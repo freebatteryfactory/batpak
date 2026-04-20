@@ -193,15 +193,20 @@ instead of pretending.
   - `cargo test --test control_plane_surface fenced_root_submit_stays_hidden_until_commit_and_cancel_discards_it`
   - `cargo test --test control_plane_surface fenced_batch_submit_stays_hidden_until_commit_and_cancel_discards_it`
   - `CARGO_INCREMENTAL=0 cargo mutants --output tools/xtask/target/mutants/writer-commit-ticket-try-check-none --in-place --baseline run --file 'src/store/write/*.rs' --exclude src/store/ancestry/by_clock.rs --all-features --cargo-arg --locked --test-tool cargo --shard 1/8 --sharding round-robin --build-timeout 300 --timeout 300 --minimum-test-timeout 120 -F 'Ticket<T>::try_check.*with None'`
+  - `CARGO_INCREMENTAL=0 cargo mutants --output tools/xtask/target/mutants/fence-token-root-under-fence-4 --in-place --baseline run --file 'src/store/write/control.rs' --all-features --cargo-arg --locked --test-tool cargo --build-timeout 300 --timeout 300 --minimum-test-timeout 120 -F 'delete field fence_token from struct Self expression in AppendSubmission::root_under_fence'`
 - Line/function coverage delta: targeted rise in `src/store/write/control.rs`; exact JSON delta not recorded in this wave
 - Mutation delta:
   - exact mutant `src/store/write/control.rs:29:9 replace Ticket<T>::try_check -> Option<Result<T, StoreError>> with None` is now caught by the ready-path proof lane
   - the exact default-receipt mutants for `AppendTicket::try_check` and `BatchAppendTicket::try_check` are now characterized as unviable at build time:
     - `src/store/write/control.rs:64:9 replace AppendTicket::try_check -> Option<AppendReply> with Some(Default::default())`
     - `src/store/write/control.rs:96:9 replace BatchAppendTicket::try_check -> Option<BatchAppendReply> with Some(Default::default())`
+  - exact field-deletion mutants in the fence/reaction submission constructors are now caught:
+    - `src/store/write/control.rs:551:13 delete field fence_token from struct Self expression in AppendSubmission::root_under_fence`
+    - `src/store/write/control.rs:562:17 delete field causation_id from struct AppendOptions expression in AppendSubmission::reaction`
+    - `src/store/write/control.rs:575:13 delete field fence_token from struct Self expression in AppendSubmission::reaction_under_fence`
 - Remaining known blind spots:
   - this closes the positive-ready edge for append and batch tickets and adds direct root-under-fence plus batch-under-fence visibility/cancel proofs
-  - the wider writer commit protocol still needs broader mutation pressure across `writer.rs`, `staging.rs`, `fanout.rs`, and the remaining fence-token-specific mutants
+  - the wider writer commit protocol still needs broader mutation pressure across `writer.rs`, `staging.rs`, and `fanout.rs`
 
 ## Oracle Harness
 
