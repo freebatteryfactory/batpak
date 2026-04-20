@@ -142,6 +142,20 @@ instead of pretending.
   - this wave proves committed progress vs rollback/restart semantics, but does
     not yet replace the broader cursor lifecycle tests in `tests/store_advanced.rs`
 
+### Invariant: Ready writer tickets surface observable completion through `try_check`
+
+- Harness pattern: `State-Machine Harness`
+- Location:
+  - `tests/control_plane_surface.rs`
+- Command used:
+  - `cargo test --test control_plane_surface try_check_surfaces_ready_append_and_batch_tickets`
+  - `CARGO_INCREMENTAL=0 cargo mutants --output tools/xtask/target/mutants/writer-commit-ticket-try-check-none --in-place --baseline run --file 'src/store/write/*.rs' --exclude src/store/ancestry/by_clock.rs --all-features --cargo-arg --locked --test-tool cargo --shard 1/8 --sharding round-robin --build-timeout 300 --timeout 300 --minimum-test-timeout 120 -F 'Ticket<T>::try_check.*with None'`
+- Line/function coverage delta: targeted rise in `src/store/write/control.rs`; exact JSON delta not recorded in this wave
+- Mutation delta:
+  - exact mutant `src/store/write/control.rs:29:9 replace Ticket<T>::try_check -> Option<Result<T, StoreError>> with None` is now caught by the ready-path proof lane
+- Remaining known blind spots:
+  - this closes the positive-ready edge for append and batch tickets, but the wider writer commit protocol still needs broader mutation pressure across `writer.rs`, `staging.rs`, and `fanout.rs`
+
 ## Oracle Harness
 
 ### Status: Planned, not yet ledger-seeded
