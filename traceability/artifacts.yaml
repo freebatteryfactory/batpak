@@ -126,8 +126,18 @@
   paths:
     - src/store/write/fanout.rs
     - src/store/write/writer.rs
+    - src/store/write/writer/append.rs
+    - src/store/write/writer/batch.rs
+    - src/store/write/writer/fence_runtime.rs
+    - src/store/write/writer/publish.rs
+    - src/store/write/writer/runtime.rs
     - src/store/write/staging.rs
-    - src/store/write/control.rs
+    - src/store/write/control/mod.rs
+    - src/store/write/control/ticket.rs
+    - src/store/write/control/outbox.rs
+    - src/store/write/control/fence.rs
+    - src/store/write/control/submission.rs
+    - src/store/write/control/store_bridge.rs
 - id: ART-STORE-REBUILD
   kind: source
   paths:

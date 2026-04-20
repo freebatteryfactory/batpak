@@ -4,7 +4,7 @@
 
 - `src/`: runtime crate
   - `src/store/`: see `mod.rs` for full submodule list. Key subdirectories:
-    - `write/` — `writer.rs` (background writer, single/batch commit), `fanout.rs` (notifications), `staging.rs`, `control.rs`
+    - `write/` — `writer.rs` (orchestration spine), `writer/{append,batch,fence_runtime,publish,runtime}.rs`, `fanout.rs` (notifications), `staging.rs`, `control/`
     - `segment/` — `mod.rs` (frame format, compaction), `scan.rs` (segment reading), `sidx.rs` (SIDX footer)
     - `index/` — `mod.rs` (in-memory query engine), `columnar.rs` (SoA/AoSoA overlays), `interner.rs` (string interning)
     - `cold_start/` — `mod.rs` (open/restore orchestration), `checkpoint.rs`, `mmap.rs`, `rebuild.rs`
