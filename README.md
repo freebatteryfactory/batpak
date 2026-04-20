@@ -57,7 +57,7 @@ neatly into one subdirectory.
 
 ```
 store/
-├── write/        writer thread, staging, fanout, submit/tickets/outbox/fences
+├── write/        control corridor + writer rooms (append, batch, fence runtime, publish, runtime)
 ├── segment/      on-disk .fbat frame format and SIDX footer
 ├── index/        in-memory query engine: streams, by_id, columnar overlays, interner
 ├── cold_start/   open/restore: mmap → checkpoint → SIDX rebuild → frame scan

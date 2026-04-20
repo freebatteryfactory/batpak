@@ -29,14 +29,14 @@ shipped typed-reactor implementation.
 
 ## Current lossy fanout semantics
 
-**Files cited**: `src/store/write/fanout.rs:60-72`, `src/store/mod.rs:448-487`, `src/store/write/writer.rs:1737-1747`.
+**Files cited**: `src/store/write/fanout.rs`, `src/store/mod.rs`, `src/store/write/writer/publish.rs`.
 
 - **Delivery guarantee.** `FanoutList::broadcast` calls `sender.try_send(value.clone())`. Result handling: `Ok` or `Full` → retain sender; `Disconnected` → prune. Consequence: when a subscriber's bounded channel is full, the message is dropped at the writer side with no signal to the subscriber. Lossy.
 - **Backpressure.** None. The writer never blocks on reactor capacity (by design — "NEVER use blocking send() — one slow subscriber must not block the writer"). Reactor latency is completely decoupled from writer throughput at the cost of drop-on-full.
 - **Error surface.** None. `react_loop` calls `reactor.react(...)` which returns `Vec<(Coordinate, EventKind, P)>` — no `Result`. Any failure in `store.append_reaction(...)` emits `tracing::warn!` and moves on (`src/store/mod.rs:481`). The calling thread sees no error.
 - **Restart / checkpoint.** None. A reactor-thread panic causes the thread to die. No supervisor, no retry, no checkpoint, no resume. Across store restart, the fanout subscription is gone entirely and any missed events are gone with it.
 - **Writer-throughput coupling.** Zero (by `try_send`).
-- **Decode cost locality.** `CommittedEventEnvelope` at `fanout.rs:13-20` carries both `Notification` (summary) and a pre-decoded `StoredEvent<serde_json::Value>`. The writer builds this envelope lazily only if `reactor_subscribers.has_subscribers()` (`writer.rs:1737-1747`), so subscribed reactors pay a per-commit `serde_json::Value` allocation cost but save the re-read + decode on the reactor side.
+- **Decode cost locality.** `CommittedEventEnvelope` in `fanout.rs` carries both `Notification` (summary) and a pre-decoded `StoredEvent<serde_json::Value>`. The writer builds this envelope lazily only if `reactor_subscribers.has_subscribers()` in `writer/publish.rs`, so subscribed reactors pay a per-commit `serde_json::Value` allocation cost but save the re-read + decode on the reactor side.
 
 ## Cursor semantics
 

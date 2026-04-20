@@ -100,9 +100,14 @@ covered by ADR-0011.
 - `src/event/`: event model and replay-lane types
 - `src/store/config.rs`: `StoreConfig`, `IndexTopology`
 - `src/store/append.rs`: `AppendOptions`, `AppendPositionHint`, batch contracts
-- `src/store/write/control.rs`: tickets, outbox, visibility fence
+- `src/store/write/control/`: tickets, outbox, visibility fence, submission bridge
 - `src/store/write/fanout.rs`: notification fanout and internal committed-event envelopes
-- `src/store/write/writer.rs`: writer thread and commit flow
+- `src/store/write/writer.rs`: writer orchestration spine, command router, segment rotation
+- `src/store/write/writer/append.rs`: single-append commit canal
+- `src/store/write/writer/batch.rs`: batch commit canal
+- `src/store/write/writer/fence_runtime.rs`: deferred replies and hidden-write ledger runtime
+- `src/store/write/writer/publish.rs`: committed-event materialization and fanout publish
+- `src/store/write/writer/runtime.rs`: restart loop, shutdown drain, segment bootstrap probe
 - `src/store/write/staging.rs`: shared committed-event staging packets
 - `src/store/index/mod.rs`: in-memory index and visibility gate
 - `src/store/index/columnar.rs`: base AoS plus optional overlays
