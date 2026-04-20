@@ -9,6 +9,9 @@
 //! INVARIANTS: INV-TYPE (cache round-trip fidelity), INV-TEMP (freshness semantics)
 
 use batpak::store::projection::{CacheMeta, NoCache, ProjectionCache};
+use batpak::store::StoreError;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 fn test_meta() -> CacheMeta {
     CacheMeta {
@@ -16,6 +19,32 @@ fn test_meta() -> CacheMeta {
         cached_at_us: 1_000_000,
         cached_at_mono_ns: None,
         process_boot_ns: None,
+    }
+}
+
+struct GetErrorCache;
+
+impl ProjectionCache for GetErrorCache {
+    fn capabilities(&self) -> batpak::store::projection::CacheCapabilities {
+        batpak::store::projection::CacheCapabilities::none()
+    }
+
+    fn get(&self, _key: &[u8]) -> Result<Option<(Vec<u8>, CacheMeta)>, StoreError> {
+        Err(StoreError::CacheFailed(
+            "simulated cache get failure".into(),
+        ))
+    }
+
+    fn put(&self, _key: &[u8], _value: &[u8], _meta: CacheMeta) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    fn delete_prefix(&self, _prefix: &[u8]) -> Result<u64, StoreError> {
+        Ok(0)
+    }
+
+    fn sync(&self) -> Result<(), StoreError> {
+        Ok(())
     }
 }
 
@@ -771,6 +800,105 @@ fn project_if_changed_never_pairs_maybe_stale_cache_with_new_generation() {
         Some(MaybeStaleGenerationCounter { count: 3 }),
         "PROPERTY: project_if_changed must not return stale cache bytes together with a newer generation token.\n\
          Investigate: src/store/projection/flow.rs project_if_changed() MaybeStale path."
+    );
+
+    store.close().expect("close");
+}
+
+#[test]
+fn projection_replays_when_cache_get_errors() {
+    use batpak::prelude::*;
+    use batpak::store::{Freshness, Store, StoreConfig, SyncConfig};
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().expect("temp dir");
+    let config = StoreConfig {
+        data_dir: dir.path().join("data"),
+        segment_max_bytes: 4096,
+        sync: SyncConfig {
+            every_n_events: 1,
+            ..SyncConfig::default()
+        },
+        ..StoreConfig::new("")
+    };
+    let store = Store::open_with_cache(config, Box::new(GetErrorCache)).expect("open store");
+    let coord = Coordinate::new("entity:cache-get-error", "scope:test").expect("coord");
+    let kind = EventKind::custom(0xF, 1);
+    store
+        .append(&coord, kind, &serde_json::json!({"x": 1}))
+        .expect("append 1");
+    store
+        .append(&coord, kind, &serde_json::json!({"x": 2}))
+        .expect("append 2");
+
+    let result: Option<MaybeStaleCounter> = store
+        .project("entity:cache-get-error", &Freshness::Consistent)
+        .expect("project after cache get error");
+    assert_eq!(
+        result,
+        Some(MaybeStaleCounter { count: 2 }),
+        "CACHE GET ERROR HONESTY: a cache backend get failure must fall back to replay and return the honest folded state."
+    );
+
+    store.close().expect("close");
+}
+
+#[test]
+fn freshness_maybe_stale_replays_at_exact_age_boundary() {
+    use batpak::prelude::*;
+    use batpak::store::{Freshness, NativeCache, Store, StoreConfig, SyncConfig};
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().expect("temp dir");
+    let cache_path = dir.path().join("cache");
+    let cache = NativeCache::open(&cache_path).expect("open native cache");
+    let now_us = Arc::new(AtomicI64::new(1_000_000));
+    let clock: Arc<dyn Fn() -> i64 + Send + Sync> = {
+        let now_us = Arc::clone(&now_us);
+        Arc::new(move || now_us.load(Ordering::SeqCst))
+    };
+
+    let config = StoreConfig {
+        data_dir: dir.path().join("data"),
+        segment_max_bytes: 4096,
+        sync: SyncConfig {
+            every_n_events: 1,
+            ..SyncConfig::default()
+        },
+        ..StoreConfig::new("")
+    }
+    .with_clock(Some(clock));
+    let store = Store::open_with_cache(config, Box::new(cache)).expect("open store");
+
+    let coord = Coordinate::new("entity:maybe-stale-boundary", "scope:test").expect("coord");
+    let kind = EventKind::custom(0xF, 1);
+    store
+        .append(&coord, kind, &serde_json::json!({"x": 1}))
+        .expect("append 1");
+    store
+        .append(&coord, kind, &serde_json::json!({"x": 2}))
+        .expect("append 2");
+
+    let seeded: Option<MaybeStaleCounter> = store
+        .project("entity:maybe-stale-boundary", &Freshness::Consistent)
+        .expect("seed cache");
+    assert_eq!(seeded, Some(MaybeStaleCounter { count: 2 }));
+
+    store
+        .append(&coord, kind, &serde_json::json!({"x": 3}))
+        .expect("append 3");
+
+    now_us.store(1_005_000, Ordering::SeqCst);
+    let result: Option<MaybeStaleCounter> = store
+        .project(
+            "entity:maybe-stale-boundary",
+            &Freshness::MaybeStale { max_stale_ms: 5 },
+        )
+        .expect("project maybe stale at boundary");
+    assert_eq!(
+        result,
+        Some(MaybeStaleCounter { count: 3 }),
+        "MAYBE STALE BOUNDARY HONESTY: when cache age equals max_stale_ms exactly, the strict '<' boundary must force replay rather than serve the stale row."
     );
 
     store.close().expect("close");

@@ -554,6 +554,92 @@ fn try_submit_returns_retry_under_pressure() {
 }
 
 #[test]
+fn try_submit_batch_returns_retry_under_pressure() {
+    let dir = TempDir::new().expect("temp dir");
+    let config = StoreConfig {
+        data_dir: dir.path().to_path_buf(),
+        sync: SyncConfig {
+            every_n_events: 1,
+            ..SyncConfig::default()
+        },
+        ..StoreConfig::new(dir.path())
+    }
+    .with_writer_channel_capacity(8)
+    .with_writer_pressure_retry_threshold_pct(50);
+
+    let store = Arc::new(Store::open(config).expect("open store"));
+    let coord = Coordinate::new("entity:pressure-batch", "scope:test").expect("coord");
+    let kind = KIND_COUNTER;
+
+    let saw_retry = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
+
+    let handles: Vec<_> = (0..4u32)
+        .map(|i| {
+            let store = Arc::clone(&store);
+            let coord = coord.clone();
+            let stop = Arc::clone(&stop);
+            std::thread::Builder::new()
+                .name(format!("pressure-batch-producer-{i}"))
+                .spawn(move || {
+                    let mut n = 0u32;
+                    while !stop.load(Ordering::Relaxed) {
+                        let items = vec![BatchAppendItem::new(
+                            coord.clone(),
+                            kind,
+                            &serde_json::json!({"t": i, "n": n}),
+                            AppendOptions::new().with_idempotency(
+                                (((i as u64) << 32) | u64::from(n) | 0xB000_0000).into(),
+                            ),
+                            batpak::store::CausationRef::None,
+                        )
+                        .expect("batch item")];
+                        let _ = store.submit_batch(items);
+                        n += 1;
+                    }
+                })
+                .expect("spawn pressure producer")
+        })
+        .collect();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        let items = vec![BatchAppendItem::new(
+            coord.clone(),
+            kind,
+            &serde_json::json!({"probe": true}),
+            AppendOptions::new().with_idempotency(0xCAFE_BA5E),
+            batpak::store::CausationRef::None,
+        )
+        .expect("batch probe item")];
+        match store.try_submit_batch(items) {
+            Ok(outcome) if outcome.is_retry() => {
+                saw_retry.store(true, Ordering::SeqCst);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    stop.store(true, Ordering::SeqCst);
+    for h in handles {
+        let _ = h.join();
+    }
+
+    assert!(
+        saw_retry.load(Ordering::SeqCst),
+        "PROPERTY: try_submit_batch must return Outcome::Retry when the writer channel \
+         exceeds the pressure threshold (50% of capacity 8 = 4 queued commands)."
+    );
+
+    let store = match Arc::try_unwrap(store) {
+        Ok(store) => store,
+        Err(_) => panic!("PROPERTY: producer threads should release the last Arc"),
+    };
+    store.close().expect("close store");
+}
+
+#[test]
 fn fence_drop_without_commit_auto_cancels() {
     let dir = TempDir::new().expect("temp dir");
     let store = Store::open(test_config(&dir)).expect("open store");
