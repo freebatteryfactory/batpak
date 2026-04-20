@@ -93,14 +93,18 @@ instead of pretending.
   - `tests/raw_projection_mode.rs`
 - Command used:
   - `cargo test --test raw_projection_mode`
--  - `cargo test --test raw_projection_mode projection_flow_maybe_stale_keeps_replay_lanes_equivalent`
+  - `cargo test --test raw_projection_mode projection_flow_maybe_stale_keeps_replay_lanes_equivalent`
+  - `cargo test --test raw_projection_mode projection_flow_incremental_group_local_keeps_lanes_equivalent`
+  - `cargo test --test raw_projection_mode projection_flow_incremental_external_cache_keeps_lanes_equivalent`
 - Line/function coverage delta: targeted rise in `src/store/projection/flow.rs`
     and watcher-adjacent paths; exact JSON delta not recorded in this wave
 - Mutation delta: unmeasured in this wave
 - Remaining known blind spots:
   - current matrix now covers relevant and irrelevant appends across the two replay
-    lanes plus the cache-enabled `Freshness::MaybeStale` stale-hit vs forced-replay branch
-  - remaining blind spots are deeper external-cache corruption and monotonic-age edge cases, which stay owned by `tests/projection_cache.rs`
+    lanes, the cache-enabled `Freshness::MaybeStale` stale-hit vs forced-replay branch,
+    and both incremental branches (group-local and external-cache replay)
+  - remaining blind spots are cache-get-error handling, exact age-boundary behavior,
+    and the empty/no-replay-plan public surface
 
 ### Invariant: MaybeStale never serves corrupt cache bytes as a “fresh enough” success
 
@@ -194,6 +198,7 @@ instead of pretending.
   - `cargo test --test control_plane_surface fenced_root_submit_stays_hidden_until_commit_and_cancel_discards_it`
   - `cargo test --test control_plane_surface fenced_batch_submit_stays_hidden_until_commit_and_cancel_discards_it`
   - `cargo test --test control_plane_surface fenced_reaction_submit_stays_hidden_until_commit_and_cancel_discards_it`
+  - `cargo test --test control_plane_surface fenced_reaction_commit_preserves_reaction_metadata`
   - `CARGO_INCREMENTAL=0 cargo mutants --output tools/xtask/target/mutants/writer-commit-ticket-try-check-none --in-place --baseline run --file 'src/store/write/*.rs' --exclude src/store/ancestry/by_clock.rs --all-features --cargo-arg --locked --test-tool cargo --shard 1/8 --sharding round-robin --build-timeout 300 --timeout 300 --minimum-test-timeout 120 -F 'Ticket<T>::try_check.*with None'`
   - `CARGO_INCREMENTAL=0 cargo mutants --output tools/xtask/target/mutants/fence-token-root-under-fence-4 --in-place --baseline run --file 'src/store/write/control.rs' --all-features --cargo-arg --locked --test-tool cargo --build-timeout 300 --timeout 300 --minimum-test-timeout 120 -F 'delete field fence_token from struct Self expression in AppendSubmission::root_under_fence'`
 - Line/function coverage delta: targeted rise in `src/store/write/control.rs`; exact JSON delta not recorded in this wave
@@ -207,7 +212,7 @@ instead of pretending.
     - `src/store/write/control.rs:562:17 delete field causation_id from struct AppendOptions expression in AppendSubmission::reaction`
     - `src/store/write/control.rs:575:13 delete field fence_token from struct Self expression in AppendSubmission::reaction_under_fence`
 - Remaining known blind spots:
-  - this closes the positive-ready edge for append and batch tickets and adds direct root-under-fence, batch-under-fence, and reaction-under-fence visibility/cancel proofs
+  - this closes the positive-ready edge for append and batch tickets and adds direct root-under-fence, batch-under-fence, reaction-under-fence visibility/cancel, and reaction metadata-preservation proofs
   - the wider writer commit protocol still needs broader mutation pressure across `writer.rs`, `staging.rs`, and `fanout.rs`
 
 ## Oracle Harness

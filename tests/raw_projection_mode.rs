@@ -79,6 +79,49 @@ impl MatrixCounterState for RawCounter {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct ValueIncrementalCounter {
+    value: i64,
+    seen: u32,
+}
+
+impl EventSourced for ValueIncrementalCounter {
+    type Input = JsonValueInput;
+
+    fn from_events(events: &[Event<serde_json::Value>]) -> Option<Self> {
+        if events.is_empty() {
+            return None;
+        }
+        let mut state = Self::default();
+        for event in events {
+            state.apply_event(event);
+        }
+        Some(state)
+    }
+
+    fn apply_event(&mut self, event: &Event<serde_json::Value>) {
+        let delta = serde_json::from_value::<CounterDelta>(event.payload.clone()).expect(
+            "ValueIncrementalCounter::apply_event expects replay payloads that match CounterDelta",
+        );
+        self.value += delta.amount;
+        self.seen += 1;
+    }
+
+    fn relevant_event_kinds() -> &'static [EventKind] {
+        &[KIND]
+    }
+
+    fn supports_incremental_apply() -> bool {
+        true
+    }
+}
+
+impl MatrixCounterState for ValueIncrementalCounter {
+    fn summary(&self) -> (i64, u32) {
+        (self.value, self.seen)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct ProjectionFlowMatrixCase {
     label: &'static str,
@@ -117,6 +160,49 @@ impl EventSourced for RawCounter {
 
     fn relevant_event_kinds() -> &'static [EventKind] {
         &[KIND]
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct RawIncrementalCounter {
+    value: i64,
+    seen: u32,
+}
+
+impl EventSourced for RawIncrementalCounter {
+    type Input = RawMsgpackInput;
+
+    fn from_events(events: &[Event<Vec<u8>>]) -> Option<Self> {
+        if events.is_empty() {
+            return None;
+        }
+        let mut state = Self::default();
+        for event in events {
+            state.apply_event(event);
+        }
+        Some(state)
+    }
+
+    fn apply_event(&mut self, event: &Event<Vec<u8>>) {
+        let delta = rmp_serde::from_slice::<CounterDelta>(&event.payload).expect(
+            "RawIncrementalCounter::apply_event expects replay payloads that decode as CounterDelta",
+        );
+        self.value += delta.amount;
+        self.seen += 1;
+    }
+
+    fn relevant_event_kinds() -> &'static [EventKind] {
+        &[KIND]
+    }
+
+    fn supports_incremental_apply() -> bool {
+        true
+    }
+}
+
+impl MatrixCounterState for RawIncrementalCounter {
+    fn summary(&self) -> (i64, u32) {
+        (self.value, self.seen)
     }
 }
 
@@ -173,6 +259,37 @@ fn cached_seeded_store() -> (Arc<Store>, TempDir) {
         Store::open_with_native_cache(config, &cache_path).expect("open with native cache"),
     );
     let coord = Coordinate::new("entity:raw-proj", "scope:test").expect("coord");
+    for (amount, label) in [(3, "a"), (-1, "b"), (7, "c"), (2, "d")] {
+        store
+            .append(
+                &coord,
+                KIND,
+                &CounterDelta {
+                    amount,
+                    label: label.to_owned(),
+                },
+            )
+            .expect("append");
+    }
+    (store, dir)
+}
+
+fn cached_seeded_store_for(entity: &str) -> (Arc<Store>, TempDir) {
+    let dir = TempDir::new().expect("temp dir");
+    let cache_path = dir.path().join("cache");
+    let config = StoreConfig {
+        data_dir: dir.path().join("data"),
+        segment_max_bytes: 4096,
+        sync: SyncConfig {
+            every_n_events: 1,
+            ..SyncConfig::default()
+        },
+        ..StoreConfig::new("")
+    };
+    let store = Arc::new(
+        Store::open_with_native_cache(config, &cache_path).expect("open with native cache"),
+    );
+    let coord = Coordinate::new(entity, "scope:test").expect("coord");
     for (amount, label) in [(3, "a"), (-1, "b"), (7, "c"), (2, "d")] {
         store
             .append(
@@ -648,4 +765,160 @@ fn projection_flow_maybe_stale_keeps_replay_lanes_equivalent() {
         Err(_) => panic!("PROPERTY: maybe-stale matrix must release all Arc clones before close"),
     };
     store.close().expect("close maybe stale matrix store");
+}
+
+#[test]
+fn projection_flow_incremental_group_local_keeps_lanes_equivalent() {
+    let (store, _dir) = cached_seeded_store_for("entity:raw-proj-incremental-group-local");
+    let baseline_value = store
+        .project::<ValueIncrementalCounter>(
+            "entity:raw-proj-incremental-group-local",
+            &Freshness::Consistent,
+        )
+        .expect("seed value incremental cache")
+        .expect("baseline value state");
+    let baseline_raw = store
+        .project::<RawIncrementalCounter>(
+            "entity:raw-proj-incremental-group-local",
+            &Freshness::Consistent,
+        )
+        .expect("seed raw incremental cache")
+        .expect("baseline raw state");
+    assert_eq!(baseline_value.summary(), baseline_raw.summary());
+
+    let coord =
+        Coordinate::new("entity:raw-proj-incremental-group-local", "scope:test").expect("coord");
+    store
+        .append(
+            &coord,
+            KIND,
+            &CounterDelta {
+                amount: 4,
+                label: "group-local-incremental".to_owned(),
+            },
+        )
+        .expect("append relevant incremental event");
+
+    let value = store
+        .project::<ValueIncrementalCounter>(
+            "entity:raw-proj-incremental-group-local",
+            &Freshness::Consistent,
+        )
+        .expect("project value incremental")
+        .expect("value incremental state");
+    let raw = store
+        .project::<RawIncrementalCounter>(
+            "entity:raw-proj-incremental-group-local",
+            &Freshness::Consistent,
+        )
+        .expect("project raw incremental")
+        .expect("raw incremental state");
+
+    assert_eq!(
+        value.summary(),
+        (15, 5),
+        "PROPERTY: group-local incremental replay must fold the new relevant event on the value lane."
+    );
+    assert_eq!(
+        raw.summary(),
+        value.summary(),
+        "PROPERTY: group-local incremental replay must stay equivalent across raw and value lanes."
+    );
+
+    let store = match Arc::try_unwrap(store) {
+        Ok(store) => store,
+        Err(_) => panic!(
+            "PROPERTY: incremental group-local test should release all Arc clones before close"
+        ),
+    };
+    store.close().expect("close");
+}
+
+#[test]
+fn projection_flow_incremental_external_cache_keeps_lanes_equivalent() {
+    let (store, dir) = cached_seeded_store_for("entity:raw-proj-incremental-external");
+    let cache_path = dir.path().join("cache");
+    let data_path = dir.path().join("data");
+    let baseline_value = store
+        .project::<ValueIncrementalCounter>(
+            "entity:raw-proj-incremental-external",
+            &Freshness::Consistent,
+        )
+        .expect("seed value external incremental cache")
+        .expect("baseline value state");
+    let baseline_raw = store
+        .project::<RawIncrementalCounter>(
+            "entity:raw-proj-incremental-external",
+            &Freshness::Consistent,
+        )
+        .expect("seed raw external incremental cache")
+        .expect("baseline raw state");
+    assert_eq!(baseline_value.summary(), baseline_raw.summary());
+
+    let store = match Arc::try_unwrap(store) {
+        Ok(store) => store,
+        Err(_) => panic!(
+            "PROPERTY: incremental external-cache seed test should release all Arc clones before close"
+        ),
+    };
+    store.close().expect("close seeded store");
+
+    let config = StoreConfig {
+        data_dir: data_path,
+        segment_max_bytes: 4096,
+        sync: SyncConfig {
+            every_n_events: 1,
+            ..SyncConfig::default()
+        },
+        ..StoreConfig::new("")
+    };
+    let reopened = Arc::new(
+        Store::open_with_native_cache(config, &cache_path).expect("reopen with native cache"),
+    );
+    let coord =
+        Coordinate::new("entity:raw-proj-incremental-external", "scope:test").expect("coord");
+    reopened
+        .append(
+            &coord,
+            KIND,
+            &CounterDelta {
+                amount: 4,
+                label: "external-incremental".to_owned(),
+            },
+        )
+        .expect("append relevant incremental event");
+
+    let value = reopened
+        .project::<ValueIncrementalCounter>(
+            "entity:raw-proj-incremental-external",
+            &Freshness::Consistent,
+        )
+        .expect("project value external incremental")
+        .expect("value external incremental state");
+    let raw = reopened
+        .project::<RawIncrementalCounter>(
+            "entity:raw-proj-incremental-external",
+            &Freshness::Consistent,
+        )
+        .expect("project raw external incremental")
+        .expect("raw external incremental state");
+
+    assert_eq!(
+        value.summary(),
+        (15, 5),
+        "PROPERTY: external-cache incremental replay must fold the new relevant event on the value lane."
+    );
+    assert_eq!(
+        raw.summary(),
+        value.summary(),
+        "PROPERTY: external-cache incremental replay must stay equivalent across raw and value lanes."
+    );
+
+    let reopened = match Arc::try_unwrap(reopened) {
+        Ok(store) => store,
+        Err(_) => panic!(
+            "PROPERTY: incremental external-cache test should release all Arc clones before close"
+        ),
+    };
+    reopened.close().expect("close reopened");
 }

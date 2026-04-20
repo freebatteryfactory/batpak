@@ -773,6 +773,62 @@ fn fenced_reaction_submit_stays_hidden_until_commit_and_cancel_discards_it() {
 }
 
 #[test]
+fn fenced_reaction_commit_preserves_reaction_metadata() {
+    let dir = TempDir::new().expect("temp dir");
+    let store = Store::open(test_config(&dir)).expect("open store");
+    let root_coord =
+        Coordinate::new("entity:fence-reaction-commit-root", "scope:test").expect("coord");
+    let reaction_coord =
+        Coordinate::new("entity:fence-reaction-commit-child", "scope:test").expect("coord");
+    let kind = KIND_COUNTER;
+
+    let root = store
+        .append(&root_coord, kind, &serde_json::json!({"root": true}))
+        .expect("append root");
+
+    let fence = store.begin_visibility_fence().expect("begin fence");
+    let ticket = fence
+        .submit_reaction(
+            &reaction_coord,
+            kind,
+            &serde_json::json!({"reaction": "commit"}),
+            root.event_id,
+            root.event_id,
+        )
+        .expect("submit fenced reaction");
+    assert_eq!(
+        store.stream("entity:fence-reaction-commit-child").len(),
+        0,
+        "PROPERTY: a fenced reaction must stay hidden until the fence commits."
+    );
+
+    fence.commit().expect("commit fence");
+    let reaction = ticket.wait().expect("wait committed reaction");
+    let entries = store.stream("entity:fence-reaction-commit-child");
+    assert_eq!(
+        entries.len(),
+        1,
+        "PROPERTY: committing a fenced reaction must publish exactly one reaction entry."
+    );
+    let reaction_entry = &entries[0];
+    assert_eq!(
+        reaction_entry.event_id, reaction.event_id,
+        "PROPERTY: the committed reaction receipt must identify the stored reaction event."
+    );
+    assert_eq!(
+        reaction_entry.correlation_id, root.event_id,
+        "PROPERTY: a committed fenced reaction must preserve the triggering correlation id."
+    );
+    assert_eq!(
+        reaction_entry.causation_id,
+        Some(root.event_id),
+        "PROPERTY: a committed fenced reaction must preserve the triggering causation id."
+    );
+
+    store.close().expect("close store");
+}
+
+#[test]
 fn shutdown_with_live_fence_cancels_pending_fence_work() {
     let dir = TempDir::new().expect("temp dir");
     let store = Store::open(test_config(&dir)).expect("open store");
