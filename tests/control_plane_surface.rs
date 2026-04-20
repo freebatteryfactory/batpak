@@ -650,6 +650,69 @@ fn fenced_root_submit_stays_hidden_until_commit_and_cancel_discards_it() {
 }
 
 #[test]
+fn fenced_batch_submit_stays_hidden_until_commit_and_cancel_discards_it() {
+    let dir = TempDir::new().expect("temp dir");
+    let store = Store::open(test_config(&dir)).expect("open store");
+    let coord = Coordinate::new("entity:fence-batch", "scope:test").expect("coord");
+    let kind = KIND_COUNTER;
+
+    let fence = store.begin_visibility_fence().expect("begin fence");
+    let mut outbox = fence.outbox();
+    outbox
+        .stage_with_options(
+            coord.clone(),
+            kind,
+            &serde_json::json!({"batch": "a"}),
+            AppendOptions::new().with_idempotency(0xAAA1),
+        )
+        .expect("stage item a");
+    outbox
+        .stage_with_options(
+            coord,
+            kind,
+            &serde_json::json!({"batch": "b"}),
+            AppendOptions::new().with_idempotency(0xAAA2),
+        )
+        .expect("stage item b");
+    let ticket = outbox.submit_flush().expect("submit fenced batch");
+
+    assert!(
+        ticket.receiver().is_empty(),
+        "PROPERTY: a batch submission under a live fence must not resolve before commit."
+    );
+    assert_eq!(
+        store.by_fact(kind).len(),
+        0,
+        "PROPERTY: a batch submission under a live fence must remain invisible before commit."
+    );
+    assert_eq!(
+        store.stream("entity:fence-batch").len(),
+        0,
+        "PROPERTY: the entity stream must also keep fenced batch submissions hidden before commit."
+    );
+
+    fence.cancel().expect("cancel fence");
+    assert!(
+        matches!(ticket.wait(), Err(StoreError::VisibilityFenceCancelled)),
+        "PROPERTY: cancelling a fence after batch submit_flush must surface VisibilityFenceCancelled."
+    );
+    assert_eq!(
+        store.by_fact(kind).len(),
+        0,
+        "PROPERTY: cancelling a fence must discard the pending batch submission."
+    );
+
+    store.close().expect("close store");
+    let reopened = Store::open(test_config(&dir)).expect("reopen store");
+    assert_eq!(
+        reopened.by_fact(kind).len(),
+        0,
+        "PROPERTY: a cancelled batch submission under a fence must stay invisible after reopen."
+    );
+    reopened.close().expect("close reopened");
+}
+
+#[test]
 fn shutdown_with_live_fence_cancels_pending_fence_work() {
     let dir = TempDir::new().expect("temp dir");
     let store = Store::open(test_config(&dir)).expect("open store");
