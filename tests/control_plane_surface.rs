@@ -60,6 +60,20 @@ fn test_config(dir: &TempDir) -> StoreConfig {
     }
 }
 
+fn wait_until_ticket_receiver_has_value<T>(
+    rx: &flume::Receiver<Result<T, StoreError>>,
+    label: &str,
+) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while rx.is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "PROPERTY: {label} must eventually publish a writer reply so try_check can observe the ready state."
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn control_plane_surface_smoke() {
     let dir = TempDir::new().expect("temp dir");
@@ -388,6 +402,69 @@ fn control_plane_surface_smoke() {
         ro_entries.len(),
         visible_before_close,
         "reopen must preserve hidden cancelled-fence ranges"
+    );
+}
+
+#[test]
+fn try_check_surfaces_ready_append_and_batch_tickets() {
+    let dir = TempDir::new().expect("temp dir");
+    let store = Store::open(test_config(&dir)).expect("open store");
+    let coord = Coordinate::new("entity:ticket-ready", "scope:test").expect("coord");
+    let kind = KIND_COUNTER;
+
+    let append_ticket = store
+        .submit(&coord, kind, &serde_json::json!({"n": "append"}))
+        .expect("submit append ticket");
+    wait_until_ticket_receiver_has_value(append_ticket.receiver(), "append ticket receiver");
+    let append_receipt = match append_ticket.try_check() {
+        Some(Ok(receipt)) => receipt,
+        Some(Err(err)) => panic!(
+            "PROPERTY: ready append ticket must surface its receipt through try_check, got error {err:?}"
+        ),
+        None => panic!(
+            "PROPERTY: once the append ticket receiver is non-empty, try_check must return Some(Ok(_))"
+        ),
+    };
+    assert_eq!(append_receipt.sequence, 0);
+
+    let batch_ticket = store
+        .submit_batch(vec![
+            BatchAppendItem::new(
+                coord.clone(),
+                kind,
+                &serde_json::json!({"n": "batch-a"}),
+                AppendOptions::new().with_idempotency(0xFACE),
+                batpak::store::CausationRef::None,
+            )
+            .expect("batch item a"),
+            BatchAppendItem::new(
+                coord.clone(),
+                kind,
+                &serde_json::json!({"n": "batch-b"}),
+                AppendOptions::new().with_idempotency(0xB00C),
+                batpak::store::CausationRef::None,
+            )
+            .expect("batch item b"),
+        ])
+        .expect("submit batch ticket");
+    wait_until_ticket_receiver_has_value(batch_ticket.receiver(), "batch ticket receiver");
+    let batch_receipts = match batch_ticket.try_check() {
+        Some(Ok(receipts)) => receipts,
+        Some(Err(err)) => panic!(
+            "PROPERTY: ready batch ticket must surface its receipts through try_check, got error {err:?}"
+        ),
+        None => panic!(
+            "PROPERTY: once the batch ticket receiver is non-empty, try_check must return Some(Ok(_))"
+        ),
+    };
+    assert_eq!(batch_receipts.len(), 2);
+    assert_eq!(
+        batch_receipts
+            .iter()
+            .map(|receipt| receipt.sequence)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+        "PROPERTY: batch try_check must expose the committed receipts in visible sequence order."
     );
 }
 
