@@ -51,6 +51,8 @@ fn open_lock_file(path: &Path) -> Result<File, StoreError> {
 
     #[cfg(not(unix))]
     {
+        // Best-effort on non-Unix: std has no O_NOFOLLOW equivalent here, so
+        // this is check-then-open rather than the Unix branch's atomic open.
         crate::store::cold_start::reject_symlink_leaf(path, "store lock file")?;
         OpenOptions::new()
             .read(true)

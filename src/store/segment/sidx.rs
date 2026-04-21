@@ -48,6 +48,7 @@ use crate::store::StoreError;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use tracing::warn;
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -104,8 +105,14 @@ pub(crate) fn raw_to_kind(raw: u16) -> EventKind {
             0x0004 => EventKind::SYSTEM_CONFIG_CHANGE,
             0x0005 => EventKind::SYSTEM_CHECKPOINT,
             0x0FFE => EventKind::TOMBSTONE,
-            // DATA (0x0000) and any unrecognised system kind → DATA
-            _ => EventKind::DATA,
+            0x0000 => EventKind::DATA,
+            _ => {
+                warn!(
+                    raw,
+                    "unrecognized reserved system kind in SIDX footer; falling back to DATA"
+                );
+                EventKind::DATA
+            }
         },
         // Reserved effect category (0xD) — match known constants.
         0xD => match raw {
@@ -115,8 +122,13 @@ pub(crate) fn raw_to_kind(raw: u16) -> EventKind {
             0xD005 => EventKind::EFFECT_BACKPRESSURE,
             0xD006 => EventKind::EFFECT_CANCEL,
             0xD007 => EventKind::EFFECT_CONFLICT,
-            // Any unrecognised effect kind → EFFECT_ERROR (closest semantic parent)
-            _ => EventKind::EFFECT_ERROR,
+            _ => {
+                warn!(
+                    raw,
+                    "unrecognized reserved effect kind in SIDX footer; falling back to EFFECT_ERROR"
+                );
+                EventKind::EFFECT_ERROR
+            }
         },
         // All other categories (0x1–0xC, 0xE–0xF) are open for product use.
         other => EventKind::custom(other, raw & 0x0FFF),

@@ -63,7 +63,7 @@ impl WriterState<'_> {
             .map(|entry| entry.hash_chain.event_hash)
             .unwrap_or([0u8; 32]);
 
-        let clock = latest.as_ref().map(|entry| entry.clock + 1).unwrap_or(0);
+        let clock = super::checked_next_clock(latest.as_ref().map(|entry| entry.clock), entity)?;
 
         let raw_ms = crate::store::config::wall_ms_from_timestamp_us(event.header.timestamp_us)?;
         let last_ms = latest.as_ref().map(|entry| entry.wall_ms).unwrap_or(0);

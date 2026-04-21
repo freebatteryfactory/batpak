@@ -84,6 +84,8 @@ impl WriterState<'_> {
         };
         let sidx_entry = SidxEntry {
             event_id: staged.meta.event_id,
+            // Placeholder string-table slots: SidxEntryCollector::record rewrites
+            // them to the correct entity/scope indexes when the footer is built.
             entity_idx: 0,
             scope_idx: 0,
             kind: kind_to_raw(staged.meta.kind),

@@ -439,8 +439,10 @@ impl Store<Open> {
     /// All events are committed together or none are visible.
     ///
     /// # Errors
-    /// Returns `StoreError::BatchFailed` if any item fails validation, encoding, durability,
-    /// or publish preparation. The `item_index` field indicates which item failed.
+    /// Returns `StoreError::BatchFailed` if a specific item fails validation,
+    /// encoding, marker writing, or publish preparation. Returns
+    /// `StoreError::BatchSyncFailed` if the batch reaches the final durability
+    /// boundary and segment sync fails before publish.
     pub fn append_batch(
         &self,
         items: Vec<crate::store::append::BatchAppendItem>,
@@ -452,8 +454,10 @@ impl Store<Open> {
     /// All events share the same correlation_id from the triggering event.
     ///
     /// # Errors
-    /// Returns `StoreError::BatchFailed` if any item fails validation, encoding, durability,
-    /// or publish preparation.
+    /// Returns `StoreError::BatchFailed` if a specific item fails validation,
+    /// encoding, marker writing, or publish preparation. Returns
+    /// `StoreError::BatchSyncFailed` if the batch reaches the final durability
+    /// boundary and segment sync fails before publish.
     pub fn append_reaction_batch(
         &self,
         correlation_id: u128,
