@@ -1,11 +1,13 @@
 pub(crate) mod columnar;
 pub(crate) mod interner;
+mod projection_bridge;
 mod query;
 mod restore;
 mod visibility;
 
-use self::columnar::{CachedProjectionSlot, ScanIndex};
+use self::columnar::ScanIndex;
 use self::interner::StringInterner;
+pub(crate) use self::projection_bridge::{projection_kind_matches, ProjectionReplayPlan};
 use self::restore::RestoreBase;
 pub(crate) use self::restore::{recommended_restore_chunk_count, RoutingSummary};
 use self::visibility::SequenceGate;
@@ -14,20 +16,9 @@ use crate::event::{EventKind, HashChain};
 use crate::store::config::IndexConfig;
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use std::any::TypeId;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-#[inline]
-pub(crate) fn projection_kind_matches(relevant_kinds: &[EventKind], kind: EventKind) -> bool {
-    match relevant_kinds {
-        [] => true,
-        [only] => *only == kind,
-        [first, second] => *first == kind || *second == kind,
-        many => many.contains(&kind),
-    }
-}
 
 /// StoreIndex: in-memory 2D index + auxiliaries. Not persisted; rebuilt from segments on cold start.
 /// [DEP:dashmap::DashMap] — see DEPENDENCY SURFACE for deadlock warnings
@@ -193,19 +184,6 @@ impl QueryHit {
             clock: entry.clock,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ProjectionReplayItem {
-    pub(crate) global_sequence: u64,
-    pub(crate) disk_pos: DiskPos,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ProjectionReplayPlan {
-    pub(crate) watermark: u64,
-    pub(crate) generation: u64,
-    pub(crate) items: Vec<ProjectionReplayItem>,
 }
 
 impl Ord for ClockKey {
@@ -629,81 +607,6 @@ impl StoreIndex {
 
     pub(crate) fn tile_count(&self) -> usize {
         self.scan.tile_count()
-    }
-
-    pub(crate) fn entity_generation(&self, entity: &str) -> Option<u64> {
-        // F6 swap-point read guard.
-        let _read = self.swap_gate.read();
-        self.scan.entity_generation(entity).or_else(|| {
-            self.streams
-                .get(entity)
-                .map(|entries| entries.value().len() as u64)
-        })
-    }
-
-    pub(crate) fn cached_projection(
-        &self,
-        entity: &str,
-        type_id: TypeId,
-    ) -> Option<CachedProjectionSlot> {
-        // F6 swap-point read guard.
-        let _read = self.swap_gate.read();
-        self.scan.cached_projection(entity, type_id)
-    }
-
-    pub(crate) fn store_cached_projection(
-        &self,
-        entity: &str,
-        type_id: TypeId,
-        bytes: Vec<u8>,
-        watermark: u64,
-    ) -> bool {
-        self.scan
-            .store_cached_projection(entity, type_id, bytes, watermark)
-    }
-
-    pub(crate) fn projection_replay_plan(
-        &self,
-        entity: &str,
-        relevant_kinds: &[EventKind],
-    ) -> Option<ProjectionReplayPlan> {
-        // F6 swap-point read guard.
-        let _read = self.swap_gate.read();
-        if let Some((watermark, generation, items)) =
-            self.scan.projection_candidates(entity, relevant_kinds)
-        {
-            return Some(ProjectionReplayPlan {
-                watermark,
-                generation,
-                items: items
-                    .into_iter()
-                    .map(|(global_sequence, disk_pos)| ProjectionReplayItem {
-                        global_sequence,
-                        disk_pos,
-                    })
-                    .collect(),
-            });
-        }
-
-        let stream = self.streams.get(entity)?;
-        let mut items = Vec::new();
-        let mut watermark = None;
-        for entry in stream.value().values() {
-            if !projection_kind_matches(relevant_kinds, entry.kind) {
-                continue;
-            }
-            watermark = Some(entry.global_sequence);
-            items.push(ProjectionReplayItem {
-                global_sequence: entry.global_sequence,
-                disk_pos: entry.disk_pos,
-            });
-        }
-
-        Some(ProjectionReplayPlan {
-            watermark: watermark?,
-            generation: stream.value().len() as u64,
-            items,
-        })
     }
 
     pub(crate) fn begin_visibility_fence(&self) -> Result<u64, crate::store::StoreError> {

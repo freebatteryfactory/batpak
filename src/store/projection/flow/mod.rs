@@ -614,10 +614,12 @@ mod tests {
             .collect();
         let legacy_items: Vec<_> = legacy_entries
             .iter()
-            .map(|entry| crate::store::index::ProjectionReplayItem {
-                global_sequence: entry.global_sequence,
-                disk_pos: entry.disk_pos,
-            })
+            .map(|entry| (entry.global_sequence, entry.disk_pos))
+            .collect();
+        let planned_items: Vec<_> = plan
+            .items
+            .iter()
+            .map(|item| (item.global_sequence, item.disk_pos))
             .collect();
         let legacy_watermark = legacy_entries
             .last()
@@ -629,7 +631,7 @@ mod tests {
             plan.generation,
             store.index.entity_generation("entity:proj").unwrap_or(0)
         );
-        assert_eq!(plan.items, legacy_items);
+        assert_eq!(planned_items, legacy_items);
 
         store.close().expect("close");
     }
