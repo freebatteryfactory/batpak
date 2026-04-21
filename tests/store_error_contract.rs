@@ -56,7 +56,9 @@ fn classify(error: &StoreError) -> HandlingClass {
         | StoreError::BatchItemTooLarge { .. }
         | StoreError::EntityClockOverflow { .. }
         | StoreError::InvalidClock { .. } => HandlingClass::Domain,
-        StoreError::BatchFailed { source, .. } => classify(source.as_ref()),
+        StoreError::BatchFailed { source, .. } | StoreError::BatchSyncFailed { source, .. } => {
+            classify(source.as_ref())
+        }
         StoreError::Serialization(_)
         | StoreError::CrcMismatch { .. }
         | StoreError::CorruptSegment { .. }
@@ -171,6 +173,22 @@ fn store_error_contract_table_stays_stable() {
             class: HandlingClass::RetryableOperational,
             source_needle: Some("IO error: flush timed out"),
             display_needles: &["batch failed at item 2", "flush timed out"],
+        },
+        Case {
+            name: "batch_sync_failed_wraps_inner_contract",
+            error: StoreError::BatchSyncFailed {
+                item_count: 3,
+                source: Box::new(StoreError::Io(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "segment fsync timed out",
+                ))),
+            },
+            class: HandlingClass::RetryableOperational,
+            source_needle: Some("IO error: segment fsync timed out"),
+            display_needles: &[
+                "batch sync failed after writing 3 items",
+                "segment fsync timed out",
+            ],
         },
         Case {
             name: "crc_mismatch",

@@ -139,18 +139,24 @@ impl WriterState<'_> {
 
         for (idx, item) in prepared.items().iter().enumerate() {
             let entity = Arc::clone(item.entity_arc());
-            let state = entity_states.entry(Arc::clone(&entity)).or_insert_with(|| {
-                let latest = self.index.get_latest(&entity);
-                BatchEntityState {
-                    entity_arc: Arc::clone(&entity),
-                    prev_hash: latest
-                        .as_ref()
-                        .map(|entry| entry.hash_chain.event_hash)
-                        .unwrap_or([0u8; 32]),
-                    next_clock: latest.as_ref().map(|entry| entry.clock + 1).unwrap_or(0),
-                    last_wall_ms: latest.as_ref().map(|entry| entry.wall_ms).unwrap_or(0),
+            let state = match entity_states.entry(Arc::clone(&entity)) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let latest = self.index.get_latest(&entity);
+                    entry.insert(BatchEntityState {
+                        entity_arc: Arc::clone(&entity),
+                        prev_hash: latest
+                            .as_ref()
+                            .map(|entry| entry.hash_chain.event_hash)
+                            .unwrap_or([0u8; 32]),
+                        next_clock: super::checked_next_clock(
+                            latest.as_ref().map(|entry| entry.clock),
+                            &entity,
+                        )?,
+                        last_wall_ms: latest.as_ref().map(|entry| entry.wall_ms).unwrap_or(0),
+                    })
                 }
-            });
+            };
 
             debug_assert!(
                 Arc::ptr_eq(&state.entity_arc, item.entity_arc()),
@@ -228,6 +234,9 @@ impl WriterState<'_> {
         let now_us = self.runtime.now_us();
         let now_ms = crate::store::config::wall_ms_from_timestamp_us(now_us)
             .map_err(|e| batch_failed(item_index_for_error, BatchFailureStage::Validation, e))?;
+        // BEGIN and COMMIT markers intentionally share `batch_id` as their
+        // synthetic identity. These frames never enter the public event-id
+        // index, so crash recovery can treat them as one batch envelope.
         let header = EventHeader::new(
             batch_id as u128,
             batch_id as u128,
@@ -361,7 +370,7 @@ impl WriterState<'_> {
 
         self.active_segment
             .sync_with_mode(&self.config.sync.mode)
-            .map_err(|e| batch_failed(prepared.len() - 1, BatchFailureStage::Syncing, e))?;
+            .map_err(|e| StoreError::batch_sync_failed(prepared.len(), e))?;
 
         let artifacts = self.materialize_batch_commit_artifacts(prepared, &computed, &receipts);
         for (sidx_entry, index_entry) in artifacts.sidx_entries.iter().zip(artifacts.entries.iter())

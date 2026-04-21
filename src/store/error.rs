@@ -85,6 +85,14 @@ pub enum StoreError {
         /// The underlying error.
         source: Box<StoreError>,
     },
+    /// Batch append reached the durability boundary but segment sync failed
+    /// before the batch became visible.
+    BatchSyncFailed {
+        /// Number of items in the batch whose final sync failed.
+        item_count: usize,
+        /// The underlying sync error.
+        source: Box<StoreError>,
+    },
     /// A fault was injected by the dangerous-test-hooks fault injection framework.
     #[cfg(feature = "dangerous-test-hooks")]
     FaultInjected(String),
@@ -298,6 +306,13 @@ impl std::fmt::Display for StoreError {
             Self::BatchFailed { item_index, source } => {
                 write!(f, "batch failed at item {}: {}", item_index, source)
             }
+            Self::BatchSyncFailed { item_count, source } => {
+                write!(
+                    f,
+                    "batch sync failed after writing {} items: {}",
+                    item_count, source
+                )
+            }
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(msg) => write!(f, "fault injected: {msg}"),
             Self::IdempotencyPartialBatch { reason } => {
@@ -437,7 +452,9 @@ impl std::error::Error for StoreError {
             | Self::InvalidClock { .. }
             | Self::CursorCheckpointCorrupt { .. }
             | Self::CursorCheckpointRegionMismatch { .. } => None,
-            Self::BatchFailed { source, .. } => Some(source.as_ref()),
+            Self::BatchFailed { source, .. } | Self::BatchSyncFailed { source, .. } => {
+                Some(source.as_ref())
+            }
             Self::CheckpointWriteFailed { source, .. } => Some(source),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => None,
@@ -449,6 +466,13 @@ impl StoreError {
     pub(crate) fn batch_failed(item_index: usize, source: impl Into<Box<StoreError>>) -> Self {
         Self::BatchFailed {
             item_index,
+            source: source.into(),
+        }
+    }
+
+    pub(crate) fn batch_sync_failed(item_count: usize, source: impl Into<Box<StoreError>>) -> Self {
+        Self::BatchSyncFailed {
+            item_count,
             source: source.into(),
         }
     }

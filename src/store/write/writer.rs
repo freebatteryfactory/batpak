@@ -33,6 +33,20 @@ use self::fence_runtime::{CommandResult, DeferredReply, FenceLedger};
 pub(crate) use self::runtime::find_latest_segment_id;
 use self::runtime::{writer_thread_main, writer_thread_name, WriterRuntime};
 
+pub(super) fn checked_next_clock(
+    latest_clock: Option<u32>,
+    entity: &str,
+) -> Result<u32, StoreError> {
+    match latest_clock {
+        Some(clock) => clock
+            .checked_add(1)
+            .ok_or_else(|| StoreError::EntityClockOverflow {
+                entity: entity.to_string(),
+            }),
+        None => Ok(0),
+    }
+}
+
 /// WriterCommand: messages sent to the background writer thread via flume.
 /// All respond channels use `flume::Sender`: sync send from the writer, async recv from callers.
 pub(crate) enum WriterCommand {
@@ -199,6 +213,31 @@ struct WriterState<'a> {
     sidx_collector: crate::store::segment::sidx::SidxEntryCollector,
     /// Currently active public visibility fence, if any.
     fence_ledger: Option<FenceLedger>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_next_clock;
+    use crate::store::StoreError;
+
+    #[test]
+    fn checked_next_clock_advances_and_overflow_fails_closed() {
+        assert_eq!(
+            checked_next_clock(None, "entity:test").expect("genesis clock"),
+            0
+        );
+        assert_eq!(
+            checked_next_clock(Some(7), "entity:test").expect("increment clock"),
+            8
+        );
+
+        let err = checked_next_clock(Some(u32::MAX), "entity:overflow")
+            .expect_err("entity clock overflow must fail closed");
+        assert!(matches!(
+            err,
+            StoreError::EntityClockOverflow { ref entity } if entity == "entity:overflow"
+        ));
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
