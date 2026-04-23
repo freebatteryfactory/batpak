@@ -72,8 +72,7 @@ fn diagnostics_reports_config() {
     let expected_data_dir = std::fs::canonicalize(dir.path()).expect("canonical temp dir");
 
     assert_eq!(
-        diag.data_dir,
-        expected_data_dir,
+        diag.data_dir, expected_data_dir,
         "PROPERTY: diagnostics must report the opened data_dir path.\n\
          Investigate: src/store/mod.rs diagnostics.\n\
          Common causes: diagnostics returns a different field, path canonicalisation mismatch.\n\

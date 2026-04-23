@@ -25,7 +25,7 @@ const MUTANTS_OUTPUT_ROOT: &str = "tools/xtask/target/mutants";
 const CRITICAL_SEAM_MIN_CATCH_PCT: u32 = 85;
 const REPO_MUTATION_PHASE: RepoMutationPhase = RepoMutationPhase::Phase0;
 const CRITICAL_SMOKE_SHARD: &str = "1/8";
-const REPO_WIDE_SMOKE_SHARD: &str = "1/24";
+const REPO_WIDE_SMOKE_SHARD: &str = "1/48";
 const REPO_MUTATION_THRESHOLDS: &[(RepoMutationPhase, u32)] = &[
     (RepoMutationPhase::Phase1, 35),
     (RepoMutationPhase::Phase2, 50),

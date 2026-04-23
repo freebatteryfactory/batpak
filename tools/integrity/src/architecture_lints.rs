@@ -460,10 +460,9 @@ fn check_packaging_surface(repo_root: &Path) -> Result<()> {
         "Cargo.toml must not exclude removed guide/** paths",
     )?;
     for required in [
-        "\"docs/**\"",
         "\"scripts/**\"",
-        "\"tools/**\"",
-        "\"traceability/**\"",
+        "\"tools/integrity/**\"",
+        "\"tools/xtask/**\"",
     ] {
         ensure(
             content.contains(required),
