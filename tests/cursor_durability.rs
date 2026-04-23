@@ -164,7 +164,9 @@ fn cursor_worker_fails_closed_on_corrupt_checkpoint() {
     let batpak::store::StoreError::CursorCheckpointCorrupt { path, .. } = err else {
         panic!("expected CursorCheckpointCorrupt");
     };
-    assert_eq!(path, checkpoint_path);
+    let expected_checkpoint_path =
+        std::fs::canonicalize(&checkpoint_path).expect("canonical checkpoint path");
+    assert_eq!(path, expected_checkpoint_path);
 
     let store = match Arc::try_unwrap(store) {
         Ok(store) => store,

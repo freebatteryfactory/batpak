@@ -69,13 +69,14 @@ fn cursor_batch_sequences(cursor: &mut batpak::store::Cursor, requests: &[usize]
 fn diagnostics_reports_config() {
     let (store, dir) = test_store();
     let diag: StoreDiagnostics = store.diagnostics();
+    let expected_data_dir = std::fs::canonicalize(dir.path()).expect("canonical temp dir");
 
     assert_eq!(
         diag.data_dir,
-        dir.path().to_path_buf(),
-        "PROPERTY: diagnostics must report the configured data_dir unchanged.\n\
+        expected_data_dir,
+        "PROPERTY: diagnostics must report the opened data_dir path.\n\
          Investigate: src/store/mod.rs diagnostics.\n\
-         Common causes: diagnostics returns a different field, path normalisation mismatch.\n\
+         Common causes: diagnostics returns a different field, path canonicalisation mismatch.\n\
          Run: cargo test --test store_advanced diagnostics_reports_config"
     );
     assert_eq!(
