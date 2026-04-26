@@ -201,44 +201,120 @@ fn highest_index_hlc(index: &StoreIndex) -> HlcPoint {
     index
         .all_entries()
         .into_iter()
-        .max_by_key(|entry| entry.global_sequence)
         .map(|entry| HlcPoint {
             wall_ms: entry.wall_ms,
             global_sequence: entry.global_sequence,
         })
+        .max()
         .unwrap_or(HlcPoint::ORIGIN)
 }
 
-fn append_open_completed_event(store: &Store<Open>, report: &OpenIndexReport) -> Option<HlcPoint> {
-    let coord = match Coordinate::new("batpak:store", "batpak:lifecycle") {
-        Ok(coord) => coord,
-        Err(error) => {
-            tracing::warn!(
-                target: "batpak::open",
-                error = %error,
-                "failed to construct lifecycle coordinate for SYSTEM_OPEN_COMPLETED"
-            );
-            return None;
-        }
-    };
+fn last_close_hlc(_index: &StoreIndex) -> HlcPoint {
+    // Phase 0 consumes a close frontier if one exists, but the current segment
+    // format has no SYSTEM_CLOSE_COMPLETED lifecycle event yet. Close emission
+    // remains out of scope for this step.
+    HlcPoint::ORIGIN
+}
 
-    match store.append(&coord, EventKind::SYSTEM_OPEN_COMPLETED, report) {
-        Ok(receipt) => store
-            .index
-            .get_by_id(receipt.event_id)
-            .map(|entry| HlcPoint {
-                wall_ms: entry.wall_ms,
-                global_sequence: entry.global_sequence,
-            }),
-        Err(error) => {
-            tracing::warn!(
-                target: "batpak::open",
-                error = %error,
-                "failed to append SYSTEM_OPEN_COMPLETED lifecycle event after open"
-            );
-            None
-        }
+fn lifecycle_open_candidate(
+    runtime: &config::ValidatedStoreConfig,
+    max_recovered_hlc: HlcPoint,
+    last_close_hlc: HlcPoint,
+) -> Result<HlcPoint, StoreError> {
+    let now_ms = match config::wall_ms_from_timestamp_us(runtime.now_us()) {
+        Ok(now_ms) => now_ms,
+        Err(StoreError::InvalidClock { .. }) => 0,
+        Err(error) => return Err(error),
+    };
+    Ok(max_recovered_hlc.max(last_close_hlc).max(HlcPoint {
+        wall_ms: now_ms,
+        global_sequence: max_recovered_hlc.global_sequence,
+    }))
+}
+
+fn validate_bootstrap_hlc(
+    open_hlc: HlcPoint,
+    max_recovered_hlc: HlcPoint,
+    last_close_hlc: HlcPoint,
+) -> Result<(), StoreError> {
+    if open_hlc < max_recovered_hlc || open_hlc < last_close_hlc {
+        return Err(StoreError::InvariantViolation {
+            reason: format!(
+                "open_hlc {:?} must be >= max_recovered_hlc {:?} and last_close_hlc {:?}",
+                open_hlc, max_recovered_hlc, last_close_hlc
+            ),
+        });
     }
+    Ok(())
+}
+
+fn bootstrap_open_hlc(
+    runtime: &config::ValidatedStoreConfig,
+    index: &StoreIndex,
+) -> Result<HlcPoint, StoreError> {
+    let max_recovered_hlc = highest_index_hlc(index);
+    let last_close_hlc = last_close_hlc(index);
+    let open_hlc = lifecycle_open_candidate(runtime, max_recovered_hlc, last_close_hlc)?;
+    validate_bootstrap_hlc(open_hlc, max_recovered_hlc, last_close_hlc)?;
+    Ok(open_hlc)
+}
+
+fn timestamp_us_for_hlc(point: HlcPoint) -> Result<i64, StoreError> {
+    let timestamp_us =
+        point
+            .wall_ms
+            .checked_mul(1000)
+            .ok_or_else(|| StoreError::InvariantViolation {
+                reason: format!("open_hlc wall_ms {} overflows timestamp_us", point.wall_ms),
+            })?;
+    i64::try_from(timestamp_us).map_err(|_| StoreError::InvariantViolation {
+        reason: format!(
+            "open_hlc wall_ms {} exceeds i64 timestamp_us range",
+            point.wall_ms
+        ),
+    })
+}
+
+fn append_open_completed_event(
+    store: &Store<Open>,
+    report: &OpenIndexReport,
+    open_candidate: HlcPoint,
+) -> Result<HlcPoint, StoreError> {
+    let coord = Coordinate::new("batpak:store", "batpak:lifecycle")?;
+    let submission = AppendSubmission::with_options(
+        AppendOptions::default().with_idempotency(crate::id::generate_v7_id()),
+    );
+    submission.validate_route(store)?;
+    submission.validate_idempotency(store)?;
+    let event = submission.build_event(
+        report,
+        EventKind::SYSTEM_OPEN_COMPLETED,
+        timestamp_us_for_hlc(open_candidate)?,
+    )?;
+
+    let (tx, rx) = flume::bounded(1);
+    let command = submission.into_command(coord, EventKind::SYSTEM_OPEN_COMPLETED, event, tx);
+    store
+        .writer_handle()?
+        .tx
+        .send(command)
+        .map_err(|_| StoreError::WriterCrashed)?;
+    let receipt = rx.recv().map_err(|_| StoreError::WriterCrashed)??;
+    let open_hlc = store
+        .index
+        .get_by_id(receipt.event_id)
+        .map(|entry| HlcPoint {
+            wall_ms: entry.wall_ms,
+            global_sequence: entry.global_sequence,
+        })
+        .ok_or_else(|| StoreError::InvariantViolation {
+            reason: format!(
+                "SYSTEM_OPEN_COMPLETED receipt {:032x} was not visible in the rebuilt index",
+                receipt.event_id
+            ),
+        })?;
+    validate_bootstrap_hlc(open_hlc, open_candidate, last_close_hlc(&store.index))?;
+    Ok(open_hlc)
 }
 
 impl Store<Open> {
@@ -286,6 +362,7 @@ impl Store<Open> {
             store_lock,
         } = open_components(config, StoreLockMode::Mutable)?;
 
+        let open_candidate = bootstrap_open_hlc(&runtime, &index)?;
         let subscribers = Arc::new(SubscriberList::new());
         let reactor_subscribers = Arc::new(ReactorSubscriberList::new());
         let writer = WriterHandle::spawn(
@@ -315,9 +392,8 @@ impl Store<Open> {
         };
 
         emit_open_report_observability(&store.config, &open_report);
-        if let Some(open_hlc) = append_open_completed_event(&store, &open_report) {
-            store.watermark_handle.lock().reset_to_bootstrap(open_hlc);
-        }
+        let open_hlc = append_open_completed_event(&store, &open_report, open_candidate)?;
+        store.watermark_handle.lock().reset_to_bootstrap(open_hlc);
 
         Ok(store)
     }
@@ -991,7 +1067,8 @@ impl Store<ReadOnly> {
             store_lock,
         } = open_components(config, StoreLockMode::ReadOnly)?;
 
-        let watermark_handle = WatermarkState::bootstrap_handle(highest_index_hlc(&index));
+        let open_hlc = bootstrap_open_hlc(&runtime, &index)?;
+        let watermark_handle = WatermarkState::bootstrap_handle(open_hlc);
         let store = Self {
             index,
             reader,
