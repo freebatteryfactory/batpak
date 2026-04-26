@@ -246,6 +246,13 @@ pub enum StoreError {
         /// Region identity expected by the caller.
         expected: String,
     },
+    /// An internal store invariant was violated during recovery or lifecycle
+    /// bootstrap. Returned as an error so adversarial recovery inputs fail
+    /// closed instead of panicking the process.
+    InvariantViolation {
+        /// Human-readable invariant failure.
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for StoreError {
@@ -411,6 +418,7 @@ impl std::fmt::Display for StoreError {
                 stored,
                 expected
             ),
+            Self::InvariantViolation { reason } => write!(f, "invariant violation: {reason}"),
         }
     }
 }
@@ -451,7 +459,8 @@ impl std::error::Error for StoreError {
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
             | Self::CursorCheckpointCorrupt { .. }
-            | Self::CursorCheckpointRegionMismatch { .. } => None,
+            | Self::CursorCheckpointRegionMismatch { .. }
+            | Self::InvariantViolation { .. } => None,
             Self::BatchFailed { source, .. } | Self::BatchSyncFailed { source, .. } => {
                 Some(source.as_ref())
             }

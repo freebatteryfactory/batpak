@@ -6,6 +6,7 @@
 //!   - Step-1 frontier scaffolding compiles and exposes a coherent dangerous snapshot.
 //!   - Immediately after mutable `Store::open`, the lifecycle open event seeds
 //!     accepted, written, durable, visible, and emitted to the same HLC point.
+//!   - Restart bootstrap is monotonic across mutable and read-only reopen.
 //!
 //! CATCHES: missing handle plumbing, missing public accessor coverage, or a
 //! bootstrap snapshot that does not reflect `SYSTEM_OPEN_COMPLETED`.
@@ -28,6 +29,25 @@ fn kind() -> EventKind {
 
 fn coord(entity: &str) -> Coordinate {
     Coordinate::new(entity, "scope:test").expect("coord")
+}
+
+fn point(entry: &batpak::store::IndexEntry) -> HlcPoint {
+    HlcPoint {
+        wall_ms: entry.wall_ms,
+        global_sequence: entry.global_sequence,
+    }
+}
+
+fn fixed_clock_config(dir: &TempDir, now_us: i64) -> StoreConfig {
+    StoreConfig::new(dir.path()).with_clock(Some(Arc::new(move || now_us)))
+}
+
+fn lifecycle_open_count<State>(store: &Store<State>) -> usize {
+    store
+        .query(&Region::entity("batpak:store"))
+        .into_iter()
+        .filter(|entry| entry.kind == EventKind::SYSTEM_OPEN_COMPLETED)
+        .count()
 }
 
 fn config_with_fault(
@@ -61,6 +81,7 @@ fn bootstrap_watermark_snapshot_matches_lifecycle_open_event() {
     let open_hlc = snapshot.durable_hlc;
 
     assert!(open_hlc > HlcPoint::ORIGIN);
+    assert_eq!(open_hlc.global_sequence, 0);
     assert_eq!(snapshot.accepted_hlc, open_hlc);
     assert_eq!(snapshot.written_hlc, open_hlc);
     assert_eq!(snapshot.durable_hlc, open_hlc);
@@ -73,6 +94,117 @@ fn bootstrap_watermark_snapshot_matches_lifecycle_open_event() {
     assert_eq!(frontier.current_visible_hlc, open_hlc);
     assert_eq!(frontier.visible_minus_durable_seq, 0);
     assert_eq!(frontier.oldest_pending_write_age_ms, None);
+}
+
+#[test]
+fn open_after_close_advances_open_hlc_past_max_pre_close() {
+    let dir = TempDir::new().expect("temp dir");
+    let coord = coord("entity:frontier-reopen");
+
+    let max_hlc_before_close = {
+        let store = Store::open(StoreConfig::new(dir.path())).expect("open store");
+        store
+            .append(&coord, kind(), &serde_json::json!({"n": 1}))
+            .expect("append");
+        let entries = store.query(&Region::entity("entity:frontier-reopen"));
+        assert_eq!(entries.len(), 1);
+        let max_hlc = point(&entries[0]);
+        store.close().expect("close");
+        max_hlc
+    };
+
+    let reopened = Store::open(StoreConfig::new(dir.path())).expect("reopen store");
+    let snapshot = reopened.dangerous_watermark_snapshot();
+    let open_hlc = snapshot.accepted_hlc;
+
+    assert!(
+        open_hlc > max_hlc_before_close,
+        "PROPERTY: mutable reopen lifecycle HLC must advance past pre-close max; open={open_hlc:?}, max={max_hlc_before_close:?}"
+    );
+    assert_eq!(snapshot.written_hlc, open_hlc);
+    assert_eq!(snapshot.durable_hlc, open_hlc);
+    assert_eq!(snapshot.visible_hlc, open_hlc);
+    assert_eq!(snapshot.emitted_hlc, open_hlc);
+    assert_eq!(snapshot.applied_hlc, HlcPoint::ORIGIN);
+}
+
+#[test]
+fn read_only_reopen_does_not_emit_lifecycle_event() {
+    let dir = TempDir::new().expect("temp dir");
+    let coord = coord("entity:frontier-readonly-lifecycle");
+
+    let (max_hlc_before_read_only, lifecycle_count_before_read_only) = {
+        let store = Store::open(StoreConfig::new(dir.path())).expect("open store");
+        store
+            .append(&coord, kind(), &serde_json::json!({"n": 1}))
+            .expect("append");
+        let entries = store.query(&Region::entity("entity:frontier-readonly-lifecycle"));
+        assert_eq!(entries.len(), 1);
+        let max_hlc = point(&entries[0]);
+        let lifecycle_count = lifecycle_open_count(&store);
+        assert_eq!(lifecycle_count, 1);
+        store.close().expect("close");
+        (max_hlc, lifecycle_count)
+    };
+
+    let read_only =
+        Store::<ReadOnly>::open_read_only(StoreConfig::new(dir.path())).expect("open read-only");
+    let snapshot = read_only.dangerous_watermark_snapshot();
+
+    assert_eq!(
+        lifecycle_open_count(&read_only),
+        lifecycle_count_before_read_only,
+        "PROPERTY: read-only open must not append SYSTEM_OPEN_COMPLETED"
+    );
+    assert!(snapshot.accepted_hlc >= max_hlc_before_read_only);
+    assert_eq!(snapshot.written_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.durable_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.visible_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.emitted_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.applied_hlc, HlcPoint::ORIGIN);
+    assert_eq!(snapshot.oldest_pending_write_age_ms, None);
+}
+
+#[test]
+fn bootstrap_with_clock_skew_preserves_monotonicity() {
+    let dir = TempDir::new().expect("temp dir");
+    let coord = coord("entity:frontier-clock-skew");
+
+    let max_hlc_before_close = {
+        let store = Store::open(fixed_clock_config(&dir, 9_000_000_000)).expect("open store");
+        store
+            .append(&coord, kind(), &serde_json::json!({"n": 1}))
+            .expect("append");
+        let entries = store.query(&Region::entity("entity:frontier-clock-skew"));
+        assert_eq!(entries.len(), 1);
+        let max_hlc = point(&entries[0]);
+        store.close().expect("close");
+        max_hlc
+    };
+
+    let reopened = Store::open(fixed_clock_config(&dir, 1_000_000)).expect("reopen store");
+    let open_hlc = reopened.dangerous_watermark_snapshot().accepted_hlc;
+
+    assert!(
+        open_hlc > max_hlc_before_close,
+        "PROPERTY: reopen must remain monotonic even when the configured clock moves backward; open={open_hlc:?}, max={max_hlc_before_close:?}"
+    );
+}
+
+#[test]
+fn empty_store_open_starts_with_lifecycle_frontier_then_append_advances() {
+    let dir = TempDir::new().expect("temp dir");
+    let store = Store::open(StoreConfig::new(dir.path())).expect("open store");
+    let open_hlc = store.dangerous_watermark_snapshot().accepted_hlc;
+    assert!(open_hlc > HlcPoint::ORIGIN);
+    assert_eq!(open_hlc.global_sequence, 0);
+
+    let coord = coord("entity:frontier-empty-advance");
+    store
+        .append(&coord, kind(), &serde_json::json!({"n": 1}))
+        .expect("append");
+    let snapshot = store.dangerous_watermark_snapshot();
+    assert!(snapshot.accepted_hlc > open_hlc);
 }
 
 #[test]
@@ -161,11 +293,11 @@ fn read_only_open_bootstraps_frontier_from_rebuilt_index() {
         Store::<ReadOnly>::open_read_only(StoreConfig::new(dir.path())).expect("open read-only");
     let snapshot = read_only.dangerous_watermark_snapshot();
 
-    assert_eq!(snapshot.accepted_hlc, max_hlc_before_close);
-    assert_eq!(snapshot.written_hlc, max_hlc_before_close);
-    assert_eq!(snapshot.durable_hlc, max_hlc_before_close);
-    assert_eq!(snapshot.visible_hlc, max_hlc_before_close);
-    assert_eq!(snapshot.emitted_hlc, max_hlc_before_close);
+    assert!(snapshot.accepted_hlc >= max_hlc_before_close);
+    assert_eq!(snapshot.written_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.durable_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.visible_hlc, snapshot.accepted_hlc);
+    assert_eq!(snapshot.emitted_hlc, snapshot.accepted_hlc);
     assert_eq!(snapshot.applied_hlc, HlcPoint::ORIGIN);
     assert_eq!(snapshot.oldest_pending_write_age_ms, None);
 }

@@ -106,13 +106,14 @@ fn mixed_append_and_batch_commands_complete_under_group_commit_drain() {
         4,
         "PROPERTY: mixed append and batch commands must all become visible under group commit drain."
     );
+    let first_sequence = sequences[0];
     assert_eq!(
         sequences,
-        vec![0, 1, 2, 3],
+        (first_sequence..first_sequence + 4).collect::<Vec<_>>(),
         "PROPERTY: mixed append and batch commands must preserve contiguous visible sequencing."
     );
-    assert!(receipt_a.sequence <= 3);
-    assert!(receipt_b.sequence <= 3);
+    assert!(receipt_a.sequence <= first_sequence + 3);
+    assert!(receipt_b.sequence <= first_sequence + 3);
     assert_eq!(batch_receipts.len(), 2);
 
     let store = match Arc::try_unwrap(store) {
@@ -263,7 +264,7 @@ fn shutdown_auto_cancels_pending_fenced_responses_after_drain_mix() {
 
     let visible = sync_append_with_idempotency(&store, &coord, 0x300, &serde_json::json!({"n": 1}))
         .expect("visible append");
-    assert_eq!(visible.sequence, 0);
+    assert_eq!(visible.sequence, 1);
 
     let ticket = {
         let fence = store.begin_visibility_fence().expect("begin fence");

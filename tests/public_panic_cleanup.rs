@@ -65,8 +65,10 @@ fn negative_custom_clock_surfaces_store_error_in_append_and_batch_paths() {
         "negative custom clock must surface StoreError::InvalidClock on append, got {append_err:?}"
     );
     assert!(
-        append_store.query(&Region::all()).is_empty(),
-        "append failure from invalid clock must not publish any visible event"
+        append_store
+            .query(&Region::entity("entity:negative-clock"))
+            .is_empty(),
+        "append failure from invalid clock must not publish any visible data event"
     );
     append_store.close().expect("close append store");
 
@@ -110,8 +112,10 @@ fn negative_custom_clock_surfaces_store_error_in_append_and_batch_paths() {
     }
 
     assert!(
-        batch_store.query(&Region::all()).is_empty(),
-        "batch failure from invalid clock must not publish any visible event"
+        batch_store
+            .query(&Region::entity("entity:negative-clock"))
+            .is_empty(),
+        "batch failure from invalid clock must not publish any visible data event"
     );
     batch_store.close().expect("close batch store");
 }
