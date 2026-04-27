@@ -19,9 +19,12 @@ use crate::store::config::ValidatedStoreConfig;
 use crate::store::index::{DiskPos, StoreIndex};
 use crate::store::segment::sidx::kind_to_raw;
 use crate::store::segment::{self, Active, FramePayloadRef, Segment};
+use crate::store::stats::{FrontierView, HlcPoint, WatermarkSnapshot};
 use crate::store::{AppendReceipt, StoreConfig, StoreError};
 use flume::{Receiver, Sender};
+use parking_lot::Mutex;
 use std::sync::Arc;
+use std::time::Instant;
 mod append;
 mod batch;
 mod fence_runtime;
@@ -32,6 +35,161 @@ pub(crate) use self::append::AppendGuards;
 use self::fence_runtime::{CommandResult, DeferredReply, FenceLedger};
 pub(crate) use self::runtime::find_latest_segment_id;
 use self::runtime::{writer_thread_main, writer_thread_name, WriterRuntime};
+
+pub(crate) type WatermarkAdvanceHandle = Arc<Mutex<WatermarkState>>;
+
+/// Internal mutable frontier state. All snapshots take this single mutex once.
+pub(crate) struct WatermarkState {
+    accepted_hlc: HlcPoint,
+    written_hlc: HlcPoint,
+    durable_hlc: HlcPoint,
+    visible_hlc: HlcPoint,
+    applied_hlc: HlcPoint,
+    emitted_hlc: HlcPoint,
+    pending_write_start: Option<Instant>,
+}
+
+impl Default for WatermarkState {
+    fn default() -> Self {
+        Self {
+            accepted_hlc: HlcPoint::ORIGIN,
+            written_hlc: HlcPoint::ORIGIN,
+            durable_hlc: HlcPoint::ORIGIN,
+            visible_hlc: HlcPoint::ORIGIN,
+            applied_hlc: HlcPoint::ORIGIN,
+            emitted_hlc: HlcPoint::ORIGIN,
+            pending_write_start: None,
+        }
+    }
+}
+
+impl WatermarkState {
+    pub(crate) fn handle() -> WatermarkAdvanceHandle {
+        Arc::new(Mutex::new(Self::default()))
+    }
+
+    pub(crate) fn bootstrap_handle(point: HlcPoint) -> WatermarkAdvanceHandle {
+        Arc::new(Mutex::new(Self::for_bootstrap(point)))
+    }
+
+    pub(crate) fn for_bootstrap(point: HlcPoint) -> Self {
+        Self {
+            accepted_hlc: point,
+            written_hlc: point,
+            durable_hlc: point,
+            visible_hlc: point,
+            applied_hlc: point,
+            emitted_hlc: point,
+            pending_write_start: None,
+        }
+    }
+
+    pub(crate) fn reset_to_bootstrap(&mut self, point: HlcPoint) {
+        *self = Self::for_bootstrap(point);
+    }
+
+    pub(crate) fn advance_accepted(&mut self, point: HlcPoint) {
+        if point > self.accepted_hlc {
+            self.accepted_hlc = point;
+            if self.pending_write_start.is_none() {
+                self.pending_write_start = Some(Instant::now());
+            }
+        }
+    }
+
+    pub(crate) fn advance_written(&mut self, point: HlcPoint) {
+        self.written_hlc = self.written_hlc.max(point);
+    }
+
+    pub(crate) fn advance_durable(&mut self, point: HlcPoint) {
+        self.durable_hlc = self.durable_hlc.max(point);
+        if self.durable_hlc == self.accepted_hlc {
+            self.pending_write_start = None;
+        }
+    }
+
+    pub(crate) fn advance_durable_to_accepted(&mut self) {
+        self.advance_durable(self.accepted_hlc);
+    }
+
+    pub(crate) fn advance_visible(&mut self, point: HlcPoint) {
+        self.visible_hlc = self.visible_hlc.max(point);
+    }
+
+    pub(crate) fn advance_emitted(&mut self, point: HlcPoint) {
+        self.emitted_hlc = self.emitted_hlc.max(point);
+    }
+
+    pub(crate) fn advance_visible_and_emitted(&mut self, point: HlcPoint) {
+        self.advance_visible(point);
+        self.advance_emitted(point);
+    }
+
+    pub(crate) fn advance_applied(&mut self, point: HlcPoint) {
+        self.applied_hlc = self.applied_hlc.max(point);
+    }
+
+    pub(crate) fn snapshot(&self) -> WatermarkSnapshot {
+        WatermarkSnapshot {
+            accepted_hlc: self.accepted_hlc,
+            written_hlc: self.written_hlc,
+            durable_hlc: self.durable_hlc,
+            visible_hlc: self.visible_hlc,
+            applied_hlc: self.applied_hlc,
+            emitted_hlc: self.emitted_hlc,
+            oldest_pending_write_age_ms: self
+                .pending_write_start
+                .map(|start| u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
+        }
+    }
+
+    pub(crate) fn snapshot_view(&self) -> FrontierView {
+        debug_assert!(
+            self.accepted_hlc >= self.written_hlc,
+            "accepted must be >= written: {:?} vs {:?}",
+            self.accepted_hlc,
+            self.written_hlc
+        );
+        debug_assert!(
+            self.written_hlc >= self.durable_hlc,
+            "written must be >= durable: {:?} vs {:?}",
+            self.written_hlc,
+            self.durable_hlc
+        );
+        debug_assert!(
+            self.accepted_hlc >= self.visible_hlc,
+            "accepted must be >= visible: {:?} vs {:?}",
+            self.accepted_hlc,
+            self.visible_hlc
+        );
+        debug_assert!(
+            self.visible_hlc >= self.applied_hlc,
+            "visible must be >= applied: {:?} vs {:?}",
+            self.visible_hlc,
+            self.applied_hlc
+        );
+        debug_assert!(
+            self.emitted_hlc >= self.visible_hlc,
+            "emitted must be >= visible: {:?} vs {:?}",
+            self.emitted_hlc,
+            self.visible_hlc
+        );
+
+        FrontierView {
+            accepted_hlc: self.accepted_hlc,
+            written_hlc: self.written_hlc,
+            durable_hlc: self.durable_hlc,
+            current_visible_hlc: self.visible_hlc,
+            applied_hlc: self.applied_hlc,
+            emitted_hlc: self.emitted_hlc,
+            visible_minus_durable_seq: (self.visible_hlc.global_sequence as i64)
+                - (self.durable_hlc.global_sequence as i64),
+            oldest_pending_write_age_ms: self
+                .pending_write_start
+                .map(|start| u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
+        }
+    }
+}
 
 pub(super) fn checked_next_clock(
     latest_clock: Option<u32>,
@@ -105,6 +263,7 @@ pub(crate) struct WriterHandle {
     pub tx: Sender<WriterCommand>,
     pub subscribers: Arc<SubscriberList>,
     pub reactor_subscribers: Arc<ReactorSubscriberList>,
+    watermark_handle: WatermarkAdvanceHandle,
     _thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -143,10 +302,12 @@ impl WriterHandle {
         let (tx, rx) = flume::bounded::<WriterCommand>(config.writer.channel_capacity);
         let subs = Arc::clone(subscribers);
         let reactor_subs = Arc::clone(reactor_subscribers);
+        let watermark_handle = WatermarkState::handle();
         let cfg = Arc::clone(config);
         let validated = Arc::clone(runtime);
         let idx = Arc::clone(index);
         let rdr = Arc::clone(reader);
+        let watermark_for_thread = Arc::clone(&watermark_handle);
 
         let mut builder = std::thread::Builder::new().name(writer_thread_name(&config.data_dir));
         if let Some(stack_size) = config.writer.stack_size {
@@ -163,6 +324,7 @@ impl WriterHandle {
                         subscribers: &subs,
                         reactor_subscribers: &reactor_subs,
                         reader: &rdr,
+                        watermark_handle: &watermark_for_thread,
                     },
                     initial_segment,
                     initial_segment_id,
@@ -174,6 +336,7 @@ impl WriterHandle {
             tx,
             subscribers: Arc::clone(subscribers),
             reactor_subscribers: Arc::clone(reactor_subscribers),
+            watermark_handle,
             _thread: Some(thread),
         })
     }
@@ -187,8 +350,13 @@ impl WriterHandle {
             tx,
             subscribers,
             reactor_subscribers: Arc::new(ReactorSubscriberList::new()),
+            watermark_handle: WatermarkState::handle(),
             _thread: None,
         }
+    }
+
+    pub(crate) fn watermark_handle(&self) -> WatermarkAdvanceHandle {
+        Arc::clone(&self.watermark_handle)
     }
 
     // NOTE: No send_append() method here. Store::append() and Store::append_reaction()
@@ -208,6 +376,8 @@ struct WriterState<'a> {
     reactor_subscribers: &'a ReactorSubscriberList,
     /// Reader handle — updated on segment rotation so mmap dispatch is correct.
     reader: Arc<crate::store::segment::scan::Reader>,
+    /// Shared frontier state for coherent watermark snapshots.
+    watermark_handle: WatermarkAdvanceHandle,
     /// Accumulates SIDX entries for the current active segment.
     /// Flushed as a footer on segment rotation and shutdown.
     sidx_collector: crate::store::segment::sidx::SidxEntryCollector,
@@ -375,7 +545,9 @@ impl WriterState<'_> {
     }
 
     fn sync_active_segment(&mut self) -> Result<(), StoreError> {
-        self.active_segment.sync_with_mode(&self.config.sync.mode)
+        self.active_segment.sync_with_mode(&self.config.sync.mode)?;
+        self.watermark_handle.lock().advance_durable_to_accepted();
+        Ok(())
     }
 
     /// Check whether the active segment needs rotation, and if so, seal it,
@@ -401,6 +573,7 @@ impl WriterState<'_> {
         }
         self.sidx_collector = crate::store::segment::sidx::SidxEntryCollector::new();
         self.active_segment.sync_with_mode(&self.config.sync.mode)?;
+        self.watermark_handle.lock().advance_durable_to_accepted();
         let old = std::mem::replace(
             self.active_segment,
             Segment::<Active>::create(&self.config.data_dir, *self.segment_id + 1)?,

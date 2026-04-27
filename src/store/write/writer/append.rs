@@ -5,6 +5,7 @@ use super::{
     StoreError, WriterState,
 };
 use super::{StagedCommitMeta, StagedCommitTiming, StagedCommittedEvent};
+use crate::store::stats::HlcPoint;
 use crate::store::AppendReceipt;
 use std::collections::BTreeMap;
 use tracing::{debug, info, trace};
@@ -80,6 +81,23 @@ impl WriterState<'_> {
         let raw_ms = crate::store::config::wall_ms_from_timestamp_us(event.header.timestamp_us)?;
         let last_ms = latest.as_ref().map(|entry| entry.wall_ms).unwrap_or(0);
         let now_ms = raw_ms.max(last_ms);
+        let global_seq = self.index.global_sequence();
+        let frontier_point = HlcPoint {
+            wall_ms: now_ms,
+            global_sequence: global_seq,
+        };
+
+        #[cfg(feature = "dangerous-test-hooks")]
+        crate::store::fault::maybe_inject(
+            crate::store::fault::InjectionPoint::SingleAppendStart {
+                entity: entity.to_string(),
+            },
+            &self.config.fault_injector,
+        )?;
+
+        self.watermark_handle
+            .lock()
+            .advance_accepted(frontier_point);
         let position = DagPosition::with_hlc(now_ms, 0, guards.dag_depth, guards.dag_lane, clock);
         event.header.position = position;
         event.header.event_kind = kind;
@@ -109,9 +127,17 @@ impl WriterState<'_> {
         }
 
         let offset = self.active_segment.write_frame(&frame)?;
+        self.watermark_handle.lock().advance_written(frontier_point);
         trace!(offset = offset, len = frame.len(), "frame written");
 
-        let global_seq = self.index.global_sequence();
+        #[cfg(feature = "dangerous-test-hooks")]
+        crate::store::fault::maybe_inject(
+            crate::store::fault::InjectionPoint::SingleAppendWritten {
+                entity: entity.to_string(),
+            },
+            &self.config.fault_injector,
+        )?;
+
         let disk_pos = DiskPos {
             segment_id: *self.segment_id,
             offset,
@@ -165,7 +191,7 @@ impl WriterState<'_> {
         debug!(event_id = %event.header.event_id, clock = clock, "append committed");
 
         if let Some(fence) = fence {
-            fence.record_publish_up_to(global_seq.saturating_add(1));
+            fence.record_publish_up_to(global_seq.saturating_add(1), frontier_point);
             self.index.note_visibility_fence_progress(
                 fence.token,
                 global_seq,
@@ -175,8 +201,17 @@ impl WriterState<'_> {
         } else {
             self.publish_then_broadcast_unfenced(
                 global_seq + 1,
+                frontier_point,
                 [committed.notification],
                 committed.envelope,
+            )?;
+
+            #[cfg(feature = "dangerous-test-hooks")]
+            crate::store::fault::maybe_inject(
+                crate::store::fault::InjectionPoint::SingleAppendPublished {
+                    entity: entity.to_string(),
+                },
+                &self.config.fault_injector,
             )?;
         }
 

@@ -99,6 +99,20 @@ fn snapshot(store: &Store) -> Vec<(String, String, u64)> {
     rows
 }
 
+fn assert_contiguous_sequences(rows: &[(String, String, u64)], label: &str) {
+    let sequences: Vec<_> = rows.iter().map(|(_, _, sequence)| *sequence).collect();
+    assert!(
+        !sequences.is_empty(),
+        "PROPERTY: {label} should have at least one visible sequence"
+    );
+    let first_sequence = sequences[0];
+    assert_eq!(
+        sequences,
+        (first_sequence..first_sequence + rows.len() as u64).collect::<Vec<_>>(),
+        "{label} should publish contiguous visible sequences"
+    );
+}
+
 #[test]
 fn reused_and_fresh_coordinate_batches_have_identical_visibility_after_reopen() {
     let reused_dir = TempDir::new().expect("reused temp dir");
@@ -143,22 +157,8 @@ fn reused_and_fresh_coordinate_batches_have_identical_visibility_after_reopen() 
             .collect::<Vec<_>>(),
         "batch staging must preserve the same visible entity/scope ordering regardless of coordinate construction pattern"
     );
-    assert_eq!(
-        reused_snapshot
-            .iter()
-            .map(|(_, _, sequence)| *sequence)
-            .collect::<Vec<_>>(),
-        (0..BATCH_LEN as u64).collect::<Vec<_>>(),
-        "reused-coordinate batch should publish contiguous visible sequences"
-    );
-    assert_eq!(
-        fresh_snapshot
-            .iter()
-            .map(|(_, _, sequence)| *sequence)
-            .collect::<Vec<_>>(),
-        (0..BATCH_LEN as u64).collect::<Vec<_>>(),
-        "fresh-coordinate batch should publish contiguous visible sequences"
-    );
+    assert_contiguous_sequences(&reused_snapshot, "reused-coordinate batch");
+    assert_contiguous_sequences(&fresh_snapshot, "fresh-coordinate batch");
 
     reused_store.close().expect("close reused");
     fresh_store.close().expect("close fresh");
@@ -229,15 +229,7 @@ fn duplicate_heavy_batch_preserves_scope_and_stream_queries_after_reopen() {
         "live snapshot should preserve scope y membership"
     );
 
-    let visible_sequences: Vec<_> = live_snapshot
-        .iter()
-        .map(|(_, _, sequence)| *sequence)
-        .collect();
-    assert_eq!(
-        visible_sequences,
-        (0..72u64).collect::<Vec<_>>(),
-        "duplicate-heavy batch should publish contiguous visible sequences"
-    );
+    assert_contiguous_sequences(&live_snapshot, "duplicate-heavy batch");
 
     store.close().expect("close");
 

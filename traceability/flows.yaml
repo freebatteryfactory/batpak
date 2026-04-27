@@ -110,3 +110,22 @@
     - ART-STORE-HIDDEN-RANGES
     - ART-CONTROL-PLANE-TESTS
     - ART-ADR-CONTROL-PLANE
+- id: FLOW-FRONTIER-OBSERVE
+  summary: Store::frontier() returns a FrontierView composed under one watermark mutex acquisition; diagnostics() consumes the same path so external observers and operators see the identical six-watermark snapshot with no torn intermediate states.
+  artifacts:
+    - ART-FRONTIER-WATERMARK-STATE
+    - ART-FRONTIER-TYPES
+    - ART-STORE-MOD
+    - ART-FRONTIER-SEMANTICS-TESTS
+- id: FLOW-FRONTIER-BOOTSTRAP
+  summary: Store::open computes open_hlc from max_recovered_hlc, last_close_hlc, and a wall-time floor; emits SYSTEM_OPEN_COMPLETED with that HLC; resets all six watermarks to open_hlc except applied which seeds at open_hlc as well to preserve the registry-empty invariant.
+  artifacts:
+    - ART-FRONTIER-BOOTSTRAP
+    - ART-FRONTIER-WATERMARK-STATE
+    - ART-FRONTIER-SEMANTICS-TESTS
+- id: FLOW-FRONTIER-CHAOS-RECOVERY
+  summary: Writer-thread panics at fault-injection seams surface to callers as StoreError::WriterCrashed without poisoning the parking_lot watermark mutex; reopen recovers all events whose commit completed prior to the panic and emits a strictly-greater open_hlc.
+  artifacts:
+    - ART-FRONTIER-CHAOS-TESTS
+    - ART-FRONTIER-BOOTSTRAP
+    - ART-FRONTIER-FAULT-INJECTION

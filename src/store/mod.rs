@@ -60,7 +60,9 @@ pub use projection::{
 pub use reaction::ReactionBatch;
 pub use reactor_typed::{ReactorConfig, ReactorError, TypedReactorHandle};
 pub use signing::SigningKey;
-pub use stats::{StoreDiagnostics, StoreStats, WriterPressure};
+pub use stats::{
+    FrontierView, HlcPoint, StoreDiagnostics, StoreStats, WatermarkSnapshot, WriterPressure,
+};
 pub use write::control::{AppendTicket, BatchAppendTicket, Outbox, VisibilityFence};
 pub use write::writer::{Notification, RestartPolicy};
 
@@ -71,13 +73,14 @@ use crate::guard::{Denial, GateSet};
 pub(crate) use config::now_us;
 use index::StoreIndex;
 use parking_lot::Mutex;
+use projection::registry::ProjectionRegistry;
 use segment::scan::Reader;
 use serde::Serialize;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use write::control::AppendSubmission;
 use write::fanout::{ReactorSubscriberList, SubscriberList};
-use write::writer::{WriterCommand, WriterHandle};
+use write::writer::{WatermarkAdvanceHandle, WatermarkState, WriterCommand, WriterHandle};
 // ProjectionCache re-exported above via pub use, no separate use needed.
 
 /// Store: the runtime. Sync API. Send + Sync.
@@ -102,6 +105,8 @@ pub struct Store<State = Open> {
     pub(crate) reader: Arc<Reader>,
     pub(crate) cache: Box<dyn ProjectionCache>,
     pub(crate) writer: Option<WriterHandle>,
+    pub(crate) watermark_handle: WatermarkAdvanceHandle,
+    pub(crate) projection_registry: ProjectionRegistry,
     pub(crate) lifecycle_gate: Mutex<()>,
     pub(crate) config: Arc<StoreConfig>,
     pub(crate) runtime: Arc<config::ValidatedStoreConfig>,
@@ -194,26 +199,124 @@ fn emit_open_report_observability(config: &StoreConfig, report: &OpenIndexReport
     }
 }
 
-fn append_open_completed_event(store: &Store<Open>, report: &OpenIndexReport) {
-    let coord = match Coordinate::new("batpak:store", "batpak:lifecycle") {
-        Ok(coord) => coord,
-        Err(error) => {
-            tracing::warn!(
-                target: "batpak::open",
-                error = %error,
-                "failed to construct lifecycle coordinate for SYSTEM_OPEN_COMPLETED"
-            );
-            return;
-        }
-    };
+fn highest_index_hlc(index: &StoreIndex) -> HlcPoint {
+    index
+        .all_entries()
+        .into_iter()
+        .map(|entry| HlcPoint {
+            wall_ms: entry.wall_ms,
+            global_sequence: entry.global_sequence,
+        })
+        .max()
+        .unwrap_or(HlcPoint::ORIGIN)
+}
 
-    if let Err(error) = store.append(&coord, EventKind::SYSTEM_OPEN_COMPLETED, report) {
-        tracing::warn!(
-            target: "batpak::open",
-            error = %error,
-            "failed to append SYSTEM_OPEN_COMPLETED lifecycle event after open"
-        );
+fn last_close_hlc(_index: &StoreIndex) -> HlcPoint {
+    // Phase 0 consumes a close frontier if one exists, but the current segment
+    // format has no SYSTEM_CLOSE_COMPLETED lifecycle event yet. Close emission
+    // remains out of scope for this step.
+    HlcPoint::ORIGIN
+}
+
+fn lifecycle_open_candidate(
+    runtime: &config::ValidatedStoreConfig,
+    max_recovered_hlc: HlcPoint,
+    last_close_hlc: HlcPoint,
+) -> Result<HlcPoint, StoreError> {
+    let now_ms = match config::wall_ms_from_timestamp_us(runtime.now_us()) {
+        Ok(now_ms) => now_ms,
+        Err(StoreError::InvalidClock { .. }) => 0,
+        Err(error) => return Err(error),
+    };
+    Ok(max_recovered_hlc.max(last_close_hlc).max(HlcPoint {
+        wall_ms: now_ms,
+        global_sequence: max_recovered_hlc.global_sequence,
+    }))
+}
+
+fn validate_bootstrap_hlc(
+    open_hlc: HlcPoint,
+    max_recovered_hlc: HlcPoint,
+    last_close_hlc: HlcPoint,
+) -> Result<(), StoreError> {
+    if open_hlc < max_recovered_hlc || open_hlc < last_close_hlc {
+        return Err(StoreError::InvariantViolation {
+            reason: format!(
+                "open_hlc {:?} must be >= max_recovered_hlc {:?} and last_close_hlc {:?}",
+                open_hlc, max_recovered_hlc, last_close_hlc
+            ),
+        });
     }
+    Ok(())
+}
+
+fn bootstrap_open_hlc(
+    runtime: &config::ValidatedStoreConfig,
+    index: &StoreIndex,
+) -> Result<HlcPoint, StoreError> {
+    let max_recovered_hlc = highest_index_hlc(index);
+    let last_close_hlc = last_close_hlc(index);
+    let open_hlc = lifecycle_open_candidate(runtime, max_recovered_hlc, last_close_hlc)?;
+    validate_bootstrap_hlc(open_hlc, max_recovered_hlc, last_close_hlc)?;
+    Ok(open_hlc)
+}
+
+fn timestamp_us_for_hlc(point: HlcPoint) -> Result<i64, StoreError> {
+    let timestamp_us =
+        point
+            .wall_ms
+            .checked_mul(1000)
+            .ok_or_else(|| StoreError::InvariantViolation {
+                reason: format!("open_hlc wall_ms {} overflows timestamp_us", point.wall_ms),
+            })?;
+    i64::try_from(timestamp_us).map_err(|_| StoreError::InvariantViolation {
+        reason: format!(
+            "open_hlc wall_ms {} exceeds i64 timestamp_us range",
+            point.wall_ms
+        ),
+    })
+}
+
+fn append_open_completed_event(
+    store: &Store<Open>,
+    report: &OpenIndexReport,
+    open_candidate: HlcPoint,
+) -> Result<HlcPoint, StoreError> {
+    let coord = Coordinate::new("batpak:store", "batpak:lifecycle")?;
+    let submission = AppendSubmission::with_options(
+        AppendOptions::default().with_idempotency(crate::id::generate_v7_id()),
+    );
+    submission.validate_route(store)?;
+    submission.validate_idempotency(store)?;
+    let event = submission.build_event(
+        report,
+        EventKind::SYSTEM_OPEN_COMPLETED,
+        timestamp_us_for_hlc(open_candidate)?,
+    )?;
+
+    let (tx, rx) = flume::bounded(1);
+    let command = submission.into_command(coord, EventKind::SYSTEM_OPEN_COMPLETED, event, tx);
+    store
+        .writer_handle()?
+        .tx
+        .send(command)
+        .map_err(|_| StoreError::WriterCrashed)?;
+    let receipt = rx.recv().map_err(|_| StoreError::WriterCrashed)??;
+    let open_hlc = store
+        .index
+        .get_by_id(receipt.event_id)
+        .map(|entry| HlcPoint {
+            wall_ms: entry.wall_ms,
+            global_sequence: entry.global_sequence,
+        })
+        .ok_or_else(|| StoreError::InvariantViolation {
+            reason: format!(
+                "SYSTEM_OPEN_COMPLETED receipt {:032x} was not visible in the rebuilt index",
+                receipt.event_id
+            ),
+        })?;
+    validate_bootstrap_hlc(open_hlc, open_candidate, last_close_hlc(&store.index))?;
+    Ok(open_hlc)
 }
 
 impl Store<Open> {
@@ -261,6 +364,7 @@ impl Store<Open> {
             store_lock,
         } = open_components(config, StoreLockMode::Mutable)?;
 
+        let open_candidate = bootstrap_open_hlc(&runtime, &index)?;
         let subscribers = Arc::new(SubscriberList::new());
         let reactor_subscribers = Arc::new(ReactorSubscriberList::new());
         let writer = WriterHandle::spawn(
@@ -271,12 +375,16 @@ impl Store<Open> {
             &reactor_subscribers,
             &reader,
         )?;
+        let watermark_handle = writer.watermark_handle();
+        let projection_registry = ProjectionRegistry::new(Arc::clone(&watermark_handle));
 
         let store = Self {
             index,
             reader,
             cache,
             writer: Some(writer),
+            watermark_handle,
+            projection_registry,
             lifecycle_gate: Mutex::new(()),
             config,
             runtime,
@@ -288,7 +396,8 @@ impl Store<Open> {
         };
 
         emit_open_report_observability(&store.config, &open_report);
-        append_open_completed_event(&store, &open_report);
+        let open_hlc = append_open_completed_event(&store, &open_report, open_candidate)?;
+        store.watermark_handle.lock().reset_to_bootstrap(open_hlc);
 
         Ok(store)
     }
@@ -962,11 +1071,16 @@ impl Store<ReadOnly> {
             store_lock,
         } = open_components(config, StoreLockMode::ReadOnly)?;
 
+        let open_hlc = bootstrap_open_hlc(&runtime, &index)?;
+        let watermark_handle = WatermarkState::bootstrap_handle(open_hlc);
+        let projection_registry = ProjectionRegistry::new(Arc::clone(&watermark_handle));
         let store = Self {
             index,
             reader,
             cache,
             writer: None,
+            watermark_handle,
+            projection_registry,
             lifecycle_gate: Mutex::new(()),
             config,
             runtime,
@@ -1153,6 +1267,43 @@ impl<State> Store<State> {
     /// Return detailed diagnostic information about the store's internal state.
     pub fn diagnostics(&self) -> StoreDiagnostics {
         lifecycle::diagnostics(self)
+    }
+
+    /// Return the current operator-facing frontier view.
+    pub fn frontier(&self) -> FrontierView {
+        self.watermark_handle.lock().snapshot_view()
+    }
+
+    /// Return a coherent clone of the internal frontier watermarks.
+    #[cfg(any(test, feature = "dangerous-test-hooks"))]
+    pub fn dangerous_watermark_snapshot(&self) -> WatermarkSnapshot {
+        self.watermark_handle.lock().snapshot()
+    }
+
+    /// Register a projection ID in the applied-frontier registry.
+    #[cfg(any(test, feature = "dangerous-test-hooks"))]
+    pub fn dangerous_register_projection(&self, projection_id: &str) {
+        self.projection_registry.register(projection_id.to_owned());
+    }
+
+    /// Register the same projection ID used by `project::<T>()` for `entity`.
+    #[cfg(any(test, feature = "dangerous-test-hooks"))]
+    pub fn dangerous_register_projection_for<T: 'static>(&self, entity: &str) {
+        self.projection_registry
+            .register(ProjectionRegistry::id_for_type::<T>(entity));
+    }
+
+    /// Report projection progress directly for focused frontier tests.
+    #[cfg(any(test, feature = "dangerous-test-hooks"))]
+    pub fn dangerous_notify_projection_applied(&self, projection_id: &str, point: HlcPoint) {
+        self.projection_registry
+            .notify_applied(projection_id.to_owned(), point);
+    }
+
+    /// Remove a projection ID from the applied-frontier registry.
+    #[cfg(any(test, feature = "dangerous-test-hooks"))]
+    pub fn dangerous_unregister_projection(&self, projection_id: &str) {
+        self.projection_registry.unregister(projection_id);
     }
 }
 
