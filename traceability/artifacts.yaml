@@ -142,6 +142,27 @@
     - src/store/write/control/fence.rs
     - src/store/write/control/submission.rs
     - src/store/write/control/store_bridge.rs
+- id: ART-FRONTIER-BOOTSTRAP
+  kind: source
+  paths:
+    - src/store/mod.rs
+    - src/store/cold_start/mod.rs
+- id: ART-FRONTIER-FAULT-INJECTION
+  kind: source
+  paths:
+    - src/store/fault.rs
+- id: ART-FRONTIER-PROJECTION-REGISTRY
+  kind: source
+  paths:
+    - src/store/projection/registry.rs
+- id: ART-FRONTIER-TYPES
+  kind: source
+  paths:
+    - src/store/stats.rs
+- id: ART-FRONTIER-WATERMARK-STATE
+  kind: source
+  paths:
+    - src/store/write/writer.rs
 - id: ART-STORE-REBUILD
   kind: source
   paths:
@@ -195,6 +216,14 @@
   kind: tests
   paths:
     - tests/observability_flows.rs
+- id: ART-FRONTIER-CHAOS-TESTS
+  kind: tests
+  paths:
+    - tests/durable_frontier_chaos.rs
+- id: ART-FRONTIER-SEMANTICS-TESTS
+  kind: tests
+  paths:
+    - tests/durable_frontier_semantics.rs
 - id: ART-REPLAY-TESTS
   kind: tests
   paths:
@@ -216,6 +245,10 @@
   kind: adr
   paths:
     - docs/adr/ADR-0007-control-plane-and-fast-start.md
+- id: ART-ADR-DURABLE-FRONTIER
+  kind: adr
+  paths:
+    - docs/adr/ADR-0014-durable-frontier.md
 - id: ART-ADR-RESTORE-PLANNER
   kind: adr
   paths:

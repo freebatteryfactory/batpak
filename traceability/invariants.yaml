@@ -184,6 +184,40 @@
   artifacts:
     - ART-STORE-FAULT
     - ART-STORE-CONFIG
+- id: INV-FRONTIER-MONOTONIC
+  statement: Each frontier watermark (accepted, written, durable, visible, emitted, applied) advances monotonically; advance methods take max with the proposed point and never permit backward motion.
+  artifacts:
+    - ART-FRONTIER-WATERMARK-STATE
+    - ART-FRONTIER-SEMANTICS-TESTS
+    - ART-ADR-DURABLE-FRONTIER
+- id: INV-FRONTIER-ORDERING
+  statement: At every torn-free observation, accepted_hlc >= written_hlc >= durable_hlc, accepted_hlc >= visible_hlc >= applied_hlc, and emitted_hlc >= visible_hlc.
+  artifacts:
+    - ART-FRONTIER-WATERMARK-STATE
+    - ART-FRONTIER-TYPES
+    - ART-FRONTIER-SEMANTICS-TESTS
+- id: INV-FRONTIER-TORN-FREE
+  statement: FrontierView is composed under a single watermark mutex acquisition; visible+emitted advances at commit time use a composite advance helper that holds the lock across both field updates.
+  artifacts:
+    - ART-FRONTIER-WATERMARK-STATE
+    - ART-FRONTIER-SEMANTICS-TESTS
+- id: INV-FRONTIER-OPEN-MONOTONIC
+  statement: On Store::open and Store::open_read_only, the bootstrap open_hlc satisfies open_hlc >= max_recovered_hlc and open_hlc >= last_close_hlc; this monotonicity is enforced post-emit and surfaces as StoreError::InvariantViolation if violated.
+  artifacts:
+    - ART-FRONTIER-BOOTSTRAP
+    - ART-FRONTIER-SEMANTICS-TESTS
+    - ART-FRONTIER-CHAOS-TESTS
+- id: INV-FRONTIER-APPLIED-MIN
+  statement: applied_hlc equals the minimum HLC across all registered projections; with zero registered projections it remains at the bootstrap open_hlc, never drifting forward.
+  artifacts:
+    - ART-FRONTIER-PROJECTION-REGISTRY
+    - ART-FRONTIER-WATERMARK-STATE
+    - ART-FRONTIER-SEMANTICS-TESTS
+- id: INV-FRONTIER-FAULT-ORDINALS
+  statement: SingleAppendStart fires before any watermark advance, SingleAppendWritten fires after written advance and before durable, and SingleAppendPublished fires after visible+emitted advance and before the receipt is returned.
+  artifacts:
+    - ART-FRONTIER-FAULT-INJECTION
+    - ART-FRONTIER-SEMANTICS-TESTS
 - id: INV-ALLOW-IS-DESIGN
   statement: "Every `#[allow(...)]` in the repo is a deliberate design decision, not a silencer. The allow carries a `// justifies <prose>` comment on the same or preceding line that cites at least one resolvable anchor — an INV-id from this catalog, an `ADR-NNNN` under `docs/adr/`, or a concrete repo path (`src/...`, `tests/...`, `examples/...`, `crates/macros/...`, `crates/macros-support/...`) — so the rationale is traceable, not narrative-only."
   artifacts:
@@ -207,9 +241,10 @@
   artifacts:
     - ART-DOCTOR
 - id: INV-TEST-PANIC-AS-ASSERTION
-  statement: "Test bodies under tests/ use panic!, unwrap, and expect as the assertion style — when a test precondition, fixture setup, or invariant check fails, the panic is the test failure signal. File-level #![allow(clippy::unwrap_used, clippy::panic)] is the acceptable scope for this idiom."
+  statement: "Test bodies under tests/ use panic!, unwrap, and expect as the assertion style — when a test precondition, fixture setup, or invariant check fails, the panic is the test failure signal. File-level #![allow(clippy::unwrap_used, clippy::panic)] is the acceptable scope for this idiom. Tests using panic! for invariant failures and test-local FaultInjector impls that panic in writer threads must opt out of clippy::panic at module scope and document the exception in a leading \"justifies:\" comment."
   artifacts:
     - ART-TESTS
+    - ART-FRONTIER-CHAOS-TESTS
 - id: INV-BUILD-FAIL-FAST
   statement: "build.rs halts the build on invariant violations with a cargo-parseable explanation. Panic sites are consolidated through the crate-private fail helper so the policy is expressed in one place; the file-level #![allow(clippy::panic)] attribute covers that single documented exit path."
   artifacts:
