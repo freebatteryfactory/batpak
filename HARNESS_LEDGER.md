@@ -140,7 +140,7 @@ instead of pretending.
   - This scaffold entry proves wrapper viability only; batpak-specific
     durability claims are recorded in the torn-tail scenario entry below.
 
-### Invariant: Torn-tail single appends are not classified durable until fsync returns
+### Invariant: Durable frontier covers recovered state after device failure
 
 - Harness pattern: `Fault-Injection Harness`
 - Location:
@@ -156,15 +156,16 @@ instead of pretending.
 - Mutation delta: not applicable; the scenario exercises real device-mapper
   failure semantics outside cargo-mutants' in-process model.
 - Covered tests:
-  - `single_append_written_is_not_durable_on_reopen_cadence_1000` defends
-    `INV-FRONTIER-TORN-TAIL-NONDURABLE` by capturing the pre-failure
-    `durable_hlc` after a successful explicit sync, appending an above-frontier
-    `SingleAppendWritten` event without another batpak fsync, failing the
-    mapper, remounting the same backing file, and asserting recovery does not
-    classify above-frontier data as durable. OS-level page-cache or ext4
-    write-back may still leave the above-frontier frame physically readable;
-    the substrate contract is durable frontier accounting, not guaranteed
-    physical disappearance.
+  - `durable_frontier_covers_recovered_state_after_device_failure_cadence_1000`
+    defends `INV-FRONTIER-DURABLE-COVERS-RECOVERED` by capturing the
+    pre-failure `durable_hlc` after a successful explicit sync, appending an
+    in-flight `SingleAppendWritten` event without another batpak fsync, failing
+    the mapper, remounting the same backing file, and asserting that recovered
+    `durable_hlc` covers every recovered event and remains monotonic across the
+    crash boundary. OS-level page-cache or ext4 write-back may preserve or lose
+    the in-flight frame; batpak's contract is honest Meaning-2 durable frontier
+    classification of whatever was preserved, not fsync-history tracking or
+    guaranteed physical disappearance.
   - `single_append_written_surfaces_io_error_cadence_1` defends that an append
     after the mapper is flipped to an error target returns a caller-visible
     storage failure instead of a false success receipt.
@@ -174,9 +175,10 @@ instead of pretending.
 - Remaining known blind spots:
   - the legacy in-process `FaultInjector` test remains ignored as a documented
     contrast with host page-cache behavior; the privileged dm-flakey scenario
-    now pins the substrate accounting contract. Batpak does not currently expose
-    a per-event durability classification API, so the chaos assertion uses the
-    recovered global `durable_hlc` as the available contract surface.
+    now pins the recovered-state accounting contract. Batpak deliberately does
+    not expose or persist a fsync-history marker that distinguishes "batpak
+    deliberately fsynced" from "the OS preserved this data"; this is recorded
+    as `OBS-DURABLE-HLC-INCLUDES-OS-PRESERVED-DATA`.
 
 ## Equivalence Harness
 
