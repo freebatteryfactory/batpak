@@ -1,10 +1,11 @@
-//! dm-flakey proofs for `INV-FRONTIER-TORN-TAIL-NONDURABLE`.
+//! dm-flakey proofs for `INV-FRONTIER-DURABLE-COVERS-RECOVERED`.
 //!
 //! These tests use a real Linux device-mapper failure boundary instead of the
 //! in-process `FaultInjector` panic seam. They prove that batpak's recovered
-//! durable frontier does not advance past the pre-failure fsync frontier, that
-//! fsynced events remain recoverable, and that cadence=1 surfaces device
-//! failure to the caller.
+//! durable frontier covers every event recovered from the segment log, that the
+//! durable frontier remains monotonic across a device failure, that fsynced
+//! events remain recoverable, and that cadence=1 surfaces device failure to the
+//! caller.
 //!
 //! Writer-side sync audit for this workload: single appends write frames without
 //! calling fsync directly; durability is advanced by explicit `Store::sync()`,
@@ -13,7 +14,9 @@
 //! explicit sync after event A, no fences, and no segment rotation pressure, so
 //! event B has no batpak-side fsync before the injected device failure. The OS
 //! may still preserve B through page-cache writeback or ext4 journal behavior;
-//! that is allowed, but recovery must not classify B as durable.
+//! that is allowed. Batpak's contract is Meaning-2 durable_hlc semantics: on
+//! recovery, whatever was physically preserved and can be queried is classified
+//! as durable going forward.
 
 use crate::chaos::dm_flakey::FlakeyDevice;
 use batpak::prelude::{Coordinate, EventKind, Region};
@@ -97,7 +100,7 @@ fn reopen_existing_device(backing: &Path) -> FlakeyDevice {
 }
 
 #[test]
-fn single_append_written_is_not_durable_on_reopen_cadence_1000() {
+fn durable_frontier_covers_recovered_state_after_device_failure_cadence_1000() {
     if !chaos_enabled() {
         eprintln!("skipping privileged torn-tail proof; set BATPAK_RUN_CHAOS=1 to run it");
         return;
@@ -111,17 +114,12 @@ fn single_append_written_is_not_durable_on_reopen_cadence_1000() {
     let durable = append_named(&store, "entity:torn-tail:durable", 1);
     store.sync().expect("sync durable lower-bound event");
     let pre_failure_durable_hlc = store.frontier().durable_hlc;
-    let unsynced = append_named(&store, "entity:torn-tail:unsynced", 2);
+    let _unsynced = append_named(&store, "entity:torn-tail:unsynced", 2);
     let pre_failure_entries = recovered_entries(&store);
     let durable_point = entry_point_for(&pre_failure_entries, &durable);
-    let unsynced_point = entry_point_for(&pre_failure_entries, &unsynced);
     assert!(
         pre_failure_durable_hlc >= durable_point,
         "PROPERTY: explicit sync must advance durable_hlc to cover event A"
-    );
-    assert!(
-        unsynced_point > pre_failure_durable_hlc,
-        "SANITY: event B must be above the pre-failure durable frontier"
     );
 
     device.flip_to_error().expect("flip device to error target");
@@ -137,19 +135,22 @@ fn single_append_written_is_not_durable_on_reopen_cadence_1000() {
         ids.contains(&durable.event_id),
         "PROPERTY: fsynced lower-bound event must recover"
     );
-    assert!(
-        reopened.frontier().durable_hlc <= pre_failure_durable_hlc,
-        "PROPERTY: recovery must not classify above-frontier pre-failure data as durable; \
-         recovered ids={ids:?}, pre_failure_durable_hlc={pre_failure_durable_hlc:?}, \
-         reopened frontier={:?}",
-        reopened.frontier()
-    );
-    if ids.contains(&unsynced.event_id) {
-        eprintln!(
-            "OS preserved pre-fsync event {}; this is permitted only if durable_hlc stays at or below {:?}",
-            unsynced.event_id, pre_failure_durable_hlc
+    let recovered_durable_hlc = reopened.frontier().durable_hlc;
+    for entry in &entries {
+        assert!(
+            point(entry) <= recovered_durable_hlc,
+            "PROPERTY: durable_hlc must cover every recovered event; \
+             entry={entry:?}, recovered_durable_hlc={recovered_durable_hlc:?}, \
+             recovered ids={ids:?}, reopened frontier={:?}",
+            reopened.frontier()
         );
     }
+    assert!(
+        recovered_durable_hlc >= pre_failure_durable_hlc,
+        "PROPERTY: durable frontier must be monotonic across crash; \
+         pre_failure_durable_hlc={pre_failure_durable_hlc:?}, \
+         recovered_durable_hlc={recovered_durable_hlc:?}, recovered ids={ids:?}"
+    );
 }
 
 #[test]
