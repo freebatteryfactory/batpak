@@ -14,9 +14,11 @@ thread blocking, a mandatory timeout, and a clear failure mode when the writer
 thread panics while callers are waiting.
 
 ## Decision
-`Store::wait_for_durable(point, timeout)` blocks the calling thread until the
-durable watermark observes `durable_hlc >= point`, the timeout expires, or the
-writer crash poison flag is set.
+`Store::wait_for_durable(point, timeout)`,
+`Store::wait_for_applied(point, timeout)`, and
+`Store::wait_for_visible(point, timeout)` block the calling thread until the
+chosen watermark observes its current HLC `>= point`, the timeout expires, or
+the writer crash poison flag is set.
 
 The implementation uses:
 
@@ -50,10 +52,30 @@ attempt to unpoison waiters after writer restart.
 Spurious wakeups are part of the contract: every wake rechecks poison and the
 target watermark before returning success.
 
+### Append-time inline gating
+
+`AppendOptions::gate` lets callers opt into the same wait contract as part of a
+blocking append call. `DurabilityGate { kind, timeout }` is optional and
+defaults to `None`, so existing append behavior remains no-gate.
+
+For single-event appends, the writer commits and publishes the event first, then
+the append path waits for the selected watermark to cross the committed event's
+HLC. For batch appends, `Store::append_batch_with_options(items, opts)` applies
+the batch-level gate to the last event in the batch; monotonic watermarks and
+atomic batch commit make that cover all earlier batch items. Per-item gates
+embedded in `BatchAppendItem` are ignored so batches do not serialize into
+per-item waits.
+
+`StoreError::WaitTimeout` from an append gate is not a rollback signal. It means
+the append committed, but the requested watermark guarantee was not observed
+within the timeout. The event remains queryable; callers that still need the
+guarantee can call the corresponding `wait_for_*` method with a longer timeout.
+
 ## References
 - [ADR-0001: Sync-Only Store API](ADR-0001-sync-only-store.md)
 - [ADR-0014: Durable Frontier Observability](ADR-0014-durable-frontier.md)
 - `traceability/invariants.yaml`: `INV-FRONTIER-DURABLE-COVERS-RECOVERED`,
   `INV-FRONTIER-OPEN-MONOTONIC`, `INV-FRONTIER-WAIT-MONOTONIC`
-- `traceability/flows.yaml`: `FLOW-FRONTIER-WAIT-DURABLE`
+- `traceability/flows.yaml`: `FLOW-FRONTIER-WAIT-DURABLE`,
+  `FLOW-FRONTIER-WAIT-APPLIED`, `FLOW-FRONTIER-WAIT-VISIBLE`
 - `tests/durable_frontier_waits.rs`

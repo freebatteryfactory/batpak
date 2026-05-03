@@ -124,11 +124,15 @@ instead of pretending.
   - `tests/durable_frontier_waits.rs`
 - Command used:
   - `cargo test --test durable_frontier_waits --features dangerous-test-hooks`
-- Line/function coverage delta: not measured; Phase 2.1 adds public wait API
-  coverage.
+- Line/function coverage delta: not measured; Phase 2.1 adds durable wait API
+  coverage, Phase 2.2 extends the same surface to applied and visible waits,
+  and Phase 2.3 adds append-time gate coverage.
 - Mutation delta:
   - `frontier-wait-durable` critical seam is registered at the 85% smoke
     threshold.
+  - `frontier-append-gate` critical seam is registered at the 85% smoke
+    threshold for gate kind matching, timeout propagation, receipt HLC
+    conversion, and batch per-item gate ignore.
 - Covered tests:
   - `wait_for_durable_returns_immediately_when_already_past` defends the fast
     path where the durable frontier already covers the target.
@@ -146,9 +150,40 @@ instead of pretending.
     zero-timeout boundary for both uncovered and already-covered targets.
   - `wait_for_durable_origin_returns_immediately` defends the origin lower
     bound.
+  - `wait_for_applied_returns_immediately_when_already_past` defends the
+    applied fast path where the projection frontier already covers the target.
+  - `wait_for_applied_returns_min_across_projections` defends that a single
+    lagging registered projection keeps `applied_hlc` behind the target.
+  - `wait_for_applied_blocks_until_lagging_projection_advances` defends that
+    `wait_for_applied` wakes only after the lagging projection advances.
+  - `wait_for_visible_returns_immediately_when_already_past` defends the
+    visible fast path after publish.
+  - `wait_for_visible_advances_under_cadence_gt_1_without_durable` defends the
+    documented cadence>1 no-gate skew: visible can advance while durable does
+    not.
+  - `mixed_wait_for_durable_applied_visible_converge_in_order` defends that the
+    three public wait surfaces share the same condvar/poison machinery and can
+    converge on the same target.
+  - `append_without_gate_returns_immediately` defends the default no-gate
+    append behavior.
+  - `append_with_durable_gate_blocks_until_synced` defends durable gate
+    blocking until a later cadence sync.
+  - `append_with_applied_gate_blocks_until_min_projection_advances` defends
+    append-time applied gates honoring the min across registered projections.
+  - `append_with_visible_gate_returns_after_publish` defends visible gate
+    success under cadence>1 without waiting for durable sync.
+  - `append_with_gate_surfaces_wait_timeout_when_unreachable` defends that
+    gate timeout is surfaced while the committed event remains queryable.
+  - `batch_append_with_durable_gate_covers_entire_batch` defends that a
+    batch-level gate on the last event covers earlier batch items.
+  - `batch_per_item_gate_ignored` defends the documented per-item gate ignore
+    behavior for batches.
+- Observation notes:
+  - `OBS-CADENCE-GT-1-VISIBLE-EXCEEDS-DURABLE` is narrowed, not retired:
+    cadence>1 without a `DurabilityGate` still exhibits the skew, and the gate
+    is the opt-in escape hatch.
 - Remaining known blind spots:
-  - Phase 2.1 covers only `wait_for_durable`; `wait_for_visible`,
-    `wait_for_applied`, and append gating are deferred to later Phase 2 stops.
+  - No precise waiter lists yet; wake-all remains the v1 wait strategy.
 
 ### Invariant: Linux block-layer chaos harness fails writes after device flip
 
