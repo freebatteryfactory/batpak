@@ -28,6 +28,7 @@ cargo xtask install-hooks
 cargo xtask traceability
 cargo xtask structural
 cargo xtask pre-commit
+cargo xtask preflight
 cargo xtask ci
 cargo xtask cover
 cargo xtask mutants policy
@@ -90,6 +91,10 @@ If a change touches persistence artifacts or cold-start behavior, update the
 release notes and reference docs explicitly. Operators need to know when reopen
 falls back to scan and which older artifact versions load with additive root
 defaults.
+
+After an intentional UI compile-fail test change, regenerate trybuild goldens
+with `TRYBUILD=overwrite cargo test --test <name>` and review the `.stderr`
+diff before committing.
 
 Coverage artifacts are retained under `target/xtask-cover/last-run/` so failed
 or partial coverage runs can be inspected instead of disappearing into a temp

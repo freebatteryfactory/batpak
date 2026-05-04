@@ -438,15 +438,24 @@ Low-level storage surface names that remain intentionally public:
 
 Important knobs on `StoreConfig`:
 
-- `segment_max_bytes`
-- `sync.every_n_events`
-- `sync.mode`
-- `fd_budget`
-- `writer.channel_capacity`
-- `writer.pressure_retry_threshold_pct`
-- `writer.shutdown_drain_limit`
-- `writer.stack_size`
-- `signing_keys` via `with_signing_key(...)`
+| Knob | Default | When to change |
+| --- | --- | --- |
+| `segment_max_bytes` | 256 MiB | Lower for faster rotation and smaller repair units; raise for fewer segment files. |
+| `sync.every_n_events` | `1000` | Lower for tighter durability; raise for throughput when callers use explicit gates where needed. |
+| `sync.mode` | `SyncAll` | Use `SyncData` only after deciding metadata sync cost is not needed for the deployment. |
+| `fd_budget` | `64` | Raise when many segments stay hot and read latency matters; lower for constrained processes. |
+| `writer.channel_capacity` | `4096` | Raise for bursty producers; lower to cap peak queued memory. |
+| `writer.pressure_retry_threshold_pct` | `75` | Lower when `try_submit*` callers should back off earlier under load. |
+| `writer.shutdown_drain_limit` | `1024` | Raise when graceful shutdown should drain larger queued append bursts. |
+| `writer.stack_size` | OS default | Set only when platform thread defaults are too small for a measured workload. |
+| `batch.max_size` | `256` items | Lower to bound latency; raise for larger atomic import batches. |
+| `batch.max_bytes` | 1 MiB | Lower to bound single-batch memory; raise only within the configured 16 MiB ceiling. |
+| `batch.group_commit_max_batch` | `1` | Raise for fsync amortization; appends then require idempotency keys. |
+| `index.topology` | `IndexTopology::aos()` | Add overlays when query benchmarks show broad scans or entity-local scans dominate. |
+| `index.incremental_projection` | `false` | Enable when projections support pure incremental apply and replay cost is visible. |
+| `index.enable_checkpoint` | `true` | Disable only for tiny stores or tests where cold-start artifacts are unwanted. |
+| `index.enable_mmap_index` | `true` | Disable when the platform or deployment policy rejects mmap artifacts. |
+| `signing_keys` via `with_signing_key(...)` | empty | Add when append and denial receipts need tamper-evident verification. |
 
 ## Receipt And Denial Notes
 
@@ -460,13 +469,6 @@ Important knobs on `StoreConfig`:
   chain; denial events are not a separate chain class.
 - `verify_append_receipt(...)` and `verify_denial_receipt(...)` validate
   receipt signatures against the store's configured signing-key registry.
-- `batch.group_commit_max_batch`
-- `batch.max_size`
-- `batch.max_bytes`
-- `index.topology`
-- `index.incremental_projection`
-- `index.enable_checkpoint`
-- `index.enable_mmap_index`
 
 Key tradeoffs:
 

@@ -47,6 +47,10 @@ _Nothing yet._
   ```
 
 ### Documentation
+- Added release polish for adoption paths: README badges and install line,
+  docs.rs typed-first quickstart, examples index run commands, operational
+  observability guidance, production checklist, and runnable signed-receipt
+  / lifecycle examples.
 - Store ownership is now documented as a lifetime-held directory lock:
   second mutable opens and concurrent read-only opens fail with `StoreLocked`
   under the exclusive-only store ownership contract instead of racing the same

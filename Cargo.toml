@@ -9,8 +9,8 @@ repository = "https://github.com/TheFreeBatteryFactory/batpak"
 homepage = "https://github.com/TheFreeBatteryFactory/batpak"
 documentation = "https://docs.rs/batpak"
 readme = "README.md"
-keywords = ["event-sourcing", "audit-trail", "causal-graph", "hash-chain", "policy-engine"]
-categories = ["database", "concurrency"]
+keywords = ["event-sourcing", "audit-trail", "causal-graph", "hash-chain", "append-only"]
+categories = ["database-implementations", "data-structures"]
 exclude = [
     ".devcontainer/**",
     ".github/**",

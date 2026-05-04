@@ -396,6 +396,56 @@ let ro = batpak::store::Store::<batpak::store::ReadOnly>::open_read_only(config)
 let events = ro.by_fact_typed::<Tick>();
 ```
 
+## Operating Batpak
+
+### Observability
+
+Batpak emits `tracing` events but does not install a subscriber for you. In
+applications, add a subscriber at process startup:
+
+```rust
+tracing_subscriber::fmt()
+    .with_env_filter(
+        "warn,batpak::open=info,batpak::checkpoint=warn,batpak::mmap_index=warn",
+    )
+    .init();
+```
+
+Useful targets:
+
+| Target | What it reports |
+| --- | --- |
+| `batpak::open` | Store open path, cold-start fallback, and lifecycle bootstrap warnings. |
+| `batpak::flow` | Append, sync, compact, close, projection, and waiter flow events. |
+| `batpak::checkpoint` | Checkpoint load/write validation and fallback reasons. |
+| `batpak::mmap_index` | mmap index load/write validation and fallback reasons. |
+| `batpak::rebuild` | Segment replay and rebuild warnings during cold start. |
+| `batpak::visibility` | Hidden-range metadata warnings for visibility fences. |
+| `batpak::index` | Query/index diagnostics. |
+
+Start with `warn` globally and enable `info` or `debug` on one `batpak::*`
+target while investigating a concrete startup, durability, or query issue.
+
+### Production Checklist
+
+Before deploying a store path that matters:
+
+- Choose `sync.every_n_events` and `sync.mode` deliberately; use
+  `AppendOptions::gate` when a caller needs the append call to wait for a
+  frontier watermark.
+- Install a `tracing-subscriber` filter and route warnings somewhere durable.
+- Size `segment_max_bytes` and `fd_budget` for the expected data volume and
+  file descriptor budget.
+- Decide whether checkpoint and mmap index artifacts should stay enabled for
+  faster cold start.
+- Configure `SigningKey`s if receipts must be verified after the fact.
+- Give restartable cursor workers stable `CheckpointId`s; process-local
+  cursors do not produce crash-durable delivery witnesses.
+- Benchmark on the deployment hardware before treating perf numbers as a
+  contract.
+- Treat `StoreLocked` as an ownership signal: only one mutable/read-only owner
+  should hold a store directory at a time.
+
 ## Policy Gates
 
 Use `Gate`, `GateSet`, `Proposal`, and `Pipeline` when you want a

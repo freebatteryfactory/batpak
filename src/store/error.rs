@@ -277,8 +277,9 @@ impl std::fmt::Display for StoreError {
                 };
                 write!(
                     f,
-                    "store at {} is already locked; could not acquire {mode} access",
-                    path.display()
+                    "store at {} is already locked; could not acquire {mode} access; ensure no other process holds this directory and remove {} only after verifying no owner is alive",
+                    path.display(),
+                    path.join(".batpak.lock").display()
                 )
             }
             Self::Coordinate(e) => write!(f, "coordinate error: {e}"),
@@ -392,7 +393,7 @@ impl std::fmt::Display for StoreError {
             }
             Self::CoordinatePathTraversal => write!(
                 f,
-                "coordinate component contains forbidden path-traversal substring"
+                "coordinate component contains forbidden path-traversal substring (`..` or `/`)"
             ),
             Self::CoordinateControlChar => write!(
                 f,

@@ -5,13 +5,12 @@
 #![cfg_attr(not(test), deny(clippy::expect_used))]
 // cast_possible_truncation and cast_sign_loss are enforced via [lints.clippy] in Cargo.toml.
 // Each intentional cast has an inline #[allow] with a justification comment.
-//! batpak: Event Sourcing Runtime with DAG Causation Tracking.
+//! Sync-first event sourcing for Rust: append-only segments, causal metadata,
+//! policy gates, and typed projections — no async runtime.
 //!
-//! Batpak provides a complete event sourcing platform with:
-//! - **Event Sourcing**: Immutable event log with hash chain integrity
-//! - **DAG Causation**: Tracks causation relationships between events
-//! - **Gate Evaluation**: Pluggable policy enforcement before event commitment
-//! - **Persistent Storage**: Segment-based append-only store with fast querying
+//! Batpak stores immutable events in segment files, tracks causation metadata,
+//! evaluates policy gates before commit, and rebuilds typed projections through
+//! a synchronous API that does not require an async runtime.
 //!
 //! Most callers start with typed payloads: derive [`EventPayload`], append with
 //! [`Store::append_typed`](crate::store::Store::append_typed), and read through
