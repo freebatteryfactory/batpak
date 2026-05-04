@@ -106,6 +106,10 @@ pub enum StoreError {
     },
     /// A fault was injected by the dangerous-test-hooks fault injection framework.
     #[cfg(feature = "dangerous-test-hooks")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "dangerous-test-hooks"))
+    )]
     FaultInjected(String),
     /// A batch mixes items with and without idempotency keys.
     /// Batches must be homogeneous: either every item carries an idempotency

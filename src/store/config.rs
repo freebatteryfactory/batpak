@@ -281,6 +281,10 @@ pub struct StoreConfig {
     /// Fault injector for testing failure scenarios.
     /// Only available with the `dangerous-test-hooks` feature.
     #[cfg(feature = "dangerous-test-hooks")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "dangerous-test-hooks"))
+    )]
     pub fault_injector: Option<Arc<dyn FaultInjector>>,
 }
 

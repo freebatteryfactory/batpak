@@ -16,9 +16,11 @@ manual publish/tag/release steps from a clean `main`.
    rg '<escaped-previous-version>' --glob Cargo.toml
    ```
 
-4. Make every crate needed by the root crate publishable. The publish order is:
-   `batpak-macros-support`, `batpak-macros`, `batpak-bench-support`, then
-   `batpak`.
+4. Make every crate needed by the root crate publishable. The required publish
+   chain for `batpak` itself is `batpak-macros-support`, `batpak-macros`,
+   then `batpak`. `batpak-bench-support` is a publishable companion crate used
+   as a root dev-dependency; publish it for version alignment, but the root
+   crate does not need it indexed before `batpak` can publish.
 5. Give each publishable internal crate crates.io metadata and a small
    crate-local `README.md`.
 6. Finalize `CHANGELOG.md`: add the dated release section and restore an empty
@@ -66,22 +68,26 @@ green. Do not tag until crates.io publishes succeed.
 
 ```bash
 git status
+
+# Required dependency chain for the root crate.
 cargo publish -p batpak-macros-support
 cargo search batpak-macros-support
 
 cargo publish -p batpak-macros
 cargo search batpak-macros
 
-cargo publish -p batpak-bench-support
-cargo search batpak-bench-support
-
 cargo publish -p batpak
 cargo search batpak
+
+# Companion crate: version-aligned, but not required for root crate resolution.
+cargo publish -p batpak-bench-support
+cargo search batpak-bench-support
 ```
 
-Wait for each crate to appear in `cargo search` before publishing the next one.
-Crates.io index propagation can lag for a few minutes; publishing out of order
-usually fails with "no matching package found" for the dependency version.
+Wait for each crate in the required chain to appear in `cargo search` before
+publishing the next one. Crates.io index propagation can lag for a few minutes;
+publishing out of order usually fails with "no matching package found" for the
+dependency version.
 
 If a published version is wrong, yank it and publish a patch release. Crates.io
 does not allow replacing the bytes for an existing version.

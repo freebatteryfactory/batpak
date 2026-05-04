@@ -59,7 +59,10 @@ pub(crate) fn docs(args: DocsArgs) -> Result<()> {
     fs::create_dir_all(&site_dir).with_context(|| format!("create {}", site_dir.display()))?;
 
     let mut cargo_doc = std::process::Command::new("cargo");
-    cargo_doc.env("RUSTDOCFLAGS", "--cfg docsrs -D warnings");
+    cargo_doc.env(
+        "RUSTDOCFLAGS",
+        "--cfg docsrs --cfg batpak_stable_docs -D warnings",
+    );
     cargo_doc.args(["doc", "--all-features", "--no-deps"]);
     crate::util::run(cargo_doc)?;
     copy_dir(&target_dir.join("doc"), &site_dir.join("api"))?;

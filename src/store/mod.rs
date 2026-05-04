@@ -9,6 +9,10 @@ mod dir_lock;
 mod error;
 /// Fault injection framework for testing failure scenarios.
 #[cfg(feature = "dangerous-test-hooks")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "dangerous-test-hooks"))
+)]
 pub mod fault;
 mod gate;
 mod hidden_ranges;
@@ -50,6 +54,10 @@ pub use delivery::observation::{AtLeastOnce, CheckpointId, IdempotencyKey, Obser
 pub use delivery::subscription::Subscription;
 pub use error::{StoreError, StoreLockMode};
 #[cfg(feature = "dangerous-test-hooks")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "dangerous-test-hooks"))
+)]
 pub use fault::{
     CountdownAction, CountdownInjector, FaultInjector, InjectionPoint, ProbabilisticInjector,
 };
