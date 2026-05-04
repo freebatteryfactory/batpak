@@ -348,11 +348,16 @@ instead of pretending.
   - `cargo test --test projection_cache freshness_maybe_stale_replays_when_fresh_cache_bytes_are_corrupt`
   - `cargo test --test projection_cache projection_replays_when_cache_get_errors`
   - `cargo test --test projection_cache freshness_maybe_stale_replays_at_exact_age_boundary`
+  - `cargo test --test projection_cache empty_projection_surface_skips_cache_for_no_replay_plan`
+  - `cargo test --test projection_cache consistent_replays_when_reopened_native_cache_row_is_stale`
+  - `cargo test --test projection_cache maybe_stale_replays_when_cache_row_has_valid_metadata_but_empty_payload`
+  - `cargo test --test projection_cache consistent_replays_when_cache_row_has_valid_metadata_but_truncated_payload`
 - Line/function coverage delta: targeted rise in `src/store/projection/flow.rs`; exact JSON delta not recorded in this wave
 - Mutation delta: unmeasured in this wave
 - Remaining known blind spots:
   - this seam now proves that stale-but-young corrupt rows, fresh-but-corrupt rows, cache-get failures, and exact age-boundary rows all fall back to honest replay under `Freshness::MaybeStale`
-  - remaining cache-edge blind spots are mostly around alternate corruption shapes and the empty/no-replay-plan public surface rather than stale-byte honesty itself
+  - coverage-closure sweep also pins empty/no-replay-plan behavior, reopened stale external-cache replay under `Freshness::Consistent`, and valid-metadata/undecodable-payload cache rows that bypass metadata corruption but still must replay honestly
+  - remaining cache-edge blind spots are now limited to backend-specific OS error shapes that are difficult to force portably without changing production behavior
 
 ## Property Harness
 
