@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-04
+
 ### Changed
 - **Breaking**: `cursor_worker` handler bounds now receive a third parameter,
   `Option<&AtLeastOnce>`. Durable workers with a `checkpoint_id` receive
