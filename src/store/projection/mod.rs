@@ -298,7 +298,17 @@ impl ProjectionCache for NativeCache {
     }
 
     fn get(&self, key: &[u8]) -> Result<Option<(Vec<u8>, CacheMeta)>, StoreError> {
-        let (_shard, path) = self.key_path(key);
+        let (shard, path) = self.key_path(key);
+        match std::fs::metadata(&shard) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => {
+                return Err(StoreError::CacheFailed(Box::new(std::io::Error::other(
+                    format!("cache shard path is not a directory: {}", shard.display()),
+                ))));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(StoreError::CacheFailed(Box::new(e))),
+        }
         match std::fs::read(&path) {
             Ok(bytes) => match CacheMeta::decode_from_bytes(&bytes) {
                 Ok((value, meta)) => Ok(Some((value, meta))),
