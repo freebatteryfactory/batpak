@@ -99,11 +99,10 @@ pub(crate) fn admit_current_parent_dir_sync() -> Result<ParentDirSyncAdmission, 
     admit_parent_dir_sync(crate::store::platform::evidence::parent_dir_sync_evidence())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn sync_file_with_mode_surfaces_platform_sync_errors() {
         let file = File::open("/dev/null").expect("open /dev/null");
