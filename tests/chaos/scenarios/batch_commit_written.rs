@@ -82,6 +82,16 @@ fn append_batch(store: &Store, prefix: &str, count: usize) -> Vec<AppendReceipt>
         .expect("append batch")
 }
 
+fn is_device_failure_surface(err: &StoreError) -> bool {
+    match err {
+        StoreError::Io(_) | StoreError::WriterCrashed => true,
+        StoreError::BatchFailed { source, .. } | StoreError::BatchSyncFailed { source, .. } => {
+            is_device_failure_surface(source)
+        }
+        _ => false,
+    }
+}
+
 fn recovered_entries(store: &Store) -> Vec<batpak::store::IndexEntry> {
     store.query(&Region::scope(BATCH_TORN_TAIL_SCOPE))
 }
@@ -197,8 +207,9 @@ fn batch_append_surfaces_io_error_after_device_failure_cadence_1000() {
         Err(err) => err,
     };
     assert!(
-        matches!(err, StoreError::Io(_) | StoreError::WriterCrashed),
-        "PROPERTY: device failure must surface as IO or writer crash, got {err:?}"
+        is_device_failure_surface(&err),
+        "PROPERTY: device failure must surface as IO or writer crash, \
+         directly or through the batch item boundary, got {err:?}"
     );
 }
 
@@ -322,7 +333,8 @@ fn batch_append_surfaces_io_error_after_device_failure_cadence_1() {
         Err(err) => err,
     };
     assert!(
-        matches!(err, StoreError::Io(_) | StoreError::WriterCrashed),
-        "PROPERTY: device failure must surface as IO or writer crash, got {err:?}"
+        is_device_failure_surface(&err),
+        "PROPERTY: device failure must surface as IO or writer crash, \
+         directly or through the batch item boundary, got {err:?}"
     );
 }
