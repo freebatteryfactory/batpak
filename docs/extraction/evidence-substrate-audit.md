@@ -196,6 +196,11 @@ is architectural closure status, not a CI pass result.
 
 ### Matrix changelog
 
+- **Matrix v7 (2026-05-08): Lane B4 — `batpak::reservation` ships `ReservationTransition`,
+  `ReservationEntry`, closed structural `RESERVATION_STATE_*` lanes, `simulate_reservation_ledger`,
+  `ReservationLedgerReportBody` + `reservation_ledger_report_body_hash`, reconciliation buckets +
+  `reservation_reconciliation_report_body_hash`, sorted structural `ReservationFinding` coverage in
+  `tests/lane_b4_reservation_substrate.rs`.**
 - **Matrix v6 (2026-05-08): Lane B3 — `batpak::transition` ships `StateTransitionEvent`,
   `build_state_transition_report` / `StateTransitionReportBody` with sorted causes/findings,
   `state_transition_event_digest`, and structural `StateTransitionFinding` coverage in
@@ -241,10 +246,10 @@ is architectural closure status, not a CI pass result.
 | CompactionReport (`CompactionReportBody`, `Store::compact_with_report`) | structural report: `compaction_id`, sorted source segment ids, bounds, output segment byte hash when performed, findings | `tests/lane_a_store_substrate.rs` (incl. performed merge); lifecycle in `src/store/lifecycle.rs`; snapshot/compaction races in `tests/store_snapshot_compaction.rs` | cite compaction report vs ad-hoc merge prose | implement in batpak core | lane-a-core-primitives | **v1 shipped** — extend fields only via `schema_version` + deterministic ordering rules |
 | IdempotencyLedger (prove-or-build) | key = provisional **event id**; single + batch replay via writer/index; TTL **out of scope** | `tests/lane_a_store_substrate.rs`; `tests/idempotent_batch_crash_recovery.rs` | no separate ledger type unless new invariants demand it | reject / not needed | lane-a-core-primitives | prove path complete; redundant ledger would duplicate index facts unless new semantics (e.g. expiry) gain an owner |
 | RegionBoundQuery (prove-or-build) | public APIs require `Region` / entity / scope / kind / `cursor_guaranteed(&Region)` | `tests/lane_a_store_substrate.rs`; topology parity elsewhere | cite explicit bounds instead of a packaged query value | reject / not needed | lane-a-core-primitives | prove path complete unless cross-cutting evidence needs a nominal `RegionBoundQuery` struct |
-| AttestedRegistry mechanics (`batpak::registry`) | `RegistryRowBody` + `row_hash`; `CanonicalArtifactEnvelope<RegistryRowBody>` verify path; drift + verification reports with `body_hash`; supersession/dup/cycle findings | `tests/lane_b1_registry_substrate.rs` | cite `batpak::registry` for signed-row / lifecycle / supersession substrate | implement in batpak core | lane-b-reservation-ledger | **B1 v1 shipped** — extend only with `schema_version` bumps + deterministic ordering rules |
-| BackupEnvelope (`batpak::store` backup_envelope) | `BackupManifestBody` + `backup_manifest_body_hash`; `BackupManifestEnvelope` / `BackupEnvelope`; `RestoreProofReportBody` + `restore_proof_report_body_hash`; `verify_backup_manifest_envelope` | `tests/lane_b2_backup_envelope_substrate.rs` | cite store backup envelope for segment digest restore proof | implement in batpak core | lane-b-reservation-ledger | **B2 v1 shipped** — extend via `schema_version` + sorted segment / finding rules only |
-| StateTransition report/event (`batpak::transition`) | `StateTransitionEvent` + `state_transition_event_digest`; `build_state_transition_report` + `state_transition_report_body_hash`; sorted causes and allowed-edge hygiene findings | `tests/lane_b3_transition_substrate.rs` | cite `batpak::transition` for generic transition evidence | implement in batpak core | lane-b-reservation-ledger | **B3 v1 shipped** — extend via `schema_version` + sorted cause/finding/edge rules only |
-| Reservation ledger | no generic reserve/commit/refund primitive | no dedicated coverage | provide generic reservation accounting substrate if truly cross-consumer | implement in batpak core | none | must prove genericity without domain nouns |
+| AttestedRegistry mechanics (`batpak::registry`) | `RegistryRowBody` + `row_hash`; `CanonicalArtifactEnvelope<RegistryRowBody>` verify path; drift + verification reports with `body_hash`; supersession/dup/cycle findings | `tests/lane_b1_registry_substrate.rs` | cite `batpak::registry` for signed-row / lifecycle / supersession substrate | implement in batpak core | none | **B1 v1 shipped** — extend only with `schema_version` bumps + deterministic ordering rules |
+| BackupEnvelope (`batpak::store` backup_envelope) | `BackupManifestBody` + `backup_manifest_body_hash`; `BackupManifestEnvelope` / `BackupEnvelope`; `RestoreProofReportBody` + `restore_proof_report_body_hash`; `verify_backup_manifest_envelope` | `tests/lane_b2_backup_envelope_substrate.rs` | cite store backup envelope for segment digest restore proof | implement in batpak core | none | **B2 v1 shipped** — extend via `schema_version` + sorted segment / finding rules only |
+| StateTransition report/event (`batpak::transition`) | `StateTransitionEvent` + `state_transition_event_digest`; `build_state_transition_report` + `state_transition_report_body_hash`; sorted causes and allowed-edge hygiene findings | `tests/lane_b3_transition_substrate.rs` | cite `batpak::transition` for generic transition evidence | implement in batpak core | none | **B3 v1 shipped** — extend via `schema_version` + sorted cause/finding/edge rules only |
+| Reservation ledger (`batpak::reservation`) | `ReservationTransition` + normalized transition log digest; `simulate_reservation_ledger` → `ReservationLedgerReportBody` + `reservation_ledger_report_body_hash`; `reservation_reconciliation_report` + body hash; sorted `ReservationFinding` invalid-transition reasons | `tests/lane_b4_reservation_substrate.rs` | cite `batpak::reservation` for generic reserve/commit/refund/expire/orphan lane mechanics | implement in batpak core | lane-b-seal | **B4 v1 shipped** — extend via `schema_version` + sorted entry/finding/cause/reconciliation rules only; no policy vocabulary |
 | StoreResourceEnvelope beyond `WriterPressure` | partial via `WriterPressure`; broader counters not stabilized | diagnostics coverage exists; no stable broader envelope contract | unify generic store-resource evidence if stable counters exist | reject / not needed | lane-b-resource-envelope | blocked on stable ownership and semantics of additional counters — reopen as implement in batpak core when facts exist |
 | Audit assertion runner | no core API; integrity + xtask infrastructure exists | integrity/structural checks already tested | centralize doctrine checks in tooling lane | implement in batpak tooling/helper | lane-tooling-audit-runner | choose host surface (`xtask` vs helper crate) |
 | Deterministic phase cache | no dedicated primitive | no dedicated coverage | avoid repeated deterministic-phase glue if pressure proves it | implement in batpak tooling/helper | lane-tooling-phase-cache | needs measured repeated pain before implementation |
@@ -265,7 +270,7 @@ is architectural closure status, not a CI pass result.
 - **B1 `AttestedRegistry` / `batpak::registry` — landed** (signed immutable rows, drift, verification, supersession helpers).
 - **B2 `BackupEnvelope` / `batpak::store::backup_envelope` — landed** (manifest + segment digests + restore proof).
 - **B3 `StateTransition` / `batpak::transition` — landed** (generic event + structural report + edge checks).
-- **B4 `ReservationLedger` — next.**
+- **B4 `ReservationLedger` / `batpak::reservation` — landed** (structural simulation + ledger/reconciliation report hashes; seal wave next).
 
 ### Tooling/Above-batpak wave (non-core ownership)
 
@@ -286,9 +291,10 @@ Do not call the evidence family batpak-native quality unless:
 6. Lane B1 registry substrate tests pass (`cargo test --test lane_b1_registry_substrate`)
 7. Lane B2 backup envelope substrate tests pass (`cargo test --test lane_b2_backup_envelope_substrate`)
 8. Lane B3 transition substrate tests pass (`cargo test --test lane_b3_transition_substrate`)
-9. real-store/reopen tests pass where applicable
-10. bench compile passes if benches were added
-11. `cargo xtask structural` passes (includes `HARNESS_LEDGER.md` lint)
-12. doctrine-bearing tests and `HARNESS_LEDGER.md` updated when adding invariants
-13. no forbidden downstream vocabulary appears in public API names
+9. Lane B4 reservation substrate tests pass (`cargo test --test lane_b4_reservation_substrate`)
+10. real-store/reopen tests pass where applicable
+11. bench compile passes if benches were added
+12. `cargo xtask structural` passes (includes `HARNESS_LEDGER.md` lint)
+13. doctrine-bearing tests and `HARNESS_LEDGER.md` updated when adding invariants
+14. no forbidden downstream vocabulary appears in public API names
 
