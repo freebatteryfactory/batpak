@@ -47,9 +47,10 @@
 //! 1. [`coordinate`]: Identify entities and scopes
 //! 2. [`event`]: Structure your events
 //! 3. [`artifact`]: Canonical body-vs-envelope digests for signed attachments
-//! 4. [`guard`]: Build policy gates
-//! 5. [`pipeline`]: Propose and commit
-//! 6. [`store`]: Persist and query
+//! 4. [`registry`]: Attested immutable rows (lifecycle, supersession, drift, verification)
+//! 5. [`guard`]: Build policy gates
+//! 6. [`pipeline`]: Propose and commit
+//! 7. [`store`]: Persist and query
 
 /// Crate-level substrate: canonical artifact body digest vs envelope digest.
 pub mod artifact;
@@ -70,6 +71,8 @@ pub mod outcome;
 pub mod pipeline;
 /// Common re-exports for convenient use.
 pub mod prelude;
+/// Crate-level substrate: generic signed registry rows composing artifact envelopes.
+pub mod registry;
 /// Deterministic schema/fixture snapshot drift evidence.
 pub mod schema;
 /// Persistent event storage and querying.
