@@ -13,6 +13,11 @@ use std::fmt::Display;
 use std::hint::black_box;
 use tempfile::TempDir;
 
+struct TopologyCase {
+    label: &'static str,
+    topology: IndexTopology,
+}
+
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 struct BenchProjection {
     count: u64,
@@ -39,12 +44,20 @@ impl EventSourced for BenchProjection {
 }
 
 fn build_store(count: u32) -> (Store, TempDir, Coordinate, EventKind, u128) {
+    build_store_with_topology(count, IndexTopology::default())
+}
+
+fn build_store_with_topology(
+    count: u32,
+    topology: IndexTopology,
+) -> (Store, TempDir, Coordinate, EventKind, u128) {
     let dir = must(TempDir::new(), "create temp dir");
     let store = must(
         Store::open(
             StoreConfig::new(dir.path())
                 .with_sync_every_n_events(100_000)
-                .with_segment_max_bytes(1 << 20),
+                .with_segment_max_bytes(1 << 20)
+                .with_index_topology(topology),
         ),
         "open bench store",
     );
@@ -62,6 +75,35 @@ fn build_store(count: u32) -> (Store, TempDir, Coordinate, EventKind, u128) {
         .event_id;
     }
     (store, dir, coord, kind, last)
+}
+
+fn topology_cases() -> [TopologyCase; 6] {
+    [
+        TopologyCase {
+            label: "aos",
+            topology: IndexTopology::aos(),
+        },
+        TopologyCase {
+            label: "scan",
+            topology: IndexTopology::scan(),
+        },
+        TopologyCase {
+            label: "entity-local",
+            topology: IndexTopology::entity_local(),
+        },
+        TopologyCase {
+            label: "tiled",
+            topology: IndexTopology::tiled(),
+        },
+        TopologyCase {
+            label: "tiled-simd",
+            topology: IndexTopology::tiled_simd(),
+        },
+        TopologyCase {
+            label: "all",
+            topology: IndexTopology::all(),
+        },
+    ]
 }
 
 fn must<T, E>(result: Result<T, E>, context: &str) -> T
@@ -121,44 +163,58 @@ fn bench_chain_walk(c: &mut Criterion) {
 fn bench_read_walk(c: &mut Criterion) {
     let mut group = c.benchmark_group("evidence/read_walk");
     apply_profile(&mut group, BenchProfile::Quick);
-    let (store, data_dir_guard, coord, kind, last_event_id) = build_store(1000);
-    assert!(data_dir_guard.path().exists());
-    black_box(last_event_id);
-    let mut req = ReadWalkRequest::full(
-        Region::scope(coord.scope()).with_fact(batpak::coordinate::KindFilter::Exact(kind)),
-    );
-    req.include_proof_refs = true;
-    group.bench_function("query_with_report", |b| {
-        b.iter(|| {
-            black_box(must(
-                store.query_with_read_walk_evidence(&req),
-                "build read walk evidence",
-            ))
-        });
-    });
-    must(store.close(), "close read walk bench store");
+    for case in topology_cases() {
+        let (store, data_dir_guard, coord, kind, last_event_id) =
+            build_store_with_topology(1000, case.topology);
+        assert!(data_dir_guard.path().exists());
+        black_box(last_event_id);
+        let mut req = ReadWalkRequest::full(
+            Region::scope(coord.scope()).with_fact(batpak::coordinate::KindFilter::Exact(kind)),
+        );
+        req.include_proof_refs = true;
+        group.bench_with_input(
+            BenchmarkId::new("query_with_report", case.label),
+            case.label,
+            |b, _| {
+                b.iter(|| {
+                    black_box(must(
+                        store.query_with_read_walk_evidence(&req),
+                        "build read walk evidence",
+                    ))
+                });
+            },
+        );
+        must(store.close(), "close read walk bench store");
+    }
     group.finish();
 }
 
 fn bench_projection_run(c: &mut Criterion) {
     let mut group = c.benchmark_group("evidence/projection_run");
     apply_profile(&mut group, BenchProfile::Quick);
-    let (store, data_dir_guard, coord, kind, last_event_id) = build_store(250);
-    assert!(data_dir_guard.path().exists());
-    black_box(kind);
-    black_box(last_event_id);
-    group.bench_function("project_run_evidence", |b| {
-        b.iter(|| {
-            black_box(must(
-                store.project_run_evidence::<BenchProjection>(
-                    coord.entity(),
-                    &Freshness::Consistent,
-                ),
-                "build projection run evidence",
-            ))
-        });
-    });
-    must(store.close(), "close projection bench store");
+    for case in topology_cases() {
+        let (store, data_dir_guard, coord, kind, last_event_id) =
+            build_store_with_topology(250, case.topology);
+        assert!(data_dir_guard.path().exists());
+        black_box(kind);
+        black_box(last_event_id);
+        group.bench_with_input(
+            BenchmarkId::new("project_run_evidence", case.label),
+            case.label,
+            |b, _| {
+                b.iter(|| {
+                    black_box(must(
+                        store.project_run_evidence::<BenchProjection>(
+                            coord.entity(),
+                            &Freshness::Consistent,
+                        ),
+                        "build projection run evidence",
+                    ))
+                });
+            },
+        );
+        must(store.close(), "close projection bench store");
+    }
     group.finish();
 }
 

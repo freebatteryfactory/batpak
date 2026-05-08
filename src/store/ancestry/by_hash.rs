@@ -35,10 +35,7 @@ pub(crate) fn walk_ancestors_by_hash<State>(
         let next = if prev == [0_u8; 32] {
             None
         } else {
-            entity_stream
-                .iter()
-                .find(|candidate| candidate.hash_chain.event_hash == prev)
-                .map(|candidate| candidate.event_id)
+            super::parent_event_id_by_hash(&entity_stream, prev)
         };
         Some((stored, next))
     })

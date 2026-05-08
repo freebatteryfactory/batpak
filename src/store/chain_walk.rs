@@ -3,7 +3,7 @@
 //! This surface reports linear chain continuity findings without inferring
 //! downstream semantics.
 
-use crate::store::{IndexEntry, Store};
+use crate::store::Store;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -299,8 +299,10 @@ impl<State> Store<State> {
             }
 
             pending_parent_hash_for_limit = Some(entry.hash_chain.prev_hash);
-            let Some(parent_id) = find_parent_event_id(&entity_stream, entry.hash_chain.prev_hash)
-            else {
+            let Some(parent_id) = crate::store::ancestry::parent_event_id_by_hash(
+                &entity_stream,
+                entry.hash_chain.prev_hash,
+            ) else {
                 findings.push(ChainWalkFinding::MissingParentLink {
                     child_event_id: current_id,
                     expected_parent_hash: entry.hash_chain.prev_hash,
@@ -343,13 +345,6 @@ impl<State> Store<State> {
 
         build_report(request.mode, &checked, findings)
     }
-}
-
-fn find_parent_event_id(entity_stream: &[IndexEntry], parent_hash: ChainWalkHash) -> Option<u128> {
-    entity_stream
-        .iter()
-        .find(|candidate| candidate.hash_chain.event_hash == parent_hash)
-        .map(|candidate| candidate.event_id)
 }
 
 fn build_report(
