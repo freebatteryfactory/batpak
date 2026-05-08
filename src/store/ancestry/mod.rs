@@ -54,6 +54,16 @@ pub(super) fn read_entry_and_event<State>(
     Some((entry, stored))
 }
 
+pub(crate) fn parent_event_id_by_hash(
+    entity_stream: &[IndexEntry],
+    parent_hash: [u8; 32],
+) -> Option<u128> {
+    entity_stream
+        .iter()
+        .find(|candidate| candidate.hash_chain.event_hash == parent_hash)
+        .map(|candidate| candidate.event_id)
+}
+
 #[cfg(not(feature = "blake3"))]
 pub(super) fn clock_cursor<State>(
     store: &Store<State>,

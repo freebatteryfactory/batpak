@@ -1,5 +1,3 @@
-// justifies: INV-TEST-PANIC-AS-ASSERTION; platform backend integration tests use panic/expect assertion style to prove fail-closed open behavior and diagnostics without hiding errors.
-#![allow(clippy::panic, clippy::unwrap_used)]
 //! Store platform backend surface.
 //! Harness pattern: State-Machine Harness (profile/admission/open failure lane).
 //!
@@ -19,25 +17,27 @@ use batpak::store::{
     PlatformEvidenceSummary, Store, StoreConfig, StoreDiagnostics, StoreError,
     StoreLockAdmissionSummary, StorePathEvidenceSummary, StorePathStatusEvidence,
 };
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
-fn test_store() -> (Store, TempDir) {
-    let dir = TempDir::new().expect("temp dir");
+type TestResult = Result<(), Box<dyn Error>>;
+
+fn test_store() -> Result<(Store, TempDir), Box<dyn Error>> {
+    let dir = TempDir::new()?;
     let store = Store::open(
         StoreConfig::new(dir.path())
             .with_segment_max_bytes(4096)
             .with_sync_every_n_events(1),
-    )
-    .expect("open store");
-    (store, dir)
+    )?;
+    Ok((store, dir))
 }
 
 #[test]
-fn diagnostics_reports_config() {
-    let (store, dir) = test_store();
+fn diagnostics_reports_config() -> TestResult {
+    let (store, dir) = test_store()?;
     let diag: StoreDiagnostics = store.diagnostics();
-    let expected_data_dir = std::fs::canonicalize(dir.path()).expect("canonical temp dir");
+    let expected_data_dir = std::fs::canonicalize(dir.path())?;
 
     assert_eq!(diag.data_dir, expected_data_dir);
     assert_eq!(diag.segment_max_bytes, 4096);
@@ -110,21 +110,26 @@ fn diagnostics_reports_config() {
         );
     }
 
-    store.close().expect("close");
+    store.close()?;
+    Ok(())
 }
 
 #[test]
-fn platform_profile_invalid_fails_before_open_completed() {
-    let dir = TempDir::new().expect("temp dir");
+fn platform_profile_invalid_fails_before_open_completed() -> TestResult {
+    let dir = TempDir::new()?;
     let profile_path = dir.path().join("bad-platform-profile.json");
-    std::fs::write(&profile_path, b"{not json").expect("write bad profile");
+    std::fs::write(&profile_path, b"{not json")?;
 
     let err = match Store::open(
         StoreConfig::new(dir.path())
             .with_segment_max_bytes(4096)
             .with_platform_profile_path(profile_path.clone()),
     ) {
-        Ok(_) => panic!("PROPERTY: invalid platform profile must fail open"),
+        Ok(_) => {
+            return Err(
+                std::io::Error::other("PROPERTY: invalid platform profile must fail open").into(),
+            );
+        }
         Err(error) => error,
     };
     assert!(
@@ -138,11 +143,12 @@ fn platform_profile_invalid_fails_before_open_completed() {
         !dir.path().join("000000.fbat").exists(),
         "profile reverify must fail before writer spawn or lifecycle append"
     );
+    Ok(())
 }
 
 #[test]
-fn missing_platform_profile_reports_profile_invalid() {
-    let dir = TempDir::new().expect("temp dir");
+fn missing_platform_profile_reports_profile_invalid() -> TestResult {
+    let dir = TempDir::new()?;
     let profile_path = dir.path().join("missing-platform-profile.json");
 
     let err = match Store::open(
@@ -150,7 +156,11 @@ fn missing_platform_profile_reports_profile_invalid() {
             .with_segment_max_bytes(4096)
             .with_platform_profile_path(profile_path.clone()),
     ) {
-        Ok(_) => panic!("PROPERTY: missing platform profile must fail open"),
+        Ok(_) => {
+            return Err(
+                std::io::Error::other("PROPERTY: missing platform profile must fail open").into(),
+            );
+        }
         Err(error) => error,
     };
     assert!(
@@ -160,11 +170,12 @@ fn missing_platform_profile_reports_profile_invalid() {
         ),
         "expected PlatformProfileInvalid for missing configured profile, got {err:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn impossible_path_mmap_profile_reports_profile_invalid() {
-    let dir = TempDir::new().expect("temp dir");
+fn impossible_path_mmap_profile_reports_profile_invalid() -> TestResult {
+    let dir = TempDir::new()?;
     let profile_path = dir.path().join("impossible-platform-profile.json");
     let body = concat!(
         r#"{"schema_version":1,"#,
@@ -179,14 +190,19 @@ fn impossible_path_mmap_profile_reports_profile_invalid() {
         r#","fingerprint_crc32":"#,
         fingerprint
     ) + "}";
-    std::fs::write(&profile_path, profile).expect("write impossible profile");
+    std::fs::write(&profile_path, profile)?;
 
     let err = match Store::open(
         StoreConfig::new(dir.path())
             .with_segment_max_bytes(4096)
             .with_platform_profile_path(profile_path.clone()),
     ) {
-        Ok(_) => panic!("PROPERTY: impossible path/mmap profile must fail open"),
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY: impossible path/mmap profile must fail open",
+            )
+            .into());
+        }
         Err(error) => error,
     };
     assert!(
@@ -196,11 +212,12 @@ fn impossible_path_mmap_profile_reports_profile_invalid() {
         ),
         "expected PlatformProfileInvalid for impossible path/mmap profile, got {err:?}"
     );
+    Ok(())
 }
 
 #[test]
-fn mmap_unavailable_profile_fails_reverify_before_open() {
-    let dir = TempDir::new().expect("temp dir");
+fn mmap_unavailable_profile_fails_reverify_before_open() -> TestResult {
+    let dir = TempDir::new()?;
     let profile_path = std::path::PathBuf::from("tests/fixtures/platform/mmap_unavailable.profile");
 
     let err = match Store::open(
@@ -208,7 +225,12 @@ fn mmap_unavailable_profile_fails_reverify_before_open() {
             .with_segment_max_bytes(4096)
             .with_platform_profile_path(profile_path.clone()),
     ) {
-        Ok(_) => panic!("PROPERTY: mmap-unavailable platform profile must fail current open"),
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY: mmap-unavailable platform profile must fail current open",
+            )
+            .into());
+        }
         Err(error) => error,
     };
     assert!(
@@ -222,11 +244,12 @@ fn mmap_unavailable_profile_fails_reverify_before_open() {
         !dir.path().join("000000.fbat").exists(),
         "mmap profile mismatch must fail before writer spawn or lifecycle append"
     );
+    Ok(())
 }
 
 #[test]
-fn without_platform_profile_path_clears_reverify_requirement() {
-    let dir = TempDir::new().expect("temp dir");
+fn without_platform_profile_path_clears_reverify_requirement() -> TestResult {
+    let dir = TempDir::new()?;
     let missing_profile = dir.path().join("missing-platform-profile.json");
 
     let store = Store::open(
@@ -234,14 +257,14 @@ fn without_platform_profile_path_clears_reverify_requirement() {
             .with_segment_max_bytes(4096)
             .with_platform_profile_path(missing_profile)
             .without_platform_profile_path(),
-    )
-    .expect("cleared platform profile path should not run reverify");
-    store.close().expect("close");
+    )?;
+    store.close()?;
+    Ok(())
 }
 
 #[test]
-fn platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle() {
-    let dir = TempDir::new().expect("temp dir");
+fn platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle() -> TestResult {
+    let dir = TempDir::new()?;
     #[cfg(unix)]
     let valid_profile = std::path::PathBuf::from("tests/fixtures/platform/linux_basic.profile");
     #[cfg(not(unix))]
@@ -251,11 +274,10 @@ fn platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle() {
         StoreConfig::new(dir.path())
             .with_segment_max_bytes(4096)
             .with_platform_profile_path(valid_profile),
-    )
-    .expect("valid platform profile should admit open");
-    store.close().expect("close");
+    )?;
+    store.close()?;
 
-    let mismatch_dir = TempDir::new().expect("temp dir");
+    let mismatch_dir = TempDir::new()?;
     #[cfg(unix)]
     let mismatch_profile =
         std::path::PathBuf::from("tests/fixtures/platform/profile_mismatch.profile");
@@ -265,10 +287,9 @@ fn platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle() {
     let observer: OpenReportObserver = {
         let observed_reports = Arc::clone(&observed_reports);
         Arc::new(move |report: &OpenIndexReport| {
-            observed_reports
-                .lock()
-                .expect("open report observer lock")
-                .push(report.clone());
+            if let Ok(mut reports) = observed_reports.lock() {
+                reports.push(report.clone());
+            }
         })
     };
     let err = match Store::open(
@@ -277,7 +298,12 @@ fn platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle() {
             .with_open_report_observer(Some(observer))
             .with_platform_profile_path(mismatch_profile.clone()),
     ) {
-        Ok(_) => panic!("PROPERTY: mismatched platform profile must fail open"),
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY: mismatched platform profile must fail open",
+            )
+            .into());
+        }
         Err(error) => error,
     };
     assert!(
@@ -294,8 +320,9 @@ fn platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle() {
     assert!(
         observed_reports
             .lock()
-            .expect("observed reports lock")
+            .map_err(|_| std::io::Error::other("observed reports lock poisoned"))?
             .is_empty(),
         "profile mismatch must fail before successful-open report observability"
     );
+    Ok(())
 }
