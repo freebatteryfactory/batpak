@@ -1,5 +1,6 @@
 mod ancestry;
 mod append;
+mod backup_envelope;
 mod chain_walk;
 pub(crate) mod cold_start;
 mod compaction_report;
@@ -46,6 +47,15 @@ pub use append::{
     AppendOptions, AppendPositionHint, AppendReceipt, BatchAppendItem, CausationRef,
     CompactionConfig, CompactionStrategy, DenialReceipt, EncodedBytes, ExtensionKey,
     ExtensionKeyError, RetentionPredicate,
+};
+pub use backup_envelope::{
+    audit_backup_manifest_segments, backup_manifest_body_bytes, backup_manifest_body_hash,
+    normalize_backup_manifest_body, restore_proof_report_body, restore_proof_report_body_hash,
+    sort_backup_segment_refs, verify_backup_manifest_envelope,
+    verify_backup_manifest_signatures_only, BackupEnvelope, BackupEnvelopeFinding,
+    BackupManifestBody, BackupManifestEnvelope, BackupManifestVerification, BackupSegmentRef,
+    RestoreProofEvidenceReport, RestoreProofReportBody, SegmentBytesDigest,
+    BACKUP_MANIFEST_BODY_SCHEMA_VERSION, RESTORE_PROOF_REPORT_SCHEMA_VERSION,
 };
 pub use chain_walk::{
     ChainWalkEvidenceReport, ChainWalkFinding, ChainWalkHash, ChainWalkMode, ChainWalkReportBody,

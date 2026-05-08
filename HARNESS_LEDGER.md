@@ -572,6 +572,26 @@ instead of pretending.
   - full graph-theoretic SCC classification for supersession is not exposed; only deterministic
     structural findings used by callers today.
 
+### Invariant: Lane B2 backup envelope — manifest body hash, segment sort, restore proof, attested envelope
+
+- Harness pattern: `Property Harness`
+- Location:
+  - `tests/lane_b2_backup_envelope_substrate.rs`
+  - `src/store/backup_envelope.rs`
+- Command used:
+  - `cargo test --test lane_b2_backup_envelope_substrate`
+- Line/function coverage delta: unmeasured
+- Mutation delta: unmeasured
+- Covered tests:
+  - segment permutation invariance for `backup_manifest_body_hash`; digest change moves hash;
+    normalized manifest body aligns with `artifact_body_hash_from_body`; restore proof stable under
+    observed permutation and finding-order canonicalization for `restore_proof_report_body_hash`;
+    missing / unexpected / digest-mismatch segments; duplicate and inconsistent `segment_id` rows;
+    `verify_backup_manifest_envelope` with `ManifestBodyHashMismatch`; envelope-only metadata changes
+    `envelope_hash` without changing manifest body hash; MessagePack disk round-trip preserves hash.
+- Remaining known blind spots:
+  - restore proof does not execute a real store open; it compares digest maps only.
+
 ## State-Machine Harness
 
 ### Invariant: Bounded schedules preserve concurrency protocol truth
