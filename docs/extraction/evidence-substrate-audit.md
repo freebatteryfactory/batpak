@@ -196,6 +196,11 @@ is architectural closure status, not a CI pass result.
 
 ### Matrix changelog
 
+- **Matrix v4 (2026-05-08): Lane B1 — `batpak::registry` ships attested row bodies
+  (`row_hash` with sorted `named_digests`), drift and verification reports with
+  `schema_version` + sorted findings, supersession hygiene helpers, and
+  composition with `CanonicalArtifactEnvelope` on normalized signing bytes;
+  proof in `tests/lane_b1_registry_substrate.rs`.**
 - **Matrix v3: Lane A kickoff — Evidence v1 sealed; evidence-debt-zero closed;
   Lane A primitives are CanonicalArtifactEnvelope, CompactionReport,
   IdempotencyLedger prove-or-build, RegionBoundQuery prove-or-build.**
@@ -228,7 +233,7 @@ is architectural closure status, not a CI pass result.
 | CompactionReport (`CompactionReportBody`, `Store::compact_with_report`) | structural report: `compaction_id`, sorted source segment ids, bounds, output segment byte hash when performed, findings | `tests/lane_a_store_substrate.rs` (incl. performed merge); lifecycle in `src/store/lifecycle.rs`; snapshot/compaction races in `tests/store_snapshot_compaction.rs` | cite compaction report vs ad-hoc merge prose | implement in batpak core | lane-a-core-primitives | **v1 shipped** — extend fields only via `schema_version` + deterministic ordering rules |
 | IdempotencyLedger (prove-or-build) | key = provisional **event id**; single + batch replay via writer/index; TTL **out of scope** | `tests/lane_a_store_substrate.rs`; `tests/idempotent_batch_crash_recovery.rs` | no separate ledger type unless new invariants demand it | reject / not needed | lane-a-core-primitives | prove path complete; redundant ledger would duplicate index facts unless new semantics (e.g. expiry) gain an owner |
 | RegionBoundQuery (prove-or-build) | public APIs require `Region` / entity / scope / kind / `cursor_guaranteed(&Region)` | `tests/lane_a_store_substrate.rs`; topology parity elsewhere | cite explicit bounds instead of a packaged query value | reject / not needed | lane-a-core-primitives | prove path complete unless cross-cutting evidence needs a nominal `RegionBoundQuery` struct |
-| AttestedRegistry mechanics | no core immutable-row attestation primitive yet | no dedicated tests yet | move generic row attestation mechanics down; keep mapping semantics above | implement in batpak core | lane-b-attested-registry | depends on `batpak::artifact` framing |
+| AttestedRegistry mechanics (`batpak::registry`) | `RegistryRowBody` + `row_hash`; `CanonicalArtifactEnvelope<RegistryRowBody>` verify path; drift + verification reports with `body_hash`; supersession/dup/cycle findings | `tests/lane_b1_registry_substrate.rs` | cite `batpak::registry` for signed-row / lifecycle / supersession substrate | implement in batpak core | lane-b-backup-envelope | **B1 v1 shipped** — extend only with `schema_version` bumps + deterministic ordering rules |
 | BackupEnvelope | backup/restore flows exist without envelope object | cold-start/rebuild tests exist; no backup envelope proof type | replace custom restore manifest prose with stable substrate envelope | implement in batpak core | lane-b-backup | depends on `batpak::artifact` and compaction provenance shape |
 | StateTransition report/event | no generic state transition primitive | lifecycle and outcome tests exist; no generic transition report | collapse repeated generic transition narratives into one type | implement in batpak core | lane-b-state-transition | strict generic boundary required; workflow semantics stay above batpak |
 | Reservation ledger | no generic reserve/commit/refund primitive | no dedicated coverage | provide generic reservation accounting substrate if truly cross-consumer | implement in batpak core | lane-b-reservation-ledger | must prove genericity without domain nouns |
@@ -247,12 +252,12 @@ is architectural closure status, not a CI pass result.
 - **A3:** Idempotency ledger — **reject / not needed** (append + batch replay proof); **TTL out of scope**.
 - **A4:** Region-bound query — **reject / not needed** (explicit `Region` / predicate APIs); no nominal helper type.
 
-### Lane B (needs stronger shared substrate first)
+### Lane B — attested substrate mechanics
 
-- `AttestedRegistry`
-- `StateTransitionReport`
-- `ReservationLedger`
-- `BackupEnvelope`
+- **B1 `AttestedRegistry` / `batpak::registry` — landed** (signed immutable rows, drift, verification, supersession helpers).
+- **B2 `BackupEnvelope` — next** (manifest + segment digests + restore proof).
+- **B3 `StateTransition` report/event — planned.**
+- **B4 `ReservationLedger` — planned.**
 
 ### Tooling/Above-batpak wave (non-core ownership)
 
@@ -270,9 +275,10 @@ Do not call the evidence family batpak-native quality unless:
 3. docs pass
 4. evidence-family invariant tests pass
 5. Lane A substrate tests pass (`cargo test --test lane_a_artifact_substrate`; `cargo test --test lane_a_store_substrate`)
-6. real-store/reopen tests pass where applicable
-7. bench compile passes if benches were added
-8. `cargo xtask structural` passes (includes `HARNESS_LEDGER.md` lint)
-9. doctrine-bearing tests and `HARNESS_LEDGER.md` updated when adding invariants
-10. no forbidden downstream vocabulary appears in public API names
+6. Lane B1 registry substrate tests pass (`cargo test --test lane_b1_registry_substrate`)
+7. real-store/reopen tests pass where applicable
+8. bench compile passes if benches were added
+9. `cargo xtask structural` passes (includes `HARNESS_LEDGER.md` lint)
+10. doctrine-bearing tests and `HARNESS_LEDGER.md` updated when adding invariants
+11. no forbidden downstream vocabulary appears in public API names
 

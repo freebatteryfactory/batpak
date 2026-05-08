@@ -552,6 +552,26 @@ instead of pretending.
   - deep cryptographic signature verification is intentionally out of scope;
     tests use structural echo verifiers only.
 
+### Invariant: Lane B1 attested registry — canonical row body, envelope composition, drift, verification, supersession
+
+- Harness pattern: `Property Harness`
+- Location:
+  - `tests/lane_b1_registry_substrate.rs`
+  - `src/registry.rs`
+- Command used:
+  - `cargo test --test lane_b1_registry_substrate`
+- Line/function coverage delta: unmeasured
+- Mutation delta: unmeasured
+- Covered tests:
+  - `named_digests` permutation invariance for `registry_row_body_hash`; normalized row bytes align
+    with `artifact_body_hash_from_body` / signing bytes; drift report `body_hash` sorts findings;
+    `verify_registry_attested_row` composes `CanonicalArtifactEnvelope` with normalized verify plane;
+    lifecycle / row-id / row-hash mismatch findings; supersession dangling target, removed row with
+    `supersedes`, simple cycle, and duplicate `row_id` in sorted catalog inputs.
+- Remaining known blind spots:
+  - full graph-theoretic SCC classification for supersession is not exposed; only deterministic
+    structural findings used by callers today.
+
 ## State-Machine Harness
 
 ### Invariant: Bounded schedules preserve concurrency protocol truth
