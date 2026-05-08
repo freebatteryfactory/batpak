@@ -612,6 +612,26 @@ instead of pretending.
 - Remaining known blind spots:
   - allowed-edge membership is a flat sorted list only (no labeled edge families or weights).
 
+### Invariant: Lane B4 reservation ledger — structural lanes, invalid transitions, reconciliation buckets, body hashes
+
+- Harness pattern: `Property Harness`
+- Location:
+  - `tests/lane_b4_reservation_substrate.rs`
+  - `src/reservation.rs`
+- Command used:
+  - `cargo test --test lane_b4_reservation_substrate`
+- Line/function coverage delta: unmeasured
+- Mutation delta: unmeasured
+- Covered tests:
+  - reserve→commit / reserve→refund / reserve→expire happy paths; double-commit and refund-after-commit
+    structural findings; duplicate reserve and invalid reserve units; commit without prior reserve;
+    expire/refund/orphan without reserve; deterministic orphan + reconciliation report hashes; transition
+    list permutation invariance after normalization; `cause_refs` sort stabilizes transition log digest;
+    subject key sort normalizes subject bytes; ledger `body_hash` independent of finding vector order;
+    `ReservationReconciliationReport` alias + schema constants exercised.
+- Remaining known blind spots:
+  - simulation is pure transition replay over an in-memory map; no store append or cross-session recovery.
+
 ## State-Machine Harness
 
 ### Invariant: Bounded schedules preserve concurrency protocol truth

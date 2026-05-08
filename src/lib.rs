@@ -49,9 +49,10 @@
 //! 3. [`artifact`]: Canonical body-vs-envelope digests for signed attachments
 //! 4. [`registry`]: Attested immutable rows (lifecycle, supersession, drift, verification)
 //! 5. [`transition`]: Generic state transition evidence (events and structural reports)
-//! 6. [`guard`]: Build policy gates
-//! 7. [`pipeline`]: Propose and commit
-//! 8. [`store`]: Persist and query
+//! 6. [`reservation`]: Generic reservation ledger (reserve/commit/refund/expire/orphan)
+//! 7. [`guard`]: Build policy gates
+//! 8. [`pipeline`]: Propose and commit
+//! 9. [`store`]: Persist and query
 
 /// Crate-level substrate: canonical artifact body digest vs envelope digest.
 pub mod artifact;
@@ -74,6 +75,8 @@ pub mod pipeline;
 pub mod prelude;
 /// Crate-level substrate: generic signed registry rows composing artifact envelopes.
 pub mod registry;
+/// Crate-level substrate: generic reservation ledger mechanics.
+pub mod reservation;
 /// Deterministic schema/fixture snapshot drift evidence.
 pub mod schema;
 /// Persistent event storage and querying.
