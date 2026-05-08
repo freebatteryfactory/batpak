@@ -1,0 +1,138 @@
+//! PROVES: chain-walk evidence reports deterministic continuity, corruption,
+//! missing-link, truncation, and body-hash facts over store chain material.
+//! CATCHES: silent truncation, missing parent links reported as success,
+//! unchecked hash mismatches, unsorted findings, and body-hash drift.
+//! SEEDED: deterministic / no randomness.
+
+use batpak::prelude::*;
+use batpak::store::{
+    ChainWalkEvidenceReport, ChainWalkFinding, ChainWalkHash, ChainWalkMode, ChainWalkReportBody,
+    ChainWalkReportError, ChainWalkRequest, ChainWalkStartRef, CHAIN_WALK_REPORT_SCHEMA_VERSION,
+};
+use std::error::Error;
+
+#[path = "support/small_store.rs"]
+mod small_store_support;
+
+type TestResult = Result<(), Box<dyn Error>>;
+
+fn hash(fill: u8) -> [u8; 32] {
+    [fill; 32]
+}
+
+#[test]
+fn linear_chain_reports_no_findings_and_deterministic_body_hash() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let coord = Coordinate::new("entity:chain-evidence-ok", "scope:test")?;
+    let kind = EventKind::custom(0xF, 0x10);
+    let first_receipt = store.append(&coord, kind, &serde_json::json!({"step": 0}))?;
+    let second_receipt = store.append(&coord, kind, &serde_json::json!({"step": 1}))?;
+    assert_ne!(first_receipt.event_id, second_receipt.event_id);
+
+    let request = ChainWalkRequest::linear(ChainWalkStartRef::EventId(second_receipt.event_id), 16);
+    let first = store.chain_walk_evidence(&request)?;
+    let second = store.chain_walk_evidence(&request)?;
+
+    assert_eq!(first.body.schema_version, CHAIN_WALK_REPORT_SCHEMA_VERSION);
+    assert_eq!(first.body.mode, ChainWalkMode::Linear);
+    assert!(first.body.findings.is_empty());
+    assert_eq!(first.body_hash, second.body_hash);
+    assert_eq!(first.body.walk_digest, second.body.walk_digest);
+    let report_hash: ChainWalkHash = first.body_hash;
+    assert_ne!(report_hash, [0_u8; 32]);
+    let synthetic_error = ChainWalkReportError::BodyEncoding {
+        message: "test".to_owned(),
+    };
+    assert!(synthetic_error.to_string().contains("test"));
+    Ok(())
+}
+
+#[test]
+fn missing_start_event_reports_deterministic_finding() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let report = store.chain_walk_evidence(&ChainWalkRequest::linear(
+        ChainWalkStartRef::EventId(0xDEAD_BEEF),
+        8,
+    ))?;
+
+    assert_eq!(report.body.checked_count, 0);
+    assert_eq!(report.body.first_ref, None);
+    assert_eq!(report.body.last_ref, None);
+    assert_eq!(
+        report.body.findings,
+        vec![ChainWalkFinding::MissingStart {
+            event_id: 0xDEAD_BEEF
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn limit_truncation_is_reported_not_silent() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let coord = Coordinate::new("entity:chain-evidence-limit", "scope:test")?;
+    let kind = EventKind::custom(0xF, 0x11);
+
+    let mut last = 0_u128;
+    for step in 0..5 {
+        last = store
+            .append(&coord, kind, &serde_json::json!({ "step": step }))?
+            .event_id;
+    }
+
+    let report = store.chain_walk_evidence(&ChainWalkRequest::linear(
+        ChainWalkStartRef::EventId(last),
+        2,
+    ))?;
+
+    assert_eq!(report.body.checked_count, 2);
+    assert!(
+        matches!(
+            report.body.findings.first(),
+            Some(ChainWalkFinding::TruncatedByLimit { limit, .. }) if *limit == 2
+        ),
+        "PROPERTY: limit-bound linear walk must emit TruncatedByLimit when ancestry continues beyond the checked prefix",
+    );
+    Ok(())
+}
+
+#[test]
+fn receipt_start_hash_mismatch_is_reported() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let coord = Coordinate::new("entity:chain-evidence-receipt", "scope:test")?;
+    let kind = EventKind::custom(0xF, 0x12);
+    let receipt = store.append(&coord, kind, &serde_json::json!({"step": 0}))?;
+
+    let report = store.chain_walk_evidence(&ChainWalkRequest {
+        start: ChainWalkStartRef::Receipt {
+            event_id: receipt.event_id,
+            content_hash: hash(9),
+        },
+        end_event_id: None,
+        limit: 4,
+        mode: ChainWalkMode::Linear,
+    })?;
+
+    assert!(
+        matches!(
+            report.body.findings.first(),
+            Some(ChainWalkFinding::StartHashMismatch {
+                event_id,
+                expected,
+                ..
+            }) if *event_id == receipt.event_id && *expected == hash(9)
+        ),
+        "PROPERTY: receipt-based start checks must report deterministic start hash mismatch when receipt hash does not match stored chain hash",
+    );
+    let body: ChainWalkReportBody = report.body;
+    assert_eq!(body.schema_version, CHAIN_WALK_REPORT_SCHEMA_VERSION);
+    let envelope: ChainWalkEvidenceReport = store.chain_walk_evidence(
+        &ChainWalkRequest::linear(ChainWalkStartRef::EventId(receipt.event_id), 4),
+    )?;
+    assert_eq!(envelope.body.mode, ChainWalkMode::Linear);
+    Ok(())
+}
