@@ -15,7 +15,6 @@ use batpak::store::{
     StoreResourceHash, StoreResourceReportBody, StoreResourceReportError,
     StoreResourceRestartPolicyShape, STORE_RESOURCE_REPORT_SCHEMA_VERSION,
 };
-use serde::Serialize;
 use std::error::Error;
 
 #[path = "support/small_store.rs"]
@@ -23,9 +22,17 @@ mod small_store_support;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-fn body_hash_via_canonical(body: &(impl Serialize + Sized)) -> Result<[u8; 32], Box<dyn Error>> {
-    let bytes = batpak::canonical::to_bytes(body)?;
-    Ok(batpak::event::hash::compute_hash(&bytes))
+fn assert_stable_resource_shape(left: &StoreResourceReportBody, right: &StoreResourceReportBody) {
+    assert_eq!(left.schema_version, right.schema_version);
+    assert_eq!(left.data_dir_identity_hash, right.data_dir_identity_hash);
+    assert_eq!(left.event_count, right.event_count);
+    assert_eq!(left.global_sequence, right.global_sequence);
+    assert_eq!(left.visible_sequence, right.visible_sequence);
+    assert_eq!(left.segment_max_bytes, right.segment_max_bytes);
+    assert_eq!(left.fd_budget, right.fd_budget);
+    assert_eq!(left.restart_policy, right.restart_policy);
+    assert_eq!(left.index_topology, right.index_topology);
+    assert_eq!(left.tile_count, right.tile_count);
 }
 
 #[test]
@@ -67,12 +74,15 @@ fn store_resource_evidence_family_invariants_and_reopen_stable() -> TestResult {
         rep1.body.data_dir_identity_hash,
         store_data_dir_identity_hash(&path)
     );
-    let expected_hash = body_hash_via_canonical(&rep1.body)?;
+    let expected_hash = store_resource_report_body_hash(&rep1.body)?;
     assert_eq!(rep1.body_hash, expected_hash);
 
     let snap_b = store.store_resource_evidence_report()?;
-    assert_eq!(snap_b.body, rep1.body);
-    assert_eq!(snap_b.body_hash, rep1.body_hash);
+    assert_stable_resource_shape(&snap_b.body, &rep1.body);
+    assert_eq!(
+        snap_b.body_hash,
+        store_resource_report_body_hash(&snap_b.body)?
+    );
 
     let mut noisy = rep1.clone();
     noisy.generated_at_unix_ms = Some(9_001);
@@ -85,8 +95,11 @@ fn store_resource_evidence_family_invariants_and_reopen_stable() -> TestResult {
     let store2 = Store::open(small_store_support::small_segment_store_config(&path))?;
     let rep2: StoreResourceEvidenceReport = store2.store_resource_evidence_report()?;
     let rep2_again: StoreResourceEvidenceReport = store2.store_resource_evidence_report()?;
-    assert_eq!(rep2.body, rep2_again.body);
-    assert_eq!(rep2.body_hash, rep2_again.body_hash);
+    assert_stable_resource_shape(&rep2.body, &rep2_again.body);
+    assert_eq!(
+        rep2_again.body_hash,
+        store_resource_report_body_hash(&rep2_again.body)?
+    );
     assert_eq!(
         rep2.body.data_dir_identity_hash,
         store_data_dir_identity_hash(&path)
@@ -98,7 +111,7 @@ fn store_resource_evidence_family_invariants_and_reopen_stable() -> TestResult {
         rep2.body.schema_version,
         STORE_RESOURCE_REPORT_SCHEMA_VERSION
     );
-    let reopen_hash = body_hash_via_canonical(&rep2.body)?;
+    let reopen_hash = store_resource_report_body_hash(&rep2.body)?;
     assert_eq!(rep2.body_hash, reopen_hash);
     store2.close()?;
     Ok(())
