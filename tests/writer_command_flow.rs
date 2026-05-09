@@ -39,6 +39,17 @@ fn sync_append_with_idempotency(
     )
 }
 
+fn flow_batch_item(coord: Coordinate, key: u128, payload: &serde_json::Value) -> BatchAppendItem {
+    BatchAppendItem::new(
+        coord,
+        KIND,
+        payload,
+        AppendOptions::new().with_idempotency(key),
+        batpak::store::CausationRef::None,
+    )
+    .expect("construct writer flow batch item")
+}
+
 fn spawn_named<T>(
     name: impl Into<String>,
     f: impl FnOnce() -> T + Send + 'static,
@@ -83,22 +94,8 @@ fn mixed_append_and_batch_commands_complete_under_group_commit_drain() {
 
     barrier.wait();
     let batch = vec![
-        BatchAppendItem::new(
-            coord.clone(),
-            KIND,
-            &serde_json::json!({"n": 3}),
-            AppendOptions::new().with_idempotency(0xC3),
-            batpak::store::CausationRef::None,
-        )
-        .expect("batch item 1"),
-        BatchAppendItem::new(
-            coord.clone(),
-            KIND,
-            &serde_json::json!({"n": 4}),
-            AppendOptions::new().with_idempotency(0xD4),
-            batpak::store::CausationRef::None,
-        )
-        .expect("batch item 2"),
+        flow_batch_item(coord.clone(), 0xC3, &serde_json::json!({"n": 3})),
+        flow_batch_item(coord.clone(), 0xD4, &serde_json::json!({"n": 4})),
     ];
     let batch_receipts = store.append_batch(batch).expect("append batch");
     let receipt_a = append_a.join().expect("append a thread").expect("append a");

@@ -12,9 +12,6 @@
 //! CATCHES: typed payload public surface drift and clean-registry validator regressions.
 //! SEEDED: deterministic / no randomness.
 
-use batpak::__private::{
-    assert_no_kind_collisions, inventory, scan_for_kind_collisions, EventPayloadRegistration,
-};
 use batpak::prelude::*;
 use batpak::store::{AppendOptions, BatchAppendItem, CausationRef, Store};
 use batpak::typestate::transition::{StateMarker, Transition};
@@ -45,6 +42,26 @@ struct OtherThingHappened {
     label: String,
 }
 
+mod left_payload_module {
+    #[derive(
+        Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, batpak::EventPayload,
+    )]
+    #[batpak(category = 1, type_id = 3)]
+    pub(super) struct SharedPayloadName {
+        pub value: u64,
+    }
+}
+
+mod right_payload_module {
+    #[derive(
+        Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, batpak::EventPayload,
+    )]
+    #[batpak(category = 1, type_id = 4)]
+    pub(super) struct SharedPayloadName {
+        pub value: u64,
+    }
+}
+
 // ─── typestate helpers (minimal) ─────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
@@ -70,7 +87,7 @@ fn coord() -> Coordinate {
 #[test]
 fn derive_private_registry_surface_is_available_to_test_binaries() {
     let mut seen = Vec::new();
-    for item in inventory::iter::<EventPayloadRegistration> {
+    for item in batpak::__private::inventory::iter::<batpak::__private::EventPayloadRegistration> {
         seen.push((item.kind_bits, item.type_name));
     }
 
@@ -86,8 +103,28 @@ fn derive_private_registry_surface_is_available_to_test_binaries() {
 
     // With the two payloads in this file using distinct kind bits, the
     // shared collision scanner must be callable and must not panic.
-    scan_for_kind_collisions();
-    assert_no_kind_collisions();
+    batpak::__private::scan_for_kind_collisions();
+    batpak::__private::assert_no_kind_collisions();
+}
+
+#[test]
+fn derive_registry_type_names_are_fully_qualified() {
+    let expected_left = std::any::type_name::<left_payload_module::SharedPayloadName>();
+    let expected_right = std::any::type_name::<right_payload_module::SharedPayloadName>();
+
+    let seen = batpak::__private::inventory::iter::<batpak::__private::EventPayloadRegistration>
+        .into_iter()
+        .map(|item| item.type_name)
+        .collect::<Vec<_>>();
+
+    assert!(
+        seen.contains(&expected_left),
+        "PROPERTY: registry type names must match std::any::type_name for module-qualified payloads, missing {expected_left}; got {seen:?}"
+    );
+    assert!(
+        seen.contains(&expected_right),
+        "PROPERTY: registry type names must distinguish same-ident payloads in different modules, missing {expected_right}; got {seen:?}"
+    );
 }
 
 // ─── append_typed ─────────────────────────────────────────────────────────────

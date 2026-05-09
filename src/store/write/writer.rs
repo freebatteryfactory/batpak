@@ -245,8 +245,8 @@ impl WatermarkState {
         self.advance_emitted(point);
     }
 
-    pub(crate) fn advance_applied(&mut self, point: HlcPoint) {
-        self.applied_hlc = self.applied_hlc.max(point);
+    pub(crate) fn set_applied(&mut self, point: HlcPoint) {
+        self.applied_hlc = point;
     }
 
     pub(crate) fn snapshot(&self) -> WatermarkSnapshot {
@@ -487,6 +487,16 @@ impl WriterHandle {
         {
             self.watermark_handle.mark_writer_crashed();
             return Err(StoreError::WriterCrashed);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn join(&mut self) -> Result<(), StoreError> {
+        if let Some(thread) = self.thread.take() {
+            thread.join().map_err(|_| {
+                self.watermark_handle.mark_writer_crashed();
+                StoreError::WriterCrashed
+            })?;
         }
         Ok(())
     }

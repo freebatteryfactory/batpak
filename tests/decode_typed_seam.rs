@@ -52,6 +52,8 @@ fn msgpack_event(kind: EventKind, bytes: Vec<u8>) -> Event<Vec<u8>> {
     Event::new(make_header(2, kind, size), bytes)
 }
 
+fn assert_decode_typed_lane<T: DecodeTyped + ?Sized>(_event: &T) {}
+
 // ─── JSON lane ────────────────────────────────────────────────────────────────
 
 mod json_lane {
@@ -60,6 +62,7 @@ mod json_lane {
     #[test]
     fn route_typed_match_decode_ok() {
         let event = json_event(Alpha::KIND, serde_json::json!({ "value": 42 }));
+        assert_decode_typed_lane(&event);
         let routed: Option<Alpha> = event.route_typed().expect("route_typed");
         assert_eq!(routed, Some(Alpha { value: 42 }));
     }

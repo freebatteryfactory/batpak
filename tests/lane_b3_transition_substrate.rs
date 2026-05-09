@@ -137,6 +137,27 @@ fn transition_unsorted_causes_and_edges_findings() {
 }
 
 #[test]
+fn transition_unsupported_event_schema_version_is_a_finding() {
+    let mut ev = sample_event(0, 1);
+    ev.schema_version = STATE_TRANSITION_EVENT_SCHEMA_VERSION + 1;
+    ev.causes.sort();
+    let edges = [(0u64, 1u64)];
+
+    let report = build_state_transition_report(&ev, &edges).expect("report");
+
+    assert!(
+        report.findings.iter().any(|finding| matches!(
+            finding,
+            StateTransitionFinding::UnsupportedEventSchemaVersion { observed, expected }
+                if *observed == STATE_TRANSITION_EVENT_SCHEMA_VERSION + 1
+                    && *expected == STATE_TRANSITION_EVENT_SCHEMA_VERSION
+        )),
+        "{:?}",
+        report.findings
+    );
+}
+
+#[test]
 fn transition_report_body_hash_sorts_findings() {
     let ev = sample_event(0, 1);
     let mut c = ev.causes.clone();

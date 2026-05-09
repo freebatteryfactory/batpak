@@ -1104,14 +1104,12 @@ fn outcome_error_with_compensation() {
 /// [FILE:src/outcome/mod.rs — flatten]
 #[test]
 fn join_all_and_flatten_accept_non_clone_types() {
-    use batpak::outcome::combine::{join_all, join_any};
-
     // A type that is deliberately NOT Clone or Copy.
     struct Unique(u64);
 
     // join_all: should compile and work with non-Clone T
     let outcomes = vec![Outcome::Ok(Unique(1)), Outcome::Ok(Unique(2))];
-    let joined = join_all(outcomes);
+    let joined = batpak::outcome::combine::join_all(outcomes);
     assert!(
         matches!(&joined, Outcome::Ok(v) if v.len() == 2),
         "JOIN_ALL NON-CLONE REGRESSION: join_all should accept non-Clone types.\n\
@@ -1121,7 +1119,7 @@ fn join_all_and_flatten_accept_non_clone_types() {
 
     // join_any: already accepted non-Clone (control check)
     let outcomes2 = vec![Outcome::Ok(Unique(10)), Outcome::Ok(Unique(20))];
-    let any = join_any(outcomes2);
+    let any = batpak::outcome::combine::join_any(outcomes2);
     assert!(matches!(any, Outcome::Ok(Unique(10))));
 
     // flatten: should compile and work with non-Clone T

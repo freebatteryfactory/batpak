@@ -183,6 +183,30 @@ fn compaction_failure_emits_preswap_rollback_finding() {
 }
 
 #[test]
+fn compaction_performed_without_output_path_emits_hash_unavailable() {
+    let cfg = CompactionConfig::default();
+    let sealed: Vec<(u64, std::path::PathBuf)> = vec![(7, PathBuf::from("x"))];
+    let result = batpak::store::segment::CompactionResult {
+        outcome: CompactionOutcome::Performed,
+        segments_removed: 1,
+        bytes_reclaimed: 64,
+    };
+
+    let rep = report_for_run(&cfg, 3, &sealed, Some(99), &result, None).expect("rep");
+
+    assert_eq!(rep.output_segment_bytes_hash, None);
+    assert!(
+        rep.findings.iter().any(|finding| matches!(
+            finding,
+            CompactionReportFinding::OutputSegmentHashUnavailable { reason }
+                if reason.contains("path unavailable")
+        )),
+        "PROPERTY: performed compaction with no hashable output path must emit an explicit finding, got {:?}",
+        rep.findings
+    );
+}
+
+#[test]
 fn idempotency_keyed_batch_double_submit_returns_cached_receipts_without_reopen() {
     let (store, _dir) = lane_store();
     let coord = Coordinate::new("e-batch", "s-lane").expect("coord");

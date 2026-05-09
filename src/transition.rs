@@ -1,9 +1,10 @@
-//! Generic **state transition** evidence: opaque machine/subject identifiers, prior and successor state
-//! discriminants, transition identity, sorted cause references, optional ordering metadata, and
-//! deterministic reports with structural findings only.
+//! Batpak Substrate Closure state transition evidence: opaque machine/subject identifiers, prior
+//! and successor state discriminants, transition identity, sorted cause references, optional
+//! ordering metadata, and deterministic reports with structural findings only.
 //!
-//! This module does **not** import [`crate::store`]. It encodes no policy, scheduler, or consumer-specific
-//! lifecycle vocabulary; callers supply state `u64` lanes and optional allowed-edge sets.
+//! This module does **not** import [`crate::store`]. It encodes no policy, scheduler, or
+//! application-specific lifecycle vocabulary; callers supply state `u64` lanes and optional
+//! allowed-edge sets.
 
 use crate::evidence::content_hash;
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,13 @@ pub struct StateTransitionEvent {
 /// Structural finding for transition validation (sorted before report `body_hash`).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum StateTransitionFinding {
+    /// Event schema version is not supported by these v1 helpers.
+    UnsupportedEventSchemaVersion {
+        /// Observed event schema version.
+        observed: u32,
+        /// Supported event schema version.
+        expected: u32,
+    },
     /// `(previous_state, next_state)` is not allowed by the supplied edge set.
     InvalidTransition {
         /// Machine id copied from the event.
@@ -179,6 +187,12 @@ pub fn build_state_transition_report(
     allowed_edges: &[(u64, u64)],
 ) -> Result<StateTransitionReportBody, rmp_serde::encode::Error> {
     let mut findings = Vec::new();
+    if event.schema_version != STATE_TRANSITION_EVENT_SCHEMA_VERSION {
+        findings.push(StateTransitionFinding::UnsupportedEventSchemaVersion {
+            observed: event.schema_version,
+            expected: STATE_TRANSITION_EVENT_SCHEMA_VERSION,
+        });
+    }
     if !transition_causes_are_sorted(&event.causes) {
         findings.push(StateTransitionFinding::UnsortedCausesInSourceEvent);
     }

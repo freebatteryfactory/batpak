@@ -1,0 +1,5 @@
+error: #[derive(EventPayload)] does not support generic payload types; use a concrete named-field struct
+ --> tests/ui/ep_generic_struct.rs:7:8
+  |
+7 | struct GenericPayload<T> {
+  |        ^^^^^^^^^^^^^^

@@ -17,6 +17,8 @@ fn compile_fail_derive_errors() {
     t.compile_fail("tests/ui/ep_on_enum.rs");
     t.compile_fail("tests/ui/ep_on_tuple_struct.rs");
     t.compile_fail("tests/ui/ep_on_unit_struct.rs");
+    t.compile_fail("tests/ui/ep_generic_enum.rs");
+    t.compile_fail("tests/ui/ep_generic_struct.rs");
     t.compile_fail("tests/ui/ep_unknown_key.rs");
     t.compile_fail("tests/ui/ep_duplicate_key.rs");
     t.compile_fail("tests/ui/ep_missing_key.rs");

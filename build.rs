@@ -6,8 +6,9 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 use syn::visit::Visit;
-#[path = "tools/shared/shared_checks.rs"]
-mod shared_checks;
+mod shared_checks {
+    include!("tools/shared/shared_checks.rs");
+}
 
 /// Single documented failure path for build.rs. Every invariant violation
 /// routes through here so the panic surface is consolidated and auditable.

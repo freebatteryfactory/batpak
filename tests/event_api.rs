@@ -8,6 +8,10 @@
 use batpak::id::EntityIdType;
 use batpak::prelude::*;
 
+fn assert_entity_id_type<T: batpak::id::EntityIdType>(id: T) -> u128 {
+    id.as_u128()
+}
+
 // ================================================================
 // src/id/mod.rs — EntityIdType + EventId + define_entity_id! macro
 // ================================================================
@@ -15,6 +19,7 @@ use batpak::prelude::*;
 #[test]
 fn event_id_now_v7_is_nonzero() {
     let id = batpak::id::EventId::now_v7();
+    assert_eq!(assert_entity_id_type(id), id.as_u128());
     assert_ne!(
         id.as_u128(),
         0,
@@ -148,9 +153,9 @@ fn define_entity_id_custom_type() {
          Run: cargo test --test event_api define_entity_id_custom_type"
     );
     assert_eq!(
-        OrderId::ENTITY_NAME,
+        <OrderId as EntityIdType>::ENTITY_NAME,
         "order",
-        "PROPERTY: define_entity_id! macro must set ENTITY_NAME to the supplied string.\n\
+        "PROPERTY: define_entity_id! macro must set EntityIdType::ENTITY_NAME to the supplied string.\n\
          Investigate: src/id/mod.rs define_entity_id! macro ENTITY_NAME const.\n\
          Common causes: macro hardcoding a different literal, or const not being \
          set from the macro argument.\n\

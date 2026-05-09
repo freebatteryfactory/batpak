@@ -1,4 +1,4 @@
-//! Deterministic schema/fixture snapshot drift evidence.
+//! Deterministic Batpak Substrate Closure schema/fixture snapshot drift evidence.
 //!
 //! This module provides a small, generic report surface for comparing expected
 //! and observed schema snapshots. It reports structural drift facts; it does
@@ -79,6 +79,8 @@ pub enum SchemaChangeClass {
 pub enum SchemaSnapshotFinding {
     /// `stable_id` differs between expected and observed snapshots.
     StableIdMismatch,
+    /// `snapshot_schema_version` differs between expected and observed snapshots.
+    SnapshotSchemaVersionMismatch,
     /// `schema_hash` differs between expected and observed snapshots.
     SchemaHashMismatch,
     /// `fixture_hash` differs between expected and observed snapshots.
@@ -91,10 +93,16 @@ pub enum SchemaSnapshotFinding {
 /// metadata such as generation time may live outside this body.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchemaSnapshotReportBody {
-    /// Stable identity of the compared subject.
+    /// Stable identity of the expected compared subject.
     pub stable_id: String,
+    /// Stable identity of the observed compared subject.
+    pub observed_stable_id: String,
     /// Report-body schema version.
     pub schema_version: u16,
+    /// Snapshot schema version from the expected record.
+    pub expected_snapshot_schema_version: u16,
+    /// Snapshot schema version from the observed record.
+    pub observed_snapshot_schema_version: u16,
     /// Expected schema hash.
     pub expected_schema_hash: SnapshotHash,
     /// Observed schema hash.
@@ -164,6 +172,9 @@ pub fn compare_schema_snapshot(
     if expected.stable_id != observed.stable_id {
         findings.push(SchemaSnapshotFinding::StableIdMismatch);
     }
+    if expected.snapshot_schema_version != observed.snapshot_schema_version {
+        findings.push(SchemaSnapshotFinding::SnapshotSchemaVersionMismatch);
+    }
     if expected.schema_hash != observed.schema_hash {
         findings.push(SchemaSnapshotFinding::SchemaHashMismatch);
     }
@@ -178,15 +189,12 @@ pub fn compare_schema_snapshot(
         SchemaChangeClass::Unknown
     };
 
-    let stable_id = if expected.stable_id == observed.stable_id {
-        expected.stable_id.clone()
-    } else {
-        format!("{} -> {}", expected.stable_id, observed.stable_id)
-    };
-
     let body = SchemaSnapshotReportBody {
-        stable_id,
+        stable_id: expected.stable_id.clone(),
+        observed_stable_id: observed.stable_id.clone(),
         schema_version: SCHEMA_SNAPSHOT_REPORT_SCHEMA_VERSION,
+        expected_snapshot_schema_version: expected.snapshot_schema_version,
+        observed_snapshot_schema_version: observed.snapshot_schema_version,
         expected_schema_hash: expected.schema_hash,
         observed_schema_hash: observed.schema_hash,
         expected_fixture_hash: expected.fixture_hash,
@@ -280,6 +288,9 @@ mod tests {
             ],
             "PROPERTY: findings must be emitted in deterministic order",
         );
+        assert_eq!(report.body.stable_id, "event.user.v1");
+        assert_eq!(report.body.observed_stable_id, "event.user.v2");
+        assert!(!report.body.stable_id.contains("->"));
         Ok(())
     }
 }

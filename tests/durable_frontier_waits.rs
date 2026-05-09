@@ -404,7 +404,7 @@ fn append_without_gate_returns_immediately() {
 
 #[test]
 fn append_with_durable_gate_blocks_until_synced() {
-    let (_dir, store) = open_store(3);
+    let (_dir, store) = open_store(1000);
     let store = Arc::new(store);
 
     let second_store = Arc::clone(&store);
@@ -418,10 +418,10 @@ fn append_with_durable_gate_blocks_until_synced() {
                     kind(),
                     &serde_json::json!({ "n": 2 }),
                 )
-                .expect("second append triggers cadence sync");
+                .expect("second append before explicit sync");
+            second_store.sync().expect("explicit sync advances durable");
         })
         .expect("spawn second append");
-
     let started = Instant::now();
     store
         .append_with_options(
@@ -430,12 +430,12 @@ fn append_with_durable_gate_blocks_until_synced() {
             &serde_json::json!({ "n": 1 }),
             AppendOptions::default().with_gate(durable_gate(Duration::from_secs(2))),
         )
-        .expect("durable gate satisfied after cadence sync");
+        .expect("durable gate satisfied after explicit sync");
     let elapsed = started.elapsed();
     second.join().expect("second append joins");
     assert!(
         elapsed >= Duration::from_millis(20),
-        "PROPERTY: durable gate should block until a later sync advances durable_hlc"
+        "PROPERTY: durable gate should block until an explicit sync advances durable_hlc"
     );
     assert!(
         elapsed < Duration::from_millis(500),

@@ -105,6 +105,13 @@ pub fn derive_event_sourced(input: TokenStream) -> TokenStream {
 }
 
 fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    if !input.generics.params.is_empty() {
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "#[derive(EventPayload)] does not support generic payload types; use a concrete named-field struct",
+        ));
+    }
+
     // ─── Shape check: named-field struct only ────────────────────────────────
     let fields = match &input.data {
         Data::Struct(s) => &s.fields,
@@ -230,7 +237,6 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let kind_bits: u16 = (u16::from(category) << 12) | type_id;
-    let type_name_str = ident.to_string();
     let test_fn_name = format_ident!("__batpak_kind_collision_check_{}", ident);
 
     // The emitted test fn is named `__batpak_kind_collision_check_<Ident>`
@@ -248,7 +254,7 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             ::batpak::__private::inventory::submit! {
                 ::batpak::__private::EventPayloadRegistration {
                     kind_bits: #kind_bits,
-                    type_name: #type_name_str,
+                    type_name: concat!(module_path!(), "::", stringify!(#ident)),
                 }
             }
         };

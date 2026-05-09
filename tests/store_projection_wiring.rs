@@ -7,6 +7,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
 
+#[cfg(feature = "dangerous-test-hooks")]
+fn entry_point(entry: &batpak::store::IndexEntry) -> batpak::store::HlcPoint {
+    batpak::store::HlcPoint {
+        wall_ms: entry.wall_ms,
+        global_sequence: entry.global_sequence,
+    }
+}
+
 #[test]
 fn project_calls_prefetch_only_when_supported() {
     struct TrackingCache {
@@ -93,6 +101,39 @@ fn project_calls_prefetch_only_when_supported() {
         prefetch_called.load(Ordering::SeqCst),
         "PROPERTY: Store::project must call cache.prefetch() when the cache advertises prefetch support.\n\
          Investigate: src/store/mod.rs project(), src/store/projection/mod.rs CacheCapabilities."
+    );
+
+    store.close().expect("close");
+}
+
+#[cfg(feature = "dangerous-test-hooks")]
+#[test]
+fn first_projection_report_can_lower_overstated_applied_frontier() {
+    let dir = TempDir::new().expect("create temp dir");
+    let store = Store::open(StoreConfig::new(dir.path())).expect("open store");
+    let coord =
+        Coordinate::new("entity:projection-first-report-lag", "scope:test").expect("valid coord");
+    let kind = EventKind::custom(0xF, 2);
+
+    for n in 1..=5 {
+        store
+            .append(&coord, kind, &serde_json::json!({ "n": n }))
+            .expect("append projection progress event");
+    }
+
+    let entries = store.query(&Region::entity(coord.entity()));
+    assert_eq!(entries.len(), 5);
+    let slow = entry_point(&entries[0]);
+    let fast = entry_point(&entries[4]);
+
+    store.dangerous_notify_projection_applied("frontier:first-fast", fast);
+    assert_eq!(store.dangerous_watermark_snapshot().applied_hlc, fast);
+
+    store.dangerous_notify_projection_applied("frontier:first-slow", slow);
+    assert_eq!(
+        store.dangerous_watermark_snapshot().applied_hlc,
+        slow,
+        "PROPERTY: first report from a newly observed lagging projection must lower applied_hlc to the true min-across-projections value"
     );
 
     store.close().expect("close");

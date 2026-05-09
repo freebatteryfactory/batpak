@@ -131,9 +131,9 @@ jobs:
 
   mutants:
     # Mutation testing smoke run — repo-owned representative shards.
-    # Triggered on every push and pull_request to surface tests that
-    # pass-by-accident (mutations that survive without being caught by any
-    # test). Also runs on manual workflow_dispatch.
+    # Triggered on every pull_request to surface tests that pass by accident
+    # (mutations that survive without being caught by any test). Also runs on
+    # manual workflow_dispatch.
     #
     # HARD GATE: critical seams run at 85% catch-rate thresholds. Repo-wide
     # smoke currently runs in Phase0 record-only mode and prints the next
@@ -142,7 +142,7 @@ jobs:
     # implemented by parsing caught.txt / missed.txt in mutants() in
     # tools/xtask/src/commands.rs after each cargo-mutants invocation.
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     needs: [integrity-linux-container, integrity-windows-native]
     steps:
       - uses: actions/checkout@v6

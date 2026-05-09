@@ -35,12 +35,24 @@ const REPO_MUTATION_THRESHOLDS: &[(RepoMutationPhase, u32)] = &[
     (RepoMutationPhase::Phase5, 85),
 ];
 const REPO_WIDE_ALL_FEATURES_MUTANT_FILES: &[&str] = &[
+    "src/artifact.rs",
+    "src/registry.rs",
+    "src/transition.rs",
+    "src/reservation.rs",
+    "src/schema.rs",
     "src/store/**/*.rs",
     "src/wire.rs",
     "src/guard/*.rs",
     "src/pipeline/*.rs",
 ];
-const REPO_WIDE_NO_DEFAULT_MUTANT_FILES: &[&str] = &["src/store/**/*.rs"];
+const REPO_WIDE_NO_DEFAULT_MUTANT_FILES: &[&str] = &[
+    "src/artifact.rs",
+    "src/registry.rs",
+    "src/transition.rs",
+    "src/reservation.rs",
+    "src/schema.rs",
+    "src/store/**/*.rs",
+];
 const WRITER_COMMIT_MUTANT_FILES: &[&str] = &["src/store/write/*.rs"];
 const CURSOR_MUTANT_FILES: &[&str] = &[
     "src/store/delivery/cursor.rs",
@@ -599,16 +611,18 @@ fn assert_mutation_policy(
         );
     }
 
-    let Some(score_pct) = score.score_pct else {
-        println!(
-            "mutants: `{}` produced execution evidence but no scoreable caught/missed mutants, so threshold math is not applied for this lane.",
-            lane.label
-        );
-        return Ok(());
-    };
-
     match lane.enforcement {
         MutationEnforcement::Threshold { min_catch_pct } => {
+            let Some(score_pct) = score.score_pct else {
+                bail!(
+                    "mutation lane `{}` produced no scoreable caught/missed mutants \
+                     ({} executed total; {} unviable). Threshold gates require at least one \
+                     scoreable mutant so unviable-only output cannot pass as evidence.",
+                    lane.label,
+                    score.executed,
+                    score.unviable,
+                );
+            };
             if score_pct < min_catch_pct as usize {
                 bail!(
                     "mutation score for `{}` is {}%, below the required {}% \
@@ -634,6 +648,13 @@ fn assert_mutation_policy(
             }
         }
         MutationEnforcement::RecordOnly => {
+            let Some(score_pct) = score.score_pct else {
+                println!(
+                    "mutants: `{}` produced execution evidence but no scoreable caught/missed mutants, so ratchet math is not applied for this record-only lane.",
+                    lane.label
+                );
+                return Ok(());
+            };
             if let Some(next_floor) = next_ratchet_floor(score_pct, None) {
                 println!(
                     "mutants: `{}` is in repo-wide record-only mode for this phase. Current score {}% supports a future ratchet to {}%.",
@@ -1579,6 +1600,16 @@ mod tests {
                 "--baseline",
                 "run",
                 "--file",
+                "src/artifact.rs",
+                "--file",
+                "src/registry.rs",
+                "--file",
+                "src/transition.rs",
+                "--file",
+                "src/reservation.rs",
+                "--file",
+                "src/schema.rs",
+                "--file",
                 "src/store/**/*.rs",
                 "--exclude",
                 "src/store/ancestry/by_hash.rs",
@@ -1739,7 +1770,7 @@ mod tests {
     }
 
     #[test]
-    fn mutation_policy_accepts_unviable_only_lane_as_execution_evidence() {
+    fn critical_mutation_policy_rejects_unviable_only_lane_as_no_scoreable_evidence() {
         let lane = fake_lane();
         let score = MutationScore {
             caught: 0,
@@ -1751,7 +1782,12 @@ mod tests {
             score_pct: None,
         };
 
-        assert!(assert_mutation_policy(&lane, &fake_output_dir(), score).is_ok());
+        let err = assert_mutation_policy(&lane, &fake_output_dir(), score).expect_err("must fail");
+        assert!(
+            err.to_string()
+                .contains("no scoreable caught/missed mutants"),
+            "threshold lanes must reject unviable-only mutation output, got: {err:#}"
+        );
     }
 
     #[test]

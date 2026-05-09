@@ -1,4 +1,4 @@
-//! Deterministic structural evidence for a compaction attempt (no retention/legal semantics).
+//! Deterministic Batpak Substrate Closure structural evidence for a compaction attempt.
 //!
 //! Built from segment identity and [`crate::store::segment::CompactionResult`].
 
@@ -210,6 +210,12 @@ pub fn report_for_run(
                 None
             }
         },
+        (CompactionOutcome::Performed, None) => {
+            findings.push(CompactionReportFinding::OutputSegmentHashUnavailable {
+                reason: "merged segment path unavailable for evidence hash".into(),
+            });
+            None
+        }
         _ => None,
     };
 

@@ -6,8 +6,8 @@
 //! SEEDED: fixed `RegistryRowId` / digest fixtures only.
 
 use batpak::artifact::{
-    artifact_body_hash_from_body, ArtifactHash, CanonicalArtifactEnvelope, SignatureEnvelope,
-    SignatureRef,
+    artifact_body_hash_from_body, ArtifactEnvelopeFinding, ArtifactHash,
+    ArtifactVerificationReport, CanonicalArtifactEnvelope, SignatureEnvelope, SignatureRef,
 };
 use batpak::registry::{
     normalize_registry_row_body, registry_drift_findings_sorted, registry_drift_report_body_hash,
@@ -122,6 +122,31 @@ fn registry_drift_report_body_hash_sorts_findings() {
 }
 
 #[test]
+fn registry_drift_report_body_hash_sorts_expected_and_observed_pairs() {
+    let a = rid(10);
+    let b = rid(11);
+    let expected_sorted = vec![(a, [1u8; 32]), (b, [2u8; 32])];
+    let observed_sorted = vec![(a, [3u8; 32]), (b, [4u8; 32])];
+    let report = RegistryDriftReportBody {
+        schema_version: REGISTRY_DRIFT_REPORT_SCHEMA_VERSION,
+        expected: expected_sorted.clone(),
+        observed: observed_sorted.clone(),
+        findings: vec![],
+    };
+    let report_permuted = RegistryDriftReportBody {
+        expected: expected_sorted.into_iter().rev().collect(),
+        observed: observed_sorted.into_iter().rev().collect(),
+        ..report.clone()
+    };
+
+    assert_eq!(
+        registry_drift_report_body_hash(&report).expect("h sorted"),
+        registry_drift_report_body_hash(&report_permuted).expect("h permuted"),
+        "PROPERTY: drift report body_hash must normalize expected and observed row/hash pairs"
+    );
+}
+
+#[test]
 fn registry_drift_detects_hash_mismatch() {
     let id = rid(4);
     let mut expected = vec![(id, [1u8; 32])];
@@ -218,6 +243,74 @@ fn registry_verify_flags_bad_lifecycle_and_bad_row_hash() {
             .iter()
             .any(|f| matches!(f, RegistryVerificationFinding::RowHashMismatch { .. })),
         "expected RowHashMismatch"
+    );
+}
+
+#[test]
+fn registry_verify_flags_unsupported_row_schema_version() {
+    let row_id = rid(12);
+    let mut body = sample_body(row_id, REGISTRY_LIFECYCLE_LIVE);
+    body.schema_version = REGISTRY_ROW_BODY_SCHEMA_VERSION + 1;
+    let row_hash = registry_row_body_hash(&body).expect("row hash");
+    let raw = registry_row_body_bytes(&body).expect("bytes");
+    let envelope = CanonicalArtifactEnvelope {
+        body,
+        envelope_schema_version: 1,
+        generated_at_wall_ms: None,
+        diagnostic_note: None,
+        signatures: vec![SignatureEnvelope {
+            signature: SignatureRef {
+                algorithm_id: 1,
+                key_id: [12u8; 32],
+                signature_bytes: raw,
+            },
+        }],
+        attestations: vec![],
+    };
+
+    let report =
+        verify_registry_attested_row(&envelope, row_id, row_hash, echo_sig_ok).expect("verify");
+
+    assert!(report.findings.iter().any(|finding| matches!(
+        finding,
+        RegistryVerificationFinding::UnsupportedRowSchemaVersion {
+            row_id: finding_row_id,
+            observed,
+            expected,
+        } if *finding_row_id == row_id
+            && *observed == REGISTRY_ROW_BODY_SCHEMA_VERSION + 1
+            && *expected == REGISTRY_ROW_BODY_SCHEMA_VERSION
+    )));
+}
+
+#[test]
+fn registry_verification_report_body_hash_sorts_nested_envelope_findings() {
+    let envelope_plane = ArtifactVerificationReport {
+        body_hash: [1u8; 32],
+        envelope_hash: [2u8; 32],
+        findings: vec![
+            ArtifactEnvelopeFinding::InvalidSignature {
+                key_id: [9u8; 32],
+                reason: "z".into(),
+            },
+            ArtifactEnvelopeFinding::InvalidSignature {
+                key_id: [8u8; 32],
+                reason: "a".into(),
+            },
+        ],
+    };
+    let report = RegistryVerificationReport {
+        schema_version: REGISTRY_VERIFICATION_REPORT_SCHEMA_VERSION,
+        envelope_plane,
+        findings: vec![],
+    };
+    let mut permuted = report.clone();
+    permuted.envelope_plane.findings.reverse();
+
+    assert_eq!(
+        registry_verification_report_body_hash(&report).expect("h report"),
+        registry_verification_report_body_hash(&permuted).expect("h permuted"),
+        "PROPERTY: registry verification body_hash must normalize nested envelope findings"
     );
 }
 

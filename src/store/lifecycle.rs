@@ -531,6 +531,9 @@ pub(crate) fn close(mut store: Store<Open>) -> Result<Closed, StoreError> {
     let result = crate::store::recv_writer_reply(&rx);
 
     result?;
+    if let Some(writer) = store.writer.as_mut() {
+        writer.join()?;
+    }
 
     // Write cold-start artifacts after writer shutdown (all data fsynced).
     // Explicit close() is the honest durable path, so artifact write failures
