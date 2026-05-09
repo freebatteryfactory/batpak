@@ -41,8 +41,8 @@
 - name: StoreDiagnostics
   justification: surfaced through diagnostics tests instead of direct type-name references
   witness:
-    - path: tests/store_advanced.rs
-      lines: [250, 804]
+    - path: tests/store_query_behavior.rs
+      lines: [12, 29]
 - name: CompactionResult
   justification: returned by compact and asserted through compaction behavior tests
   witness:
