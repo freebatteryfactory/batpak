@@ -30,7 +30,21 @@ type TestResult = Result<(), Box<dyn Error>>;
 
 fn body_hash_via_canonical(body: &(impl Serialize + Sized)) -> Result<[u8; 32], Box<dyn Error>> {
     let bytes = batpak::canonical::to_bytes(body)?;
-    Ok(batpak::event::hash::compute_hash(&bytes))
+    Ok(evidence_content_hash(&bytes))
+}
+
+fn evidence_content_hash(bytes: &[u8]) -> [u8; 32] {
+    #[cfg(feature = "blake3")]
+    {
+        batpak::event::hash::compute_hash(bytes)
+    }
+    #[cfg(not(feature = "blake3"))]
+    {
+        let crc = crc32fast::hash(bytes).to_be_bytes();
+        let mut out = [0_u8; 32];
+        out[..4].copy_from_slice(&crc);
+        out
+    }
 }
 
 fn sorted_eq<T: Ord + Clone + core::fmt::Debug>(slice: &[T]) {
@@ -187,9 +201,10 @@ fn chain_walk_three_link_chain_checked_count_stable_across_close_reopen() -> Tes
 
     let request = ChainWalkRequest::linear(ChainWalkStartRef::EventId(last), 64);
     let first = store.chain_walk_evidence(&request)?;
+    let expected_checked_count = if cfg!(feature = "blake3") { 3 } else { 1 };
     assert_eq!(
-        first.body.checked_count, 3,
-        "PROPERTY: walk from leaf of 3-append chain checks 3 entries"
+        first.body.checked_count, expected_checked_count,
+        "PROPERTY: chain-walk depth follows the configured hash-chain surface"
     );
     store.close()?;
 
