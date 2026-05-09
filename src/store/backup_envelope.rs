@@ -1,12 +1,14 @@
-//! Canonical **backup manifest** body identity and deterministic **restore proof** reports for store
-//! segment byte digests. Composes [`crate::artifact::CanonicalArtifactEnvelope`] for attested manifests
-//! without embedding transport or consumer-specific semantics in field names.
+//! Batpak Substrate Closure backup manifest body identity and deterministic **restore proof**
+//! reports for store segment byte digests. Composes [`crate::artifact::CanonicalArtifactEnvelope`]
+//! for attested manifests without embedding transport or application-specific semantics in field
+//! names.
 //!
 //! Manifest [`BackupManifestBody::segments`] are sorted by [`BackupSegmentRef`] total order before
 //! [`backup_manifest_body_hash`] so caller-supplied slice order is immaterial. Envelope-only timestamps
 //! and notes do not participate in manifest body identity.
 
 use crate::artifact::{
+    artifact_envelope_hash_from_identity, artifact_envelope_identity,
     verify_canonical_artifact_envelope, ArtifactVerificationReport, CanonicalArtifactEnvelope,
     SignatureRef,
 };
@@ -47,9 +49,17 @@ pub struct BackupManifestBody {
 }
 
 /// Attested manifest envelope (signatures and attestations are outside manifest body identity).
+///
+/// The inherited [`CanonicalArtifactEnvelope::body_hash`] and
+/// [`CanonicalArtifactEnvelope::envelope_hash`] methods hash the raw `body` as stored in the
+/// envelope. For backup manifests, use [`backup_manifest_envelope_body_hash`] and
+/// [`backup_manifest_envelope_hash`] so segment order is normalized first.
 pub type BackupManifestEnvelope = CanonicalArtifactEnvelope<BackupManifestBody>;
 
 /// Backwards-compatible alias for callers that prefer the shorter name.
+///
+/// Use [`backup_manifest_envelope_body_hash`] and [`backup_manifest_envelope_hash`] instead of the
+/// inherited raw-body envelope hash methods when computing backup manifest identity.
 pub type BackupEnvelope = BackupManifestEnvelope;
 
 /// Structural findings for manifest audit and restore proof (sorted before report `body_hash`).
@@ -140,6 +150,22 @@ pub fn normalize_backup_manifest_body(body: &BackupManifestBody) -> BackupManife
     }
 }
 
+/// Normalize a backup manifest envelope by sorting manifest segment refs before envelope hashing
+/// or signature verification.
+#[must_use]
+pub fn normalize_backup_manifest_envelope(
+    envelope: &BackupManifestEnvelope,
+) -> BackupManifestEnvelope {
+    CanonicalArtifactEnvelope {
+        body: normalize_backup_manifest_body(&envelope.body),
+        envelope_schema_version: envelope.envelope_schema_version,
+        generated_at_wall_ms: envelope.generated_at_wall_ms,
+        diagnostic_note: envelope.diagnostic_note.clone(),
+        signatures: envelope.signatures.clone(),
+        attestations: envelope.attestations.clone(),
+    }
+}
+
 /// Canonical MessagePack bytes for the normalized manifest body.
 ///
 /// # Errors
@@ -160,6 +186,32 @@ pub fn backup_manifest_body_hash(
 ) -> Result<SegmentBytesDigest, rmp_serde::encode::Error> {
     let bytes = backup_manifest_body_bytes(body)?;
     Ok(content_hash(&bytes))
+}
+
+/// Normalized body digest for a backup manifest envelope.
+///
+/// # Errors
+/// MessagePack encode failure from `rmp-serde`.
+pub fn backup_manifest_envelope_body_hash(
+    envelope: &BackupManifestEnvelope,
+) -> Result<SegmentBytesDigest, rmp_serde::encode::Error> {
+    backup_manifest_body_hash(&envelope.body)
+}
+
+/// Normalized envelope digest for a backup manifest envelope.
+///
+/// This uses the normalized manifest body hash as the envelope identity anchor while preserving
+/// envelope-owned timestamps, diagnostics, signatures, and attestations.
+///
+/// # Errors
+/// MessagePack encode failure from `rmp-serde`.
+pub fn backup_manifest_envelope_hash(
+    envelope: &BackupManifestEnvelope,
+) -> Result<SegmentBytesDigest, rmp_serde::encode::Error> {
+    let normalized = normalize_backup_manifest_envelope(envelope);
+    let body_hash = backup_manifest_body_hash(&normalized.body)?;
+    let identity = artifact_envelope_identity(&normalized, body_hash);
+    artifact_envelope_hash_from_identity(&identity)
 }
 
 fn collect_segment_digest_index(
@@ -210,15 +262,7 @@ pub fn verify_backup_manifest_envelope<F>(
 where
     F: FnMut(&SignatureRef, &[u8]) -> Result<(), String>,
 {
-    let normalized_body = normalize_backup_manifest_body(&envelope.body);
-    let envelope_norm = CanonicalArtifactEnvelope {
-        body: normalized_body,
-        envelope_schema_version: envelope.envelope_schema_version,
-        generated_at_wall_ms: envelope.generated_at_wall_ms,
-        diagnostic_note: envelope.diagnostic_note.clone(),
-        signatures: envelope.signatures.clone(),
-        attestations: envelope.attestations.clone(),
-    };
+    let envelope_norm = normalize_backup_manifest_envelope(envelope);
     let envelope_plane = verify_canonical_artifact_envelope(&envelope_norm, verify_signature)?;
     let mut findings = audit_backup_manifest_segments(&envelope.body);
     let computed = backup_manifest_body_hash(&envelope.body)?;
@@ -246,15 +290,7 @@ pub fn verify_backup_manifest_signatures_only<F>(
 where
     F: FnMut(&SignatureRef, &[u8]) -> Result<(), String>,
 {
-    let normalized_body = normalize_backup_manifest_body(&envelope.body);
-    let envelope_norm = CanonicalArtifactEnvelope {
-        body: normalized_body,
-        envelope_schema_version: envelope.envelope_schema_version,
-        generated_at_wall_ms: envelope.generated_at_wall_ms,
-        diagnostic_note: envelope.diagnostic_note.clone(),
-        signatures: envelope.signatures.clone(),
-        attestations: envelope.attestations.clone(),
-    };
+    let envelope_norm = normalize_backup_manifest_envelope(envelope);
     verify_canonical_artifact_envelope(&envelope_norm, verify_signature)
 }
 

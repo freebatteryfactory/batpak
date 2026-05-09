@@ -1,4 +1,5 @@
-//! Deterministic structural chain-walk evidence over stored event material.
+//! Deterministic Batpak Substrate Closure structural chain-walk evidence over stored event
+//! material.
 //!
 //! This surface reports linear chain continuity findings without inferring
 //! downstream semantics.
@@ -63,6 +64,11 @@ impl ChainWalkRequest {
 /// Deterministic structural findings from a chain walk.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ChainWalkFinding {
+    /// Request limit cannot check even the start entry.
+    InvalidLimit {
+        /// Requested walk limit.
+        limit: usize,
+    },
     /// Start event was not found.
     MissingStart {
         /// Missing start event ID.
@@ -97,6 +103,17 @@ pub enum ChainWalkFinding {
         child_event_id: u128,
         /// Parent hash required by the child chain edge.
         expected_parent_hash: ChainWalkHash,
+    },
+    /// More than one prior entry in the same entity stream matched the required parent hash.
+    ParentHashAmbiguous {
+        /// Child event where the ambiguous parent edge was encountered.
+        child_event_id: u128,
+        /// Parent hash required by the child chain edge.
+        expected_parent_hash: ChainWalkHash,
+        /// Nearest prior matching event selected for the walk.
+        selected_parent_event_id: u128,
+        /// Number of prior matching entries.
+        matching_parent_count: u64,
     },
     /// Parent entry was found but sequence ordering regressed.
     OrderingRegression {
@@ -213,6 +230,14 @@ impl<State> Store<State> {
             } => (event_id, Some(content_hash)),
         };
 
+        if request.limit == 0 {
+            return build_report(
+                request.mode,
+                &[],
+                vec![ChainWalkFinding::InvalidLimit { limit: 0 }],
+            );
+        }
+
         let start_entry = match self.index.get_by_id(start_event_id) {
             Some(entry) => entry,
             None => {
@@ -299,9 +324,10 @@ impl<State> Store<State> {
             }
 
             pending_parent_hash_for_limit = Some(entry.hash_chain.prev_hash);
-            let Some(parent_id) = crate::store::ancestry::parent_event_id_by_hash(
+            let Some(parent_id) = resolve_parent_event_id_by_hash(
                 &entity_stream,
                 entry.hash_chain.prev_hash,
+                entry.global_sequence,
             ) else {
                 findings.push(ChainWalkFinding::MissingParentLink {
                     child_event_id: current_id,
@@ -309,19 +335,27 @@ impl<State> Store<State> {
                 });
                 break;
             };
+            if parent_id.matching_parent_count > 1 {
+                findings.push(ChainWalkFinding::ParentHashAmbiguous {
+                    child_event_id: current_id,
+                    expected_parent_hash: entry.hash_chain.prev_hash,
+                    selected_parent_event_id: parent_id.event_id,
+                    matching_parent_count: parent_id.matching_parent_count,
+                });
+            }
 
-            if let Some(parent_entry) = self.index.get_by_id(parent_id) {
+            if let Some(parent_entry) = self.index.get_by_id(parent_id.event_id) {
                 if parent_entry.global_sequence >= entry.global_sequence {
                     findings.push(ChainWalkFinding::OrderingRegression {
                         child_event_id: current_id,
-                        parent_event_id: parent_id,
+                        parent_event_id: parent_id.event_id,
                         child_sequence: entry.global_sequence,
                         parent_sequence: parent_entry.global_sequence,
                     });
                     break;
                 }
             }
-            cursor = Some(parent_id);
+            cursor = Some(parent_id.event_id);
         }
 
         if findings.is_empty() && checked.len() == request.limit {
@@ -345,6 +379,31 @@ impl<State> Store<State> {
 
         build_report(request.mode, &checked, findings)
     }
+}
+
+struct ParentHashResolution {
+    event_id: u128,
+    matching_parent_count: u64,
+}
+
+fn resolve_parent_event_id_by_hash(
+    entity_stream: &[crate::store::IndexEntry],
+    parent_hash: ChainWalkHash,
+    child_sequence: u64,
+) -> Option<ParentHashResolution> {
+    let mut matches: Vec<&crate::store::IndexEntry> = entity_stream
+        .iter()
+        .filter(|candidate| {
+            candidate.hash_chain.event_hash == parent_hash
+                && candidate.global_sequence < child_sequence
+        })
+        .collect();
+    matches.sort_by_key(|candidate| candidate.global_sequence);
+    let selected = matches.last()?;
+    Some(ParentHashResolution {
+        event_id: selected.event_id,
+        matching_parent_count: matches.len() as u64,
+    })
 }
 
 fn build_report(

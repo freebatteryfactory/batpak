@@ -85,8 +85,10 @@ fn extension_key_validates_namespace_rules() {
 
 #[test]
 fn namespace_prefix_query_excludes_adjacent_namespaces() {
-    assert!(namespace_prefix_matches("alice", "alice:child"));
-    assert!(!namespace_prefix_matches("alice", "alice2"));
+    let child_matches = namespace_prefix_matches("alice", "alice:child");
+    let adjacent_matches = namespace_prefix_matches("alice", "alice2");
+    assert!(child_matches);
+    assert!(!adjacent_matches);
 
     let dir = TempDir::new().expect("temp dir");
     let store = Store::open(

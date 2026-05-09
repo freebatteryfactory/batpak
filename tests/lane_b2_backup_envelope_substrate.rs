@@ -11,8 +11,9 @@ use batpak::artifact::{
 use batpak::encoding;
 use batpak::store::{
     audit_backup_manifest_segments, backup_manifest_body_bytes, backup_manifest_body_hash,
-    normalize_backup_manifest_body, restore_proof_report_body, restore_proof_report_body_hash,
-    sort_backup_segment_refs, verify_backup_manifest_envelope,
+    backup_manifest_envelope_body_hash, backup_manifest_envelope_hash,
+    normalize_backup_manifest_body, normalize_backup_manifest_envelope, restore_proof_report_body,
+    restore_proof_report_body_hash, sort_backup_segment_refs, verify_backup_manifest_envelope,
     verify_backup_manifest_signatures_only, BackupEnvelope, BackupEnvelopeFinding,
     BackupManifestBody, BackupManifestEnvelope, BackupManifestVerification, BackupSegmentRef,
     RestoreProofEvidenceReport, RestoreProofReportBody, SegmentBytesDigest,
@@ -226,8 +227,8 @@ fn backup_envelope_metadata_does_not_change_manifest_hash() {
         backup_manifest_body_hash(&e2.body).expect("b2")
     );
     assert_ne!(
-        e1.envelope_hash().expect("eh1"),
-        e2.envelope_hash().expect("eh2"),
+        backup_manifest_envelope_hash(&e1).expect("eh1"),
+        backup_manifest_envelope_hash(&e2).expect("eh2"),
         "envelope digest should move with metadata"
     );
     let key: SegmentBytesDigest = [3u8; 32];
@@ -261,6 +262,40 @@ fn backup_envelope_metadata_does_not_change_manifest_hash() {
     let plane = verify_backup_manifest_signatures_only(&envelope, echo_sig_ok).expect("sig");
     assert_eq!(plane.body_hash, v.envelope_plane.body_hash);
     let _be: BackupEnvelope = envelope.clone();
+}
+
+#[test]
+fn backup_manifest_envelope_hash_helpers_normalize_segments() {
+    let body = sample_manifest();
+    let mut body_reversed = body.clone();
+    body_reversed.segments.reverse();
+    let e1 = CanonicalArtifactEnvelope {
+        body: body.clone(),
+        envelope_schema_version: 1,
+        generated_at_wall_ms: Some(10),
+        diagnostic_note: Some("same".into()),
+        signatures: vec![],
+        attestations: vec![],
+    };
+    let e2 = CanonicalArtifactEnvelope {
+        body: body_reversed,
+        ..e1.clone()
+    };
+
+    assert_eq!(
+        backup_manifest_envelope_body_hash(&e1).expect("body h1"),
+        backup_manifest_envelope_body_hash(&e2).expect("body h2"),
+        "PROPERTY: envelope body helper must normalize segment order"
+    );
+    assert_eq!(
+        backup_manifest_envelope_hash(&e1).expect("env h1"),
+        backup_manifest_envelope_hash(&e2).expect("env h2"),
+        "PROPERTY: envelope hash helper must normalize manifest body before framing"
+    );
+    assert_eq!(
+        normalize_backup_manifest_envelope(&e1).body,
+        normalize_backup_manifest_envelope(&e2).body
+    );
 }
 
 #[test]

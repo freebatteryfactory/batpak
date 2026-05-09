@@ -1,10 +1,10 @@
-//! Generic **attested registry row** substrate: stable row identity, canonical row body digest,
+//! Batpak Substrate Closure attested registry row: stable row identity, canonical row body digest,
 //! lifecycle and supersession pointers, drift evidence, and verification reports that compose
 //! [`crate::artifact::CanonicalArtifactEnvelope`] without importing [`crate::store`].
 //!
 //! Public evidence bodies use [`crate::encoding::to_bytes`] (the [`crate::canonical`] alias) for byte identity.
 //! Callers supply opaque `row_kind`, `opaque_payload`, and `named_digests`; batpak does not interpret
-//! protocol or domain meaning in those fields.
+//! protocol or application meaning in those fields.
 
 use crate::artifact::{
     verify_canonical_artifact_envelope, ArtifactHash, ArtifactVerificationReport,
@@ -203,7 +203,13 @@ pub fn registry_drift_report_body_hash(
 ) -> Result<ArtifactHash, rmp_serde::encode::Error> {
     let mut findings = report.findings.clone();
     findings.sort();
+    let mut expected = report.expected.clone();
+    let mut observed = report.observed.clone();
+    sort_registry_row_hash_pairs(&mut expected);
+    sort_registry_row_hash_pairs(&mut observed);
     let normalized = RegistryDriftReportBody {
+        expected,
+        observed,
         findings,
         ..report.clone()
     };
@@ -214,6 +220,15 @@ pub fn registry_drift_report_body_hash(
 /// Registry-specific verification finding layered on [`ArtifactVerificationReport`].
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RegistryVerificationFinding {
+    /// [`RegistryRowBody::schema_version`] is not supported by these v1 helpers.
+    UnsupportedRowSchemaVersion {
+        /// Row id from the decoded body.
+        row_id: RegistryRowId,
+        /// Observed row body schema version.
+        observed: u32,
+        /// Supported row body schema version.
+        expected: u32,
+    },
     /// [`RegistryRowBody::lifecycle`] is not one of the `REGISTRY_LIFECYCLE_*` constants.
     InvalidLifecycle {
         /// Row id from the decoded body.
@@ -259,7 +274,10 @@ pub fn registry_verification_report_body_hash(
 ) -> Result<ArtifactHash, rmp_serde::encode::Error> {
     let mut findings = report.findings.clone();
     findings.sort();
+    let mut envelope_plane = report.envelope_plane.clone();
+    envelope_plane.findings.sort();
     let normalized = RegistryVerificationReport {
+        envelope_plane,
         findings,
         ..report.clone()
     };
@@ -392,6 +410,14 @@ where
     let mut findings = Vec::new();
 
     let body = &envelope_norm.body;
+    if body.schema_version != REGISTRY_ROW_BODY_SCHEMA_VERSION {
+        findings.push(RegistryVerificationFinding::UnsupportedRowSchemaVersion {
+            row_id: body.row_id,
+            observed: body.schema_version,
+            expected: REGISTRY_ROW_BODY_SCHEMA_VERSION,
+        });
+    }
+
     if body.row_id != claimed_row_id {
         findings.push(RegistryVerificationFinding::RowIdMismatch {
             body_row_id: body.row_id,

@@ -100,6 +100,65 @@ fn limit_truncation_is_reported_not_silent() -> TestResult {
 }
 
 #[test]
+fn zero_limit_is_reported_as_invalid() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let coord = Coordinate::new("entity:chain-evidence-zero-limit", "scope:test")?;
+    let kind = EventKind::custom(0xF, 0x14);
+    let receipt = store.append(&coord, kind, &serde_json::json!({"step": 0}))?;
+
+    let report = store.chain_walk_evidence(&ChainWalkRequest::linear(
+        ChainWalkStartRef::EventId(receipt.event_id),
+        0,
+    ))?;
+
+    assert_eq!(report.body.checked_count, 0);
+    assert_eq!(
+        report.body.findings,
+        vec![ChainWalkFinding::InvalidLimit { limit: 0 }],
+        "PROPERTY: limit=0 must not produce a clean chain-walk report"
+    );
+    Ok(())
+}
+
+#[test]
+fn duplicate_payload_parent_hash_chooses_nearest_prior_and_reports_ambiguity() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let coord = Coordinate::new("entity:chain-evidence-duplicate-parent", "scope:test")?;
+    let kind = EventKind::custom(0xF, 0x15);
+    let _first_same = store.append(&coord, kind, &serde_json::json!({"same": true}))?;
+    let _middle = store.append(&coord, kind, &serde_json::json!({"middle": true}))?;
+    let second_same = store.append(&coord, kind, &serde_json::json!({"same": true}))?;
+    let child = store.append(&coord, kind, &serde_json::json!({"child": true}))?;
+
+    let report = store.chain_walk_evidence(&ChainWalkRequest {
+        start: ChainWalkStartRef::EventId(child.event_id),
+        end_event_id: Some(second_same.event_id),
+        limit: 8,
+        mode: ChainWalkMode::Linear,
+    })?;
+
+    assert_eq!(report.body.checked_count, 2);
+    assert_eq!(report.body.last_ref, Some(second_same.event_id));
+    assert!(
+        report.body.findings.iter().any(|finding| matches!(
+            finding,
+            ChainWalkFinding::ParentHashAmbiguous {
+                child_event_id,
+                selected_parent_event_id,
+                matching_parent_count: 2,
+                ..
+            } if *child_event_id == child.event_id
+                && *selected_parent_event_id == second_same.event_id
+        )),
+        "PROPERTY: duplicate payload parent hashes must select the nearest prior match and report ambiguity, got {:?}",
+        report.body.findings
+    );
+    Ok(())
+}
+
+#[test]
 fn receipt_start_hash_mismatch_is_reported() -> TestResult {
     let (store, data_dir_guard) = small_store_support::small_segment_store()?;
     assert!(data_dir_guard.path().exists());

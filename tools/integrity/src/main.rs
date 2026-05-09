@@ -41,6 +41,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use syn::visit::Visit;
 use syn::Item;
 use walkdir::WalkDir;
 
@@ -379,6 +380,7 @@ fn traceability_check() -> Result<()> {
                 !evidence.trim().is_empty(),
                 format!("observation {} has blank evidence", observation.id),
             )?;
+            validate_observation_evidence(&repo_root, &observation.id, evidence)?;
         }
         for artifact_id in &observation.artifacts {
             ensure(
@@ -655,34 +657,51 @@ fn check_ci_parity(repo_root: &Path) -> Result<()> {
         }
     }
 
-    // 3. Tool version pin parity between Dockerfile and xtask setup.
-    let pinned_tools = [
-        "cargo-nextest",
-        "cargo-deny",
-        "cargo-audit",
-        "cargo-llvm-cov",
-        "cargo-mutants",
-    ];
-    for tool in pinned_tools {
-        let dock_pin_re = build_tool_pin_regex(tool)?;
+    let docker_pins = dockerfile_tool_pins(&dockerfile)?;
+
+    // 3. Every workflow-owned tool pin must also be present in the
+    //    Dockerfile with the same version. This is derived from the workflow
+    //    install-action entries instead of a fixed list so newly added tools
+    //    are covered automatically.
+    for (tool, wf_ver) in &workflow_tools {
+        match docker_pins.get(tool) {
+            Some(dock_ver) if dock_ver == wf_ver => {}
+            Some(dock_ver) => {
+                bail!(
+                    "ci-parity: tool `{tool}` is pinned to `{wf_ver}` in \
+                     `.github/workflows/ci.yml` but `{dock_ver}` in \
+                     `.devcontainer/Dockerfile`. Pick one version and update both."
+                );
+            }
+            None => {
+                bail!(
+                    "ci-parity: workflow installs `{tool}@{wf_ver}` via \
+                     taiki-e/install-action but `.devcontainer/Dockerfile` does not pin `{tool}`. \
+                     Add the same tool pin to the Dockerfile or remove it from the workflow."
+                );
+            }
+        }
+    }
+
+    // 4. Tool version pin parity between Dockerfile and xtask setup. This is
+    //    also dynamic over the Dockerfile so a new canonical container tool
+    //    must be represented in xtask setup.
+    for (tool, dock_v) in &docker_pins {
         let xtask_pin_re = build_tool_pin_regex(tool)?;
-        let dock_v = dock_pin_re
-            .captures(&dockerfile)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string());
         let xtask_v = xtask_pin_re
             .captures(&xtask_sources)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string());
-        match (dock_v, xtask_v) {
-            (Some(d), Some(x)) if d != x => {
+        match xtask_v {
+            Some(x) if &x != dock_v => {
                 bail!(
                     "ci-parity: tool `{tool}` is pinned to `{d}` in \
                      `.devcontainer/Dockerfile` but `{x}` in `cargo xtask setup --install-tools` \
-                     (tools/xtask/src/). Pick one version and update both."
+                     (tools/xtask/src/). Pick one version and update both.",
+                    d = dock_v
                 );
             }
-            (Some(_), None) => {
+            None => {
                 bail!(
                     "ci-parity: tool `{tool}` is pinned in \
                      `.devcontainer/Dockerfile` but unpinned (or missing) in \
@@ -695,6 +714,26 @@ fn check_ci_parity(repo_root: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn dockerfile_tool_pins(dockerfile: &str) -> Result<HashMap<String, String>> {
+    // justifies: INV-LITERAL-REGEX-UNWRAP-SAFE; pattern is a string literal known-safe at compile time in tools/integrity/src/main.rs; this expect cannot fire in any reachable code path
+    let pin_re = Regex::new(r"\b(cargo-[a-z0-9-]+)@(\d+(?:\.\d+)+)\b")
+        .expect("internal regex is a compile-time constant and will compile");
+    let mut pins = HashMap::new();
+    for cap in pin_re.captures_iter(dockerfile) {
+        let tool = cap.get(1).map(|m| m.as_str()).unwrap_or_default();
+        let version = cap.get(2).map(|m| m.as_str()).unwrap_or_default();
+        match pins.insert(tool.to_owned(), version.to_owned()) {
+            Some(existing) if existing != version => {
+                bail!(
+                    "ci-parity: `.devcontainer/Dockerfile` pins `{tool}` to both `{existing}` and `{version}`"
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(pins)
 }
 
 fn assert_workflow_list_values(
@@ -1110,6 +1149,71 @@ fn check_pub_items_have_references(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn validate_observation_evidence(
+    repo_root: &Path,
+    observation_id: &str,
+    evidence: &str,
+) -> Result<()> {
+    let trimmed = evidence.trim();
+    let (path_part, symbol_part) = trimmed
+        .split_once("::")
+        .map(|(path, symbol)| (path.trim(), Some(symbol.trim())))
+        .unwrap_or((trimmed, None));
+    ensure(
+        !path_part.is_empty(),
+        format!("observation {observation_id} evidence `{evidence}` has blank path"),
+    )?;
+    let full = repo_root.join(path_part);
+    ensure(
+        full.exists(),
+        format!(
+            "observation {observation_id} evidence `{evidence}` points at missing path `{path_part}`"
+        ),
+    )?;
+    if full.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+        return Ok(());
+    }
+    let Some(symbol) = symbol_part else {
+        bail!(
+            "observation {observation_id} evidence `{evidence}` points at Rust source but does not name a test/function with `path :: function_name`"
+        );
+    };
+    ensure(
+        !symbol.is_empty(),
+        format!("observation {observation_id} evidence `{evidence}` has blank function name"),
+    )?;
+    let content = fs::read_to_string(&full)
+        .with_context(|| format!("read observation evidence {}", relative(repo_root, &full)))?;
+    let file = syn::parse_file(&content)
+        .with_context(|| format!("parse observation evidence {}", relative(repo_root, &full)))?;
+    ensure(
+        rust_file_declares_fn(&file, symbol),
+        format!(
+            "observation {observation_id} evidence `{evidence}` names `{symbol}`, but no Rust function with that name exists in `{path_part}`"
+        ),
+    )
+}
+
+fn rust_file_declares_fn(file: &syn::File, name: &str) -> bool {
+    struct FnFinder<'a> {
+        name: &'a str,
+        found: bool,
+    }
+    impl<'a, 'ast> syn::visit::Visit<'ast> for FnFinder<'a> {
+        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+            if node.sig.ident == self.name {
+                self.found = true;
+                return;
+            }
+            syn::visit::visit_item_fn(self, node);
+        }
+    }
+
+    let mut finder = FnFinder { name, found: false };
+    finder.visit_file(file);
+    finder.found
+}
+
 fn tracked_repo_files(repo_root: &Path) -> Result<Vec<PathBuf>> {
     let output = Command::new("git")
         .args(["ls-files"])
@@ -1206,7 +1310,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_item_names_collects_async_use_const_type_and_mod() {
+    fn public_item_names_collects_async_use_const_type_and_reexports() {
         let source = r#"
             pub const FLAG: u8 = 1;
             pub type Alias = u64;
@@ -1225,7 +1329,7 @@ mod tests {
 
         assert!(names.contains("FLAG"));
         assert!(names.contains("Alias"));
-        assert!(names.contains("nested"));
+        assert!(!names.contains("nested"));
         assert!(names.contains("PublicStoreError"));
         assert!(names.contains("subscribe"));
     }
@@ -1249,6 +1353,49 @@ matrix:
                 "--features blake3".to_string(),
                 "--all-features".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn dockerfile_tool_pins_are_collected_dynamically() {
+        let pins = dockerfile_tool_pins(
+            r#"
+RUN cargo binstall --no-confirm cargo-deny@0.19.0 || cargo install --locked cargo-deny@0.19.0
+RUN cargo install --locked cargo-mutants@27.0.0
+"#,
+        )
+        .expect("parse pins");
+        assert_eq!(pins.get("cargo-deny").map(String::as_str), Some("0.19.0"));
+        assert_eq!(
+            pins.get("cargo-mutants").map(String::as_str),
+            Some("27.0.0")
+        );
+    }
+
+    #[test]
+    fn observation_evidence_requires_named_rust_function() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("crate lives under tools/integrity — two parents is the repo root")
+            .to_path_buf();
+
+        assert!(validate_observation_evidence(
+            &repo_root,
+            "OBS-TEST",
+            "tests/durable_frontier_waits.rs :: append_with_visible_gate_returns_after_publish",
+        )
+        .is_ok());
+
+        let err = validate_observation_evidence(
+            &repo_root,
+            "OBS-TEST",
+            "tests/durable_frontier_waits.rs :: missing_observation_evidence_function",
+        )
+        .expect_err("missing function must fail");
+        assert!(
+            err.to_string().contains("no Rust function"),
+            "wrong error: {err:#}"
         );
     }
 

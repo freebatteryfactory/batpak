@@ -1,7 +1,7 @@
-//! Deterministic subscriber frontier observations.
+//! Deterministic Batpak Substrate Closure subscriber frontier observations.
 //!
 //! This module reports structural delivery/frontier observations for lossy
-//! subscribers and cursor-backed consumers without imposing policy semantics.
+//! subscribers and cursor-backed pull paths without imposing policy semantics.
 
 use crate::store::Store;
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ pub type SubscriberFrontierHash = [u8; 32];
 pub enum SubscriberFrontierSource {
     /// Push-based lossy subscription.
     LossyPush,
-    /// Cursor-backed pull consumer.
+    /// Cursor-backed pull path.
     CursorBacked,
 }
 
@@ -109,6 +109,13 @@ pub enum SubscriberFrontierFinding {
     LagObserved {
         /// Number of events between available and consumed frontiers.
         lag_events: u64,
+    },
+    /// Caller-reported consumed frontier is ahead of the available frontier.
+    ConsumedFrontierAheadOfAvailable {
+        /// Caller-reported consumed sequence.
+        consumed_sequence: u64,
+        /// Available sequence for the observed source lane.
+        available_sequence: u64,
     },
     /// Delivery path reported dropped subscriber state.
     DeliveryDropped,
@@ -220,6 +227,16 @@ impl<State> Store<State> {
         if let Some(lag) = lag_events {
             if lag > 0 {
                 findings.push(SubscriberFrontierFinding::LagObserved { lag_events: lag });
+            }
+        }
+        if let Some(consumed_sequence) = request.consumed_frontier_sequence {
+            if consumed_sequence > available_frontier_sequence {
+                findings.push(
+                    SubscriberFrontierFinding::ConsumedFrontierAheadOfAvailable {
+                        consumed_sequence,
+                        available_sequence: available_frontier_sequence,
+                    },
+                );
             }
         }
 

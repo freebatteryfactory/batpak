@@ -51,8 +51,9 @@ pub use append::{
 };
 pub use backup_envelope::{
     audit_backup_manifest_segments, backup_manifest_body_bytes, backup_manifest_body_hash,
-    normalize_backup_manifest_body, restore_proof_report_body, restore_proof_report_body_hash,
-    sort_backup_segment_refs, verify_backup_manifest_envelope,
+    backup_manifest_envelope_body_hash, backup_manifest_envelope_hash,
+    normalize_backup_manifest_body, normalize_backup_manifest_envelope, restore_proof_report_body,
+    restore_proof_report_body_hash, sort_backup_segment_refs, verify_backup_manifest_envelope,
     verify_backup_manifest_signatures_only, BackupEnvelope, BackupEnvelopeFinding,
     BackupManifestBody, BackupManifestEnvelope, BackupManifestVerification, BackupSegmentRef,
     RestoreProofEvidenceReport, RestoreProofReportBody, SegmentBytesDigest,
@@ -536,6 +537,7 @@ impl Store<Open> {
 
         emit_open_report_observability(&store.config, &open_report);
         let open_hlc = append_open_completed_event(&store, &open_report, open_candidate)?;
+        lifecycle::sync(&store)?;
         store.watermark_handle.lock().reset_to_bootstrap(open_hlc);
 
         Ok(store)
@@ -1561,19 +1563,20 @@ impl<State> Store<State> {
     }
 }
 
-/// Safety net: if Store is dropped without calling close(), send a best-effort
-/// Shutdown to the writer thread and wait briefly for it to drain pending events.
+/// Safety net: if Store is dropped without calling close(), send Shutdown to the
+/// writer thread and wait for it to drain pending events before releasing the
+/// directory lock.
 /// close(self) is still the preferred explicit path for guaranteed clean shutdown.
 impl<State> Drop for Store<State> {
     fn drop(&mut self) {
         if !self.should_shutdown_on_drop {
             return;
         }
-        let Some(writer) = self.writer.as_ref() else {
+        let Some(mut writer) = self.writer.take() else {
             return;
         };
         tracing::warn!(
-            "Store dropped without explicit close(); only a bounded best-effort drain will run"
+            "Store dropped without explicit close(); draining writer before releasing store lock"
         );
         let (tx, rx) = flume::bounded(1);
         if writer
@@ -1581,10 +1584,9 @@ impl<State> Drop for Store<State> {
             .send(WriterCommand::Shutdown { respond: tx })
             .is_ok()
         {
-            // Wait up to 100ms for the writer to drain pending events.
-            // This prevents data loss when Store is dropped without close().
-            let _ = rx.recv_timeout(std::time::Duration::from_millis(100));
+            let _ = rx.recv();
         }
+        let _ = writer.join();
     }
 }
 
@@ -1631,6 +1633,45 @@ mod tests {
         );
 
         store.close().expect("close");
+    }
+
+    #[test]
+    fn append_submission_waits_behind_lifecycle_gate() {
+        let dir = TempDir::new().expect("temp dir");
+        let store = Arc::new(Store::open(StoreConfig::new(dir.path())).expect("open store"));
+        let lifecycle = store.lifecycle_gate.lock();
+        let coord = Coordinate::new("entity:lifecycle-gated", "scope:test").expect("coord");
+        let (started_tx, started_rx) = flume::bounded(1);
+        let (done_tx, done_rx) = flume::bounded(1);
+        let worker_store = Arc::clone(&store);
+
+        let worker = std::thread::Builder::new()
+            .name("batpak-lifecycle-gate-regression".into())
+            .spawn(move || {
+                started_tx.send(()).expect("notify started");
+                let result = worker_store.append(
+                    &coord,
+                    EventKind::DATA,
+                    &serde_json::json!({"blocked": true}),
+                );
+                done_tx.send(result).expect("send append result");
+            })
+            .expect("spawn append worker");
+
+        started_rx.recv().expect("worker started");
+        assert!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err(),
+            "PROPERTY: writer submissions must not pass the lifecycle gate while compaction/snapshot/close owns it"
+        );
+
+        drop(lifecycle);
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("append completes after lifecycle gate opens")
+            .expect("append succeeds");
+        worker.join().expect("append worker joins");
     }
 
     #[test]

@@ -15,6 +15,14 @@ fn strip_open_completed(entries: Vec<batpak::store::IndexEntry>) -> Vec<batpak::
         .collect()
 }
 
+#[cfg(feature = "dangerous-test-hooks")]
+fn fault_injector_check<I: batpak::store::fault::FaultInjector>(
+    injector: &I,
+    point: batpak::store::fault::InjectionPoint,
+) -> Option<batpak::store::StoreError> {
+    injector.check(point)
+}
+
 /// Test: append_reaction_batch sets correlation/causation on all items.
 #[test]
 fn batch_append_reaction_batch() {
@@ -869,27 +877,27 @@ fn batch_subscription_atomicity_no_partial_visibility() {
 #[cfg(feature = "dangerous-test-hooks")]
 #[test]
 fn fault_injector_after_commit_before_fsync() {
-    use batpak::store::fault::{CountdownInjector, FaultInjector, InjectionPoint};
+    use batpak::store::fault::{CountdownInjector, InjectionPoint};
 
     let injector = CountdownInjector::after_commit_before_fsync();
 
     // Should trigger at BatchCommitWritten point.
     let commit_point = InjectionPoint::BatchCommitWritten { batch_id: 1 };
-    assert!(injector.check(commit_point).is_some());
+    assert!(fault_injector_check(&injector, commit_point).is_some());
 
     // Should NOT trigger at other points.
     let begin_point = InjectionPoint::BatchBeginWritten {
         batch_id: 1,
         item_count: 5,
     };
-    assert!(injector.check(begin_point).is_none());
+    assert!(fault_injector_check(&injector, begin_point).is_none());
 
     let items_point = InjectionPoint::BatchItemWritten {
         batch_id: 1,
         item_index: 0,
         total_items: 5,
     };
-    assert!(injector.check(items_point).is_none());
+    assert!(fault_injector_check(&injector, items_point).is_none());
 }
 
 /// Test: cross-segment batch with fault at segment boundary.
@@ -1425,6 +1433,69 @@ fn batch_survives_unclean_shutdown_without_sidx_footer() {
         vec![0, 1, 2],
         "recovered batch payloads must round-trip exactly"
     );
+}
+
+#[test]
+fn oversized_batch_reopens_with_sidx_entries_pointing_to_correct_segment() {
+    let tmp = tempfile::tempdir().expect("create temp dir for oversized batch SIDX test");
+    let data_dir = tmp.path().to_path_buf();
+    let coord = Coordinate::new("regress:sidx-segment-owner", "scope:test").expect("coord");
+    let mut expected = Vec::new();
+
+    {
+        let mut config = StoreConfig::new(&data_dir);
+        config.segment_max_bytes = 512;
+        let store = Store::open(config).expect("open store");
+        store
+            .append(
+                &coord,
+                EventKind::DATA,
+                &serde_json::json!({"warmup": "x".repeat(400)}),
+            )
+            .expect("warmup append");
+
+        let items: Vec<BatchAppendItem> = (0..4)
+            .map(|i| {
+                expected.push(i);
+                BatchAppendItem::new(
+                    coord.clone(),
+                    EventKind::DATA,
+                    &serde_json::json!({"item": i, "pad": "y".repeat(400)}),
+                    AppendOptions::default(),
+                    CausationRef::None,
+                )
+                .expect("construct oversized batch item")
+            })
+            .collect();
+        let receipts = store.append_batch(items).expect("append oversized batch");
+        assert_eq!(receipts.len(), expected.len());
+        store.close().expect("close store writes SIDX footer");
+    }
+
+    let _ = std::fs::remove_file(data_dir.join("index.ckpt"));
+    let _ = std::fs::remove_file(data_dir.join("index.fbati"));
+
+    let reopened = Store::open(StoreConfig::new(&data_dir)).expect("reopen via segment scan");
+    let entries = reopened.query(&Region::entity(coord.entity()));
+    assert_eq!(
+        entries.len(),
+        expected.len() + 1,
+        "warmup plus every committed batch item must rebuild from segment SIDX"
+    );
+
+    for (entry, expected_item) in entries.iter().skip(1).zip(expected) {
+        let stored = reopened
+            .get(entry.event_id)
+            .expect("SIDX disk position reads committed batch frame");
+        assert_eq!(
+            stored.event.header.event_id, entry.event_id,
+            "PROPERTY: SIDX row must point to the segment containing this event frame, not a later batch segment"
+        );
+        assert_eq!(
+            stored.event.payload["item"],
+            serde_json::json!(expected_item)
+        );
+    }
 }
 
 /// REGRESSION: batch wall_ms must remain monotonic per entity even when the

@@ -207,7 +207,7 @@ instead of pretending.
   - `append_without_gate_returns_immediately` defends the default no-gate
     append behavior.
   - `append_with_durable_gate_blocks_until_synced` defends durable gate
-    blocking until a later cadence sync.
+    blocking until a later explicit sync advances the durable frontier.
   - `append_with_applied_gate_blocks_until_min_projection_advances` defends
     append-time applied gates honoring the min across registered projections.
   - `append_with_visible_gate_returns_after_publish` defends visible gate

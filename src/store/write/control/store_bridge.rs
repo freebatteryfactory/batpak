@@ -18,6 +18,7 @@ impl Store<Open> {
         items: Vec<BatchAppendItem>,
         token: Option<u64>,
     ) -> Result<BatchAppendTicket, StoreError> {
+        let _lifecycle = self.lifecycle_gate.lock();
         let (tx, rx) = flume::bounded(1);
         let command = match token {
             Some(token) => WriterCommand::FenceAppendBatch {
@@ -41,6 +42,7 @@ impl Store<Open> {
         payload: &impl Serialize,
         submission: AppendSubmission,
     ) -> Result<AppendTicket, StoreError> {
+        let _lifecycle = self.lifecycle_gate.lock();
         submission.validate_route(self)?;
         submission.validate_idempotency(self)?;
         let event = submission.build_event(payload, kind, self.runtime.now_us())?;

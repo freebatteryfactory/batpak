@@ -103,7 +103,7 @@ fn wall_ms_monotonic_under_clock_regression() {
 
 #[test]
 fn clock_key_orders_by_wall_then_clock_then_uuid() {
-    let mut keys = vec![
+    let mut keys = [
         ClockKey {
             wall_ms: 10,
             clock: 3,
@@ -130,7 +130,7 @@ fn clock_key_orders_by_wall_then_clock_then_uuid() {
 
     assert_eq!(
         keys,
-        vec![
+        [
             ClockKey {
                 wall_ms: 9,
                 clock: 99,

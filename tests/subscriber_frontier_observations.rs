@@ -127,3 +127,29 @@ fn unknown_precision_and_unknown_consumed_frontier_are_explicit() -> TestResult 
     assert_eq!(envelope.body.loss_precision, LossPrecision::Unknown);
     Ok(())
 }
+
+#[test]
+fn consumed_frontier_ahead_of_available_is_explicit() -> TestResult {
+    let (store, data_dir_guard) = small_store_support::small_segment_store()?;
+    assert!(data_dir_guard.path().exists());
+    let report =
+        store.subscriber_frontier_observation(&SubscriberFrontierRequest::cursor_backed(
+            Some(99),
+            SubscriberDeliveryState::Active,
+            LossPrecision::Unknown,
+        ))?;
+
+    assert!(
+        report.body.findings.iter().any(|finding| matches!(
+            finding,
+            SubscriberFrontierFinding::ConsumedFrontierAheadOfAvailable {
+                consumed_sequence: 99,
+                available_sequence,
+            } if *available_sequence == report.body.available_frontier_sequence
+        )),
+        "PROPERTY: consumed frontier greater than available must emit an explicit finding, got {:?}",
+        report.body.findings
+    );
+    assert_eq!(report.body.lag_events, Some(0));
+    Ok(())
+}

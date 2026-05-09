@@ -43,11 +43,7 @@ impl ProjectionRegistry {
     pub(crate) fn notify_applied(&self, projection_id: impl Into<String>, point: HlcPoint) {
         let projection_id = projection_id.into();
         let mut state = self.inner.lock();
-        let current_applied = self.watermark_handle.lock().snapshot().applied_hlc;
-        let progress = state
-            .progress
-            .entry(projection_id)
-            .or_insert(current_applied);
+        let progress = state.progress.entry(projection_id).or_insert(point);
         *progress = (*progress).max(point);
         self.recompute_locked(&state);
     }
@@ -61,7 +57,7 @@ impl ProjectionRegistry {
 
     fn recompute_locked(&self, state: &ProjectionRegistryState) {
         if let Some(point) = state.progress.values().copied().min() {
-            self.watermark_handle.lock().advance_applied(point);
+            self.watermark_handle.lock().set_applied(point);
         }
     }
 }

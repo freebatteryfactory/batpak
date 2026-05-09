@@ -372,52 +372,75 @@ pub(crate) fn ast_references_name(file: &syn::File, name: &str) -> bool {
         needle: &'a str,
         found: bool,
     }
+    impl Walker<'_> {
+        fn path_matches(&self, path: &syn::Path) -> bool {
+            path.segments
+                .iter()
+                .any(|segment| segment.ident == self.needle)
+        }
+
+        fn token_stream_mentions(&self, tokens: &proc_macro2::TokenStream) -> bool {
+            tokens.clone().into_iter().any(|token| match token {
+                proc_macro2::TokenTree::Ident(ident) => ident == self.needle,
+                proc_macro2::TokenTree::Group(group) => self.token_stream_mentions(&group.stream()),
+                proc_macro2::TokenTree::Punct(_) | proc_macro2::TokenTree::Literal(_) => false,
+            })
+        }
+    }
     impl<'a, 'ast> Visit<'ast> for Walker<'a> {
+        fn visit_attribute(&mut self, attr: &'ast syn::Attribute) {
+            if self.found {
+                return;
+            }
+            let meta_mentions = match &attr.meta {
+                syn::Meta::Path(path) => self.path_matches(path),
+                syn::Meta::List(list) => self.token_stream_mentions(&list.tokens),
+                syn::Meta::NameValue(_) => false,
+            };
+            if self.path_matches(attr.path()) || meta_mentions {
+                self.found = true;
+                return;
+            }
+            syn::visit::visit_attribute(self, attr);
+        }
+
         fn visit_path(&mut self, path: &'ast syn::Path) {
             if self.found {
                 return;
             }
-            for segment in &path.segments {
-                if segment.ident == self.needle {
-                    self.found = true;
-                    return;
-                }
+            if self.path_matches(path) {
+                self.found = true;
+                return;
             }
             syn::visit::visit_path(self, path);
         }
 
-        fn visit_use_tree(&mut self, tree: &'ast syn::UseTree) {
+        fn visit_expr_struct(&mut self, expr: &'ast syn::ExprStruct) {
             if self.found {
                 return;
             }
-            match tree {
-                syn::UseTree::Name(n) => {
-                    if n.ident == self.needle {
-                        self.found = true;
-                    }
-                }
-                syn::UseTree::Rename(r) => {
-                    if r.ident == self.needle || r.rename == self.needle {
-                        self.found = true;
-                    }
-                }
-                syn::UseTree::Path(p) => {
-                    if p.ident == self.needle {
-                        self.found = true;
-                        return;
-                    }
-                    self.visit_use_tree(&p.tree);
-                }
-                syn::UseTree::Group(group) => {
-                    for item in &group.items {
-                        self.visit_use_tree(item);
-                        if self.found {
-                            return;
-                        }
-                    }
-                }
-                syn::UseTree::Glob(_) => {}
+            if self.path_matches(&expr.path) {
+                self.found = true;
+                return;
             }
+            syn::visit::visit_expr_struct(self, expr);
+        }
+
+        fn visit_expr_path(&mut self, expr: &'ast syn::ExprPath) {
+            if self.found {
+                return;
+            }
+            if self.path_matches(&expr.path) {
+                self.found = true;
+                return;
+            }
+            syn::visit::visit_expr_path(self, expr);
+        }
+
+        fn visit_item_use(&mut self, _node: &'ast syn::ItemUse) {
+            // Import-only references do not prove behavioral coverage. The
+            // caller wants an expression, type, pattern, method call, or macro
+            // path that actually consumes the public item.
         }
 
         fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
@@ -435,11 +458,9 @@ pub(crate) fn ast_references_name(file: &syn::File, name: &str) -> bool {
             if self.found {
                 return;
             }
-            for segment in &mac.path.segments {
-                if segment.ident == self.needle {
-                    self.found = true;
-                    return;
-                }
+            if self.path_matches(&mac.path) || self.token_stream_mentions(&mac.tokens) {
+                self.found = true;
+                return;
             }
             syn::visit::visit_macro(self, mac);
         }
@@ -534,7 +555,11 @@ impl Visit<'_> for PublicItemCollector {
     }
 
     fn visit_item_mod(&mut self, node: &syn::ItemMod) {
-        self.record_visibility(&node.vis, &node.attrs, node.ident.to_string());
+        // Public modules are namespace/ownership containers. Their exported
+        // functions, types, constants, traits, and explicit `pub use` symbols
+        // carry the behavioral surface and are checked directly; requiring a
+        // test to name every namespace would turn this detector into import
+        // style enforcement instead of orphan-infrastructure detection.
         syn::visit::visit_item_mod(self, node);
     }
 
@@ -626,6 +651,101 @@ fn example() {}
         assert!(
             sites.is_empty(),
             "sibling unused_* lints and non-dead_code attributes must stay allowed"
+        );
+    }
+
+    #[test]
+    fn ast_reference_detection_ignores_bare_imports_but_accepts_type_use() {
+        let import_only = syn::parse_file(
+            r#"
+use batpak::ImportantType;
+
+fn unrelated() {}
+"#,
+        )
+        .expect("parse import-only fixture");
+        assert!(
+            !super::ast_references_name(&import_only, "ImportantType"),
+            "bare use trees must not satisfy public-item coverage"
+        );
+
+        let typed_use = syn::parse_file(
+            r#"
+use batpak::ImportantType;
+
+fn takes_value(value: ImportantType) {
+    let _ = value;
+}
+"#,
+        )
+        .expect("parse type-use fixture");
+        assert!(
+            super::ast_references_name(&typed_use, "ImportantType"),
+            "type positions still count as real public-item uses"
+        );
+
+        let struct_literal = syn::parse_file(
+            r#"
+use batpak::ImportantType;
+
+fn constructs() {
+    let _ = ImportantType { value: 1 };
+}
+"#,
+        )
+        .expect("parse struct-literal fixture");
+        assert!(
+            super::ast_references_name(&struct_literal, "ImportantType"),
+            "constructor and struct-literal positions are real public-item uses"
+        );
+
+        let bare_function_call = syn::parse_file(
+            r#"
+use batpak::important_function;
+
+fn calls() {
+    important_function();
+}
+"#,
+        )
+        .expect("parse bare function-call fixture");
+        assert!(
+            super::ast_references_name(&bare_function_call, "important_function"),
+            "bare function calls imported into scope are real public-item uses"
+        );
+
+        let macro_body_reference = syn::parse_file(
+            r#"
+use batpak::ImportantType;
+
+fn checks(value: ImportantType) {
+    assert!(matches!(value, ImportantType::Ready));
+}
+"#,
+        )
+        .expect("parse macro-body fixture");
+        assert!(
+            super::ast_references_name(&macro_body_reference, "Ready"),
+            "macro token bodies are real Rust positions, while string literals remain ignored"
+        );
+
+        let derive_attribute_reference = syn::parse_file(
+            r#"
+#[derive(Debug, ImportantDerive)]
+struct UsesDerive;
+"#,
+        )
+        .expect("parse derive-attribute fixture");
+        assert!(
+            super::ast_references_name(&derive_attribute_reference, "ImportantDerive"),
+            "derive macro attributes are real public-item witnesses"
+        );
+
+        let config_propagation = syn::parse_file(include_str!("../../tests/config_propagation.rs"))
+            .expect("parse config_propagation fixture");
+        assert!(
+            super::ast_references_name(&config_propagation, "ClockKey"),
+            "pub_item_allowlist witnesses may use struct-literal construction as behavioral coverage"
         );
     }
 }

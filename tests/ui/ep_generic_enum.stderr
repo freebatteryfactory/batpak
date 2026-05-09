@@ -1,0 +1,5 @@
+error: #[derive(EventPayload)] does not support generic payload types; use a concrete named-field struct
+ --> tests/ui/ep_generic_enum.rs:7:6
+  |
+7 | enum GenericEnumPayload<T> {
+  |      ^^^^^^^^^^^^^^^^^^

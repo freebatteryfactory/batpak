@@ -247,6 +247,7 @@ impl WriterState<'_> {
         kind: EventKind,
         payload_size: u32,
         item_index_for_error: usize,
+        allow_rotation: bool,
     ) -> Result<u64, StoreError> {
         let now_us = self.runtime.now_us();
         let now_ms = crate::store::config::wall_ms_from_timestamp_us(now_us)
@@ -272,8 +273,10 @@ impl WriterState<'_> {
         let frame = segment::frame_encode(&payload)
             .map_err(|e| batch_failed(item_index_for_error, BatchFailureStage::Encoding, e))?;
 
-        self.maybe_rotate_segment()
-            .map_err(|e| batch_failed(item_index_for_error, BatchFailureStage::Syncing, e))?;
+        if allow_rotation {
+            self.maybe_rotate_segment()
+                .map_err(|e| batch_failed(item_index_for_error, BatchFailureStage::Syncing, e))?;
+        }
 
         let offset = self
             .active_segment
@@ -348,8 +351,13 @@ impl WriterState<'_> {
 
         let batch_count = u32::try_from(prepared.len())
             .map_err(|_| StoreError::ser_msg("prepared batch item count exceeds u32::MAX"))?;
-        let marker_offset =
-            self.write_batch_marker_frame(batch_id, EventKind::SYSTEM_BATCH_BEGIN, batch_count, 0)?;
+        let marker_offset = self.write_batch_marker_frame(
+            batch_id,
+            EventKind::SYSTEM_BATCH_BEGIN,
+            batch_count,
+            0,
+            true,
+        )?;
         trace!(batch_id, offset = marker_offset, "batch marker written");
 
         #[cfg(feature = "dangerous-test-hooks")]
@@ -377,6 +385,7 @@ impl WriterState<'_> {
             EventKind::SYSTEM_BATCH_COMMIT,
             0,
             prepared.len() - 1,
+            false,
         )?;
         trace!(batch_id, "batch commit marker written");
 
@@ -460,9 +469,6 @@ impl WriterState<'_> {
             };
             let frame = segment::frame_encode(&frame_payload)
                 .map_err(|e| batch_failed(idx, BatchFailureStage::Encoding, e))?;
-
-            self.maybe_rotate_segment()
-                .map_err(|e| batch_failed(idx, BatchFailureStage::Syncing, e))?;
 
             let offset = self
                 .active_segment

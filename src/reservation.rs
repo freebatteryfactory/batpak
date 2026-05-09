@@ -1,7 +1,7 @@
-//! Generic **reservation ledger** substrate: dimensionless `units`, opaque `subject_ref`, closed
-//! structural states, explicit transition operations, deterministic findings, and reconciliation
-//! buckets. This module does **not** import [`crate::store`] and encodes no payment, inventory,
-//! capability, or workflow policy.
+//! Batpak Substrate Closure reservation ledger: dimensionless `units`, opaque `subject_ref`,
+//! closed structural states, explicit transition operations, deterministic findings, and
+//! reconciliation buckets. This module does **not** import [`crate::store`] and encodes no payment,
+//! inventory, capability, or workflow policy.
 
 use crate::evidence::content_hash;
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,9 @@ pub const RESERVATION_LEDGER_REPORT_SCHEMA_VERSION: u32 = 1;
 
 /// Schema version for [`ReservationReconciliationReportBody`].
 pub const RESERVATION_RECONCILIATION_REPORT_SCHEMA_VERSION: u32 = 1;
+
+/// Schema version for [`ReservationTransition`] inputs understood by v1 helpers.
+pub const RESERVATION_TRANSITION_SCHEMA_VERSION: u32 = 1;
 
 /// Structural reservation state lane (closed set).
 pub const RESERVATION_STATE_RESERVED: u32 = 0;
@@ -61,7 +64,7 @@ pub type ReservationState = u32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ReservationId(pub [u8; 32]);
 
-/// Opaque subject reference (normalized by sorting `key_bytes` only; `namespace` is caller-defined).
+/// Opaque subject reference (`key_bytes` are caller-defined bytes and are never reordered).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReservationSubjectRef {
     /// Caller-defined namespace discriminant.
@@ -148,6 +151,15 @@ pub enum ReservationFinding {
         /// Stable reason code (see `RESERVATION_REASON_*`).
         reason_code: u32,
     },
+    /// Transition schema version is not supported by these v1 helpers.
+    UnsupportedTransitionSchemaVersion {
+        /// Target reservation id.
+        reservation_id: ReservationId,
+        /// Observed transition schema version.
+        observed: u32,
+        /// Supported transition schema version.
+        expected: u32,
+    },
 }
 
 /// Canonical ledger report body after simulating normalized transitions.
@@ -186,15 +198,12 @@ pub type ReservationReconciliationReport = ReservationReconciliationReportBody;
 /// Digest width for reservation reports.
 pub type ReservationDigest = [u8; 32];
 
-/// Normalize subject ref (sort `key_bytes` only).
+/// Normalize subject ref.
+///
+/// `key_bytes` are opaque caller material and are preserved byte-for-byte.
 #[must_use]
 pub fn normalize_reservation_subject_ref(subject: &ReservationSubjectRef) -> ReservationSubjectRef {
-    let mut key_bytes = subject.key_bytes.clone();
-    key_bytes.sort();
-    ReservationSubjectRef {
-        namespace: subject.namespace,
-        key_bytes,
-    }
+    subject.clone()
 }
 
 /// Normalize transition for hashing (sorts `cause_refs`).
@@ -278,7 +287,12 @@ pub fn simulate_reservation_ledger(
     let mut ledger: BTreeMap<ReservationId, ReservationEntry> = BTreeMap::new();
 
     for t in &sorted {
-        if t.schema_version != 1 {
+        if t.schema_version != RESERVATION_TRANSITION_SCHEMA_VERSION {
+            findings.push(ReservationFinding::UnsupportedTransitionSchemaVersion {
+                reservation_id: t.reservation_id,
+                observed: t.schema_version,
+                expected: RESERVATION_TRANSITION_SCHEMA_VERSION,
+            });
             continue;
         }
         let id = t.reservation_id;

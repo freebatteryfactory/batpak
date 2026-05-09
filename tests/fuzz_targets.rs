@@ -33,6 +33,20 @@ fn valid_region_component() -> BoxedStrategy<String> {
     "[a-z][a-z0-9:_]{0,20}".prop_map(|s| s.to_string()).boxed()
 }
 
+fn segment_header_fixture(
+    version: u16,
+    flags: u16,
+    created_ns: i64,
+    segment_id: u64,
+) -> SegmentHeader {
+    SegmentHeader {
+        version,
+        flags,
+        created_ns,
+        segment_id,
+    }
+}
+
 // ============================================================
 // FUZZ TARGET 1: frame_decode — CRITICAL
 // Parses [len:u32 BE][crc32:u32 BE][msgpack] from arbitrary bytes.
@@ -485,7 +499,7 @@ proptest! {
         created_ns in any::<i64>(),
         segment_id in any::<u64>(),
     ) {
-        let header = SegmentHeader { version, flags, created_ns, segment_id };
+        let header = segment_header_fixture(version, flags, created_ns, segment_id);
         let bytes = rmp_serde::to_vec_named(&header).expect("serialize");
         let decoded: SegmentHeader = rmp_serde::from_slice(&bytes).expect("deserialize");
         prop_assert_eq!(header.version, decoded.version,
