@@ -532,6 +532,8 @@ mod tests {
     use super::{checked_next_clock, WatermarkState};
     use crate::store::stats::HlcPoint;
     use crate::store::StoreError;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn checked_next_clock_advances_and_overflow_fails_closed() {
@@ -573,6 +575,47 @@ mod tests {
             state.snapshot().oldest_pending_write_age_ms,
             None,
             "PROPERTY: duplicate accepted advance must not reopen pending write age"
+        );
+    }
+
+    #[test]
+    fn dangerous_notify_all_wakes_condvar_waiters() {
+        let handle = WatermarkState::handle();
+        let waiter_handle = handle.clone();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = std::thread::Builder::new()
+            .name("watermark-dangerous-notify-proof".to_string())
+            .spawn(move || {
+                let mut guard = waiter_handle.state.lock();
+                ready_tx.send(()).expect("signal waiter readiness");
+                let wait_result = waiter_handle
+                    .cv
+                    .wait_for(&mut guard, Duration::from_secs(2));
+                done_tx
+                    .send(wait_result.timed_out())
+                    .expect("signal waiter outcome");
+            })
+            .expect("spawn condvar waiter");
+
+        ready_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("waiter reached condvar wait setup");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let timed_out = loop {
+            handle.dangerous_notify_all();
+            match done_rx.recv_timeout(Duration::from_millis(10)) {
+                Ok(timed_out) => break timed_out,
+                Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
+                Err(err) => panic!("PROPERTY: watermark waiter did not report outcome: {err}"),
+            }
+        };
+
+        waiter.join().expect("condvar waiter joins");
+        assert!(
+            !timed_out,
+            "PROPERTY: dangerous_notify_all must wake frontier waiters before their timeout"
         );
     }
 }
