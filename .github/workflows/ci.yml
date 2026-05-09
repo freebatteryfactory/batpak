@@ -126,7 +126,7 @@ jobs:
           bash ./scripts/run-in-devcontainer.sh '
             cargo xtask quickstart &&
             cargo xtask consumer-smoke &&
-            cargo run --manifest-path templates/minimal-app/Cargo.toml
+            cargo xtask templates
           '
 
   mutants:

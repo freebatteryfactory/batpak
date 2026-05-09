@@ -1,4 +1,4 @@
-use super::{deny_split, integrity};
+use super::{deny_split, integrity, templates};
 use crate::bench;
 use crate::util::cargo;
 use crate::BenchSurface;
@@ -22,6 +22,7 @@ pub(crate) fn ci() -> Result<()> {
     cargo(["test", "--doc", "--all-features"])?;
     cargo(["check", "--all-features"])?;
     cargo(["check", "--no-default-features"])?;
+    templates()?;
     bench::bench_compile(BenchSurface::Neutral)?;
     bench::bench_compile(BenchSurface::Native)
 }

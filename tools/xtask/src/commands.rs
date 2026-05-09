@@ -5,6 +5,7 @@ mod release;
 mod scaffold;
 mod setup;
 mod stress;
+mod templates;
 
 use crate::util::cargo;
 use crate::{ChaosArgs, FuzzArgs, MutantsArgs, PlatformArgs, ReleaseArgs, ScaffoldArgs, SetupArgs};
@@ -41,6 +42,10 @@ pub(crate) fn integrity<const N: usize>(subcommand: &str, extra: [&str; N]) -> R
 
 pub(crate) fn scaffold(args: ScaffoldArgs) -> Result<()> {
     scaffold::scaffold(args)
+}
+
+pub(crate) fn templates() -> Result<()> {
+    templates::templates()
 }
 
 pub(crate) fn deny_split() -> Result<()> {

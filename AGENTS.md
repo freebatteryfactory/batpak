@@ -57,6 +57,7 @@
 - `cargo xtask platform audit`
 - `cargo xtask perf-gates`    — hardware-dependent catastrophic-regression guards, not precision perf gates. Run only on stable hardware; no current environment is both canonical and timing-stable, so these thresholds stay intentionally generous and are excluded from `cargo xtask ci`.
 - `cargo xtask bench --surface neutral|native [--save|--compare|--compile]`
+- `cargo xtask templates`     — offline standalone smoke test for every Cargo template under `templates/`; catches scaffold/template drift that structural path checks cannot prove
 - `cargo xtask cover [--ci|--json|--threshold N]`
 - `cargo xtask docs`
 - `cargo xtask release --dry-run`

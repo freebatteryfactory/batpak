@@ -38,6 +38,8 @@ enum XtaskCommand {
     Bench(BenchArgs),
     Cover(CoverArgs),
     Mutants(MutantsArgs),
+    /// Smoke-test every standalone Cargo template under `templates/`.
+    Templates,
     /// Copy a golden batpak starter template into a local project directory.
     Scaffold(ScaffoldArgs),
     Platform(PlatformArgs),
@@ -244,6 +246,7 @@ fn main() -> Result<()> {
         XtaskCommand::Bench(args) => bench::bench(args),
         XtaskCommand::Cover(args) => coverage::cover(args),
         XtaskCommand::Mutants(args) => commands::mutants(args),
+        XtaskCommand::Templates => commands::templates(),
         XtaskCommand::Scaffold(args) => commands::scaffold(args),
         XtaskCommand::Platform(args) => commands::platform(args),
         XtaskCommand::Fuzz(args) => commands::fuzz(args),
