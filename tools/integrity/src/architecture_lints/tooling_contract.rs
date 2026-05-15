@@ -9,6 +9,7 @@ pub(super) fn check(repo_root: &Path) -> Result<()> {
     check_packaging_surface(repo_root)?;
     check_default_feature_surface(repo_root)?;
     check_xtask_surface_contract(repo_root)?;
+    check_syncbat_is_explicitly_gated(repo_root)?;
     Ok(())
 }
 
@@ -265,6 +266,36 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
             && !run_in_devcontainer_content.contains("image_hash_label"),
         "run-in-devcontainer.sh must stay a thin compatibility wrapper over xtask-owned devcontainer logic",
     )?;
+    Ok(())
+}
+
+fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
+    let workspace_toml =
+        fs::read_to_string(repo_root.join("Cargo.toml")).context("read workspace Cargo.toml")?;
+    if !workspace_toml.contains("\"crates/syncbat\"") {
+        return Ok(());
+    }
+
+    let xtask_main =
+        fs::read_to_string(repo_root.join("tools/xtask/src/main.rs")).context("read xtask main")?;
+    let ci_rs =
+        fs::read_to_string(repo_root.join("tools/xtask/src/commands/ci.rs")).context("read ci")?;
+
+    for (label, content) in [
+        ("tools/xtask/src/main.rs", xtask_main),
+        ("tools/xtask/src/commands/ci.rs", ci_rs),
+    ] {
+        ensure(
+            content.contains("\"syncbat\"")
+                && content.contains("\"check\"")
+                && content.contains("\"test\"")
+                && content.contains("\"clippy\""),
+            format!(
+                "{label} must explicitly gate syncbat with check, test, and clippy while default-members stays core-only"
+            ),
+        )?;
+    }
+
     Ok(())
 }
 

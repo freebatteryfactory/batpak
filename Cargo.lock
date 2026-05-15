@@ -1422,6 +1422,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "syncbat"
+version = "0.1.0"
+dependencies = [
+ "batpak",
+]
+
+[[package]]
 name = "target-triple"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
