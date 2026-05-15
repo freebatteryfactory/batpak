@@ -227,20 +227,36 @@ fn main() -> Result<()> {
         XtaskCommand::AgentDoctor => commands::integrity("agent-doctor", []),
         XtaskCommand::Check => {
             util::cargo(["check", "--all-features"])?;
-            util::cargo(["check", "--no-default-features"])
+            util::cargo(["check", "--no-default-features"])?;
+            util::cargo(["check", "-p", "syncbat", "--all-features"])?;
+            util::cargo(["check", "-p", "syncbat", "--no-default-features"])
         }
         XtaskCommand::Test => {
             util::cargo(["nextest", "run", "--profile", "ci", "--all-features"])?;
-            util::cargo(["test", "--doc", "--all-features"])
+            util::cargo(["test", "--doc", "--all-features"])?;
+            util::cargo(["test", "-p", "syncbat", "--all-features"])
         }
-        XtaskCommand::Clippy => util::cargo([
-            "clippy",
-            "--all-features",
-            "--all-targets",
-            "--",
-            "-D",
-            "warnings",
-        ]),
+        XtaskCommand::Clippy => {
+            util::cargo([
+                "clippy",
+                "--all-features",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ])?;
+            util::cargo([
+                "clippy",
+                "-p",
+                "syncbat",
+                "--no-deps",
+                "--all-features",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ])
+        }
         XtaskCommand::Fmt => util::cargo(["fmt", "--check"]),
         XtaskCommand::Deny => commands::deny_split(),
         XtaskCommand::Bench(args) => bench::bench(args),
@@ -287,6 +303,17 @@ fn main() -> Result<()> {
             util::cargo(["fmt", "--check"])?;
             util::cargo([
                 "clippy",
+                "--all-features",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ])?;
+            util::cargo([
+                "clippy",
+                "-p",
+                "syncbat",
+                "--no-deps",
                 "--all-features",
                 "--all-targets",
                 "--",

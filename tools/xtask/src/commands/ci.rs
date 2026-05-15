@@ -17,11 +17,25 @@ pub(crate) fn ci() -> Result<()> {
         "-D",
         "warnings",
     ])?;
+    cargo([
+        "clippy",
+        "-p",
+        "syncbat",
+        "--no-deps",
+        "--all-features",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings",
+    ])?;
     deny_split()?;
     cargo(["nextest", "run", "--profile", "ci", "--all-features"])?;
     cargo(["test", "--doc", "--all-features"])?;
+    cargo(["test", "-p", "syncbat", "--all-features"])?;
     cargo(["check", "--all-features"])?;
     cargo(["check", "--no-default-features"])?;
+    cargo(["check", "-p", "syncbat", "--all-features"])?;
+    cargo(["check", "-p", "syncbat", "--no-default-features"])?;
     templates()?;
     bench::bench_compile(BenchSurface::Neutral)?;
     bench::bench_compile(BenchSurface::Native)
