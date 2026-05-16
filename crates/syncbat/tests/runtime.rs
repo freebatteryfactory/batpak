@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use syncbat::{
-    Core, EffectClass, Handler, HandlerError, HandlerResult, Module, OperationDescriptor,
-    ReceiptEnvelope, ReceiptHash, ReceiptHashPolicy, ReceiptOutcome, ReceiptSink, ReceiptSinkError,
-    RecordedReceipt, Register, RuntimeError,
+    CheckoutFrame, Core, EffectClass, Handler, HandlerError, HandlerResult, Module,
+    OperationDescriptor, ReceiptEnvelope, ReceiptHash, ReceiptHashPolicy, ReceiptOutcome,
+    ReceiptSink, ReceiptSinkError, RecordedReceipt, Register, RuntimeError,
 };
 
 const ECHO: OperationDescriptor = OperationDescriptor::new(
@@ -15,6 +15,14 @@ const ECHO: OperationDescriptor = OperationDescriptor::new(
     "schema.echo.input.v1",
     "schema.echo.output.v1",
     "receipt.echo.v1",
+);
+
+const PING: OperationDescriptor = OperationDescriptor::new(
+    "ping",
+    EffectClass::Inspect,
+    "schema.ping.input.v1",
+    "schema.ping.output.v1",
+    "receipt.ping.v1",
 );
 
 struct EchoHandler;
@@ -85,6 +93,17 @@ fn register_and_cache_lookup_descriptor_by_name() {
     register
         .insert_operation(ECHO)
         .expect("operation inserts once");
+    register
+        .insert_operation(PING)
+        .expect("operation inserts once");
+
+    let names = register.names().collect::<Vec<_>>();
+    assert_eq!(names, vec!["echo", "ping"]);
+    let descriptor_names = register
+        .descriptors()
+        .map(|(name, descriptor)| (name, descriptor.name()))
+        .collect::<Vec<_>>();
+    assert_eq!(descriptor_names, vec![("echo", "echo"), ("ping", "ping")]);
 
     let cache = syncbat::CacheRegister::from_register(&register);
     assert!(cache.contains_operation("echo"));
@@ -92,6 +111,30 @@ fn register_and_cache_lookup_descriptor_by_name() {
         cache.operation("echo").expect("descriptor").receipt_kind,
         "receipt.echo.v1"
     );
+    assert_eq!(
+        cache.descriptor("ping").expect("descriptor").effect,
+        EffectClass::Inspect
+    );
+    assert_eq!(cache.names().collect::<Vec<_>>(), vec!["echo", "ping"]);
+}
+
+#[test]
+fn cache_register_is_rebuilt_projection_over_register() {
+    let mut register = Register::new();
+    register
+        .insert_operation(ECHO)
+        .expect("operation inserts once");
+
+    {
+        let cache = syncbat::CacheRegister::from_register(&register);
+        assert_eq!(cache.names().collect::<Vec<_>>(), vec!["echo"]);
+    }
+
+    register
+        .insert_operation(PING)
+        .expect("operation inserts once");
+    let cache = syncbat::CacheRegister::from_register(&register);
+    assert_eq!(cache.names().collect::<Vec<_>>(), vec!["echo", "ping"]);
 }
 
 #[test]
@@ -222,6 +265,94 @@ fn unknown_operation_does_not_emit_receipt() {
 
     assert!(matches!(err, RuntimeError::UnknownOperation { name } if name == "missing"));
     assert!(sink.envelopes().is_empty());
+}
+
+#[test]
+fn unknown_checkout_frame_does_not_emit_receipt() {
+    let sink = RecordingReceiptSink::default();
+    let mut builder = Core::builder();
+    builder.register(ECHO, EchoHandler).expect("register");
+    builder.receipt_sink(sink.clone());
+    let mut core = builder.build().expect("core builds");
+
+    let err = match core.checkout_frame(CheckoutFrame::new("missing", b"plain".to_vec())) {
+        Ok(_) => panic!("expected unknown operation"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(err, RuntimeError::UnknownOperation { name } if name == "missing"));
+    assert!(sink.envelopes().is_empty());
+}
+
+#[test]
+fn register_resolved_checkout_records_completed_receipt_once() {
+    let sink = RecordingReceiptSink::default();
+    let register = Register::from_operations([ECHO]).expect("register builds");
+    let mut builder = Core::builder();
+    builder.register(ECHO, EchoHandler).expect("register");
+    builder.receipt_sink(sink.clone());
+    let mut core = builder.build().expect("core builds");
+
+    let checkout = register
+        .checkout("echo", b"hello".to_vec())
+        .expect("checkout resolves");
+    let result = core.checkout(checkout).expect("checkout runs");
+
+    assert_eq!(result.output().as_slice(), b"hello:ok");
+    let recorded = result.recorded_receipt().expect("recorded receipt");
+    assert_eq!(sink.envelopes(), vec![recorded.envelope.clone()]);
+}
+
+#[test]
+fn checkout_uses_runtime_descriptor_when_resolved_descriptor_is_stale() {
+    const STALE_ECHO: OperationDescriptor = OperationDescriptor::new(
+        "echo",
+        EffectClass::Emit,
+        "schema.stale.input.v1",
+        "schema.stale.output.v1",
+        "receipt.stale.v1",
+    );
+
+    let sink = RecordingReceiptSink::default();
+    let mut builder = Core::builder();
+    builder.register(ECHO, EchoHandler).expect("register");
+    builder.receipt_sink(sink.clone());
+    let mut core = builder.build().expect("core builds");
+
+    let checkout = syncbat::Checkout::new(STALE_ECHO, b"hello".to_vec());
+    let result = core.checkout(checkout).expect("checkout runs");
+
+    assert_eq!(result.descriptor(), &ECHO);
+    let recorded = result.recorded_receipt().expect("recorded receipt");
+    assert_eq!(recorded.envelope.descriptor_name, "echo");
+    assert_eq!(recorded.envelope.receipt_kind, "receipt.echo.v1");
+    assert_eq!(sink.envelopes(), vec![recorded.envelope.clone()]);
+}
+
+#[test]
+fn register_resolved_checkout_records_failed_receipt_once() {
+    let sink = RecordingReceiptSink::default();
+    let register = Register::from_operations([ECHO]).expect("register builds");
+    let mut builder = Core::builder();
+    builder.register(ECHO, FailingHandler).expect("register");
+    builder.receipt_sink(sink.clone());
+    let mut core = builder.build().expect("core builds");
+
+    let checkout = register
+        .checkout("echo", b"bad".to_vec())
+        .expect("checkout resolves");
+    let err = match core.checkout(checkout) {
+        Ok(_) => panic!("expected handler failure"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(err, RuntimeError::Handler { .. }));
+    let envelopes = sink.envelopes();
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(
+        envelopes[0].outcome,
+        ReceiptOutcome::failed("failed", "boom")
+    );
 }
 
 #[test]

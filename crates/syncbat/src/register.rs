@@ -4,7 +4,8 @@
 //! from persisted records. [`CacheRegister`] is a borrowed, hot lookup view over
 //! a register; it is an optimization surface, not the source of truth.
 
-use crate::operation::OperationDescriptor;
+use crate::core::{Checkout, CheckoutFrame};
+use crate::operation::{OperationDescriptor, OperationInput};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -85,6 +86,12 @@ impl Register {
         self.operations.get(name)
     }
 
+    /// Return an operation descriptor by name.
+    #[must_use]
+    pub fn descriptor(&self, name: &str) -> Option<&OperationDescriptor> {
+        self.operation(name)
+    }
+
     /// Return true when an operation name exists in the catalog.
     #[must_use]
     pub fn contains_operation(&self, name: &str) -> bool {
@@ -113,6 +120,25 @@ impl Register {
         self.operations
             .iter()
             .map(|(name, descriptor)| (name.as_str(), descriptor))
+    }
+
+    /// Iterate operation descriptors in deterministic key order.
+    pub fn descriptors(&self) -> impl Iterator<Item = (&str, &OperationDescriptor)> + '_ {
+        self.operations()
+    }
+
+    /// Resolve a checkout request against this durable catalog.
+    #[must_use]
+    pub fn checkout(&self, name: impl AsRef<str>, input: OperationInput) -> Option<Checkout> {
+        let name = name.as_ref();
+        let descriptor = *self.operation(name)?;
+        Some(Checkout::new(descriptor, input))
+    }
+
+    /// Build an unresolved checkout frame.
+    #[must_use]
+    pub fn checkout_frame(name: impl Into<String>, input: OperationInput) -> CheckoutFrame {
+        CheckoutFrame::new(name, input)
     }
 
     /// Borrow the underlying deterministic operation map.
@@ -152,6 +178,12 @@ impl<'a> CacheRegister<'a> {
         self.operations.get(name).copied()
     }
 
+    /// Return an operation descriptor by name.
+    #[must_use]
+    pub fn descriptor(&self, name: &str) -> Option<&'a OperationDescriptor> {
+        self.operation(name)
+    }
+
     /// Return true when the projection contains an operation name.
     #[must_use]
     pub fn contains_operation(&self, name: &str) -> bool {
@@ -180,5 +212,10 @@ impl<'a> CacheRegister<'a> {
         self.operations
             .iter()
             .map(|(name, descriptor)| (*name, *descriptor))
+    }
+
+    /// Iterate projected operation descriptors in deterministic key order.
+    pub fn descriptors(&self) -> impl Iterator<Item = (&'a str, &'a OperationDescriptor)> + '_ {
+        self.operations()
     }
 }

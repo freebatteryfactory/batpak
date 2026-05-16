@@ -54,8 +54,34 @@ impl Core {
         &mut self,
         name: impl AsRef<str>,
         input: operation::OperationInput,
-    ) -> Result<InvokeResult, RuntimeError> {
-        let name = name.as_ref();
+    ) -> Result<CheckoutResult, RuntimeError> {
+        self.checkout_frame(CheckoutFrame::new(name.as_ref(), input))
+    }
+
+    /// Invoke a checkout frame by resolving it against this runtime.
+    ///
+    /// # Errors
+    /// Returns the same errors as [`Core::invoke`].
+    pub fn checkout_frame(&mut self, frame: CheckoutFrame) -> Result<CheckoutResult, RuntimeError> {
+        let descriptor = *self
+            .descriptors
+            .get(frame.name())
+            .ok_or_else(|| RuntimeError::unknown_operation(frame.name()))?;
+        self.checkout(Checkout::from_frame(descriptor, frame))
+    }
+
+    /// Invoke a checkout that has already been resolved against a register.
+    ///
+    /// Runtime receipts are owned by this method. Handlers receive only their
+    /// invocation context and cannot write directly to the configured sink.
+    ///
+    /// # Errors
+    /// Returns [`RuntimeError::UnknownOperation`] when this runtime does not
+    /// mount the checkout descriptor, [`RuntimeError::MissingHandler`] when no
+    /// matching handler is present, a handler-provided runtime error, or a
+    /// fail-closed receipt-sink error after a resolved handler invocation.
+    pub fn checkout(&mut self, checkout: Checkout) -> Result<CheckoutResult, RuntimeError> {
+        let name = checkout.descriptor.name();
         let descriptor = *self
             .descriptors
             .get(name)
@@ -64,6 +90,7 @@ impl Core {
             .handlers
             .get_mut(name)
             .ok_or_else(|| RuntimeError::missing_handler(name))?;
+        let input = checkout.input;
         let handler_result = {
             let mut cx = Cx::new(&descriptor);
             handler.handle(&input, &mut cx)
@@ -84,7 +111,7 @@ impl Core {
             ReceiptOutcome::Completed,
         )?;
 
-        Ok(InvokeResult {
+        Ok(CheckoutResult {
             descriptor,
             output,
             recorded_receipt,
@@ -118,6 +145,83 @@ impl Core {
     }
 }
 
+/// Unresolved checkout request passed to a runtime.
+pub struct CheckoutFrame {
+    name: String,
+    input: operation::OperationInput,
+}
+
+impl CheckoutFrame {
+    /// Build an unresolved checkout frame.
+    #[must_use]
+    pub fn new(name: impl Into<String>, input: operation::OperationInput) -> Self {
+        Self {
+            name: name.into(),
+            input,
+        }
+    }
+
+    /// Requested operation name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Input bytes for the requested checkout.
+    #[must_use]
+    pub fn input(&self) -> &[u8] {
+        &self.input
+    }
+
+    /// Consume the frame and return its parts.
+    #[must_use]
+    pub fn into_parts(self) -> (String, operation::OperationInput) {
+        (self.name, self.input)
+    }
+}
+
+/// Checkout request resolved to an operation descriptor.
+pub struct Checkout {
+    descriptor: operation::OperationDescriptor,
+    input: operation::OperationInput,
+}
+
+impl Checkout {
+    /// Build a resolved checkout request.
+    #[must_use]
+    pub fn new(
+        descriptor: operation::OperationDescriptor,
+        input: operation::OperationInput,
+    ) -> Self {
+        Self { descriptor, input }
+    }
+
+    fn from_frame(descriptor: operation::OperationDescriptor, frame: CheckoutFrame) -> Self {
+        Self {
+            descriptor,
+            input: frame.input,
+        }
+    }
+
+    /// Descriptor that will be used for dispatch.
+    #[must_use]
+    pub fn descriptor(&self) -> &operation::OperationDescriptor {
+        &self.descriptor
+    }
+
+    /// Input bytes for this checkout.
+    #[must_use]
+    pub fn input(&self) -> &[u8] {
+        &self.input
+    }
+
+    /// Consume the checkout and return its parts.
+    #[must_use]
+    pub fn into_parts(self) -> (operation::OperationDescriptor, operation::OperationInput) {
+        (self.descriptor, self.input)
+    }
+}
+
 /// Minimal borrowed invocation context passed to handlers.
 pub struct Cx<'a> {
     descriptor: &'a operation::OperationDescriptor,
@@ -135,14 +239,14 @@ impl<'a> Cx<'a> {
     }
 }
 
-/// Result returned by a successful invocation.
-pub struct InvokeResult {
+/// Result returned by a successful checkout.
+pub struct CheckoutResult {
     descriptor: operation::OperationDescriptor,
     output: operation::OperationOutput,
     recorded_receipt: Option<RecordedReceipt>,
 }
 
-impl InvokeResult {
+impl CheckoutResult {
     /// Descriptor that was used for dispatch.
     #[must_use]
     pub fn descriptor(&self) -> &operation::OperationDescriptor {
@@ -167,3 +271,6 @@ impl InvokeResult {
         self.output
     }
 }
+
+/// Backward-compatible name for checkout results returned by [`Core::invoke`].
+pub type InvokeResult = CheckoutResult;

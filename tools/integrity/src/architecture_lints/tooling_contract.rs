@@ -272,27 +272,57 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
 fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
     let workspace_toml =
         fs::read_to_string(repo_root.join("Cargo.toml")).context("read workspace Cargo.toml")?;
-    if !workspace_toml.contains("\"crates/syncbat\"") {
-        return Ok(());
-    }
+    let family_crates = [
+        ("syncbat", "\"crates/syncbat\""),
+        ("clawbat", "\"crates/clawbat\""),
+        ("netbat", "\"crates/netbat\""),
+    ];
 
     let xtask_main =
         fs::read_to_string(repo_root.join("tools/xtask/src/main.rs")).context("read xtask main")?;
     let ci_rs =
         fs::read_to_string(repo_root.join("tools/xtask/src/commands/ci.rs")).context("read ci")?;
+    let coverage_rs = fs::read_to_string(repo_root.join("tools/xtask/src/coverage.rs"))
+        .context("read coverage")?;
+    let docs_rs =
+        fs::read_to_string(repo_root.join("tools/xtask/src/docs.rs")).context("read docs")?;
+
+    let active_family_crates = family_crates
+        .iter()
+        .filter_map(|(package, manifest_entry)| {
+            workspace_toml.contains(manifest_entry).then_some(*package)
+        })
+        .collect::<Vec<_>>();
+
+    if active_family_crates.is_empty() {
+        return Ok(());
+    }
 
     for (label, content) in [
         ("tools/xtask/src/main.rs", xtask_main),
         ("tools/xtask/src/commands/ci.rs", ci_rs),
     ] {
+        for package in &active_family_crates {
+            ensure(
+                content.contains(&format!("\"{package}\""))
+                    && content.contains("\"check\"")
+                    && content.contains("\"test\"")
+                    && content.contains("\"clippy\""),
+                format!(
+                    "{label} must explicitly gate {package} with check, test, and clippy while default-members stays core-only"
+                ),
+            )?;
+        }
+    }
+
+    for package in &active_family_crates {
         ensure(
-            content.contains("\"syncbat\"")
-                && content.contains("\"check\"")
-                && content.contains("\"test\"")
-                && content.contains("\"clippy\""),
-            format!(
-                "{label} must explicitly gate syncbat with check, test, and clippy while default-members stays core-only"
-            ),
+            coverage_rs.contains(&format!("\"{package}\"")),
+            format!("tools/xtask/src/coverage.rs must include {package} while default-members stays core-only"),
+        )?;
+        ensure(
+            docs_rs.contains(&format!("\"{package}\"")),
+            format!("tools/xtask/src/docs.rs must include {package} while default-members stays core-only"),
         )?;
     }
 

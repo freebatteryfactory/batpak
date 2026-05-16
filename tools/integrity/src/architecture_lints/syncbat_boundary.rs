@@ -91,38 +91,88 @@ const SYNCBAT_LAYER_LEAKS: &[BoundaryTerm] = &[
     },
 ];
 
-const SYNCBAT_INTERNAL_BATPAK_PATHS: &[InternalPathTerm] = &[
+const CLAWBAT_LAYER_LEAKS: &[BoundaryTerm] = &[
+    BoundaryTerm {
+        token: "netbat",
+        reason: "network layer names belong outside clawbat",
+    },
+    BoundaryTerm {
+        token: "Netbat",
+        reason: "network layer type names belong outside clawbat",
+    },
+    BoundaryTerm {
+        token: "contract.context_v1",
+        reason: "PCP profile wire validation belongs outside clawbat",
+    },
+    BoundaryTerm {
+        token: "authority_required",
+        reason: "authority claims are caller policy input, not clawbat law",
+    },
+    BoundaryTerm {
+        token: "PCP-Core",
+        reason: "PCP semantics stay outside clawbat",
+    },
+    BoundaryTerm {
+        token: "PcpProfile",
+        reason: "PCP profile types stay outside clawbat",
+    },
+];
+
+const NETBAT_LAYER_LEAKS: &[BoundaryTerm] = &[
+    BoundaryTerm {
+        token: "contract.context_v1",
+        reason: "PCP profile wire validation belongs outside netbat",
+    },
+    BoundaryTerm {
+        token: "authority_required",
+        reason: "authority claims are caller policy input, not netbat law",
+    },
+    BoundaryTerm {
+        token: "PCP-Core",
+        reason: "PCP semantics stay outside netbat",
+    },
+    BoundaryTerm {
+        token: "PcpProfile",
+        reason: "PCP profile types stay outside netbat",
+    },
+    BoundaryTerm {
+        token: "batpak::",
+        reason: "netbat should expose syncbat, not bypass the runtime into batpak",
+    },
+];
+
+const FAMILY_INTERNAL_BATPAK_PATHS: &[InternalPathTerm] = &[
     InternalPathTerm {
         module: "write",
-        reason: "syncbat must use batpak's public substrate API, not store write internals",
+        reason: "family layers must use batpak's public substrate API, not store write internals",
     },
     InternalPathTerm {
         module: "segment",
-        reason: "syncbat must use batpak's public substrate API, not segment internals",
+        reason: "family layers must use batpak's public substrate API, not segment internals",
     },
     InternalPathTerm {
         module: "index",
-        reason: "syncbat must use batpak's public substrate API, not index internals",
+        reason: "family layers must use batpak's public substrate API, not index internals",
     },
     InternalPathTerm {
         module: "cold_start",
-        reason: "syncbat must use batpak's public substrate API, not cold-start internals",
+        reason: "family layers must use batpak's public substrate API, not cold-start internals",
     },
     InternalPathTerm {
         module: "platform",
-        reason: "syncbat must use batpak's public substrate API, not platform internals",
+        reason: "family layers must use batpak's public substrate API, not platform internals",
     },
     InternalPathTerm {
         module: "projection",
-        reason: "syncbat must use batpak's public substrate API, not projection internals",
+        reason: "family layers must use batpak's public substrate API, not projection internals",
     },
     InternalPathTerm {
         module: "delivery",
-        reason: "syncbat must use batpak's public substrate API, not delivery internals",
+        reason: "family layers must use batpak's public substrate API, not delivery internals",
     },
     InternalPathTerm {
         module: "ancestry",
-        reason: "syncbat must use batpak's public substrate API, not ancestry internals",
+        reason: "family layers must use batpak's public substrate API, not ancestry internals",
     },
 ];
 
@@ -150,12 +200,13 @@ pub(super) fn check(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
             )?;
         }
 
-        if layer == SourceLayer::Syncbat {
-            for term in syncbat_internal_batpak_paths(&semantic_content) {
+        if layer.checks_internal_batpak_paths() {
+            for term in family_internal_batpak_paths(&semantic_content) {
                 ensure(
                     false,
                     format!(
-                        "syncbat batpak internal dependency in {}: `batpak::store::{}` ({})",
+                        "{} batpak internal dependency in {}: `batpak::store::{}` ({})",
+                        layer.label(),
                         relative(repo_root, path),
                         term.module,
                         term.reason
@@ -171,6 +222,8 @@ pub(super) fn check(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
 enum SourceLayer {
     Core,
     Syncbat,
+    Clawbat,
+    Netbat,
 }
 
 impl SourceLayer {
@@ -178,7 +231,16 @@ impl SourceLayer {
         match self {
             SourceLayer::Core => "batpak core",
             SourceLayer::Syncbat => "syncbat",
+            SourceLayer::Clawbat => "clawbat",
+            SourceLayer::Netbat => "netbat",
         }
+    }
+
+    fn checks_internal_batpak_paths(self) -> bool {
+        matches!(
+            self,
+            SourceLayer::Syncbat | SourceLayer::Clawbat | SourceLayer::Netbat
+        )
     }
 }
 
@@ -193,6 +255,12 @@ fn source_layer(repo_root: &Path, path: &Path) -> Option<SourceLayer> {
     if rel.starts_with("crates/syncbat/src/") || rel.starts_with("crates/syncbat-macros/src/") {
         return Some(SourceLayer::Syncbat);
     }
+    if rel.starts_with("crates/clawbat/src/") {
+        return Some(SourceLayer::Clawbat);
+    }
+    if rel.starts_with("crates/netbat/src/") {
+        return Some(SourceLayer::Netbat);
+    }
     None
 }
 
@@ -200,13 +268,15 @@ fn forbidden_layer_terms(layer: SourceLayer, content: &str) -> Vec<&'static Boun
     let terms = match layer {
         SourceLayer::Core => CORE_LAYER_LEAKS,
         SourceLayer::Syncbat => SYNCBAT_LAYER_LEAKS,
+        SourceLayer::Clawbat => CLAWBAT_LAYER_LEAKS,
+        SourceLayer::Netbat => NETBAT_LAYER_LEAKS,
     };
     matching_terms(terms, content)
 }
 
-fn syncbat_internal_batpak_paths(content: &str) -> Vec<&'static InternalPathTerm> {
+fn family_internal_batpak_paths(content: &str) -> Vec<&'static InternalPathTerm> {
     let compact = compact(content);
-    SYNCBAT_INTERNAL_BATPAK_PATHS
+    FAMILY_INTERNAL_BATPAK_PATHS
         .iter()
         .filter(|term| {
             let direct = format!("batpak::store::{}", term.module);
@@ -300,7 +370,7 @@ fn compact(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        forbidden_layer_terms, semantic_content, source_layer, syncbat_internal_batpak_paths,
+        family_internal_batpak_paths, forbidden_layer_terms, semantic_content, source_layer,
         SourceLayer,
     };
     use std::path::Path;
@@ -330,23 +400,41 @@ mod tests {
     }
 
     #[test]
+    fn detects_clawbat_layer_leaks() {
+        let content = "pub struct NetbatGateway;\nconst PROFILE: &str = \"contract.context_v1\";\n";
+        let tokens = tokens(forbidden_layer_terms(SourceLayer::Clawbat, content));
+        assert!(tokens.contains(&"Netbat"));
+        assert!(tokens.contains(&"contract.context_v1"));
+    }
+
+    #[test]
+    fn detects_netbat_layer_leaks() {
+        let content = "let _ = batpak::Store::open;\nconst CLAIM: &str = \"authority_required\";\n";
+        let tokens = tokens(forbidden_layer_terms(SourceLayer::Netbat, content));
+        assert!(tokens.contains(&"batpak::"));
+        assert!(tokens.contains(&"authority_required"));
+    }
+
+    #[test]
     fn allows_public_substrate_terms() {
         let content = "Store AppendReceipt GateSet Pipeline opaque extension cargo";
         assert!(forbidden_layer_terms(SourceLayer::Core, content).is_empty());
         assert!(forbidden_layer_terms(SourceLayer::Syncbat, content).is_empty());
+        assert!(forbidden_layer_terms(SourceLayer::Clawbat, content).is_empty());
+        assert!(forbidden_layer_terms(SourceLayer::Netbat, content).is_empty());
     }
 
     #[test]
     fn allows_syncbat_public_batpak_paths() {
         let content = "use batpak::{AppendOptions, Store};\nuse batpak::prelude::*;\n";
         assert!(forbidden_layer_terms(SourceLayer::Syncbat, content).is_empty());
-        assert!(syncbat_internal_batpak_paths(content).is_empty());
+        assert!(family_internal_batpak_paths(content).is_empty());
     }
 
     #[test]
     fn rejects_syncbat_internal_batpak_paths() {
         let content = "use batpak::store::segment::FrameHeader;\n";
-        let tokens = path_modules(syncbat_internal_batpak_paths(content));
+        let tokens = path_modules(family_internal_batpak_paths(content));
         assert_eq!(tokens, vec!["segment"]);
     }
 
@@ -357,15 +445,15 @@ mod tests {
         let nested_group = "use batpak::{store::{Store, platform::Probe}};\n";
 
         assert_eq!(
-            path_modules(syncbat_internal_batpak_paths(direct_group)),
+            path_modules(family_internal_batpak_paths(direct_group)),
             vec!["segment"]
         );
         assert_eq!(
-            path_modules(syncbat_internal_batpak_paths(crate_group)),
+            path_modules(family_internal_batpak_paths(crate_group)),
             vec!["index"]
         );
         assert_eq!(
-            path_modules(syncbat_internal_batpak_paths(nested_group)),
+            path_modules(family_internal_batpak_paths(nested_group)),
             vec!["platform"]
         );
     }
@@ -392,6 +480,14 @@ mod tests {
         assert_eq!(
             source_layer(root, Path::new("/repo/crates/syncbat-macros/src/lib.rs")),
             Some(SourceLayer::Syncbat)
+        );
+        assert_eq!(
+            source_layer(root, Path::new("/repo/crates/clawbat/src/lib.rs")),
+            Some(SourceLayer::Clawbat)
+        );
+        assert_eq!(
+            source_layer(root, Path::new("/repo/crates/netbat/src/lib.rs")),
+            Some(SourceLayer::Netbat)
         );
         assert_eq!(
             source_layer(
