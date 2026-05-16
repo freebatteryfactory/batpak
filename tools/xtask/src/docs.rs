@@ -73,7 +73,19 @@ pub(crate) fn docs(args: DocsArgs) -> Result<()> {
         "RUSTDOCFLAGS",
         "--cfg docsrs --cfg batpak_stable_docs -D warnings",
     );
-    cargo_doc.args(["doc", "--all-features", "--no-deps"]);
+    cargo_doc.args([
+        "doc",
+        "-p",
+        "batpak",
+        "-p",
+        "syncbat",
+        "-p",
+        "downstream-kit",
+        "-p",
+        "netbat",
+        "--all-features",
+        "--no-deps",
+    ]);
     crate::util::run(cargo_doc)?;
     copy_dir(&target_dir.join("doc"), &site_dir.join("api"))?;
 

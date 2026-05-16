@@ -10,6 +10,8 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+const FAMILY_CRATES: &[&str] = &["syncbat", "downstream-kit", "netbat"];
+
 #[derive(Parser)]
 #[command(author, version, about = "Root developer command surface for batpak")]
 struct Cli {
@@ -228,13 +230,19 @@ fn main() -> Result<()> {
         XtaskCommand::Check => {
             util::cargo(["check", "--all-features"])?;
             util::cargo(["check", "--no-default-features"])?;
-            util::cargo(["check", "-p", "syncbat", "--all-features"])?;
-            util::cargo(["check", "-p", "syncbat", "--no-default-features"])
+            for package in FAMILY_CRATES {
+                util::cargo(["check", "-p", package, "--all-features"])?;
+                util::cargo(["check", "-p", package, "--no-default-features"])?;
+            }
+            Ok(())
         }
         XtaskCommand::Test => {
             util::cargo(["nextest", "run", "--profile", "ci", "--all-features"])?;
             util::cargo(["test", "--doc", "--all-features"])?;
-            util::cargo(["test", "-p", "syncbat", "--all-features"])
+            for package in FAMILY_CRATES {
+                util::cargo(["test", "-p", package, "--all-features"])?;
+            }
+            Ok(())
         }
         XtaskCommand::Clippy => {
             util::cargo([
@@ -245,17 +253,20 @@ fn main() -> Result<()> {
                 "-D",
                 "warnings",
             ])?;
-            util::cargo([
-                "clippy",
-                "-p",
-                "syncbat",
-                "--no-deps",
-                "--all-features",
-                "--all-targets",
-                "--",
-                "-D",
-                "warnings",
-            ])
+            for package in FAMILY_CRATES {
+                util::cargo([
+                    "clippy",
+                    "-p",
+                    package,
+                    "--no-deps",
+                    "--all-features",
+                    "--all-targets",
+                    "--",
+                    "-D",
+                    "warnings",
+                ])?;
+            }
+            Ok(())
         }
         XtaskCommand::Fmt => util::cargo(["fmt", "--check"]),
         XtaskCommand::Deny => commands::deny_split(),
@@ -320,6 +331,19 @@ fn main() -> Result<()> {
                 "-D",
                 "warnings",
             ])?;
+            for package in ["downstream-kit", "netbat"] {
+                util::cargo([
+                    "clippy",
+                    "-p",
+                    package,
+                    "--no-deps",
+                    "--all-features",
+                    "--all-targets",
+                    "--",
+                    "-D",
+                    "warnings",
+                ])?;
+            }
             commands::integrity("traceability-check", [])?;
             commands::integrity("structural-check", [])
         }

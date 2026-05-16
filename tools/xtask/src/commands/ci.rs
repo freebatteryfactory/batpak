@@ -4,6 +4,8 @@ use crate::util::cargo;
 use crate::BenchSurface;
 use anyhow::Result;
 
+const FAMILY_CRATES: &[&str] = &["syncbat", "downstream-kit", "netbat"];
+
 pub(crate) fn ci() -> Result<()> {
     integrity("doctor", ["--strict"])?;
     integrity("traceability-check", [])?;
@@ -17,25 +19,31 @@ pub(crate) fn ci() -> Result<()> {
         "-D",
         "warnings",
     ])?;
-    cargo([
-        "clippy",
-        "-p",
-        "syncbat",
-        "--no-deps",
-        "--all-features",
-        "--all-targets",
-        "--",
-        "-D",
-        "warnings",
-    ])?;
+    for package in FAMILY_CRATES {
+        cargo([
+            "clippy",
+            "-p",
+            package,
+            "--no-deps",
+            "--all-features",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ])?;
+    }
     deny_split()?;
     cargo(["nextest", "run", "--profile", "ci", "--all-features"])?;
     cargo(["test", "--doc", "--all-features"])?;
-    cargo(["test", "-p", "syncbat", "--all-features"])?;
+    for package in FAMILY_CRATES {
+        cargo(["test", "-p", package, "--all-features"])?;
+    }
     cargo(["check", "--all-features"])?;
     cargo(["check", "--no-default-features"])?;
-    cargo(["check", "-p", "syncbat", "--all-features"])?;
-    cargo(["check", "-p", "syncbat", "--no-default-features"])?;
+    for package in FAMILY_CRATES {
+        cargo(["check", "-p", package, "--all-features"])?;
+        cargo(["check", "-p", package, "--no-default-features"])?;
+    }
     templates()?;
     bench::bench_compile(BenchSurface::Neutral)?;
     bench::bench_compile(BenchSurface::Native)
