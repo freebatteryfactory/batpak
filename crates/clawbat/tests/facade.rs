@@ -5,6 +5,7 @@ use downstream-kit as cb;
 #[cb::operation(
     descriptor = ECHO,
     register = register_echo,
+    register_item = echo_item,
     name = "claw.echo",
     effect = Compute,
     input_schema = "schema.claw.echo.input.v1",
@@ -21,12 +22,12 @@ fn echo(input: &[u8], cx: &mut syncbat::Cx<'_>) -> syncbat::HandlerResult {
 
 #[test]
 fn cb_operation_macro_generates_syncbat_descriptor() {
-    assert_eq!(ECHO.name, "claw.echo");
-    assert_eq!(ECHO.title, Some("Claw Echo"));
+    assert_eq!(ECHO.name(), "claw.echo");
+    assert_eq!(ECHO.title(), Some("Claw Echo"));
     assert_eq!(ECHO.effect, cb::EffectClass::Compute);
-    assert_eq!(ECHO.input_schema_ref, "schema.claw.echo.input.v1");
-    assert_eq!(ECHO.output_schema_ref, "schema.claw.echo.output.v1");
-    assert_eq!(ECHO.receipt_kind, "receipt.claw.echo.v1");
+    assert_eq!(ECHO.input_schema_ref(), "schema.claw.echo.input.v1");
+    assert_eq!(ECHO.output_schema_ref(), "schema.claw.echo.output.v1");
+    assert_eq!(ECHO.receipt_kind(), "receipt.claw.echo.v1");
 }
 
 #[test]
@@ -53,16 +54,38 @@ fn cb_vocabulary_maps_to_syncbat_without_runtime_ownership() {
     let descriptor: cb::OperationDescriptor = syncbat::OperationDescriptor::new(
         "claw.vocab",
         cb::EffectClass::Inspect,
-        pass.as_str(),
-        capability.as_str(),
+        "schema.claw.vocab.input.v1",
+        "schema.claw.vocab.output.v1",
         "receipt.claw.vocab.v1",
     );
+    let pass_descriptor = cb::PassDescriptor::new(pass).with_title("Local validation");
+    let capability_descriptor =
+        cb::CapabilityDescriptor::new(capability).with_title("Store append");
+    let passes = [pass];
+    let capabilities = [capability];
+    let item = cb::OperationKitItem::new(descriptor.clone(), &passes, &capabilities);
     let envelope = cb::ReceiptEnvelope::new(&descriptor, cb::ReceiptOutcome::Completed);
 
     assert_eq!(descriptor.name(), "claw.vocab");
     assert_eq!(descriptor.effect, syncbat::EffectClass::Inspect);
+    assert_eq!(pass_descriptor.id(), pass);
+    assert_eq!(pass_descriptor.title(), Some("Local validation"));
+    assert_eq!(capability_descriptor.id(), capability);
+    assert_eq!(capability_descriptor.title(), Some("Store append"));
+    assert_eq!(item.descriptor(), &descriptor);
+    assert_eq!(item.passes(), &[pass]);
+    assert_eq!(item.capabilities(), &[capability]);
     assert_eq!(envelope.descriptor_name, "claw.vocab");
     assert_eq!(envelope.outcome, syncbat::ReceiptOutcome::Completed);
+}
+
+#[test]
+fn cb_kit_item_builds_syncbat_register_item_without_running_runtime() {
+    let item = cb::OperationKitItem::new(ECHO.clone(), &[], &[]);
+    let register_item = item.register_item(echo);
+
+    assert_eq!(register_item.descriptor(), &ECHO);
+    assert_eq!(echo_item().descriptor(), &ECHO);
 }
 
 #[test]
