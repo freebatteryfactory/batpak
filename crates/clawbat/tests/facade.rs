@@ -75,4 +75,53 @@ fn cb_refs_reject_invalid_values() {
             byte: b' '
         })
     ));
+    assert!(matches!(
+        cb::CapabilityRef::new(".capability"),
+        Err(cb::RefError::InvalidBoundary {
+            index: 0,
+            byte: b'.'
+        })
+    ));
+    assert!(matches!(
+        cb::CapabilityRef::new("capability."),
+        Err(cb::RefError::InvalidBoundary {
+            index: 10,
+            byte: b'.'
+        })
+    ));
+    assert!(matches!(
+        cb::CapabilityRef::new("capability..store"),
+        Err(cb::RefError::RepeatedSeparator {
+            index: 11,
+            byte: b'.'
+        })
+    ));
+}
+
+#[test]
+fn cb_ref_validation_drills_ascii_byte_space() {
+    for byte in 0_u8..=127 {
+        let value = [b'a', byte, b'z'];
+        let value = std::str::from_utf8(&value).expect("ascii fixture");
+        let accepted = cb::CapabilityRef::new(Box::leak(value.to_owned().into_boxed_str()));
+        let should_accept = matches!(
+            byte,
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'.' | b'_' | b':' | b'-'
+        );
+
+        assert_eq!(
+            accepted.is_ok(),
+            should_accept,
+            "unexpected validation result for byte 0x{byte:02x}"
+        );
+    }
+
+    assert!(cb::CapabilityRef::new("a.b_c:d-e").is_ok());
+    assert!(matches!(
+        cb::CapabilityRef::new("a.-z"),
+        Err(cb::RefError::RepeatedSeparator {
+            index: 2,
+            byte: b'-'
+        })
+    ));
 }

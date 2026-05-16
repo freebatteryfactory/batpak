@@ -38,6 +38,21 @@ pub enum RefError {
         /// Invalid byte.
         byte: u8,
     },
+    /// The reference started or ended with punctuation instead of an
+    /// alphanumeric token byte.
+    InvalidBoundary {
+        /// Byte offset of the invalid boundary byte.
+        index: usize,
+        /// Invalid boundary byte.
+        byte: u8,
+    },
+    /// The reference contained two adjacent separator bytes.
+    RepeatedSeparator {
+        /// Byte offset of the repeated separator byte.
+        index: usize,
+        /// Repeated separator byte.
+        byte: u8,
+    },
 }
 
 impl fmt::Display for RefError {
@@ -51,6 +66,18 @@ impl fmt::Display for RefError {
                 write!(
                     f,
                     "reference contains invalid byte 0x{byte:02x} at offset {index}"
+                )
+            }
+            Self::InvalidBoundary { index, byte } => {
+                write!(
+                    f,
+                    "reference contains boundary separator byte 0x{byte:02x} at offset {index}"
+                )
+            }
+            Self::RepeatedSeparator { index, byte } => {
+                write!(
+                    f,
+                    "reference contains repeated separator byte 0x{byte:02x} at offset {index}"
                 )
             }
         }
@@ -74,7 +101,8 @@ impl<K> Ref<K> {
     ///
     /// # Errors
     /// Returns [`RefError`] when the value is empty, too long, or contains a
-    /// byte outside `[A-Za-z0-9._:-]`.
+    /// byte outside `[A-Za-z0-9._:-]`, starts or ends with punctuation, or
+    /// contains adjacent separator bytes.
     pub const fn new(value: &'static str) -> Result<Self, RefError> {
         let bytes = value.as_bytes();
         if bytes.is_empty() {
@@ -103,6 +131,14 @@ impl<K> Ref<K> {
             if !valid {
                 return Err(RefError::InvalidByte { index, byte });
             }
+            if !is_ref_alnum(byte) {
+                if index == 0 || index + 1 == bytes.len() {
+                    return Err(RefError::InvalidBoundary { index, byte });
+                }
+                if !is_ref_alnum(bytes[index - 1]) {
+                    return Err(RefError::RepeatedSeparator { index, byte });
+                }
+            }
             index += 1;
         }
 
@@ -117,6 +153,10 @@ impl<K> Ref<K> {
     pub const fn as_str(&self) -> &'static str {
         self.value
     }
+}
+
+const fn is_ref_alnum(byte: u8) -> bool {
+    matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9')
 }
 
 impl<K> AsRef<str> for Ref<K> {
