@@ -11,13 +11,131 @@ use std::error::Error;
 use std::fmt;
 
 pub use syncbat::operation;
-pub use syncbat::{EffectClass, OperationDescriptor, ReceiptEnvelope, ReceiptOutcome};
+pub use syncbat::{
+    EffectClass, OperationDescriptor, OperationRegisterItem, ReceiptEnvelope, ReceiptOutcome,
+};
 
 /// Lightweight validated reference to a pass declared by an operation kit.
 pub type PassRef = Ref<Pass>;
 
 /// Lightweight validated reference to a capability declared by an operation kit.
 pub type CapabilityRef = Ref<Capability>;
+
+/// Declared pass metadata for an operation kit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PassDescriptor {
+    id: PassRef,
+    title: Option<&'static str>,
+}
+
+impl PassDescriptor {
+    /// Construct pass metadata from a validated pass reference.
+    #[must_use]
+    pub const fn new(id: PassRef) -> Self {
+        Self { id, title: None }
+    }
+
+    /// Return a copy with a human-readable title.
+    #[must_use]
+    pub const fn with_title(mut self, title: &'static str) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    /// Stable pass reference.
+    #[must_use]
+    pub const fn id(&self) -> PassRef {
+        self.id
+    }
+
+    /// Optional human-readable title.
+    #[must_use]
+    pub const fn title(&self) -> Option<&'static str> {
+        self.title
+    }
+}
+
+/// Declared capability metadata for an operation kit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CapabilityDescriptor {
+    id: CapabilityRef,
+    title: Option<&'static str>,
+}
+
+impl CapabilityDescriptor {
+    /// Construct capability metadata from a validated capability reference.
+    #[must_use]
+    pub const fn new(id: CapabilityRef) -> Self {
+        Self { id, title: None }
+    }
+
+    /// Return a copy with a human-readable title.
+    #[must_use]
+    pub const fn with_title(mut self, title: &'static str) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    /// Stable capability reference.
+    #[must_use]
+    pub const fn id(&self) -> CapabilityRef {
+        self.id
+    }
+
+    /// Optional human-readable title.
+    #[must_use]
+    pub const fn title(&self) -> Option<&'static str> {
+        self.title
+    }
+}
+
+/// Claw kit operation declaration metadata.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationKitItem<'a> {
+    descriptor: OperationDescriptor,
+    passes: &'a [PassRef],
+    capabilities: &'a [CapabilityRef],
+}
+
+impl<'a> OperationKitItem<'a> {
+    /// Construct operation-kit metadata.
+    #[must_use]
+    pub fn new(
+        descriptor: OperationDescriptor,
+        passes: &'a [PassRef],
+        capabilities: &'a [CapabilityRef],
+    ) -> Self {
+        Self {
+            descriptor,
+            passes,
+            capabilities,
+        }
+    }
+
+    /// Runtime descriptor compiled from this declaration.
+    #[must_use]
+    pub fn descriptor(&self) -> &OperationDescriptor {
+        &self.descriptor
+    }
+
+    /// Pass references declared by this operation.
+    #[must_use]
+    pub const fn passes(&self) -> &'a [PassRef] {
+        self.passes
+    }
+
+    /// Capability references declared by this operation.
+    #[must_use]
+    pub const fn capabilities(&self) -> &'a [CapabilityRef] {
+        self.capabilities
+    }
+
+    /// Build a syncbat register item from this operation and a handler.
+    #[must_use]
+    pub fn register_item(&self, handler: syncbat::handler::HandlerFn) -> OperationRegisterItem {
+        OperationRegisterItem::new(self.descriptor.clone(), handler)
+    }
+}
 
 /// Validation error for operation-kit references.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -182,7 +300,8 @@ pub enum Capability {}
 /// Common imports for declaring claw kit operations.
 pub mod prelude {
     pub use crate::{
-        operation, CapabilityRef, EffectClass, OperationDescriptor, PassRef, ReceiptEnvelope,
+        operation, CapabilityDescriptor, CapabilityRef, EffectClass, OperationDescriptor,
+        OperationKitItem, OperationRegisterItem, PassDescriptor, PassRef, ReceiptEnvelope,
         ReceiptOutcome, Ref, RefError,
     };
 }
