@@ -1,7 +1,9 @@
 use super::{ensure, relative};
 use anyhow::{Context, Result};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use syn::visit::Visit;
 
 struct BoundaryTerm {
     token: &'static str,
@@ -176,6 +178,15 @@ const FAMILY_INTERNAL_BATPAK_PATHS: &[InternalPathTerm] = &[
     },
 ];
 
+const ASYNC_RUNTIME_DEPS: &[&str] = &[
+    "tokio",
+    "async-std",
+    "smol",
+    "glommio",
+    "monoio",
+    "async-executor",
+];
+
 pub(super) fn check(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
     for path in tracked_files {
         let layer = match source_layer(repo_root, path) {
@@ -214,7 +225,12 @@ pub(super) fn check(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
                 )?;
             }
         }
+
+        if checks_runtime_shape(repo_root, path) {
+            check_no_async_or_unsafe_runtime_source(repo_root, path, &content)?;
+        }
     }
+    check_family_manifest_boundaries(repo_root)?;
     Ok(())
 }
 
@@ -262,6 +278,192 @@ fn source_layer(repo_root: &Path, path: &Path) -> Option<SourceLayer> {
         return Some(SourceLayer::Netbat);
     }
     None
+}
+
+fn checks_runtime_shape(repo_root: &Path, path: &Path) -> bool {
+    let rel = relative(repo_root, path);
+    rel.starts_with("crates/syncbat/src/")
+        || rel.starts_with("crates/clawbat/src/")
+        || rel.starts_with("crates/netbat/src/")
+}
+
+fn check_no_async_or_unsafe_runtime_source(
+    repo_root: &Path,
+    path: &Path,
+    content: &str,
+) -> Result<()> {
+    let parsed =
+        syn::parse_file(content).with_context(|| format!("parse {}", relative(repo_root, path)))?;
+    let mut visitor = RuntimeShapeVisitor::default();
+    visitor.visit_file(&parsed);
+    if visitor.findings.is_empty() {
+        return Ok(());
+    }
+    ensure(
+        false,
+        format!(
+            "runtime layer source must stay sync-first and safe Rust in {}: {}",
+            relative(repo_root, path),
+            visitor.findings.join(", ")
+        ),
+    )
+}
+
+#[derive(Default)]
+struct RuntimeShapeVisitor {
+    findings: Vec<String>,
+}
+
+impl<'ast> Visit<'ast> for RuntimeShapeVisitor {
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        check_signature(&node.sig, &mut self.findings);
+        syn::visit::visit_item_fn(self, node);
+    }
+
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        check_signature(&node.sig, &mut self.findings);
+        syn::visit::visit_impl_item_fn(self, node);
+    }
+
+    fn visit_trait_item_fn(&mut self, node: &'ast syn::TraitItemFn) {
+        check_signature(&node.sig, &mut self.findings);
+        syn::visit::visit_trait_item_fn(self, node);
+    }
+
+    fn visit_expr_unsafe(&mut self, node: &'ast syn::ExprUnsafe) {
+        self.findings.push("unsafe block".to_owned());
+        syn::visit::visit_expr_unsafe(self, node);
+    }
+}
+
+fn check_signature(sig: &syn::Signature, findings: &mut Vec<String>) {
+    if sig.asyncness.is_some() {
+        findings.push(format!("async fn `{}`", sig.ident));
+    }
+    if sig.unsafety.is_some() {
+        findings.push(format!("unsafe fn `{}`", sig.ident));
+    }
+}
+
+fn check_family_manifest_boundaries(repo_root: &Path) -> Result<()> {
+    let manifests = [
+        ManifestRule {
+            label: "batpak core",
+            rel: "crates/core/Cargo.toml",
+            forbidden_stack_deps: &[
+                "syncbat",
+                "syncbat-macros",
+                "clawbat",
+                "netbat",
+                "pcp",
+                "liteship",
+            ],
+        },
+        ManifestRule {
+            label: "syncbat",
+            rel: "crates/syncbat/Cargo.toml",
+            forbidden_stack_deps: &["clawbat", "netbat", "pcp", "liteship"],
+        },
+        ManifestRule {
+            label: "syncbat-macros",
+            rel: "crates/syncbat-macros/Cargo.toml",
+            forbidden_stack_deps: &["batpak", "syncbat", "clawbat", "netbat", "pcp", "liteship"],
+        },
+        ManifestRule {
+            label: "clawbat",
+            rel: "crates/clawbat/Cargo.toml",
+            forbidden_stack_deps: &["netbat", "pcp", "liteship"],
+        },
+        ManifestRule {
+            label: "netbat",
+            rel: "crates/netbat/Cargo.toml",
+            forbidden_stack_deps: &["batpak", "clawbat", "pcp", "liteship"],
+        },
+    ];
+
+    for rule in manifests {
+        let path = repo_root.join(rule.rel);
+        if !path.exists() {
+            continue;
+        }
+        let content = fs::read_to_string(&path).with_context(|| format!("read {}", rule.rel))?;
+        let all_deps = dependency_names(&content, true);
+        for dep in rule.forbidden_stack_deps {
+            ensure(
+                !all_deps.contains(*dep),
+                format!(
+                    "{} must not declare upward stack dependency `{dep}` in {}",
+                    rule.label, rule.rel
+                ),
+            )?;
+        }
+
+        let production_deps = dependency_names(&content, false);
+        for dep in ASYNC_RUNTIME_DEPS {
+            ensure(
+                !production_deps.contains(*dep),
+                format!(
+                    "{} must not declare async runtime dependency `{dep}` in {}",
+                    rule.label, rule.rel
+                ),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+struct ManifestRule {
+    label: &'static str,
+    rel: &'static str,
+    forbidden_stack_deps: &'static [&'static str],
+}
+
+fn dependency_names(content: &str, include_dev: bool) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut in_dependency_table = false;
+
+    for line in content.lines() {
+        let Some(line) = line.split('#').next() else {
+            continue;
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            in_dependency_table = dependency_table_allows(trimmed, include_dev);
+            continue;
+        }
+        if !in_dependency_table {
+            continue;
+        }
+        let Some((name, _)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let name = name.trim().trim_matches('"').trim_matches('\'');
+        if !name.is_empty() {
+            names.insert(name.to_owned());
+        }
+    }
+
+    names
+}
+
+fn dependency_table_allows(header: &str, include_dev: bool) -> bool {
+    if header == "[dependencies]" || header == "[build-dependencies]" {
+        return true;
+    }
+    if header == "[dev-dependencies]" {
+        return include_dev;
+    }
+    if header.starts_with("[target.") && header.ends_with(".dependencies]") {
+        return true;
+    }
+    if header.starts_with("[target.") && header.ends_with(".build-dependencies]") {
+        return true;
+    }
+    include_dev && header.starts_with("[target.") && header.ends_with(".dev-dependencies]")
 }
 
 fn forbidden_layer_terms(layer: SourceLayer, content: &str) -> Vec<&'static BoundaryTerm> {
@@ -370,10 +572,11 @@ fn compact(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        family_internal_batpak_paths, forbidden_layer_terms, semantic_content, source_layer,
-        SourceLayer,
+        check_signature, dependency_names, family_internal_batpak_paths, forbidden_layer_terms,
+        semantic_content, source_layer, RuntimeShapeVisitor, SourceLayer,
     };
     use std::path::Path;
+    use syn::visit::Visit;
 
     fn tokens(leaks: Vec<&'static super::BoundaryTerm>) -> Vec<&'static str> {
         leaks.iter().map(|leak| leak.token).collect()
@@ -504,5 +707,66 @@ mod tests {
             source_layer(root, Path::new("/repo/crates/syncbat/src/readme.md")),
             None
         );
+    }
+
+    #[test]
+    fn dependency_names_respect_dependency_tables() {
+        let manifest = r#"
+[dependencies]
+syncbat = { path = "../syncbat" }
+tokio = "1"
+
+[dev-dependencies]
+netbat = { path = "../netbat" }
+
+[target.'cfg(unix)'.dependencies]
+smol = "2"
+"#;
+
+        let production = dependency_names(manifest, false);
+        let all = dependency_names(manifest, true);
+
+        assert!(production.contains("syncbat"));
+        assert!(production.contains("tokio"));
+        assert!(production.contains("smol"));
+        assert!(!production.contains("netbat"));
+        assert!(all.contains("netbat"));
+    }
+
+    #[test]
+    fn runtime_shape_visitor_detects_async_and_unsafe_items() {
+        let parsed: syn::File = syn::parse_quote! {
+            async fn bad_async() {}
+            unsafe fn bad_unsafe() {}
+            fn bad_block() {
+                unsafe {}
+            }
+        };
+        let mut visitor = RuntimeShapeVisitor::default();
+        visitor.visit_file(&parsed);
+
+        assert!(visitor
+            .findings
+            .iter()
+            .any(|finding| finding == "async fn `bad_async`"));
+        assert!(visitor
+            .findings
+            .iter()
+            .any(|finding| finding == "unsafe fn `bad_unsafe`"));
+        assert!(visitor
+            .findings
+            .iter()
+            .any(|finding| finding == "unsafe block"));
+    }
+
+    #[test]
+    fn signature_check_allows_plain_sync_safe_functions() {
+        let sig: syn::Signature = syn::parse_quote! {
+            fn plain(input: &[u8]) -> Vec<u8>
+        };
+        let mut findings = Vec::new();
+        check_signature(&sig, &mut findings);
+
+        assert!(findings.is_empty());
     }
 }
