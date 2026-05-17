@@ -471,11 +471,31 @@ impl WriterState<'_> {
                 .borrowed_frame_event(item.payload_bytes())
                 .map_err(|e| batch_failed(idx, BatchFailureStage::Encoding, e))?;
 
+            let mut receipt = AppendReceipt {
+                event_id: staged.event_id(),
+                sequence: staged.global_sequence(),
+                disk_pos: DiskPos {
+                    segment_id: *self.segment_id,
+                    offset: 0,
+                    length: 0,
+                },
+                content_hash: staged.hash_chain.event_hash,
+                key_id: [0; 32],
+                signature: None,
+                extensions: item_options.extensions.clone(),
+            };
+            self.runtime.signing_registry.sign_append_receipt(
+                &mut receipt,
+                &staged.coord,
+                staged.meta.kind,
+                staged.hash_chain.prev_hash,
+            );
+
             let frame_payload = FramePayloadRef {
                 event: &event,
                 entity: staged.coord.entity(),
                 scope: staged.coord.scope(),
-                receipt_extensions: &item_options.extensions,
+                receipt_extensions: &receipt.extensions,
             };
             let frame = segment::frame_encode(&frame_payload)
                 .map_err(|e| batch_failed(idx, BatchFailureStage::Encoding, e))?;
@@ -489,7 +509,7 @@ impl WriterState<'_> {
                 global_sequence: staged.global_sequence(),
             });
 
-            let disk_pos = DiskPos {
+            receipt.disk_pos = DiskPos {
                 segment_id: *self.segment_id,
                 offset,
                 length: u32::try_from(frame.len()).map_err(|_| {
@@ -500,21 +520,6 @@ impl WriterState<'_> {
                     )
                 })?,
             };
-            let mut receipt = AppendReceipt {
-                event_id: staged.event_id(),
-                sequence: staged.global_sequence(),
-                disk_pos,
-                content_hash: staged.hash_chain.event_hash,
-                key_id: [0; 32],
-                signature: None,
-                extensions: item_options.extensions.clone(),
-            };
-            self.runtime.signing_registry.sign_append_receipt(
-                &mut receipt,
-                &staged.coord,
-                staged.meta.kind,
-                staged.hash_chain.prev_hash,
-            );
             receipts.push(receipt);
 
             #[cfg(feature = "dangerous-test-hooks")]

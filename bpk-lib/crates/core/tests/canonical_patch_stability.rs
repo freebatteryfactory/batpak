@@ -36,8 +36,10 @@ use batpak::store::{
     report_skipped, store_resource_report_body_from_diagnostics, store_resource_report_body_hash,
     ActiveSegmentReadEvidence, ChainWalkReportBody, ClockEvidence, CompactionReportBody,
     LockLeafSymlinkProtection, MmapAdmissionSummary, MmapEvidence, ParentDirSyncAdmissionSummary,
-    ParentDirSyncEvidence, ReadWalkReportBody, StoreLockAdmissionSummary, StorePathStatusEvidence,
-    StoreResourceReportBody, SubscriberFrontierReportBody,
+    ParentDirSyncEvidence, ReadWalkReportBody, SnapshotFenceTokenRef, SnapshotFileKind,
+    SnapshotFinding, SnapshotReportBody, SnapshotWatermarkRef, StoreLockAdmissionSummary,
+    StorePathStatusEvidence, StoreResourceReportBody, SubscriberFrontierReportBody,
+    SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION,
 };
 use batpak::transition::{
     build_state_transition_report, state_transition_report_body_hash, StateTransitionEvent,
@@ -346,6 +348,7 @@ fn sample_store_reports() -> TestResult<(
     ProjectionRunReportBody,
     ReadWalkReportBody,
     StoreResourceReportBody,
+    SnapshotReportBody,
 )> {
     let mut chain_findings = vec![
         ChainWalkFinding::TruncatedByLimit {
@@ -505,7 +508,28 @@ fn sample_store_reports() -> TestResult<(
     resource.platform_evidence.admission.mmap_index = MmapAdmissionSummary::FileBacked;
     resource.platform_evidence.admission.sealed_segment_mmap = MmapAdmissionSummary::FileBacked;
 
-    Ok((chain, subscriber, projection, read_walk, resource))
+    let snapshot = SnapshotReportBody {
+        schema_version: SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION,
+        snapshot_id: digest(0x96),
+        fence_token: SnapshotFenceTokenRef { token: 7 },
+        source_watermark: SnapshotWatermarkRef {
+            segment_id: 3,
+            offset: 4096,
+        },
+        copied_segment_ids_sorted: vec![1, 2, 3],
+        copied_visibility_ranges_present: true,
+        copied_pending_compaction_marker_present: false,
+        destination_path_digest: digest(0x97),
+        findings: vec![
+            SnapshotFinding::CopyByteHashUnavailable {
+                reason: "snapshot v1 structural fixture".into(),
+                file_kind: SnapshotFileKind::Segment,
+            },
+            SnapshotFinding::FenceTokenCancelled,
+        ],
+    };
+
+    Ok((chain, subscriber, projection, read_walk, resource, snapshot))
 }
 
 proptest! {
@@ -646,7 +670,7 @@ fn substrate_report_body_goldens_do_not_drift() -> TestResult {
 
 #[test]
 fn store_report_body_goldens_do_not_drift() -> TestResult {
-    let (chain, subscriber, projection, read_walk, resource) = sample_store_reports()?;
+    let (chain, subscriber, projection, read_walk, resource, snapshot) = sample_store_reports()?;
 
     assert_golden_round_trip("chain_walk_report_body_v1.hex", &chain)?;
     assert_golden_round_trip("subscriber_frontier_report_body_v1.hex", &subscriber)?;
@@ -658,5 +682,6 @@ fn store_report_body_goldens_do_not_drift() -> TestResult {
         "PROPERTY: store resource body hash must equal hash(canonical(body))",
     );
     assert_golden_round_trip("store_resource_report_body_v1.hex", &resource)?;
+    assert_golden_round_trip("snapshot_report_body_v1.hex", &snapshot)?;
     Ok(())
 }

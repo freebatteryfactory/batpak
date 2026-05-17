@@ -62,8 +62,8 @@ fn compaction_report_skipped_is_deterministic() {
     store.sync().expect("sync");
 
     let cfg = CompactionConfig::default();
-    let (r0, rep0) = store.compact_with_report(&cfg).expect("cw");
-    let (r1, rep1) = store.compact_with_report(&cfg).expect("cw2");
+    let (r0, rep0) = store.compact(&cfg).expect("cw");
+    let (r1, rep1) = store.compact(&cfg).expect("cw2");
     assert!(matches!(r0.outcome, CompactionOutcome::Skipped));
     assert_eq!(r0.outcome, r1.outcome);
     assert_eq!(rep0.compaction_id, rep1.compaction_id);
@@ -72,6 +72,18 @@ fn compaction_report_skipped_is_deterministic() {
     let h1 = rep1.body_hash().expect("h1");
     assert_eq!(h0, h1);
     assert_eq!(rep0.schema_version, COMPACTION_REPORT_SCHEMA_VERSION);
+    store.close().expect("close");
+}
+
+#[test]
+// justifies: ADR-0027 and tests/lane_a_store_substrate.rs exercise the one-cut deprecated compaction evidence alias.
+#[allow(deprecated)]
+fn compact_with_report_alias_preserves_report_shape_for_one_cut() {
+    let (store, _dir) = lane_store();
+    let cfg = CompactionConfig::default();
+    let (result, report) = store.compact_with_report(&cfg).expect("compact alias");
+    assert!(matches!(result.outcome, CompactionOutcome::Skipped));
+    assert_eq!(report.schema_version, COMPACTION_REPORT_SCHEMA_VERSION);
     store.close().expect("close");
 }
 
@@ -95,9 +107,7 @@ fn compact_with_report_merge_evidence_has_sorted_sources_stable_body_hash_and_ou
         min_segments: 1,
         ..CompactionConfig::default()
     };
-    let (result, report) = store
-        .compact_with_report(&cfg)
-        .expect("compact_with_report");
+    let (result, report) = store.compact(&cfg).expect("compact");
     assert!(
         matches!(result.outcome, CompactionOutcome::Performed),
         "PROPERTY: merge scenario must perform compaction to exercise output segment digest"

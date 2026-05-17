@@ -3,6 +3,10 @@ use crate::event::{EventKind, StoredEvent};
 use crate::store::cold_start::{latest_segment_watermark, ColdStartArtifactKind};
 use crate::store::segment::scan as reader;
 use crate::store::segment::{self, Active, FramePayload};
+use crate::store::snapshot_report::{
+    destination_path_digest, snapshot_evidence_report, SnapshotEvidenceReport, SnapshotFileKind,
+    SnapshotFinding, SnapshotReportInput,
+};
 use crate::store::write::control::AppendSubmission;
 use crate::store::{
     AppendOptions, Closed, CompactionConfig, CompactionStrategy, Open, Store, StoreDiagnostics,
@@ -57,7 +61,10 @@ pub(crate) fn sync(store: &Store<Open>) -> Result<(), StoreError> {
     crate::store::recv_writer_reply(&rx)
 }
 
-pub(crate) fn snapshot(store: &Store<Open>, dest: &std::path::Path) -> Result<(), StoreError> {
+pub(crate) fn snapshot(
+    store: &Store<Open>,
+    dest: &std::path::Path,
+) -> Result<SnapshotEvidenceReport, StoreError> {
     tracing::debug!(
         target: "batpak::flow",
         flow = "snapshot",
@@ -68,35 +75,88 @@ pub(crate) fn snapshot(store: &Store<Open>, dest: &std::path::Path) -> Result<()
     // concurrent unfenced appends are rejected and a user-held fence cannot
     // race hidden writes into the copied segment set.
     let snapshot_fence = store.begin_visibility_fence()?;
+    let fence_token = snapshot_fence.token();
     sync(store)?;
+    let (source_watermark_segment_id, source_watermark_offset) =
+        latest_segment_watermark(&store.config.data_dir)?;
     crate::store::platform::fs::reject_symlink_leaf(dest, "snapshot destination")?;
     std::fs::create_dir_all(dest).map_err(StoreError::Io)?;
-    clear_snapshot_store_artifacts(dest)?;
+    let cleared_artifact_count = clear_snapshot_store_artifacts(dest)?;
     let entries = std::fs::read_dir(&store.config.data_dir).map_err(StoreError::Io)?;
+    let mut copied_segment_ids_sorted = Vec::new();
+    let mut copied_visibility_ranges_present = false;
+    let mut copied_pending_compaction_marker_present = false;
+    let mut findings = Vec::new();
+    if cleared_artifact_count > 0 {
+        findings.push(SnapshotFinding::DestinationCleared {
+            artifact_count: cleared_artifact_count,
+        });
+    }
     for entry in entries.flatten() {
         let path = entry.path();
-        if snapshot_source_should_copy(&path) {
+        if let Some(file_kind) = snapshot_source_file_kind(&path) {
             let dest_path = dest.join(entry.file_name());
             crate::store::platform::fs::reject_symlink_leaf(&dest_path, "snapshot entry")?;
             std::fs::copy(&path, &dest_path).map_err(StoreError::Io)?;
+            match file_kind {
+                SnapshotFileKind::Segment => {
+                    if let Some(segment_id) = snapshot_segment_id(&path) {
+                        copied_segment_ids_sorted.push(segment_id);
+                    }
+                }
+                SnapshotFileKind::VisibilityRanges => {
+                    copied_visibility_ranges_present = true;
+                }
+                SnapshotFileKind::PendingCompactionMarker => {
+                    copied_pending_compaction_marker_present = true;
+                }
+            }
         }
     }
     snapshot_fence.cancel()?;
-    Ok(())
+    findings.push(SnapshotFinding::FenceTokenCancelled);
+    findings.push(SnapshotFinding::CopyByteHashUnavailable {
+        reason:
+            "snapshot v1 records structural file identity; per-file byte hash table is out of scope"
+                .to_string(),
+        file_kind: SnapshotFileKind::Segment,
+    });
+    let report = snapshot_evidence_report(SnapshotReportInput {
+        fence_token,
+        source_watermark_segment_id,
+        source_watermark_offset,
+        copied_segment_ids_sorted,
+        copied_visibility_ranges_present,
+        copied_pending_compaction_marker_present,
+        destination_path_digest: destination_path_digest(dest),
+        findings,
+    })?;
+    Ok(report)
 }
 
-fn snapshot_source_should_copy(path: &std::path::Path) -> bool {
+fn snapshot_source_file_kind(path: &std::path::Path) -> Option<SnapshotFileKind> {
     path.extension()
         .map(|ext| ext == segment::SEGMENT_EXTENSION)
         .unwrap_or(false)
-        || path
-            .file_name()
-            .map(|name| name == crate::store::hidden_ranges::VISIBILITY_RANGES_FILENAME)
-            .unwrap_or(false)
-        || path
-            .file_name()
-            .map(|name| name == crate::store::cold_start::rebuild::COMPACTION_MARKER_FILENAME)
-            .unwrap_or(false)
+        .then_some(SnapshotFileKind::Segment)
+        .or_else(|| {
+            path.file_name()
+                .map(|name| name == crate::store::hidden_ranges::VISIBILITY_RANGES_FILENAME)
+                .unwrap_or(false)
+                .then_some(SnapshotFileKind::VisibilityRanges)
+        })
+        .or_else(|| {
+            path.file_name()
+                .map(|name| name == crate::store::cold_start::rebuild::COMPACTION_MARKER_FILENAME)
+                .unwrap_or(false)
+                .then_some(SnapshotFileKind::PendingCompactionMarker)
+        })
+}
+
+fn snapshot_segment_id(path: &std::path::Path) -> Option<u64> {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.parse::<u64>().ok())
 }
 
 fn snapshot_destination_should_clear(path: &std::path::Path) -> bool {
@@ -114,28 +174,29 @@ fn snapshot_destination_should_clear(path: &std::path::Path) -> bool {
             .unwrap_or(false)
 }
 
-fn remove_file_if_present(path: &std::path::Path) -> Result<(), StoreError> {
+fn remove_file_if_present(path: &std::path::Path) -> Result<bool, StoreError> {
     match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(StoreError::Io(error)),
     }
 }
 
-fn remove_dir_all_if_present(path: &std::path::Path) -> Result<(), StoreError> {
+fn remove_dir_all_if_present(path: &std::path::Path) -> Result<bool, StoreError> {
     match std::fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(StoreError::Io(error)),
     }
 }
 
-fn clear_snapshot_store_artifacts(dest: &std::path::Path) -> Result<(), StoreError> {
+fn clear_snapshot_store_artifacts(dest: &std::path::Path) -> Result<usize, StoreError> {
     let entries = std::fs::read_dir(dest).map_err(StoreError::Io)?;
+    let mut removed = 0;
     for entry in entries.flatten() {
         let path = entry.path();
         if snapshot_destination_should_clear(&path) {
-            remove_file_if_present(&path)?;
+            removed += usize::from(remove_file_if_present(&path)?);
             continue;
         }
 
@@ -145,10 +206,10 @@ fn clear_snapshot_store_artifacts(dest: &std::path::Path) -> Result<(), StoreErr
                 .map(|name| name == "cursors")
                 .unwrap_or(false)
         {
-            remove_dir_all_if_present(&path)?;
+            removed += usize::from(remove_dir_all_if_present(&path)?);
         }
     }
-    Ok(())
+    Ok(removed)
 }
 
 fn rollback_compaction_disk_state(

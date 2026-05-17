@@ -227,7 +227,9 @@ fn snapshot_checkpoint_matches_source_projection() {
         .expect("project");
 
     let snapshot_dir = TempDir::new().expect("snapshot");
-    store.snapshot(snapshot_dir.path()).expect("snapshot");
+    store
+        .snapshot_with_evidence(snapshot_dir.path())
+        .expect("snapshot");
 
     let reopened = Store::<ReadOnly>::open_read_only(StoreConfig::new(snapshot_dir.path()))
         .expect("open snapshot");

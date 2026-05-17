@@ -116,11 +116,28 @@ impl WriterState<'_> {
         });
         event.header.content_hash = event_hash;
 
+        let mut receipt = AppendReceipt {
+            event_id: event.header.event_id,
+            sequence: global_seq,
+            disk_pos: DiskPos {
+                segment_id: *self.segment_id,
+                offset: 0,
+                length: 0,
+            },
+            content_hash: event_hash,
+            key_id: [0; 32],
+            signature: None,
+            extensions: guards.extensions.clone(),
+        };
+        self.runtime
+            .signing_registry
+            .sign_append_receipt(&mut receipt, coord, kind, prev_hash);
+
         let frame_payload = FramePayloadRef {
             event: &event,
             entity,
             scope,
-            receipt_extensions: &guards.extensions,
+            receipt_extensions: &receipt.extensions,
         };
         let frame = segment::frame_encode(&frame_payload)?;
 
@@ -146,6 +163,7 @@ impl WriterState<'_> {
             length: u32::try_from(frame.len())
                 .map_err(|_| StoreError::ser_msg("encoded frame length exceeds u32::MAX"))?,
         };
+        receipt.disk_pos = disk_pos;
         let meta = StagedCommitMeta::new(
             event.header.event_id,
             correlation_id,
@@ -182,7 +200,7 @@ impl WriterState<'_> {
             CommitFrameView {
                 payload_bytes: &event.payload,
                 flags: event.header.flags,
-                receipt_extensions: &guards.extensions,
+                receipt_extensions: &receipt.extensions,
                 emit_envelope,
             },
         );
@@ -220,18 +238,6 @@ impl WriterState<'_> {
             )?;
         }
 
-        let mut receipt = AppendReceipt {
-            event_id: event.header.event_id,
-            sequence: global_seq,
-            disk_pos,
-            content_hash: event_hash,
-            key_id: [0; 32],
-            signature: None,
-            extensions: guards.extensions.clone(),
-        };
-        self.runtime
-            .signing_registry
-            .sign_append_receipt(&mut receipt, coord, kind, prev_hash);
         Ok(receipt)
     }
 }

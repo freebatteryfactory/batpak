@@ -67,6 +67,7 @@ fn evidence_public_types_avoid_protocol_product_vocabulary() -> TestResult {
         stringify!(ReadWalkEvidenceReport),
         stringify!(SchemaSnapshotEvidenceReport),
         stringify!(StoreResourceEvidenceReport),
+        stringify!(SnapshotEvidenceReport),
     );
     let lower = blob.to_ascii_lowercase();
     const FORBIDDEN: &[&str] = &[
@@ -140,6 +141,46 @@ fn schema_snapshot_evidence_family_invariants() -> TestResult {
     with_meta.diagnostics = vec!["noise".into()];
     assert_eq!(with_meta.body, report.body);
     assert_eq!(with_meta.body_hash, report.body_hash);
+    Ok(())
+}
+
+#[test]
+fn snapshot_evidence_family_invariants_and_no_append_side_effect() -> TestResult {
+    let (store, _data_dir_guard) = small_store_support::small_segment_store()?;
+    let coord = Coordinate::new("entity:family-snapshot", "scope:fam_snapshot")?;
+    let kind = EventKind::custom(0xF, 0x22);
+    store.append(&coord, kind, &serde_json::json!({"s": 0}))?;
+    let before = store.stats().event_count;
+
+    let snapshot_dir = TempDir::new()?;
+    let report = store.snapshot_with_evidence(snapshot_dir.path())?;
+
+    assert_eq!(
+        store.stats().event_count,
+        before,
+        "snapshot evidence must not append"
+    );
+    assert_eq!(
+        report.body.schema_version,
+        SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION
+    );
+    assert_ne!(report.body.schema_version, 0);
+    sorted_eq(&report.body.findings);
+    assert!(!report.body.copied_segment_ids_sorted.is_empty());
+    assert!(report
+        .body
+        .findings
+        .contains(&SnapshotFinding::FenceTokenCancelled));
+    let expected_hash = body_hash_via_canonical(&report.body)?;
+    assert_eq!(report.body_hash, expected_hash);
+
+    let mut with_meta = report.clone();
+    with_meta.generated_at_unix_ms = Some(u64::MAX);
+    with_meta.batpak_version = Some("bogus-test-version".into());
+    with_meta.diagnostics = vec!["noise".into()];
+    assert_eq!(with_meta.body, report.body);
+    assert_eq!(with_meta.body_hash, report.body_hash);
+    store.close()?;
     Ok(())
 }
 

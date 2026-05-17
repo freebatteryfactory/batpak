@@ -79,7 +79,9 @@ fn evict_mmap_before_compaction_delete() {
         store.append(&coord, kind_a(), &payload(i)).expect("append");
     }
     store.sync().expect("sync");
-    let result = store.compact(&CompactionConfig::default());
+    let result = store
+        .compact(&CompactionConfig::default())
+        .map(|(result, _report)| result);
     assert!(
         result.is_ok(),
         "PROPERTY: compaction must succeed even with mmap'd segments.\n\

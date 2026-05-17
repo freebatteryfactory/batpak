@@ -1,5 +1,6 @@
 use crate::coordinate::Coordinate;
 use crate::event::EventKind;
+use crate::store::append::{signing_downgrade_extension_key, SigningDowngradeBody};
 use crate::store::{AppendReceipt, DenialReceipt, ExtensionKey};
 use ed25519_compact::{KeyPair, PublicKey, Seed, Signature};
 use std::collections::BTreeMap;
@@ -96,8 +97,7 @@ impl ReceiptSigningRegistry {
             Ok(cover) => cover,
             Err(error) => {
                 tracing::error!(error = %error, "failed to build receipt signature cover");
-                receipt.key_id = [0; 32];
-                receipt.signature = None;
+                downgrade_receipt_signing(receipt, error.to_string());
                 return;
             }
         };
@@ -183,6 +183,25 @@ impl ReceiptSigningRegistry {
             .verify(cover, &signature)
             .is_ok()
     }
+}
+
+fn downgrade_receipt_signing(receipt: &mut AppendReceipt, error: impl Into<String>) {
+    let body = SigningDowngradeBody::cover_build_failed(error);
+    match body.encode_extension() {
+        Ok(bytes) => {
+            receipt
+                .extensions
+                .insert(signing_downgrade_extension_key(), bytes);
+        }
+        Err(error) => {
+            tracing::error!(
+                error = %error,
+                "failed to encode signing downgrade receipt extension"
+            );
+        }
+    }
+    receipt.key_id = [0; 32];
+    receipt.signature = None;
 }
 
 #[derive(Debug)]
@@ -318,5 +337,35 @@ mod tests {
             cover_a, cover_c,
             "PROPERTY: receipt signature cover must include the EventKind type-id bits"
         );
+    }
+
+    #[test]
+    fn cover_build_failure_adds_signing_downgrade_extension() {
+        let mut receipt = AppendReceipt {
+            event_id: 7,
+            sequence: 9,
+            disk_pos: crate::store::index::DiskPos {
+                segment_id: 1,
+                offset: 2,
+                length: 3,
+            },
+            content_hash: [0x22; 32],
+            key_id: [0xAA; 32],
+            signature: Some([0xBB; 64]),
+            extensions: BTreeMap::new(),
+        };
+
+        downgrade_receipt_signing(&mut receipt, "synthetic cover failure");
+
+        assert_eq!(receipt.key_id, [0; 32]);
+        assert!(receipt.signature.is_none());
+        let downgrade = receipt
+            .signing_downgrade()
+            .expect("downgrade extension should decode");
+        assert!(matches!(
+            downgrade.reason,
+            crate::store::SigningDowngradeReason::CoverBuildFailed { ref encoding_error }
+                if encoding_error == "synthetic cover failure"
+        ));
     }
 }

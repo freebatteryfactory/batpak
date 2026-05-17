@@ -22,6 +22,7 @@ This follows `100_ADR_0019_CANONICAL_ENCODING_CONTRACT.md`.
 - `ProjectionRunEvidenceReport` (`bpk-lib/crates/core/src/store/projection_run.rs`)
 - `ReadWalkEvidenceReport` (`bpk-lib/crates/core/src/store/read_walk.rs`)
 - `StoreResourceEvidenceReport` / `StoreResourceEnvelope` (`bpk-lib/crates/core/src/store/store_resource_report.rs`)
+- `SnapshotEvidenceReport` (`bpk-lib/crates/core/src/store/snapshot_report.rs`)
 
 ## v1 Family Seal
 
@@ -35,6 +36,7 @@ surface:
 - projection run evidence (`ADR-0024`)
 - read walk evidence (`ADR-0025`)
 - store resource evidence (diagnostics snapshot envelope; schema v1 in-tree)
+- snapshot evidence (`ADR-0027`)
 
 This family is intentionally bounded. New report types require concrete
 substrate pressure that cannot be satisfied by existing report bodies.
@@ -52,7 +54,10 @@ substrate pressure that cannot be satisfied by existing report bodies.
 - **Structural scope only:** these reports do not infer policy, protocol, or
   application semantics.
 - **Receipt boundary:** reports are observations; append and denial receipts
-  carry the commit/denial witness surfaces.
+  carry the commit/denial witness surfaces. Unsigned append receipts with
+  `batpak.signing.downgrade` record a receipt-local signing downgrade; that
+  extension is not an evidence-report family member and, by definition, is
+  outside the signed cover because cover construction already failed.
 - **No fake uncertainty:** `Unknown` is reserved for genuinely indeterminate
   facts. Use `Known` when batpak already exposes the value, `NotApplicable` when
   the field does not apply, `NotTracked` only when the substrate does not track
@@ -95,6 +100,11 @@ substrate pressure that cannot be satisfied by existing report bodies.
   digest. Bodies are point-in-time: full byte equality across `close`/`open` is
   not a contract because cold-start path, timing, frontier coordinates, and
   replayed system events can differ while the store remains consistent.
+- `SnapshotEvidenceReport`: deterministic snapshot-copy observation over the
+  private visibility fence token, source segment watermark, copied segment ids,
+  copied optional sidecar presence, destination path digest, and structural
+  findings. v1 records structural file identity only; per-file byte hash tables
+  remain out of scope.
 
 ## Forensic Query Composition
 

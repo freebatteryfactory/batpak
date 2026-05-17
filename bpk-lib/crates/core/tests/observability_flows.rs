@@ -218,8 +218,10 @@ fn named_store_flows_emit_traceable_events() {
             .expect("project");
         store.sync().expect("sync");
         let snapshot_dir = TempDir::new().expect("snapshot dir");
-        store.snapshot(snapshot_dir.path()).expect("snapshot");
-        let _ = store
+        store
+            .snapshot_with_evidence(snapshot_dir.path())
+            .expect("snapshot");
+        let (_result, _report) = store
             .compact(&CompactionConfig::default())
             .expect("compact");
         store.close().expect("close");

@@ -48,7 +48,7 @@ fn bench_compaction(c: &mut Criterion) {
                         (store, dir)
                     },
                     |(store, _dir)| {
-                        store
+                        let (_result, _report) = store
                             .compact(&CompactionConfig::default())
                             .expect("compact");
                     },
