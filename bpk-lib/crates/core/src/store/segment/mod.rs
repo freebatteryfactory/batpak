@@ -230,13 +230,25 @@ impl Segment<Active> {
     /// Returns `StoreError::Io` if the segment file cannot be created or the header cannot be written.
     /// Returns `StoreError::Serialization` if the segment header cannot be serialized.
     pub fn create(dir: &std::path::Path, segment_id: u64) -> Result<Self, StoreError> {
+        Self::create_with_created_ns(
+            dir,
+            segment_id,
+            crate::store::Clock::now_wall_ns(&crate::store::SystemClock::new()),
+        )
+    }
+
+    pub(crate) fn create_with_created_ns(
+        dir: &std::path::Path,
+        segment_id: u64,
+        created_ns: i64,
+    ) -> Result<Self, StoreError> {
         let path = dir.join(segment_filename(segment_id));
         let mut file = crate::store::platform::fs::create_new_file(&path)?;
 
         let header = SegmentHeader {
             version: 1,
             flags: 0,
-            created_ns: crate::store::platform::clock::now_wall_ns_saturating(),
+            created_ns,
             segment_id,
         };
 

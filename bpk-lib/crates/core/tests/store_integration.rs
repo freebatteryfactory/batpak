@@ -5,7 +5,7 @@
 //!
 //! PROVES: LAW-002 (No Local State — uses real Store), LAW-003 (No Orphan Infrastructure)
 //! DEFENDS: FM-007 (Island Syndrome — full production path), FM-008 (Shadow Test — imports real types)
-//! INVARIANTS: INV-TEMP (cold start rebuild), INV-CONC (concurrent r/w)
+//! INVARIANTS: INV-BATCH-CRASH-RECOVERY (cold start rebuild), INV-CONCURRENCY-SCHEDULE-PROOF (concurrent r/w)
 //!
 //! Anti-almost-correctness: These tests exercise the real DashMap index query()
 //! method (regression coverage for the iterator-vs-Vec dead-logic branch that

@@ -39,8 +39,9 @@ pub(crate) fn justification_body(line: &str) -> Option<String> {
 pub(crate) fn extract_anchors(body: &str) -> Vec<JustifiesAnchor> {
     let mut out = Vec::new();
     for tok in body.split(|c: char| c.is_whitespace() || c == ',' || c == ';') {
-        let tok =
-            tok.trim_matches(|c: char| c == '(' || c == ')' || c == '\'' || c == '"' || c == '.');
+        let tok = tok.trim_matches(|c: char| {
+            c == '(' || c == ')' || c == '\'' || c == '"' || c == '.' || c == '`'
+        });
         if tok.is_empty() {
             continue;
         }
@@ -123,7 +124,7 @@ pub(crate) fn load_known_invariants(repo_root: &Path) -> Result<BTreeSet<String>
     Ok(records.into_iter().map(|r| r.id).collect())
 }
 
-fn resolve_anchor(
+pub(crate) fn resolve_anchor(
     anchor: &JustifiesAnchor,
     repo_root: &Path,
     known_invariants: &BTreeSet<String>,

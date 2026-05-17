@@ -1,5 +1,6 @@
 mod ci;
 mod disk_audit;
+mod loom;
 mod mutants;
 mod package_scan;
 mod platform;
@@ -99,6 +100,10 @@ pub(crate) fn chaos(args: ChaosArgs) -> Result<()> {
 
 pub(crate) fn ci() -> Result<()> {
     ci::ci()
+}
+
+pub(crate) fn loom() -> Result<()> {
+    loom::loom()
 }
 
 pub(crate) fn run_nextest_ci<const N: usize>(args: [&str; N]) -> Result<()> {

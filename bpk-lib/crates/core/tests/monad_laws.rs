@@ -5,7 +5,7 @@
 //!
 //! PROVES: LAW-006 (Algebraic Integrity — monad laws hold for Outcome)
 //! DEFENDS: FM-009 (Polite Downgrade — combinators must not silently drop errors)
-//! INVARIANTS: INV-TYPE (type-level guarantees on combinator composition)
+//! INVARIANTS: INV-TYPELEVEL-COMBINATOR-LAWS (type-level guarantees on combinator composition)
 //!
 //! Anti-almost-correctness: This test would have caught the missing T: Clone
 //! bound on join_all (Phase 1.4) — proptest generates Batch(vec![Ok(x)]) cases

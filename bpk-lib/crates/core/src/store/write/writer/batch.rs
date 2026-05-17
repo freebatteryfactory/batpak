@@ -191,7 +191,7 @@ impl WriterState<'_> {
             let event_id = item
                 .options()
                 .idempotency_key
-                .unwrap_or_else(|| uuid::Uuid::now_v7().as_u128());
+                .unwrap_or_else(|| crate::id::generate_v7_id_with_clock(self.runtime.clock()));
 
             let causation_id = item
                 .causation()

@@ -1,5 +1,6 @@
 // justifies: INV-TEST-PANIC-AS-ASSERTION, ADR-0007; test bodies in tests/control_plane_surface.rs treat invariant violations as test failures; panic! is the assertion style throughout this file.
 #![allow(clippy::panic)]
+//! PROVES: INV-MULTI-VIEW-PUBLISH-AFTER-VIEW-SYNC, INV-FENCE-CANCELLED-STAYS-HIDDEN.
 
 use batpak::coordinate::{Coordinate, Region};
 use batpak::event::{Event, EventKind, EventSourced};

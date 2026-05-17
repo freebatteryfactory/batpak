@@ -15,6 +15,10 @@ pub trait EntityIdType:
     fn as_u128(&self) -> u128;
     /// Generate a new UUIDv7-based instance using the current time.
     fn now_v7() -> Self;
+    /// Generate a new UUIDv7-based instance using a caller-provided clock.
+    fn now_v7_with_clock(clock: &dyn crate::store::Clock) -> Self {
+        Self::new(generate_v7_id_with_clock(clock))
+    }
     /// Return the nil (zero) instance.
     fn nil() -> Self;
 }
@@ -25,6 +29,25 @@ pub trait EntityIdType:
 /// \[DEP:uuid::Uuid::now_v7\] → generates UUIDv7, .as_u128() → u128
 pub fn generate_v7_id() -> u128 {
     uuid::Uuid::now_v7().as_u128()
+}
+
+/// Generate a UUIDv7 as `u128` using a caller-provided store clock.
+///
+/// This is the deterministic counterpart to [`generate_v7_id`]. The UUIDv7
+/// timestamp is derived from `clock.now_us()`, while the random/counter portion
+/// remains owned by the `uuid` crate.
+pub fn generate_v7_id_with_clock(clock: &dyn crate::store::Clock) -> u128 {
+    let timestamp_us = clock.now_us().max(0);
+    let seconds = timestamp_us / 1_000_000;
+    let subsec_nanos = (timestamp_us % 1_000_000) * 1_000;
+    let seconds = u64::try_from(seconds).unwrap_or(u64::MAX);
+    let subsec_nanos = u32::try_from(subsec_nanos).unwrap_or(u32::MAX);
+    uuid::Uuid::new_v7(uuid::Timestamp::from_unix(
+        uuid::NoContext,
+        seconds,
+        subsec_nanos,
+    ))
+    .as_u128()
 }
 
 /// define_entity_id!: Layer 1+ macro. Uses generate_v7_id() helper.
@@ -49,6 +72,10 @@ macro_rules! define_entity_id {
 
             fn now_v7() -> Self {
                 Self($crate::id::generate_v7_id())
+            }
+
+            fn now_v7_with_clock(clock: &dyn $crate::store::Clock) -> Self {
+                Self($crate::id::generate_v7_id_with_clock(clock))
             }
 
             fn nil() -> Self {

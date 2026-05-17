@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Visibility-fence cancellation is durable across close+reopen.
 //!
-//! [INV-FENCE-CANCEL-DURABLE] When a batch submitted under a visibility fence
+//! [INV-FENCE-CANCELLED-STAYS-HIDDEN] When a batch submitted under a visibility fence
 //! is cancelled, the batch is permanently hidden: subsequent reads — even
 //! after the store is closed and reopened — never observe those events. The
 //! cancelled range is persisted via `hidden_ranges::write_cancelled_ranges`

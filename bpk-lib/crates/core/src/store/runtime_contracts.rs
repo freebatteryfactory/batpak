@@ -9,7 +9,7 @@ fn test_store_with_writer(tx: flume::Sender<writer::WriterCommand>) -> (Store, T
     let subscribers = Arc::new(fanout::SubscriberList::new());
     let config = Arc::new(StoreConfig::new(dir.path().to_path_buf()));
     let runtime = Arc::new(config.validated().expect("validated runtime config"));
-    let watermark_handle = writer::WatermarkState::handle();
+    let watermark_handle = writer::WatermarkState::handle(runtime.clock_arc());
     let store = Store {
         index: Arc::new(index::StoreIndex::new()),
         reader: Arc::new(reader::Reader::new(dir.path().to_path_buf(), 4)),
@@ -87,9 +87,10 @@ fn checked_payload_len_returns_exact_serialized_length() {
 
 #[test]
 fn now_us_moves_forward_over_real_time() {
-    let first = now_us();
+    let clock = SystemClock::new();
+    let first = clock.now_us();
     std::thread::sleep(std::time::Duration::from_millis(2));
-    let second = now_us();
+    let second = clock.now_us();
 
     assert!(
         first > 0,

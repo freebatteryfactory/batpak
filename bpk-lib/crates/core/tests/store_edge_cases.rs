@@ -10,7 +10,7 @@
 //!
 //! PROVES: LAW-006 (Bidirectional Traceability — audit findings drove these tests)
 //! DEFENDS: FM-011 (Error Path Hollowing), FM-013 (Coverage Mirage)
-//! INVARIANTS: INV-TYPE (frame decode totality), INV-CONC (concurrent appends)
+//! INVARIANTS: INV-WIRE-ROUNDTRIP-TOTALITY (frame decode totality), INV-CONCURRENCY-SCHEDULE-PROOF (concurrent appends)
 
 use batpak::prelude::*;
 use std::io::Write;

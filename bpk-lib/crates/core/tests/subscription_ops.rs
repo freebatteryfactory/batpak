@@ -4,7 +4,7 @@
 //!
 //! PROVES: LAW-004 (Composition Over Construction — ops chain correctly)
 //! DEFENDS: FM-009 (Polite Downgrade — map must not silently drop events)
-//! INVARIANTS: INV-STATE (subscription: open → recv → closed)
+//! INVARIANTS: INV-SUBSCRIPTION-STATE-MACHINE (subscription: open to recv to closed)
 //! Intentional: direct `SubscriptionOps::recv()` calls exercise the blocking API
 //! after deterministic producer appends; exhaustion probes are bounded by an
 //! outer `recv_timeout` channel.
@@ -332,7 +332,7 @@ fn ops_filter_and_take_combined() {
 // ===== Wave 3D: Subscription composition depth tests =====
 // PROVES: LAW-004 (Composition Over Construction — ops chain correctly)
 // DEFENDS: FM-009 (Polite Downgrade — map must not silently drop events)
-// INVARIANTS: INV-STATE (subscription state machine: open → recv → closed)
+// INVARIANTS: INV-SUBSCRIPTION-STATE-MACHINE (subscription state machine: open to recv to closed)
 
 #[test]
 fn ops_map_transforms_notification() {

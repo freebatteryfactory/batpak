@@ -1,3 +1,5 @@
+//! PROVES: INV-POSITION-HINT-PERSISTENCE.
+
 use batpak::prelude::*;
 use batpak::store::cold_start::rebuild::OpenIndexPath;
 use serde_json::json;

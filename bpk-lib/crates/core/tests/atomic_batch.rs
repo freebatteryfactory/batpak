@@ -1,6 +1,7 @@
 // justifies: INV-TEST-PANIC-AS-ASSERTION; atomic batch tests use explicit panic branches as assertion failures for Store result error paths.
 #![allow(clippy::panic)]
 //! Atomic batch append tests.
+//! PROVES: INV-BATCH-ATOMIC-VISIBILITY, INV-BATCH-CRASH-RECOVERY.
 
 use batpak::prelude::*;
 use std::collections::HashSet;
@@ -1556,7 +1557,7 @@ fn batch_wall_ms_monotonic_under_regressing_clock() {
         Arc::new(move || clock_tick.fetch_sub(10_000, Ordering::SeqCst));
 
     let tmp = tempfile::tempdir().expect("create temp dir for wall_ms regression");
-    let store = Store::open(StoreConfig::new(tmp.path()).with_clock(Some(clock)))
+    let store = Store::open(StoreConfig::new(tmp.path()).with_clock_fn(move || clock()))
         .expect("open store with regressing clock");
     let coord = Coordinate::new("regress", "wallms").expect("valid coord");
 

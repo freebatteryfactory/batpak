@@ -1,5 +1,6 @@
 //! Red-path tests keep the `unified_*_red` names for cross-surface edge cases
 //! that should fail fast or prove defensive behavior across the unified store.
+//! PROVES: INV-SCHEMA-VERSION-ISOLATION.
 // justifies: INV-TEST-PANIC-AS-ASSERTION, INV-MACRO-BOUNDED-CAST; unified red-path projection tests in tests/unified_projection_red.rs use unwrap/panic as the assertion style and narrow bounded test counters that fit in u32.
 #![allow(clippy::unwrap_used, clippy::cast_possible_truncation, clippy::panic)]
 
@@ -184,7 +185,7 @@ fn maybe_stale_uses_milliseconds_not_microseconds_for_external_cache_age() {
     let now_us = Arc::new(AtomicI64::new(1_000_000));
     let clock = Arc::clone(&now_us);
     let config = StoreConfig::new(dir.path().join("data"))
-        .with_clock(Some(Arc::new(move || clock.load(Ordering::SeqCst))));
+        .with_clock_fn(move || clock.load(Ordering::SeqCst));
     let store = Store::open_with_native_cache(config, &cache_path).expect("open with cache");
     let coord = Coordinate::new("stale:entity", "stale:scope").expect("coord");
 

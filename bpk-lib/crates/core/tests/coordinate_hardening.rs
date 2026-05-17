@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Coordinate hardening coverage.
 //!
-//! [INV-COORD-HARDEN] `Coordinate::new` rejects every hostile or malformed
+//! [INV-COORDINATE-IS-LOGICAL-STREAM] `Coordinate::new` rejects every hostile or malformed
 //! component (NUL, ASCII control chars, path-traversal) before a Coordinate
 //! value ever exists, and every in-process construction path routes through
 //! the same validator — including rmp_serde deserialization.

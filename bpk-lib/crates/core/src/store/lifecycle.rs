@@ -24,7 +24,9 @@ fn append_close_completed_event(store: &Store<Open>) -> Result<(), StoreError> {
     let close_hlc = store.watermark_handle.lock().snapshot().visible_hlc;
     let coord = Coordinate::new("batpak:store", "batpak:lifecycle")?;
     let submission = AppendSubmission::with_options(
-        AppendOptions::default().with_idempotency(crate::id::generate_v7_id()),
+        AppendOptions::default()
+            .with_idempotency(crate::id::generate_v7_id_with_clock(store.runtime.clock())),
+        store.runtime.clock(),
     );
     submission.validate_route(store)?;
     submission.validate_idempotency(store)?;
@@ -330,7 +332,11 @@ fn materialize_compacted_segment(
     }
 
     let _ = std::fs::remove_file(merged_path);
-    let mut merged_segment = segment::Segment::<Active>::create(&store.config.data_dir, merged_id)?;
+    let mut merged_segment = segment::Segment::<Active>::create_with_created_ns(
+        &store.config.data_dir,
+        merged_id,
+        store.runtime.now_wall_ns(),
+    )?;
     match strategy {
         CompactionStrategy::Merge => {
             for (_, path) in sealed.iter() {

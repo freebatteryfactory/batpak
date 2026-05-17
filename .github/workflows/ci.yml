@@ -156,6 +156,23 @@ jobs:
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask mutants smoke'
 
+  loom-schedule-proof:
+    name: Loom schedule proof
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-loom'))
+    needs: [integrity-linux-container, integrity-windows-native]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Bounded loom schedule proofs
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask loom'
+
   mutants-full:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1'

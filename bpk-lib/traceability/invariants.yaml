@@ -73,6 +73,7 @@
   statement: Idempotency, compare-and-set, restart-budget, and compaction-exclusivity semantics remain valid under deterministic schedule exploration.
   artifacts:
     - ART-DETERMINISTIC-CONCURRENCY-TESTS
+    - ART-LOOM-CI-LANE
     - ART-STORE-MOD
     - ART-STORE-LIFECYCLE
 - id: INV-OBSERVABILITY-FAILURE-PATHS
@@ -175,6 +176,7 @@
     - ART-BATCH-TESTS
     - ART-SUBSCRIPTION-TESTS
     - ART-DETERMINISTIC-CONCURRENCY-TESTS
+    - ART-LOOM-CI-LANE
 - id: INV-BATCH-CRASH-RECOVERY
   statement: Incomplete batches (BEGIN without matching COMMIT) are discarded during cold-start segment scan. Cross-segment batch state persists across segment boundaries to handle batches spanning rotation points.
   artifacts:
@@ -308,6 +310,39 @@
   artifacts:
     - ART-STORE-MOD
     - ART-STORE-LIFECYCLE
+- id: INV-WIRE-ROUNDTRIP-TOTALITY
+  statement: Public wire/event/id surfaces round-trip every valid generated value and reject malformed bytes or identifiers without partial decoding.
+  artifacts:
+    - ART-WIRE-FORMAT-TESTS
+- id: INV-PERFORMANCE-GATES-ENFORCED
+  statement: Hardware-dependent performance gates remain explicit ignored tests and are runnable only through the repo-owned perf-gates command surface.
+  artifacts:
+    - ART-PERF-GATES
+    - ART-XTASK
+- id: INV-SUBSCRIPTION-STATE-MACHINE
+  statement: Subscription delivery follows the open, receive, close state machine without fabricating events or hiding a closed producer.
+  artifacts:
+    - ART-SUBSCRIPTION-TESTS
+- id: INV-TYPELEVEL-COMBINATOR-LAWS
+  statement: Public outcome and monadic combinators preserve their type-level success, retry, cancelled, and error law shapes under property tests.
+  artifacts:
+    - ART-COMBINATOR-LAW-TESTS
+- id: INV-HASH-CHAIN-INTEGRITY
+  statement: Hash-chain tests preserve append-order integrity by detecting reordered, missing, or mutated event payload links.
+  artifacts:
+    - ART-HASH-CHAIN-TESTS
+- id: INV-OUTBOX-DROP-SAFETY
+  statement: Dropping a producer outbox without flush cannot publish buffered events; only explicit flush/submit paths cross the writer boundary.
+  artifacts:
+    - ART-OUTBOX-TESTS
+- id: INV-COLD-START-ARTIFACTS
+  statement: Clean close and restart paths produce and consume the expected checkpoint, mmap, and segment artifacts without trusting stale fast-start metadata.
+  artifacts:
+    - ART-COLD-START-RECOVERY-TESTS
+- id: INV-INDEX-FILTER-COMPOSES
+  statement: Index filter composition over kind, scope, entity, and topology overlays returns the same logical result set as the authoritative scan.
+  artifacts:
+    - ART-INDEX-FILTER-COMPOSITION-TESTS
 - id: INV-NO-DEAD-CODE-SILENCERS
   statement: "dead_code lint suppressions are banned in tracked Rust source. The AST walker in shared_checks::collect_dead_code_silencer_sites rejects #[allow(dead_code)], #[expect(dead_code)], crate-inner forms, lint-list forms containing dead_code, #[allow(unused)] and #[expect(unused)] (the `unused` group subsumes dead_code), and cfg_attr wrappers around any of those, including multi-line wrappers. The only escape hatch is an exact-site entry in traceability/dead_code_silencer_allowlist.yaml with non-empty reason + adr fields that resolve to a real ADR. The honest responses to a dead_code warning are #[cfg(test)] for test-only code, deletion for truly unused code, or restructuring (workspace crate, narrower module, finer-grained #[path] include) so the compilation unit matches actual ownership. See ADR-0012."
   artifacts:

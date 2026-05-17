@@ -2,7 +2,7 @@
 //!
 //! PROVES: LAW-001 (No Fake Success — config must actually apply)
 //! DEFENDS: FM-003 (Silent Config Drift — fields ignored after construction)
-//! INVARIANTS: INV-STATE (config→runtime field propagation)
+//! INVARIANTS: INV-CLOCK-NOW-US-LIVE (config to runtime field propagation)
 //!
 //! These tests exist because three bugs slipped through code review:
 //! 1. wall_ms clock regression — backward clock could reorder events in BTreeMap
@@ -32,7 +32,7 @@ fn wall_ms_monotonic_under_clock_regression() {
     let clock_ref = Arc::clone(&clock_us);
     let config = StoreConfig::new(dir.path())
         .with_sync_every_n_events(1)
-        .with_clock(Some(Arc::new(move || clock_ref.load(Ordering::SeqCst))));
+        .with_clock_fn(move || clock_ref.load(Ordering::SeqCst));
     let store = Store::open(config).expect("open store");
     let coord = Coordinate::new("entity:clock-test", "scope:test").expect("valid coord");
     let kind = EventKind::custom(0xF, 1);
@@ -101,7 +101,7 @@ fn wall_ms_monotonic_per_entity_isolation() {
     let clock_ref = Arc::clone(&clock_us);
     let config = StoreConfig::new(dir.path())
         .with_sync_every_n_events(1)
-        .with_clock(Some(Arc::new(move || clock_ref.load(Ordering::SeqCst))));
+        .with_clock_fn(move || clock_ref.load(Ordering::SeqCst));
     let store = Store::open(config).expect("open store");
     let coord_a = Coordinate::new("entity:a", "scope:test").expect("valid coord");
     let coord_b = Coordinate::new("entity:b", "scope:test").expect("valid coord");
@@ -365,7 +365,7 @@ fn store_config_all_fields_overridable() {
         .with_incremental_projection(false) // default
         .with_enable_checkpoint(false) // disabled for this test
         .with_enable_mmap_index(false) // non-default
-        .with_clock(Some(clock_fn)) // custom clock
+        .with_clock_fn(move || clock_fn()) // custom clock
         .with_event_payload_validation(EventPayloadValidation::Warn);
 
     let store = Store::open(config).expect(
@@ -425,7 +425,7 @@ fn store_config_debug_lists_all_integrity_relevant_fields() {
         .with_incremental_projection(false)
         .with_enable_checkpoint(true)
         .with_enable_mmap_index(false)
-        .with_clock(Some(clock_fn))
+        .with_clock_fn(move || clock_fn())
         .with_event_payload_validation(EventPayloadValidation::FailFast);
 
     let debug = format!("{config:?}");
@@ -455,7 +455,7 @@ fn store_config_debug_lists_all_integrity_relevant_fields() {
         "topology: IndexTopology { soa: true, entity_groups: false, tiles64: true, tiles64_simd: false }",
         "enable_checkpoint: true",
         "enable_mmap_index: false",
-        "clock: Some(\"<fn>\")",
+        "clock: Some(\"<clock>\")",
         "platform_profile_path: None",
         "signing_keys: 0",
         "event_payload_validation: FailFast",

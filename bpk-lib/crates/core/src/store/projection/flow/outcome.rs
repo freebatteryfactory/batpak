@@ -1,5 +1,4 @@
-use crate::store::config::duration_micros;
-use crate::store::HlcPoint;
+use crate::store::{Clock, HlcPoint};
 
 /// Outcome returned by the internal `project_inner` pipeline.
 ///
@@ -132,30 +131,33 @@ pub(crate) struct ProjectionTimings {
 
 pub(super) fn record_total_time(
     timings: &mut Option<&mut ProjectionTimings>,
-    started_at: std::time::Instant,
+    clock: &dyn Clock,
+    started_at_ns: i64,
 ) {
     if let Some(t) = timings.as_deref_mut() {
-        t.total_us = duration_micros(started_at.elapsed());
+        t.total_us = elapsed_us(clock, started_at_ns);
     }
 }
 
 pub(super) fn record_external_cache_probe_time(
     timings: &mut Option<&mut ProjectionTimings>,
-    started_at: std::time::Instant,
+    clock: &dyn Clock,
+    started_at_ns: i64,
 ) {
     if let Some(t) = timings.as_deref_mut() {
-        t.external_cache_probe_us = duration_micros(started_at.elapsed());
+        t.external_cache_probe_us = elapsed_us(clock, started_at_ns);
     }
 }
 
 pub(super) fn finish_projection<T>(
     timings: &mut Option<&mut ProjectionTimings>,
-    started_at: std::time::Instant,
+    clock: &dyn Clock,
+    started_at_ns: i64,
     state: Option<T>,
     returned_generation: u64,
     observation: ProjectionFinishObservation,
 ) -> ProjectionOutcome<T> {
-    record_total_time(timings, started_at);
+    record_total_time(timings, clock, started_at_ns);
     ProjectionOutcome::new(
         state,
         returned_generation,
@@ -168,14 +170,20 @@ pub(super) fn finish_projection<T>(
 
 pub(super) fn finish_empty_projection<T>(
     timings: &mut Option<&mut ProjectionTimings>,
-    started_at: std::time::Instant,
+    clock: &dyn Clock,
+    started_at_ns: i64,
     returned_generation: u64,
 ) -> ProjectionOutcome<T> {
-    record_total_time(timings, started_at);
+    record_total_time(timings, clock, started_at_ns);
     ProjectionOutcome::empty(
         returned_generation,
         ProjectionCacheObservation::Bypassed,
         ProjectionObservedFreshness::NotApplicable,
         None,
     )
+}
+
+fn elapsed_us(clock: &dyn Clock, started_at_ns: i64) -> u64 {
+    u64::try_from(clock.now_mono_ns().saturating_sub(started_at_ns).max(0) / 1_000)
+        .unwrap_or(u64::MAX)
 }

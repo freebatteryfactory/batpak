@@ -9,7 +9,7 @@
 //!
 //! PROVES: LAW-004 (Composition Over Construction — quadratic dogfooding)
 //! DEFENDS: FM-013 (Coverage Mirage — gates test themselves), FM-007 (Island Syndrome)
-//! INVARIANTS: INV-PERF (performance thresholds), INV-STATE (gate evaluation)
+//! INVARIANTS: INV-PERFORMANCE-GATES-ENFORCED (performance thresholds), INV-FRONTIER-APPEND-GATE-HONORED (gate evaluation)
 //!
 //! This is deliberate dogfooding of shared control-flow primitives, not a
 //! claim that these tests are the sole performance authority. Criterion

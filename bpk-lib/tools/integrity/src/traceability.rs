@@ -1,3 +1,4 @@
+use crate::invariant_bridge;
 use crate::repo_surface::{
     core_examples_root, ensure, ensure_unique_ids, load_yaml, relative, repo_root,
     resolve_repo_or_core_path,
@@ -123,6 +124,17 @@ pub(crate) fn run() -> Result<()> {
             )?;
             referenced_artifacts.insert(artifact_id.as_str());
         }
+        let artifact_paths = invariant
+            .artifacts
+            .iter()
+            .filter_map(|artifact_id| artifact_map.get(artifact_id.as_str()))
+            .flat_map(|artifact| artifact.paths.iter().cloned())
+            .collect::<Vec<_>>();
+        invariant_bridge::invariant_test_artifacts_cite_header(
+            &repo_root,
+            &invariant.id,
+            &artifact_paths,
+        )?;
     }
 
     for flow in &flows {

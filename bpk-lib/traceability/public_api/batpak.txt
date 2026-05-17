@@ -603,6 +603,7 @@ pub fn batpak::id::CausationId::as_u128(&self) -> u128
 pub fn batpak::id::CausationId::new(id: u128) -> Self
 pub fn batpak::id::CausationId::nil() -> Self
 pub fn batpak::id::CausationId::now_v7() -> Self
+pub fn batpak::id::CausationId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl core::convert::From<batpak::id::CausationId> for u128
 pub fn u128::from(id: batpak::id::CausationId) -> Self
 impl core::convert::From<u128> for batpak::id::CausationId
@@ -619,6 +620,7 @@ pub fn batpak::id::CorrelationId::as_u128(&self) -> u128
 pub fn batpak::id::CorrelationId::new(id: u128) -> Self
 pub fn batpak::id::CorrelationId::nil() -> Self
 pub fn batpak::id::CorrelationId::now_v7() -> Self
+pub fn batpak::id::CorrelationId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl core::convert::From<batpak::id::CorrelationId> for u128
 pub fn u128::from(id: batpak::id::CorrelationId) -> Self
 impl core::convert::From<u128> for batpak::id::CorrelationId
@@ -635,6 +637,7 @@ pub fn batpak::id::EventId::as_u128(&self) -> u128
 pub fn batpak::id::EventId::new(id: u128) -> Self
 pub fn batpak::id::EventId::nil() -> Self
 pub fn batpak::id::EventId::now_v7() -> Self
+pub fn batpak::id::EventId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl core::convert::From<batpak::id::EventId> for u128
 pub fn u128::from(id: batpak::id::EventId) -> Self
 impl core::convert::From<u128> for batpak::id::EventId
@@ -650,25 +653,30 @@ pub fn batpak::id::EntityIdType::as_u128(&self) -> u128
 pub fn batpak::id::EntityIdType::new(id: u128) -> Self
 pub fn batpak::id::EntityIdType::nil() -> Self
 pub fn batpak::id::EntityIdType::now_v7() -> Self
+pub fn batpak::id::EntityIdType::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl batpak::id::EntityIdType for batpak::id::CausationId
 pub const batpak::id::CausationId::ENTITY_NAME: &'static str
 pub fn batpak::id::CausationId::as_u128(&self) -> u128
 pub fn batpak::id::CausationId::new(id: u128) -> Self
 pub fn batpak::id::CausationId::nil() -> Self
 pub fn batpak::id::CausationId::now_v7() -> Self
+pub fn batpak::id::CausationId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl batpak::id::EntityIdType for batpak::id::CorrelationId
 pub const batpak::id::CorrelationId::ENTITY_NAME: &'static str
 pub fn batpak::id::CorrelationId::as_u128(&self) -> u128
 pub fn batpak::id::CorrelationId::new(id: u128) -> Self
 pub fn batpak::id::CorrelationId::nil() -> Self
 pub fn batpak::id::CorrelationId::now_v7() -> Self
+pub fn batpak::id::CorrelationId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl batpak::id::EntityIdType for batpak::id::EventId
 pub const batpak::id::EventId::ENTITY_NAME: &'static str
 pub fn batpak::id::EventId::as_u128(&self) -> u128
 pub fn batpak::id::EventId::new(id: u128) -> Self
 pub fn batpak::id::EventId::nil() -> Self
 pub fn batpak::id::EventId::now_v7() -> Self
+pub fn batpak::id::EventId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 pub fn batpak::id::generate_v7_id() -> u128
+pub fn batpak::id::generate_v7_id_with_clock(clock: &dyn batpak::store::Clock) -> u128
 pub mod batpak::outcome
 pub mod batpak::outcome::combine
 pub fn batpak::outcome::combine::join_all<T>(outcomes: alloc::vec::Vec<batpak::outcome::Outcome<T>>) -> batpak::outcome::Outcome<alloc::vec::Vec<T>>
@@ -1491,6 +1499,7 @@ pub fn batpak::id::CausationId::as_u128(&self) -> u128
 pub fn batpak::id::CausationId::new(id: u128) -> Self
 pub fn batpak::id::CausationId::nil() -> Self
 pub fn batpak::id::CausationId::now_v7() -> Self
+pub fn batpak::id::CausationId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl core::convert::From<batpak::id::CausationId> for u128
 pub fn u128::from(id: batpak::id::CausationId) -> Self
 impl core::convert::From<u128> for batpak::id::CausationId
@@ -1563,6 +1572,7 @@ pub fn batpak::id::CorrelationId::as_u128(&self) -> u128
 pub fn batpak::id::CorrelationId::new(id: u128) -> Self
 pub fn batpak::id::CorrelationId::nil() -> Self
 pub fn batpak::id::CorrelationId::now_v7() -> Self
+pub fn batpak::id::CorrelationId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl core::convert::From<batpak::id::CorrelationId> for u128
 pub fn u128::from(id: batpak::id::CorrelationId) -> Self
 impl core::convert::From<u128> for batpak::id::CorrelationId
@@ -1686,6 +1696,7 @@ pub fn batpak::id::EventId::as_u128(&self) -> u128
 pub fn batpak::id::EventId::new(id: u128) -> Self
 pub fn batpak::id::EventId::nil() -> Self
 pub fn batpak::id::EventId::now_v7() -> Self
+pub fn batpak::id::EventId::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
 impl core::convert::From<batpak::id::EventId> for u128
 pub fn u128::from(id: batpak::id::EventId) -> Self
 impl core::convert::From<u128> for batpak::id::EventId
@@ -2098,7 +2109,8 @@ pub fn batpak::prelude::StoreConfig::sync(&self) -> &batpak::prelude::SyncConfig
 pub fn batpak::prelude::StoreConfig::with_batch_max_bytes(self, batch_max_bytes: u32) -> Self
 pub fn batpak::prelude::StoreConfig::with_batch_max_size(self, batch_max_size: u32) -> Self
 pub fn batpak::prelude::StoreConfig::with_broadcast_capacity(self, broadcast_capacity: usize) -> Self
-pub fn batpak::prelude::StoreConfig::with_clock(self, clock: core::option::Option<alloc::sync::Arc<(dyn core::ops::function::Fn() -> i64 + core::marker::Send + core::marker::Sync)>>) -> Self
+pub fn batpak::prelude::StoreConfig::with_clock(self, clock: core::option::Option<alloc::sync::Arc<dyn batpak::store::Clock>>) -> Self
+pub fn batpak::prelude::StoreConfig::with_clock_fn<F>(self, clock: F) -> Self where F: core::ops::function::Fn() -> i64 + core::marker::Send + core::marker::Sync + 'static
 pub fn batpak::prelude::StoreConfig::with_enable_checkpoint(self, enable_checkpoint: bool) -> Self
 pub fn batpak::prelude::StoreConfig::with_enable_mmap_index(self, enable_mmap_index: bool) -> Self
 pub fn batpak::prelude::StoreConfig::with_event_payload_validation(self, validation: batpak::event::payload::EventPayloadValidation) -> Self
@@ -4069,7 +4081,8 @@ pub fn batpak::prelude::StoreConfig::sync(&self) -> &batpak::prelude::SyncConfig
 pub fn batpak::prelude::StoreConfig::with_batch_max_bytes(self, batch_max_bytes: u32) -> Self
 pub fn batpak::prelude::StoreConfig::with_batch_max_size(self, batch_max_size: u32) -> Self
 pub fn batpak::prelude::StoreConfig::with_broadcast_capacity(self, broadcast_capacity: usize) -> Self
-pub fn batpak::prelude::StoreConfig::with_clock(self, clock: core::option::Option<alloc::sync::Arc<(dyn core::ops::function::Fn() -> i64 + core::marker::Send + core::marker::Sync)>>) -> Self
+pub fn batpak::prelude::StoreConfig::with_clock(self, clock: core::option::Option<alloc::sync::Arc<dyn batpak::store::Clock>>) -> Self
+pub fn batpak::prelude::StoreConfig::with_clock_fn<F>(self, clock: F) -> Self where F: core::ops::function::Fn() -> i64 + core::marker::Send + core::marker::Sync + 'static
 pub fn batpak::prelude::StoreConfig::with_enable_checkpoint(self, enable_checkpoint: bool) -> Self
 pub fn batpak::prelude::StoreConfig::with_enable_mmap_index(self, enable_mmap_index: bool) -> Self
 pub fn batpak::prelude::StoreConfig::with_event_payload_validation(self, validation: batpak::event::payload::EventPayloadValidation) -> Self
@@ -4195,6 +4208,16 @@ pub batpak::store::SyncConfig::every_n_events: u32
 pub batpak::store::SyncConfig::mode: batpak::prelude::SyncMode
 impl core::default::Default for batpak::prelude::SyncConfig
 pub fn batpak::prelude::SyncConfig::default() -> Self
+pub struct batpak::store::SystemClock
+impl batpak::store::SystemClock
+pub fn batpak::store::SystemClock::new() -> Self
+impl batpak::store::Clock for batpak::store::SystemClock
+pub fn batpak::store::SystemClock::now_mono_ns(&self) -> i64
+pub fn batpak::store::SystemClock::now_us(&self) -> i64
+pub fn batpak::store::SystemClock::now_wall_ns(&self) -> i64
+pub fn batpak::store::SystemClock::process_boot_ns(&self) -> u64
+impl core::default::Default for batpak::store::SystemClock
+pub fn batpak::store::SystemClock::default() -> Self
 pub struct batpak::store::TypedReactorHandle<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static>
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> batpak::store::reactor_typed::TypedReactorHandle<E>
 pub fn batpak::store::reactor_typed::TypedReactorHandle<E>::join(self) -> core::result::Result<(), batpak::store::reactor_typed::ReactorError<E>>
@@ -4262,6 +4285,16 @@ impl batpak::store::delivery::canal::CanalItem for batpak::prelude::Notification
 pub fn batpak::prelude::Notification::event_id(&self) -> u128
 impl batpak::store::delivery::canal::CanalItem for batpak::store::index::IndexEntry
 pub fn batpak::store::index::IndexEntry::event_id(&self) -> u128
+pub trait batpak::store::Clock: core::marker::Send + core::marker::Sync
+pub fn batpak::store::Clock::now_mono_ns(&self) -> i64
+pub fn batpak::store::Clock::now_us(&self) -> i64
+pub fn batpak::store::Clock::now_wall_ns(&self) -> i64
+pub fn batpak::store::Clock::process_boot_ns(&self) -> u64
+impl batpak::store::Clock for batpak::store::SystemClock
+pub fn batpak::store::SystemClock::now_mono_ns(&self) -> i64
+pub fn batpak::store::SystemClock::now_us(&self) -> i64
+pub fn batpak::store::SystemClock::now_wall_ns(&self) -> i64
+pub fn batpak::store::SystemClock::process_boot_ns(&self) -> u64
 pub trait batpak::store::ProjectionCache: core::marker::Send + core::marker::Sync + 'static
 pub fn batpak::store::ProjectionCache::capabilities(&self) -> batpak::store::projection::CacheCapabilities
 pub fn batpak::store::ProjectionCache::delete_prefix(&self, prefix: &[u8]) -> core::result::Result<u64, batpak::prelude::StoreError>

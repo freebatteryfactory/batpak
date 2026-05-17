@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Scope query visibility + filter composition across index overlays.
 //!
-//! [INV-SCOPE-QUERY] `Region::scope(...)` returns only events whose
+//! [INV-COORDINATE-IS-LOGICAL-STREAM] `Region::scope(...)` returns only events whose
 //! `coord.scope()` matches exactly. Combining scope with kind / clock_range
 //! composes correctly (B1: filters run inside the overlay, not as a
 //! post-filter). Exercised across every public overlay topology so any

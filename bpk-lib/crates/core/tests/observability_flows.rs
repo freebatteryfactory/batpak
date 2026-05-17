@@ -1,4 +1,5 @@
 //! Observability proofs for named store flows.
+//! PROVES: INV-OBSERVABILITY-FAILURE-PATHS, INV-OPEN-REPORT-RECEIPT.
 //!
 //! Tests in this module use `#[serial_test::serial(observability_flows)]` so
 //! `stable_batpak_targets_field_shape_at_info_and_trace` can install a global

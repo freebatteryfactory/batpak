@@ -1,8 +1,8 @@
 // justifies: INV-TEST-PANIC-AS-ASSERTION; this frontier bootstrap harness uses panic! through assert macros for crisp invariant failures.
 #![allow(clippy::panic)]
 #![cfg(feature = "dangerous-test-hooks")]
-
 //! PROVES:
+//!   - INV-FRONTIER-MONOTONIC, INV-FRONTIER-ORDERING, INV-FRONTIER-TORN-FREE, INV-FRONTIER-OPEN-MONOTONIC, INV-FRONTIER-APPLIED-MIN, INV-FRONTIER-FAULT-ORDINALS.
 //!   - Step-1 frontier scaffolding compiles and exposes a coherent dangerous snapshot.
 //!   - Immediately after mutable `Store::open`, the lifecycle open event seeds
 //!     accepted, written, durable, visible, and emitted to the same HLC point.
@@ -71,7 +71,7 @@ fn point(entry: &batpak::store::index::IndexEntry) -> HlcPoint {
 }
 
 fn fixed_clock_config(dir: &TempDir, now_us: i64) -> StoreConfig {
-    StoreConfig::new(dir.path()).with_clock(Some(Arc::new(move || now_us)))
+    StoreConfig::new(dir.path()).with_clock_fn(move || now_us)
 }
 
 fn lifecycle_open_count<State>(store: &Store<State>) -> usize {

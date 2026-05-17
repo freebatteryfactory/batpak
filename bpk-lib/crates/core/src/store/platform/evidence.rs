@@ -4,6 +4,7 @@ use crate::store::stats::{
     PlatformAdmissionSummary, PlatformEvidenceSummary, StoreLockAdmissionSummary,
     StorePathEvidenceSummary, StorePathStatusEvidence,
 };
+use crate::store::Clock;
 use memmap2::MmapOptions;
 use std::io::Write;
 use std::path::Path;
@@ -21,7 +22,7 @@ pub(crate) fn collect_for_store_path(data_dir: &Path) -> PlatformEvidenceSummary
     let admission = admission_from_store_path(&store_path);
     PlatformEvidenceSummary {
         host: HostEvidenceSummary {
-            process_clock_epoch_marker_ns: crate::store::platform::clock::process_boot_ns(),
+            process_clock_epoch_marker_ns: crate::store::SystemClock::new().process_boot_ns(),
             monotonic_clock: ClockEvidence::ProcessLocalInstantAnchor,
         },
         store_path,

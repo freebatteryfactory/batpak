@@ -2,7 +2,7 @@ use super::{AppendGuards, AppendReply, WriterCommand};
 use crate::coordinate::Coordinate;
 use crate::event::{Event, EventHeader, EventKind};
 use crate::store::append::{checked_payload_len, EncodedBytes, ExtensionKey};
-use crate::store::{AppendOptions, Open, Store, StoreError};
+use crate::store::{AppendOptions, Clock, Open, Store, StoreError};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -15,8 +15,8 @@ pub(crate) struct AppendSubmission {
 }
 
 impl AppendSubmission {
-    pub(crate) fn root() -> Self {
-        let event_id = crate::id::generate_v7_id();
+    pub(crate) fn root(clock: &dyn Clock) -> Self {
+        let event_id = crate::id::generate_v7_id_with_clock(clock);
         Self {
             event_id,
             correlation_id: event_id,
@@ -25,15 +25,15 @@ impl AppendSubmission {
         }
     }
 
-    pub(crate) fn root_under_fence(token: u64) -> Self {
+    pub(crate) fn root_under_fence(token: u64, clock: &dyn Clock) -> Self {
         Self {
             fence_token: Some(token),
-            ..Self::root()
+            ..Self::root(clock)
         }
     }
 
-    pub(crate) fn reaction(correlation_id: u128, causation_id: u128) -> Self {
-        let event_id = crate::id::generate_v7_id();
+    pub(crate) fn reaction(clock: &dyn Clock, correlation_id: u128, causation_id: u128) -> Self {
+        let event_id = crate::id::generate_v7_id_with_clock(clock);
         Self {
             event_id,
             correlation_id,
@@ -47,19 +47,20 @@ impl AppendSubmission {
 
     pub(crate) fn reaction_under_fence(
         token: u64,
+        clock: &dyn Clock,
         correlation_id: u128,
         causation_id: u128,
     ) -> Self {
         Self {
             fence_token: Some(token),
-            ..Self::reaction(correlation_id, causation_id)
+            ..Self::reaction(clock, correlation_id, causation_id)
         }
     }
 
-    pub(crate) fn with_options(options: AppendOptions) -> Self {
+    pub(crate) fn with_options(options: AppendOptions, clock: &dyn Clock) -> Self {
         let event_id = options
             .idempotency_key
-            .unwrap_or_else(crate::id::generate_v7_id);
+            .unwrap_or_else(|| crate::id::generate_v7_id_with_clock(clock));
         Self {
             event_id,
             correlation_id: options.correlation_id.unwrap_or(event_id),

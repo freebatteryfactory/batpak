@@ -2,7 +2,7 @@ use crate::event::EventPayloadValidation;
 use crate::store::cold_start::rebuild::OpenIndexReport;
 use crate::store::cold_start::ColdStartPolicy;
 pub(crate) use crate::store::platform::clock::{
-    now_mono_ns, now_us, process_boot_ns, wall_ms_from_timestamp_us, MonotonicClock,
+    clock_from_fn, wall_ms_from_timestamp_us, Clock, MonotonicClock, SystemClock,
 };
 use crate::store::signing::{ReceiptSigningRegistry, SigningKey};
 use crate::store::RestartPolicy;
@@ -253,7 +253,7 @@ impl Default for IndexConfig {
 
 /// StoreConfig: all settings for a Store instance.
 /// No Default — callers must provide data_dir via `StoreConfig::new(path)`.
-/// Manual Clone and Debug impls because `clock` field is `Arc<dyn Fn>`.
+/// Manual Clone and Debug impls because `clock` field is `Arc<dyn Clock>`.
 pub struct StoreConfig {
     /// Directory where segment files (.fbat) are stored.
     pub(crate) data_dir: PathBuf,
@@ -274,9 +274,8 @@ pub struct StoreConfig {
     pub(crate) sync: SyncConfig,
     /// Secondary query index topology, projection, and checkpoint configuration.
     pub(crate) index: IndexConfig,
-    /// Injectable clock for deterministic testing. Returns microseconds since epoch.
-    /// None = std::time::SystemTime::now() (production default).
-    pub(crate) clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
+    /// Injectable clock for deterministic testing. None = SystemClock.
+    pub(crate) clock: Option<Arc<dyn Clock>>,
     /// Optional callback fired once after a successful open completes.
     pub(crate) open_report_observer: Option<OpenReportObserver>,
     /// Optional platform profile record that must match current platform evidence at open.
@@ -305,7 +304,7 @@ pub(crate) struct ValidatedStoreConfig {
     pub(crate) shutdown_drain_limit: usize,
     pub(crate) group_commit_drain_budget: u32,
     pub(crate) signing_registry: ReceiptSigningRegistry,
-    clock: Option<MonotonicClock>,
+    clock: Arc<dyn Clock>,
 }
 
 impl StoreConfig {
@@ -415,7 +414,11 @@ impl StoreConfig {
             shutdown_drain_limit: self.writer.shutdown_drain_limit,
             group_commit_drain_budget,
             signing_registry: ReceiptSigningRegistry::from_keys(&self.signing_keys),
-            clock: self.clock.clone().map(MonotonicClock::wrap),
+            clock: Arc::new(MonotonicClock::wrap(
+                self.clock
+                    .clone()
+                    .unwrap_or_else(|| Arc::new(SystemClock::new())),
+            )),
         })
     }
 
@@ -499,8 +502,21 @@ impl StoreConfig {
     ///
     /// Negative timestamps are rejected at append/batch execution time with
     /// `StoreError::InvalidClock` rather than being truncated or panicking.
-    pub fn with_clock(mut self, clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>) -> Self {
+    pub fn with_clock(mut self, clock: Option<Arc<dyn Clock>>) -> Self {
         self.clock = clock;
+        self
+    }
+
+    /// Install a microsecond wall-clock closure for deterministic tests.
+    ///
+    /// This is an adapter for older closure-based tests. New callers that need
+    /// control over monotonic or boot-epoch observations should implement
+    /// [`Clock`] and pass it through [`StoreConfig::with_clock`].
+    pub fn with_clock_fn<F>(mut self, clock: F) -> Self
+    where
+        F: Fn() -> i64 + Send + Sync + 'static,
+    {
+        self.clock = Some(clock_from_fn(Arc::new(clock)));
         self
     }
 
@@ -692,7 +708,7 @@ impl std::fmt::Debug for StoreConfig {
             .field("writer", &self.writer)
             .field("sync", &self.sync)
             .field("index", &self.index)
-            .field("clock", &self.clock.as_ref().map(|_| "<fn>"))
+            .field("clock", &self.clock.as_ref().map(|_| "<clock>"))
             .field(
                 "open_report_observer",
                 &self.open_report_observer.as_ref().map(|_| "<observer>"),
@@ -714,7 +730,7 @@ impl std::fmt::Debug for ValidatedStoreConfig {
             .field("shutdown_drain_limit", &self.shutdown_drain_limit)
             .field("group_commit_drain_budget", &self.group_commit_drain_budget)
             .field("signing_registry", &"<registry>")
-            .field("clock", &self.clock.as_ref().map(|_| "<monotonic>"))
+            .field("clock", &"<monotonic>")
             .finish()
     }
 }
@@ -726,10 +742,27 @@ impl ValidatedStoreConfig {
     /// validation so direct field assignment cannot bypass the non-decreasing
     /// runtime invariant.
     pub(crate) fn now_us(&self) -> i64 {
-        match &self.clock {
-            Some(clock) => clock.now_us(),
-            None => now_us(),
-        }
+        self.clock.now_us()
+    }
+
+    pub(crate) fn clock(&self) -> &dyn Clock {
+        &*self.clock
+    }
+
+    pub(crate) fn clock_arc(&self) -> Arc<dyn Clock> {
+        Arc::clone(&self.clock)
+    }
+
+    pub(crate) fn now_wall_ns(&self) -> i64 {
+        self.clock.now_wall_ns()
+    }
+
+    pub(crate) fn now_mono_ns(&self) -> i64 {
+        self.clock.now_mono_ns()
+    }
+
+    pub(crate) fn process_boot_ns(&self) -> u64 {
+        self.clock.process_boot_ns()
     }
 
     /// Projection/cache metadata clock source.
@@ -777,7 +810,7 @@ mod tests {
         };
 
         let mut config = StoreConfig::new("target/test-clock-wrap");
-        config.clock = Some(raw_clock);
+        config.clock = Some(clock_from_fn(raw_clock));
 
         let runtime = config.validated().expect("config validates");
         assert_eq!(runtime.now_us(), 2_000);
@@ -794,7 +827,7 @@ mod tests {
     fn cache_now_us_clamps_negative_custom_clock_values() {
         let raw_clock = Arc::new(|| -42_i64) as Arc<dyn Fn() -> i64 + Send + Sync>;
         let mut config = StoreConfig::new("target/test-cache-clock-clamp");
-        config.clock = Some(raw_clock);
+        config.clock = Some(clock_from_fn(raw_clock));
 
         let runtime = config.validated().expect("config validates");
         assert_eq!(
@@ -808,7 +841,7 @@ mod tests {
     fn cache_now_us_preserves_zero_custom_clock_value() {
         let raw_clock = Arc::new(|| 0_i64) as Arc<dyn Fn() -> i64 + Send + Sync>;
         let mut config = StoreConfig::new("target/test-cache-clock-zero");
-        config.clock = Some(raw_clock);
+        config.clock = Some(clock_from_fn(raw_clock));
 
         let runtime = config.validated().expect("config validates");
         assert_eq!(
@@ -934,8 +967,9 @@ mod tests {
 
     #[test]
     fn process_boot_ns_is_nonzero_and_stable_in_process() {
-        let first = process_boot_ns();
-        let second = process_boot_ns();
+        let clock = SystemClock::new();
+        let first = clock.process_boot_ns();
+        let second = clock.process_boot_ns();
 
         assert_ne!(
             first, 0,
@@ -949,8 +983,9 @@ mod tests {
 
     #[test]
     fn now_mono_ns_advances_beyond_nonzero_sentinel() {
+        let clock = SystemClock::new();
         std::thread::sleep(Duration::from_millis(1));
-        let elapsed = now_mono_ns();
+        let elapsed = clock.now_mono_ns();
 
         assert!(
             elapsed > 1,

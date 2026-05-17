@@ -4,6 +4,7 @@
 //!
 //! PROVES: partial batch writes survive crash + idempotent retry,
 //!         group commit drain loop is race-free under loom.
+//! INVARIANTS: INV-GROUP-COMMIT-IDEMPOTENCY, INV-BATCH-ATOMIC-VISIBILITY.
 
 use batpak::prelude::*;
 use batpak::store::{Store, StoreConfig};
@@ -119,16 +120,17 @@ fn loom_group_commit_drain_race() {
         h2.join().unwrap();
 
         let total = committed.load(Ordering::Acquire);
-        // At least the first message must always be committed.
+        // At least the first message must always be committed and no model
+        // schedule may invent or double-commit a command.
         // Under some valid loom schedules, sender 2's message arrives after
         // the drain loop finishes — that's correct (it would be picked up on
         // the next writer iteration). The invariant is: no message sent BEFORE
         // the blocking recv returned is lost. Total is 1, 2, or 3 depending
         // on schedule.
         assert!(
-            total >= 1,
-            "PROPERTY: at least one command must be committed per writer iteration.\n\
-             total={total}, expected >= 1."
+            matches!(total, 1..=3),
+            "PROPERTY: one writer iteration may commit one sender or both senders exactly once.\n\
+             total={total}, expected one of 1, 2, or 3."
         );
     });
 }
@@ -190,5 +192,11 @@ fn loom_interner_concurrent_resolve() {
         writer.join().unwrap();
         reader1.join().unwrap();
         reader2.join().unwrap();
+
+        let fwd = forward.read().unwrap();
+        let rev = reverse.read().unwrap();
+        assert_eq!(fwd.len(), 1, "PROPERTY: final forward map has one key");
+        assert_eq!(fwd.get("hello"), Some(&0));
+        assert_eq!(rev.as_slice(), ["hello"]);
     });
 }

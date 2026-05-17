@@ -3,10 +3,11 @@
 //!
 //! PROVES: LAW-003 (No Orphan Infrastructure — every pub item exercised)
 //! DEFENDS: FM-007 (Island Syndrome — pub items must connect to tests)
-//! INVARIANTS: INV-TYPE (event round-trip fidelity), INV-OBS (every pub API has a test witness)
+//! INVARIANTS: INV-WIRE-ROUNDTRIP-TOTALITY (event round-trip fidelity), INV-TRACEABILITY-COMPLETE (every pub API has a test witness)
 
 use batpak::id::EntityIdType;
 use batpak::prelude::*;
+use batpak::store::Clock;
 
 fn assert_entity_id_type<T: batpak::id::EntityIdType>(id: T) -> u128 {
     id.as_u128()
@@ -40,6 +41,41 @@ fn generate_v7_id_is_nonzero() {
          Investigate: src/id/mod.rs generate_v7_id().\n\
          Common causes: UUID generator returning nil, wrong helper wired, or helper stubbed.\n\
          Run: cargo test --test event_api generate_v7_id_is_nonzero"
+    );
+}
+
+struct FixedClock {
+    timestamp_us: i64,
+}
+
+impl Clock for FixedClock {
+    fn now_us(&self) -> i64 {
+        self.timestamp_us
+    }
+
+    fn now_wall_ns(&self) -> i64 {
+        self.timestamp_us.saturating_mul(1000)
+    }
+
+    fn now_mono_ns(&self) -> i64 {
+        0
+    }
+
+    fn process_boot_ns(&self) -> u64 {
+        1
+    }
+}
+
+#[test]
+fn generate_v7_id_with_clock_uses_supplied_timestamp() {
+    let raw = batpak::id::generate_v7_id_with_clock(&FixedClock {
+        timestamp_us: 1_234_567_000,
+    });
+    let encoded_millis = raw >> 80;
+
+    assert_eq!(
+        encoded_millis, 1_234_567,
+        "PROPERTY: generate_v7_id_with_clock must encode the supplied clock's millisecond timestamp"
     );
 }
 

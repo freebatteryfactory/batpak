@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Index filter composition across overlays.
 //!
-//! [INV-INDEX-FILTER-COMPOSE] For every supported overlay topology and every
+//! [INV-INDEX-FILTER-COMPOSES] For every supported overlay topology and every
 //! combination of `Region` predicates (entity prefix, scope, kind filter,
 //! clock range), the index returns exactly the same set of events as a
 //! linear ground-truth scan over the same corpus. This pins B1 (filters

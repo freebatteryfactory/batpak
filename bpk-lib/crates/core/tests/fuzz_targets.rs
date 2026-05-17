@@ -6,7 +6,7 @@
 //!
 //! PROVES: LAW-007 (Codebase Accuses Itself — fuzz as specification)
 //! DEFENDS: FM-004 (Phantom Dependency), FM-006 (Version Chimera)
-//! INVARIANTS: INV-TYPE (round-trip fidelity for all types), INV-SEC (EventKind packing)
+//! INVARIANTS: INV-WIRE-ROUNDTRIP-TOTALITY (round-trip fidelity for all types), INV-MACRO-BOUNDED-CAST (EventKind packing)
 //!
 //! Run with: cargo test --test fuzz_targets --all-features
 //! Deep fuzz: PROPTEST_CASES=100000 cargo test --test fuzz_targets --all-features --release
@@ -592,7 +592,7 @@ proptest! {
 
 // ============================================================
 // FUZZ TARGET 10: Wire.rs uncovered visitor paths
-// INVARIANTS: INV-TYPE (wire format totality — all visitor paths exercised)
+// INVARIANTS: INV-WIRE-ROUNDTRIP-TOTALITY (wire format totality; all visitor paths exercised)
 // ============================================================
 
 /// Explicit test for Option<u128> None round-trip through msgpack.
