@@ -6,7 +6,7 @@
 //!
 //! PROVES: LAW-004 (Composition Over Construction — typestate enforces phase)
 //! DEFENDS: FM-009 (Polite Downgrade — generated methods must carry real data)
-//! INVARIANTS: INV-TYPE (typestate round-trip fidelity)
+//! INVARIANTS: INV-TYPESTATE-OPEN-HAS-WRITER (typestate round-trip fidelity), INV-RECEIPT-SEALED (receipt construction boundary)
 
 use batpak::EventPayload;
 use serde::{Deserialize, Serialize};

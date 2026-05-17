@@ -74,6 +74,8 @@ enum XtaskCommand {
     Fuzz(FuzzArgs),
     Chaos(ChaosArgs),
     FuzzChaos,
+    /// Run deterministic loom schedule proofs under --cfg loom.
+    Loom,
     Stress,
     /// Run hardware-dependent perf gates (excluded from `cargo xtask ci`).
     /// These tests are loose catastrophic-regression guards, not precision
@@ -365,6 +367,7 @@ fn main() -> Result<()> {
             "--ignored",
             "--nocapture",
         ]),
+        XtaskCommand::Loom => commands::loom(),
         XtaskCommand::Stress => {
             commands::fuzz(FuzzArgs { deep: false })?;
             commands::chaos(ChaosArgs { deep: false })?;

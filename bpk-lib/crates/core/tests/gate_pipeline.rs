@@ -5,7 +5,7 @@
 //!
 //! PROVES: LAW-004 (Composition Over Construction)
 //! DEFENDS: FM-022 (Receipt Hollowing — Receipt is sealed, single-use)
-//! INVARIANTS: INV-STATE (gate evaluation state machine), INV-SEC (Receipt seal)
+//! INVARIANTS: INV-FRONTIER-APPEND-GATE-HONORED (gate evaluation state machine), INV-RECEIPT-SEALED (Receipt seal)
 
 use batpak::pipeline::BypassReceipt;
 use batpak::prelude::*;

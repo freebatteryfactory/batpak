@@ -90,7 +90,7 @@ impl Store<Open> {
             coord,
             kind,
             payload,
-            AppendSubmission::root_under_fence(token),
+            AppendSubmission::root_under_fence(token, self.runtime.clock()),
         )
     }
 
@@ -107,7 +107,12 @@ impl Store<Open> {
             coord,
             kind,
             payload,
-            AppendSubmission::reaction_under_fence(token, correlation_id, causation_id),
+            AppendSubmission::reaction_under_fence(
+                token,
+                self.runtime.clock(),
+                correlation_id,
+                causation_id,
+            ),
         )
     }
 

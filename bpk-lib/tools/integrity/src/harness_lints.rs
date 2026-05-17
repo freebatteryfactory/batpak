@@ -246,6 +246,8 @@ pub fn check(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
     let ledger_rust_files = ledger_rust_files(&entries);
     check_module_headers(repo_root, &ledger_rust_files)?;
     check_line_caps(repo_root, &ledger_rust_files)?;
+    check_no_silent_repo_fixture_skips(repo_root, tracked_files)?;
+    check_no_tombstone_ignores(repo_root, tracked_files)?;
     Ok(())
 }
 
@@ -695,6 +697,41 @@ fn tracked_set(repo_root: &Path, tracked_files: &[PathBuf]) -> BTreeSet<String> 
         .iter()
         .map(|path| relative(repo_root, path))
         .collect()
+}
+
+fn check_no_silent_repo_fixture_skips(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
+    for path in tracked_files {
+        let rel = relative(repo_root, path);
+        if !rel.starts_with("crates/core/tests/") || !rel.ends_with(".rs") {
+            continue;
+        }
+        let content = fs::read_to_string(path).with_context(|| format!("read {rel}"))?;
+        if content.contains(".cargo_vcs_info.json") && content.contains("return;") {
+            bail!(
+                "{rel}: packaged-source fixture tests must fail loudly when required fixtures are absent, not silently return under .cargo_vcs_info.json"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn check_no_tombstone_ignores(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
+    for path in tracked_files {
+        let rel = relative(repo_root, path);
+        if !rel.starts_with("crates/core/tests/") || !rel.ends_with(".rs") {
+            continue;
+        }
+        let content = fs::read_to_string(path).with_context(|| format!("read {rel}"))?;
+        for (index, line) in content.lines().enumerate() {
+            if line.contains("#[ignore = \"SUPERSEDED:") {
+                bail!(
+                    "{rel}:{}: superseded test tombstones must be deleted or replaced by an active proof",
+                    index + 1
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn relative(root: &Path, path: &Path) -> String {

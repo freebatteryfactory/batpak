@@ -5,8 +5,8 @@
 //!
 //! PROVES: LAW-003 (No Orphan Infrastructure), LAW-007 (Codebase Accuses Itself)
 //! DEFENDS: FM-007 (Island Syndrome), FM-022 (Receipt Hollowing), FM-023 (Fallback Laundering)
-//! INVARIANTS: INV-TEMP (replay determinism), INV-CONC (idempotency), INV-TYPE (round-trip),
-//!             INV-SEC (EventKind category enforcement)
+//! INVARIANTS: INV-REPLAY-LANE-SELECTION (replay determinism), INV-GROUP-COMMIT-IDEMPOTENCY (idempotency), INV-WIRE-ROUNDTRIP-TOTALITY (round-trip),
+//!             INV-MACRO-BOUNDED-CAST (EventKind category enforcement), INV-STORE-ERROR-TAXONOMY (error shape stability)
 
 use batpak::prelude::*;
 use proptest::prelude::*;
@@ -49,7 +49,7 @@ fn arb_json() -> impl Strategy<Value = serde_json::Value> {
     )
 }
 
-// ===== INV-TEMP: Replay Determinism =====
+// ===== INV-REPLAY-LANE-SELECTION: Replay Determinism =====
 // Same event log → same state. Close, reopen, verify exact equality.
 // Proves: non-replayable truth is absent (Big Bang CS vocab: Replayability).
 
@@ -113,7 +113,7 @@ fn replay_determinism_cold_start_rebuilds_identical_index() {
     }
 }
 
-// ===== INV-CONC: Idempotency Algebraic Property =====
+// ===== INV-GROUP-COMMIT-IDEMPOTENCY: Idempotency Algebraic Property =====
 // Same operation twice → no new truth (Big Bang: Idempotence).
 
 #[test]
@@ -152,7 +152,7 @@ fn idempotency_algebraic_duplicate_produces_no_new_event() {
     );
 }
 
-// ===== INV-TYPE: Round-Trip Fidelity =====
+// ===== INV-WIRE-ROUNDTRIP-TOTALITY: Round-Trip Fidelity =====
 // Serialize → deserialize preserves meaning exactly (Big Bang: Round-trip fidelity).
 
 #[test]
@@ -448,7 +448,7 @@ fn errors_propagate_not_launder_to_defaults() {
     );
 }
 
-// ===== INV-SEC: EventKind Category Enforcement =====
+// ===== INV-MACRO-BOUNDED-CAST: EventKind Category Enforcement =====
 // Products must not be able to create system (0x0) or effect (0xD) kinds via custom().
 
 #[test]
@@ -630,7 +630,7 @@ fn totality_projection_handles_unknown_event_kinds() {
         result.is_some(),
         "PROPERTY: Projection must complete successfully even with unknown EventKinds.\n\
          Investigate: src/store/mod.rs project() event filtering.\n\
-         INVARIANT: INV-TYPE totality — functions handle all inputs in their domain."
+         INVARIANT: INV-WIRE-ROUNDTRIP-TOTALITY totality -- functions handle all inputs in their domain."
     );
 }
 

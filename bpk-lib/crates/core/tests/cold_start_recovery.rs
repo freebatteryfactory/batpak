@@ -3,7 +3,7 @@
 //! Cold-start recovery artifacts.
 //! Harness pattern: Fault-Injection Harness (artifact recovery lane).
 //!
-//! [INV-COLDSTART-ARTIFACTS] A clean close writes the expected on-disk
+//! [INV-COLD-START-ARTIFACTS] A clean close writes the expected on-disk
 //! artifacts (segment + SIDX footer + the preferred fast-start artifact),
 //! and reopening the store from those artifacts yields the same visible
 //! events with no data loss. When both checkpoint and mmap snapshots are

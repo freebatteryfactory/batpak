@@ -46,7 +46,12 @@ impl Store<Open> {
         kind: EventKind,
         payload: &impl Serialize,
     ) -> Result<AppendTicket, StoreError> {
-        self.submit_prepared(coord, kind, payload, AppendSubmission::root())
+        self.submit_prepared(
+            coord,
+            kind,
+            payload,
+            AppendSubmission::root(self.runtime.clock()),
+        )
     }
 
     /// Nonblocking reaction append submission.
@@ -66,7 +71,7 @@ impl Store<Open> {
             coord,
             kind,
             payload,
-            AppendSubmission::reaction(correlation_id, causation_id),
+            AppendSubmission::reaction(self.runtime.clock(), correlation_id, causation_id),
         )
     }
 
@@ -373,7 +378,12 @@ impl Store<Open> {
             has_idempotency = opts.idempotency_key.is_some()
         );
         let receipt = self
-            .submit_prepared(coord, kind, payload, AppendSubmission::with_options(opts))?
+            .submit_prepared(
+                coord,
+                kind,
+                payload,
+                AppendSubmission::with_options(opts, self.runtime.clock()),
+            )?
             .wait()?;
         if let Some(gate) = gate {
             self.wait_for_gate(&receipt, gate)?;

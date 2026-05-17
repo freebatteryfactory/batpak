@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Integration coverage for at-least-once witness delivery through cursor and
 //! typed-reactor handler surfaces.
+//! PROVES: INV-DELIVERY-AT-LEAST-ONCE-WITNESS.
 
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};

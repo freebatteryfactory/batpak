@@ -21,9 +21,6 @@ fn run_downstream_fixture(args: &[&str]) {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest = manifest_dir.join("fixtures/kind-collision-composer/Cargo.toml");
     if !manifest.exists() {
-        if manifest_dir.join(".cargo_vcs_info.json").exists() {
-            return;
-        }
         panic!(
             "downstream fixture manifest is missing from repo checkout: {}",
             manifest.display()

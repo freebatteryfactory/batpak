@@ -7,7 +7,6 @@ use crate::store::index::StoreIndex;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 pub(super) struct WriterRuntime<'a> {
@@ -57,7 +56,7 @@ pub(super) fn writer_thread_main(
     let mut segment = initial_segment;
     let mut seg_id = initial_segment_id;
     let mut restarts: u32 = 0;
-    let mut window_start = Instant::now();
+    let mut window_start = runtime.validated_cfg.now_mono_ns();
 
     loop {
         let rdr = Arc::clone(runtime.reader);
@@ -94,7 +93,7 @@ pub(super) fn writer_thread_main(
                     &runtime.config.writer.restart_policy,
                     &mut restarts,
                     &mut window_start,
-                    Instant::now(),
+                    runtime.validated_cfg.now_mono_ns(),
                 );
 
                 if !budget_ok {
@@ -144,7 +143,11 @@ pub(super) fn writer_thread_main(
                 }
 
                 seg_id = find_latest_segment_id(&runtime.config.data_dir).unwrap_or(seg_id) + 1;
-                segment = match Segment::<Active>::create(&runtime.config.data_dir, seg_id) {
+                segment = match Segment::<Active>::create_with_created_ns(
+                    &runtime.config.data_dir,
+                    seg_id,
+                    runtime.validated_cfg.now_wall_ns(),
+                ) {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::error!(
@@ -161,8 +164,8 @@ pub(super) fn writer_thread_main(
 fn restart_budget_allows(
     policy: &RestartPolicy,
     restarts: &mut u32,
-    window_start: &mut Instant,
-    now: Instant,
+    window_start_ns: &mut i64,
+    now_ns: i64,
 ) -> bool {
     match policy {
         RestartPolicy::Once => {
@@ -177,9 +180,10 @@ fn restart_budget_allows(
             max_restarts,
             within_ms,
         } => {
-            if now.saturating_duration_since(*window_start) > Duration::from_millis(*within_ms) {
+            let elapsed_ms = now_ns.saturating_sub(*window_start_ns).max(0) / 1_000_000;
+            if elapsed_ms > i64::try_from(*within_ms).unwrap_or(i64::MAX) {
                 *restarts = 0;
-                *window_start = now;
+                *window_start_ns = now_ns;
             }
             if *restarts >= *max_restarts {
                 false
@@ -365,15 +369,10 @@ mod tests {
     #[test]
     fn restart_budget_once_allows_exactly_one_restart() {
         let mut restarts = 0;
-        let mut window_start = Instant::now();
+        let mut window_start = 0;
 
         assert!(
-            restart_budget_allows(
-                &RestartPolicy::Once,
-                &mut restarts,
-                &mut window_start,
-                Instant::now()
-            ),
+            restart_budget_allows(&RestartPolicy::Once, &mut restarts, &mut window_start, 0,),
             "PROPERTY: RestartPolicy::Once grants the first restart"
         );
         assert_eq!(
@@ -381,12 +380,7 @@ mod tests {
             "PROPERTY: accepting a restart increments the budget counter"
         );
         assert!(
-            !restart_budget_allows(
-                &RestartPolicy::Once,
-                &mut restarts,
-                &mut window_start,
-                Instant::now()
-            ),
+            !restart_budget_allows(&RestartPolicy::Once, &mut restarts, &mut window_start, 0,),
             "PROPERTY: RestartPolicy::Once rejects a second restart"
         );
         assert_eq!(
@@ -401,7 +395,7 @@ mod tests {
             max_restarts: 1,
             within_ms: 10,
         };
-        let base = Instant::now();
+        let base = 1_000_000_000;
         let mut window_start = base;
         let mut restarts = 0;
 
@@ -410,21 +404,11 @@ mod tests {
             "PROPERTY: bounded policy accepts the first restart in the window"
         );
         assert!(
-            !restart_budget_allows(
-                &policy,
-                &mut restarts,
-                &mut window_start,
-                base + Duration::from_millis(1)
-            ),
+            !restart_budget_allows(&policy, &mut restarts, &mut window_start, base + 1_000_000),
             "PROPERTY: bounded policy rejects restarts past the per-window cap"
         );
         assert!(
-            restart_budget_allows(
-                &policy,
-                &mut restarts,
-                &mut window_start,
-                base + Duration::from_millis(11)
-            ),
+            restart_budget_allows(&policy, &mut restarts, &mut window_start, base + 11_000_000),
             "PROPERTY: bounded policy resets after its configured time window"
         );
         assert_eq!(

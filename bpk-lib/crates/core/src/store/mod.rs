@@ -94,6 +94,7 @@ pub use fault::{
     CountdownAction, CountdownInjector, FaultInjector, InjectionPoint, ProbabilisticInjector,
 };
 pub use gate::DurabilityGate;
+pub use platform::clock::{Clock, SystemClock};
 pub use projection::watch::{CursorWatcherError, ProjectionWatcher, WatcherError};
 pub use projection::{
     CacheCapabilities, CacheMeta, Freshness, NativeCache, NoCache, ProjectionCache,
@@ -147,8 +148,6 @@ use crate::event::{
     self, EventKind, EventPayload, EventPayloadValidation, EventSourced, StoredEvent,
 };
 use crate::guard::{Denial, GateSet};
-#[cfg(test)]
-pub(crate) use config::now_us;
 use index::StoreIndex;
 use open::timestamp_us_for_hlc;
 use parking_lot::Mutex;

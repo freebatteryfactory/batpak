@@ -33,6 +33,7 @@ mod ci_parity;
 mod doctor;
 mod evidence_audit;
 mod harness_lints;
+mod invariant_bridge;
 mod public_surface;
 mod repo_surface;
 mod store_pub_fn_coverage;

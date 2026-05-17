@@ -1,8 +1,9 @@
 use batpak::prelude::*;
+use batpak::store::{Clock, SystemClock};
+use std::sync::Arc;
 
 #[test]
 fn store_config_builder_methods_are_chainable() {
-    let clock: std::sync::Arc<dyn Fn() -> i64 + Send + Sync> = std::sync::Arc::new(|| 42);
     let config = StoreConfig::new("./batpak-data")
         .with_segment_max_bytes(1024)
         .with_sync_every_n_events(7)
@@ -16,7 +17,7 @@ fn store_config_builder_methods_are_chainable() {
         })
         .with_shutdown_drain_limit(13)
         .with_writer_stack_size(Some(14))
-        .with_clock(Some(clock))
+        .with_clock_fn(|| 42)
         .with_sync_mode(SyncMode::SyncData)
         .with_platform_profile_path("./platform.profile")
         .with_event_payload_validation(EventPayloadValidation::FailFast);
@@ -57,6 +58,17 @@ fn store_config_builder_methods_are_chainable() {
     {
         let _dangerous = StoreConfig::new("./batpak-data").with_fault_injector(None);
     }
+}
+
+#[test]
+fn store_config_accepts_clock_trait_object() {
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
+    let config = StoreConfig::new("./batpak-data").with_clock(Some(clock));
+
+    assert!(
+        format!("{config:?}").contains("clock: Some(\"<clock>\")"),
+        "public with_clock must install a trait-object clock through the builder path"
+    );
 }
 
 #[test]

@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Outbox drop safety.
 //!
-//! [INV-OUTBOX-DROP] Dropping an `Outbox` without calling `.flush()` leaves the
+//! [INV-OUTBOX-DROP-SAFETY] Dropping an `Outbox` without calling `.flush()` leaves the
 //! store untouched: nothing commits, no frames reach disk, no subscriber
 //! notification fires. Flushing an outbox after staging is atomic — all items
 //! land together.

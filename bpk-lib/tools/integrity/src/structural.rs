@@ -7,7 +7,7 @@ use crate::shared_checks::{
     load_dead_code_silencer_allowlist, load_known_invariants,
 };
 use crate::{
-    agent_surface, architecture_lints, ci_parity, harness_lints, public_surface,
+    agent_surface, architecture_lints, ci_parity, harness_lints, invariant_bridge, public_surface,
     store_pub_fn_coverage,
 };
 use anyhow::{anyhow, bail, Result};
@@ -20,6 +20,7 @@ pub(crate) fn run() -> Result<()> {
     architecture_lints::check(&repo_root, &tracked_files)?;
     agent_surface::check(&repo_root)?;
     harness_lints::check(&repo_root, &tracked_files)?;
+    invariant_bridge::check(&repo_root, &tracked_files)?;
     check_no_dead_code_silencers(&repo_root)?;
     check_allow_justifications(&repo_root)?;
     public_surface::check(&repo_root)?;

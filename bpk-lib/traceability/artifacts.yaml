@@ -309,6 +309,13 @@
   kind: tests
   paths:
     - crates/core/tests/deterministic_concurrency.rs
+    - crates/core/tests/group_commit_crash.rs
+- id: ART-LOOM-CI-LANE
+  kind: workflow
+  paths:
+    - .github/workflows/ci.yml
+    - tools/xtask/src/commands/loom.rs
+    - tools/xtask/src/main.rs
 - id: ART-ADR-SYNC
   kind: adr
   paths:
@@ -428,6 +435,39 @@
   kind: tests
   paths:
     - crates/core/tests/subscription_ops.rs
+- id: ART-WIRE-FORMAT-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/wire_format.rs
+    - crates/core/tests/event_api.rs
+    - crates/core/tests/fuzz_targets.rs
+    - crates/core/tests/store_properties.rs
+    - crates/core/tests/store_edge_cases.rs
+- id: ART-PERF-GATES
+  kind: tests
+  paths:
+    - crates/core/tests/perf_gates.rs
+- id: ART-COMBINATOR-LAW-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/monad_laws.rs
+    - crates/core/tests/outcome_combinators.rs
+- id: ART-HASH-CHAIN-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/hash_chain.rs
+- id: ART-OUTBOX-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/outbox_drop_safety.rs
+- id: ART-COLD-START-RECOVERY-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/cold_start_recovery.rs
+- id: ART-INDEX-FILTER-COMPOSITION-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/index_filter_composition.rs
 - id: ART-DX-DOCS
   kind: docs
   paths:
@@ -455,6 +495,7 @@
     - crates/core/examples/raw_projection_counter_derived.rs
     - crates/core/examples/read_only.rs
     - crates/core/examples/signed_receipts.rs
+    - crates/core/examples/store_lock_helper.rs
     - crates/core/examples/submit_pipeline.rs
     - crates/core/examples/typed_reactor.rs
     - crates/core/examples/typed_reactor_multi.rs

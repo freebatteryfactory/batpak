@@ -6,7 +6,7 @@
 //!
 //! PROVES: LAW-001 (No Fake Success — cached projections must be correct)
 //! DEFENDS: FM-009 (Polite Downgrade — MaybeStale stale-window semantics stay honest)
-//! INVARIANTS: INV-TYPE (cache round-trip fidelity), INV-TEMP (freshness semantics)
+//! INVARIANTS: INV-CACHE-CAPABILITIES-EXPLICIT (cache round-trip fidelity), INV-CLOCK-NOW-US-LIVE (freshness semantics), INV-NATIVE-DELETE-IDEMPOTENT (native cache deletion), INV-REPLAY-LANE-SELECTION (replay path selection)
 
 use batpak::store::projection::{CacheMeta, NoCache, ProjectionCache};
 use batpak::store::StoreError;
@@ -1064,15 +1064,12 @@ fn freshness_maybe_stale_replays_at_exact_age_boundary() {
     let cache_path = dir.path().join("cache");
     let cache = NativeCache::open(&cache_path).expect("open native cache");
     let now_us = Arc::new(AtomicI64::new(1_000_000));
-    let clock: Arc<dyn Fn() -> i64 + Send + Sync> = {
-        let now_us = Arc::clone(&now_us);
-        Arc::new(move || now_us.load(Ordering::SeqCst))
-    };
+    let clock = Arc::clone(&now_us);
 
     let config = StoreConfig::new(dir.path().join("data"))
         .with_segment_max_bytes(4096)
         .with_sync_every_n_events(1)
-        .with_clock(Some(clock));
+        .with_clock_fn(move || clock.load(Ordering::SeqCst));
     let store = Store::open_with_cache(config, Box::new(cache)).expect("open store");
 
     let coord = Coordinate::new("entity:maybe-stale-boundary", "scope:test").expect("coord");

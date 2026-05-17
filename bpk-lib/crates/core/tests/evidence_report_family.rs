@@ -20,7 +20,6 @@ use batpak::store::{
 };
 use serde::Serialize;
 use std::error::Error;
-use std::sync::Arc;
 use tempfile::TempDir;
 
 #[path = "support/small_store.rs"]
@@ -404,7 +403,7 @@ fn read_walk_evidence_body_is_topology_independent() -> TestResult {
         let store = Store::open(
             StoreConfig::new(dir.path())
                 .with_index_topology(topology)
-                .with_clock(Some(Arc::new(|| 1_000_000))),
+                .with_clock_fn(|| 1_000_000),
         )?;
         let coord = Coordinate::new("entity:family-topology-read", "scope:topology-read")?;
         let kind = EventKind::custom(0xE, 0x81);
@@ -444,7 +443,7 @@ fn projection_run_evidence_output_is_topology_independent() -> TestResult {
         let store = Store::open(
             StoreConfig::new(dir.path())
                 .with_index_topology(topology)
-                .with_clock(Some(Arc::new(|| 2_000_000))),
+                .with_clock_fn(|| 2_000_000),
         )?;
         let coord = Coordinate::new("entity:family-topology-projection", "scope:topology-proj")?;
         let relevant = EventKind::custom(0xE, 0x71);

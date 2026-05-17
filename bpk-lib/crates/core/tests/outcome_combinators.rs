@@ -6,7 +6,7 @@
 //!
 //! PROVES: LAW-006 (Algebraic Integrity — combinator contracts)
 //! DEFENDS: FM-009 (Polite Downgrade — combinators preserve collapse semantics)
-//! INVARIANTS: INV-TYPE (combinator type safety), INV-STATE (WaitCondition semantics)
+//! INVARIANTS: INV-TYPELEVEL-COMBINATOR-LAWS (combinator type safety), INV-FRONTIER-WAIT-MONOTONIC (WaitCondition semantics)
 
 use batpak::outcome::WaitCondition;
 use batpak::prelude::*;

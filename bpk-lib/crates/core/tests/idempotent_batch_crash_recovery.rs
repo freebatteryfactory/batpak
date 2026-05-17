@@ -7,7 +7,7 @@
 //! CATCHES: silent acceptance of partial idempotency-key replay in batch preflight.
 //! SEEDED: fixed `EventKind`, stable coordinates, explicit u128 idempotency keys, `tempfile` roots.
 //!
-//! [INV-BATCH-IDEMPOTENT-SHAPE] A batch that mixes keyed and unkeyed items is
+//! [INV-GROUP-COMMIT-IDEMPOTENCY] A batch that mixes keyed and unkeyed items is
 //! rejected synchronously with `StoreError::IdempotencyPartialBatch` before
 //! any frame reaches disk. A fully-keyed batch survives close+reopen and is
 //! replayable without producing duplicate events.

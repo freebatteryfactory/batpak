@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Durable cursor checkpoints.
 //!
-//! [INV-CURSOR-DURABLE] A cursor worker constructed with a `checkpoint_id`
+//! [INV-DELIVERY-AT-LEAST-ONCE-WITNESS] A cursor worker constructed with a `checkpoint_id`
 //! persists its position atomically after every successful batch. After the
 //! store is closed and reopened, a new cursor worker with the same id
 //! resumes exactly from the persisted position: it sees only the events

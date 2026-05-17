@@ -58,8 +58,13 @@ fn open_components(
 
     // Cold start: checkpoint/mmap fast paths or full segment scan.
     // Segment files are named so lexicographic order matches replay order.
-    let open_outcome =
-        cold_start::rebuild::open_index(&index, &reader, &config.data_dir, runtime.cold_start)?;
+    let open_outcome = cold_start::rebuild::open_index(
+        &index,
+        &reader,
+        &config.data_dir,
+        runtime.cold_start,
+        runtime.clock(),
+    )?;
 
     // Tell the reader which segment is active (for mmap dispatch).
     // The writer's initial segment ID is the highest existing + 1.
@@ -227,7 +232,9 @@ fn append_open_completed_event(
 ) -> Result<HlcPoint, StoreError> {
     let coord = Coordinate::new("batpak:store", "batpak:lifecycle")?;
     let submission = AppendSubmission::with_options(
-        AppendOptions::default().with_idempotency(crate::id::generate_v7_id()),
+        AppendOptions::default()
+            .with_idempotency(crate::id::generate_v7_id_with_clock(store.runtime.clock())),
+        store.runtime.clock(),
     );
     submission.validate_route(store)?;
     submission.validate_idempotency(store)?;
@@ -391,7 +398,7 @@ impl Store<ReadOnly> {
         } = open_components(config, StoreLockMode::ReadOnly)?;
 
         let open_hlc = bootstrap_open_hlc(&runtime, &index)?;
-        let watermark_handle = WatermarkState::bootstrap_handle(open_hlc);
+        let watermark_handle = WatermarkState::bootstrap_handle(open_hlc, runtime.clock_arc());
         let projection_registry = ProjectionRegistry::new(watermark_handle.clone());
         let store = Self {
             index,

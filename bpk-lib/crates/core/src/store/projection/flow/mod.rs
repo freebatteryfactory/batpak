@@ -4,8 +4,7 @@ mod replay_input;
 mod strategy;
 
 use crate::event::{EventSourced, ProjectionInput};
-use crate::store::config::duration_micros;
-use crate::store::{Freshness, HlcPoint, Store, StoreError};
+use crate::store::{Clock, Freshness, HlcPoint, Store, StoreError};
 use std::any::TypeId;
 
 pub(crate) use cache_identity::projection_cache_key;
@@ -38,12 +37,17 @@ where
     }
 }
 
+fn elapsed_us(clock: &dyn Clock, started_at_ns: i64) -> u64 {
+    u64::try_from(clock.now_mono_ns().saturating_sub(started_at_ns).max(0) / 1_000)
+        .unwrap_or(u64::MAX)
+}
+
 fn fallback_to_full_replay<T, I, State>(
     store: &Store<State>,
     entity: &str,
     freshness: &Freshness,
     replay: &ReplayContext,
-    started_at: std::time::Instant,
+    started_at_ns: i64,
     timings: &mut Option<&mut ProjectionTimings>,
 ) -> Result<ProjectionOutcome<T>, StoreError>
 where
@@ -52,7 +56,7 @@ where
 {
     execute_full_replay::<T, I, State>(
         store,
-        replay_execution(entity, freshness, replay, started_at),
+        replay_execution(entity, freshness, replay, started_at_ns),
         ProjectionCacheObservation::Miss,
         ProjectionObservedFreshness::Fresh,
         timings,
@@ -163,7 +167,7 @@ where
     T: EventSourced + serde::Serialize + serde::de::DeserializeOwned + 'static,
     I: ReplayInput<Payload = <T::Input as ProjectionInput>::Payload>,
 {
-    let t_start = std::time::Instant::now();
+    let t_start = store.runtime.now_mono_ns();
     let observed_generation = store.entity_generation(entity).unwrap_or(0);
 
     tracing::debug!(
@@ -183,22 +187,22 @@ where
     let preparation = match store.index.projection_replay_plan(entity, relevant_kinds) {
         None => ProjectionPreparation::Empty,
         Some(plan) => {
-            let t_cache_key = std::time::Instant::now();
+            let t_cache_key = store.runtime.now_mono_ns();
             let replay = ReplayContext {
                 watermark: plan.watermark,
                 cached_at_us: store.runtime.cache_now_us(),
-                cached_at_mono_ns: crate::store::config::now_mono_ns(),
-                process_boot_ns: crate::store::config::process_boot_ns(),
+                cached_at_mono_ns: store.runtime.now_mono_ns(),
+                process_boot_ns: store.runtime.process_boot_ns(),
                 type_id: TypeId::of::<T>(),
                 cache_key: projection_cache_key::<T>(entity),
                 plan,
             };
             if let Some(t) = timings.as_deref_mut() {
-                t.cache_key_build_us = duration_micros(t_cache_key.elapsed());
+                t.cache_key_build_us = elapsed_us(store.runtime.clock(), t_cache_key);
             }
 
             // Fire prefetch early so I/O overlaps with group-local CPU work.
-            let t_prefetch = std::time::Instant::now();
+            let t_prefetch = store.runtime.now_mono_ns();
             if store.cache.capabilities().supports_prefetch {
                 let predicted_meta = super::CacheMeta {
                     watermark: replay.watermark,
@@ -211,10 +215,10 @@ where
                 }
             }
             if let Some(t) = timings.as_deref_mut() {
-                t.prefetch_us = duration_micros(t_prefetch.elapsed());
+                t.prefetch_us = elapsed_us(store.runtime.clock(), t_prefetch);
             }
 
-            let t_group = std::time::Instant::now();
+            let t_group = store.runtime.now_mono_ns();
             let group_local_slot = store.index.cached_projection(entity, replay.type_id);
             let group_local_fresh = group_local_slot
                 .as_ref()
@@ -246,7 +250,7 @@ where
                 })
                 .unwrap_or(false);
             if let Some(t) = timings.as_deref_mut() {
-                t.group_local_lookup_us = duration_micros(t_group.elapsed());
+                t.group_local_lookup_us = elapsed_us(store.runtime.clock(), t_group);
             }
 
             ProjectionPreparation::Planned(PreparedProjection {
@@ -257,7 +261,7 @@ where
         }
     };
     if let Some(t) = timings.as_deref_mut() {
-        t.plan_build_us = duration_micros(t_start.elapsed());
+        t.plan_build_us = elapsed_us(store.runtime.clock(), t_start);
     }
 
     // ── Phase 2: Compute strategy ─────────────────────────────────────
@@ -294,6 +298,7 @@ where
     let outcome = match dispatch {
         ProjectionDispatch::Empty => Ok(finish_empty_projection(
             &mut timings,
+            store.runtime.clock(),
             t_start,
             observed_generation,
         )),
@@ -306,6 +311,7 @@ where
             ) {
                 Ok(finish_projection(
                     &mut timings,
+                    store.runtime.clock(),
                     t_start,
                     Some(value),
                     slot.generation,
@@ -344,6 +350,7 @@ where
                 store_projection_value(store, &execution, &cached_state);
                 Ok(finish_projection(
                     &mut timings,
+                    store.runtime.clock(),
                     t_start,
                     Some(cached_state),
                     replay.plan.generation,
@@ -390,7 +397,7 @@ where
         entity,
         cache_status = ?outcome.cache_status(),
         observed_freshness = ?outcome.observed_freshness(),
-        total_us = duration_micros(t_start.elapsed()),
+        total_us = elapsed_us(store.runtime.clock(), t_start),
         returned_generation = outcome.returned_generation(),
     );
 
@@ -435,9 +442,9 @@ where
     // the honest generation for any state served from this path — see F5.
     let plan_generation = execution.replay.plan.generation;
 
-    let t_ext = std::time::Instant::now();
+    let t_ext = store.runtime.now_mono_ns();
     let cache_row = store.cache.get(&execution.replay.cache_key);
-    let probe_us = duration_micros(t_ext.elapsed());
+    let probe_us = elapsed_us(store.runtime.clock(), t_ext);
     let probe_outcome = match &cache_row {
         Ok(Some(_)) => "some",
         Ok(None) => "none",
@@ -452,7 +459,7 @@ where
     );
     match cache_row {
         Ok(Some((bytes, meta))) => {
-            record_external_cache_probe_time(timings, t_ext);
+            record_external_cache_probe_time(timings, store.runtime.clock(), t_ext);
             let is_fresh = match execution.freshness {
                 Freshness::Consistent => meta.watermark == execution.replay.watermark,
                 Freshness::MaybeStale { max_stale_ms } => {
@@ -490,7 +497,8 @@ where
                     store_projection_value(store, &execution, &cached_state);
                     return Ok(finish_projection(
                         timings,
-                        execution.started_at,
+                        store.runtime.clock(),
+                        execution.started_at_ns,
                         Some(cached_state),
                         plan_generation,
                         finish_observation(
@@ -517,7 +525,8 @@ where
                     );
                     return Ok(finish_projection(
                         timings,
-                        execution.started_at,
+                        store.runtime.clock(),
+                        execution.started_at_ns,
                         Some(value),
                         plan_generation,
                         finish_observation(
@@ -536,13 +545,13 @@ where
         }
         Ok(None) => {
             fallback_cache_status = ProjectionCacheObservation::Miss;
-            record_external_cache_probe_time(timings, t_ext);
+            record_external_cache_probe_time(timings, store.runtime.clock(), t_ext);
         }
         Err(e) => {
             fallback_cache_status = ProjectionCacheObservation::Unavailable {
                 reason: "cache_get_failed",
             };
-            record_external_cache_probe_time(timings, t_ext);
+            record_external_cache_probe_time(timings, store.runtime.clock(), t_ext);
             tracing::warn!("cache get failed (falling back to replay): {e}");
         }
     }
@@ -580,7 +589,7 @@ where
     // Full replay -- batch-read filtered events from disk.
     // Uses the projection's replay-input lane, which always skips Coordinate
     // construction and may leave payloads as raw MessagePack bytes.
-    let t_disk = std::time::Instant::now();
+    let t_disk = store.runtime.now_mono_ns();
     let positions: Vec<&crate::store::index::DiskPos> = execution
         .replay
         .plan
@@ -590,15 +599,15 @@ where
         .collect();
     let events = I::read_batch(&store.reader, &positions)?;
     if let Some(t) = timings.as_deref_mut() {
-        t.disk_read_us = duration_micros(t_disk.elapsed());
+        t.disk_read_us = elapsed_us(store.runtime.clock(), t_disk);
         // No separate extraction step -- replay lanes return Event directly.
         t.event_extract_us = 0;
     }
 
-    let t_fold = std::time::Instant::now();
+    let t_fold = store.runtime.now_mono_ns();
     let result = T::from_events(&events);
     if let Some(t) = timings.as_deref_mut() {
-        t.replay_fold_us = duration_micros(t_fold.elapsed());
+        t.replay_fold_us = elapsed_us(store.runtime.clock(), t_fold);
     }
 
     if result.is_none() && !events.is_empty() {
@@ -610,17 +619,18 @@ where
     }
 
     // Cache store-back
-    let t_store = std::time::Instant::now();
+    let t_store = store.runtime.now_mono_ns();
     if let Some(ref value) = result {
         store_projection_value(store, &execution, value);
     }
     if let Some(t) = timings.as_deref_mut() {
-        t.cache_store_us = duration_micros(t_store.elapsed());
+        t.cache_store_us = elapsed_us(store.runtime.clock(), t_store);
     }
 
     Ok(finish_projection(
         timings,
-        execution.started_at,
+        store.runtime.clock(),
+        execution.started_at_ns,
         result,
         plan_generation,
         finish_observation(
@@ -669,17 +679,14 @@ fn store_projection_value<T, State>(
         // — anything that depends on "how old is this cache row" must see
         // the real put timestamp, not the plan-build timestamp.
         //
-        // Wall-clock (`now_us`) flows through the injected `MonotonicClock`
-        // wrapper, so the age observable in the `MaybeStale` path above is
-        // the same clock a test controls via `StoreConfig::with_clock`.
-        // `cached_at_mono_ns` + `process_boot_ns` stay pinned to the
-        // hardware monotonic anchor for the lifetime of this process —
-        // they are the cross-process-mismatch detector, not the age basis.
+        // Wall-clock and monotonic metadata both flow through the runtime
+        // clock; tests that install a full `Clock` can control wall time,
+        // monotonic age, and process-epoch evidence from one seam.
         let meta = super::CacheMeta {
             watermark: execution.replay.watermark,
             cached_at_us: store.runtime.cache_now_us(),
-            cached_at_mono_ns: Some(crate::store::config::now_mono_ns()),
-            process_boot_ns: Some(crate::store::config::process_boot_ns()),
+            cached_at_mono_ns: Some(store.runtime.now_mono_ns()),
+            process_boot_ns: Some(store.runtime.process_boot_ns()),
         };
         if let Err(error) = store.cache.put(&execution.replay.cache_key, &bytes, meta) {
             tracing::warn!("cache put failed (non-fatal): {error}");

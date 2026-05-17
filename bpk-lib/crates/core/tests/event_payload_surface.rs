@@ -8,7 +8,7 @@
 //! try_submit_reaction_typed, by_fact_typed, BatchAppendItem::typed,
 //! Transition::from_payload.
 //!
-//! PROVES: LAW-003 (No Orphan Infrastructure), INV-OBS (every pub API has witness).
+//! PROVES: LAW-003 (No Orphan Infrastructure), INV-TRACEABILITY-COMPLETE (every pub API has witness).
 //! CATCHES: typed payload public surface drift and clean-registry validator regressions.
 //! SEEDED: deterministic / no randomness.
 

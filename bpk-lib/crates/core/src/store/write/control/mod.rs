@@ -21,7 +21,8 @@ mod tests {
 
     #[test]
     fn reaction_with_zero_causation_yields_none() {
-        let submission = AppendSubmission::reaction(42, 0);
+        let clock = crate::store::SystemClock::new();
+        let submission = AppendSubmission::reaction(&clock, 42, 0);
         assert_eq!(
             submission.options.causation_id, None,
             "causation_id=0 is the wire sentinel — reaction() must not produce Some(0)"
@@ -30,7 +31,8 @@ mod tests {
 
     #[test]
     fn reaction_with_nonzero_causation_is_preserved() {
-        let submission = AppendSubmission::reaction(42, 99);
+        let clock = crate::store::SystemClock::new();
+        let submission = AppendSubmission::reaction(&clock, 42, 99);
         assert_eq!(submission.options.causation_id, Some(99));
     }
 }

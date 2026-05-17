@@ -1,6 +1,7 @@
 // justifies: INV-TEST-PANIC-AS-ASSERTION; this lock-behavior harness uses panic! as assertion style for precise lock-mode drift.
 #![allow(clippy::panic)]
 //! Store directory locking surface.
+//! PROVES: INV-JOURNAL-SINGLE-LIVE-OWNER.
 //! Harness pattern: State-Machine Harness (open/hold/reject/release lane).
 //!
 //! PROVES: mutable and read-only opens both hold an exclusive lifetime lock
@@ -12,7 +13,7 @@
 
 use batpak::event::kind::EventKindError;
 use batpak::store::{ReadOnly, Store, StoreConfig, StoreError, StoreLockMode};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -102,11 +103,29 @@ fn wait_for_read_only_open_after_release(
 }
 
 fn helper_command(data_dir: &Path, ready: &Path, release: &Path) -> Command {
-    let mut cmd = Command::new(std::env::current_exe().expect("current test binary"));
-    cmd.arg("--exact")
-        .arg("subprocess_helper_holds_mutable_lock")
-        .arg("--nocapture")
-        .env("BATPAK_LOCK_HELPER_DATA_DIR", data_dir)
+    let current = std::env::current_exe().expect("current test binary");
+    let example_name = format!("store_lock_helper{}", std::env::consts::EXE_SUFFIX);
+    let example = current
+        .parent()
+        .and_then(Path::parent)
+        .expect("test binary lives under target profile")
+        .join("examples")
+        .join(example_name);
+    let mut cmd = if example.exists() {
+        Command::new(example)
+    } else {
+        let mut cargo = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+        cargo
+            .arg("run")
+            .arg("--quiet")
+            .arg("--example")
+            .arg("store_lock_helper")
+            .arg("--manifest-path")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+            .arg("--");
+        cargo
+    };
+    cmd.env("BATPAK_LOCK_HELPER_DATA_DIR", data_dir)
         .env("BATPAK_LOCK_HELPER_READY", ready)
         .env("BATPAK_LOCK_HELPER_RELEASE", release);
     cmd
@@ -211,20 +230,4 @@ fn event_kind_error_pub_surface_has_a_real_test_witness() {
         display.contains("reserved"),
         "public EventKindError witness should remain a real path-position test use"
     );
-}
-
-#[test]
-fn subprocess_helper_holds_mutable_lock() {
-    let data_dir = match std::env::var_os("BATPAK_LOCK_HELPER_DATA_DIR") {
-        Some(path) => PathBuf::from(path),
-        None => return,
-    };
-    let ready = PathBuf::from(std::env::var_os("BATPAK_LOCK_HELPER_READY").expect("ready path"));
-    let release =
-        PathBuf::from(std::env::var_os("BATPAK_LOCK_HELPER_RELEASE").expect("release path"));
-
-    let store = Store::open(StoreConfig::new(&data_dir)).expect("helper opens mutable store");
-    std::fs::write(&ready, b"ready").expect("write ready file");
-    wait_for_path(&release, "helper release file");
-    drop(store);
 }

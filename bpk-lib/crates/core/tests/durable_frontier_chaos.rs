@@ -148,39 +148,6 @@ fn writer_panic_at_single_append_published_is_durable_on_reopen() {
     assert_eq!(frontier.visible_hlc, frontier.accepted_hlc);
 }
 
-#[test]
-#[ignore = "SUPERSEDED: real block-layer durable frontier proof lives at tests/chaos/scenarios/single_append_written.rs::durable_frontier_covers_recovered_state_after_device_failure_cadence_1000; this in-process FaultInjector shape leaves the unsynced frame recoverable from host page cache and cannot model device failure"]
-fn writer_panic_at_single_append_written_is_not_durable_on_reopen() {
-    let dir = TempDir::new().expect("temp dir");
-    let target_entity = "entity:chaos-written-target";
-    let (config, fired) = config_with_panic(
-        &dir,
-        InjectionPoint::SingleAppendWritten {
-            entity: target_entity.to_string(),
-        },
-    );
-    let store = Store::open(config).expect("open store");
-    let baseline_hlc = append_baseline(&store, "written");
-
-    assert_writer_crashed(store.append(
-        &coord(target_entity),
-        kind(),
-        &serde_json::json!({"target": 3}),
-    ));
-    assert!(fired.load(Ordering::Acquire));
-
-    drop(store);
-
-    let reopened = Store::open(StoreConfig::new(dir.path())).expect("reopen store");
-    let entries = reopened.query(&Region::scope(CHAOS_SCOPE));
-    assert_eq!(
-        entries.len(),
-        2,
-        "PROPERTY: SingleAppendWritten panic must not recover the unsynced tail frame"
-    );
-    assert!(reopened.frontier().accepted_hlc <= baseline_hlc);
-}
-
 /// In-process `BatchCommitWritten` panic recovery pins the host-page-cache
 /// observation recorded by `OBS-DURABLE-HLC-INCLUDES-OS-PRESERVED-DATA`.
 /// See `tests/chaos/scenarios/batch_commit_written.rs` for the substrate-level

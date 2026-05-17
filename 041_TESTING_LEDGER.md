@@ -12,6 +12,7 @@ instead of pretending.
 ### Invariant: Invalid derive input fails structurally
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-BUILD-FAIL-FAST`, `INV-GENERATED-WITNESS-PIN`
 - Location:
   - `bpk-lib/crates/core/tests/derive_eventpayload_errors.rs`
   - `bpk-lib/crates/core/tests/derive_event_sourced_errors.rs`
@@ -29,6 +30,7 @@ instead of pretending.
 ### Invariant: Corruption and stress fail closed
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-FAULT-INJECT-GATED`, `INV-BATCH-CRASH-RECOVERY`
 - Location:
   - `bpk-lib/crates/core/tests/chaos_testing.rs`
   - `bpk-lib/crates/core/tests/cold_start_recovery.rs`
@@ -44,6 +46,7 @@ instead of pretending.
 ### Invariant: Slow-path segment recovery fails closed on corrupt batch metadata
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-BATCH-CRASH-RECOVERY`
 - Location:
   - `bpk-lib/crates/core/tests/segment_scan_hardening.rs`
 - Command used:
@@ -77,6 +80,7 @@ instead of pretending.
 ### Invariant: Durable frontier observations stay honest under writer faults
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-FRONTIER-DURABLE-COVERS-RECOVERED`
 - Location:
   - `bpk-lib/crates/core/tests/durable_frontier_semantics.rs`
   - `bpk-lib/crates/core/tests/durable_frontier_chaos.rs`
@@ -100,6 +104,7 @@ instead of pretending.
 ### Invariant: Explicit close lifecycle frontiers survive restart
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-STORE-LIFECYCLE-HONESTY`, `INV-FRONTIER-OPEN-MONOTONIC`
 - Location:
   - `bpk-lib/crates/core/tests/durable_frontier_semantics.rs`
 - Command used:
@@ -141,6 +146,7 @@ instead of pretending.
 ### Invariant: Platform profile mismatch fails open before lifecycle success
 
 - Harness pattern: `State-Machine Harness`
+- Catalog invariants: `INV-PLATFORM-EVIDENCE-NOT-MEANING`
 - Location:
   - `bpk-lib/crates/core/tests/platform_backend.rs`
 - Command used:
@@ -160,6 +166,7 @@ instead of pretending.
 ### Invariant: Durable frontier wait API surfaces honest blocking semantics
 
 - Harness pattern: `State-Machine Harness`
+- Catalog invariants: `INV-FRONTIER-WAIT-MONOTONIC`, `INV-FRONTIER-APPEND-GATE-HONORED`
 - Location:
   - `bpk-lib/crates/core/tests/durable_frontier_waits.rs`
 - Command used:
@@ -229,6 +236,7 @@ instead of pretending.
 ### Invariant: Linux block-layer chaos harness fails writes after device flip
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-CHAOS-LINUX-ONLY`
 - Location:
   - `bpk-lib/crates/core/tests/chaos.rs`
   - `bpk-lib/crates/core/tests/chaos/dm_flakey.rs`
@@ -251,6 +259,7 @@ instead of pretending.
 ### Invariant: Durable frontier covers recovered state after device failure
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-FRONTIER-DURABLE-COVERS-RECOVERED`, `INV-CHAOS-LINUX-ONLY`
 - Location:
   - `bpk-lib/crates/core/tests/chaos.rs`
   - `bpk-lib/crates/core/tests/chaos/dm_flakey.rs`
@@ -314,6 +323,7 @@ instead of pretending.
 ### Invariant: Derived projections stay equivalent to the hand-written target
 
 - Harness pattern: `Equivalence Harness`
+- Catalog invariants: `INV-REPLAY-LANE-SELECTION`
 - Location:
   - `bpk-lib/crates/core/tests/derive_event_sourced_parity.rs`
   - `bpk-lib/crates/core/tests/derive_event_sourced_generic.rs`
@@ -328,6 +338,7 @@ instead of pretending.
 ### Invariant: Live, reopen, and replay paths converge on the same visible truth
 
 - Harness pattern: `Equivalence Harness`
+- Catalog invariants: `INV-REPLAY-LANE-SELECTION`, `INV-MMAP-SEALED-READS`
 - Location:
   - `bpk-lib/crates/core/tests/replay_consistency.rs`
   - `bpk-lib/crates/core/tests/mmap_cold_start.rs`
@@ -343,6 +354,7 @@ instead of pretending.
 ### Invariant: Projection flow surfaces stay observationally equivalent
 
 - Harness pattern: `Equivalence Harness`
+- Catalog invariants: `INV-CACHE-CAPABILITIES-EXPLICIT`, `INV-REPLAY-LANE-SELECTION`
 - Location:
   - `bpk-lib/crates/core/tests/raw_projection_mode.rs`
 - Command used:
@@ -365,6 +377,7 @@ instead of pretending.
 ### Invariant: MaybeStale never serves corrupt cache bytes as a “fresh enough” success
 
 - Harness pattern: `Fault-Injection Harness`
+- Catalog invariants: `INV-CACHE-CAPABILITIES-EXPLICIT`, `INV-CLOCK-NOW-US-LIVE`
 - Location:
   - `bpk-lib/crates/core/tests/projection_cache.rs`
 - Command used:
@@ -388,6 +401,8 @@ instead of pretending.
 ### Invariant: Fuzz and chaos probe outputs stay within explicit policy gates
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`, `INV-GROUP-COMMIT-IDEMPOTENCY`
+- Catalog invariants: `INV-FAULT-INJECT-GATED`
 - Location:
   - `bpk-lib/crates/core/tests/fuzz_chaos_feedback.rs`
 - Command used:
@@ -401,6 +416,8 @@ instead of pretending.
 ### Invariant: Representative store errors keep stable handling, display, and source contracts
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
+- Catalog invariants: `INV-STORE-ERROR-TAXONOMY`
 - Location:
   - `bpk-lib/crates/core/tests/store_error_contract.rs`
   - `bpk-lib/crates/core/src/store/error.rs`
@@ -424,6 +441,8 @@ instead of pretending.
 ### Invariant: Catastrophic performance regressions trip explicit thresholds
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
+- Catalog invariants: `INV-PERFORMANCE-GATES-ENFORCED`
 - Location:
   - `bpk-lib/crates/core/tests/perf_gates.rs`
 - Command used:
@@ -437,6 +456,8 @@ instead of pretending.
 ### Invariant: Typed payload kind allocation is binary-wide and collision-checked
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
+- Catalog invariants: `INV-GENERATED-WITNESS-PIN`, `INV-MACRO-BOUNDED-CAST`
 - Location:
   - `bpk-lib/crates/core/fixtures/downstream/src/lib.rs`
   - `bpk-lib/crates/core/tests/event_payload_registry_policy.rs`
@@ -469,6 +490,8 @@ instead of pretending.
 ### Invariant: Harness doctrine stays structurally enforceable
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
+- Catalog invariants: `INV-ALLOW-IS-DESIGN`, `INV-NO-DEAD-CODE-SILENCERS`
 - Location:
   - `bpk-lib/tools/integrity/src/harness_lints.rs`
 - Command used:
@@ -492,6 +515,7 @@ instead of pretending.
 ### Invariant: Evidence report bodies keep deterministic structural identity
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
 - Location:
   - `bpk-lib/crates/core/tests/evidence_report_family.rs`
   - `bpk-lib/crates/core/tests/lane_store_resource_evidence.rs`
@@ -528,6 +552,7 @@ instead of pretending.
 ### Invariant: Lane A generic substrate — artifact envelope framing, compaction evidence, idempotency, and explicit read bounds
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`, `INV-GROUP-COMMIT-IDEMPOTENCY`
 - Location:
   - `bpk-lib/crates/core/tests/lane_a_artifact_substrate.rs`
   - `bpk-lib/crates/core/tests/lane_a_store_substrate.rs`
@@ -560,6 +585,7 @@ instead of pretending.
 ### Invariant: Lane B1 attested registry — canonical row body, envelope composition, drift, verification, supersession
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
 - Location:
   - `bpk-lib/crates/core/tests/lane_b1_registry_substrate.rs`
   - `bpk-lib/crates/core/src/registry.rs`
@@ -580,6 +606,7 @@ instead of pretending.
 ### Invariant: Lane B2 backup envelope — manifest body hash, segment sort, restore proof, attested envelope
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
 - Location:
   - `bpk-lib/crates/core/tests/lane_b2_backup_envelope_substrate.rs`
   - `bpk-lib/crates/core/src/store/backup_envelope.rs`
@@ -600,6 +627,7 @@ instead of pretending.
 ### Invariant: Lane B3 transition substrate — canonical event digest, allowed-edge report, finding order
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
 - Location:
   - `bpk-lib/crates/core/tests/lane_b3_transition_substrate.rs`
   - `bpk-lib/crates/core/src/transition.rs`
@@ -620,6 +648,7 @@ instead of pretending.
 ### Invariant: Lane B4 reservation ledger — structural lanes, invalid transitions, reconciliation buckets, body hashes
 
 - Harness pattern: `Property Harness`
+- Catalog invariants: `INV-CANONICAL-PATCH-STABILITY`
 - Location:
   - `bpk-lib/crates/core/tests/lane_b4_reservation_substrate.rs`
   - `bpk-lib/crates/core/src/reservation.rs`
@@ -642,10 +671,11 @@ instead of pretending.
 ### Invariant: Bounded schedules preserve concurrency protocol truth
 
 - Harness pattern: `State-Machine Harness`
+- Catalog invariants: `INV-CONCURRENCY-SCHEDULE-PROOF`, `INV-BATCH-ATOMIC-VISIBILITY`
 - Location:
   - `bpk-lib/crates/core/tests/deterministic_concurrency.rs`
 - Command used:
-  - `cargo test --test deterministic_concurrency`
+  - `cargo xtask loom`
 - Line/function coverage delta: unmeasured
 - Mutation delta: unmeasured
 - Remaining known blind spots:
@@ -654,6 +684,7 @@ instead of pretending.
 ### Invariant: Durable cursor checkpoints only commit honest progress
 
 - Harness pattern: `State-Machine Harness`
+- Catalog invariants: `INV-DELIVERY-AT-LEAST-ONCE-WITNESS`
 - Location:
   - `bpk-lib/crates/core/tests/cursor_durability.rs`
 - Command used:
@@ -668,6 +699,7 @@ instead of pretending.
 ### Invariant: Ready writer tickets surface observable completion through `try_check`
 
 - Harness pattern: `State-Machine Harness`
+- Catalog invariants: `INV-JOURNAL-WRITER-SERIALIZES-COMMITS`, `INV-FENCE-CANCELLED-STAYS-HIDDEN`
 - Location:
   - `bpk-lib/crates/core/tests/control_plane_surface.rs`
 - Command used:
@@ -698,6 +730,7 @@ instead of pretending.
 ### Invariant: Public query and cursor surfaces match a linear reference scan across topologies
 
 - Harness pattern: `Oracle Harness`
+- Catalog invariants: `INV-INDEX-FILTER-COMPOSES`, `INV-MULTI-VIEW-PUBLISH-AFTER-VIEW-SYNC`
 - Location:
   - `bpk-lib/crates/core/tests/index_filter_composition.rs`
 - Command used:
@@ -712,6 +745,7 @@ instead of pretending.
 ### Invariant: Public topology diagnostics match configured overlay posture
 
 - Harness pattern: `Oracle Harness`
+- Catalog invariants: `INV-COLUMNAR-REPLACES-DASHMAP`
 - Location:
   - `bpk-lib/crates/core/tests/index_topology.rs`
 - Command used:

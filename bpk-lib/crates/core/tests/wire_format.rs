@@ -9,7 +9,7 @@
 //!
 //! PROVES: LAW-005 (Architecture Freeze — wire format stability)
 //! DEFENDS: FM-010 (Semantic Drift — byte-level determinism prevents silent serde changes)
-//! INVARIANTS: INV-TYPE (round-trip fidelity), INV-MIG (backward compatibility)
+//! INVARIANTS: INV-WIRE-ROUNDTRIP-TOTALITY (round-trip fidelity), INV-CHECKPOINT-V2-INTERNED (backward compatibility)
 //!
 //! Anti-almost-correctness: This test would have caught the Arc<str> serialization
 //! failure (the missing `serde 'rc'` feature flag that broke `Coordinate`

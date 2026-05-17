@@ -1,3 +1,5 @@
+//! PROVES: INV-CHAOS-LINUX-ONLY.
+
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};
 use std::io;

@@ -20,7 +20,7 @@ use crate::store::index::{DiskPos, StoreIndex};
 use crate::store::segment::sidx::kind_to_raw;
 use crate::store::segment::{self, Active, FramePayloadRef, Segment};
 use crate::store::stats::{FrontierView, HlcPoint, WatermarkKind, WatermarkSnapshot};
-use crate::store::{AppendReceipt, StoreConfig, StoreError};
+use crate::store::{AppendReceipt, Clock, StoreConfig, StoreError, SystemClock};
 use flume::{Receiver, Sender};
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::ops::{Deref, DerefMut};
@@ -189,7 +189,8 @@ pub(crate) struct WatermarkState {
     visible_hlc: HlcPoint,
     applied_hlc: HlcPoint,
     emitted_hlc: HlcPoint,
-    pending_write_start: Option<Instant>,
+    pending_write_start_mono_ns: Option<i64>,
+    clock: Arc<dyn Clock>,
 }
 
 impl Default for WatermarkState {
@@ -201,21 +202,32 @@ impl Default for WatermarkState {
             visible_hlc: HlcPoint::ORIGIN,
             applied_hlc: HlcPoint::ORIGIN,
             emitted_hlc: HlcPoint::ORIGIN,
-            pending_write_start: None,
+            pending_write_start_mono_ns: None,
+            clock: Arc::new(SystemClock::new()),
         }
     }
 }
 
 impl WatermarkState {
-    pub(crate) fn handle() -> WatermarkAdvanceHandle {
-        WatermarkAdvanceHandle::new(Self::default())
+    pub(crate) fn handle(clock: Arc<dyn Clock>) -> WatermarkAdvanceHandle {
+        WatermarkAdvanceHandle::new(Self::new(clock))
     }
 
-    pub(crate) fn bootstrap_handle(point: HlcPoint) -> WatermarkAdvanceHandle {
-        WatermarkAdvanceHandle::new(Self::for_bootstrap(point))
+    pub(crate) fn bootstrap_handle(
+        point: HlcPoint,
+        clock: Arc<dyn Clock>,
+    ) -> WatermarkAdvanceHandle {
+        WatermarkAdvanceHandle::new(Self::for_bootstrap(point, clock))
     }
 
-    pub(crate) fn for_bootstrap(point: HlcPoint) -> Self {
+    pub(crate) fn new(clock: Arc<dyn Clock>) -> Self {
+        Self {
+            clock,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn for_bootstrap(point: HlcPoint, clock: Arc<dyn Clock>) -> Self {
         Self {
             accepted_hlc: point,
             written_hlc: point,
@@ -223,19 +235,21 @@ impl WatermarkState {
             visible_hlc: point,
             applied_hlc: point,
             emitted_hlc: point,
-            pending_write_start: None,
+            pending_write_start_mono_ns: None,
+            clock,
         }
     }
 
     pub(crate) fn reset_to_bootstrap(&mut self, point: HlcPoint) {
-        *self = Self::for_bootstrap(point);
+        let clock = Arc::clone(&self.clock);
+        *self = Self::for_bootstrap(point, clock);
     }
 
     pub(crate) fn advance_accepted(&mut self, point: HlcPoint) {
         if point > self.accepted_hlc {
             self.accepted_hlc = point;
-            if self.pending_write_start.is_none() {
-                self.pending_write_start = Some(Instant::now());
+            if self.pending_write_start_mono_ns.is_none() {
+                self.pending_write_start_mono_ns = Some(self.clock.now_mono_ns());
             }
         }
     }
@@ -247,7 +261,7 @@ impl WatermarkState {
     pub(crate) fn advance_durable(&mut self, point: HlcPoint) {
         self.durable_hlc = self.durable_hlc.max(point);
         if self.durable_hlc == self.accepted_hlc {
-            self.pending_write_start = None;
+            self.pending_write_start_mono_ns = None;
         }
     }
 
@@ -281,8 +295,8 @@ impl WatermarkState {
             applied_hlc: self.applied_hlc,
             emitted_hlc: self.emitted_hlc,
             oldest_pending_write_age_ms: self
-                .pending_write_start
-                .map(|start| u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
+                .pending_write_start_mono_ns
+                .map(|start| elapsed_ms_since(self.clock.now_mono_ns(), start)),
         }
     }
 
@@ -328,10 +342,15 @@ impl WatermarkState {
             visible_minus_durable_seq: (self.visible_hlc.global_sequence as i64)
                 - (self.durable_hlc.global_sequence as i64),
             oldest_pending_write_age_ms: self
-                .pending_write_start
-                .map(|start| u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
+                .pending_write_start_mono_ns
+                .map(|start| elapsed_ms_since(self.clock.now_mono_ns(), start)),
         }
     }
+}
+
+fn elapsed_ms_since(now_ns: i64, then_ns: i64) -> u64 {
+    let elapsed_ns = now_ns.saturating_sub(then_ns).max(0);
+    u64::try_from(elapsed_ns / 1_000_000).unwrap_or(u64::MAX)
 }
 
 pub(super) fn checked_next_clock(
@@ -440,12 +459,16 @@ impl WriterHandle {
         // Fallible init — propagate errors to Store::open() caller
         std::fs::create_dir_all(&config.data_dir).map_err(StoreError::Io)?;
         let initial_segment_id = find_latest_segment_id(&config.data_dir).unwrap_or(0) + 1;
-        let initial_segment = Segment::<Active>::create(&config.data_dir, initial_segment_id)?;
+        let initial_segment = Segment::<Active>::create_with_created_ns(
+            &config.data_dir,
+            initial_segment_id,
+            runtime.now_wall_ns(),
+        )?;
 
         let (tx, rx) = flume::bounded::<WriterCommand>(config.writer.channel_capacity);
         let subs = Arc::clone(subscribers);
         let reactor_subs = Arc::clone(reactor_subscribers);
-        let watermark_handle = WatermarkState::handle();
+        let watermark_handle = WatermarkState::handle(runtime.clock_arc());
         let cfg = Arc::clone(config);
         let validated = Arc::clone(runtime);
         let idx = Arc::clone(index);
@@ -493,7 +516,7 @@ impl WriterHandle {
             tx,
             subscribers,
             reactor_subscribers: Arc::new(ReactorSubscriberList::new()),
-            watermark_handle: WatermarkState::handle(),
+            watermark_handle: WatermarkState::handle(Arc::new(SystemClock::new())),
             thread: None,
         }
     }
@@ -603,7 +626,7 @@ mod tests {
 
     #[test]
     fn dangerous_notify_all_wakes_condvar_waiters() {
-        let handle = WatermarkState::handle();
+        let handle = WatermarkState::handle(std::sync::Arc::new(crate::store::SystemClock::new()));
         let waiter_handle = handle.clone();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (done_tx, done_rx) = mpsc::channel();
@@ -811,7 +834,11 @@ impl WriterState<'_> {
         self.watermark_handle.lock().advance_durable_to_accepted();
         let old = std::mem::replace(
             self.active_segment,
-            Segment::<Active>::create(&self.config.data_dir, *self.segment_id + 1)?,
+            Segment::<Active>::create_with_created_ns(
+                &self.config.data_dir,
+                *self.segment_id + 1,
+                self.runtime.now_wall_ns(),
+            )?,
         );
         let _sealed = old.seal();
         *self.segment_id += 1;

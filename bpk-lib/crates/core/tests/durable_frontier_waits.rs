@@ -1,8 +1,8 @@
 // justifies: INV-TEST-PANIC-AS-ASSERTION; wait API tests use panic! through assert macros and explicit error extraction to pin blocking invariants.
 #![allow(clippy::panic)]
 #![cfg(feature = "dangerous-test-hooks")]
-
 //! PROVES:
+//!   - INV-FRONTIER-WAIT-MONOTONIC and INV-FRONTIER-APPEND-GATE-HONORED.
 //!   - `Store::wait_for_durable`, `Store::wait_for_applied`, and
 //!     `Store::wait_for_visible` return only after observing their
 //!     corresponding watermark `>= target`.

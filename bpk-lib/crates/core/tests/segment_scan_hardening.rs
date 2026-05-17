@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 //! Segment-scan hardening.
 //!
-//! [INV-SEGMENT-SCAN-BOUNDED] The cold-start scan rejects or stops at every
+//! [INV-BATCH-CRASH-RECOVERY] The cold-start scan rejects or stops at every
 //! malformed frame without allocating unbounded memory and without panicking:
 //!
 //!   * a frame header claiming a payload larger than the hard frame-size cap

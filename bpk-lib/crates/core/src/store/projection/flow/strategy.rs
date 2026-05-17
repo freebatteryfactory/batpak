@@ -64,7 +64,7 @@ pub(super) struct ReplayExecution<'a> {
     pub(super) entity: &'a str,
     pub(super) freshness: &'a Freshness,
     pub(super) replay: &'a ReplayContext,
-    pub(super) started_at: std::time::Instant,
+    pub(super) started_at_ns: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -102,13 +102,13 @@ pub(super) fn replay_execution<'a>(
     entity: &'a str,
     freshness: &'a Freshness,
     replay: &'a ReplayContext,
-    started_at: std::time::Instant,
+    started_at_ns: i64,
 ) -> ReplayExecution<'a> {
     ReplayExecution {
         entity,
         freshness,
         replay,
-        started_at,
+        started_at_ns,
     }
 }
 

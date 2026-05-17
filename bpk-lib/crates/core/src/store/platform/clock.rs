@@ -1,13 +1,29 @@
 use crate::store::StoreError;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
+
+/// Runtime clock source for store timestamping, evidence, and deterministic tests.
+///
+/// Production uses [`SystemClock`]. Tests and embeddings that need repeatable
+/// store behavior can provide a custom implementation and install it with
+/// [`crate::store::StoreConfig::with_clock`].
+pub trait Clock: Send + Sync {
+    /// Return microseconds since the Unix epoch.
+    fn now_us(&self) -> i64;
+    /// Return nanoseconds since the Unix epoch, saturating on overflow.
+    fn now_wall_ns(&self) -> i64;
+    /// Return process-local monotonic nanoseconds.
+    fn now_mono_ns(&self) -> i64;
+    /// Return the process-epoch marker for monotonic metadata.
+    fn process_boot_ns(&self) -> u64;
+}
 
 /// Returns microseconds since Unix epoch, saturating to `i64::MAX` if the system
 /// clock is beyond year ~292,277 (treat the max value as a clock-malfunction
 /// signal). No panic; cache staleness checks downstream see a saturated value
 /// and force a replay rather than poisoning the process.
-pub(crate) fn now_us() -> i64 {
+fn system_now_us() -> i64 {
     let micros = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -30,7 +46,7 @@ pub(crate) fn wall_ms_from_timestamp_us(timestamp_us: i64) -> Result<u64, StoreE
     Ok((timestamp_us / 1000).cast_unsigned())
 }
 
-pub(crate) fn now_wall_ns_saturating() -> i64 {
+fn system_now_wall_ns_saturating() -> i64 {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -48,14 +64,13 @@ pub(crate) fn now_wall_ns_saturating() -> i64 {
 ///      read back by a different process MUST compare its `process_boot_ns`
 ///      against this value — mismatch means the monotonic value belongs to a
 ///      different process's clock and cannot be trusted.
-struct MonotonicAnchor {
+pub(crate) struct MonotonicAnchor {
     anchor_instant: Instant,
     anchor_boot_ns: u64,
 }
 
 impl MonotonicAnchor {
     fn get() -> &'static Self {
-        use std::sync::OnceLock;
         static ANCHOR: OnceLock<MonotonicAnchor> = OnceLock::new();
         ANCHOR.get_or_init(|| {
             // The boot marker is the wall-clock time at anchor creation, encoded
@@ -73,6 +88,11 @@ impl MonotonicAnchor {
             }
         })
     }
+
+    fn now_mono_ns(&self) -> i64 {
+        let elapsed = self.anchor_instant.elapsed().as_nanos();
+        i64::try_from(elapsed).unwrap_or(i64::MAX)
+    }
 }
 
 /// Returns monotonic nanoseconds since the process-wide anchor. Guaranteed
@@ -81,22 +101,81 @@ impl MonotonicAnchor {
 ///
 /// Saturates to `i64::MAX` if the process has been alive for more than
 /// ~292 years.
-pub(crate) fn now_mono_ns() -> i64 {
-    let anchor = MonotonicAnchor::get();
-    let elapsed = anchor.anchor_instant.elapsed().as_nanos();
-    i64::try_from(elapsed).unwrap_or(i64::MAX)
+#[derive(Clone)]
+pub struct SystemClock {
+    anchor: &'static MonotonicAnchor,
 }
 
-/// Returns this process's monotonic epoch marker. Two processes never share
-/// this value (except in the vanishingly unlikely case of same-nanosecond
-/// boot); a monotonic value read from disk whose `process_boot_ns` does not
-/// match the current one belongs to a prior process and cannot be compared
-/// against [`now_mono_ns`].
-pub(crate) fn process_boot_ns() -> u64 {
-    MonotonicAnchor::get().anchor_boot_ns
+impl SystemClock {
+    /// Create a production clock backed by system wall time and process-local monotonic time.
+    pub fn new() -> Self {
+        Self {
+            anchor: MonotonicAnchor::get(),
+        }
+    }
 }
 
-/// Non-decreasing wrapper around a user-supplied `Fn() -> i64` clock.
+impl Default for SystemClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clock for SystemClock {
+    fn now_us(&self) -> i64 {
+        system_now_us()
+    }
+
+    fn now_wall_ns(&self) -> i64 {
+        system_now_wall_ns_saturating()
+    }
+
+    fn now_mono_ns(&self) -> i64 {
+        self.anchor.now_mono_ns()
+    }
+
+    fn process_boot_ns(&self) -> u64 {
+        self.anchor.anchor_boot_ns
+    }
+}
+
+struct FnClock {
+    inner: Arc<dyn Fn() -> i64 + Send + Sync>,
+    anchor: &'static MonotonicAnchor,
+}
+
+impl FnClock {
+    fn new(inner: Arc<dyn Fn() -> i64 + Send + Sync>) -> Self {
+        Self {
+            inner,
+            anchor: MonotonicAnchor::get(),
+        }
+    }
+}
+
+impl Clock for FnClock {
+    fn now_us(&self) -> i64 {
+        (self.inner)()
+    }
+
+    fn now_wall_ns(&self) -> i64 {
+        self.now_us().saturating_mul(1000)
+    }
+
+    fn now_mono_ns(&self) -> i64 {
+        self.anchor.now_mono_ns()
+    }
+
+    fn process_boot_ns(&self) -> u64 {
+        self.anchor.anchor_boot_ns
+    }
+}
+
+pub(crate) fn clock_from_fn(inner: Arc<dyn Fn() -> i64 + Send + Sync>) -> Arc<dyn Clock> {
+    Arc::new(FnClock::new(inner))
+}
+
+/// Non-decreasing wrapper around a clock source.
 ///
 /// A user clock that regresses (e.g. NTP jump, manual reset) would poison age
 /// comparisons — a slot cached at `now=1000` and read at `now=500` would look
@@ -107,15 +186,15 @@ pub(crate) fn process_boot_ns() -> u64 {
 /// is broken, but the store keeps running.
 #[derive(Clone)]
 pub(crate) struct MonotonicClock {
-    inner: Arc<dyn Fn() -> i64 + Send + Sync>,
+    inner: Arc<dyn Clock>,
     last: Arc<AtomicI64>,
 }
 
 impl MonotonicClock {
-    /// Wrap a user-supplied clock function. The returned handle is cloneable
+    /// Wrap a clock. The returned handle is cloneable
     /// and stores shared state (`AtomicI64`) in an `Arc`, so clones observe the
     /// same non-decreasing sequence.
-    pub(crate) fn wrap(inner: Arc<dyn Fn() -> i64 + Send + Sync>) -> Self {
+    pub(crate) fn wrap(inner: Arc<dyn Clock>) -> Self {
         Self {
             inner,
             last: Arc::new(AtomicI64::new(i64::MIN)),
@@ -126,7 +205,7 @@ impl MonotonicClock {
     /// any value previously returned by this [`MonotonicClock`] (or any clone
     /// of it). A regression is logged at `error` level.
     pub(crate) fn now_us(&self) -> i64 {
-        let raw = (self.inner)();
+        let raw = self.inner.now_us();
         // Compare-and-swap loop: install `raw` if it's newer than `last`,
         // otherwise report a regression and keep the old value.
         loop {
@@ -144,5 +223,23 @@ impl MonotonicClock {
                 return prev;
             }
         }
+    }
+}
+
+impl Clock for MonotonicClock {
+    fn now_us(&self) -> i64 {
+        MonotonicClock::now_us(self)
+    }
+
+    fn now_wall_ns(&self) -> i64 {
+        self.inner.now_wall_ns()
+    }
+
+    fn now_mono_ns(&self) -> i64 {
+        self.inner.now_mono_ns()
+    }
+
+    fn process_boot_ns(&self) -> u64 {
+        self.inner.process_boot_ns()
     }
 }

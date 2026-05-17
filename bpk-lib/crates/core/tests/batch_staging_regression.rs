@@ -1,3 +1,5 @@
+//! PROVES: INV-PREPARED-BATCH-STAGING-EQUIVALENCE.
+
 use batpak::prelude::*;
 use batpak::store::{BatchAppendItem, CausationRef, Store, StoreConfig};
 use tempfile::TempDir;

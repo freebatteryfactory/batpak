@@ -774,7 +774,7 @@ impl Store<crate::store::Open> {
                 cursor = cursor.with_gap_config(gap_observation);
                 let mut committed = cursor.checkpoint();
                 let mut restarts = 0u32;
-                let mut window_start = Instant::now();
+                let mut window_start_ns = store.runtime.now_mono_ns();
                 let mut budget_callback = on_restart_budget_exhausted;
                 let checkpoint_error_slot = Arc::clone(&error_slot_thread);
                 // G5: the durable-persist failure callback. For in-memory
@@ -898,9 +898,15 @@ impl Store<crate::store::Open> {
                                     max_restarts,
                                     within_ms,
                                 } => {
-                                    if window_start.elapsed() > Duration::from_millis(*within_ms) {
+                                    let elapsed_ms = store
+                                        .runtime
+                                        .now_mono_ns()
+                                        .saturating_sub(window_start_ns)
+                                        .max(0)
+                                        / 1_000_000;
+                                    if elapsed_ms > i64::try_from(*within_ms).unwrap_or(i64::MAX) {
                                         restarts = 0;
-                                        window_start = Instant::now();
+                                        window_start_ns = store.runtime.now_mono_ns();
                                     }
                                     if restarts >= *max_restarts {
                                         false

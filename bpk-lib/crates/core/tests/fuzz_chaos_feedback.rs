@@ -18,7 +18,7 @@
 //!
 //! PROVES: LAW-001 (No Fake Success), LAW-005 (Resilience Under Chaos)
 //! DEFENDS: FM-013 (Coverage Mirage), FM-019 (Chaos Gap)
-//! INVARIANTS: INV-STATE (state machine), INV-CONC (concurrent), INV-TEMP (temporal)
+//! INVARIANTS: INV-FAULT-INJECT-GATED (state machine), INV-CONCURRENCY-SCHEDULE-PROOF (concurrent), INV-BATCH-CRASH-RECOVERY (temporal)
 //!
 //! This is the feedback loop:
 //!   1. Run fuzz + chaos probes

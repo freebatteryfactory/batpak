@@ -3,7 +3,7 @@
 //!
 //! PROVES: LAW-001 (No Fake Success — tampered chains must fail verification)
 //! DEFENDS: FM-022 (Receipt Hollowing — hash integrity prevents forgery)
-//! INVARIANTS: INV-SEC (cryptographic chain integrity)
+//! INVARIANTS: INV-HASH-CHAIN-INTEGRITY (cryptographic chain integrity)
 
 use batpak::prelude::*;
 #[cfg(feature = "blake3")]

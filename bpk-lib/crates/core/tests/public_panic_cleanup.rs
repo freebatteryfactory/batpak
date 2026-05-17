@@ -43,7 +43,7 @@ fn negative_custom_clock_surfaces_store_error_in_append_and_batch_paths() {
     let append_dir = tempfile::tempdir().expect("append temp dir");
     let append_clock: Arc<dyn Fn() -> i64 + Send + Sync> = Arc::new(|| -1);
     let append_store =
-        Store::open(StoreConfig::new(append_dir.path()).with_clock(Some(append_clock)))
+        Store::open(StoreConfig::new(append_dir.path()).with_clock_fn(move || append_clock()))
             .expect("open append store");
 
     let append_err = match append_store.append(
@@ -74,8 +74,9 @@ fn negative_custom_clock_surfaces_store_error_in_append_and_batch_paths() {
 
     let batch_dir = tempfile::tempdir().expect("batch temp dir");
     let batch_clock: Arc<dyn Fn() -> i64 + Send + Sync> = Arc::new(|| -1);
-    let batch_store = Store::open(StoreConfig::new(batch_dir.path()).with_clock(Some(batch_clock)))
-        .expect("open batch store");
+    let batch_store =
+        Store::open(StoreConfig::new(batch_dir.path()).with_clock_fn(move || batch_clock()))
+            .expect("open batch store");
 
     let batch_err = match batch_store.append_batch(vec![BatchAppendItem::new(
         coord.clone(),

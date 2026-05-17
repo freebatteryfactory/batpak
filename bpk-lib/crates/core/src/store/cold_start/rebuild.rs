@@ -1,6 +1,5 @@
 use crate::coordinate::Coordinate;
 use crate::store::cold_start::{ColdStartPolicy, ReservedKindFallbackStats, WatermarkInfo};
-use crate::store::config::duration_micros;
 use crate::store::index::interner::StringInterner;
 use crate::store::index::{DiskPos, IndexEntry, RoutingSummary, StoreIndex};
 use crate::store::segment;
@@ -249,35 +248,36 @@ pub(crate) fn open_index(
     reader: &Reader,
     data_dir: &Path,
     policy: ColdStartPolicy,
+    clock: &dyn crate::store::Clock,
 ) -> Result<OpenIndexOutcome, StoreError> {
-    let t0 = std::time::Instant::now();
+    let t0 = clock.now_mono_ns();
     let planner = RestorePlanner {
         reader,
         data_dir,
         policy,
     };
-    let t_plan = std::time::Instant::now();
+    let t_plan = clock.now_mono_ns();
     let plan = planner.build()?;
-    let phase_plan_build_us = duration_micros(t_plan.elapsed());
+    let phase_plan_build_us = elapsed_us(clock, t_plan);
 
-    let t_interner = std::time::Instant::now();
+    let t_interner = clock.now_mono_ns();
     index
         .interner
         .replace_from_full_snapshot(&plan.interner_strings);
-    let phase_interner_us = duration_micros(t_interner.elapsed());
+    let phase_interner_us = elapsed_us(clock, t_interner);
 
-    let t_restore = std::time::Instant::now();
+    let t_restore = clock.now_mono_ns();
     index.restore_sorted_entries_with_routing(plan.entries, plan.allocator_hint, &plan.routing)?;
-    let phase_restore_index_us = duration_micros(t_restore.elapsed());
+    let phase_restore_index_us = elapsed_us(clock, t_restore);
 
     // G2: cold-start fails closed on corrupt hidden-ranges metadata.
     // A missing file is OK (first open); any other read/parse failure is
     // surfaced so callers cannot silently resurrect cancelled events.
-    let t_hidden = std::time::Instant::now();
+    let t_hidden = clock.now_mono_ns();
     if let Some(ranges) = crate::store::hidden_ranges::load_cancelled_ranges(data_dir)? {
         index.restore_cancelled_visibility_ranges(ranges);
     }
-    let phase_hidden_ranges_us = duration_micros(t_hidden.elapsed());
+    let phase_hidden_ranges_us = elapsed_us(clock, t_hidden);
 
     let cumulative_reserved_kind_fallbacks = plan
         .persisted_cumulative_reserved_kind_fallbacks
@@ -294,7 +294,7 @@ pub(crate) fn open_index(
             },
             restored_entries: plan.restored_entries,
             tail_entries: plan.tail_entries,
-            elapsed_us: duration_micros(t0.elapsed()),
+            elapsed_us: elapsed_us(clock, t0),
             phase_plan_build_us,
             phase_interner_us,
             phase_restore_index_us,
@@ -322,6 +322,10 @@ pub(crate) fn open_index(
         },
         cumulative_reserved_kind_fallbacks,
     })
+}
+
+fn elapsed_us(clock: &dyn crate::store::Clock, start_ns: i64) -> u64 {
+    u64::try_from(clock.now_mono_ns().saturating_sub(start_ns).max(0) / 1_000).unwrap_or(u64::MAX)
 }
 
 fn pending_compaction_path(data_dir: &Path) -> std::path::PathBuf {
@@ -1211,6 +1215,7 @@ mod tests {
             &reader,
             dir.path(),
             ColdStartPolicy::new(true, false),
+            &crate::store::SystemClock::new(),
         )
         .expect("open index with pending compaction");
 
