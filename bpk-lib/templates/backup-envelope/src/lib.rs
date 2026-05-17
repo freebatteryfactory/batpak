@@ -1,4 +1,4 @@
-use batpak::store::{
+use batpak::store::backup_envelope::{
     backup_manifest_body_hash, BackupManifestBody, BackupSegmentRef,
     BACKUP_MANIFEST_BODY_SCHEMA_VERSION,
 };

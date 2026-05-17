@@ -42,6 +42,7 @@ mod runtime_contracts;
 /// On-disk segment format, frame encoding/decoding, and compaction helpers.
 pub mod segment;
 mod signing;
+mod snapshot_report;
 /// Runtime statistics and diagnostic snapshots.
 pub mod stats;
 mod store_resource_report;
@@ -56,7 +57,8 @@ pub use append::{
     AppendOptions, AppendPositionHint, AppendReceipt, BatchAppendItem, CausationRef,
     CompactionConfig, CompactionStrategy, DenialReceipt, EncodedBytes, ExtensionKey,
     ExtensionKeyError, ReceiptExtensionKey, ReceiptExtensionNamespace, ReceiptExtensionValue,
-    RetentionPredicate,
+    RetentionPredicate, SigningDowngradeBody, SigningDowngradeReason, SigningExtensionNamespace,
+    SIGNING_DOWNGRADE_SCHEMA_VERSION,
 };
 pub use chain_walk::{
     ChainWalkEvidenceReport, ChainWalkFinding, ChainWalkHash, ChainWalkMode, ChainWalkReportBody,
@@ -112,6 +114,11 @@ pub use read_walk::{
     ReadWalkSourceRef, READ_WALK_REPORT_SCHEMA_VERSION,
 };
 pub use signing::SigningKey;
+pub use snapshot_report::{
+    snapshot_report_body_hash, SnapshotEvidenceHash, SnapshotEvidenceReport, SnapshotFenceTokenRef,
+    SnapshotFileKind, SnapshotFinding, SnapshotReportBody, SnapshotWatermarkRef,
+    SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION,
+};
 pub use stats::{
     ActiveSegmentReadEvidence, ClockEvidence, FrontierView, HlcPoint, HostEvidenceSummary,
     LockLeafSymlinkProtection, MmapAdmissionSummary, MmapEvidence, ParentDirSyncAdmissionSummary,

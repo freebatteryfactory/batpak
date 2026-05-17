@@ -244,11 +244,54 @@ pub struct DenialReceipt {
 /// Encoded extension payload bytes.
 pub type EncodedBytes = Vec<u8>;
 
+/// Schema version for the signing-downgrade receipt extension body.
+pub const SIGNING_DOWNGRADE_SCHEMA_VERSION: u16 = 1;
+
+/// Receipt extension body emitted when a configured signing registry cannot
+/// build the signature cover.
+///
+/// This evidence is unsigned by definition: it is attached only after cover
+/// construction has failed, so `signature` remains `None` and `key_id` remains
+/// all zeroes. An unsigned receipt without this extension remains the canonical
+/// "no signing keys configured" shape.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct SigningDowngradeBody {
+    /// Signing-downgrade extension schema version.
+    pub schema_version: u16,
+    /// Typed downgrade reason.
+    pub reason: SigningDowngradeReason,
+}
+
+/// Typed reason receipt signing downgraded to an unsigned receipt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum SigningDowngradeReason {
+    /// Signature-cover construction failed before signing could run.
+    CoverBuildFailed {
+        /// Human-readable cover-build failure.
+        encoding_error: String,
+    },
+}
+
 impl AppendReceipt {
     /// Location of the committed event frame on disk.
     #[must_use]
     pub const fn disk_pos(&self) -> DiskPos {
         self.disk_pos
+    }
+
+    /// Decode the substrate signing-downgrade receipt extension when present.
+    ///
+    /// `None` means either the receipt was signed, signing was never configured,
+    /// or the extension bytes are malformed. Malformed extension bytes still
+    /// remain covered by normal receipt-extension preservation and signature
+    /// verification paths.
+    #[must_use]
+    pub fn signing_downgrade(&self) -> Option<SigningDowngradeBody> {
+        self.extensions
+            .get(&signing_downgrade_extension_key())
+            .and_then(|bytes| crate::encoding::from_bytes(bytes).ok())
     }
 }
 
@@ -289,6 +332,13 @@ pub struct ExtensionKey(String);
 pub trait ReceiptExtensionNamespace {
     /// Namespace prefix owned by this extension family.
     const PREFIX: &'static str;
+}
+
+/// Substrate-owned receipt-extension namespace for signing evidence.
+pub struct SigningExtensionNamespace;
+
+impl ReceiptExtensionNamespace for SigningExtensionNamespace {
+    const PREFIX: &'static str = "batpak.signing";
 }
 
 /// Extension key branded by a receipt-extension namespace marker.
@@ -425,17 +475,13 @@ impl ExtensionKey {
 
     /// Construct a substrate-owned reserved extension key.
     #[must_use]
-    #[cfg(test)]
-    pub(crate) fn reserved(key: &'static str) -> Self {
+    pub(crate) fn reserved(key: impl Into<String>) -> Self {
+        let key = key.into();
         debug_assert!(key.starts_with("batpak."));
         debug_assert!(key.is_ascii());
         debug_assert!(key.len() <= Self::MAX_LEN);
-        let Some((prefix, field)) = key.split_once('.') else {
-            debug_assert!(false, "reserved extension keys require exactly one dot");
-            return Self(key.to_owned());
-        };
-        debug_assert!(!prefix.is_empty() && !field.is_empty() && !field.contains('.'));
-        Self(key.to_owned())
+        debug_assert!(key.split('.').all(|segment| !segment.is_empty()));
+        Self(key)
     }
 
     /// Borrow the validated extension key as a string slice.
@@ -646,6 +692,25 @@ pub(crate) fn checked_payload_len(payload_bytes: &[u8]) -> Result<u32, StoreErro
         .map_err(|_| StoreError::ser_msg("payload size exceeds u32::MAX (4GB limit)"))
 }
 
+pub(crate) fn signing_downgrade_extension_key() -> ExtensionKey {
+    ExtensionKey::reserved("batpak.signing.downgrade")
+}
+
+impl SigningDowngradeBody {
+    pub(crate) fn cover_build_failed(error: impl Into<String>) -> Self {
+        Self {
+            schema_version: SIGNING_DOWNGRADE_SCHEMA_VERSION,
+            reason: SigningDowngradeReason::CoverBuildFailed {
+                encoding_error: error.into(),
+            },
+        }
+    }
+
+    pub(crate) fn encode_extension(&self) -> Result<EncodedBytes, StoreError> {
+        crate::encoding::to_bytes(self).map_err(|error| StoreError::Serialization(Box::new(error)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,8 +748,8 @@ mod tests {
 
     #[test]
     fn extension_key_reserved_constructor_allows_batpak_namespace() {
-        let key = ExtensionKey::reserved("batpak.signature");
-        assert_eq!(key.as_str(), "batpak.signature");
+        let key = ExtensionKey::reserved("batpak.signing.downgrade");
+        assert_eq!(key.as_str(), "batpak.signing.downgrade");
     }
 
     #[test]

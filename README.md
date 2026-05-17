@@ -144,10 +144,13 @@ write-to-deliver gap observations without introducing a persisted system event.
 
 **Store control surface** — `submit`/`try_submit` for non-blocking fire-and-ticket. `outbox()` for
 staged batch assembly. `begin_visibility_fence()` for atomic write groups. `open`, `close`,
-`sync`, `snapshot`, `compact` for lifecycle. `stats()` and `diagnostics()` for
-observability. `diagnostics().open_report` exposes the structured cold-start
-receipt, `StoreConfig::with_open_report_observer(...)` lets callers export it,
-and mutable opens append one durable `SYSTEM_OPEN_COMPLETED` lifecycle event at
+`sync`, `snapshot_with_evidence`, `snapshot`, `compact` for lifecycle. `compact`
+returns compaction evidence by default; `snapshot_with_evidence` returns
+snapshot-copy evidence while `snapshot` remains the legacy wrapper.
+`stats()` and `diagnostics()` for observability. `diagnostics().open_report`
+exposes the structured cold-start receipt,
+`StoreConfig::with_open_report_observer(...)` lets callers export it, and
+mutable opens append one durable `SYSTEM_OPEN_COMPLETED` lifecycle event at
 `batpak:store` / `batpak:lifecycle`. The `batpak:` coordinate prefix is
 reserved for library-owned lifecycle streams; application code should avoid it.
 Receipt signing is opt-in via `StoreConfig::with_signing_key(...)`; signed

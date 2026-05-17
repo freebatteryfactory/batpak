@@ -455,7 +455,7 @@ fn compact_skips_when_below_min_segments() {
 
     let mut compact_config = CompactionConfig::default();
     compact_config.min_segments = 10; // High threshold — won't trigger
-    let result = store.compact(&compact_config).expect("compact");
+    let (result, _report) = store.compact(&compact_config).expect("compact");
     assert_eq!(
         result.segments_removed, 0,
         "should skip compaction below min_segments"

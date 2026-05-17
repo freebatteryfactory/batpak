@@ -11,7 +11,9 @@ use batpak::store::MAX_CHECKPOINT_ID_LEN;
 use batpak::store::{
     AppendOptions, AppendReceipt, BatchAppendItem, CausationRef, CheckpointId, CheckpointIdError,
     CursorGapConfig, EncodedBytes, ExtensionKey, ExtensionKeyError, GapObservation, IdempotencyKey,
-    ReceiptExtensionKey, ReceiptExtensionNamespace, ReceiptExtensionValue, Store, StoreConfig,
+    ReceiptExtensionKey, ReceiptExtensionNamespace, ReceiptExtensionValue, SigningDowngradeBody,
+    SigningDowngradeReason, SigningExtensionNamespace, Store, StoreConfig,
+    SIGNING_DOWNGRADE_SCHEMA_VERSION,
 };
 #[cfg(feature = "blake3")]
 use batpak::store::{DenialReceipt, SigningKey};
@@ -61,6 +63,7 @@ fn encoding_surface_round_trips_and_canonical_alias_matches() {
 
     assert_eq!(encoded, alias_encoded);
     assert_eq!(decoded, payload);
+    assert_eq!(SIGNING_DOWNGRADE_SCHEMA_VERSION, 1);
 }
 
 #[test]
@@ -77,6 +80,16 @@ fn observation_witnesses_round_trip() {
     assert_eq!(checkpoint.as_str(), "typed-checkpoint");
     assert_eq!(CheckpointId::new(""), Err(CheckpointIdError::Empty));
     assert!(MAX_CHECKPOINT_ID_LEN >= checkpoint.as_str().len());
+}
+
+#[test]
+fn signing_downgrade_public_surface_is_named() {
+    let _body_witness: Option<SigningDowngradeBody> = None;
+    let _reason_witness: Option<SigningDowngradeReason> = None;
+    let namespace = std::any::type_name::<SigningExtensionNamespace>();
+
+    assert!(namespace.contains("SigningExtensionNamespace"));
+    assert_eq!(SIGNING_DOWNGRADE_SCHEMA_VERSION, 1);
 }
 
 #[test]
@@ -865,6 +878,26 @@ fn signed_receipts_round_trip() {
     assert!(verified_denial_receipt);
 
     store.close().expect("close rotated store");
+}
+
+#[test]
+fn unsigned_receipt_without_keys_has_no_signing_downgrade() {
+    let dir = TempDir::new().expect("temp dir");
+    let coord = Coordinate::new("signed:none", "scope:test").expect("coord");
+    let kind = EventKind::custom(0xA, 17);
+    let store = Store::open(StoreConfig::new(dir.path())).expect("open unsigned store");
+
+    let receipt = store
+        .append(&coord, kind, &serde_json::json!({"n": 1}))
+        .expect("append unsigned event");
+
+    assert_eq!(receipt.key_id, [0; 32]);
+    assert!(receipt.signature.is_none());
+    assert!(
+        receipt.signing_downgrade().is_none(),
+        "unsigned receipts from an empty signing registry must not claim downgrade evidence"
+    );
+    assert!(store.verify_append_receipt(&receipt));
 }
 
 #[cfg(feature = "blake3")]

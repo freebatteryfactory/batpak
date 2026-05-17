@@ -249,9 +249,10 @@ the absence of writer pressure rather than the mutable writer mailbox capacity.
 
 The deterministic evidence-report family keeps this boundary explicit: report
 bodies prove structural facts over visible store state, chain reads, projection
-runs, read walks, schema snapshots, and subscriber observations. They do not
-attest to fsync cadence, platform profile paths, signing-key configuration, or
-which optional index layout produced equivalent answers.
+runs, read walks, schema snapshots, subscriber observations, lifecycle
+compaction, and snapshot copies. They do not attest to fsync cadence, platform
+profile paths, signing-key configuration, or which optional index layout
+produced equivalent answers.
 
 ## Writer Data Flow
 

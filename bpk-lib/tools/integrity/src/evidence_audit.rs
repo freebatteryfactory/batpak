@@ -25,6 +25,7 @@ const SCHEMA_VERSION_BODY_ANCHORS: &[(&str, &str)] = &[
         "src/store/store_resource_report.rs",
         "StoreResourceReportBody",
     ),
+    ("src/store/snapshot_report.rs", "SnapshotReportBody"),
     ("src/store/compaction_report.rs", "CompactionReportBody"),
     ("src/store/backup_envelope.rs", "BackupManifestBody"),
     ("src/store/backup_envelope.rs", "RestoreProofReportBody"),

@@ -96,7 +96,7 @@ fn post_compact_checkpoint_valid() {
         store.append(&coord, kind_a(), &payload(i)).expect("append");
     }
     store.sync().expect("sync");
-    store
+    let (_result, _report) = store
         .compact(&CompactionConfig::default())
         .expect("compact");
     store.close().expect("close writes post-compact checkpoint");

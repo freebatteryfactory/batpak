@@ -1198,6 +1198,20 @@ pub batpak::prelude::SchemaSnapshotReportError::BodyEncoding::message: alloc::st
 impl core::error::Error for batpak::schema::SchemaSnapshotReportError
 impl core::fmt::Display for batpak::schema::SchemaSnapshotReportError
 pub fn batpak::schema::SchemaSnapshotReportError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum batpak::prelude::SigningDowngradeReason
+pub batpak::prelude::SigningDowngradeReason::CoverBuildFailed
+pub batpak::prelude::SigningDowngradeReason::CoverBuildFailed::encoding_error: alloc::string::String
+pub enum batpak::prelude::SnapshotFileKind
+pub batpak::prelude::SnapshotFileKind::PendingCompactionMarker
+pub batpak::prelude::SnapshotFileKind::Segment
+pub batpak::prelude::SnapshotFileKind::VisibilityRanges
+pub enum batpak::prelude::SnapshotFinding
+pub batpak::prelude::SnapshotFinding::CopyByteHashUnavailable
+pub batpak::prelude::SnapshotFinding::CopyByteHashUnavailable::file_kind: batpak::prelude::SnapshotFileKind
+pub batpak::prelude::SnapshotFinding::CopyByteHashUnavailable::reason: alloc::string::String
+pub batpak::prelude::SnapshotFinding::DestinationCleared
+pub batpak::prelude::SnapshotFinding::DestinationCleared::artifact_count: usize
+pub batpak::prelude::SnapshotFinding::FenceTokenCancelled
 #[non_exhaustive] pub enum batpak::prelude::StoreError
 pub batpak::prelude::StoreError::AncestryCorrupt
 pub batpak::prelude::StoreError::AncestryCorrupt::cycle_at: u128
@@ -1411,6 +1425,7 @@ pub batpak::prelude::AppendReceipt::sequence: u64
 pub batpak::prelude::AppendReceipt::signature: core::option::Option<[u8; 64]>
 impl batpak::prelude::AppendReceipt
 pub const fn batpak::prelude::AppendReceipt::disk_pos(&self) -> batpak::store::index::DiskPos
+pub fn batpak::prelude::AppendReceipt::signing_downgrade(&self) -> core::option::Option<batpak::prelude::SigningDowngradeBody>
 pub struct batpak::prelude::AppendTicket
 impl batpak::prelude::AppendTicket
 pub fn batpak::prelude::AppendTicket::receiver(&self) -> &flume::Receiver<core::result::Result<batpak::prelude::AppendReceipt, batpak::prelude::StoreError>>
@@ -1938,6 +1953,35 @@ pub struct batpak::prelude::SignatureRef
 pub batpak::prelude::SignatureRef::algorithm_id: u32
 pub batpak::prelude::SignatureRef::key_id: batpak::artifact::ArtifactHash
 pub batpak::prelude::SignatureRef::signature_bytes: alloc::vec::Vec<u8>
+#[non_exhaustive] pub struct batpak::prelude::SigningDowngradeBody
+pub batpak::prelude::SigningDowngradeBody::reason: batpak::prelude::SigningDowngradeReason
+pub batpak::prelude::SigningDowngradeBody::schema_version: u16
+pub struct batpak::prelude::SigningExtensionNamespace
+impl batpak::prelude::ReceiptExtensionNamespace for batpak::prelude::SigningExtensionNamespace
+pub const batpak::prelude::SigningExtensionNamespace::PREFIX: &'static str
+pub struct batpak::prelude::SnapshotEvidenceReport
+pub batpak::prelude::SnapshotEvidenceReport::batpak_version: core::option::Option<alloc::string::String>
+pub batpak::prelude::SnapshotEvidenceReport::body: batpak::prelude::SnapshotReportBody
+pub batpak::prelude::SnapshotEvidenceReport::body_hash: batpak::prelude::SnapshotEvidenceHash
+pub batpak::prelude::SnapshotEvidenceReport::diagnostics: alloc::vec::Vec<alloc::string::String>
+pub batpak::prelude::SnapshotEvidenceReport::generated_at_unix_ms: core::option::Option<u64>
+pub struct batpak::prelude::SnapshotFenceTokenRef
+pub batpak::prelude::SnapshotFenceTokenRef::token: u64
+pub struct batpak::prelude::SnapshotReportBody
+pub batpak::prelude::SnapshotReportBody::copied_pending_compaction_marker_present: bool
+pub batpak::prelude::SnapshotReportBody::copied_segment_ids_sorted: alloc::vec::Vec<u64>
+pub batpak::prelude::SnapshotReportBody::copied_visibility_ranges_present: bool
+pub batpak::prelude::SnapshotReportBody::destination_path_digest: batpak::prelude::SnapshotEvidenceHash
+pub batpak::prelude::SnapshotReportBody::fence_token: batpak::prelude::SnapshotFenceTokenRef
+pub batpak::prelude::SnapshotReportBody::findings: alloc::vec::Vec<batpak::prelude::SnapshotFinding>
+pub batpak::prelude::SnapshotReportBody::schema_version: u16
+pub batpak::prelude::SnapshotReportBody::snapshot_id: batpak::prelude::SnapshotEvidenceHash
+pub batpak::prelude::SnapshotReportBody::source_watermark: batpak::prelude::SnapshotWatermarkRef
+impl batpak::prelude::SnapshotReportBody
+pub fn batpak::prelude::SnapshotReportBody::body_hash(&self) -> core::result::Result<batpak::prelude::SnapshotEvidenceHash, rmp_serde::encode::Error>
+pub struct batpak::prelude::SnapshotWatermarkRef
+pub batpak::prelude::SnapshotWatermarkRef::offset: u64
+pub batpak::prelude::SnapshotWatermarkRef::segment_id: u64
 pub struct batpak::prelude::Store<State>
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::append(&self, coord: &batpak::coordinate::Coordinate, kind: batpak::event::kind::EventKind, payload: &impl serde_core::ser::Serialize) -> core::result::Result<batpak::prelude::AppendReceipt, batpak::prelude::StoreError>
@@ -1966,9 +2010,10 @@ pub fn batpak::store::Store<batpak::store::Open>::try_submit_typed<T: batpak::ev
 pub fn batpak::store::Store<batpak::store::Open>::writer_pressure(&self) -> batpak::store::stats::WriterPressure
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::close(self) -> core::result::Result<batpak::store::Closed, batpak::prelude::StoreError>
-pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::prelude::CompactionConfig) -> core::result::Result<batpak::store::segment::CompactionResult, batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::prelude::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::compact_with_report(&self, config: &batpak::prelude::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence(&self, dest: &std::path::Path) -> core::result::Result<batpak::prelude::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::wait_for_applied(&self, point: batpak::store::stats::HlcPoint, timeout: core::time::Duration) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::wait_for_durable(&self, point: batpak::store::stats::HlcPoint, timeout: core::time::Duration) -> core::result::Result<(), batpak::prelude::StoreError>
@@ -2173,6 +2218,8 @@ pub const batpak::prelude::CHAIN_WALK_REPORT_SCHEMA_VERSION: u16
 pub const batpak::prelude::PROJECTION_RUN_REPORT_SCHEMA_VERSION: u16
 pub const batpak::prelude::READ_WALK_REPORT_SCHEMA_VERSION: u16
 pub const batpak::prelude::SCHEMA_SNAPSHOT_REPORT_SCHEMA_VERSION: u16
+pub const batpak::prelude::SIGNING_DOWNGRADE_SCHEMA_VERSION: u16
+pub const batpak::prelude::SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION: u16
 pub const batpak::prelude::STORE_RESOURCE_REPORT_SCHEMA_VERSION: u32
 pub const batpak::prelude::SUBSCRIBER_FRONTIER_REPORT_SCHEMA_VERSION: u16
 pub trait batpak::prelude::DecodeTyped
@@ -2214,6 +2261,8 @@ pub trait batpak::prelude::Reactive<P>
 pub fn batpak::prelude::Reactive::react(&self, event: &batpak::event::Event<P>) -> alloc::vec::Vec<(batpak::coordinate::Coordinate, batpak::event::kind::EventKind, P)>
 pub trait batpak::prelude::ReceiptExtensionNamespace
 pub const batpak::prelude::ReceiptExtensionNamespace::PREFIX: &'static str
+impl batpak::prelude::ReceiptExtensionNamespace for batpak::prelude::SigningExtensionNamespace
+pub const batpak::prelude::SigningExtensionNamespace::PREFIX: &'static str
 pub trait batpak::prelude::TypedReactive<T: batpak::event::payload::EventPayload>: core::marker::Send + 'static
 pub type batpak::prelude::TypedReactive::Error: core::error::Error + core::marker::Send + core::marker::Sync + 'static
 pub fn batpak::prelude::TypedReactive::react(&mut self, event: &batpak::event::StoredEvent<T>, out: &mut batpak::store::reaction::ReactionBatch, at_least_once: core::option::Option<&batpak::store::delivery::observation::AtLeastOnce>) -> core::result::Result<(), Self::Error>
@@ -2223,6 +2272,7 @@ pub fn batpak::prelude::validate_event_payload_registry() -> core::result::Resul
 pub type batpak::prelude::ArtifactHash = [u8; 32]
 pub type batpak::prelude::ProjectionEvent<T> = batpak::event::Event<batpak::event::sourcing::ProjectionPayload<T>>
 pub type batpak::prelude::ProjectionPayload<T> = <<T as batpak::event::sourcing::EventSourced>::Input as batpak::event::sourcing::ProjectionInput>::Payload
+pub type batpak::prelude::SnapshotEvidenceHash = [u8; 32]
 pub type batpak::prelude::StoreResourceHash = [u8; 32]
 pub mod batpak::registry
 pub enum batpak::registry::RegistryDriftFinding
@@ -3182,6 +3232,20 @@ pub batpak::store::RestartPolicy::Bounded
 pub batpak::store::RestartPolicy::Bounded::max_restarts: u32
 pub batpak::store::RestartPolicy::Bounded::within_ms: u64
 pub batpak::store::RestartPolicy::Once
+#[non_exhaustive] pub enum batpak::store::SigningDowngradeReason
+pub batpak::store::SigningDowngradeReason::CoverBuildFailed
+pub batpak::store::SigningDowngradeReason::CoverBuildFailed::encoding_error: alloc::string::String
+pub enum batpak::store::SnapshotFileKind
+pub batpak::store::SnapshotFileKind::PendingCompactionMarker
+pub batpak::store::SnapshotFileKind::Segment
+pub batpak::store::SnapshotFileKind::VisibilityRanges
+pub enum batpak::store::SnapshotFinding
+pub batpak::store::SnapshotFinding::CopyByteHashUnavailable
+pub batpak::store::SnapshotFinding::CopyByteHashUnavailable::file_kind: batpak::prelude::SnapshotFileKind
+pub batpak::store::SnapshotFinding::CopyByteHashUnavailable::reason: alloc::string::String
+pub batpak::store::SnapshotFinding::DestinationCleared
+pub batpak::store::SnapshotFinding::DestinationCleared::artifact_count: usize
+pub batpak::store::SnapshotFinding::FenceTokenCancelled
 #[non_exhaustive] pub enum batpak::store::StoreError
 pub batpak::store::StoreError::AncestryCorrupt
 pub batpak::store::StoreError::AncestryCorrupt::cycle_at: u128
@@ -3427,6 +3491,7 @@ pub batpak::store::AppendReceipt::sequence: u64
 pub batpak::store::AppendReceipt::signature: core::option::Option<[u8; 64]>
 impl batpak::prelude::AppendReceipt
 pub const fn batpak::prelude::AppendReceipt::disk_pos(&self) -> batpak::store::index::DiskPos
+pub fn batpak::prelude::AppendReceipt::signing_downgrade(&self) -> core::option::Option<batpak::prelude::SigningDowngradeBody>
 pub struct batpak::store::AppendTicket
 impl batpak::prelude::AppendTicket
 pub fn batpak::prelude::AppendTicket::receiver(&self) -> &flume::Receiver<core::result::Result<batpak::prelude::AppendReceipt, batpak::prelude::StoreError>>
@@ -3755,11 +3820,40 @@ impl<P: batpak::prelude::ReceiptExtensionNamespace> batpak::prelude::ReceiptExte
 pub fn batpak::prelude::ReceiptExtensionValue<P>::new(bytes: impl core::convert::Into<batpak::store::EncodedBytes>) -> Self
 impl<P: batpak::prelude::ReceiptExtensionNamespace> core::clone::Clone for batpak::prelude::ReceiptExtensionValue<P>
 pub fn batpak::prelude::ReceiptExtensionValue<P>::clone(&self) -> Self
+#[non_exhaustive] pub struct batpak::store::SigningDowngradeBody
+pub batpak::store::SigningDowngradeBody::reason: batpak::prelude::SigningDowngradeReason
+pub batpak::store::SigningDowngradeBody::schema_version: u16
+pub struct batpak::store::SigningExtensionNamespace
+impl batpak::prelude::ReceiptExtensionNamespace for batpak::prelude::SigningExtensionNamespace
+pub const batpak::prelude::SigningExtensionNamespace::PREFIX: &'static str
 pub struct batpak::store::SigningKey
 impl batpak::store::SigningKey
 pub fn batpak::store::SigningKey::from_bytes(bytes: [u8; 32]) -> Self
 impl core::fmt::Debug for batpak::store::SigningKey
 pub fn batpak::store::SigningKey::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct batpak::store::SnapshotEvidenceReport
+pub batpak::store::SnapshotEvidenceReport::batpak_version: core::option::Option<alloc::string::String>
+pub batpak::store::SnapshotEvidenceReport::body: batpak::prelude::SnapshotReportBody
+pub batpak::store::SnapshotEvidenceReport::body_hash: batpak::prelude::SnapshotEvidenceHash
+pub batpak::store::SnapshotEvidenceReport::diagnostics: alloc::vec::Vec<alloc::string::String>
+pub batpak::store::SnapshotEvidenceReport::generated_at_unix_ms: core::option::Option<u64>
+pub struct batpak::store::SnapshotFenceTokenRef
+pub batpak::store::SnapshotFenceTokenRef::token: u64
+pub struct batpak::store::SnapshotReportBody
+pub batpak::store::SnapshotReportBody::copied_pending_compaction_marker_present: bool
+pub batpak::store::SnapshotReportBody::copied_segment_ids_sorted: alloc::vec::Vec<u64>
+pub batpak::store::SnapshotReportBody::copied_visibility_ranges_present: bool
+pub batpak::store::SnapshotReportBody::destination_path_digest: batpak::prelude::SnapshotEvidenceHash
+pub batpak::store::SnapshotReportBody::fence_token: batpak::prelude::SnapshotFenceTokenRef
+pub batpak::store::SnapshotReportBody::findings: alloc::vec::Vec<batpak::prelude::SnapshotFinding>
+pub batpak::store::SnapshotReportBody::schema_version: u16
+pub batpak::store::SnapshotReportBody::snapshot_id: batpak::prelude::SnapshotEvidenceHash
+pub batpak::store::SnapshotReportBody::source_watermark: batpak::prelude::SnapshotWatermarkRef
+impl batpak::prelude::SnapshotReportBody
+pub fn batpak::prelude::SnapshotReportBody::body_hash(&self) -> core::result::Result<batpak::prelude::SnapshotEvidenceHash, rmp_serde::encode::Error>
+pub struct batpak::store::SnapshotWatermarkRef
+pub batpak::store::SnapshotWatermarkRef::offset: u64
+pub batpak::store::SnapshotWatermarkRef::segment_id: u64
 pub struct batpak::store::Store<State>
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::append(&self, coord: &batpak::coordinate::Coordinate, kind: batpak::event::kind::EventKind, payload: &impl serde_core::ser::Serialize) -> core::result::Result<batpak::prelude::AppendReceipt, batpak::prelude::StoreError>
@@ -3788,9 +3882,10 @@ pub fn batpak::store::Store<batpak::store::Open>::try_submit_typed<T: batpak::ev
 pub fn batpak::store::Store<batpak::store::Open>::writer_pressure(&self) -> batpak::store::stats::WriterPressure
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::close(self) -> core::result::Result<batpak::store::Closed, batpak::prelude::StoreError>
-pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::prelude::CompactionConfig) -> core::result::Result<batpak::store::segment::CompactionResult, batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::prelude::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::compact_with_report(&self, config: &batpak::prelude::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence(&self, dest: &std::path::Path) -> core::result::Result<batpak::prelude::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::wait_for_applied(&self, point: batpak::store::stats::HlcPoint, timeout: core::time::Duration) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::wait_for_durable(&self, point: batpak::store::stats::HlcPoint, timeout: core::time::Duration) -> core::result::Result<(), batpak::prelude::StoreError>
@@ -4021,6 +4116,8 @@ pub const batpak::store::COMPACTION_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::MAX_CHECKPOINT_ID_LEN: usize
 pub const batpak::store::PROJECTION_RUN_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::READ_WALK_REPORT_SCHEMA_VERSION: u16
+pub const batpak::store::SIGNING_DOWNGRADE_SCHEMA_VERSION: u16
+pub const batpak::store::SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::STORE_RESOURCE_REPORT_SCHEMA_VERSION: u32
 pub const batpak::store::SUBSCRIBER_FRONTIER_REPORT_SCHEMA_VERSION: u16
 pub trait batpak::store::ProjectionCache: core::marker::Send + core::marker::Sync + 'static
@@ -4046,9 +4143,12 @@ pub fn batpak::store::projection::NoCache::put(&self, _key: &[u8], _value: &[u8]
 pub fn batpak::store::projection::NoCache::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
 pub trait batpak::store::ReceiptExtensionNamespace
 pub const batpak::store::ReceiptExtensionNamespace::PREFIX: &'static str
+impl batpak::prelude::ReceiptExtensionNamespace for batpak::prelude::SigningExtensionNamespace
+pub const batpak::prelude::SigningExtensionNamespace::PREFIX: &'static str
 pub fn batpak::store::compaction_strategy_shape(strategy: &batpak::prelude::CompactionStrategy) -> batpak::store::CompactionStrategyShape
 pub fn batpak::store::report_for_run(config: &batpak::prelude::CompactionConfig, active_segment_id: u64, sealed: &[(u64, std::path::PathBuf)], merged_segment_id: core::option::Option<u64>, result: &batpak::store::segment::CompactionResult, merged_segment_path_for_hash: core::option::Option<&std::path::Path>) -> core::result::Result<batpak::store::CompactionReportBody, rmp_serde::encode::Error>
 pub fn batpak::store::report_skipped(config: &batpak::prelude::CompactionConfig, active_segment_id: u64, sealed: &[(u64, std::path::PathBuf)]) -> core::result::Result<batpak::store::CompactionReportBody, rmp_serde::encode::Error>
+pub fn batpak::store::snapshot_report_body_hash(body: &batpak::prelude::SnapshotReportBody) -> core::result::Result<batpak::prelude::SnapshotEvidenceHash, rmp_serde::encode::Error>
 pub fn batpak::store::store_data_dir_identity_hash(path: &std::path::Path) -> batpak::prelude::StoreResourceHash
 pub fn batpak::store::store_resource_evidence_report_from_diagnostics(d: &batpak::store::stats::StoreDiagnostics) -> core::result::Result<batpak::prelude::StoreResourceEvidenceReport, batpak::prelude::StoreResourceReportError>
 pub fn batpak::store::store_resource_report_body_from_diagnostics(d: &batpak::store::stats::StoreDiagnostics) -> batpak::prelude::StoreResourceReportBody
@@ -4059,6 +4159,7 @@ pub type batpak::store::OpenReportObserver = alloc::sync::Arc<(dyn core::ops::fu
 pub type batpak::store::ProjectionRunHash = [u8; 32]
 pub type batpak::store::ReadWalkHash = [u8; 32]
 pub type batpak::store::RetentionPredicate = alloc::boxed::Box<(dyn core::ops::function::Fn(&batpak::event::StoredEvent<serde_json::value::Value>) -> bool + core::marker::Send)>
+pub type batpak::store::SnapshotEvidenceHash = [u8; 32]
 pub type batpak::store::StoreResourceHash = [u8; 32]
 pub type batpak::store::SubscriberFrontierHash = [u8; 32]
 pub mod batpak::transition

@@ -54,12 +54,25 @@ impl Store<Open> {
         self.watermark_handle.wait_for_visible(point, timeout)
     }
 
-    /// Snapshot the current index to a destination directory.
+    /// Snapshot the current index to a destination directory and return
+    /// deterministic snapshot evidence.
     ///
     /// # Errors
     /// Returns `StoreError::Io` if creating the destination directory or copying segment files fails.
-    pub fn snapshot(&self, dest: &std::path::Path) -> Result<(), StoreError> {
+    pub fn snapshot_with_evidence(
+        &self,
+        dest: &std::path::Path,
+    ) -> Result<SnapshotEvidenceReport, StoreError> {
         lifecycle::snapshot(self, dest)
+    }
+
+    /// Deprecated snapshot wrapper that drops [`SnapshotEvidenceReport`].
+    ///
+    /// # Errors
+    /// Returns `StoreError::Io` if creating the destination directory or copying segment files fails.
+    #[deprecated(note = "use snapshot_with_evidence; snapshot evidence is now first-class")]
+    pub fn snapshot(&self, dest: &std::path::Path) -> Result<(), StoreError> {
+        self.snapshot_with_evidence(dest).map(|_| ())
     }
 
     /// Compact: merge sealed segments, optionally filtering events.
@@ -76,7 +89,9 @@ impl Store<Open> {
     /// partially rebuilt view.
     ///
     /// Failure modes are surfaced through the returned
-    /// [`segment::CompactionResult`]:
+    /// [`segment::CompactionResult`]. The accompanying
+    /// [`CompactionReportBody`] is always returned as deterministic evidence
+    /// for the compaction decision and observed outcome.
     ///
     /// * [`segment::CompactionOutcome::Performed`] — the segment merge
     ///   happened and the live index has been swapped for the fresh one.
@@ -100,15 +115,21 @@ impl Store<Open> {
     pub fn compact(
         &self,
         config: &CompactionConfig,
-    ) -> Result<crate::store::segment::CompactionResult, StoreError> {
-        lifecycle::compact(self, config).map(|(result, _report)| result)
+    ) -> Result<
+        (
+            crate::store::segment::CompactionResult,
+            CompactionReportBody,
+        ),
+        StoreError,
+    > {
+        lifecycle::compact(self, config)
     }
 
-    /// Same as [`Store::compact`], plus a deterministic structural
-    /// [`CompactionReportBody`] for evidence.
+    /// Deprecated alias for [`Store::compact`].
     ///
     /// # Errors
     /// Same error paths as [`Store::compact`].
+    #[deprecated(note = "use Store::compact; the report is now always returned")]
     pub fn compact_with_report(
         &self,
         config: &CompactionConfig,

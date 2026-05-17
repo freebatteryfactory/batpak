@@ -49,3 +49,4 @@ Root layer docs:
 | ADR-0024 | Projection Run Evidence Report v1 | Accepted |
 | ADR-0025 | Read Walk Evidence Report v1 | Accepted |
 | ADR-0026 | Pre-1.0 Public Surface Strategy | Accepted; correction strategy for 0.7.6 |
+| ADR-0027 | Snapshot Evidence Report v1 | Accepted |

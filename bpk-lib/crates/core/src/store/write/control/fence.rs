@@ -29,6 +29,10 @@ impl<'a> VisibilityFence<'a> {
         }
     }
 
+    pub(crate) fn token(&self) -> u64 {
+        self.token
+    }
+
     /// Submit a root-cause append under this fence.
     ///
     /// # Errors

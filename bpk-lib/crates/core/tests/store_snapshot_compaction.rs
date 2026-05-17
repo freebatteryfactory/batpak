@@ -19,7 +19,9 @@
 use batpak::prelude::*;
 use batpak::store::{
     segment::{CompactionOutcome, CompactionResult},
-    ReadOnly, Store, StoreConfig, StoreError,
+    snapshot_report_body_hash, ReadOnly, SnapshotEvidenceHash, SnapshotEvidenceReport,
+    SnapshotFenceTokenRef, SnapshotFileKind, SnapshotFinding, SnapshotReportBody,
+    SnapshotWatermarkRef, Store, StoreConfig, StoreError, SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -46,7 +48,9 @@ fn snapshot_copies_segments() {
     store.sync().expect("sync");
 
     let snap_dir = TempDir::new().expect("snap dir");
-    store.snapshot(snap_dir.path()).expect("snapshot");
+    store
+        .snapshot_with_evidence(snap_dir.path())
+        .expect("snapshot");
 
     let fbat_count = std::fs::read_dir(snap_dir.path())
         .expect("read snap dir")
@@ -80,6 +84,71 @@ fn snapshot_copies_segments() {
     store.close().expect("close");
 }
 
+#[test]
+fn snapshot_with_evidence_reports_fence_watermark_and_copied_segments() {
+    let (store, _dir) = test_store();
+    let coord = Coordinate::new("entity:snap:evidence", "scope:test").expect("valid coord");
+    let kind = EventKind::custom(0xF, 0x11);
+
+    for i in 0..12 {
+        store
+            .append(&coord, kind, &serde_json::json!({"i": i}))
+            .expect("append");
+    }
+
+    let snap_dir = TempDir::new().expect("snap dir");
+    let report = store
+        .snapshot_with_evidence(snap_dir.path())
+        .expect("snapshot evidence");
+    let envelope: SnapshotEvidenceReport = report.clone();
+    let body: SnapshotReportBody = envelope.body.clone();
+    let report_hash: SnapshotEvidenceHash = envelope.body_hash;
+    let _fence_ref: SnapshotFenceTokenRef = body.fence_token;
+    let _watermark_ref: SnapshotWatermarkRef = body.source_watermark;
+    assert_eq!(body.schema_version, SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION);
+    assert_eq!(
+        report_hash,
+        snapshot_report_body_hash(&body).expect("body hash")
+    );
+    assert_eq!(report_hash, body.body_hash().expect("body hash method"));
+    assert!(body.fence_token.token > 0);
+    assert!(body.source_watermark.segment_id > 0);
+    assert!(body.source_watermark.offset > 0);
+    assert!(
+        body.copied_segment_ids_sorted
+            .windows(2)
+            .all(|pair| pair[0] <= pair[1]),
+        "PROPERTY: snapshot report segment ids must be sorted"
+    );
+    assert!(
+        body.copied_segment_ids_sorted
+            .contains(&body.source_watermark.segment_id),
+        "PROPERTY: snapshot report must name the source watermark segment"
+    );
+    assert!(body
+        .findings
+        .contains(&SnapshotFinding::FenceTokenCancelled));
+    assert!(body.findings.iter().any(|finding| matches!(
+        finding,
+        SnapshotFinding::CopyByteHashUnavailable {
+            file_kind: SnapshotFileKind::Segment,
+            ..
+        }
+    )));
+
+    store.close().expect("close");
+}
+
+#[test]
+// justifies: ADR-0027 and tests/store_snapshot_compaction.rs exercise the one-cut deprecated snapshot wrapper.
+#[allow(deprecated)]
+fn snapshot_alias_preserves_copy_behavior_for_one_cut() {
+    let (store, _dir) = test_store();
+    let snap_dir = TempDir::new().expect("snap dir");
+    store.snapshot(snap_dir.path()).expect("snapshot alias");
+    store.close().expect("close");
+}
+
 fn user_visible_entries(store: &Store) -> Vec<batpak::store::index::IndexEntry> {
     store
         .query(&Region::all())
@@ -101,7 +170,7 @@ fn snapshot_rejects_when_visibility_fence_is_active() {
         .expect("begin visibility fence");
     let snap_dir = TempDir::new().expect("snap dir");
 
-    let err = match store.snapshot(snap_dir.path()) {
+    let err = match store.snapshot_with_evidence(snap_dir.path()) {
         Ok(_) => panic!("PROPERTY: snapshot must not proceed while a visibility fence is active"),
         Err(err) => err,
     };
@@ -138,7 +207,7 @@ fn snapshot_reused_destination_replaces_stale_store_artifacts() {
     }
 
     store
-        .snapshot(snapshot_dir.path())
+        .snapshot_with_evidence(snapshot_dir.path())
         .expect("snapshot into reused dir");
 
     let reopened = Store::<ReadOnly>::open_read_only(StoreConfig::new(snapshot_dir.path()))
@@ -208,7 +277,9 @@ fn snapshot_waits_for_in_flight_compaction() {
     let snapshot = std::thread::Builder::new()
         .name("store-snapshot-compaction-blocked-by-compact".into())
         .spawn(move || {
-            let result = snapshot_store.snapshot(&snapshot_dest);
+            let result = snapshot_store
+                .snapshot_with_evidence(&snapshot_dest)
+                .map(|_| ());
             let _ = snapshot_done_tx.send(result);
         })
         .expect("spawn snapshot thread");
@@ -223,7 +294,7 @@ fn snapshot_waits_for_in_flight_compaction() {
     let compaction_result = compaction.join().expect("join compaction thread");
     assert!(
         matches!(
-            compaction_result.expect("compact result").outcome,
+            compaction_result.expect("compact result").0.outcome,
             CompactionOutcome::Performed | CompactionOutcome::Skipped
         ),
         "compaction should finish honestly once the test releases the predicate gate"
@@ -269,7 +340,9 @@ fn snapshot_preserves_pending_compaction_marker() {
     .expect("write pending compaction marker");
 
     let snapshot_dir = TempDir::new().expect("snapshot dir");
-    store.snapshot(snapshot_dir.path()).expect("snapshot");
+    store
+        .snapshot_with_evidence(snapshot_dir.path())
+        .expect("snapshot");
 
     assert!(
         snapshot_dir.path().join("compaction.pending.json").exists(),
@@ -291,7 +364,7 @@ fn compact_does_not_lose_data() {
             .expect("append");
     }
 
-    let compaction: CompactionResult = store
+    let (compaction, _report): (CompactionResult, _) = store
         .compact(&CompactionConfig {
             min_segments: 1,
             ..CompactionConfig::default()
@@ -339,7 +412,7 @@ fn compact_merge_rebuild_does_not_duplicate_superseded_sealed_segments() {
         .with_segment_max_bytes(512)
         .with_sync_every_n_events(1);
     let store = Store::open(config).expect("reopen");
-    let compaction = store
+    let (compaction, _report) = store
         .compact(&CompactionConfig {
             min_segments: 1,
             ..CompactionConfig::default()
@@ -404,7 +477,7 @@ fn compact_fails_closed_on_corrupt_hidden_ranges_metadata() {
     std::fs::write(dir.path().join("visibility_ranges.fbv"), b"corrupt")
         .expect("write corrupt hidden ranges metadata");
 
-    let result = store
+    let (result, _report) = store
         .compact(&CompactionConfig {
             min_segments: 1,
             ..CompactionConfig::default()
@@ -462,7 +535,7 @@ fn compact_rolls_back_marker_on_pre_swap_rename_failure() {
     let blocker = dir.path().join(format!("{merged_id:06}.fbat.compact-src"));
     std::fs::create_dir_all(&blocker).expect("create rename blocker");
 
-    let result = store
+    let (result, _report) = store
         .compact(&CompactionConfig {
             min_segments: 1,
             ..CompactionConfig::default()
@@ -526,7 +599,7 @@ fn compact_retention_removes_dropped_events_from_index() {
         strategy: CompactionStrategy::Retention(retention),
         min_segments: 1,
     };
-    store.compact(&retention_config).expect("compact");
+    let (_result, _report) = store.compact(&retention_config).expect("compact");
 
     for dropped_id in &drop_ids {
         let get_result = store.get(*dropped_id);
@@ -587,7 +660,7 @@ fn compact_tombstone_updates_event_kind_in_index() {
         })),
         min_segments: 1,
     };
-    store.compact(&tombstone_config).expect("compact");
+    let (_result, _report) = store.compact(&tombstone_config).expect("compact");
 
     assert_eq!(
         store.by_entity("entity:tombstone").len(),

@@ -807,7 +807,9 @@ fn correctness_gates_self_validate() {
 
     // --- Probe 6: Snapshot bootability ---
     let snap_dir = TempDir::new().expect("snap dir");
-    store.snapshot(snap_dir.path()).expect("snapshot");
+    store
+        .snapshot_with_evidence(snap_dir.path())
+        .expect("snapshot");
     let snap_config = StoreConfig::new(snap_dir.path());
     let snap_boot = Store::open(snap_config);
     let snapshot_boots = snap_boot.is_ok();
