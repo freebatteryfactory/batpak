@@ -55,12 +55,12 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/chaos/scenarios/batch_commit_written.rs",
         reason: "chaos scenario has prose header but not canonical fields",
-        target: "normalize scenario headers by v0.8.0",
+        target: "normalize scenario headers by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/chaos/scenarios/single_append_written.rs",
         reason: "chaos scenario has prose header but not canonical fields",
-        target: "normalize scenario headers by v0.8.0",
+        target: "normalize scenario headers by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/chaos/scenarios/smoke.rs",
@@ -70,7 +70,7 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/chaos_testing.rs",
         reason: "legacy chaos suite has partial header only",
-        target: "split or normalize by v0.8.0",
+        target: "split or normalize by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/cold_start_recovery.rs",
@@ -80,7 +80,7 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/control_plane_surface.rs",
         reason: "large control-plane suite predates module-header doctrine",
-        target: "split by writer-control seam by v0.8.0",
+        target: "split by writer-control seam by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/derive_event_sourced_errors.rs",
@@ -115,12 +115,12 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/durable_frontier_waits.rs",
         reason: "durable wait suite has partial header only",
-        target: "add missing CATCHES/SEEDED by v0.8.0",
+        target: "add missing CATCHES/SEEDED by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/fuzz_chaos_feedback.rs",
         reason: "fuzz-chaos suite has partial header only",
-        target: "add missing CATCHES/SEEDED by v0.8.0",
+        target: "add missing CATCHES/SEEDED by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/index_filter_composition.rs",
@@ -135,12 +135,12 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/perf_gates.rs",
         reason: "perf gate suite has partial header only",
-        target: "add missing CATCHES/SEEDED by v0.8.0",
+        target: "add missing CATCHES/SEEDED by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/projection_cache.rs",
         reason: "cache suite has partial header only",
-        target: "split and normalize by v0.8.0",
+        target: "split and normalize by 0.7.6 correction cut",
     },
     HeaderDebt {
         path: "tests/replay_consistency.rs",
@@ -155,7 +155,7 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/store_advanced.rs",
         reason: "legacy omnibus suite has partial header only",
-        target: "split by seam by v0.8.0",
+        target: "split by seam by 0.7.6 correction cut",
     },
 ];
 
@@ -164,67 +164,67 @@ const OVERSIZE_HARNESS_ALLOWLIST: &[OversizeDebt] = &[
         path: "tests/chaos_testing.rs",
         max_lines: 1017,
         reason: "legacy chaos matrix remains intact until split",
-        target: "split low-level byte corruption cases by v0.8.0",
+        target: "split low-level byte corruption cases by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/control_plane_surface.rs",
         max_lines: 1055,
         reason: "control-plane proofs share fixtures today",
-        target: "split ticket/fence/pressure seams by v0.8.0",
+        target: "split ticket/fence/pressure seams by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/cursor_durability.rs",
         max_lines: 578,
         reason: "cursor checkpoint lifecycle matrix remains coupled",
-        target: "split checkpoint corruption vs delivery progress by v0.8.0",
+        target: "split checkpoint corruption vs delivery progress by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/durable_frontier_semantics.rs",
         max_lines: 1044,
         reason: "durable frontier semantic phases still share setup",
-        target: "split lifecycle/frontier cases by v0.8.0",
+        target: "split lifecycle/frontier cases by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/durable_frontier_waits.rs",
         max_lines: 597,
         reason: "wait and gate API phases share controlled projection fixtures",
-        target: "split wait surfaces from append-gate surfaces by v0.8.0",
+        target: "split wait surfaces from append-gate surfaces by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/fuzz_chaos_feedback.rs",
         max_lines: 757,
         reason: "fuzz-chaos policy matrix remains single-file",
-        target: "split generators from policy assertions by v0.8.0",
+        target: "split generators from policy assertions by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/perf_gates.rs",
         max_lines: 1350,
         reason: "hardware-dependent gates share calibration constants",
-        target: "split gate families by v0.8.0",
+        target: "split gate families by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/projection_cache.rs",
         max_lines: 1213,
         reason: "cache corruption and freshness matrix share cache fixtures",
-        target: "split freshness modes from corruption shapes by v0.8.0",
+        target: "split freshness modes from corruption shapes by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/raw_projection_mode.rs",
         max_lines: 923,
         reason: "raw/derived projection equivalence matrix shares event fixtures",
-        target: "split replay lane families by v0.8.0",
+        target: "split replay lane families by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/segment_scan_hardening.rs",
         max_lines: 709,
         reason: "segment corruption shapes share frame-building helpers",
-        target: "split helper module from case table by v0.8.0",
+        target: "split helper module from case table by 0.7.6 correction cut",
     },
     OversizeDebt {
         path: "tests/store_advanced.rs",
         max_lines: 1675,
         reason: "legacy omnibus store suite is being burned down over time",
-        target: "move cursor/lifecycle remnants to focused suites by v0.8.0",
+        target: "move cursor/lifecycle remnants to focused suites by 0.7.6 correction cut",
     },
 ];
 

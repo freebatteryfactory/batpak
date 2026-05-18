@@ -8,7 +8,7 @@ The repository root is the command deck. It is intentionally readable with
 Root Markdown files are canonical navigation and governance documents.
 
 - `000_REPO_MAP.md`: repository grammar and reading order.
-- `001_*` through `004_*`: batpak-family layer primers.
+- `001_*` through `003_*`: batpak-family layer primers.
 - `010_*` through `080_*`: operating manuals, vocabulary, references, runbooks, testing
   doctrine, security, contribution, and evidence docs.
 - `099_DECISION_INDEX.md`: decision navigation index.
@@ -28,8 +28,8 @@ or layer contracts.
 
 - `bpk-lib/Cargo.toml`: workspace manifest and xtask entrypoint context.
 - `bpk-lib/crates/core/`: primary `batpak` package.
-- `bpk-lib/crates/syncbat/`, `bpk-lib/crates/downstream-kit/`, and
-  `bpk-lib/crates/netbat/`: stack layers over the substrate.
+- `bpk-lib/crates/syncbat/` and `bpk-lib/crates/netbat/`: stack layers over
+  the substrate.
 - `bpk-lib/tools/`: repo-owned Rust tools.
 - `bpk-lib/traceability/`: machine-readable requirements, invariants, flows,
   and artifact registries.

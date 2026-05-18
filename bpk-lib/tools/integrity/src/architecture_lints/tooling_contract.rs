@@ -31,8 +31,7 @@ fn check_project_layout_contract(repo_root: &Path) -> Result<()> {
         "000_REPO_MAP.md",
         "001_BATPAK_SUBSTRATE.md",
         "002_SYNCBAT_RUNTIME.md",
-        "003_DownstreamKit_KIT.md",
-        "004_NETBAT_NETWORK.md",
+        "003_NETBAT_NETWORK.md",
         "010_USER_GUIDE.md",
         "020_TECHNICAL_REFERENCE.md",
         "099_DECISION_INDEX.md",
@@ -273,8 +272,6 @@ fn check_crate_layout_contract(repo_root: &Path) -> Result<()> {
         "crates/core/fixtures",
         "crates/syncbat/src",
         "crates/syncbat/tests",
-        "crates/downstream-kit/src",
-        "crates/downstream-kit/tests",
         "crates/netbat/src",
         "crates/netbat/tests",
         "crates/macros/src",
@@ -297,7 +294,7 @@ fn check_crate_layout_contract(repo_root: &Path) -> Result<()> {
         )?;
     }
 
-    for crate_name in ["syncbat", "downstream-kit", "netbat"] {
+    for crate_name in ["syncbat", "netbat"] {
         let crate_root = repo_root.join("crates").join(crate_name);
         for dir in ["examples", "benches", "fixtures"] {
             ensure(
@@ -560,7 +557,6 @@ fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
         fs::read_to_string(repo_root.join("Cargo.toml")).context("read workspace Cargo.toml")?;
     let family_crates = [
         ("syncbat", "\"crates/syncbat\""),
-        ("downstream-kit", "\"crates/downstream-kit\""),
         ("netbat", "\"crates/netbat\""),
     ];
 

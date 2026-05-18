@@ -8,7 +8,6 @@ members = [
     "crates/bench-support",
     "crates/syncbat-macros",
     "crates/syncbat",
-    "crates/downstream-kit",
     "crates/netbat",
 ]
 default-members = ["crates/core"]

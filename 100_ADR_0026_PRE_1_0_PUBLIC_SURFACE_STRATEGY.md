@@ -19,8 +19,9 @@ Examples include:
 - duplicate public words for the same operational concept
 - compatibility aliases that keep old names alive after better names exist
 
-Deferring every correction to `0.8.0` would make the version number cleaner but
-would also preserve accidental public contracts longer than the project needs.
+Deferring every correction to a later minor line would make the version number
+cleaner but would also preserve accidental public contracts longer than the
+project needs.
 For this repository, maintainability and an honest pre-1.0 shape matter more
 than preserving a patch-compatible fiction for unused APIs.
 
@@ -76,4 +77,3 @@ structural checks are not acceptable.
 - This ADR does not add ExtProfile semantics to `batpak`.
 - This ADR does not include deferred durability-waiter redesign or performance
   threshold calibration.
-

@@ -86,8 +86,6 @@ pub(crate) fn docs(args: DocsArgs) -> Result<()> {
         "-p",
         "syncbat",
         "-p",
-        "downstream-kit",
-        "-p",
         "netbat",
         "--all-features",
         "--no-deps",

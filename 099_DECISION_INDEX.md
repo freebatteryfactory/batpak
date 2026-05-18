@@ -17,8 +17,7 @@ Root layer docs:
 | --- | --- |
 | [`001_BATPAK_SUBSTRATE.md`](001_BATPAK_SUBSTRATE.md) | `bp` substrate |
 | [`002_SYNCBAT_RUNTIME.md`](002_SYNCBAT_RUNTIME.md) | `sb` sync runtime |
-| [`003_DownstreamKit_KIT.md`](003_DownstreamKit_KIT.md) | `cb` operation kit |
-| [`004_NETBAT_NETWORK.md`](004_NETBAT_NETWORK.md) | `nb` network/server boundary |
+| [`003_NETBAT_NETWORK.md`](003_NETBAT_NETWORK.md) | `nb` network/server boundary |
 | [`025_VOCABULARY.md`](025_VOCABULARY.md) | canonical naming and public-surface correction target |
 
 | ADR | Title | Status |
