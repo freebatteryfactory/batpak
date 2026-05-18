@@ -93,33 +93,6 @@ const SYNCBAT_LAYER_LEAKS: &[BoundaryTerm] = &[
     },
 ];
 
-const CLAWBAT_LAYER_LEAKS: &[BoundaryTerm] = &[
-    BoundaryTerm {
-        token: "netbat",
-        reason: "network layer names belong outside clawbat",
-    },
-    BoundaryTerm {
-        token: "Netbat",
-        reason: "network layer type names belong outside clawbat",
-    },
-    BoundaryTerm {
-        token: "contract.context_v1",
-        reason: "PCP profile wire validation belongs outside clawbat",
-    },
-    BoundaryTerm {
-        token: "authority_required",
-        reason: "authority claims are caller policy input, not clawbat law",
-    },
-    BoundaryTerm {
-        token: "PCP-Core",
-        reason: "PCP semantics stay outside clawbat",
-    },
-    BoundaryTerm {
-        token: "PcpProfile",
-        reason: "PCP profile types stay outside clawbat",
-    },
-];
-
 const NETBAT_LAYER_LEAKS: &[BoundaryTerm] = &[
     BoundaryTerm {
         token: "contract.context_v1",
@@ -238,7 +211,6 @@ pub(super) fn check(repo_root: &Path, tracked_files: &[PathBuf]) -> Result<()> {
 enum SourceLayer {
     Core,
     Syncbat,
-    Clawbat,
     Netbat,
 }
 
@@ -247,16 +219,12 @@ impl SourceLayer {
         match self {
             SourceLayer::Core => "batpak core",
             SourceLayer::Syncbat => "syncbat",
-            SourceLayer::Clawbat => "clawbat",
             SourceLayer::Netbat => "netbat",
         }
     }
 
     fn checks_internal_batpak_paths(self) -> bool {
-        matches!(
-            self,
-            SourceLayer::Syncbat | SourceLayer::Clawbat | SourceLayer::Netbat
-        )
+        matches!(self, SourceLayer::Syncbat | SourceLayer::Netbat)
     }
 }
 
@@ -271,9 +239,6 @@ fn source_layer(repo_root: &Path, path: &Path) -> Option<SourceLayer> {
     if rel.starts_with("crates/syncbat/src/") || rel.starts_with("crates/syncbat-macros/src/") {
         return Some(SourceLayer::Syncbat);
     }
-    if rel.starts_with("crates/clawbat/src/") {
-        return Some(SourceLayer::Clawbat);
-    }
     if rel.starts_with("crates/netbat/src/") {
         return Some(SourceLayer::Netbat);
     }
@@ -282,9 +247,7 @@ fn source_layer(repo_root: &Path, path: &Path) -> Option<SourceLayer> {
 
 fn checks_runtime_shape(repo_root: &Path, path: &Path) -> bool {
     let rel = relative(repo_root, path);
-    rel.starts_with("crates/syncbat/src/")
-        || rel.starts_with("crates/clawbat/src/")
-        || rel.starts_with("crates/netbat/src/")
+    rel.starts_with("crates/syncbat/src/") || rel.starts_with("crates/netbat/src/")
 }
 
 fn check_no_async_or_unsafe_runtime_source(
@@ -368,11 +331,6 @@ fn check_family_manifest_boundaries(repo_root: &Path) -> Result<()> {
             label: "syncbat-macros",
             rel: "crates/syncbat-macros/Cargo.toml",
             forbidden_stack_deps: &["batpak", "syncbat", "clawbat", "netbat", "pcp", "liteship"],
-        },
-        ManifestRule {
-            label: "clawbat",
-            rel: "crates/clawbat/Cargo.toml",
-            forbidden_stack_deps: &["netbat", "pcp", "liteship"],
         },
         ManifestRule {
             label: "netbat",
@@ -470,7 +428,6 @@ fn forbidden_layer_terms(layer: SourceLayer, content: &str) -> Vec<&'static Boun
     let terms = match layer {
         SourceLayer::Core => CORE_LAYER_LEAKS,
         SourceLayer::Syncbat => SYNCBAT_LAYER_LEAKS,
-        SourceLayer::Clawbat => CLAWBAT_LAYER_LEAKS,
         SourceLayer::Netbat => NETBAT_LAYER_LEAKS,
     };
     matching_terms(terms, content)
@@ -603,14 +560,6 @@ mod tests {
     }
 
     #[test]
-    fn detects_clawbat_layer_leaks() {
-        let content = "pub struct NetbatGateway;\nconst PROFILE: &str = \"contract.context_v1\";\n";
-        let tokens = tokens(&forbidden_layer_terms(SourceLayer::Clawbat, content));
-        assert!(tokens.contains(&"Netbat"));
-        assert!(tokens.contains(&"contract.context_v1"));
-    }
-
-    #[test]
     fn detects_netbat_layer_leaks() {
         let content = "let _ = batpak::Store::open;\nconst CLAIM: &str = \"authority_required\";\n";
         let tokens = tokens(&forbidden_layer_terms(SourceLayer::Netbat, content));
@@ -623,7 +572,6 @@ mod tests {
         let content = "Store AppendReceipt GateSet Pipeline opaque extension cargo";
         assert!(forbidden_layer_terms(SourceLayer::Core, content).is_empty());
         assert!(forbidden_layer_terms(SourceLayer::Syncbat, content).is_empty());
-        assert!(forbidden_layer_terms(SourceLayer::Clawbat, content).is_empty());
         assert!(forbidden_layer_terms(SourceLayer::Netbat, content).is_empty());
     }
 
@@ -683,10 +631,6 @@ mod tests {
         assert_eq!(
             source_layer(root, Path::new("/repo/crates/syncbat-macros/src/lib.rs")),
             Some(SourceLayer::Syncbat)
-        );
-        assert_eq!(
-            source_layer(root, Path::new("/repo/crates/clawbat/src/lib.rs")),
-            Some(SourceLayer::Clawbat)
         );
         assert_eq!(
             source_layer(root, Path::new("/repo/crates/netbat/src/lib.rs")),

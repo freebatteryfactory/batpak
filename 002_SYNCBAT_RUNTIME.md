@@ -13,7 +13,7 @@ sb runs.
 
 ## Boundary
 
-`syncbat` depends on `batpak`. It does not depend on `clawbat`, `netbat`,
+`syncbat` depends on `batpak`. It does not depend on `netbat`,
 LiteShip, or PCP semantics. It stays synchronous and does not introduce a
 production async runtime.
 

@@ -150,8 +150,6 @@ fn run_llvm_cov_nextest(export_dir: &Path, json_mode: bool) -> Result<()> {
         "-p",
         "syncbat",
         "-p",
-        "clawbat",
-        "-p",
         "netbat",
         "--all-features",
         "--no-report",

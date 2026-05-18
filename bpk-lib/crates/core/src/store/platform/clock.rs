@@ -97,7 +97,7 @@ impl MonotonicAnchor {
 
 /// Returns monotonic nanoseconds since the process-wide anchor. Guaranteed
 /// non-decreasing within a single process; meaningless across processes
-/// (use [`process_boot_ns`] to detect cross-process comparisons).
+/// (use [`Clock::process_boot_ns`] to detect cross-process comparisons).
 ///
 /// Saturates to `i64::MAX` if the process has been alive for more than
 /// ~292 years.

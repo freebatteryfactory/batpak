@@ -22,20 +22,19 @@ For repository navigation, start with
 
 ## Batpak Family Layers
 
-The root crate stays substrate-facing. Companion crates layer runtime, kit, and
-network boundaries without changing what batpak core is.
+The root crate stays substrate-facing. Companion crates layer runtime and
+network boundaries without changing what batpak core is. Higher-level kits and
+agent products, including ClawBat-shaped surfaces, live downstream.
 
 | Prefix | Crate | Role | Doc |
 | --- | --- | --- | --- |
 | `bp` | `batpak` | records events and receipts | [`001_BATPAK_SUBSTRATE.md`](001_BATPAK_SUBSTRATE.md) |
 | `sb` | `syncbat` | runs sync checkouts over registered operations | [`002_SYNCBAT_RUNTIME.md`](002_SYNCBAT_RUNTIME.md) |
-| `cb` | `clawbat` | declares operation-kit vocabulary | [`003_CLAWBAT_KIT.md`](003_CLAWBAT_KIT.md) |
-| `nb` | `netbat` | exposes syncbat runtimes at network/server boundaries | [`004_NETBAT_NETWORK.md`](004_NETBAT_NETWORK.md) |
+| `nb` | `netbat` | exposes syncbat runtimes at network/server boundaries | [`003_NETBAT_NETWORK.md`](003_NETBAT_NETWORK.md) |
 
 Layer rule:
 
 ```text
-cb declares.
 sb runs.
 nb exposes.
 bp records.

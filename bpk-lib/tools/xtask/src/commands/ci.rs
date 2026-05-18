@@ -4,7 +4,7 @@ use crate::util::{cargo, cargo_target_dir_arg};
 use crate::BenchSurface;
 use anyhow::Result;
 
-const FAMILY_CRATES: &[&str] = &["syncbat", "clawbat", "netbat"];
+const FAMILY_CRATES: &[&str] = &["syncbat", "netbat"];
 
 pub(crate) fn ci() -> Result<()> {
     integrity("doctor", ["--strict"])?;

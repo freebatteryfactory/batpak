@@ -14,7 +14,7 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
-const FAMILY_CRATES: &[&str] = &["syncbat", "clawbat", "netbat"];
+const FAMILY_CRATES: &[&str] = &["syncbat", "netbat"];
 
 #[derive(Parser)]
 #[command(author, version, about = "Root developer command surface for batpak")]
@@ -413,7 +413,7 @@ fn main() -> Result<()> {
                 "-D",
                 "warnings",
             ])?;
-            for package in ["clawbat", "netbat"] {
+            for package in ["netbat"] {
                 util::cargo([
                     "clippy",
                     "-p",

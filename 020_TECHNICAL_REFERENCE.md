@@ -28,18 +28,17 @@ The batpak-family workspace keeps engine-facing layer names explicit:
 | --- | --- | --- |
 | `bp` | `batpak` | substrate; records events, receipts, extensions, replay state |
 | `sb` | `syncbat` | sync runtime; registers operations, folds durable register lifecycle rows, dispatches checkouts, emits runtime receipts |
-| `cb` | `clawbat` | operation kit; declares pass/capability vocabulary, compiles requirement gates, and provides macro wiring |
 | `nb` | `netbat` | boundary layer; validates routes/versioned line frames/transports and calls syncbat |
 
 Root layer docs:
 [`001_BATPAK_SUBSTRATE.md`](001_BATPAK_SUBSTRATE.md),
 [`002_SYNCBAT_RUNTIME.md`](002_SYNCBAT_RUNTIME.md),
-[`003_CLAWBAT_KIT.md`](003_CLAWBAT_KIT.md), and
-[`004_NETBAT_NETWORK.md`](004_NETBAT_NETWORK.md).
+[`003_NETBAT_NETWORK.md`](003_NETBAT_NETWORK.md).
 
-Dependency direction is one-way: `syncbat` may depend on `batpak`, `clawbat`
-may depend on `syncbat`, and `netbat` may depend on `syncbat`. The substrate
-does not import the layers above it.
+Dependency direction is one-way: `syncbat` may depend on `batpak`, and
+`netbat` may depend on `syncbat`. The substrate does not import the layers
+above it. Operation kits and agent products are downstream consumers, not
+workspace layers.
 
 ## Crate Layout Contract
 
@@ -50,8 +49,8 @@ does not import the layers above it.
 - `bpk-lib/crates/core/examples/` stays inside the crate because Cargo treats
   those as package examples (`cargo run -p batpak --example ...`) and package
   docs/smokes understand that shape.
-- `syncbat`, `clawbat`, and `netbat` are public stack layers, so each carries
-  integration tests in its own `tests/` directory.
+- `syncbat` and `netbat` are public stack layers, so each carries integration
+  tests in its own `tests/` directory.
 - `batpak-macros`, `syncbat-macros`, `macros-support`, and `bench-support` are
   implementation/support crates. They do not need empty `tests/` folders; their
   behavior is covered through the consumer crate UI tests, integration tests, or

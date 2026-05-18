@@ -1,4 +1,4 @@
-# 004 Netbat Network
+# 003 Netbat Network
 
 `netbat` is the server/network boundary layer.
 

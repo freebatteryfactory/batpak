@@ -75,8 +75,9 @@ All notable changes to this project will be documented in this file.
   `ReservationReconciliationReportBody`.
 - Removed the transitional `StateTransitionReport` alias; use
   `StateTransitionReportBody`.
-- Removed the transitional `clawbat::RequirementSet` alias; use
-  `RequirementEvidence`.
+- Removed the in-workspace Rust `clawbat` kit crate and root `cb` layer doc;
+  ClawBat-shaped kit/agent surfaces are downstream consumers of batpak,
+  syncbat, and netbat.
 - Removed the transitional `syncbat::InvokeResult` alias; use
   `CheckoutResult`.
 - Removed the transitional `syncbat::RegisterOperationPutV1` alias; use
