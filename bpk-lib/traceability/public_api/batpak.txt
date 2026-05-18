@@ -2556,6 +2556,11 @@ pub batpak::store::backup_envelope::BackupManifestVerification::findings: alloc:
 pub struct batpak::store::backup_envelope::BackupSegmentRef
 pub batpak::store::backup_envelope::BackupSegmentRef::bytes_digest: batpak::store::backup_envelope::SegmentBytesDigest
 pub batpak::store::backup_envelope::BackupSegmentRef::segment_id: u64
+pub struct batpak::store::backup_envelope::RestoreProofEvidenceReport
+pub batpak::store::backup_envelope::RestoreProofEvidenceReport::body: batpak::store::backup_envelope::RestoreProofReportBody
+pub batpak::store::backup_envelope::RestoreProofEvidenceReport::body_hash: batpak::store::backup_envelope::RestoreProofHash
+impl batpak::store::backup_envelope::RestoreProofEvidenceReport
+pub fn batpak::store::backup_envelope::RestoreProofEvidenceReport::from_body(body: batpak::store::backup_envelope::RestoreProofReportBody) -> core::result::Result<Self, rmp_serde::encode::Error>
 pub struct batpak::store::backup_envelope::RestoreProofReportBody
 pub batpak::store::backup_envelope::RestoreProofReportBody::findings: alloc::vec::Vec<batpak::store::backup_envelope::BackupEnvelopeFinding>
 pub batpak::store::backup_envelope::RestoreProofReportBody::manifest_body_hash: batpak::store::backup_envelope::SegmentBytesDigest
@@ -2570,11 +2575,13 @@ pub fn batpak::store::backup_envelope::backup_manifest_envelope_body_hash(envelo
 pub fn batpak::store::backup_envelope::backup_manifest_envelope_hash(envelope: &batpak::store::backup_envelope::BackupManifestEnvelope) -> core::result::Result<batpak::store::backup_envelope::SegmentBytesDigest, rmp_serde::encode::Error>
 pub fn batpak::store::backup_envelope::normalize_backup_manifest_body(body: &batpak::store::backup_envelope::BackupManifestBody) -> batpak::store::backup_envelope::BackupManifestBody
 pub fn batpak::store::backup_envelope::normalize_backup_manifest_envelope(envelope: &batpak::store::backup_envelope::BackupManifestEnvelope) -> batpak::store::backup_envelope::BackupManifestEnvelope
+pub fn batpak::store::backup_envelope::restore_proof_evidence_report(expected_manifest: &batpak::store::backup_envelope::BackupManifestBody, observed_segments: alloc::vec::Vec<batpak::store::backup_envelope::BackupSegmentRef>) -> core::result::Result<batpak::store::backup_envelope::RestoreProofEvidenceReport, rmp_serde::encode::Error>
 pub fn batpak::store::backup_envelope::restore_proof_report_body(expected_manifest: &batpak::store::backup_envelope::BackupManifestBody, observed_segments: &[batpak::store::backup_envelope::BackupSegmentRef]) -> core::result::Result<batpak::store::backup_envelope::RestoreProofReportBody, rmp_serde::encode::Error>
 pub fn batpak::store::backup_envelope::restore_proof_report_body_hash(report: &batpak::store::backup_envelope::RestoreProofReportBody) -> core::result::Result<batpak::store::backup_envelope::SegmentBytesDigest, rmp_serde::encode::Error>
 pub fn batpak::store::backup_envelope::sort_backup_segment_refs(segments: &mut [batpak::store::backup_envelope::BackupSegmentRef])
 pub fn batpak::store::backup_envelope::verify_backup_manifest_envelope<F>(envelope: &batpak::store::backup_envelope::BackupManifestEnvelope, claimed_manifest_hash: batpak::store::backup_envelope::SegmentBytesDigest, verify_signature: F) -> core::result::Result<batpak::store::backup_envelope::BackupManifestVerification, rmp_serde::encode::Error> where F: core::ops::function::FnMut(&batpak::artifact::SignatureRef, &[u8]) -> core::result::Result<(), alloc::string::String>
 pub fn batpak::store::backup_envelope::verify_backup_manifest_signatures_only<F>(envelope: &batpak::store::backup_envelope::BackupManifestEnvelope, verify_signature: F) -> core::result::Result<batpak::artifact::ArtifactVerificationReport, rmp_serde::encode::Error> where F: core::ops::function::FnMut(&batpak::artifact::SignatureRef, &[u8]) -> core::result::Result<(), alloc::string::String>
+pub type batpak::store::backup_envelope::RestoreProofHash = batpak::store::backup_envelope::SegmentBytesDigest
 pub type batpak::store::backup_envelope::SegmentBytesDigest = [u8; 32]
 pub mod batpak::store::cold_start
 pub mod batpak::store::cold_start::rebuild
@@ -3677,6 +3684,11 @@ pub batpak::store::CompactionConfig::min_segments: usize
 pub batpak::store::CompactionConfig::strategy: batpak::prelude::CompactionStrategy
 impl core::default::Default for batpak::prelude::CompactionConfig
 pub fn batpak::prelude::CompactionConfig::default() -> Self
+pub struct batpak::store::CompactionEvidenceReport
+pub batpak::store::CompactionEvidenceReport::body: batpak::store::CompactionReportBody
+pub batpak::store::CompactionEvidenceReport::body_hash: batpak::store::CompactionEvidenceHash
+impl batpak::store::CompactionEvidenceReport
+pub fn batpak::store::CompactionEvidenceReport::from_body(body: batpak::store::CompactionReportBody) -> core::result::Result<Self, rmp_serde::encode::Error>
 pub struct batpak::store::CompactionReportBody
 pub batpak::store::CompactionReportBody::active_segment_id: u64
 pub batpak::store::CompactionReportBody::bytes_reclaimed: u64
@@ -4329,6 +4341,7 @@ pub fn batpak::store::store_resource_evidence_report_from_diagnostics(d: &batpak
 pub fn batpak::store::store_resource_report_body_from_diagnostics(d: &batpak::store::stats::StoreDiagnostics) -> batpak::prelude::StoreResourceReportBody
 pub fn batpak::store::store_resource_report_body_hash(body: &batpak::prelude::StoreResourceReportBody) -> core::result::Result<batpak::prelude::StoreResourceHash, batpak::prelude::StoreResourceReportError>
 pub type batpak::store::ChainWalkHash = [u8; 32]
+pub type batpak::store::CompactionEvidenceHash = [u8; 32]
 pub type batpak::store::EncodedBytes = alloc::vec::Vec<u8>
 pub type batpak::store::OpenReportObserver = alloc::sync::Arc<(dyn core::ops::function::Fn(&batpak::store::cold_start::rebuild::OpenIndexReport) + core::marker::Send + core::marker::Sync)>
 pub type batpak::store::ProjectionRunHash = [u8; 32]

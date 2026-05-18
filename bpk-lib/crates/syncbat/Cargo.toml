@@ -8,13 +8,12 @@ description = "Sync-first runtime layer for batpak-family operation kits."
 repository = "https://github.com/heyoub/batpak"
 homepage = "https://github.com/heyoub/batpak"
 documentation = "https://docs.rs/syncbat"
-publish = false
 
 [features]
 default = []
 
 [dependencies]
-batpak = { path = "../core", version = "0.7.5", default-features = false }
+batpak = { path = "../core", version = "0.7.6", default-features = false }
 serde = { version = "1", features = ["derive"] }
 syncbat-macros = { path = "../syncbat-macros", version = "0.1.0" }
 

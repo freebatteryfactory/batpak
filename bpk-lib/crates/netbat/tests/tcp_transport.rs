@@ -161,6 +161,46 @@ fn tcp_listener_writes_stable_error_response_for_bad_request() {
 }
 
 #[test]
+fn tcp_listener_keeps_connection_after_request_error_when_limit_allows() {
+    let listener = localhost_listener();
+    let addr = listener.local_addr().expect("listener addr");
+    let shutdown = nb::ShutdownHandle::new();
+    let server_shutdown = shutdown.clone();
+
+    let config = nb::TcpServerConfig {
+        max_connections: 1,
+        max_requests_per_connection: 2,
+        ..nb::TcpServerConfig::default()
+    };
+    let handle = spawn_server(
+        "netbat-tcp-keepalive-error",
+        listener,
+        config,
+        server_shutdown,
+    );
+
+    let mut stream = connect_client(addr);
+    stream
+        .write_all(b"NOPE ping 00\nNETBAT/1 CALL ping 6869\n")
+        .expect("write requests");
+    let mut reader = BufReader::new(stream);
+    let mut first = String::new();
+    let mut second = String::new();
+    reader.read_line(&mut first).expect("read first response");
+    reader.read_line(&mut second).expect("read second response");
+
+    let stats = handle.join().expect("server thread joins");
+    assert!(first.starts_with("ERR malformed_request "));
+    assert_eq!(second, "OK 6869\n");
+    assert_eq!(stats.accepted_connections, 1);
+    assert_eq!(stats.served_requests, 1);
+    assert_eq!(stats.failed_requests, 1);
+    assert_eq!(stats.malformed_requests, 1);
+    assert_eq!(stats.limit_failures, 0);
+    assert_eq!(stats.runtime_failures, 0);
+}
+
+#[test]
 fn tcp_listener_rejects_unsupported_protocol_version() {
     let listener = localhost_listener();
     let addr = listener.local_addr().expect("listener addr");

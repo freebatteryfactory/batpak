@@ -1,5 +1,6 @@
 use super::ci;
 use crate::docs;
+use crate::publish::RELEASE_CHAIN;
 use crate::util::{cargo, cargo_target_dir, repo_root, run};
 use crate::{DocsArgs, ReleaseArgs};
 use anyhow::{bail, Context, Result};
@@ -122,19 +123,27 @@ pub(crate) fn release(args: ReleaseArgs) -> Result<()> {
     consumer_smoke()?;
     docs::docs(DocsArgs { open: false })?;
     if args.dry_run {
-        let mut publish = Command::new("cargo");
-        publish.current_dir(repo_root()?).args([
-            "publish",
-            "--dry-run",
-            "--allow-dirty",
-            "--config",
-            "patch.crates-io.batpak-macros-support.path=\"crates/macros-support\"",
-            "--config",
-            "patch.crates-io.batpak-macros.path=\"crates/macros\"",
-            "--config",
-            "patch.crates-io.batpak-bench-support.path=\"crates/bench-support\"",
-        ]);
-        run(publish)
+        let root = repo_root()?;
+        for package in RELEASE_CHAIN {
+            let mut publish = Command::new("cargo");
+            publish
+                .current_dir(&root)
+                .args(["publish", "-p", package, "--dry-run", "--allow-dirty"])
+                .arg("--config")
+                .arg("patch.crates-io.batpak-macros-support.path=\"crates/macros-support\"")
+                .arg("--config")
+                .arg("patch.crates-io.batpak-macros.path=\"crates/macros\"")
+                .arg("--config")
+                .arg("patch.crates-io.batpak-bench-support.path=\"crates/bench-support\"")
+                .arg("--config")
+                .arg("patch.crates-io.syncbat-macros.path=\"crates/syncbat-macros\"")
+                .arg("--config")
+                .arg("patch.crates-io.batpak.path=\"crates/core\"")
+                .arg("--config")
+                .arg("patch.crates-io.syncbat.path=\"crates/syncbat\"");
+            run(publish)?;
+        }
+        Ok(())
     } else {
         bail!("release without --dry-run is intentionally disabled in xtask")
     }

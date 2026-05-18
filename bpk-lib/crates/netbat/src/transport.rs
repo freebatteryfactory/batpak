@@ -584,7 +584,6 @@ fn serve_tcp_connection(
             Err(error) => {
                 stats.failed_requests += 1;
                 record_request_failure(stats, &error);
-                return Ok(());
             }
         }
     }

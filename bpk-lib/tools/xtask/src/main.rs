@@ -8,13 +8,12 @@ mod devcontainer;
 mod docs;
 mod preflight;
 mod public_api;
+mod publish;
 mod util;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-
-const FAMILY_CRATES: &[&str] = &["syncbat", "netbat"];
 
 #[derive(Parser)]
 #[command(author, version, about = "Root developer command surface for batpak")]
@@ -44,6 +43,8 @@ enum XtaskCommand {
     CleanGenerated(CleanGeneratedArgs),
     /// Build the batpak package locally and scan the .crate for leak-shaped text.
     PackageLeakScan(PackageLeakScanArgs),
+    /// Check workspace package versions and path-dependency version pins.
+    CheckVersionPins,
     /// Static evidence-report hygiene (schema anchors, export vocabulary).
     EvidenceAudit,
     /// Fast agent-oriented repository doctor with stable repair IDs.
@@ -67,7 +68,7 @@ enum XtaskCommand {
     /// Run release-oriented semver checks. Advisory by default during 0.7.6 cleanup.
     SemverCheck(SemverCheckArgs),
     /// Write a local release proof manifest under target/.
-    ReleaseManifest,
+    ReleaseManifest(ReleaseManifestArgs),
     /// Copy a golden batpak starter template into a local project directory.
     Scaffold(ScaffoldArgs),
     Platform(PlatformArgs),
@@ -106,12 +107,12 @@ pub(crate) enum BenchSurface {
     Native,
 }
 
-#[derive(Args, Clone, Copy)]
+#[derive(Args, Clone)]
 pub(crate) struct BenchArgs {
     #[arg(long, value_enum, default_value_t = BenchSurface::Neutral)]
     surface: BenchSurface,
     #[arg(long)]
-    save: bool,
+    save: Option<String>,
     #[arg(long)]
     compare: bool,
     #[arg(long)]
@@ -274,6 +275,16 @@ pub(crate) struct SemverCheckArgs {
     strict: bool,
 }
 
+#[derive(Args, Clone, Copy)]
+pub(crate) struct ReleaseManifestArgs {
+    /// Refuse to write a manifest from a dirty worktree.
+    #[arg(long)]
+    strict: bool,
+    /// Record dirty-worktree state in the local manifest.
+    #[arg(long)]
+    allow_dirty: bool,
+}
+
 #[derive(Args, Clone, Debug)]
 pub(crate) struct DevcontainerExecArgs {
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -296,12 +307,13 @@ fn main() -> Result<()> {
         XtaskCommand::DiskAudit => commands::disk_audit(),
         XtaskCommand::CleanGenerated(args) => commands::clean_generated(args),
         XtaskCommand::PackageLeakScan(args) => commands::package_leak_scan(args),
+        XtaskCommand::CheckVersionPins => commands::check_version_pins(),
         XtaskCommand::EvidenceAudit => commands::integrity("evidence-audit", []),
         XtaskCommand::AgentDoctor => commands::integrity("agent-doctor", []),
         XtaskCommand::Check => {
             util::cargo(["check", "--all-features"])?;
             util::cargo(["check", "--no-default-features"])?;
-            for package in FAMILY_CRATES {
+            for package in publish::FAMILY_CRATES {
                 util::cargo(["check", "-p", package, "--all-features"])?;
                 util::cargo(["check", "-p", package, "--no-default-features"])?;
             }
@@ -310,7 +322,7 @@ fn main() -> Result<()> {
         XtaskCommand::Test => {
             commands::run_nextest_ci(["--all-features"])?;
             util::cargo(["test", "--doc", "--all-features"])?;
-            for package in FAMILY_CRATES {
+            for package in publish::FAMILY_CRATES {
                 util::cargo(["test", "-p", package, "--all-features"])?;
             }
             Ok(())
@@ -324,7 +336,7 @@ fn main() -> Result<()> {
                 "-D",
                 "warnings",
             ])?;
-            for package in FAMILY_CRATES {
+            for package in publish::FAMILY_CRATES {
                 util::cargo([
                     "clippy",
                     "-p",
@@ -352,7 +364,7 @@ fn main() -> Result<()> {
         XtaskCommand::StagedDiff => commands::staged_diff(),
         XtaskCommand::PublicApi(args) => public_api::public_api(args),
         XtaskCommand::SemverCheck(args) => public_api::semver_check(args),
-        XtaskCommand::ReleaseManifest => commands::release_manifest(),
+        XtaskCommand::ReleaseManifest(args) => commands::release_manifest(args),
         XtaskCommand::Scaffold(args) => commands::scaffold(args),
         XtaskCommand::Platform(args) => commands::platform(args),
         XtaskCommand::Fuzz(args) => commands::fuzz(args),
@@ -383,7 +395,7 @@ fn main() -> Result<()> {
             ])?;
             bench::bench(BenchArgs {
                 surface: BenchSurface::Neutral,
-                save: false,
+                save: None,
                 compare: false,
                 compile: false,
             })

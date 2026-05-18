@@ -10,11 +10,13 @@ use batpak::encoding;
 use batpak::store::backup_envelope::{
     audit_backup_manifest_segments, backup_manifest_body_bytes, backup_manifest_body_hash,
     backup_manifest_envelope_body_hash, backup_manifest_envelope_hash,
-    normalize_backup_manifest_body, normalize_backup_manifest_envelope, restore_proof_report_body,
-    restore_proof_report_body_hash, sort_backup_segment_refs, verify_backup_manifest_envelope,
+    normalize_backup_manifest_body, normalize_backup_manifest_envelope,
+    restore_proof_evidence_report, restore_proof_report_body, restore_proof_report_body_hash,
+    sort_backup_segment_refs, verify_backup_manifest_envelope,
     verify_backup_manifest_signatures_only, BackupEnvelopeFinding, BackupManifestBody,
-    BackupManifestEnvelope, BackupManifestVerification, BackupSegmentRef, RestoreProofReportBody,
-    SegmentBytesDigest, BACKUP_MANIFEST_BODY_SCHEMA_VERSION, RESTORE_PROOF_REPORT_SCHEMA_VERSION,
+    BackupManifestEnvelope, BackupManifestVerification, BackupSegmentRef,
+    RestoreProofEvidenceReport, RestoreProofHash, RestoreProofReportBody, SegmentBytesDigest,
+    BACKUP_MANIFEST_BODY_SCHEMA_VERSION, RESTORE_PROOF_REPORT_SCHEMA_VERSION,
 };
 use std::io::Write;
 
@@ -100,6 +102,12 @@ fn backup_sort_backup_segment_refs_and_restore_proof_stable() {
     assert_eq!(r1.findings, r2.findings);
     assert_eq!(r1.manifest_body_hash, r2.manifest_body_hash);
     let g1 = restore_proof_report_body_hash(&r1).expect("rh1");
+    let envelope = RestoreProofEvidenceReport::from_body(r1.clone()).expect("restore envelope");
+    let _: RestoreProofHash = envelope.body_hash;
+    assert_eq!(envelope.body_hash, g1);
+    let built_envelope =
+        restore_proof_evidence_report(&manifest, observed.clone()).expect("built envelope");
+    assert_eq!(built_envelope.body_hash, g1);
     let mut findings = r1.findings.clone();
     findings.reverse();
     let r_perm = RestoreProofReportBody {

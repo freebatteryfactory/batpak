@@ -8,7 +8,11 @@ pub(crate) fn bench(args: BenchArgs) -> Result<()> {
         return bench_compile(args.surface);
     }
 
-    let baseline = baseline_name(os_slug(), args.surface);
+    let baseline = args
+        .save
+        .as_deref()
+        .map(|label| explicit_baseline_name(os_slug(), args.surface, label))
+        .unwrap_or_else(|| baseline_name(os_slug(), args.surface));
     let benches = bench_targets(args.surface);
     let mut command = Command::new("cargo");
     command.arg("bench");
@@ -20,8 +24,8 @@ pub(crate) fn bench(args: BenchArgs) -> Result<()> {
     }
 
     match (args.save, args.compare) {
-        (true, true) => bail!("--save and --compare are mutually exclusive"),
-        (true, false) => {
+        (Some(_), true) => bail!("--save and --compare are mutually exclusive"),
+        (Some(_), false) => {
             println!(
                 "Running {} benchmarks and saving baseline {}...",
                 surface_name(args.surface),
@@ -29,7 +33,7 @@ pub(crate) fn bench(args: BenchArgs) -> Result<()> {
             );
             command.arg("--").arg("--save-baseline").arg(baseline);
         }
-        (false, true) => {
+        (None, true) => {
             if !baseline_exists(&baseline)? {
                 bail!(
                     "baseline {} does not exist yet. Run `cargo xtask bench --surface {} --save` first.",
@@ -44,7 +48,7 @@ pub(crate) fn bench(args: BenchArgs) -> Result<()> {
             );
             command.arg("--").arg("--baseline").arg(baseline);
         }
-        (false, false) => {
+        (None, false) => {
             println!("Running {} benchmarks...", surface_name(args.surface));
             println!("Baseline name: {}", baseline);
         }
@@ -131,6 +135,10 @@ fn baseline_name(os: &str, surface: BenchSurface) -> String {
     format!("{os}-{}-v3", surface_name(surface))
 }
 
+fn explicit_baseline_name(os: &str, surface: BenchSurface, label: &str) -> String {
+    format!("{os}-{}-{label}", surface_name(surface))
+}
+
 fn baseline_exists(baseline: &str) -> Result<bool> {
     let target_dir = cargo_target_dir()?.join("criterion");
     if !target_dir.exists() {
@@ -167,7 +175,7 @@ fn walk_dir(root: &std::path::Path) -> Result<Vec<std::fs::DirEntry>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{baseline_name, bench_compile_args, bench_targets};
+    use super::{baseline_name, bench_compile_args, bench_targets, explicit_baseline_name};
     use crate::BenchSurface;
     use std::path::Path;
 
@@ -222,6 +230,14 @@ mod tests {
         assert_eq!(
             baseline_name("windows", BenchSurface::Native),
             "windows-native-v3"
+        );
+    }
+
+    #[test]
+    fn explicit_baseline_name_uses_supplied_label() {
+        assert_eq!(
+            explicit_baseline_name("linux", BenchSurface::Neutral, "baseline-v0.7.6"),
+            "linux-neutral-baseline-v0.7.6"
         );
     }
 
