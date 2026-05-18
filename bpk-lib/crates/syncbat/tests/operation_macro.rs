@@ -1,3 +1,6 @@
+//! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
+//! CATCHES: macro-generated descriptor/register item drift before runtime registration.
+//! SEEDED: fixed operation macro declarations.
 #![allow(clippy::panic)]
 
 use syncbat::{Core, HandlerError, RuntimeError};

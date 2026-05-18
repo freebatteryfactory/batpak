@@ -1,3 +1,7 @@
+//! PROVES: INV-SYNCBAT-DISPATCH-RECEIPTS
+//! CATCHES: invalid syncbat receipt-extension namespaces and extension value plumbing drift.
+//! SEEDED: fixed extension field/value examples.
+
 use batpak::store::{AppendOptions, ExtensionKey};
 use syncbat::{receipt_extension_key, receipt_extension_value, SYNCBAT_EXTENSION_NAMESPACE};
 

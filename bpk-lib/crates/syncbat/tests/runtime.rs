@@ -1,3 +1,6 @@
+//! PROVES: INV-SYNCBAT-DISPATCH-RECEIPTS
+//! CATCHES: duplicate/missing runtime receipts, unknown-operation receipt forgery, and receipt-sink fail-open regressions.
+//! SEEDED: deterministic in-memory handlers and receipt sinks.
 #![allow(clippy::panic)]
 
 use std::cell::RefCell;

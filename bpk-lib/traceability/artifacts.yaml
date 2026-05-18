@@ -41,6 +41,8 @@
   kind: public-api
   paths:
     - traceability/public_api/batpak.txt
+    - traceability/public_api/syncbat.txt
+    - traceability/public_api/netbat.txt
     - tools/xtask/src/public_api.rs
 - id: ART-DEAD-CODE-SILENCER-ALLOWLIST
   kind: registry
@@ -73,6 +75,51 @@
   kind: manifest
   paths:
     - Cargo.toml
+- id: ART-SYNCBAT-SOURCE
+  kind: source
+  paths:
+    - crates/syncbat/src/lib.rs
+    - crates/syncbat/src/builder.rs
+    - crates/syncbat/src/core.rs
+    - crates/syncbat/src/error.rs
+    - crates/syncbat/src/handler.rs
+    - crates/syncbat/src/module.rs
+    - crates/syncbat/src/operation.rs
+    - crates/syncbat/src/receipt.rs
+    - crates/syncbat/src/register.rs
+    - crates/syncbat/src/register_store.rs
+    - crates/syncbat/src/store_sink.rs
+- id: ART-SYNCBAT-TESTS
+  kind: tests
+  paths:
+    - crates/syncbat/tests/descriptor_validation.rs
+    - crates/syncbat/tests/operation_macro.rs
+    - crates/syncbat/tests/operation_macro_errors.rs
+    - crates/syncbat/tests/receipt_namespace.rs
+    - crates/syncbat/tests/register_properties.rs
+    - crates/syncbat/tests/register_store_catalog.rs
+    - crates/syncbat/tests/runtime.rs
+    - crates/syncbat/tests/store_sink.rs
+- id: ART-NETBAT-SOURCE
+  kind: source
+  paths:
+    - crates/netbat/src/lib.rs
+    - crates/netbat/src/route.rs
+    - crates/netbat/src/transport.rs
+- id: ART-NETBAT-TESTS
+  kind: tests
+  paths:
+    - crates/netbat/tests/boundary.rs
+    - crates/netbat/tests/route_validation.rs
+    - crates/netbat/tests/tcp_transport.rs
+- id: ART-ADR-SYNCBAT-CONTRACT
+  kind: adr
+  paths:
+    - 100_ADR_0028_SYNCBAT_RUNTIME_CONTRACT.md
+- id: ART-ADR-NETBAT-CONTRACT
+  kind: adr
+  paths:
+    - 100_ADR_0029_NETBAT_BOUNDARY_CONTRACT.md
 - id: ART-RELEASE-HISTORY
   kind: release-history
   paths:

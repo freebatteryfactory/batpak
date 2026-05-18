@@ -66,3 +66,6 @@ which terminal state a name entered is rejected during rebuild.
 Macros may declare descriptors and register items, but callers still assemble a
 runtime explicitly. Runtime dispatch emits receipts only through the configured
 sink. Batpak records the durable facts.
+
+The normative runtime contract is ADR-0028. The public API is locked by
+`bpk-lib/traceability/public_api/syncbat.txt`.

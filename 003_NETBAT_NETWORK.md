@@ -55,3 +55,6 @@ Helpers:
 Use netbat to expose already-assembled syncbat runtimes at process or network
 boundaries. Netbat validates and frames requests, then calls syncbat. Syncbat
 dispatches. Batpak records.
+
+The normative boundary contract is ADR-0029. The public API is locked by
+`bpk-lib/traceability/public_api/netbat.txt`.

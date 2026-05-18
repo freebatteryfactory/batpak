@@ -1,3 +1,6 @@
+//! PROVES: INV-NETBAT-LINE-PROTOCOL-STABLE, INV-NETBAT-BOUNDARY-THIN
+//! CATCHES: TCP listener response-shape drift, limit accounting regressions, and shutdown-loop ownership bugs.
+//! SEEDED: localhost listeners with fixed request frames.
 #![allow(clippy::panic)]
 
 use netbat as nb;

@@ -49,3 +49,5 @@ Root layer docs:
 | ADR-0025 | Read Walk Evidence Report v1 | Accepted |
 | ADR-0026 | Pre-1.0 Public Surface Strategy | Accepted; correction strategy for 0.7.6 |
 | ADR-0027 | Snapshot Evidence Report v1 | Accepted |
+| ADR-0028 | Syncbat Runtime Contract | Accepted; 0.7.6 correction cut |
+| ADR-0029 | Netbat Boundary Contract | Accepted; 0.7.6 correction cut |

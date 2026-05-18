@@ -1,3 +1,6 @@
+//! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
+//! CATCHES: malformed catalog rows, invalid lifecycle transitions, tombstone reuse, and nondeterministic rebuilds.
+//! SEEDED: tempfile-backed batpak stores with fixed operation descriptors.
 #![allow(clippy::panic)]
 
 use std::sync::Arc;

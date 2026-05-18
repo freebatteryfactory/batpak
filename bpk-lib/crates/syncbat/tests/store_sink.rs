@@ -1,3 +1,6 @@
+//! PROVES: INV-SYNCBAT-DISPATCH-RECEIPTS
+//! CATCHES: receipt-envelope persistence drift between syncbat receipts and batpak append receipts.
+//! SEEDED: tempfile-backed batpak stores and fixed operation descriptors.
 #![allow(clippy::panic)]
 
 use std::sync::Arc;

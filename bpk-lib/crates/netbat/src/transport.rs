@@ -10,7 +10,7 @@ use std::time::Duration;
 /// Default maximum request line size accepted by the line transport.
 pub const DEFAULT_MAX_LINE_BYTES: usize = 64 * 1024;
 /// Default maximum operation name size accepted by the line transport.
-pub const DEFAULT_MAX_OPERATION_NAME_BYTES: usize = 256;
+pub const DEFAULT_MAX_OPERATION_NAME_BYTES: usize = syncbat::MAX_OPERATION_NAME_BYTES;
 /// Default maximum decoded input size accepted by the line transport.
 pub const DEFAULT_MAX_INPUT_BYTES: usize = 32 * 1024;
 /// Default maximum handler output size encoded into a response frame.
@@ -649,12 +649,22 @@ fn validate_operation_name(operation: &[u8], limits: &Limits) -> Result<(), Netb
             max: limits.max_operation_name_bytes,
         });
     }
-    if operation
-        .iter()
-        .any(|byte| !byte.is_ascii_graphic() || byte.is_ascii_whitespace())
-    {
+    if operation.iter().any(|byte| {
+        !matches!(
+            byte,
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'.' | b'_' | b'-'
+        )
+    }) {
         return Err(NetbatError::MalformedRequest {
             reason: "operation has invalid bytes",
+        });
+    }
+    if operation.starts_with(b".")
+        || operation.ends_with(b".")
+        || operation.windows(2).any(|w| w == b"..")
+    {
+        return Err(NetbatError::MalformedRequest {
+            reason: "operation dot segments must be non-empty",
         });
     }
     Ok(())
