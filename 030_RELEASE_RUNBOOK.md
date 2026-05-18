@@ -12,19 +12,18 @@ manual publish/tag/release steps from a clean `main`.
    a patch release because there is no downstream adoption baseline yet and
    the work is correcting accidental surface before asking users to depend on
    it.
-3. Keep internal dependency cross-references in sync. After editing, search
-   for the previous version across manifests; this should be clean except for
-   historical changelog entries:
+3. Keep internal dependency cross-references in sync. After editing, run the
+   workspace-owned pin check:
 
    ```bash
-   rg '<escaped-previous-version>' --glob Cargo.toml
+   cargo xtask check-version-pins
    ```
 
-4. Make every crate needed by the root crate publishable. The required publish
-   chain for `batpak` itself is `batpak-macros-support`, `batpak-macros`,
-   then `batpak`. `batpak-bench-support` is a publishable companion crate used
-   as a root dev-dependency; publish it for version alignment, but the root
-   crate does not need it indexed before `batpak` can publish.
+4. Make every crate in the release chain publishable. For the 0.7.6 correction
+   cut the publishable substrate family is `batpak`, `syncbat`, and `netbat`;
+   `syncbat-macros`, `batpak-macros-support`, `batpak-macros`, and
+   `batpak-bench-support` are published in the chain because those crates are
+   required by the family manifests.
 5. Give each publishable internal crate crates.io metadata and a small
    crate-local `README.md`.
 6. Finalize `CHANGELOG.md`: add the dated release section and restore an empty
@@ -46,9 +45,9 @@ manual publish/tag/release steps from a clean `main`.
    ```
 
    The xtask dry-run runs the repo-owned CI surface, downstream consumer smoke,
-   docs, and a patched `cargo publish --dry-run` for the root crate. The patch
-   overrides are a dry-run aid only; the real publish still needs dependency
-   crates indexed on crates.io.
+   docs, and patched `cargo publish --dry-run` checks for the release chain.
+   Patch overrides cannot detect internal dependency version drift; the
+   release-prep PR owns that through `cargo xtask check-version-pins`.
 
 9. Before publish, explicitly smoke the cross-crate payload registry fixture in
    both debug and release modes so `inventory` registration survives optimized
@@ -66,7 +65,10 @@ manual publish/tag/release steps from a clean `main`.
    cargo package --list -p batpak-macros-support
    cargo package --list -p batpak-macros
    cargo package --list -p batpak-bench-support
+   cargo package --list -p syncbat-macros
    cargo package --list -p batpak
+   cargo package --list -p syncbat
+   cargo package --list -p netbat
    ```
 
    Look for missing READMEs, accidental large fixtures, broken symlinks, and
@@ -82,6 +84,25 @@ manual publish/tag/release steps from a clean `main`.
 
    Refresh goldens only as a deliberate compatibility decision paired with
    ADR-0019 and `CHANGELOG.md` notes.
+
+## Pre-Release-Prep Gate Order
+
+Run this order once from the release-prep branch before asking for release
+review:
+
+```bash
+cargo xtask preflight
+cargo xtask evidence-audit
+cargo xtask check-version-pins
+cargo xtask package-leak-scan --strict-language
+cargo xtask perf-gates
+cargo xtask loom
+cargo xtask mutants smoke
+cargo xtask public-api --strict --check-baseline
+cargo xtask semver-check
+cargo xtask release-manifest --strict
+cargo xtask release --dry-run
+```
 
 ## Benchmark Baseline
 
@@ -105,19 +126,26 @@ green. Do not tag until crates.io publishes succeed.
 ```bash
 git status
 
-# Required dependency chain for the root crate.
 cargo publish -p batpak-macros-support
 cargo search batpak-macros-support
 
 cargo publish -p batpak-macros
 cargo search batpak-macros
 
+cargo publish -p batpak-bench-support
+cargo search batpak-bench-support
+
+cargo publish -p syncbat-macros
+cargo search syncbat-macros
+
 cargo publish -p batpak
 cargo search batpak
 
-# Companion crate: version-aligned, but not required for root crate resolution.
-cargo publish -p batpak-bench-support
-cargo search batpak-bench-support
+cargo publish -p syncbat
+cargo search syncbat
+
+cargo publish -p netbat
+cargo search netbat
 ```
 
 Wait for each crate in the required chain to appear in `cargo search` before
@@ -127,6 +155,19 @@ dependency version.
 
 If a published version is wrong, yank it and publish a patch release. Crates.io
 does not allow replacing the bytes for an existing version.
+
+## Rollback / Hotfix
+
+- Yank-only: yank in reverse publish order: `netbat`, `syncbat`, `batpak`,
+  `syncbat-macros`, `batpak-bench-support`, `batpak-macros`,
+  `batpak-macros-support`.
+- Yank-and-patch: yank the incorrect version, prepare the next patch release,
+  run the full Pre-Release-Prep Gate Order, then publish the chain.
+- Tag correction: replace an unpublished local tag with `git tag -fa`. If any
+  consumer may have pulled the tag, publish release notes that name the
+  corrected tag and leave the original object reachable.
+- docs.rs failure: rebuild docs locally first. Yank only when package bytes are
+  wrong; otherwise publish a patch release with the documentation fix.
 
 ## Deployment Pattern
 

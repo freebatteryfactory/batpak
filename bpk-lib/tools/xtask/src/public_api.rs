@@ -126,41 +126,51 @@ pub(crate) fn semver_check(args: SemverCheckArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut command = Command::new("cargo");
-    command
-        .current_dir(&root)
-        .env("CARGO_TARGET_DIR", cargo_target_dir()?)
-        .args([
-            "semver-checks",
-            "--manifest-path",
-            "crates/core/Cargo.toml",
-            "--package",
-            "batpak",
-            "--features",
-            "blake3",
-        ]);
-
-    let output = match run_output(command) {
-        Ok(output) => output,
-        Err(error) if !args.strict => {
-            let report = target_dir.join("semver-checks.txt");
-            fs::write(&report, format!("{error:#}\n")).context("write semver advisory error")?;
-            eprintln!(
-                "semver-check: advisory run reported incompatibility or failed; see {}",
-                report.display()
-            );
-            return Ok(());
+    let mut combined_stdout = String::new();
+    let mut combined_stderr = String::new();
+    for package in PUBLIC_API_PACKAGES {
+        let manifest_path = format!("crates/{}/Cargo.toml", crate_dir(package.package));
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(&root)
+            .env("CARGO_TARGET_DIR", cargo_target_dir()?)
+            .args([
+                "semver-checks",
+                "--manifest-path",
+                manifest_path.as_str(),
+                "--package",
+                package.package,
+            ]);
+        if !package.features.is_empty() {
+            command.arg("--features").arg(package.features.join(","));
         }
-        Err(error) => return Err(error),
-    };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    fs::write(target_dir.join("semver-checks.txt"), stdout.as_bytes())
-        .context("write target/semver-public-api/semver-checks.txt")?;
+        match run_output(command) {
+            Ok(output) => {
+                combined_stdout.push_str(&format!("## {}\n", package.package));
+                combined_stdout.push_str(&String::from_utf8_lossy(&output.stdout));
+                combined_stderr.push_str(&format!("## {}\n", package.package));
+                combined_stderr.push_str(&String::from_utf8_lossy(&output.stderr));
+            }
+            Err(error) if !args.strict => {
+                combined_stdout.push_str(&format!("## {}\n{error:#}\n", package.package));
+                eprintln!(
+                    "semver-check: advisory run reported incompatibility or failed for {}",
+                    package.package
+                );
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    fs::write(
+        target_dir.join("semver-checks.txt"),
+        combined_stdout.as_bytes(),
+    )
+    .context("write target/semver-public-api/semver-checks.txt")?;
     fs::write(
         target_dir.join("semver-checks.stderr.txt"),
-        stderr.as_bytes(),
+        combined_stderr.as_bytes(),
     )
     .context("write target/semver-public-api/semver-checks.stderr.txt")?;
     println!(
@@ -168,6 +178,13 @@ pub(crate) fn semver_check(args: SemverCheckArgs) -> Result<()> {
         target_dir.join("semver-checks.txt").display()
     );
     Ok(())
+}
+
+fn crate_dir(package: &str) -> &str {
+    match package {
+        "batpak" => "core",
+        other => other,
+    }
 }
 
 fn cargo_public_api_is_available() -> bool {
@@ -188,4 +205,19 @@ fn cargo_semver_checks_is_available() -> bool {
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PUBLIC_API_PACKAGES;
+    use crate::publish::PUBLISH_CRATES;
+
+    #[test]
+    fn public_api_packages_match_publish_crates() {
+        let public = PUBLIC_API_PACKAGES
+            .iter()
+            .map(|package| package.package)
+            .collect::<Vec<_>>();
+        assert_eq!(public, PUBLISH_CRATES);
+    }
 }

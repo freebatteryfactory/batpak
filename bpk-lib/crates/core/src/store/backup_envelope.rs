@@ -24,6 +24,9 @@ pub const RESTORE_PROOF_REPORT_SCHEMA_VERSION: u32 = 1;
 /// Content digest for a segment file byte span (store-native width).
 pub type SegmentBytesDigest = [u8; 32];
 
+/// Hash alias for restore proof evidence report bodies.
+pub type RestoreProofHash = SegmentBytesDigest;
+
 /// One sealed segment identity in a backup manifest (`segment_id` matches store segment numbering).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct BackupSegmentRef {
@@ -188,6 +191,26 @@ pub struct RestoreProofReportBody {
     pub observed_segments_sorted: Vec<BackupSegmentRef>,
     /// Findings (sorted before [`restore_proof_report_body_hash`]).
     pub findings: Vec<BackupEnvelopeFinding>,
+}
+
+/// Evidence envelope for a deterministic restore proof body.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestoreProofEvidenceReport {
+    /// Deterministic restore proof body.
+    pub body: RestoreProofReportBody,
+    /// Canonical hash of [`RestoreProofEvidenceReport::body`].
+    pub body_hash: RestoreProofHash,
+}
+
+impl RestoreProofEvidenceReport {
+    /// Build a restore proof evidence report from an already assembled body.
+    ///
+    /// # Errors
+    /// MessagePack encoding failure while computing `body_hash`.
+    pub fn from_body(body: RestoreProofReportBody) -> Result<Self, rmp_serde::encode::Error> {
+        let body_hash = restore_proof_report_body_hash(&body)?;
+        Ok(Self { body, body_hash })
+    }
 }
 
 /// Sort segment refs in place (ascending `segment_id`, then `bytes_digest` lexicographic).
@@ -431,4 +454,18 @@ pub fn restore_proof_report_body_hash(
     };
     let bytes = crate::encoding::to_bytes(&normalized)?;
     Ok(content_hash(&bytes))
+}
+
+/// Build a restore proof evidence envelope from a manifest and observed segment
+/// bytes.
+///
+/// # Errors
+/// MessagePack encode failure while computing the restore proof body or body
+/// hash.
+pub fn restore_proof_evidence_report(
+    expected_manifest: &BackupManifestBody,
+    observed_segments: Vec<BackupSegmentRef>,
+) -> Result<RestoreProofEvidenceReport, rmp_serde::encode::Error> {
+    let body = restore_proof_report_body(expected_manifest, &observed_segments)?;
+    RestoreProofEvidenceReport::from_body(body)
 }

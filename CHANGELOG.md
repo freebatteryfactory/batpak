@@ -17,6 +17,13 @@ All notable changes to this project will be documented in this file.
 - Added ADR-0009 historical fixture stores for checkpoint v5 and mmap v4,
   generated from the last local commit that wrote those artifact versions and
   reopened through current `Store::open` tests.
+- Added `cargo xtask check-version-pins` to fail closed when workspace
+  path-dependency version pins drift from the package versions they reference.
+- Added `cargo xtask release-manifest --strict|--allow-dirty` metadata for the
+  local release proof bundle.
+- Added `CompactionEvidenceReport` and `RestoreProofEvidenceReport` envelopes
+  so compaction decisions and restore proofs carry the same body-plus-hash
+  evidence shape as the rest of the report family.
 
 ### Changed
 - Pinned the canonical MessagePack encoder to the exact `rmp-serde` version
@@ -95,6 +102,9 @@ All notable changes to this project will be documented in this file.
   after failed handler execution preserve the handler's stable class and
   message, so callers can distinguish completed-receipt sink failure from
   failed-receipt sink failure without parsing text.
+- `syncbat`, `netbat`, and `syncbat-macros` are publishable crates for the
+  0.7.6 correction cut. The publishable substrate family is `batpak`,
+  `syncbat`, and `netbat`.
 
 ### Removed
 - Removed the transitional `BackupEnvelope` alias; use

@@ -588,7 +588,11 @@ fn fold_catalog_entries<State>(
         .with_fact(KindFilter::Exact(SYNCBAT_REGISTER_EVENT_KIND));
     let mut hits = store.query(&region);
     hits.retain(|hit| hit.coord() == coordinate);
-    hits.sort_by_key(|hit| hit.global_sequence());
+    hits.sort_by(|left, right| {
+        left.global_sequence()
+            .cmp(&right.global_sequence())
+            .then_with(|| left.event_id().cmp(&right.event_id()))
+    });
 
     let mut entries = BTreeMap::<String, CatalogEntryState>::new();
     for hit in hits {

@@ -65,8 +65,9 @@ pub use chain_walk::{
     ChainWalkReportError, ChainWalkRequest, ChainWalkStartRef, CHAIN_WALK_REPORT_SCHEMA_VERSION,
 };
 pub use compaction_report::{
-    compaction_strategy_shape, report_for_run, report_skipped, CompactionReportBody,
-    CompactionReportFinding, CompactionStrategyShape, COMPACTION_REPORT_SCHEMA_VERSION,
+    compaction_strategy_shape, report_for_run, report_skipped, CompactionEvidenceHash,
+    CompactionEvidenceReport, CompactionReportBody, CompactionReportFinding,
+    CompactionStrategyShape, COMPACTION_REPORT_SCHEMA_VERSION,
 };
 pub use config::{
     BatchConfig, IndexConfig, IndexTopology, OpenReportObserver, StoreConfig, SyncConfig, SyncMode,

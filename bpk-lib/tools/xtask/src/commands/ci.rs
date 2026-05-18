@@ -1,12 +1,12 @@
 use super::{deny_split, integrity, templates};
 use crate::bench;
+use crate::publish::FAMILY_CRATES;
 use crate::util::{cargo, cargo_target_dir_arg};
-use crate::BenchSurface;
+use crate::{BenchSurface, PackageLeakScanArgs, PublicApiArgs};
 use anyhow::Result;
 
-const FAMILY_CRATES: &[&str] = &["syncbat", "netbat"];
-
 pub(crate) fn ci() -> Result<()> {
+    super::check_version_pins()?;
     integrity("doctor", ["--strict"])?;
     integrity("traceability-check", [])?;
     integrity("structural-check", [])?;
@@ -45,6 +45,15 @@ pub(crate) fn ci() -> Result<()> {
         cargo(["check", "-p", package, "--no-default-features"])?;
     }
     templates()?;
+    crate::public_api::public_api(PublicApiArgs {
+        strict: true,
+        check_baseline: true,
+        bless_baseline: false,
+    })?;
+    super::package_leak_scan(PackageLeakScanArgs {
+        allow_dirty: false,
+        strict_language: true,
+    })?;
     bench::bench_compile(BenchSurface::Neutral)?;
     bench::bench_compile(BenchSurface::Native)?;
     integrity("structural-check", [])

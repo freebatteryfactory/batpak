@@ -23,6 +23,8 @@ This follows `100_ADR_0019_CANONICAL_ENCODING_CONTRACT.md`.
 - `ReadWalkEvidenceReport` (`bpk-lib/crates/core/src/store/read_walk.rs`)
 - `StoreResourceEvidenceReport` / `StoreResourceEnvelope` (`bpk-lib/crates/core/src/store/store_resource_report.rs`)
 - `SnapshotEvidenceReport` (`bpk-lib/crates/core/src/store/snapshot_report.rs`)
+- `CompactionEvidenceReport` (`bpk-lib/crates/core/src/store/compaction_report.rs`)
+- `RestoreProofEvidenceReport` (`bpk-lib/crates/core/src/store/backup_envelope.rs`)
 
 ## v1 Family Seal
 
@@ -37,6 +39,8 @@ surface:
 - read walk evidence (`ADR-0025`)
 - store resource evidence (diagnostics snapshot envelope; schema v1 in-tree)
 - snapshot evidence (`ADR-0027`)
+- compaction decision evidence (schema v1 in-tree)
+- restore proof evidence (schema v1 in-tree)
 
 This family is intentionally bounded. New report types require concrete
 substrate pressure that cannot be satisfied by existing report bodies.
@@ -104,7 +108,12 @@ substrate pressure that cannot be satisfied by existing report bodies.
   private visibility fence token, source segment watermark, copied segment ids,
   copied optional sidecar presence, destination path digest, and structural
   findings. v1 records structural file identity only; per-file byte hash tables
-  remain out of scope.
+  require their own schema.
+- `CompactionEvidenceReport`: deterministic compaction decision observation over
+  strategy shape, source segment ids, merged segment identity when present,
+  outcome, reclaimed bytes, and structural findings.
+- `RestoreProofEvidenceReport`: deterministic restore observation over a
+  manifest body hash, observed segment byte digests, and structural findings.
 
 ## Forensic Query Composition
 
@@ -121,13 +130,13 @@ aliases and lower-level helper states stay in their owning modules unless
 consumers need them to pattern-match report bodies without reaching through
 private internals.
 
-## Non-goals
+## Boundary
 
 - No policy engine.
 - No downstream application vocabulary.
 - No implied exactness where internals only support coarse or unknown precision.
 
-## Owned Outside This Family
+## Separate Owners
 
 - Additional canonical artifact workflows beyond the generic envelope already in
   `bpk-lib/crates/core/src/artifact.rs`.

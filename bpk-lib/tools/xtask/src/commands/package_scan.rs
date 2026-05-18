@@ -1,3 +1,4 @@
+use crate::publish::PUBLISH_CRATES;
 use crate::util::{cargo_target_dir, repo_root, run, run_output};
 use crate::PackageLeakScanArgs;
 use anyhow::{bail, Context, Result};
@@ -5,14 +6,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const PACKAGE: &str = "batpak";
-
 pub(crate) fn package_leak_scan(args: PackageLeakScanArgs) -> Result<()> {
     let root = repo_root()?;
-    package(&root, args.allow_dirty)?;
-    let archive = latest_packaged_crate(&cargo_target_dir()?.join("package"), PACKAGE)?;
-    let entries = package_entries(&archive)?;
-    let findings = scan_archive(&archive, &entries)?;
+    let mut total_entries = 0_usize;
+    let mut scanned_archives = Vec::new();
+    let mut findings = Vec::new();
+    for package_name in PUBLISH_CRATES {
+        package(&root, package_name, args.allow_dirty)?;
+        let archive = latest_packaged_crate(&cargo_target_dir()?.join("package"), package_name)?;
+        let entries = package_entries(&archive)?;
+        total_entries += entries.len();
+        findings.extend(scan_archive(&archive, &entries)?);
+        scanned_archives.push(archive);
+    }
+    findings.sort();
+    findings.dedup();
 
     let hard: Vec<_> = findings
         .iter()
@@ -45,18 +53,18 @@ pub(crate) fn package_leak_scan(args: PackageLeakScanArgs) -> Result<()> {
     }
 
     println!(
-        "package-leak-scan: ok; scanned {} file(s) in {}",
-        entries.len(),
-        archive.display()
+        "package-leak-scan: ok; scanned {} file(s) across {} crate archive(s)",
+        total_entries,
+        scanned_archives.len()
     );
     Ok(())
 }
 
-fn package(root: &Path, allow_dirty: bool) -> Result<()> {
+fn package(root: &Path, package_name: &str, allow_dirty: bool) -> Result<()> {
     let mut command = Command::new("cargo");
     command
         .current_dir(root)
-        .args(["package", "-p", PACKAGE, "--locked", "--no-verify"]);
+        .args(["package", "-p", package_name, "--locked", "--no-verify"]);
     if allow_dirty {
         command.arg("--allow-dirty");
     }

@@ -11,6 +11,7 @@ mod setup;
 mod staged;
 mod stress;
 mod templates;
+mod version_pins;
 
 use crate::util::cargo;
 use crate::CleanGeneratedArgs;
@@ -69,12 +70,16 @@ pub(crate) fn package_leak_scan(args: PackageLeakScanArgs) -> Result<()> {
     package_scan::package_leak_scan(args)
 }
 
+pub(crate) fn check_version_pins() -> Result<()> {
+    version_pins::check_version_pins()
+}
+
 pub(crate) fn staged_diff() -> Result<()> {
     staged::staged_diff()
 }
 
-pub(crate) fn release_manifest() -> Result<()> {
-    release_manifest::release_manifest()
+pub(crate) fn release_manifest(args: crate::ReleaseManifestArgs) -> Result<()> {
+    release_manifest::release_manifest(args)
 }
 
 pub(crate) fn deny_split() -> Result<()> {

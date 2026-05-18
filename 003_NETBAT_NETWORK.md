@@ -29,6 +29,9 @@ The first-rung legacy `CALL <operation-name> <hex-input>` frame remains accepted
 Unsupported `NETBAT/*` versions return a stable error response. Listener stats
 separate malformed frames, limit failures, and runtime failures.
 
+Encoders write lowercase ASCII hex. Decoders accept lowercase and uppercase
+ASCII hex.
+
 ## Main Types
 
 - `Endpoint`

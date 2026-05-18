@@ -13,8 +13,9 @@ use batpak::store::index::IndexEntry;
 use batpak::store::segment::CompactionOutcome;
 use batpak::store::{
     compaction_strategy_shape, report_for_run, report_skipped, BatchAppendItem, Canal, CanalBatch,
-    CanalClosed, CanalHandle, CanalItem, CausationRef, CompactionReportBody,
-    CompactionReportFinding, CompactionStrategyShape, StoreError, COMPACTION_REPORT_SCHEMA_VERSION,
+    CanalClosed, CanalHandle, CanalItem, CausationRef, CompactionEvidenceHash,
+    CompactionEvidenceReport, CompactionReportBody, CompactionReportFinding,
+    CompactionStrategyShape, StoreError, COMPACTION_REPORT_SCHEMA_VERSION,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -36,6 +37,9 @@ fn compaction_report_helpers_cover_engine_paths() {
     ];
     let skipped = report_skipped(&cfg, 9, &sealed).expect("skipped");
     let _: CompactionReportBody = skipped.clone();
+    let envelope = CompactionEvidenceReport::from_body(skipped.clone()).expect("envelope");
+    let _: CompactionEvidenceHash = envelope.body_hash;
+    assert_eq!(envelope.body_hash, skipped.body_hash().expect("body hash"));
     let _: CompactionStrategyShape = skipped.strategy_shape;
     assert_eq!(
         skipped.strategy_shape,

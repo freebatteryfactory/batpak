@@ -11,6 +11,9 @@ use std::path::Path;
 /// Report body schema version for compaction evidence.
 pub const COMPACTION_REPORT_SCHEMA_VERSION: u16 = 1;
 
+/// Hash alias for compaction evidence report bodies.
+pub type CompactionEvidenceHash = [u8; 32];
+
 /// Strategy shape participating in compaction evidence (predicate bodies intentionally omitted).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CompactionStrategyShape {
@@ -110,6 +113,26 @@ impl CompactionReportBody {
         sort_findings(&mut body.findings);
         let bytes = crate::encoding::to_bytes(&body)?;
         Ok(content_hash(&bytes))
+    }
+}
+
+/// Evidence envelope for a single compaction decision.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionEvidenceReport {
+    /// Deterministic compaction report body.
+    pub body: CompactionReportBody,
+    /// Canonical hash of [`CompactionEvidenceReport::body`].
+    pub body_hash: CompactionEvidenceHash,
+}
+
+impl CompactionEvidenceReport {
+    /// Build a compaction evidence report from an already assembled body.
+    ///
+    /// # Errors
+    /// MessagePack encoding failure while computing `body_hash`.
+    pub fn from_body(body: CompactionReportBody) -> Result<Self, rmp_serde::encode::Error> {
+        let body_hash = body.body_hash()?;
+        Ok(Self { body, body_hash })
     }
 }
 

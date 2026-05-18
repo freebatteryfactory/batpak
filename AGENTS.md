@@ -69,7 +69,7 @@ Run canonical commands from `bpk-lib/`:
 - `cd bpk-lib && cargo xtask platform bless --store-path <dir> --profile <file>`
 - `cd bpk-lib && cargo xtask platform audit`
 - `cd bpk-lib && cargo xtask perf-gates`
-- `cd bpk-lib && cargo xtask bench --surface neutral|native [--save|--compare|--compile]`
+- `cd bpk-lib && cargo xtask bench --surface neutral|native [--save <baseline-label>|--compare|--compile]`
 - `cd bpk-lib && cargo xtask templates`
 - `cd bpk-lib && cargo xtask template-freshness` — focused template smoke plus generated-lock drift check
 - `cd bpk-lib && cargo xtask staged-diff` — inspect staged files for generated artifacts, retired paths, and conflict markers
