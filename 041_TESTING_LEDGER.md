@@ -7,6 +7,66 @@ Coverage is treated as a consequence of harness density, not as the target
 itself. Where a delta is not yet measured, the ledger says so explicitly
 instead of pretending.
 
+## Runtime And Boundary Harness
+
+### Invariant: syncbat checkout emits honest runtime receipts
+
+- Harness pattern: `Runtime And Boundary Harness`
+- Catalog invariants: `INV-SYNCBAT-DISPATCH-RECEIPTS`
+- Location:
+  - `bpk-lib/crates/syncbat/tests/runtime.rs`
+  - `bpk-lib/crates/syncbat/tests/store_sink.rs`
+  - `bpk-lib/crates/syncbat/tests/receipt_namespace.rs`
+- Command used:
+  - `cargo test -p syncbat --test runtime`
+  - `cargo test -p syncbat --test store_sink`
+  - `cargo test -p syncbat --test receipt_namespace`
+- Line/function coverage delta: unmeasured
+- Mutation delta: unmeasured
+- Remaining known blind spots:
+  - receipt hashing policy coverage is deterministic but not yet fuzzed across
+    arbitrary byte inputs.
+
+### Invariant: syncbat durable catalog rebuild is deterministic
+
+- Harness pattern: `Runtime And Boundary Harness`
+- Catalog invariants: `INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC`
+- Location:
+  - `bpk-lib/crates/syncbat/tests/register_store_catalog.rs`
+  - `bpk-lib/crates/syncbat/tests/register_properties.rs`
+  - `bpk-lib/crates/syncbat/tests/descriptor_validation.rs`
+  - `bpk-lib/crates/syncbat/tests/operation_macro.rs`
+  - `bpk-lib/crates/syncbat/tests/operation_macro_errors.rs`
+- Command used:
+  - `cargo test -p syncbat --test register_store_catalog`
+  - `cargo test -p syncbat --test register_properties`
+  - `cargo test -p syncbat --test descriptor_validation`
+  - `cargo test -p syncbat --test operation_macro`
+  - `cargo test -p syncbat --test operation_macro_errors`
+- Line/function coverage delta: unmeasured
+- Mutation delta: unmeasured
+- Remaining known blind spots:
+  - catalog row order is covered through store sequence order, but no separate
+    mutation score is recorded for lifecycle conflict branches yet.
+
+### Invariant: netbat line protocol stays stable and thin
+
+- Harness pattern: `Runtime And Boundary Harness`
+- Catalog invariants: `INV-NETBAT-LINE-PROTOCOL-STABLE`, `INV-NETBAT-BOUNDARY-THIN`
+- Location:
+  - `bpk-lib/crates/netbat/tests/boundary.rs`
+  - `bpk-lib/crates/netbat/tests/route_validation.rs`
+  - `bpk-lib/crates/netbat/tests/tcp_transport.rs`
+- Command used:
+  - `cargo test -p netbat --test boundary`
+  - `cargo test -p netbat --test route_validation`
+  - `cargo test -p netbat --test tcp_transport`
+- Line/function coverage delta: unmeasured
+- Mutation delta: unmeasured
+- Remaining known blind spots:
+  - NETBAT/1 is request/response only; streaming over Canal is intentionally a
+    future ADR rather than an implicit extension.
+
 ## Fault-Injection Harness
 
 ### Invariant: Invalid derive input fails structurally

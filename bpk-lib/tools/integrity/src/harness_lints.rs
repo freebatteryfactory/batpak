@@ -10,6 +10,7 @@ const VALID_PATTERNS: &[&str] = &[
     "Property Harness",
     "State-Machine Harness",
     "Oracle Harness",
+    "Runtime And Boundary Harness",
 ];
 
 const REQUIRED_FIELDS: &[&str] = &[

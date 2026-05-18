@@ -1,3 +1,6 @@
+//! PROVES: INV-NETBAT-LINE-PROTOCOL-STABLE, INV-NETBAT-BOUNDARY-THIN
+//! CATCHES: request/response grammar drift, limit bypasses, and runtime-boundary ownership leaks.
+//! SEEDED: in-memory streams and fixed syncbat handlers.
 #![allow(clippy::panic)]
 
 use netbat as nb;
@@ -249,9 +252,23 @@ fn dispatch_revalidates_public_request_frames() {
             Ok(_) => panic!("expected input limit failure"),
             Err(error) => error,
         };
+    let grammar_err = match nb::dispatch_frame(
+        &mut core,
+        nb::RequestFrame::new("bad/name", Vec::<u8>::new()),
+        &nb::Limits::default(),
+    ) {
+        Ok(_) => panic!("expected operation grammar failure"),
+        Err(error) => error,
+    };
 
     assert_eq!(name_err, nb::NetbatError::OperationNameTooLong { max: 3 });
     assert_eq!(input_err, nb::NetbatError::InputTooLarge { max: 1 });
+    assert_eq!(
+        grammar_err,
+        nb::NetbatError::MalformedRequest {
+            reason: "operation has invalid bytes"
+        }
+    );
 }
 
 #[test]
@@ -396,6 +413,10 @@ fn rejects_odd_hex_unsupported_verb_missing_fields_and_whitespace_operation() {
         Ok(_) => panic!("expected whitespace operation rejection"),
         Err(error) => error,
     };
+    let dot_segment = match nb::decode_line(b"CALL ping..name 00\n", &nb::Limits::default()) {
+        Ok(_) => panic!("expected dot-segment operation rejection"),
+        Err(error) => error,
+    };
 
     assert_eq!(
         odd,
@@ -419,6 +440,12 @@ fn rejects_odd_hex_unsupported_verb_missing_fields_and_whitespace_operation() {
         whitespace,
         nb::NetbatError::MalformedRequest {
             reason: "operation has invalid bytes"
+        }
+    );
+    assert_eq!(
+        dot_segment,
+        nb::NetbatError::MalformedRequest {
+            reason: "operation dot segments must be non-empty"
         }
     );
 }

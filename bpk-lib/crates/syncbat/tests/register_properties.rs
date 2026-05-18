@@ -1,3 +1,6 @@
+//! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
+//! CATCHES: duplicate operation names, lookup drift, and cache-register projection mismatch.
+//! SEEDED: fixed register descriptor sets.
 #![allow(clippy::panic)]
 
 use syncbat::{EffectClass, OperationDescriptor, Register};

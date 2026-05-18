@@ -1,3 +1,6 @@
+//! PROVES: INV-NETBAT-BOUNDARY-THIN
+//! CATCHES: invalid routes, duplicate server exposures, and syncbat operation-name grammar drift at the boundary.
+//! SEEDED: fixed module and endpoint descriptors.
 #![allow(clippy::panic)]
 
 use netbat as nb;

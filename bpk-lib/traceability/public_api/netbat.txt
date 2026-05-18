@@ -1,0 +1,145 @@
+pub mod netbat
+pub enum netbat::NetbatError
+pub netbat::NetbatError::EmptyStream
+pub netbat::NetbatError::InputTooLarge
+pub netbat::NetbatError::InputTooLarge::max: usize
+pub netbat::NetbatError::Io
+pub netbat::NetbatError::Io::kind: core::io::error::ErrorKind
+pub netbat::NetbatError::LineTooLong
+pub netbat::NetbatError::LineTooLong::max: usize
+pub netbat::NetbatError::MalformedRequest
+pub netbat::NetbatError::MalformedRequest::reason: &'static str
+pub netbat::NetbatError::OperationNameTooLong
+pub netbat::NetbatError::OperationNameTooLong::max: usize
+pub netbat::NetbatError::OutputTooLarge
+pub netbat::NetbatError::OutputTooLarge::max: usize
+pub netbat::NetbatError::Runtime(syncbat::error::RuntimeError)
+pub netbat::NetbatError::UnsupportedProtocolVersion
+pub netbat::NetbatError::UnsupportedProtocolVersion::version: alloc::string::String
+impl core::convert::From<std::io::error::Error> for netbat::NetbatError
+pub fn netbat::NetbatError::from(error: std::io::error::Error) -> Self
+impl core::convert::From<syncbat::error::RuntimeError> for netbat::NetbatError
+pub fn netbat::NetbatError::from(error: syncbat::error::RuntimeError) -> Self
+impl core::error::Error for netbat::NetbatError
+impl core::fmt::Display for netbat::NetbatError
+pub fn netbat::NetbatError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum netbat::RouteValidationError
+pub netbat::RouteValidationError::DuplicateRoute
+pub netbat::RouteValidationError::DuplicateRoute::method: &'static str
+pub netbat::RouteValidationError::DuplicateRoute::path: alloc::string::String
+pub netbat::RouteValidationError::InvalidMethod
+pub netbat::RouteValidationError::InvalidMethod::message: &'static str
+pub netbat::RouteValidationError::InvalidMethod::method: alloc::string::String
+pub netbat::RouteValidationError::InvalidModule(syncbat::register::RegisterValidationError)
+pub netbat::RouteValidationError::InvalidOperationName
+pub netbat::RouteValidationError::InvalidOperationName::message: &'static str
+pub netbat::RouteValidationError::InvalidOperationName::name: alloc::string::String
+pub netbat::RouteValidationError::InvalidPath
+pub netbat::RouteValidationError::InvalidPath::message: &'static str
+pub netbat::RouteValidationError::InvalidPath::path: alloc::string::String
+impl core::convert::From<syncbat::register::RegisterValidationError> for netbat::RouteValidationError
+pub fn netbat::RouteValidationError::from(error: syncbat::register::RegisterValidationError) -> Self
+impl core::error::Error for netbat::RouteValidationError
+impl core::fmt::Display for netbat::RouteValidationError
+pub fn netbat::RouteValidationError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct netbat::CoreHealth
+pub netbat::CoreHealth::layer_rule: &'static str
+pub netbat::CoreHealth::missing_operations: alloc::vec::Vec<alloc::string::String>
+pub netbat::CoreHealth::mounted_operations: alloc::vec::Vec<alloc::string::String>
+impl netbat::CoreHealth
+pub fn netbat::CoreHealth::is_healthy(&self) -> bool
+pub struct netbat::Endpoint
+impl netbat::Endpoint
+pub fn netbat::Endpoint::new(operation_name: impl core::convert::Into<alloc::string::String>, path: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, netbat::RouteValidationError>
+pub fn netbat::Endpoint::operation_name(&self) -> &str
+pub fn netbat::Endpoint::path(&self) -> &str
+pub struct netbat::Introspection
+pub netbat::Introspection::layer_rule: &'static str
+pub netbat::Introspection::module_count: usize
+pub netbat::Introspection::operation_count: usize
+pub netbat::Introspection::route_count: usize
+pub struct netbat::IoTimeouts
+pub netbat::IoTimeouts::read: core::option::Option<core::time::Duration>
+pub netbat::IoTimeouts::write: core::option::Option<core::time::Duration>
+pub struct netbat::Limits
+pub netbat::Limits::max_input_bytes: usize
+pub netbat::Limits::max_line_bytes: usize
+pub netbat::Limits::max_operation_name_bytes: usize
+pub netbat::Limits::max_output_bytes: usize
+impl core::default::Default for netbat::Limits
+pub fn netbat::Limits::default() -> Self
+pub struct netbat::RequestFrame
+impl netbat::RequestFrame
+pub fn netbat::RequestFrame::input(&self) -> &[u8]
+pub fn netbat::RequestFrame::into_parts(self) -> (alloc::string::String, alloc::vec::Vec<u8>)
+pub fn netbat::RequestFrame::new(operation: impl core::convert::Into<alloc::string::String>, input: impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+pub fn netbat::RequestFrame::operation(&self) -> &str
+pub struct netbat::ResponseFrame
+impl netbat::ResponseFrame
+pub fn netbat::ResponseFrame::into_output(self) -> alloc::vec::Vec<u8>
+pub fn netbat::ResponseFrame::new(output: impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+pub fn netbat::ResponseFrame::output(&self) -> &[u8]
+pub struct netbat::Route
+impl netbat::Route
+pub fn netbat::Route::endpoint(&self) -> &netbat::Endpoint
+pub fn netbat::Route::method(&self) -> &'static str
+pub fn netbat::Route::new(method: &'static str, endpoint: netbat::Endpoint) -> core::result::Result<Self, netbat::RouteValidationError>
+pub fn netbat::Route::operation_name(&self) -> &str
+pub fn netbat::Route::path(&self) -> &str
+pub struct netbat::Server
+impl netbat::Server
+pub fn netbat::Server::introspect(&self) -> netbat::Introspection
+pub fn netbat::Server::modules(&self) -> &[netbat::ServerModule]
+pub fn netbat::Server::mount(&mut self, module: netbat::ServerModule) -> core::result::Result<&mut Self, netbat::RouteValidationError>
+pub fn netbat::Server::new() -> Self
+pub fn netbat::Server::routes(&self) -> impl core::iter::traits::iterator::Iterator<Item = &netbat::Route>
+pub struct netbat::ServerModule
+impl netbat::ServerModule
+pub fn netbat::ServerModule::expose(module: syncbat::module::Module, base_path: impl core::convert::AsRef<str>) -> core::result::Result<Self, netbat::RouteValidationError>
+pub fn netbat::ServerModule::into_module(self) -> syncbat::module::Module
+pub fn netbat::ServerModule::module(&self) -> &syncbat::module::Module
+pub fn netbat::ServerModule::name(&self) -> &str
+pub fn netbat::ServerModule::operation_count(&self) -> usize
+pub fn netbat::ServerModule::routes(&self) -> &[netbat::Route]
+pub struct netbat::ShutdownHandle
+impl netbat::ShutdownHandle
+pub fn netbat::ShutdownHandle::is_shutdown(&self) -> bool
+pub fn netbat::ShutdownHandle::new() -> Self
+pub fn netbat::ShutdownHandle::shutdown(&self)
+pub struct netbat::TcpServeStats
+pub netbat::TcpServeStats::accepted_connections: usize
+pub netbat::TcpServeStats::failed_requests: usize
+pub netbat::TcpServeStats::limit_failures: usize
+pub netbat::TcpServeStats::malformed_requests: usize
+pub netbat::TcpServeStats::runtime_failures: usize
+pub netbat::TcpServeStats::served_requests: usize
+pub netbat::TcpServeStats::shutdown_requested: bool
+pub struct netbat::TcpServerConfig
+pub netbat::TcpServerConfig::idle_sleep: core::time::Duration
+pub netbat::TcpServerConfig::limits: netbat::Limits
+pub netbat::TcpServerConfig::max_connections: usize
+pub netbat::TcpServerConfig::max_requests_per_connection: usize
+pub netbat::TcpServerConfig::timeouts: netbat::IoTimeouts
+impl core::default::Default for netbat::TcpServerConfig
+pub fn netbat::TcpServerConfig::default() -> Self
+pub const netbat::CALL_VERB: &str
+pub const netbat::DEFAULT_MAX_CONNECTIONS: usize
+pub const netbat::DEFAULT_MAX_INPUT_BYTES: usize
+pub const netbat::DEFAULT_MAX_LINE_BYTES: usize
+pub const netbat::DEFAULT_MAX_OPERATION_NAME_BYTES: usize
+pub const netbat::DEFAULT_MAX_OUTPUT_BYTES: usize
+pub const netbat::DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize
+pub const netbat::LAYER_RULE: &str
+pub const netbat::LINE_PROTOCOL_VERSION: &str
+pub const netbat::MAX_ROUTE_PATH_BYTES: usize
+pub const netbat::PROTOCOL_PREFIX: &str
+pub fn netbat::decode_hex(input: &[u8], max_input_bytes: usize) -> core::result::Result<alloc::vec::Vec<u8>, netbat::NetbatError>
+pub fn netbat::decode_line(line: &[u8], limits: &netbat::Limits) -> core::result::Result<netbat::RequestFrame, netbat::NetbatError>
+pub fn netbat::dispatch_frame(core: &mut syncbat::core::Core, frame: netbat::RequestFrame, limits: &netbat::Limits) -> core::result::Result<netbat::ResponseFrame, netbat::NetbatError>
+pub fn netbat::encode_hex_into(bytes: &[u8], output: &mut alloc::vec::Vec<u8>)
+pub fn netbat::encode_request(operation: &str, input: &[u8]) -> alloc::vec::Vec<u8>
+pub fn netbat::encode_response(result: core::result::Result<&[u8], &netbat::NetbatError>) -> alloc::vec::Vec<u8>
+pub fn netbat::inspect_core_operations<I, S>(core: &syncbat::core::Core, operation_names: I) -> netbat::CoreHealth where I: core::iter::traits::collect::IntoIterator<Item = S>, S: core::convert::AsRef<str>
+pub fn netbat::introspect_modules(modules: &[netbat::ServerModule]) -> netbat::Introspection
+pub fn netbat::serve_stream<S>(stream: &mut S, core: &mut syncbat::core::Core, limits: &netbat::Limits) -> core::result::Result<netbat::ResponseFrame, netbat::NetbatError> where S: std::io::Read + std::io::Write
+pub fn netbat::serve_tcp_listener(listener: std::net::tcp::TcpListener, core: &mut syncbat::core::Core, config: &netbat::TcpServerConfig, shutdown: &netbat::ShutdownHandle) -> core::result::Result<netbat::TcpServeStats, netbat::NetbatError>

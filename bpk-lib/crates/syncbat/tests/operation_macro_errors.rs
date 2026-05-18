@@ -1,3 +1,7 @@
+//! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
+//! CATCHES: invalid operation macro inputs that would otherwise mint unstable runtime descriptors.
+//! SEEDED: trybuild compile-fail fixtures.
+
 #[test]
 fn operation_macro_rejects_invalid_inputs() {
     let t = trybuild::TestCases::new();

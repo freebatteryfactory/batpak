@@ -1,3 +1,6 @@
+//! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
+//! CATCHES: invalid operation names and schema/receipt references before catalog or runtime insertion.
+//! SEEDED: fixed descriptor-token tables.
 #![allow(clippy::panic)]
 
 use syncbat::{Core, EffectClass, HandlerResult, Module, OperationDescriptor, Register};
