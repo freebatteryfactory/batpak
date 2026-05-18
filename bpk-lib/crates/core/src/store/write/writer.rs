@@ -575,10 +575,17 @@ struct WriterState<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{checked_next_clock, WatermarkState};
+    // justifies: INV-TEST-PANIC-AS-ASSERTION; writer unit tests use explicit panic branches to prove join and conversion failures are observable test failures.
+    #![allow(clippy::panic)]
+
+    use super::{
+        checked_next_clock, elapsed_ms_since, ReactorSubscriberList, SubscriberList,
+        WatermarkState, WriterCommand, WriterHandle,
+    };
     use crate::store::stats::HlcPoint;
-    use crate::store::StoreError;
+    use crate::store::{StoreError, SystemClock};
     use std::sync::mpsc;
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -621,6 +628,53 @@ mod tests {
             state.snapshot().oldest_pending_write_age_ms,
             None,
             "PROPERTY: duplicate accepted advance must not reopen pending write age"
+        );
+    }
+
+    #[test]
+    fn pending_write_age_reports_elapsed_milliseconds_not_nanoseconds_or_products() {
+        assert_eq!(
+            elapsed_ms_since(3_500_000, 1_000_000),
+            2,
+            "PROPERTY: frontier pending-write age is floor(elapsed_ns / 1_000_000)"
+        );
+        assert_eq!(
+            elapsed_ms_since(1_000_000, 3_500_000),
+            0,
+            "PROPERTY: backwards monotonic samples saturate to zero"
+        );
+    }
+
+    #[test]
+    fn writer_handle_join_surfaces_thread_panic_and_poisons_watermarks() {
+        let (tx, _rx) = flume::bounded::<WriterCommand>(1);
+        let watermark_handle = WatermarkState::handle(Arc::new(SystemClock::new()));
+        let thread = std::thread::Builder::new()
+            .name("writer-join-panic-proof".to_owned())
+            .spawn(|| {
+                panic!("intentional writer join panic proof");
+            })
+            .expect("spawn panic proof thread");
+
+        let mut handle = WriterHandle {
+            tx,
+            subscribers: Arc::new(SubscriberList::new()),
+            reactor_subscribers: Arc::new(ReactorSubscriberList::new()),
+            watermark_handle: watermark_handle.clone(),
+            thread: Some(thread),
+        };
+
+        let err = match handle.join() {
+            Ok(()) => panic!("PROPERTY: writer thread panic must surface through join"),
+            Err(err) => err,
+        };
+        assert!(matches!(err, StoreError::WriterCrashed));
+
+        let poisoned =
+            watermark_handle.wait_for_durable(HlcPoint::ORIGIN, Duration::from_millis(1));
+        assert!(
+            matches!(poisoned, Err(StoreError::WriterCrashed)),
+            "PROPERTY: join panic must poison frontier waiters"
         );
     }
 

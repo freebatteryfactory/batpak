@@ -89,7 +89,7 @@ Capture release numbers from the merged release commit on stable hardware, not
 from an unmerged PR head, devcontainer, or noisy VM:
 
 ```bash
-cargo xtask bench --surface neutral --save baseline-v0.7.5
+cargo xtask bench --surface neutral --save baseline-v<version>
 ```
 
 Record the hardware and OS next to the numbers: CPU model, RAM, disk type, OS,
@@ -143,9 +143,9 @@ directory lock.
 After crates.io indexing settles:
 
 ```bash
-git tag -a v0.7.0 -m "Release 0.7.0"
-git push origin v0.7.0
-gh release create v0.7.0 --title "v0.7.0" --notes-file <notes-file>
+git tag -a v<version> -m "Release <version>"
+git push origin v<version>
+gh release create v<version> --title "v<version>" --notes-file <notes-file>
 ```
 
 Use release notes from `CHANGELOG.md` plus the benchmark appendix. Prefer an
@@ -159,7 +159,7 @@ annotated tag; avoid lightweight release tags.
    mkdir batpak-smoke
    cd batpak-smoke
    cargo init --name batpak-smoke
-   cargo add batpak@0.7.0
+   cargo add batpak@<version>
    printf 'use batpak::*; fn main() {}' > src/main.rs
    cargo build
    ```
