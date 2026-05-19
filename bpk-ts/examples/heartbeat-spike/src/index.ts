@@ -106,14 +106,15 @@ async function runBankCommit(host: string, port: number): Promise<typeof BankCom
     nonce: "spike-bank-commit",
   });
 
+  // Cast the plain hex string into the branded HexBlob shape that
+  // the generated schema expects. Sound at runtime — the brand is a
+  // phantom type that the schema validates at encode time anyway.
   const request: typeof BankCommitRequest.Type = {
     entity: "spike:demo",
     scope: "spike-scope",
-    // Use the heartbeat-request kind discriminants from the generated
-    // operation handle (avoids hand-coded magic numbers here).
     kind_category: 15,
     kind_type_id: 2561,
-    payload_hex: encodeHex(heartbeatPayload),
+    payload_hex: encodeHex(heartbeatPayload) as typeof BankCommitRequest.Type.payload_hex,
   };
   const socket = await openSocket(host, port);
   try {
@@ -137,7 +138,11 @@ async function runEventGet(
 ): Promise<typeof EventGetAck.Type> {
   const socket = await openSocket(host, port);
   try {
-    const request: typeof EventGetRequest.Type = { event_id_hex: eventIdHex };
+    const request: typeof EventGetRequest.Type = {
+      // Cast plain string into the branded EventIdHex; the schema
+      // validates the pattern at encode time.
+      event_id_hex: eventIdHex as typeof EventGetRequest.Type.event_id_hex,
+    };
     const payload = encodeBytes(EventGetRequest, request);
     const response = await call(socket, EVENT_GET.name, payload);
     if (response.kind !== "netbat-ok") {

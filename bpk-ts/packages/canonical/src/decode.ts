@@ -28,6 +28,21 @@ const MAP32 = 0xdf;
 /**
  * Decode canonical named-field MessagePack bytes back into a
  * JSON-shaped value.
+ *
+ * Inverse of {@link encode}. Object keys appear in the order the
+ * encoder wrote them.
+ *
+ * @throws {CanonicalDecodeError} for unknown opcodes, integer values
+ * outside `[0, Number.MAX_SAFE_INTEGER]`, truncated buffers, or
+ * trailing bytes after a complete value.
+ *
+ * @example
+ * ```ts
+ * import { decode, decodeHex } from "@batpak/canonical";
+ *
+ * decode(decodeHex("81a56e6f6e6365a26869"));
+ * // => { nonce: "hi" }
+ * ```
  */
 export function decode(bytes: Uint8Array): unknown {
   const reader = new Reader(bytes);

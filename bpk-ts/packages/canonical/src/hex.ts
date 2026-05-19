@@ -12,6 +12,14 @@ import { CanonicalDecodeError } from "./reader.js";
  *
  * Matches the Rust side's `netbat::transport::encode_hex_into` (and the
  * hbat manifest `encode_hex` helper) byte-for-byte.
+ *
+ * @example
+ * ```ts
+ * import { encodeHex } from "@batpak/canonical";
+ *
+ * encodeHex(new Uint8Array([0xde, 0xad, 0xbe, 0xef]));
+ * // => "deadbeef"
+ * ```
  */
 export function encodeHex(bytes: Uint8Array): string {
   const HEX = "0123456789abcdef";
@@ -26,6 +34,17 @@ export function encodeHex(bytes: Uint8Array): string {
 /**
  * Decode a lowercase-or-mixed-case hex string back to bytes. Matches the
  * Rust decoder's permissive case behavior.
+ *
+ * @throws {CanonicalDecodeError} when the input has odd length or
+ * contains a non-hex character.
+ *
+ * @example
+ * ```ts
+ * import { decodeHex } from "@batpak/canonical";
+ *
+ * Array.from(decodeHex("DEADbeef"));
+ * // => [0xde, 0xad, 0xbe, 0xef]
+ * ```
  */
 export function decodeHex(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) {

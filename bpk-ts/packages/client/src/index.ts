@@ -146,6 +146,19 @@ export function validateOperationName(operation: string): OperationName {
  * Accepts either a plain `string` (which is validated and brand-promoted
  * internally) or an already-branded {@link OperationName}. Either way the
  * frame is only emitted when the name passes the netbat grammar.
+ *
+ * @throws {FrameValidationError} when the operation name is empty, too
+ * long, contains illegal characters, or the input exceeds
+ * `DEFAULT_MAX_INPUT_BYTES`.
+ *
+ * @example
+ * ```ts
+ * import { encodeRequest } from "@batpak/client";
+ *
+ * const frame = encodeRequest("system.heartbeat", new Uint8Array([0xde, 0xad]));
+ * new TextDecoder().decode(frame);
+ * // => "NETBAT/1 CALL system.heartbeat dead\n"
+ * ```
  */
 export function encodeRequest(operation: string | OperationName, input: Uint8Array): Uint8Array {
   const validated = validateOperationName(operation);
@@ -166,7 +179,22 @@ export function encodeRequest(operation: string | OperationName, input: Uint8Arr
   return out;
 }
 
-/** Parse a CALL request frame (including or excluding the trailing newline). */
+/**
+ * Parse a CALL request frame (including or excluding the trailing newline).
+ *
+ * The returned `operation` is a branded {@link OperationName} — it has
+ * already passed the grammar check, so downstream code never re-validates.
+ *
+ * @example
+ * ```ts
+ * import { parseRequestFrame } from "@batpak/client";
+ *
+ * const frame = new TextEncoder().encode("NETBAT/1 CALL system.heartbeat dead\n");
+ * const parsed = parseRequestFrame(frame);
+ * parsed.operation; // "system.heartbeat" (branded OperationName)
+ * Array.from(parsed.input); // [0xde, 0xad]
+ * ```
+ */
 export function parseRequestFrame(line: Uint8Array): RequestFrame {
   const text = trimNewline(new TextDecoder("utf-8", { fatal: true }).decode(line));
   const prefix = `${NETBAT_VERSION} ${CALL_VERB} `;
@@ -190,7 +218,31 @@ export function parseRequestFrame(line: Uint8Array): RequestFrame {
   return { operation, input };
 }
 
-/** Parse an OK or ERR response frame (including or excluding the trailing newline). */
+/**
+ * Parse an OK or ERR response frame (including or excluding the trailing newline).
+ *
+ * Returns a tagged-union {@link NetbatResponse}: `kind: "netbat-ok"`
+ * carries the output bytes; `kind: "netbat-error"` carries a typed
+ * {@link NetbatErrorCode} and a UTF-8 message (NOT MessagePack — do
+ * not pass it through `@batpak/canonical`'s `decode`).
+ *
+ * @example
+ * ```ts
+ * import { parseResponseFrame } from "@batpak/client";
+ *
+ * const ok = parseResponseFrame(new TextEncoder().encode("OK babe\n"));
+ * if (ok.kind === "netbat-ok") {
+ *   console.log("output:", ok.output);
+ * }
+ *
+ * const err = parseResponseFrame(
+ *   new TextEncoder().encode("ERR unknown_operation 626f6f6d\n"),
+ * );
+ * if (err.kind === "netbat-error") {
+ *   console.error(`${err.code}: ${err.message}`); // "unknown_operation: boom"
+ * }
+ * ```
+ */
 export function parseResponseFrame(line: Uint8Array): NetbatResponse {
   const text = trimNewline(new TextDecoder("utf-8", { fatal: true }).decode(line));
   if (text.startsWith("OK ")) {
@@ -307,6 +359,21 @@ export interface NodeReadable {
  * Issue a single CALL/response roundtrip over a Node `net.Socket`.
  *
  * The socket is consumed for this call (one request, one response).
+ *
+ * @example
+ * ```ts
+ * import { createConnection } from "node:net";
+ * import { call } from "@batpak/client";
+ * import { encode } from "@batpak/canonical";
+ *
+ * const socket = createConnection({ host: "127.0.0.1", port: 54321 });
+ * const response = await call(socket, "system.heartbeat", encode({ nonce: "x" }));
+ * if (response.kind === "netbat-ok") {
+ *   console.log("output bytes:", response.output.length);
+ * } else {
+ *   console.error("netbat error:", response.code, response.message);
+ * }
+ * ```
  */
 export async function call(
   socket: NodeSocketLike,

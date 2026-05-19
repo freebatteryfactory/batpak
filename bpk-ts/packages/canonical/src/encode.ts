@@ -40,6 +40,27 @@ const MAP32 = 0xdf;
 /**
  * Encode a JSON-shaped value into canonical named-field MessagePack
  * bytes.
+ *
+ * Supported value shapes: `null`, `boolean`, finite `number` (integers
+ * in `[0, Number.MAX_SAFE_INTEGER]` are written using the shortest
+ * uint family; doubles use float64), `string`, `Array<unknown>`,
+ * `Record<string, unknown>` (object keys are emitted in JS insertion
+ * order — see the property test for the EC-262 caveat on
+ * integer-indexed keys).
+ *
+ * @throws {CanonicalEncodeError} `unsupported_value_type` for
+ * non-JSON-shaped inputs (functions, Symbols, BigInt, etc.) or
+ * `output_too_large` when the encoded length exceeds
+ * `options.maxBytes` (default 32 KiB).
+ *
+ * @example
+ * ```ts
+ * import { encode, encodeHex } from "@batpak/canonical";
+ *
+ * const bytes = encode({ nonce: "hi" });
+ * encodeHex(bytes);
+ * // => "81a56e6f6e6365a26869"  (fixmap{1}, fixstr"nonce", fixstr"hi")
+ * ```
  */
 export function encode(value: unknown, options: EncodeOptions = {}): Uint8Array {
   const max = options.maxBytes ?? DEFAULT_MAX_BYTES;
