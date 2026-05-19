@@ -126,6 +126,7 @@ fn partial_keys_rejected_synchronously() {
 }
 
 #[test]
+#[allow(clippy::wildcard_enum_match_arm)] // intentional catch-all over #[non_exhaustive] StoreError
 fn batch_max_bytes_accepts_exact_limit_and_rejects_one_byte_over() {
     let coord = coord();
     let items = byte_counted_batch(&coord);
@@ -162,6 +163,11 @@ fn batch_max_bytes_accepts_exact_limit_and_rejects_one_byte_over() {
                 "PROPERTY: batch byte-limit failure must preserve Configuration source"
             );
         }
+        // Wildcard intentional: this assertion only cares that the
+        // error IS StoreError::BatchFailed; the function-level allow
+        // silences clippy's wildcard_enum_match_arm because StoreError
+        // is #[non_exhaustive] and a generic catch-all is the right
+        // shape for a property-assertion failure path.
         other => panic!("PROPERTY: expected StoreError::BatchFailed, got {other:?}"),
     }
     over_store.close().expect("close over");
