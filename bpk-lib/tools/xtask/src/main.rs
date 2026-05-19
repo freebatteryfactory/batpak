@@ -67,6 +67,13 @@ enum XtaskCommand {
     /// auto-installs it; consulting clients run release gates inside
     /// clean containers and want deterministic tool versioning.
     Sbom,
+    /// Detect dependencies declared in any workspace `Cargo.toml` that are
+    /// never referenced from source. Each unused dep widens the supply-chain
+    /// blast radius and slows builds; this gate keeps the dep set tight.
+    ///
+    /// Backed by `cargo-machete` (separate install:
+    /// `cargo install cargo-machete --locked`).
+    UnusedDeps,
     /// Focused alias for template smoke + generated-lock drift checks.
     TemplateFreshness,
     /// Inspect staged files for generated artifacts, retired paths, and conflict markers.
@@ -403,6 +410,7 @@ fn main() -> Result<()> {
         XtaskCommand::Mutants(args) => commands::mutants(&args),
         XtaskCommand::Templates => commands::templates(),
         XtaskCommand::Sbom => commands::sbom(),
+        XtaskCommand::UnusedDeps => commands::unused_deps(),
         XtaskCommand::TemplateFreshness => {
             commands::templates()?;
             commands::integrity("structural-check", [])

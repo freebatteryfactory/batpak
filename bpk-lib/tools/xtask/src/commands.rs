@@ -13,6 +13,7 @@ mod setup;
 mod staged;
 mod stress;
 mod templates;
+mod unused_deps;
 mod version_pins;
 
 use crate::util::cargo;
@@ -68,6 +69,13 @@ pub(crate) fn templates() -> Result<()> {
 /// the binary is missing rather than auto-installing or no-opping.
 pub(crate) fn sbom() -> Result<()> {
     sbom::sbom()
+}
+
+/// Detect dependencies declared in `Cargo.toml` that are never referenced
+/// from source. Backed by `cargo-machete`. Install with
+/// `cargo install cargo-machete --locked`.
+pub(crate) fn unused_deps() -> Result<()> {
+    unused_deps::unused_deps()
 }
 
 pub(crate) fn disk_audit() -> Result<()> {
