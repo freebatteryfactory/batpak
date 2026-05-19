@@ -204,4 +204,20 @@ mod tests {
             batpak::event::EventKind::SYSTEM_HEARTBEAT.as_raw_u16(),
         );
     }
+
+    #[test]
+    fn derive_macro_kinds_match_substrate_named_constants() {
+        // The derive macro produces KIND from #[batpak(category=N, type_id=M)].
+        // The substrate exposes named constants that must stay byte-equal so
+        // downstream consumers can reference the canonical name without having
+        // to import the hbat struct.
+        assert_eq!(
+            SystemHeartbeatRequest::KIND.as_raw_u16(),
+            batpak::event::EventKind::SYSTEM_HEARTBEAT_REQUEST.as_raw_u16(),
+        );
+        assert_eq!(
+            SystemHeartbeatAck::KIND.as_raw_u16(),
+            batpak::event::EventKind::SYSTEM_HEARTBEAT_ACK.as_raw_u16(),
+        );
+    }
 }
