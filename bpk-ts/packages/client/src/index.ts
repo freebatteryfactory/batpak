@@ -25,13 +25,25 @@
 
 import { decodeHex, encodeHex } from "@batpak/canonical";
 
-export const NETBAT_VERSION = "NETBAT/1" as const;
-export const CALL_VERB = "CALL" as const;
+export const NETBAT_VERSION = "NETBAT/1";
+export const CALL_VERB = "CALL";
 
 export const DEFAULT_MAX_LINE_BYTES = 64 * 1024;
 export const DEFAULT_MAX_INPUT_BYTES = 32 * 1024;
 export const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024;
 export const MAX_OPERATION_NAME_BYTES = 128;
+
+/**
+ * Branded TS counterpart of Rust's `syncbat::OperationName` newtype: a
+ * string that has been validated against the netbat operation-name
+ * grammar. Construct only via {@link validateOperationName}; downstream
+ * code should accept this type instead of re-parsing the grammar.
+ *
+ * The brand is structural — every {@link OperationName} is assignable to
+ * a plain `string`, but a plain `string` is not assignable to
+ * {@link OperationName} without going through the validator.
+ */
+export type OperationName = string & { readonly __brand: "OperationName" };
 
 const OPERATION_NAME_PATTERN = /^[A-Za-z0-9._-]+$/u;
 
@@ -67,7 +79,13 @@ export interface NetbatOk {
 export type NetbatResponse = NetbatOk | NetbatError;
 
 export interface RequestFrame {
-  readonly operation: string;
+  /**
+   * Validated operation name. `OperationName` is structurally a string, so
+   * the field is read-compatible with any existing consumer that expects a
+   * plain `string`. New code should keep names branded by funnelling them
+   * through {@link validateOperationName}.
+   */
+  readonly operation: OperationName;
   readonly input: Uint8Array;
 }
 
@@ -81,10 +99,16 @@ export class FrameValidationError extends Error {
 }
 
 /**
- * Validate an operation name against the netbat grammar. Throws on
- * empty, too-long, illegal characters, or `..` substrings.
+ * Validate an operation name against the netbat grammar and brand it as an
+ * {@link OperationName}. Throws on empty, too-long, illegal characters,
+ * leading/trailing `.`, or `..` substrings.
+ *
+ * This is the TS counterpart of the substrate-wide
+ * `syncbat::OperationName::new` validating constructor. Every layer
+ * (encode, parse, dispatch) should funnel through this function so the
+ * grammar lives in exactly one place.
  */
-export function validateOperationName(operation: string): void {
+export function validateOperationName(operation: string): OperationName {
   if (operation.length === 0) {
     throw new FrameValidationError("malformed_request", "operation name is empty");
   }
@@ -113,18 +137,25 @@ export function validateOperationName(operation: string): void {
       `operation name ${JSON.stringify(operation)} cannot contain '..'`,
     );
   }
+  return operation as OperationName;
 }
 
-/** Encode a CALL request frame, including the trailing `\n`. */
-export function encodeRequest(operation: string, input: Uint8Array): Uint8Array {
-  validateOperationName(operation);
+/**
+ * Encode a CALL request frame, including the trailing `\n`.
+ *
+ * Accepts either a plain `string` (which is validated and brand-promoted
+ * internally) or an already-branded {@link OperationName}. Either way the
+ * frame is only emitted when the name passes the netbat grammar.
+ */
+export function encodeRequest(operation: string | OperationName, input: Uint8Array): Uint8Array {
+  const validated = validateOperationName(operation);
   if (input.length > DEFAULT_MAX_INPUT_BYTES) {
     throw new FrameValidationError(
       "input_too_large",
       `input ${input.length} bytes exceeds ${DEFAULT_MAX_INPUT_BYTES}`,
     );
   }
-  const prefix = `${NETBAT_VERSION} ${CALL_VERB} ${operation} `;
+  const prefix = `${NETBAT_VERSION} ${CALL_VERB} ${validated} `;
   const prefixBytes = new TextEncoder().encode(prefix);
   const hex = encodeHex(input);
   const hexBytes = new TextEncoder().encode(hex);
@@ -153,9 +184,8 @@ export function parseRequestFrame(line: Uint8Array): RequestFrame {
       "request frame missing space between operation and hex payload",
     );
   }
-  const operation = remainder.slice(0, spaceIdx);
+  const operation = validateOperationName(remainder.slice(0, spaceIdx));
   const hex = remainder.slice(spaceIdx + 1);
-  validateOperationName(operation);
   const input = decodeHex(hex);
   return { operation, input };
 }
@@ -226,12 +256,7 @@ export async function readLine(
         buffered.push(byte);
         if (buffered.length > maxBytes) {
           cleanup();
-          reject(
-            new FrameValidationError(
-              "line_too_long",
-              `line exceeded ${maxBytes} bytes`,
-            ),
-          );
+          reject(new FrameValidationError("line_too_long", `line exceeded ${maxBytes} bytes`));
           return;
         }
         if (byte === 0x0a) {
@@ -244,9 +269,7 @@ export async function readLine(
     const onEnd = () => {
       cleanup();
       if (buffered.length === 0) {
-        reject(
-          new FrameValidationError("empty_stream", "stream closed before any bytes"),
-        );
+        reject(new FrameValidationError("empty_stream", "stream closed before any bytes"));
       } else {
         // Tolerate trailing line missing newline.
         resolve(new Uint8Array(buffered));
@@ -268,15 +291,15 @@ export async function readLine(
 }
 
 /** Minimal duck-typed Node readable used by {@link readLine}. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface NodeReadable {
   on(event: "data", listener: (chunk: Buffer | Uint8Array) => void): unknown;
   once(event: "end", listener: () => void): unknown;
   once(event: "error", listener: (error: Error) => void): unknown;
-  // Matches Node's `EventEmitter.off` signature shape so a `Socket` is
-  // assignable. We never call `off` with anything other than listeners
-  // we previously registered via `on`/`once` above.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // `off` matches Node's EventEmitter.off shape. We never call it with
+  // anything other than listeners we previously registered via on/once
+  // above — using `unknown[]` instead of `any[]` keeps the typed-lint
+  // bundle happy while still accepting a Socket structurally.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- rationale: matches Node EventEmitter.off ABI; we never invoke it
   off(eventName: string | symbol, listener: (...args: any[]) => void): unknown;
 }
 
@@ -287,7 +310,7 @@ export interface NodeReadable {
  */
 export async function call(
   socket: NodeSocketLike,
-  operation: string,
+  operation: string | OperationName,
   input: Uint8Array,
 ): Promise<NetbatResponse> {
   const frame = encodeRequest(operation, input);
@@ -300,8 +323,5 @@ export async function call(
 
 /** Minimal Node `net.Socket`-shaped writer/reader used by {@link call}. */
 export interface NodeSocketLike extends NodeReadable {
-  write(
-    data: Uint8Array,
-    callback?: (error: Error | null | undefined) => void,
-  ): boolean;
+  write(data: Uint8Array, callback?: (error: Error | null | undefined) => void): boolean;
 }

@@ -20,6 +20,10 @@ pub use route::{
     inspect_core_operations, introspect_modules, CoreHealth, Endpoint, Introspection, Route,
     RouteValidationError, Server, ServerModule, LAYER_RULE, MAX_ROUTE_PATH_BYTES,
 };
+// Re-export the substrate-wide operation-name newtype so callers writing
+// `use netbat as nb;` can reach for `nb::OperationName` instead of pulling
+// syncbat directly.
+pub use syncbat::{OperationName, OperationNameError};
 pub use transport::{
     decode_hex, decode_hex_str, decode_line, dispatch_frame, encode_hex, encode_hex_into,
     encode_hex_str, encode_request, encode_response, serve_stream, serve_tcp_listener, IoTimeouts,

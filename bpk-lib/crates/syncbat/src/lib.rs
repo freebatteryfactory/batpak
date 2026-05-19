@@ -14,6 +14,7 @@ pub mod error;
 pub mod handler;
 pub mod module;
 pub mod operation;
+pub mod operation_name;
 pub mod receipt;
 pub mod register;
 pub mod register_store;
@@ -28,6 +29,7 @@ pub use operation::{
     DescriptorValidationError, EffectClass, OperationDescriptor, OperationInput, OperationOutput,
     OperationRegisterItem, MAX_DESCRIPTOR_REF_BYTES, MAX_OPERATION_NAME_BYTES,
 };
+pub use operation_name::{OperationName, OperationNameError};
 pub use receipt::{
     BatpakReceiptFields, ReceiptEnvelope, ReceiptExtensionDrawer, ReceiptHash, ReceiptHashPolicy,
     ReceiptHasher, ReceiptOutcome, ReceiptSink, ReceiptSinkError, RecordedReceipt,
