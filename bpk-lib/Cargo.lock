@@ -903,6 +903,7 @@ dependencies = [
 name = "netbat"
 version = "0.7.6"
 dependencies = [
+ "proptest",
  "syncbat",
  "tracing",
 ]
@@ -1461,6 +1462,7 @@ name = "syncbat"
 version = "0.7.6"
 dependencies = [
  "batpak",
+ "proptest",
  "serde",
  "syncbat-macros",
  "tempfile",
