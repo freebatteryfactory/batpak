@@ -753,6 +753,8 @@ dependencies = [
  "serde_json",
  "syncbat",
  "tempfile",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -901,6 +903,7 @@ name = "netbat"
 version = "0.7.6"
 dependencies = [
  "syncbat",
+ "tracing",
 ]
 
 [[package]]
@@ -1460,6 +1463,7 @@ dependencies = [
  "serde",
  "syncbat-macros",
  "tempfile",
+ "tracing",
  "trybuild",
 ]
 

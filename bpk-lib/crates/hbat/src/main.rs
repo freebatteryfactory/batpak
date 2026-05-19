@@ -58,12 +58,29 @@ struct ServeArgs {
 }
 
 fn main() -> Result<()> {
+    install_tracing_subscriber();
     let cli = Cli::parse();
     match cli.command {
         HbatCommand::Serve(args) => serve(&args),
     }
 }
 
+/// Install a fmt subscriber that respects `RUST_LOG`. Defaults to
+/// `info` for syncbat/netbat/hbat when `RUST_LOG` is unset so live
+/// operations always emit at least the dispatch + accept-loop spans.
+fn install_tracing_subscriber() {
+    use tracing_subscriber::filter::EnvFilter;
+    use tracing_subscriber::fmt;
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,hbat=info,netbat=info,syncbat=info"));
+    let _ = fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
+#[tracing::instrument(name = "hbat.serve", skip_all, fields(store = %args.store.display(), tcp = %args.tcp))]
 fn serve(args: &ServeArgs) -> Result<()> {
     let addr: SocketAddr = args
         .tcp

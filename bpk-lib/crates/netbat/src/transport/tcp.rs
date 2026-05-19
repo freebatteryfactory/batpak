@@ -149,6 +149,7 @@ pub struct TcpServeStats {
 /// `max_output_bytes` is a transport serialization limit. It is enforced after
 /// syncbat dispatch returns output bytes; use runtime gates or handler-level
 /// validation when output size must be an admission rule.
+#[tracing::instrument(name = "netbat.serve_stream", skip_all)]
 pub fn serve_stream<S>(
     stream: &mut S,
     core: &mut syncbat::Core,
@@ -200,6 +201,10 @@ where
 /// configuration, or response writes fail. Per-request decode/runtime errors
 /// are counted in [`TcpServeStats::failed_requests`] after their error response
 /// is written.
+#[tracing::instrument(name = "netbat.serve_tcp_listener", skip_all, fields(
+    addr = %listener.local_addr().map(|a| a.to_string()).unwrap_or_default(),
+    max_connections = config.max_connections,
+))]
 pub fn serve_tcp_listener(
     listener: TcpListener,
     core: &mut syncbat::Core,
@@ -208,11 +213,13 @@ pub fn serve_tcp_listener(
 ) -> Result<TcpServeStats, NetbatError> {
     listener.set_nonblocking(true)?;
     let mut stats = TcpServeStats::default();
+    tracing::info!("accept loop started");
 
     while !shutdown.is_shutdown() && stats.accepted_connections < config.max_connections {
         match listener.accept() {
-            Ok((stream, _addr)) => {
+            Ok((stream, addr)) => {
                 stats.accepted_connections += 1;
+                tracing::debug!(peer = %addr, "connection accepted");
                 apply_timeouts(&stream, config.timeouts)?;
                 serve_tcp_connection(stream, core, config, &mut stats)?;
             }
@@ -225,6 +232,13 @@ pub fn serve_tcp_listener(
     }
 
     stats.shutdown_requested = shutdown.is_shutdown();
+    tracing::info!(
+        accepted = stats.accepted_connections,
+        served = stats.served_requests,
+        failed = stats.failed_requests,
+        shutdown = stats.shutdown_requested,
+        "accept loop exiting",
+    );
     drop(listener);
     Ok(stats)
 }

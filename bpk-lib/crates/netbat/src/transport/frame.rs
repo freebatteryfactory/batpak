@@ -219,6 +219,15 @@ pub fn encode_response(result: Result<&[u8], &NetbatError>) -> Vec<u8> {
 /// # Errors
 /// Returns [`NetbatError`] when syncbat rejects the checkout or output exceeds
 /// configured transport limits.
+#[tracing::instrument(
+    name = "netbat.dispatch_frame",
+    skip_all,
+    fields(
+        operation = %frame.operation(),
+        input_bytes = frame.input().len(),
+        output_bytes = tracing::field::Empty,
+    ),
+)]
 pub fn dispatch_frame(
     core: &mut syncbat::Core,
     frame: RequestFrame,
@@ -229,10 +238,16 @@ pub fn dispatch_frame(
     let result = core.checkout_frame(syncbat::CheckoutFrame::new(operation, input))?;
     let output = result.into_output();
     if output.len() > limits.max_output_bytes {
+        tracing::warn!(
+            output_bytes = output.len(),
+            max = limits.max_output_bytes,
+            "output exceeded transport limit",
+        );
         return Err(NetbatError::OutputTooLarge {
             max: limits.max_output_bytes,
         });
     }
+    tracing::Span::current().record("output_bytes", output.len());
     Ok(ResponseFrame::new(output))
 }
 
