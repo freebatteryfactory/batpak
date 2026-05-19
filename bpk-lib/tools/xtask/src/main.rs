@@ -59,6 +59,14 @@ enum XtaskCommand {
     Mutants(MutantsArgs),
     /// Smoke-test every standalone Cargo template under `templates/`.
     Templates,
+    /// Emit a CycloneDX 1.5 SBOM JSON file per publishable crate into
+    /// `target/sbom/<crate>.cdx.json`.
+    ///
+    /// `cargo-cyclonedx` is a separate install:
+    /// `cargo install cargo-cyclonedx --locked`. The subcommand never
+    /// auto-installs it; consulting clients run release gates inside
+    /// clean containers and want deterministic tool versioning.
+    Sbom,
     /// Focused alias for template smoke + generated-lock drift checks.
     TemplateFreshness,
     /// Inspect staged files for generated artifacts, retired paths, and conflict markers.
@@ -394,6 +402,7 @@ fn main() -> Result<()> {
         XtaskCommand::Cover(args) => coverage::cover(args),
         XtaskCommand::Mutants(args) => commands::mutants(&args),
         XtaskCommand::Templates => commands::templates(),
+        XtaskCommand::Sbom => commands::sbom(),
         XtaskCommand::TemplateFreshness => {
             commands::templates()?;
             commands::integrity("structural-check", [])
@@ -501,12 +510,7 @@ fn run_check(args: &CheckArgs) -> Result<()> {
             util::cargo(cmd.iter().map(String::as_str))?;
         }
         if !args.all_features_only {
-            util::cargo([
-                "check",
-                "-p",
-                pkg,
-                "--no-default-features",
-            ])?;
+            util::cargo(["check", "-p", pkg, "--no-default-features"])?;
         }
         return Ok(());
     }
@@ -553,7 +557,12 @@ fn run_test(args: &TestArgs) -> Result<()> {
         cmd.extend(feature_args.iter().cloned());
         util::cargo(cmd.iter().map(String::as_str))?;
         if !args.no_doc && args.test.is_none() {
-            let mut doc_cmd = vec!["test".to_owned(), "--doc".to_owned(), "-p".to_owned(), pkg.to_owned()];
+            let mut doc_cmd = vec![
+                "test".to_owned(),
+                "--doc".to_owned(),
+                "-p".to_owned(),
+                pkg.to_owned(),
+            ];
             doc_cmd.extend(feature_args.iter().cloned());
             util::cargo(doc_cmd.iter().map(String::as_str))?;
         }

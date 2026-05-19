@@ -7,6 +7,7 @@ mod package_scan;
 mod platform;
 mod release;
 mod release_manifest;
+mod sbom;
 mod scaffold;
 mod setup;
 mod staged;
@@ -57,6 +58,16 @@ pub(crate) fn scaffold(args: ScaffoldArgs) -> Result<()> {
 
 pub(crate) fn templates() -> Result<()> {
     templates::templates()
+}
+
+/// Drive `cargo cyclonedx` over every publishable crate and emit a
+/// CycloneDX 1.5 SBOM JSON under `target/sbom/`.
+///
+/// `cargo-cyclonedx` is a separate install: `cargo install cargo-cyclonedx
+/// --locked`. The subcommand fails fast with a clear install hint when
+/// the binary is missing rather than auto-installing or no-opping.
+pub(crate) fn sbom() -> Result<()> {
+    sbom::sbom()
 }
 
 pub(crate) fn disk_audit() -> Result<()> {
