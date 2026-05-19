@@ -107,6 +107,21 @@ export class FrameValidationError extends Error {
  * `syncbat::OperationName::new` validating constructor. Every layer
  * (encode, parse, dispatch) should funnel through this function so the
  * grammar lives in exactly one place.
+ *
+ * @throws {FrameValidationError} with code `malformed_request` (empty,
+ * illegal chars, leading/trailing dot, `..`) or `operation_name_too_long`
+ * (>128 UTF-8 bytes).
+ *
+ * @example
+ * ```ts
+ * import { validateOperationName } from "@batpak/client";
+ *
+ * const name = validateOperationName("system.heartbeat");
+ * // name now has the OperationName brand and can be passed into
+ * // encodeRequest / call without re-validation.
+ *
+ * validateOperationName("bad..name"); // throws FrameValidationError
+ * ```
  */
 export function validateOperationName(operation: string): OperationName {
   if (operation.length === 0) {
