@@ -622,3 +622,91 @@ fn output_limit_fails_closed_after_dispatch() {
     assert_eq!(err, nb::NetbatError::OutputTooLarge { max: 1 });
     assert_eq!(count.get(), 1);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wire-compat emit gate
+//
+// PROVES: emitter byte-stability against the same golden .hex fixtures
+// already used by the parser. The previous boundary suite proves
+// `decode_line` accepts these bytes; this section proves
+// `encode_request` / `encode_response` produces them. Without this
+// gate, the encoder could drift while the parser still accepts the
+// older shape — a silent wire-format break.
+// CATCHES: any change to encoder framing (separator, trailing newline,
+// hex case, protocol version token, operation-name placement, OK/ERR
+// keyword spelling) that would not be caught by parser-only tests.
+// SEEDED: the same `tests/golden/*.hex` artifacts the parser tests
+// consume. New goldens added MUST also appear here.
+
+#[test]
+fn emit_request_v1_matches_golden_bytes() {
+    let frame = nb::encode_request("ping", b"hi");
+    let golden_hex = REQUEST_CALL_V1_HEX.trim();
+    let golden_bytes = nb::decode_hex_str(golden_hex).expect("golden hex decodes");
+    assert_eq!(
+        frame, golden_bytes,
+        "encode_request drifted from request_call_v1.hex"
+    );
+}
+
+#[test]
+fn emit_response_ok_matches_golden_bytes() {
+    let frame = nb::encode_response(Ok(b"ok"));
+    let golden_bytes = nb::decode_hex_str(RESPONSE_OK_HEX.trim()).expect("golden hex decodes");
+    assert_eq!(
+        frame, golden_bytes,
+        "encode_response drifted from response_ok.hex"
+    );
+}
+
+#[test]
+fn emit_response_ok_hi_matches_golden_bytes() {
+    let frame = nb::encode_response(Ok(b"hi"));
+    let golden_bytes = nb::decode_hex_str(RESPONSE_OK_HI_HEX.trim()).expect("golden hex decodes");
+    assert_eq!(
+        frame, golden_bytes,
+        "encode_response drifted from response_ok_hi.hex"
+    );
+}
+
+#[test]
+fn emit_response_err_carries_typed_code_and_hex_message() {
+    let error = nb::NetbatError::MalformedRequest { reason: "bad" };
+    let frame = nb::encode_response(Err(&error));
+    let golden_bytes =
+        nb::decode_hex_str(RESPONSE_ERR_MALFORMED_HEX.trim()).expect("golden hex decodes");
+    assert_eq!(
+        frame, golden_bytes,
+        "encode_response(Err) drifted from response_err_malformed.hex"
+    );
+}
+
+#[test]
+fn emit_request_then_parse_returns_input_unchanged() {
+    // Closed-loop round-trip across every (op, payload) shape we ship.
+    for (op, payload) in [
+        ("ping", &[][..]),
+        ("ping", &b"hi"[..]),
+        ("system.heartbeat", &[0_u8, 1, 255][..]),
+        ("bank.commit", &b"\x81\xa0"[..]),
+    ] {
+        let frame = nb::encode_request(op, payload);
+        let parsed = nb::decode_line(&frame, &nb::Limits::default()).expect("parse");
+        assert_eq!(parsed.operation(), op);
+        assert_eq!(parsed.input(), payload);
+    }
+}
+
+#[test]
+fn emit_response_ok_then_parse_returns_output_unchanged() {
+    for payload in [&[][..], &b"hi"[..], &[0_u8, 1, 255][..]] {
+        let frame = nb::encode_response(Ok(payload));
+        let line = frame
+            .strip_prefix(b"OK ")
+            .and_then(|s| s.strip_suffix(b"\n"))
+            .expect("response shape OK <hex>\\n");
+        let decoded = nb::decode_hex_str(std::str::from_utf8(line).expect("hex ascii"))
+            .expect("hex decodes");
+        assert_eq!(decoded, payload);
+    }
+}
