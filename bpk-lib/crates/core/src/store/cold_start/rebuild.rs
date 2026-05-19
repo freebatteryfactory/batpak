@@ -396,10 +396,17 @@ fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, std::path::PathBuf)>, Stor
             if !is_segment {
                 return None;
             }
-            let segment_id = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .and_then(|stem| stem.parse::<u64>().ok())?;
+            let segment_id = match segment::SegmentId::from_filename(&path) {
+                Ok(parsed) => parsed.as_u64(),
+                Err(error) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "skipping malformed segment filename"
+                    );
+                    return None;
+                }
+            };
             Some((segment_id, path))
         })
         .collect();

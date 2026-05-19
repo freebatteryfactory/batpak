@@ -117,11 +117,19 @@ impl Reader {
         // Fast path: try SIDX footer for sealed segments only.
         // Sealed segments cannot have incomplete batches, so SIDX is safe.
         // Active segment might have incomplete batches, so use slow path.
-        let segment_id = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
+        // Falls back to 0 if the filename is malformed, but surfaces the parse
+        // failure so a corrupt name on disk is not invisible.
+        let segment_id = match segment::SegmentId::from_filename(path) {
+            Ok(parsed) => parsed.as_u64(),
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "skipping malformed segment filename"
+                );
+                0
+            }
+        };
         let is_active = self.active_segment_id.load(Ordering::Acquire) == segment_id;
 
         if !is_active && batch_state.as_ref().is_none_or(|s| !s.in_batch) {
@@ -157,14 +165,14 @@ impl Reader {
             return Err(StoreError::corrupt_magic(0));
         }
 
-        let segment_id = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u64>().ok())
-        {
-            Some(id) => id,
-            None => {
-                tracing::warn!(?path, "skipping segment with unparseable filename");
+        let segment_id = match segment::SegmentId::from_filename(path) {
+            Ok(parsed) => parsed.as_u64(),
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "skipping malformed segment filename"
+                );
                 return Ok(());
             }
         };
