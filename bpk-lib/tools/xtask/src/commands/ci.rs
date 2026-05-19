@@ -69,16 +69,19 @@ pub(crate) fn perf_gates() -> Result<()> {
     ])
 }
 
-pub(crate) fn run_nextest_ci<const N: usize>(args: [&str; N]) -> Result<()> {
+pub(crate) fn run_nextest_ci<'a, I>(args: I) -> Result<()>
+where
+    I: IntoIterator<Item = &'a str>,
+{
     let target_dir = cargo_target_dir_arg()?;
-    let mut command = vec![
-        "nextest",
-        "run",
-        "--target-dir",
-        target_dir.as_str(),
-        "--profile",
-        "ci",
+    let mut command: Vec<String> = vec![
+        "nextest".to_owned(),
+        "run".to_owned(),
+        "--target-dir".to_owned(),
+        target_dir,
+        "--profile".to_owned(),
+        "ci".to_owned(),
     ];
-    command.extend(args);
-    cargo(command)
+    command.extend(args.into_iter().map(str::to_owned));
+    cargo(command.iter().map(String::as_str))
 }

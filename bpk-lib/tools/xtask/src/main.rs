@@ -49,9 +49,9 @@ enum XtaskCommand {
     EvidenceAudit,
     /// Fast agent-oriented repository doctor with stable repair IDs.
     AgentDoctor,
-    Check,
-    Test,
-    Clippy,
+    Check(CheckArgs),
+    Test(TestArgs),
+    Clippy(ClippyArgs),
     Fmt,
     Deny,
     Bench(BenchArgs),
@@ -102,6 +102,70 @@ enum XtaskCommand {
 pub(crate) struct SetupArgs {
     #[arg(long)]
     install_tools: bool,
+}
+
+/// Narrow `cargo test` to a single crate / single test binary so the
+/// per-feature dev loop doesn't pay the full-workspace tax.
+///
+/// `cargo xtask test`                 ← default, full workspace + doctests + per-family-crate
+/// `cargo xtask test --pkg syncbat`   ← only syncbat unit + integration + doc tests
+/// `cargo xtask test --pkg syncbat --test runtime`
+///                                    ← single integration test binary
+/// `cargo xtask test --pkg netbat --no-doc`
+///                                    ← skip doctests for this scoped run
+/// `cargo xtask test --features ""`   ← override the default `--all-features`
+#[derive(Args, Clone, Debug, Default)]
+pub(crate) struct TestArgs {
+    /// Cargo `-p` package name. Implies `--no-workspace` unless overridden.
+    #[arg(long)]
+    pub(crate) pkg: Option<String>,
+    /// Cargo `--test` name (integration-test binary). Only valid with `--pkg`.
+    #[arg(long, requires = "pkg")]
+    pub(crate) test: Option<String>,
+    /// Feature flags to pass to cargo. Defaults to `--all-features` when
+    /// unset.
+    #[arg(long)]
+    pub(crate) features: Option<String>,
+    /// Skip the doctest pass.
+    #[arg(long)]
+    pub(crate) no_doc: bool,
+    /// Skip the workspace-wide `nextest` step. Implied by `--pkg` unless
+    /// you also pass `--workspace`.
+    #[arg(long, conflicts_with = "workspace")]
+    pub(crate) no_workspace: bool,
+    /// Force the workspace-wide step to run even when `--pkg` is set.
+    #[arg(long)]
+    pub(crate) workspace: bool,
+}
+
+/// Narrow `cargo check`. Default behaviour matches the legacy
+/// `XtaskCommand::Check` (workspace + per-family-crate).
+#[derive(Args, Clone, Debug, Default)]
+pub(crate) struct CheckArgs {
+    /// Cargo `-p` package name. Implies `--no-workspace`.
+    #[arg(long)]
+    pub(crate) pkg: Option<String>,
+    /// Feature flag override.
+    #[arg(long)]
+    pub(crate) features: Option<String>,
+    /// Skip the `--no-default-features` half of the check.
+    #[arg(long)]
+    pub(crate) no_default_only: bool,
+    /// Skip the `--all-features` half of the check.
+    #[arg(long)]
+    pub(crate) all_features_only: bool,
+}
+
+/// Narrow `cargo clippy`. Default matches the legacy
+/// `XtaskCommand::Clippy`.
+#[derive(Args, Clone, Debug, Default)]
+pub(crate) struct ClippyArgs {
+    /// Cargo `-p` package name. Implies `--no-workspace`.
+    #[arg(long)]
+    pub(crate) pkg: Option<String>,
+    /// Feature flag override.
+    #[arg(long)]
+    pub(crate) features: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -321,47 +385,9 @@ fn main() -> Result<()> {
         XtaskCommand::CheckVersionPins => commands::check_version_pins(),
         XtaskCommand::EvidenceAudit => commands::integrity("evidence-audit", []),
         XtaskCommand::AgentDoctor => commands::integrity("agent-doctor", []),
-        XtaskCommand::Check => {
-            util::cargo(["check", "--all-features"])?;
-            util::cargo(["check", "--no-default-features"])?;
-            for package in publish::FAMILY_CRATES {
-                util::cargo(["check", "-p", package, "--all-features"])?;
-                util::cargo(["check", "-p", package, "--no-default-features"])?;
-            }
-            Ok(())
-        }
-        XtaskCommand::Test => {
-            commands::run_nextest_ci(["--all-features"])?;
-            util::cargo(["test", "--doc", "--all-features"])?;
-            for package in publish::FAMILY_CRATES {
-                util::cargo(["test", "-p", package, "--all-features"])?;
-            }
-            Ok(())
-        }
-        XtaskCommand::Clippy => {
-            util::cargo([
-                "clippy",
-                "--all-features",
-                "--all-targets",
-                "--",
-                "-D",
-                "warnings",
-            ])?;
-            for package in publish::FAMILY_CRATES {
-                util::cargo([
-                    "clippy",
-                    "-p",
-                    package,
-                    "--no-deps",
-                    "--all-features",
-                    "--all-targets",
-                    "--",
-                    "-D",
-                    "warnings",
-                ])?;
-            }
-            Ok(())
-        }
+        XtaskCommand::Check(args) => run_check(&args),
+        XtaskCommand::Test(args) => run_test(&args),
+        XtaskCommand::Clippy(args) => run_clippy(&args),
         XtaskCommand::Fmt => util::cargo(["fmt", "--check"]),
         XtaskCommand::Deny => commands::deny_split(),
         XtaskCommand::Bench(args) => bench::bench(args),
@@ -456,4 +482,128 @@ fn main() -> Result<()> {
         XtaskCommand::Docs(args) => docs::docs(args),
         XtaskCommand::Release(args) => commands::release(args),
     }
+}
+
+fn features_flag(features: Option<&str>) -> Vec<String> {
+    match features {
+        None => vec!["--all-features".to_owned()],
+        Some(spec) if spec.is_empty() => Vec::new(),
+        Some(spec) => vec!["--features".to_owned(), spec.to_owned()],
+    }
+}
+
+fn run_check(args: &CheckArgs) -> Result<()> {
+    if let Some(pkg) = args.pkg.as_deref() {
+        let feature_args = features_flag(args.features.as_deref());
+        if !args.no_default_only {
+            let mut cmd = vec!["check".to_owned(), "-p".to_owned(), pkg.to_owned()];
+            cmd.extend(feature_args.iter().cloned());
+            util::cargo(cmd.iter().map(String::as_str))?;
+        }
+        if !args.all_features_only {
+            util::cargo([
+                "check",
+                "-p",
+                pkg,
+                "--no-default-features",
+            ])?;
+        }
+        return Ok(());
+    }
+    util::cargo(["check", "--all-features"])?;
+    util::cargo(["check", "--no-default-features"])?;
+    for package in publish::FAMILY_CRATES {
+        util::cargo(["check", "-p", package, "--all-features"])?;
+        util::cargo(["check", "-p", package, "--no-default-features"])?;
+    }
+    Ok(())
+}
+
+fn run_test(args: &TestArgs) -> Result<()> {
+    let scoped = args.pkg.is_some();
+    let workspace_step = (!scoped && !args.no_workspace) || args.workspace;
+    let feature_args = features_flag(args.features.as_deref());
+    let feature_strs: Vec<&str> = feature_args.iter().map(String::as_str).collect();
+
+    if workspace_step {
+        let mut nextest_args: Vec<&str> = Vec::new();
+        nextest_args.extend(feature_strs.iter().copied());
+        commands::run_nextest_ci(nextest_args.iter().copied())?;
+        if !args.no_doc {
+            let mut doc_cmd = vec!["test".to_owned(), "--doc".to_owned()];
+            doc_cmd.extend(feature_args.iter().cloned());
+            util::cargo(doc_cmd.iter().map(String::as_str))?;
+        }
+        if !scoped {
+            for package in publish::FAMILY_CRATES {
+                let mut cmd = vec!["test".to_owned(), "-p".to_owned(), package.to_string()];
+                cmd.extend(feature_args.iter().cloned());
+                util::cargo(cmd.iter().map(String::as_str))?;
+            }
+            return Ok(());
+        }
+    }
+
+    if let Some(pkg) = args.pkg.as_deref() {
+        let mut cmd = vec!["test".to_owned(), "-p".to_owned(), pkg.to_owned()];
+        if let Some(test_bin) = args.test.as_deref() {
+            cmd.push("--test".to_owned());
+            cmd.push(test_bin.to_owned());
+        }
+        cmd.extend(feature_args.iter().cloned());
+        util::cargo(cmd.iter().map(String::as_str))?;
+        if !args.no_doc && args.test.is_none() {
+            let mut doc_cmd = vec!["test".to_owned(), "--doc".to_owned(), "-p".to_owned(), pkg.to_owned()];
+            doc_cmd.extend(feature_args.iter().cloned());
+            util::cargo(doc_cmd.iter().map(String::as_str))?;
+        }
+    }
+    Ok(())
+}
+
+fn run_clippy(args: &ClippyArgs) -> Result<()> {
+    let feature_args = features_flag(args.features.as_deref());
+    if let Some(pkg) = args.pkg.as_deref() {
+        let mut cmd = vec![
+            "clippy".to_owned(),
+            "-p".to_owned(),
+            pkg.to_owned(),
+            "--no-deps".to_owned(),
+        ];
+        cmd.extend(feature_args.iter().cloned());
+        cmd.extend([
+            "--all-targets".to_owned(),
+            "--".to_owned(),
+            "-D".to_owned(),
+            "warnings".to_owned(),
+        ]);
+        util::cargo(cmd.iter().map(String::as_str))?;
+        return Ok(());
+    }
+    let mut cmd = vec!["clippy".to_owned()];
+    cmd.extend(feature_args.iter().cloned());
+    cmd.extend([
+        "--all-targets".to_owned(),
+        "--".to_owned(),
+        "-D".to_owned(),
+        "warnings".to_owned(),
+    ]);
+    util::cargo(cmd.iter().map(String::as_str))?;
+    for package in publish::FAMILY_CRATES {
+        let mut per_cmd = vec![
+            "clippy".to_owned(),
+            "-p".to_owned(),
+            package.to_string(),
+            "--no-deps".to_owned(),
+        ];
+        per_cmd.extend(feature_args.iter().cloned());
+        per_cmd.extend([
+            "--all-targets".to_owned(),
+            "--".to_owned(),
+            "-D".to_owned(),
+            "warnings".to_owned(),
+        ]);
+        util::cargo(per_cmd.iter().map(String::as_str))?;
+    }
+    Ok(())
 }

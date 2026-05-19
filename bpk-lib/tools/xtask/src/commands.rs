@@ -116,7 +116,10 @@ pub(crate) fn loom() -> Result<()> {
     loom::loom()
 }
 
-pub(crate) fn run_nextest_ci<const N: usize>(args: [&str; N]) -> Result<()> {
+pub(crate) fn run_nextest_ci<'a, I>(args: I) -> Result<()>
+where
+    I: IntoIterator<Item = &'a str>,
+{
     ci::run_nextest_ci(args)
 }
 
