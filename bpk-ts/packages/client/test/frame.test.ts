@@ -176,3 +176,100 @@ describe("roundtrip: encodeRequest -> parseRequestFrame", () => {
     expect(Array.from(parsed.input)).toEqual(Array.from(input));
   });
 });
+
+describe("readLine preserves bytes after the newline", () => {
+  // REGRESSION: readLine used to drop any bytes that arrived in the
+  // same chunk AFTER the line-terminating `\n`. On persistent sockets
+  // (max_requests_per_connection > 1) or pipelined peers, the second
+  // frame's prefix was silently discarded and the next readLine would
+  // hang. The fix routes leftover bytes back via Socket.unshift() so
+  // they're re-emitted on the next read.
+
+  type DataListener = (chunk: Uint8Array) => void;
+
+  class MockSocket {
+    private dataListeners: DataListener[] = [];
+    private pending: Uint8Array[] = [];
+
+    on(event: "data", listener: DataListener): this {
+      if (event === "data") {
+        this.dataListeners.push(listener);
+        // Flush any unshifted bytes through the listener stack — but
+        // re-fetch on every iteration so a listener that deregistered
+        // itself (via off()) inside the call doesn't get called twice.
+        while (this.pending.length > 0 && this.dataListeners.includes(listener)) {
+          const chunk = this.pending.shift()!;
+          this.dispatch(chunk);
+        }
+      }
+      return this;
+    }
+    once(_event: "end" | "error", _listener: (e?: Error) => void): this {
+      return this;
+    }
+    off(_event: string | symbol, listener: DataListener): this {
+      this.dataListeners = this.dataListeners.filter((l) => l !== listener);
+      return this;
+    }
+    unshift(chunk: Buffer | Uint8Array): void {
+      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+      this.pending.unshift(bytes);
+    }
+    emit(chunk: Uint8Array): void {
+      this.dispatch(chunk);
+    }
+    private dispatch(chunk: Uint8Array): void {
+      for (const listener of [...this.dataListeners]) {
+        if (!this.dataListeners.includes(listener)) continue;
+        listener(chunk);
+      }
+    }
+  }
+
+  it("returns leftover bytes via socket.unshift for the next read", async () => {
+    const { readLine } = await import("../src/index.js");
+    const socket = new MockSocket();
+    const both = new TextEncoder().encode("OK abcd\nOK efgh\n");
+    const first = readLine(socket);
+    socket.emit(both);
+    const line1 = await first;
+    expect(new TextDecoder().decode(line1)).toBe("OK abcd\n");
+
+    // The second frame's bytes must have been unshifted and re-emit
+    // when the next reader subscribes. Without the fix, this readLine
+    // would hang because the bytes were dropped.
+    const line2 = await readLine(socket);
+    expect(new TextDecoder().decode(line2)).toBe("OK efgh\n");
+  });
+
+  it("handles 3+ frames pipelined into one chunk via sequential reads", async () => {
+    const { readLine } = await import("../src/index.js");
+    const socket = new MockSocket();
+    const triple = new TextEncoder().encode("OK 01\nOK 02\nOK 03\n");
+
+    // Sequential read pattern: one readLine, then the next. The first
+    // emit hands the whole chunk to readLine #1; the next two readLines
+    // pull from the unshifted-back buffer when they subscribe.
+    const first = readLine(socket);
+    socket.emit(triple);
+    expect(new TextDecoder().decode(await first)).toBe("OK 01\n");
+
+    const second = await readLine(socket);
+    expect(new TextDecoder().decode(second)).toBe("OK 02\n");
+
+    const third = await readLine(socket);
+    expect(new TextDecoder().decode(third)).toBe("OK 03\n");
+  });
+
+  it("doesn't unshift anything when the chunk ends exactly at the newline", async () => {
+    const { readLine } = await import("../src/index.js");
+    const socket = new MockSocket();
+    socket.emit(new TextEncoder().encode("")); // no-op
+    const first = readLine(socket);
+    socket.emit(new TextEncoder().encode("OK ab\n"));
+    const line = await first;
+    expect(new TextDecoder().decode(line)).toBe("OK ab\n");
+    // No pending bytes left for the next reader.
+    expect(socket["pending" as keyof MockSocket]).toEqual([]);
+  });
+});

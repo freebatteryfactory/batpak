@@ -319,7 +319,9 @@ export async function readLine(
   return await new Promise<Uint8Array>((resolve, reject) => {
     const onData = (chunk: Buffer | Uint8Array) => {
       const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
-      for (const byte of bytes) {
+      for (let i = 0; i < bytes.length; i += 1) {
+        const byte = bytes[i];
+        if (byte === undefined) continue;
         buffered.push(byte);
         if (buffered.length > maxBytes) {
           cleanup();
@@ -328,6 +330,23 @@ export async function readLine(
         }
         if (byte === 0x0a) {
           cleanup();
+          // CRITICAL: bytes after the newline in this same chunk
+          // belong to the NEXT frame on a persistent socket
+          // (max_requests_per_connection > 1) or any pipelined
+          // peer. Push them back via Socket.unshift() so the next
+          // readLine() call sees them. Without this, the second
+          // frame's prefix is silently dropped and the next read
+          // hangs waiting for bytes that already arrived.
+          if (i + 1 < bytes.length) {
+            const remaining = bytes.subarray(i + 1);
+            if (typeof socket.unshift === "function") {
+              // Node's Readable.unshift accepts Buffer or Uint8Array
+              // depending on the stream's encoding; passing the
+              // Uint8Array view works on every standard transport
+              // (net.Socket, tls.Socket, stream.PassThrough).
+              socket.unshift(remaining);
+            }
+          }
           resolve(new Uint8Array(buffered));
           return;
         }
@@ -368,6 +387,14 @@ export interface NodeReadable {
   // bundle happy while still accepting a Socket structurally.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- rationale: matches Node EventEmitter.off ABI; we never invoke it
   off(eventName: string | symbol, listener: (...args: any[]) => void): unknown;
+  /**
+   * Push bytes back to the stream's buffer so the next `data` consumer
+   * sees them. Used by {@link readLine} to preserve any bytes that
+   * arrived AFTER the line-terminating `\n` in the same chunk — those
+   * belong to the next frame on a persistent / pipelined socket.
+   * Optional because not every minimal mock implements it.
+   */
+  unshift?(chunk: Buffer | Uint8Array): void;
 }
 
 /**
