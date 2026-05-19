@@ -178,6 +178,13 @@ pub struct EventDescriptorRegistration {
 inventory::collect!(EventDescriptorRegistration);
 
 impl EventDescriptorRegistration {
+    // justifies: INV-MANIFEST-FIXTURE-DETERMINISM; manifest fixture encoders are
+    // deterministic on Phase 0 payload types per the EventPayloadFixture trait
+    // contract in crates/hbat/src/lib.rs. A None return here means the upstream
+    // fixture impl has drifted off the canonical encoding contract — fail
+    // loud at manifest export time with the offending rust_type named in the
+    // panic so the regression points at the responsible module.
+    #[allow(clippy::panic)]
     fn materialize(&self) -> EventDescriptor {
         let payload_bytes = (self.fixture_bytes)()
             .unwrap_or_else(|| panic!("encode fixture bytes for {}", self.rust_type));
@@ -278,6 +285,13 @@ impl<'a> EventIndex<'a> {
         Self { by_schema_ref }
     }
 
+    // justifies: INV-MANIFEST-SCHEMA-REF-INTEGRITY; build_operation only ever
+    // requests schema refs declared as `pub const` in the same crate that
+    // submitted the matching EventDescriptorRegistration. A missing schema ref
+    // here is a build-time misconfiguration (e.g. someone added an operation
+    // without the matching inventory::submit!) and must fail loud — not
+    // silently emit an empty hex string into the exported manifest.
+    #[allow(clippy::panic)]
     fn golden_for(&self, schema_ref: &str) -> &'a str {
         self.by_schema_ref
             .get(schema_ref)
