@@ -120,6 +120,13 @@ impl ReceiptSigningRegistry {
         kind: EventKind,
         prev_hash: [u8; 32],
     ) -> bool {
+        // Sentinel-signed receipts (no signature, no key) bypass the cover
+        // rebuild: signing was either not configured or it downgraded due to
+        // a cover-build failure (e.g. no-blake3 builds). Their validity is
+        // a property of the registry state, not of any computed cover.
+        if receipt.signature.is_none() && receipt.key_id == [0; 32] {
+            return self.verifying_keys.is_empty();
+        }
         let cover = match cover_bytes(
             {
                 use crate::id::EntityIdType;
@@ -148,6 +155,9 @@ impl ReceiptSigningRegistry {
         kind: EventKind,
         prev_hash: [u8; 32],
     ) -> bool {
+        if receipt.signature.is_none() && receipt.key_id == [0; 32] {
+            return self.verifying_keys.is_empty();
+        }
         let cover = match cover_bytes(
             {
                 use crate::id::EntityIdType;

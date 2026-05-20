@@ -302,16 +302,21 @@ impl<State> Store<State> {
                 }
             }
 
-            let computed_hash = observed_content_hash(&stored);
-            if computed_hash != entry.hash_chain.event_hash {
-                findings.push(ChainWalkFinding::EntryHashMismatch {
-                    event_id: current_id,
-                    expected: entry.hash_chain.event_hash,
-                    observed: computed_hash,
-                });
-                checked.push((current_id, entry.hash_chain.event_hash));
-                break;
+            #[cfg(feature = "blake3")]
+            {
+                let computed_hash = observed_content_hash(&stored);
+                if computed_hash != entry.hash_chain.event_hash {
+                    findings.push(ChainWalkFinding::EntryHashMismatch {
+                        event_id: current_id,
+                        expected: entry.hash_chain.event_hash,
+                        observed: computed_hash,
+                    });
+                    checked.push((current_id, entry.hash_chain.event_hash));
+                    break;
+                }
             }
+            #[cfg(not(feature = "blake3"))]
+            let _ = &stored;
 
             checked.push((current_id, entry.hash_chain.event_hash));
 
@@ -451,16 +456,9 @@ fn report_body_hash(body: &ChainWalkReportBody) -> Result<ChainWalkHash, ChainWa
     })
 }
 
+#[cfg(feature = "blake3")]
 fn observed_content_hash(stored: &crate::event::StoredEvent<Vec<u8>>) -> ChainWalkHash {
-    #[cfg(feature = "blake3")]
-    {
-        crate::event::hash::compute_hash(&stored.event.payload)
-    }
-    #[cfg(not(feature = "blake3"))]
-    {
-        let _ = stored;
-        [0_u8; 32]
-    }
+    crate::event::hash::compute_hash(&stored.event.payload)
 }
 
 #[cfg(test)]
