@@ -205,10 +205,7 @@ impl WriterState<'_> {
                 )
                 .map_err(|e| batch_failed(idx, BatchFailureStage::Validation, e))?;
 
-            #[cfg(feature = "blake3")]
             let event_hash = crate::event::hash::compute_hash(item.payload_bytes());
-            #[cfg(not(feature = "blake3"))]
-            let event_hash = [0u8; 32];
 
             state.prev_hash = event_hash;
             state.next_clock =
