@@ -399,6 +399,48 @@ describe("generate writes the expected files", () => {
     expect(outputMatches).toHaveLength(1);
   });
 
+  it("fails with event_ts_name_collision when two events share a tsName", () => {
+    // REGRESSION (Codex P2 on commit ec4898f): renderEventsModule
+    // emits `export const ${tsName}` AND `export type ${tsName}` for
+    // every manifest event without checking `tsName` uniqueness.
+    // Manifest validation does not enforce this either. Two events
+    // sharing a `tsName` (e.g. two Rust modules each defining a type
+    // that maps to `Heartbeat`) would produce duplicate identifiers
+    // and break tsc. Now we surface a precise CodegenError naming
+    // both offending Rust types, so the operator can disambiguate at
+    // the source instead of debugging a duplicate-export tsc error.
+    const manifest = {
+      ...MINIMAL_MANIFEST,
+      events: [
+        {
+          ...MINIMAL_MANIFEST.events[0],
+          name: "alpha.heartbeat",
+          rustType: "alpha::Heartbeat",
+          tsName: "Heartbeat",
+        },
+        {
+          ...MINIMAL_MANIFEST.events[0],
+          name: "beta.heartbeat",
+          rustType: "beta::Heartbeat",
+          tsName: "Heartbeat",
+          typeId: 2,
+        },
+      ],
+      operations: [],
+    };
+    const path = writeManifest(manifest);
+    const out = join(workDir, "out");
+    try {
+      generate({ manifestPath: path, outDir: out });
+      throw new Error("expected event_ts_name_collision");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CodegenError);
+      if (error instanceof CodegenError) {
+        expect(error.code).toBe("event_ts_name_collision");
+      }
+    }
+  });
+
   it("rejects manifests where an event tsName collides with a generated type alias", () => {
     // REGRESSION (Codex P2 on commit 1497d94): operations.ts imports
     // every event tsName from ./events.js, then emits

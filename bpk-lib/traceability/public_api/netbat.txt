@@ -121,6 +121,7 @@ pub fn netbat::ShutdownHandle::new() -> Self
 pub fn netbat::ShutdownHandle::shutdown(&self)
 #[non_exhaustive] pub struct netbat::TcpServeStats
 pub netbat::TcpServeStats::accepted_connections: usize
+pub netbat::TcpServeStats::connection_io_failures: usize
 pub netbat::TcpServeStats::failed_requests: usize
 pub netbat::TcpServeStats::limit_failures: usize
 pub netbat::TcpServeStats::malformed_requests: usize

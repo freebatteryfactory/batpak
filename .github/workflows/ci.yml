@@ -48,6 +48,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt,llvm-tools-preview
+      # cargo-public-api uses rustdoc JSON, which is only available
+      # on nightly. Install a minimal nightly toolchain alongside
+      # stable so the public-api gate in `cargo xtask ci` can
+      # auto-fall-back to nightly. We install via `rustup` directly
+      # (not dtolnay/rust-toolchain@nightly) so the *default* toolchain
+      # stays whatever `rust-toolchain.toml` pins (1.92 stable) and
+      # the rest of the build is unaffected.
+      - name: Install nightly for cargo-public-api rustdoc JSON
+        shell: bash
+        run: rustup toolchain install nightly --profile minimal --no-self-update
       # Tool version pins MUST stay in lock-step with `.devcontainer/Dockerfile`
       # and `cargo xtask setup --install-tools`. Drift is caught by `check_ci_parity` in
       # `tools/integrity/src/main.rs` (run via `cargo xtask structural`).

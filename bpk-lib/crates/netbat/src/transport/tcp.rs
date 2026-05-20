@@ -131,6 +131,12 @@ pub struct TcpServeStats {
     pub limit_failures: usize,
     /// Failed requests rejected by syncbat dispatch.
     pub runtime_failures: usize,
+    /// Connections torn down by a peer-driven IO error (BrokenPipe /
+    /// ConnectionReset on read or write, etc.) after the empty-stream
+    /// short-circuit. These are dropped silently per-connection so a
+    /// misbehaving peer can't tear down the whole listener; counting
+    /// them keeps the failure mode observable for operators.
+    pub connection_io_failures: usize,
     /// True when the listener exited because its shutdown handle was set.
     pub shutdown_requested: bool,
 }
@@ -266,11 +272,36 @@ fn serve_tcp_connection(
     config: &TcpServerConfig,
     stats: &mut TcpServeStats,
 ) -> Result<(), NetbatError> {
+    serve_connection_loop(&mut stream, core, config, stats)
+}
+
+/// Drive one accepted connection through up to
+/// `max_requests_per_connection` request/response rounds.
+///
+/// Per-connection IO failures are peer-driven: a client that sends a
+/// request and closes/resets before reading the response surfaces here
+/// as BrokenPipe / ConnectionReset on the response write_all. Drop the
+/// connection and continue the listener — escalating any single
+/// client's IO state to a listener-wide fatal would be a trivial
+/// remote DoS path. The accept loop's own IO errors are still fatal
+/// at the listener scope (see [`serve_tcp_listener`]). PROVES:
+/// tcp.rs::tests::peer_io_failure_does_not_propagate_from_connection,
+/// tests/tcp_transport.rs::peer_close_mid_response_does_not_kill_the_listener.
+fn serve_connection_loop<S: Read + Write>(
+    stream: &mut S,
+    core: &mut syncbat::Core,
+    config: &TcpServerConfig,
+    stats: &mut TcpServeStats,
+) -> Result<(), NetbatError> {
     for _ in 0..config.max_requests_per_connection {
-        match serve_stream(&mut stream, core, &config.limits) {
+        match serve_stream(stream, core, &config.limits) {
             Ok(_) => stats.served_requests += 1,
             Err(NetbatError::EmptyStream) => return Ok(()),
-            Err(error @ NetbatError::Io { .. }) => return Err(error),
+            Err(NetbatError::Io { .. }) => {
+                stats.connection_io_failures += 1;
+                tracing::debug!("connection torn down by peer IO error");
+                return Ok(());
+            }
             Err(error) => {
                 stats.failed_requests += 1;
                 record_request_failure(stats, &error);
@@ -322,5 +353,96 @@ fn record_request_failure(stats: &mut TcpServeStats, error: &NetbatError) {
         }
         NetbatError::Runtime(_) => stats.runtime_failures += 1,
         NetbatError::Io { .. } | NetbatError::EmptyStream => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for the per-connection loop's failure handling.
+    //! These avoid TCP timing by driving `serve_connection_loop` directly
+    //! with a mock Read+Write — the integration counterpart in
+    //! `tests/tcp_transport.rs` exercises the same property end-to-end.
+
+    use super::*;
+    use std::io::Cursor;
+    use syncbat::{Core, EffectClass, Handler, HandlerResult, OperationDescriptor};
+
+    const PING: OperationDescriptor = OperationDescriptor::new(
+        "ping",
+        EffectClass::Inspect,
+        "schema.ping.input.v1",
+        "schema.ping.output.v1",
+        "receipt.ping.v1",
+    );
+
+    struct PingHandler;
+
+    impl Handler for PingHandler {
+        fn handle(&mut self, input: &[u8], _cx: &mut syncbat::Ctx<'_>) -> HandlerResult {
+            Ok(input.to_vec())
+        }
+    }
+
+    fn core_with_ping() -> Core {
+        let mut builder = Core::builder();
+        builder.register(PING, PingHandler).expect("register");
+        builder.build().expect("build")
+    }
+
+    /// Read+Write that returns the request bytes once on read, then BrokenPipe
+    /// on every write — simulating a peer that sent a valid frame and then
+    /// reset the connection before the server's response could land.
+    struct WriteFailsAfterRead {
+        request: Cursor<Vec<u8>>,
+    }
+
+    impl WriteFailsAfterRead {
+        fn new(request: &[u8]) -> Self {
+            Self {
+                request: Cursor::new(request.to_vec()),
+            }
+        }
+    }
+
+    impl Read for WriteFailsAfterRead {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.request.read(buf)
+        }
+    }
+
+    impl Write for WriteFailsAfterRead {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+    }
+
+    #[test]
+    fn peer_io_failure_does_not_propagate_from_connection() {
+        // REGRESSION: previously, a client that sent a valid request and
+        // then RST/closed before the server's write_all completed would
+        // surface as NetbatError::Io from serve_stream, and
+        // serve_tcp_connection escalated that to the whole listener,
+        // dropping the accept loop. Now the loop swallows per-connection
+        // IO failures and counts them in TcpServeStats.
+        let mut stream = WriteFailsAfterRead::new(b"NETBAT/1 CALL ping 6869\n");
+        let mut core = core_with_ping();
+        let config = TcpServerConfig::default();
+        let mut stats = TcpServeStats::default();
+
+        let outcome = serve_connection_loop(&mut stream, &mut core, &config, &mut stats);
+
+        // Per-connection IO is non-fatal: the loop returns Ok and the
+        // listener (the caller) is free to accept the next connection.
+        assert!(
+            outcome.is_ok(),
+            "per-connection IO failure must not escalate; got {outcome:?}"
+        );
+        assert_eq!(stats.connection_io_failures, 1);
+        assert_eq!(stats.served_requests, 0);
+        assert_eq!(stats.failed_requests, 0);
     }
 }

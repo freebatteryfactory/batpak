@@ -348,3 +348,70 @@ fn connect_and_close_does_not_kill_the_listener() {
     assert_eq!(stats.failed_requests, 0);
     assert_eq!(stats.malformed_requests, 0);
 }
+
+#[test]
+fn peer_close_mid_response_does_not_kill_the_listener() {
+    // REGRESSION: previously, `serve_stream`'s `stream.write_all(...)?`
+    // would propagate BrokenPipe / ConnectionReset on the response
+    // write as NetbatError::Io, and `serve_tcp_connection` escalated
+    // that to the whole listener. A client that sent a valid request
+    // and then immediately closed (or RST'd) without reading the
+    // response could tear down the accept loop — a trivial remote
+    // DoS. Now per-connection IO failures are dropped silently and
+    // counted in `TcpServeStats::connection_io_failures`; the listener
+    // continues accepting. The deterministic unit-level witness lives
+    // at `tcp.rs::tests::peer_io_failure_does_not_propagate_from_connection`;
+    // this end-to-end test confirms a subsequent clean request still
+    // succeeds after the misbehaved peer.
+    let listener = localhost_listener();
+    let addr = listener.local_addr().expect("listener addr");
+    let shutdown = nb::ShutdownHandle::new();
+    let server_shutdown = shutdown.clone();
+
+    let config = nb::TcpServerConfig::default()
+        .with_max_connections(2)
+        .with_idle_sleep(Duration::from_millis(1));
+    let handle = spawn_server(
+        "netbat-peer-close-mid-response",
+        listener,
+        config,
+        server_shutdown,
+    );
+
+    // Misbehaved peer: send a valid request, then half-close both
+    // directions and drop without reading the response. Whether the
+    // server's write_all eventually surfaces BrokenPipe depends on
+    // kernel buffer state; either way the listener must survive.
+    let mut misbehaved = connect_client(addr);
+    misbehaved
+        .write_all(b"NETBAT/1 CALL ping 6869\n")
+        .expect("write request from misbehaved peer");
+    let _ = misbehaved.shutdown(std::net::Shutdown::Both);
+    drop(misbehaved);
+    thread::sleep(Duration::from_millis(30));
+
+    // Clean peer afterward — proves the listener is still serving.
+    let mut clean = connect_client(addr);
+    clean
+        .write_all(b"NETBAT/1 CALL ping 6869\n")
+        .expect("write request from clean peer");
+    let mut response = String::new();
+    BufReader::new(clean)
+        .read_line(&mut response)
+        .expect("read response");
+    assert_eq!(response, "OK 6869\n");
+
+    shutdown.shutdown();
+    let stats = handle.join().expect("server thread joins");
+    assert_eq!(stats.accepted_connections, 2);
+    // The clean peer must have been served. The misbehaved peer may
+    // have been counted as a served request OR a connection IO
+    // failure depending on kernel timing — both outcomes preserve
+    // the invariant under test: the listener didn't die.
+    assert!(
+        stats.served_requests >= 1,
+        "clean peer must be served; stats={stats:?}"
+    );
+    assert_eq!(stats.malformed_requests, 0);
+    assert_eq!(stats.runtime_failures, 0);
+}

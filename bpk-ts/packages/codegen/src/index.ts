@@ -231,7 +231,22 @@ function renderManifestModule(manifest: BatpakTsManifest, options: GenerateOptio
 
 function renderEventsModule(manifest: BatpakTsManifest): string {
   const lines: string[] = [FILE_HEADER, `import * as Schema from "effect/Schema";`, ""];
+  // Manifest validation does not enforce `tsName` uniqueness, but we
+  // emit `export const ${tsName}` AND `export type ${tsName}` for
+  // every event — two events sharing a `tsName` would produce
+  // duplicate identifiers and break `tsc`. Fail loudly at codegen
+  // time with the offending Rust types named, so the operator can
+  // disambiguate at the source.
+  const seenTsNames = new Map<string, string>();
   for (const event of manifest.events) {
+    const previousRustType = seenTsNames.get(event.tsName);
+    if (previousRustType !== undefined) {
+      throw new CodegenError(
+        "event_ts_name_collision",
+        `events ${JSON.stringify(previousRustType)} and ${JSON.stringify(event.rustType)} both declare tsName ${JSON.stringify(event.tsName)}; pick distinct tsNames so the generated events.ts compiles`,
+      );
+    }
+    seenTsNames.set(event.tsName, event.rustType);
     lines.push(
       `/** Source: ${event.rustType}; category=${event.category}, typeId=${event.typeId} */`,
     );
