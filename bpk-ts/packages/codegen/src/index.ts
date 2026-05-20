@@ -376,6 +376,22 @@ function renderOperationsModule(manifest: BatpakTsManifest): string {
     outputAliases.set(`${responseEvent.tsName}Output`, responseEvent.tsName);
   }
 
+  // Type-alias-vs-event-name collision check: every alias name
+  // (`<tsName>Input` / `<tsName>Output`) is a NEW declaration in
+  // operations.ts. If the manifest also has an event whose tsName is
+  // literally `FooInput` or `FooOutput`, the alias and the imported
+  // event type clash (TS2440 duplicate identifier). Catch it here at
+  // codegen time rather than letting tsc fail on the consumer side.
+  const eventTsNames = new Set(manifest.events.map((e) => e.tsName));
+  for (const [alias, target] of [...inputAliases, ...outputAliases]) {
+    if (eventTsNames.has(alias) && alias !== target) {
+      throw new CodegenError(
+        "type_alias_event_name_collision",
+        `operations.ts would emit \`export type ${alias} = ${target}\` but an event already declares the type ${alias}; rename the event or pick distinct operation input/output shapes`,
+      );
+    }
+  }
+
   // Emit the deduped type aliases AFTER the operation consts. Two
   // operations sharing the same input event type now produce one
   // `export type FooInput = Foo` declaration, not two.

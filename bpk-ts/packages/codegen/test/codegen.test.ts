@@ -398,6 +398,56 @@ describe("generate writes the expected files", () => {
     expect(inputMatches).toHaveLength(1);
     expect(outputMatches).toHaveLength(1);
   });
+
+  it("rejects manifests where an event tsName collides with a generated type alias", () => {
+    // REGRESSION (Codex P2 on commit 1497d94): operations.ts imports
+    // every event tsName from ./events.js, then emits
+    // `export type <RequestEvent>Input = <RequestEvent>`. If the
+    // manifest ALSO has an event whose tsName is literally
+    // `FooInput`, the alias declaration collides with the imported
+    // event type (TS2440 duplicate identifier) and the consumer
+    // package fails to compile.
+    //
+    // Manifest below: two events `Foo` and `FooInput`, plus one
+    // operation whose inputEvent is `Foo`. The naive emitter would
+    // produce `export type FooInput = Foo` while `FooInput` is
+    // already imported. We want a CodegenError up front.
+    const manifest = {
+      ...MINIMAL_MANIFEST,
+      events: [
+        {
+          ...MINIMAL_MANIFEST.events[0],
+          name: "foo",
+          tsName: "Foo",
+        },
+        {
+          ...MINIMAL_MANIFEST.events[0],
+          name: "foo.input",
+          tsName: "FooInput",
+          typeId: 2,
+        },
+      ],
+      operations: [
+        {
+          ...MINIMAL_MANIFEST.operations[0],
+          name: "use.foo",
+          inputEvent: "foo",
+          outputEvent: "foo",
+        },
+      ],
+    };
+    const path = writeManifest(manifest);
+    const out = join(workDir, "out");
+    try {
+      generate({ manifestPath: path, outDir: out });
+      throw new Error("expected type_alias_event_name_collision");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CodegenError);
+      if (error instanceof CodegenError) {
+        expect(error.code).toBe("type_alias_event_name_collision");
+      }
+    }
+  });
 });
 
 describe("token vocabulary mapping", () => {
