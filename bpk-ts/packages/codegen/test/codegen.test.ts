@@ -278,6 +278,30 @@ describe("generate writes the expected files", () => {
     expect(idxZebra).toBeGreaterThan(-1);
     expect(idxApple).toBeGreaterThan(idxZebra);
   });
+
+  it("emits valid TS identifiers even when the operation name contains hyphens", () => {
+    // REGRESSION: renderOperationsModule used to strip only `.` from
+    // op.name when forming the const identifier. Hyphens were left
+    // in place, producing illegal TS like `export const BANK-COMMIT
+    // = ...`. The OperationName grammar allows `[A-Za-z0-9._-]+`,
+    // so hyphens must collapse to underscores too.
+    const manifest = {
+      ...MINIMAL_MANIFEST,
+      operations: [
+        {
+          ...MINIMAL_MANIFEST.operations[0],
+          name: "bank-commit.v2",
+        },
+      ],
+    };
+    const path = writeManifest(manifest);
+    const out = join(workDir, "out");
+    generate({ manifestPath: path, outDir: out });
+    const ops = readFileSync(join(out, "operations.ts"), "utf-8");
+    // Must produce a valid identifier — no hyphen.
+    expect(ops).toContain("export const BANK_COMMIT_V2");
+    expect(ops).not.toContain("BANK-COMMIT");
+  });
 });
 
 describe("token vocabulary mapping", () => {

@@ -567,7 +567,18 @@ fn serve_stream_writes_stable_error_for_line_read_failures() {
     assert!(too_long_bytes
         .windows(b"ERR line_too_long ".len())
         .any(|window| window == b"ERR line_too_long "));
-    assert!(empty_bytes.starts_with(b"ERR empty_stream "));
+    // EmptyStream returns without writing an ERR frame: the most
+    // common cause is a client connecting then closing before any
+    // bytes, and writing to a peer-closed socket would race a
+    // BrokenPipe IO error that serve_tcp_connection used to treat
+    // as fatal — letting a connect-and-close client kill the
+    // listener. The Codex P1 fix (netbat/src/transport/tcp.rs)
+    // short-circuits this case; the test now asserts the silent
+    // graceful path.
+    assert!(
+        empty_bytes.is_empty(),
+        "EmptyStream must not write an ERR frame (BrokenPipe-fatal race fix)"
+    );
 }
 
 #[test]

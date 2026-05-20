@@ -314,7 +314,14 @@ function renderOperationsModule(manifest: BatpakTsManifest): string {
         `operation ${op.name}: missing referenced event (${op.inputEvent} or ${op.outputEvent})`,
       );
     }
-    const constName = constCase(op.name.replace(/\./gu, "_")).toUpperCase();
+    // The OperationName grammar (syncbat::OperationName::new) accepts
+    // `[A-Za-z0-9._-]+`. The TS const identifier we emit MUST be a
+    // valid JS identifier, so collapse every separator the grammar
+    // allows (dot AND hyphen) into underscore. Plain `replace(/\./gu)`
+    // alone would leave hyphens, producing illegal output like
+    // `export const BANK-COMMIT = ...` when a downstream manifest
+    // names an operation with a hyphen.
+    const constName = constCase(op.name.replace(/[.-]/gu, "_")).toUpperCase();
     lines.push(`/** Source: syncbat operation "${op.name}" */`);
     lines.push(`export const ${constName} = {`);
     lines.push(`  name: ${JSON.stringify(op.name)},`);

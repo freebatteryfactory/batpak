@@ -228,10 +228,10 @@ mod tests {
     fn rejects_non_ascii() {
         let name = "café";
         let err = OperationName::new(name).expect_err("non-ascii rejected");
-        match err {
-            OperationNameError::IllegalCharacter { byte } => assert!(byte >= 0x80),
-            other => panic!("expected illegal-character variant, got {other:?}"),
-        }
+        let OperationNameError::IllegalCharacter { byte } = err else {
+            panic!("expected illegal-character variant, got {err:?}");
+        };
+        assert!(byte >= 0x80);
     }
 
     #[test]

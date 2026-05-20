@@ -19,10 +19,7 @@
 
 use proptest::prelude::*;
 
-use syncbat::{
-    EffectClass, OperationDescriptor, OperationName, RegisterOperationActionV1,
-    RegisterOperationRowV1,
-};
+use syncbat::{EffectClass, OperationDescriptor, OperationName, RegisterOperationRowV1};
 
 // ─── arbitrary generators ──────────────────────────────────────────────────
 
