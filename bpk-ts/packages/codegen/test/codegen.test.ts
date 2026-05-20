@@ -326,6 +326,78 @@ describe("generate writes the expected files", () => {
     // The illegal `export const 1_SYNC` MUST NOT appear.
     expect(ops).not.toMatch(/export const 1_SYNC\b/u);
   });
+
+  it("fails with operation_name_collision when two ops normalize to the same TS const", () => {
+    // REGRESSION (Codex P2 on commit 62cff8e): `"bank.commit"` and
+    // `"bank-commit"` are both valid OperationName wire shapes (the
+    // grammar accepts both `.` and `-`), but they collapse to the
+    // same `BANK_COMMIT` TS identifier under the dot+hyphen
+    // normalization. Without a uniqueness check, the codegen would
+    // emit duplicate `export const BANK_COMMIT = ...` lines and the
+    // generated package would fail to compile. Now we catch it at
+    // codegen time with operation_name_collision.
+    const manifest = {
+      ...MINIMAL_MANIFEST,
+      operations: [
+        { ...MINIMAL_MANIFEST.operations[0], name: "bank.commit" },
+        { ...MINIMAL_MANIFEST.operations[0], name: "bank-commit" },
+      ],
+    };
+    const path = writeManifest(manifest);
+    const out = join(workDir, "out");
+    try {
+      generate({ manifestPath: path, outDir: out });
+      throw new Error("expected operation_name_collision");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CodegenError);
+      if (error instanceof CodegenError) {
+        expect(error.code).toBe("operation_name_collision");
+      }
+    }
+  });
+
+  it("dedupes shared event type aliases across operations", () => {
+    // REGRESSION (Codex P2 on commit 62cff8e): each operation used
+    // to emit `export type <EventTsName>Input = ...` inside the
+    // per-op loop. Two operations sharing the same input event
+    // type (legitimate — same request schema, different effect
+    // class) would produce two identical `export type FooInput`
+    // declarations and tsc would fail to compile the generated
+    // package. Now the aliases are accumulated into a deduped Map
+    // and emitted ONCE after the loop.
+    const sharedEvent = {
+      ...MINIMAL_MANIFEST.events[0],
+      name: "shared.event",
+      tsName: "SharedEvent",
+    };
+    const manifest = {
+      ...MINIMAL_MANIFEST,
+      events: [sharedEvent],
+      operations: [
+        {
+          ...MINIMAL_MANIFEST.operations[0],
+          name: "op.alpha",
+          inputEvent: "shared.event",
+          outputEvent: "shared.event",
+        },
+        {
+          ...MINIMAL_MANIFEST.operations[0],
+          name: "op.beta",
+          inputEvent: "shared.event",
+          outputEvent: "shared.event",
+        },
+      ],
+    };
+    const path = writeManifest(manifest);
+    const out = join(workDir, "out");
+    generate({ manifestPath: path, outDir: out });
+    const ops = readFileSync(join(out, "operations.ts"), "utf-8");
+    // Each unique alias appears EXACTLY ONCE, never twice.
+    const inputMatches = ops.match(/export type SharedEventInput =/gu) ?? [];
+    const outputMatches = ops.match(/export type SharedEventOutput =/gu) ?? [];
+    expect(inputMatches).toHaveLength(1);
+    expect(outputMatches).toHaveLength(1);
+  });
 });
 
 describe("token vocabulary mapping", () => {

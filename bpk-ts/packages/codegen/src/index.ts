@@ -305,6 +305,19 @@ function renderOperationsModule(manifest: BatpakTsManifest): string {
     `import type { ${manifest.events.map((e) => e.tsName).join(", ")} } from "./events.js";`,
     "",
   ];
+  // Track sanitized identifiers across operations so collisions
+  // (`bank.commit` and `bank-commit` both normalize to BANK_COMMIT)
+  // fail at codegen time with a precise diagnostic instead of
+  // producing duplicate `export const BANK_COMMIT = ...` lines that
+  // tsc can't compile.
+  const seenConstNames = new Map<string, string>();
+  // Dedupe per-event-tsName type-alias emission so two operations
+  // sharing an input or output event type don't produce duplicate
+  // `export type X = Y` lines. Each unique alias gets emitted once
+  // AFTER the operations loop.
+  const inputAliases = new Map<string, string>();
+  const outputAliases = new Map<string, string>();
+
   for (const op of manifest.operations) {
     const requestEvent = manifest.events.find((e) => e.name === op.inputEvent);
     const responseEvent = manifest.events.find((e) => e.name === op.outputEvent);
@@ -328,6 +341,15 @@ function renderOperationsModule(manifest: BatpakTsManifest): string {
     if (/^[0-9]/u.test(constName)) {
       constName = `_${constName}`;
     }
+    const previous = seenConstNames.get(constName);
+    if (previous !== undefined) {
+      throw new CodegenError(
+        "operation_name_collision",
+        `operations ${JSON.stringify(previous)} and ${JSON.stringify(op.name)} both normalize to the TS constant identifier ${constName}; pick names that survive the [./-] -> _ collapse to be distinct`,
+      );
+    }
+    seenConstNames.set(constName, op.name);
+
     lines.push(`/** Source: syncbat operation "${op.name}" */`);
     lines.push(`export const ${constName} = {`);
     lines.push(`  name: ${JSON.stringify(op.name)},`);
@@ -348,11 +370,26 @@ function renderOperationsModule(manifest: BatpakTsManifest): string {
     lines.push(`    messageUtf8: ${JSON.stringify(op.errorFixture.messageUtf8)},`);
     lines.push(`  },`);
     lines.push(`} as const;`);
-    lines.push(``);
-    lines.push(`export type ${requestEvent.tsName}Input = ${requestEvent.tsName};`);
-    lines.push(`export type ${responseEvent.tsName}Output = ${responseEvent.tsName};`);
     lines.push("");
+
+    inputAliases.set(`${requestEvent.tsName}Input`, requestEvent.tsName);
+    outputAliases.set(`${responseEvent.tsName}Output`, responseEvent.tsName);
   }
+
+  // Emit the deduped type aliases AFTER the operation consts. Two
+  // operations sharing the same input event type now produce one
+  // `export type FooInput = Foo` declaration, not two.
+  if (inputAliases.size > 0 || outputAliases.size > 0) {
+    lines.push(`// ─── shared event type aliases ──────────────────────`);
+  }
+  for (const [alias, target] of inputAliases) {
+    lines.push(`export type ${alias} = ${target};`);
+  }
+  for (const [alias, target] of outputAliases) {
+    lines.push(`export type ${alias} = ${target};`);
+  }
+  lines.push("");
+
   return lines.join("\n");
 }
 
