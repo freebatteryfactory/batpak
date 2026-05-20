@@ -9,6 +9,7 @@
 import { CanonicalDecodeError, Reader } from "./reader.js";
 
 const POS_FIXINT_MAX = 0x7f;
+const NEG_FIXINT_MIN = 0xe0;
 
 const NIL = 0xc0;
 const FALSE = 0xc2;
@@ -17,6 +18,10 @@ const UINT8 = 0xcc;
 const UINT16 = 0xcd;
 const UINT32 = 0xce;
 const UINT64 = 0xcf;
+const INT8 = 0xd0;
+const INT16 = 0xd1;
+const INT32 = 0xd2;
+const INT64 = 0xd3;
 const STR8 = 0xd9;
 const STR16 = 0xda;
 const STR32 = 0xdb;
@@ -58,21 +63,25 @@ export function decode(bytes: Uint8Array): unknown {
 
 function decodeValue(reader: Reader): unknown {
   const head = reader.readByte();
-  // Positive fixint
+  // Positive fixint (0x00..0x7f).
   if (head <= POS_FIXINT_MAX) {
     return head;
   }
-  // fixmap
+  // fixmap (0x80..0x8f).
   if (head >= 0x80 && head <= 0x8f) {
     return decodeMap(reader, head & 0x0f);
   }
-  // fixarray
+  // fixarray (0x90..0x9f).
   if (head >= 0x90 && head <= 0x9f) {
     return decodeArray(reader, head & 0x0f);
   }
-  // fixstr
+  // fixstr (0xa0..0xbf).
   if (head >= 0xa0 && head <= 0xbf) {
     return decodeString(reader, head & 0x1f);
+  }
+  // Negative fixint (0xe0..0xff -> -32..-1).
+  if (head >= NEG_FIXINT_MIN) {
+    return head - 0x100;
   }
   switch (head) {
     case NIL:
@@ -87,6 +96,40 @@ function decodeValue(reader: Reader): unknown {
       return reader.readUInt16BE();
     case UINT32:
       return reader.readUInt32BE();
+    case INT8: {
+      // Sign-extend an unsigned byte to a signed JS number.
+      const b = reader.readByte();
+      return (b << 24) >> 24;
+    }
+    case INT16: {
+      const v = reader.readUInt16BE();
+      return (v << 16) >> 16;
+    }
+    case INT32: {
+      // Bitwise `| 0` forces JS numeric coercion to signed i32.
+      const v = reader.readUInt32BE();
+      return v | 0;
+    }
+    case INT64: {
+      // 8 bytes big-endian, two's-complement. Reconstruct as a JS
+      // number while validating safe-int bounds — rmp-serde will
+      // emit INT64 when an i64 value doesn't fit in any shorter
+      // signed token, and we have to reject anything past
+      // Number.MAX_SAFE_INTEGER on either side.
+      const high = reader.readUInt32BE();
+      const low = reader.readUInt32BE();
+      // Combine into a JS number. high is treated as signed via the
+      // top-bit check; low always contributes its unsigned value.
+      const signedHigh = high & 0x80000000 ? high - 0x100000000 : high;
+      const combined = signedHigh * 0x100000000 + low;
+      if (!Number.isSafeInteger(combined)) {
+        throw new CanonicalDecodeError(
+          "integer_out_of_safe_range",
+          `INT64 value ${combined} is outside Number.MAX_SAFE_INTEGER bounds`,
+        );
+      }
+      return combined;
+    }
     case UINT64:
       return reader.readUInt64BE();
     case STR8:

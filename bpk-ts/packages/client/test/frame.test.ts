@@ -40,6 +40,18 @@ describe("encodeRequest", () => {
     const big = new Uint8Array(DEFAULT_MAX_INPUT_BYTES + 1);
     expect(() => encodeRequest("x", big)).toThrow(FrameValidationError);
   });
+
+  it("rejects inputs that hex-double past the line cap (frame guard)", () => {
+    // REGRESSION: encodeRequest used to only check input.length vs
+    // DEFAULT_MAX_INPUT_BYTES (32 KiB). But the encoded frame is
+    // hex-encoded, doubling the input length, so a 32 KiB input
+    // becomes a 64+ KiB frame — exceeding the 64 KiB line cap on
+    // the server. The handshake would succeed locally but fail
+    // server-side with line_too_long after a network round-trip.
+    // Now we catch it at encode time with a precise diagnostic.
+    const justOver = new Uint8Array(DEFAULT_MAX_INPUT_BYTES);
+    expect(() => encodeRequest("a", justOver)).toThrow(/line_too_long|max line/);
+  });
 });
 
 describe("validateOperationName", () => {

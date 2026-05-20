@@ -53,13 +53,36 @@ describe("encoder rejects out-of-subset values", () => {
     expect(() => encode({ x: 1.5 })).toThrow(/non-integer/);
   });
 
-  it("rejects negative integers", () => {
-    expect(() => encode({ x: -1 })).toThrow(/negative integer/);
+  it("accepts negative integers and round-trips them through decode", () => {
+    // Signed MessagePack ints are required by i64-microseconds schema
+    // fields (e.g. EventGetAck.timestamp_us, where pre-epoch
+    // timestamps are negative). Round-trip every boundary shape so
+    // encoder + decoder agree across the negative-fixint / int8 /
+    // int16 / int32 / int64 transitions.
+    for (const value of [
+      -1,
+      -32,
+      -33,
+      -128,
+      -129,
+      -32768,
+      -32769,
+      -2147483648,
+      -2147483649,
+      Number.MIN_SAFE_INTEGER,
+    ]) {
+      const bytes = encode({ x: value });
+      const round = decode(bytes) as { x: number };
+      expect(round.x).toBe(value);
+    }
   });
 
-  it("rejects above-safe integers", () => {
+  it("rejects integers outside Number.MAX_SAFE_INTEGER bounds", () => {
     expect(() => encode({ x: Number.MAX_SAFE_INTEGER + 1 })).toThrow(
-      /above Number\.MAX_SAFE_INTEGER/,
+      /outside Number\.MAX_SAFE_INTEGER bounds/,
+    );
+    expect(() => encode({ x: Number.MIN_SAFE_INTEGER - 1 })).toThrow(
+      /outside Number\.MAX_SAFE_INTEGER bounds/,
     );
   });
 

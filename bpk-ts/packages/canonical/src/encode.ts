@@ -144,19 +144,71 @@ function encodeNumber(writer: Writer, value: number): void {
       `Phase 0 canonical encoder rejects non-integer number ${value}`,
     );
   }
-  if (value < 0) {
-    throw new CanonicalEncodeError(
-      "unsupported_value",
-      `Phase 0 canonical encoder rejects negative integer ${value} (no signed payload fields in fixtures)`,
-    );
-  }
   if (!Number.isSafeInteger(value)) {
     throw new CanonicalEncodeError(
       "unsupported_value",
-      `Phase 0 canonical encoder rejects integer ${value} above Number.MAX_SAFE_INTEGER`,
+      `Phase 0 canonical encoder rejects integer ${value} outside Number.MAX_SAFE_INTEGER bounds`,
     );
   }
-  encodeUnsignedInt(writer, value);
+  if (value >= 0) {
+    encodeUnsignedInt(writer, value);
+  } else {
+    encodeSignedInt(writer, value);
+  }
+}
+
+const INT8 = 0xd0;
+const INT16 = 0xd1;
+const INT32 = 0xd2;
+const INT64 = 0xd3;
+
+function encodeSignedInt(writer: Writer, value: number): void {
+  // negative fixint: -32..-1 packs into the head byte.
+  if (value >= -32) {
+    writer.pushByte(value & 0xff);
+    return;
+  }
+  if (value >= -128) {
+    writer.pushByte(INT8);
+    writer.pushByte(value & 0xff);
+    return;
+  }
+  if (value >= -32768) {
+    writer.pushByte(INT16);
+    const u = value & 0xffff;
+    writer.pushByte((u >> 8) & 0xff);
+    writer.pushByte(u & 0xff);
+    return;
+  }
+  if (value >= -2147483648) {
+    writer.pushByte(INT32);
+    const u = value >>> 0;
+    writer.pushByte((u >>> 24) & 0xff);
+    writer.pushByte((u >>> 16) & 0xff);
+    writer.pushByte((u >>> 8) & 0xff);
+    writer.pushByte(u & 0xff);
+    return;
+  }
+  // i64: 8 bytes big-endian two's-complement. Value is already
+  // safe-int-bounded by encodeNumber's guard above.
+  writer.pushByte(INT64);
+  // Compute u64 two's complement of `value`. `value` is negative
+  // and safe-int, so adding 2^64 produces the unsigned bit pattern.
+  // We split into two u32 halves.
+  // value = signedHigh * 2^32 + low
+  // For negative safe-int, signedHigh is also negative; convert to
+  // u32 form via +2^32 first.
+  const low = (value >>> 0) & 0xffffffff;
+  const signedHigh = Math.floor(value / 0x100000000);
+  const high = signedHigh < 0 ? signedHigh + 0x100000000 : signedHigh;
+  writer.pushByte((high >>> 24) & 0xff);
+  writer.pushByte((high >>> 16) & 0xff);
+  writer.pushByte((high >>> 8) & 0xff);
+  writer.pushByte(high & 0xff);
+  writer.pushByte((low >>> 24) & 0xff);
+  writer.pushByte((low >>> 16) & 0xff);
+  writer.pushByte((low >>> 8) & 0xff);
+  writer.pushByte(low & 0xff);
 }
 
 function encodeUnsignedInt(writer: Writer, value: number): void {

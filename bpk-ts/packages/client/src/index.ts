@@ -185,6 +185,19 @@ export function encodeRequest(operation: string | OperationName, input: Uint8Arr
   }
   const prefix = `${NETBAT_VERSION} ${CALL_VERB} ${validated} `;
   const prefixBytes = new TextEncoder().encode(prefix);
+  // Boundary check: hex doubles input, so a 32 KiB input that
+  // passes input_too_large above would produce a frame larger
+  // than the 64 KiB line cap the server enforces. Catch it here
+  // with a precise diagnostic instead of letting the server
+  // reject it as `line_too_long` after the network round-trip.
+  const frameLength = prefixBytes.length + input.length * 2 + 1;
+  if (frameLength > DEFAULT_MAX_LINE_BYTES) {
+    throw new FrameValidationError(
+      "line_too_long",
+      `encoded frame would be ${frameLength} bytes (input ${input.length} hex-doubles to ${input.length * 2}); ` +
+        `max line is ${DEFAULT_MAX_LINE_BYTES}. Use a shorter input or raise the server's max_line_bytes limit.`,
+    );
+  }
   const hex = encodeHex(input);
   const hexBytes = new TextEncoder().encode(hex);
   const out = new Uint8Array(prefixBytes.length + hexBytes.length + 1);
