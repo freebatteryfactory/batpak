@@ -1,5 +1,6 @@
 use super::{ensure, relative};
 use anyhow::{Context, Result};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -12,8 +13,10 @@ pub(super) fn check(repo_root: &Path) -> Result<()> {
     check_single_target_dir_contract(repo_root)?;
     check_crate_layout_contract(repo_root)?;
     check_default_feature_surface(repo_root)?;
+    check_core_feature_cfg_contract(repo_root)?;
     check_xtask_surface_contract(repo_root)?;
     check_syncbat_is_explicitly_gated(repo_root)?;
+    check_hbat_manifest_wiring_contract(repo_root)?;
     Ok(())
 }
 
@@ -346,6 +349,125 @@ fn check_default_feature_surface(repo_root: &Path) -> Result<()> {
     )
 }
 
+fn check_core_feature_cfg_contract(repo_root: &Path) -> Result<()> {
+    const IMPOSSIBLE_FEATURE_GUARDS: &[&str] = &["async-store", "exponential-backoff", "sha256"];
+
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .manifest_path(repo_root.join("Cargo.toml"))
+        .no_deps()
+        .exec()
+        .context("read Cargo metadata for core feature cfg contract")?;
+    let package = metadata
+        .packages
+        .iter()
+        .find(|package| package.name == "batpak")
+        .context("Cargo metadata must contain root batpak package")?;
+    let declared_features = package.features.keys().cloned().collect::<BTreeSet<_>>();
+    let impossible_features = IMPOSSIBLE_FEATURE_GUARDS
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+
+    for path in files_with_extension(&repo_root.join("crates/core/src"), "rs") {
+        let rel = relative(repo_root, &path);
+        let content = fs::read_to_string(&path).with_context(|| format!("read {rel}"))?;
+        let lines = content.lines().collect::<Vec<_>>();
+
+        for feature in extract_cfg_feature_names(&content) {
+            ensure(
+                declared_features.contains(&feature)
+                    || impossible_features.contains(feature.as_str()),
+                format!(
+                    "undeclared feature cfg `{feature}` in {rel}; declare it in crates/core/Cargo.toml or add a deliberate impossible-feature compile_error guard"
+                ),
+            )?;
+        }
+
+        for (index, line) in lines.iter().enumerate() {
+            if !line.contains("allow(unexpected_cfgs)") {
+                continue;
+            }
+
+            if line.trim_start().starts_with("#![") {
+                ensure(
+                    rel == "crates/core/src/lib.rs",
+                    format!(
+                        "crate-level unexpected_cfgs allowance is only permitted at crates/core/src/lib.rs, found in {rel}:{}",
+                        index + 1
+                    ),
+                )?;
+                ensure(
+                    ["async-store", "sha256"]
+                        .iter()
+                        .all(|feature| content.contains(&format!("#[cfg(feature = \"{feature}\")]"))),
+                    "crates/core/src/lib.rs crate-level unexpected_cfgs allowance must be paired with its impossible-feature compile_error guards",
+                )?;
+                continue;
+            }
+
+            let Some(feature) = following_cfg_feature(&lines, index + 1) else {
+                ensure(
+                    false,
+                    format!(
+                        "unexpected_cfgs allowance at {rel}:{} must directly guard an impossible-feature cfg",
+                        index + 1
+                    ),
+                )?;
+                continue;
+            };
+            ensure(
+                impossible_features.contains(feature.as_str()),
+                format!(
+                    "unexpected_cfgs allowance at {rel}:{} guards `{feature}`, but only impossible-feature compile_error tripwires may suppress cfg warnings",
+                    index + 1
+                ),
+            )?;
+            ensure(
+                following_lines_contain(&lines, index + 1, 4, "compile_error!"),
+                format!(
+                    "unexpected_cfgs allowance at {rel}:{} must lead to compile_error!, not dormant code",
+                    index + 1
+                ),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_cfg_feature_names(content: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut remaining = content;
+    const NEEDLE: &str = "feature = \"";
+    while let Some(start) = remaining.find(NEEDLE) {
+        let after = &remaining[start + NEEDLE.len()..];
+        let Some(end) = after.find('"') else {
+            break;
+        };
+        names.push(after[..end].to_owned());
+        remaining = &after[end + 1..];
+    }
+    names
+}
+
+fn following_cfg_feature(lines: &[&str], start: usize) -> Option<String> {
+    lines.iter().skip(start).find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            return None;
+        }
+        extract_cfg_feature_names(trimmed).into_iter().next()
+    })
+}
+
+fn following_lines_contain(lines: &[&str], start: usize, count: usize, needle: &str) -> bool {
+    lines
+        .iter()
+        .skip(start)
+        .take(count)
+        .any(|line| line.contains(needle))
+}
+
 fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
     let project_root = project_root(repo_root);
     let xtask_main = repo_root.join("tools/xtask/src/main.rs");
@@ -611,6 +733,124 @@ fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn check_hbat_manifest_wiring_contract(repo_root: &Path) -> Result<()> {
+    let hbat_src = repo_root.join("crates/hbat/src");
+    if !hbat_src.is_dir() {
+        return Ok(());
+    }
+
+    let manifest_path = hbat_src.join("manifest.rs");
+    let main_path = hbat_src.join("main.rs");
+    let manifest =
+        fs::read_to_string(&manifest_path).context("read crates/hbat/src/manifest.rs")?;
+    let main = fs::read_to_string(&main_path).context("read crates/hbat/src/main.rs")?;
+
+    for path in files_with_extension(&hbat_src, "rs") {
+        let rel = relative(repo_root, &path);
+        let module = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .context("hbat source file has UTF-8 stem")?;
+        let content = fs::read_to_string(&path).with_context(|| format!("read {rel}"))?;
+
+        for descriptor in hbat_operation_descriptors(&content) {
+            let Some(prefix) = descriptor.strip_suffix("_DESCRIPTOR") else {
+                ensure(
+                    false,
+                    format!(
+                        "hbat operation descriptor `{descriptor}` in {rel} must use *_DESCRIPTOR naming"
+                    ),
+                )?;
+                continue;
+            };
+            ensure(
+                manifest.contains(&format!("{prefix}_OPERATION_NAME")),
+                format!(
+                    "hbat operation descriptor `{descriptor}` in {rel} is not represented in manifest::descriptors()"
+                ),
+            )?;
+            ensure(
+                main.contains(&format!("hbat::{descriptor}.clone()")),
+                format!(
+                    "hbat operation descriptor `{descriptor}` in {rel} is not registered by hbat main::build_core"
+                ),
+            )?;
+        }
+
+        for payload in hbat_event_payload_structs(&content) {
+            let rust_type = format!("hbat::{module}::{payload}");
+            ensure(
+                count_occurrences(&content, &format!("rust_type: \"{rust_type}\"")) == 1,
+                format!(
+                    "hbat EventPayload `{rust_type}` in {rel} must have exactly one EventDescriptorRegistration rust_type row"
+                ),
+            )?;
+            ensure(
+                count_occurrences(&content, &format!("ts_name: \"{payload}\"")) == 1,
+                format!(
+                    "hbat EventPayload `{rust_type}` in {rel} must have exactly one EventDescriptorRegistration ts_name row"
+                ),
+            )?;
+            ensure(
+                count_occurrences(&content, &format!("kind_bits: {payload}::KIND.as_raw_u16()"))
+                    == 1,
+                format!(
+                    "hbat EventPayload `{rust_type}` in {rel} must register its derive-generated KIND in the manifest"
+                ),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn hbat_operation_descriptors(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let after_pub_const = trimmed.strip_prefix("pub const ")?;
+            let (name, rest) = after_pub_const.split_once(':')?;
+            rest.contains("OperationDescriptor")
+                .then(|| name.trim().to_owned())
+        })
+        .collect()
+}
+
+fn hbat_event_payload_structs(content: &str) -> Vec<String> {
+    let mut structs = Vec::new();
+    let mut pending_event_payload_derive = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("#[derive(") && trimmed.contains("EventPayload") {
+            pending_event_payload_derive = true;
+            continue;
+        }
+        if !pending_event_payload_derive {
+            continue;
+        }
+        if let Some(after_struct) = trimmed.strip_prefix("pub struct ") {
+            let name = after_struct
+                .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() {
+                structs.push(name.to_owned());
+            }
+            pending_event_payload_derive = false;
+        } else if trimmed.starts_with("#[") {
+            continue;
+        } else {
+            pending_event_payload_derive = false;
+        }
+    }
+    structs
+}
+
+fn count_occurrences(haystack: &str, needle: &str) -> usize {
+    haystack.match_indices(needle).count()
 }
 
 fn files_with_extension(root: &Path, extension: &str) -> Vec<PathBuf> {

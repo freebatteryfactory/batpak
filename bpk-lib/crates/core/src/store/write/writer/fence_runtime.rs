@@ -208,7 +208,13 @@ impl WriterState<'_> {
                 pending = fence.responses.len(),
                 "auto-cancelling active visibility fence during shutdown"
             );
-            let _ = self.index.cancel_visibility_fence(fence.token);
+            if let Err(error) = self.index.cancel_visibility_fence(fence.token) {
+                tracing::error!(
+                    token = fence.token,
+                    error = %error,
+                    "failed to cancel active visibility fence during shutdown"
+                );
+            }
             if let Err(error) = self.persist_cancelled_visibility_ranges() {
                 tracing::error!(
                     error = %error,

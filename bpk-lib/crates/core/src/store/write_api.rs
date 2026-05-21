@@ -19,7 +19,13 @@ impl Store<Open> {
             .tx
             .send(WriterCommand::BeginVisibilityFence { token, respond: tx });
         if send_result.is_err() {
-            let _ = self.index.cancel_visibility_fence(token);
+            if let Err(error) = self.index.cancel_visibility_fence(token) {
+                tracing::error!(
+                    token,
+                    error = %error,
+                    "failed to roll back visibility fence after writer enqueue failure"
+                );
+            }
             return Err(StoreError::WriterCrashed);
         }
         recv_writer_reply(&rx)?;
