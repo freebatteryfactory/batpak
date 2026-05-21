@@ -40,6 +40,8 @@
 //! | causation_id    | 16    | u128 LE; 0 = no causation           |
 //! | **Total**       | **162** |                                   |
 
+mod footer;
+
 #[cfg(test)]
 use crate::event::EventKind;
 use crate::event::HashChain;
@@ -59,10 +61,6 @@ use std::path::Path;
 
 /// Four-byte magic that identifies a SIDX footer at the tail of a segment file.
 pub(crate) const SIDX_MAGIC: &[u8; 4] = b"SDX2";
-
-/// Size of the fixed-layout trailer that terminates the SIDX footer:
-/// `string_table_offset(8) + entry_count(4) + magic(4)` = 16 bytes.
-const TRAILER_SIZE: u64 = 16;
 
 /// Fixed byte size of one serialised [`SidxEntry`] on disk.
 ///
@@ -392,10 +390,10 @@ impl SidxEntryCollector {
 
         // 4. Build the full footer in one contiguous buffer so the write
         // is atomic (single write_all) — no partial-write torn state.
-        let trailer_size = usize::try_from(TRAILER_SIZE)
-            .expect("invariant: SIDX trailer size fits usize on every supported target");
         let mut footer = Vec::with_capacity(
-            string_table_bytes.len() + self.entries.len() * ENTRY_SIZE + trailer_size,
+            string_table_bytes.len()
+                + self.entries.len() * ENTRY_SIZE
+                + footer::trailer_size_usize(),
         );
 
         footer.extend_from_slice(&string_table_bytes);
@@ -472,89 +470,21 @@ pub(crate) fn read_footer(path: &Path) -> Result<Option<SidxFooterData>, StoreEr
 
     let mut file = std::fs::File::open(path).map_err(StoreError::Io)?;
 
-    // ── 1. Guard: file must be at least TRAILER_SIZE bytes ────────────────────
-    let file_len = file.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
-    if file_len < TRAILER_SIZE {
+    let Some(layout) = footer::read_layout(&mut file, segment_id)? else {
         return Ok(None);
-    }
-
-    // ── 2. Read the 16-byte trailer ───────────────────────────────────────────
-    file.seek(SeekFrom::End(-(TRAILER_SIZE as i64)))
-        .map_err(StoreError::Io)?;
-
-    let mut trailer = [0u8; 16];
-    file.read_exact(&mut trailer).map_err(StoreError::Io)?;
-
-    // Last 4 bytes must be the SIDX magic; if not, this is a non-SIDX segment.
-    if &trailer[12..16] != SIDX_MAGIC {
-        return Ok(None);
-    }
-
-    // A5: explicit length guards. The slices are 8 and 4 bytes by
-    // construction (trailer is `[u8; 16]`), but surfacing a proper
-    // `CorruptFrame` error — rather than an `.expect` panic — keeps the
-    // cold-start read path honest if TRAILER_SIZE is ever refactored.
-    let offset_bytes: [u8; 8] = trailer[0..8]
-        .try_into()
-        .map_err(|_| StoreError::CorruptFrame {
-            segment_id,
-            offset: 0,
-            reason: "trailer truncated: string_table_offset bytes not readable".into(),
-        })?;
-    let string_table_offset = u64::from_le_bytes(offset_bytes);
-
-    let count_bytes: [u8; 4] = trailer[8..12]
-        .try_into()
-        .map_err(|_| StoreError::CorruptFrame {
-            segment_id,
-            offset: 0,
-            reason: "trailer truncated: entry_count bytes not readable".into(),
-        })?;
-    let entry_count = u32::from_le_bytes(count_bytes) as usize;
-
-    // ── 3. Validate offsets before any further I/O ────────────────────────────
-    // entries block occupies the ENTRY_SIZE × N bytes immediately before the trailer.
-    let entries_block_len = (entry_count as u64)
-        .checked_mul(ENTRY_SIZE as u64)
-        .ok_or_else(|| StoreError::CorruptSegment {
-            segment_id,
-            detail: "SIDX entry_count × ENTRY_SIZE overflows u64".into(),
-        })?;
-
-    // entries_start = file_len - TRAILER_SIZE - entries_block_len
-    let entries_start = file_len
-        .checked_sub(TRAILER_SIZE)
-        .and_then(|n| n.checked_sub(entries_block_len))
-        .ok_or_else(|| StoreError::CorruptSegment {
-            segment_id,
-            detail: "SIDX entry block extends before the beginning of the file".into(),
-        })?;
-
-    if string_table_offset > entries_start {
-        return Err(StoreError::CorruptSegment {
-            segment_id,
-            detail: format!(
-                "SIDX string_table_offset {string_table_offset} is past entries_start {entries_start}"
-            ),
-        });
-    }
-
-    // string_table_len is the gap between the table start and the entry block start.
-    let string_table_len = entries_start
-        .checked_sub(string_table_offset)
-        .ok_or_else(|| StoreError::CorruptSegment {
-            segment_id,
-            detail: "SIDX string table length underflows".into(),
-        })?;
+    };
 
     // ── 4. Read and decode string table ───────────────────────────────────────
-    file.seek(SeekFrom::Start(string_table_offset))
+    file.seek(SeekFrom::Start(layout.string_table_offset))
         .map_err(StoreError::Io)?;
 
     let table_len_usize =
-        usize::try_from(string_table_len).map_err(|_| StoreError::CorruptSegment {
+        usize::try_from(layout.string_table_len).map_err(|_| StoreError::CorruptSegment {
             segment_id,
-            detail: format!("SIDX string table length {string_table_len} exceeds usize::MAX"),
+            detail: format!(
+                "SIDX string table length {} exceeds usize::MAX",
+                layout.string_table_len
+            ),
         })?;
     let mut string_table_buf = vec![0u8; table_len_usize];
     file.read_exact(&mut string_table_buf)
@@ -565,10 +495,10 @@ pub(crate) fn read_footer(path: &Path) -> Result<Option<SidxFooterData>, StoreEr
 
     // ── 5. Read and decode entries ─────────────────────────────────────────────
     // After reading the string table we are positioned at entries_start.
-    let mut entries = Vec::with_capacity(entry_count);
+    let mut entries = Vec::with_capacity(layout.entry_count);
     let mut entry_buf = [0u8; ENTRY_SIZE];
 
-    for i in 0..entry_count {
+    for i in 0..layout.entry_count {
         file.read_exact(&mut entry_buf).map_err(|e| {
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
                 StoreError::CorruptSegment {
