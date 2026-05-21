@@ -23,6 +23,7 @@
 .idea/
 .vscode/
 .cursor/plans/
+.cursor
 # Nested Cargo.lock files from path-dependency fixture crates are cache, not
 # source of truth.
 bpk-lib/crates/core/fixtures/*/Cargo.lock
