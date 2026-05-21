@@ -2,20 +2,18 @@ use crate::coordinate::Coordinate;
 use crate::store::cold_start::{ColdStartPolicy, ReservedKindFallbackStats, WatermarkInfo};
 use crate::store::index::interner::StringInterner;
 use crate::store::index::{DiskPos, IndexEntry, RoutingSummary, StoreIndex};
-use crate::store::segment;
 use crate::store::segment::scan::{FrameScanTailPolicy, Reader, ScannedIndexEntry};
 use crate::store::StoreError;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-pub(crate) const COMPACTION_MARKER_FILENAME: &str = "compaction.pending.json";
+mod topology;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct PendingCompaction {
-    pub merged_id: u64,
-    pub source_segment_ids: Vec<u64>,
-}
+pub(crate) use topology::{
+    clear_pending_compaction, write_pending_compaction, COMPACTION_MARKER_FILENAME,
+};
+use topology::{load_pending_compaction, segment_paths};
 
 /// Which cold-start restore strategy was actually used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -328,136 +326,6 @@ pub(crate) fn open_index(
 
 fn elapsed_us(clock: &dyn crate::store::Clock, start_ns: i64) -> u64 {
     u64::try_from(clock.now_mono_ns().saturating_sub(start_ns).max(0) / 1_000).unwrap_or(u64::MAX)
-}
-
-fn pending_compaction_path(data_dir: &Path) -> std::path::PathBuf {
-    data_dir.join(COMPACTION_MARKER_FILENAME)
-}
-
-fn compaction_source_temp_path(data_dir: &Path, merged_id: u64) -> std::path::PathBuf {
-    data_dir.join(format!(
-        "{merged_id:06}.{}.compact-src",
-        segment::SEGMENT_EXTENSION
-    ))
-}
-
-fn load_pending_compaction(data_dir: &Path) -> Result<Option<PendingCompaction>, StoreError> {
-    let path = pending_compaction_path(data_dir);
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(StoreError::Io)?;
-    let marker = serde_json::from_slice::<PendingCompaction>(&bytes)
-        .map_err(|_| StoreError::DataDirMalformed { path: path.clone() })?;
-    Ok(Some(marker))
-}
-
-pub(crate) fn write_pending_compaction(
-    data_dir: &Path,
-    merged_id: u64,
-    source_segment_ids: &[u64],
-) -> Result<(), StoreError> {
-    let marker = PendingCompaction {
-        merged_id,
-        source_segment_ids: source_segment_ids.to_vec(),
-    };
-    let final_path = pending_compaction_path(data_dir);
-    crate::store::platform::fs::write_file_atomically(
-        data_dir,
-        &final_path,
-        "compaction marker",
-        |file| {
-            serde_json::to_writer(file, &marker).map_err(|e| StoreError::Serialization(Box::new(e)))
-        },
-    )
-}
-
-pub(crate) fn clear_pending_compaction(data_dir: &Path) -> Result<(), StoreError> {
-    let path = pending_compaction_path(data_dir);
-    match std::fs::remove_file(&path) {
-        Ok(()) => {
-            crate::store::platform::sync::sync_parent_dir(&path)?;
-            Ok(())
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(StoreError::Io(err)),
-    }
-}
-
-fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, std::path::PathBuf)>, StoreError> {
-    let mut entries: Vec<(u64, std::path::PathBuf)> = std::fs::read_dir(data_dir)?
-        .filter_map(|e| e.ok())
-        .filter_map(|entry| {
-            let path = entry.path();
-            let is_segment = path
-                .extension()
-                .map(|ext| ext == segment::SEGMENT_EXTENSION)
-                .unwrap_or(false);
-            if !is_segment {
-                return None;
-            }
-            let segment_id = match segment::SegmentId::from_filename(&path) {
-                Ok(parsed) => parsed.as_u64(),
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "skipping malformed segment filename"
-                    );
-                    return None;
-                }
-            };
-            Some((segment_id, path))
-        })
-        .collect();
-    if let Some(marker) = load_pending_compaction(data_dir)? {
-        let merged_present = entries
-            .iter()
-            .any(|(segment_id, _)| *segment_id == marker.merged_id);
-        let temp_source_path = compaction_source_temp_path(data_dir, marker.merged_id);
-        let temp_source_exists = temp_source_path.exists();
-        let stale_finalized_marker = merged_present
-            && !temp_source_exists
-            && marker
-                .source_segment_ids
-                .iter()
-                .filter(|&&segment_id| segment_id != marker.merged_id)
-                .all(|segment_id| !entries.iter().any(|(id, _)| id == segment_id));
-
-        if !stale_finalized_marker {
-            if merged_present {
-                entries.retain(|(segment_id, _)| {
-                    *segment_id == marker.merged_id
-                        || !marker
-                            .source_segment_ids
-                            .iter()
-                            .any(|source_id| source_id == segment_id)
-                });
-            } else {
-                if temp_source_exists {
-                    entries.retain(|(segment_id, _)| *segment_id != marker.merged_id);
-                    entries.push((marker.merged_id, temp_source_path));
-                }
-                for source_id in marker
-                    .source_segment_ids
-                    .iter()
-                    .copied()
-                    .filter(|source_id| *source_id != marker.merged_id)
-                {
-                    if !entries
-                        .iter()
-                        .any(|(segment_id, _)| *segment_id == source_id)
-                    {
-                        return Err(StoreError::DataDirMalformed {
-                            path: pending_compaction_path(data_dir),
-                        });
-                    }
-                }
-            }
-        }
-    }
-    entries.sort_by_key(|(segment_id, _)| *segment_id);
-    Ok(entries)
 }
 
 fn read_sealed_sidx_entries_parallel(
@@ -784,8 +652,10 @@ pub(crate) fn rebuild_from_segments(
 
 #[cfg(test)]
 mod tests {
+    use super::topology::compaction_source_temp_path;
     use super::*;
     use crate::prelude::*;
+    use crate::store::segment;
     use tempfile::TempDir;
 
     #[derive(Clone, Debug, Eq, PartialEq)]
