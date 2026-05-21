@@ -142,7 +142,15 @@ pub(super) fn writer_thread_main(
                     }
                 }
 
-                seg_id = find_latest_segment_id(&runtime.config.data_dir).unwrap_or(seg_id) + 1;
+                seg_id = match find_latest_segment_id(&runtime.config.data_dir) {
+                    Ok(latest) => latest.unwrap_or(seg_id) + 1,
+                    Err(error) => {
+                        tracing::error!(
+                            "writer restart failed — cannot enumerate segments: {error}. Thread exiting."
+                        );
+                        return;
+                    }
+                };
                 segment = match Segment::<Active>::create_with_created_ns(
                     &runtime.config.data_dir,
                     seg_id,
@@ -320,32 +328,32 @@ fn drain_shutdown_queue(
 }
 
 /// Find the latest segment ID by scanning data_dir for .fbat files.
-pub(crate) fn find_latest_segment_id(dir: &std::path::Path) -> Option<u64> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let path = e.path();
-            if !path
-                .extension()
-                .map(|ext| ext == crate::store::segment::SEGMENT_EXTENSION)
-                .unwrap_or(false)
-            {
-                return None;
+pub(crate) fn find_latest_segment_id(dir: &std::path::Path) -> Result<Option<u64>, StoreError> {
+    let mut latest = None;
+    for entry in std::fs::read_dir(dir).map_err(StoreError::Io)? {
+        let entry = entry.map_err(StoreError::Io)?;
+        let path = entry.path();
+        if !path
+            .extension()
+            .map(|ext| ext == crate::store::segment::SEGMENT_EXTENSION)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        match crate::store::segment::SegmentId::from_filename(&path) {
+            Ok(parsed) => {
+                latest = Some(latest.unwrap_or(0).max(parsed.as_u64()));
             }
-            match crate::store::segment::SegmentId::from_filename(&path) {
-                Ok(parsed) => Some(parsed.as_u64()),
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "skipping malformed segment filename"
-                    );
-                    None
-                }
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "skipping malformed segment filename"
+                );
             }
-        })
-        .max()
+        }
+    }
+    Ok(latest)
 }
 
 #[cfg(test)]

@@ -73,7 +73,7 @@ fn open_components(
 
     // Tell the reader which segment is active (for mmap dispatch).
     // The writer's initial segment ID is the highest existing + 1.
-    let active_seg_id = next_active_segment_id(&config.data_dir);
+    let active_seg_id = next_active_segment_id(&config.data_dir)?;
     reader.set_active_segment(active_seg_id);
 
     Ok(OpenComponents {
@@ -87,8 +87,8 @@ fn open_components(
     })
 }
 
-fn next_active_segment_id(data_dir: &std::path::Path) -> u64 {
-    write::writer::find_latest_segment_id(data_dir).unwrap_or(0) + 1
+fn next_active_segment_id(data_dir: &std::path::Path) -> Result<u64, StoreError> {
+    Ok(write::writer::find_latest_segment_id(data_dir)?.unwrap_or(0) + 1)
 }
 
 fn emit_open_report_observability(config: &StoreConfig, report: &OpenIndexReport) {
@@ -439,16 +439,17 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn next_active_segment_id_is_one_past_latest_existing_segment() {
-        let dir = TempDir::new().expect("temp dir");
-        std::fs::write(dir.path().join(segment::segment_filename(1)), b"").expect("segment 1");
-        std::fs::write(dir.path().join(segment::segment_filename(7)), b"").expect("segment 7");
+    fn next_active_segment_id_is_one_past_latest_existing_segment() -> Result<(), StoreError> {
+        let dir = TempDir::new()?;
+        std::fs::write(dir.path().join(segment::segment_filename(1)), b"")?;
+        std::fs::write(dir.path().join(segment::segment_filename(7)), b"")?;
 
         assert_eq!(
-            next_active_segment_id(dir.path()),
+            next_active_segment_id(dir.path())?,
             8,
             "PROPERTY: reader active segment must be one past the highest existing segment so the last sealed segment remains mmap-eligible"
         );
+        Ok(())
     }
 
     #[test]

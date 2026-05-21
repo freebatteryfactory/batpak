@@ -95,7 +95,8 @@ pub(crate) fn snapshot(
             artifact_count: cleared_artifact_count,
         });
     }
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry.map_err(StoreError::Io)?;
         let path = entry.path();
         if let Some(file_kind) = snapshot_source_file_kind(&path) {
             let dest_path = dest.join(entry.file_name());
@@ -204,7 +205,8 @@ fn remove_dir_all_if_present(path: &std::path::Path) -> Result<bool, StoreError>
 fn clear_snapshot_store_artifacts(dest: &std::path::Path) -> Result<usize, StoreError> {
     let entries = std::fs::read_dir(dest).map_err(StoreError::Io)?;
     let mut removed = 0;
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry.map_err(StoreError::Io)?;
         let path = entry.path();
         if snapshot_destination_should_clear(&path) {
             removed += usize::from(remove_file_if_present(&path)?);

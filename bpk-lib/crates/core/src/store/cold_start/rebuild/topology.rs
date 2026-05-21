@@ -67,31 +67,30 @@ pub(crate) fn clear_pending_compaction(data_dir: &Path) -> Result<(), StoreError
 }
 
 pub(super) fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, PathBuf)>, StoreError> {
-    let mut entries: Vec<(u64, PathBuf)> = std::fs::read_dir(data_dir)?
-        .filter_map(|e| e.ok())
-        .filter_map(|entry| {
-            let path = entry.path();
-            let is_segment = path
-                .extension()
-                .map(|ext| ext == segment::SEGMENT_EXTENSION)
-                .unwrap_or(false);
-            if !is_segment {
-                return None;
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(data_dir).map_err(StoreError::Io)? {
+        let entry = entry.map_err(StoreError::Io)?;
+        let path = entry.path();
+        let is_segment = path
+            .extension()
+            .map(|ext| ext == segment::SEGMENT_EXTENSION)
+            .unwrap_or(false);
+        if !is_segment {
+            continue;
+        }
+        let segment_id = match segment::SegmentId::from_filename(&path) {
+            Ok(parsed) => parsed.as_u64(),
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "skipping malformed segment filename"
+                );
+                continue;
             }
-            let segment_id = match segment::SegmentId::from_filename(&path) {
-                Ok(parsed) => parsed.as_u64(),
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "skipping malformed segment filename"
-                    );
-                    return None;
-                }
-            };
-            Some((segment_id, path))
-        })
-        .collect();
+        };
+        entries.push((segment_id, path));
+    }
     if let Some(marker) = load_pending_compaction(data_dir)? {
         let merged_present = entries
             .iter()
