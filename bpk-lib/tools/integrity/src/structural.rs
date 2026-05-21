@@ -41,8 +41,6 @@ fn check_rust_file_size_pressure(repo_root: &Path) -> Result<()> {
         ("crates/core/src/store/segment/sidx.rs", 995),
         ("crates/core/src/store/index/mod.rs", 929),
         ("crates/macros/src/lib.rs", 915),
-        ("crates/core/src/store/write/writer.rs", 903),
-        ("crates/core/src/store/projection/flow/mod.rs", 893),
     ];
 
     for path in production_rust_files(repo_root) {
