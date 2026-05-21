@@ -19,6 +19,8 @@ use crate::store::config::ValidatedStoreConfig;
 use crate::store::index::{DiskPos, StoreIndex};
 use crate::store::segment::sidx::kind_to_raw;
 use crate::store::segment::{self, Active, FramePayloadRef, Segment};
+#[cfg(test)]
+use crate::store::SystemClock;
 use crate::store::{AppendReceipt, StoreConfig, StoreError};
 use flume::{Receiver, Sender};
 use std::sync::Arc;
