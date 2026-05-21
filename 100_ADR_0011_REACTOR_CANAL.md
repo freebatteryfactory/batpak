@@ -45,12 +45,12 @@ subscription-backed primitives without moving ownership of either primitive.
 
 ## Cursor semantics
 
-**Files cited**: `bpk-lib/crates/core/src/store/delivery/cursor.rs:65-253`, `bpk-lib/crates/core/src/store/read_api.rs:167-169`.
+**Files cited**: `bpk-lib/crates/core/src/store/delivery/cursor.rs:55-258`, `bpk-lib/crates/core/src/store/delivery/cursor/worker.rs:281-537`, `bpk-lib/crates/core/src/store/read_api.rs:167-169`.
 
-- **Delivery guarantee.** Pull-based from the in-memory index. `Cursor::poll_batch(max)` at `bpk-lib/crates/core/src/store/delivery/cursor.rs:243-253` queries by `(region, position, started)` via `StoreIndex::query_hits_after` and returns up to `max` matching hits. The cursor advances only when events are consumed. "Guaranteed" here means at-least-once within process lifetime, and at-least-once across process restart when a `checkpoint_id` is set on `CursorWorkerConfig`.
+- **Delivery guarantee.** Pull-based from the in-memory index. `Cursor::poll_batch(max)` at `bpk-lib/crates/core/src/store/delivery/cursor.rs:146-158` queries by `(region, position, started)` via `StoreIndex::query_hits_after` and returns up to `max` matching hits. The cursor advances only when events are consumed. "Guaranteed" here means at-least-once within process lifetime, and at-least-once across process restart when a `checkpoint_id` is set on `CursorWorkerConfig`.
 - **Backpressure.** Natural — the reactor pulls. A slow reactor simply polls less frequently. The writer's commit-to-index visibility path is untouched.
-- **Error surface.** `cursor_worker` at `bpk-lib/crates/core/src/store/delivery/cursor.rs:655-880` supplies a supervised thread with explicit outcomes: the handler returns `CursorWorkerAction::{Continue, Stop}`, panics are caught via `std::panic::catch_unwind`, thread join surfaces `WriterCrashed` error to `CursorWorkerHandle::join()`.
-- **Restart / checkpoint.** Full: `RestartPolicy::{Once, Bounded { max_restarts, within_ms }}` is defined at `bpk-lib/crates/core/src/store/write/writer.rs:417-427` and enforced by the cursor worker at `bpk-lib/crates/core/src/store/delivery/cursor.rs:825-846`. On panic, the worker restores the last committed checkpoint via `Cursor::restore_checkpoint` and re-polls from there. When `CursorWorkerConfig.checkpoint_id: Option<String>` is set, checkpoints are persisted under `{data_dir}/cursors/{id}.ckpt` with parent-dir fsync so restart recovery spans process lifetime.
+- **Error surface.** `cursor_worker` at `bpk-lib/crates/core/src/store/delivery/cursor/worker.rs:281-537` supplies a supervised thread with explicit outcomes: the handler returns `CursorWorkerAction::{Continue, Stop}`, panics are caught via `std::panic::catch_unwind`, thread join surfaces `WriterCrashed` error to `CursorWorkerHandle::join()`.
+- **Restart / checkpoint.** Full: `RestartPolicy::{Once, Bounded { max_restarts, within_ms }}` is defined at `bpk-lib/crates/core/src/store/write/writer.rs:417-427` and enforced by the cursor worker at `bpk-lib/crates/core/src/store/delivery/cursor/worker.rs:462-524`. On panic, the worker restores the last committed checkpoint via `Cursor::restore_checkpoint` and re-polls from there. When `CursorWorkerConfig.checkpoint_id: Option<String>` is set, checkpoints are persisted under `{data_dir}/cursors/{id}.ckpt` with parent-dir fsync so restart recovery spans process lifetime.
 - **Writer-throughput coupling.** Zero — the writer writes, the cursor reads from index. No channel between them.
 - **Decode cost locality.** The cursor returns `IndexEntry`; callers decode by calling `Store::get(event_id)` → `StoredEvent<serde_json::Value>`. That's one index lookup plus one disk read per event. Against the fanout's pre-decoded envelope, this is strictly more work on the reactor side — but the Dispatch Chapter's decode seam (ADR-0010 consumer, shipped in T1 of the Dispatch Chapter) will re-decode typed events from `Event<Value>` anyway, so the pre-decoded optimization is moot for a typed reactor.
 
@@ -201,5 +201,5 @@ reactor fanout now uses the same writer-side region-filter contract as
 
 - Raw surface: `bpk-lib/crates/core/src/store/watch_api.rs:28-64` (`react_loop`), `bpk-lib/crates/core/src/event/sourcing.rs:222-250` (`Reactive<P>`)
 - Typed surface target: `bpk-lib/crates/core/src/store/reactor_typed.rs` (shipped in Dispatch Chapter T4b)
-- Cursor primitives: `bpk-lib/crates/core/src/store/delivery/cursor.rs:65-253`
+- Cursor primitives: `bpk-lib/crates/core/src/store/delivery/cursor.rs:55-258`
 - Decode seam: ADR-0010 + Dispatch Chapter T1 (`bpk-lib/crates/core/src/event/decode.rs`)
