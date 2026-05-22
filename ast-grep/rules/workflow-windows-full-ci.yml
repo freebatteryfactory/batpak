@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/rule.json
+
+id: workflow-windows-full-ci
+message: >-
+  Windows CI should run `cargo xtask ci-windows-surface`, not full `cargo xtask ci`.
+severity: error
+language: Yaml
+rule:
+  pattern: cargo xtask ci'
