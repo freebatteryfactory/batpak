@@ -26,70 +26,82 @@ env:
   CHAOS_ITERATIONS: 500
 
 jobs:
-  integrity-linux-container:
-    name: Integrity (ubuntu-devcontainer)
+  rust-changed:
+    name: Detect Rust-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.detect.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: detect
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          if git diff --name-only "$base" HEAD | grep -qE '^(bpk-lib/|\.devcontainer/|\.github/workflows/ci\.yml|bpk-lib/\.cargo/)'; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci-fast-linux:
+    name: CI fast (ubuntu-devcontainer)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-fast
       - uses: ./.github/actions/setup-devcontainer
-      - name: Canonical container integrity gates
+      - name: Fast PR signal
         env:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: |
-          bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci'
+        run: bash ./scripts/run-in-devcontainer.sh 'just ci-fast'
 
-  integrity-windows-native:
-    name: Integrity (windows-native)
+  verify-linux:
+    name: Verify (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [ci-fast-linux]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: verify
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Canonical preflight proof bundle
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'just verify'
+
+  ci-windows:
+    name: CI Windows surface (native)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy,rustfmt,llvm-tools-preview
-      # cargo-public-api uses rustdoc JSON, which is only available
-      # on nightly. Install a minimal nightly toolchain alongside
-      # stable so the public-api gate in `cargo xtask ci` can
-      # auto-fall-back to nightly. We install via `rustup` directly
-      # (not dtolnay/rust-toolchain@nightly) so the *default* toolchain
-      # stays whatever `rust-toolchain.toml` pins (1.92 stable) and
-      # the rest of the build is unaffected.
-      - name: Install nightly for cargo-public-api rustdoc JSON
-        shell: bash
-        run: rustup toolchain install nightly --profile minimal --no-self-update
-      # Tool version pins MUST stay in lock-step with `.devcontainer/Dockerfile`
-      # and `cargo xtask setup --install-tools`. Drift is caught by `check_ci_parity` in
-      # `tools/integrity/src/main.rs` (run via `cargo xtask structural`).
+          components: clippy,rustfmt
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.132
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny@0.19.0
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-audit@0.22.1
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov@0.8.5
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-public-api@0.51.0
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-mutants@27.0.0
       - uses: Swatinem/rust-cache@v2
-      - name: Integrity
+        with:
+          shared-key: ci-windows
+      - name: Native Windows surface lane
         working-directory: bpk-lib
-        run: cargo xtask ci
-      - name: Cross-crate EventPayload registry fixture
-        working-directory: bpk-lib
-        run: cargo test --release --manifest-path crates/core/fixtures/kind-collision-composer/Cargo.toml
+        run: cargo xtask ci-windows-surface
 
   feature-isolation:
     runs-on: ubuntu-latest
-    needs: [integrity-linux-container, integrity-windows-native]
+    needs: [ci-fast-linux, verify-linux, rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -109,24 +121,10 @@ jobs:
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: bash ./scripts/run-in-devcontainer.sh "cargo test ${{ matrix.features }}"
 
-  coverage:
-    runs-on: ubuntu-latest
-    needs: [integrity-linux-container, integrity-windows-native]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - uses: ./.github/actions/setup-devcontainer
-      - name: Coverage threshold check
-        env:
-          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
-          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: |
-          bash ./scripts/run-in-devcontainer.sh 'cargo xtask cover --ci --threshold 80'
-
   smoke-consumers:
     name: Smoke (quickstart, packaged consumer, template)
     runs-on: ubuntu-latest
-    needs: [integrity-linux-container]
+    needs: [verify-linux]
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -152,7 +150,7 @@ jobs:
     # generated tree and rebuilding.
     name: TS Parity (manifest + canonical + heartbeat-spike)
     runs-on: ubuntu-latest
-    needs: [integrity-linux-container]
+    needs: [verify-linux]
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -249,30 +247,60 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  mutants:
-    # Mutation testing smoke run — repo-owned representative shards.
-    # Triggered on every pull_request to surface tests that pass by accident
-    # (mutations that survive without being caught by any test). Also runs on
-    # manual workflow_dispatch.
-    #
-    # HARD GATE: critical seams run at 85% catch-rate thresholds. Repo-wide
-    # smoke currently runs in Phase0 record-only mode and prints the next
-    # available ratchet floor without enforcing it yet.
-    # cargo-mutants 27.0.0 has no built-in staged policy surface; the gate is
-    # implemented by parsing caught.txt / missed.txt in mutants() in
-    # tools/xtask/src/commands.rs after each cargo-mutants invocation.
+  mutants-smoke:
+    name: Mutation smoke (${{ matrix.seam }})
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    needs: [integrity-linux-container, integrity-windows-native]
+    if: >-
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') &&
+      needs.rust-changed.outputs.rust == 'true'
+    needs: [ci-fast-linux, rust-changed]
+    strategy:
+      fail-fast: false
+      matrix:
+        seam:
+          - writer-commit
+          - cursor-delivery
+          - projection-flow
+          - segment-scan
+          - hash-chain-replay
+          - frontier-wait-durable
+          - frontier-append-gate
+          - event-payload-registry-validator
+          - platform-backend
+          - testing-ledger-structural-lint
+          - syncbat-runtime-dispatch
+          - syncbat-register-catalog
+          - netbat-boundary-protocol
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mutants-smoke-${{ matrix.seam }}
       - uses: ./.github/actions/setup-devcontainer
-      - name: Mutation smoke (critical seams + repo-wide shard 1/48)
+      - name: Mutation smoke (critical seam shard)
         env:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask mutants smoke'
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask mutants smoke --seam ${{ matrix.seam }}'
+
+  mutants-smoke-repo-wide:
+    name: Mutation smoke (repo-wide ratchet)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') &&
+      needs.rust-changed.outputs.rust == 'true'
+    needs: [ci-fast-linux, rust-changed]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mutants-smoke-repo-wide
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Mutation smoke (repo-wide shard 1/48)
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask mutants smoke --repo-wide-only'
 
   loom-schedule-proof:
     name: Loom schedule proof
@@ -280,7 +308,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-loom'))
-    needs: [integrity-linux-container, integrity-windows-native]
+    needs: [ci-fast-linux, verify-linux]
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -317,6 +345,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mutants-full-${{ matrix.surface }}-${{ matrix.shard }}
       - uses: ./.github/actions/setup-devcontainer
       - name: Full mutation shard
         env:
@@ -347,7 +377,7 @@ jobs:
 
   docs:
     runs-on: ubuntu-latest
-    needs: [integrity-linux-container, integrity-windows-native]
+    needs: [verify-linux]
     if: github.ref == 'refs/heads/main'
     permissions:
       pages: write

@@ -46,7 +46,9 @@ At repo root, agents use `just`. Raw `cargo`, `npm`, and `pnpm` are implementati
 
 - `just list` — show the command surface
 - `just inspect` — structural doctrine, boundary checks, architecture IR, and ast-grep calipers
+- `just ci-fast` — early PR signal (format, clippy, checks, tests, dependency gates, traceability, structural)
 - `just verify` — canonical preflight proof bundle
+- `just ci-windows` — native Windows surface compatibility lane
 - `just seal` — release-readiness checks for a clean tree
 - `just ship dry` — release dry run
 - `just cargo -- <args>` — explicit Cargo escape hatch
@@ -57,8 +59,10 @@ Implementation commands still live under `bpk-lib/` and remain valid when a task
 
 - `cd bpk-lib && cargo xtask doctor`
 - `cd bpk-lib && cargo xtask install-hooks`
+- `cd bpk-lib && cargo xtask ci-fast`       — early PR signal; version pins, format, clippy, checks, nextest, deny/audit, traceability, structural
 - `cd bpk-lib && cargo xtask preflight`     — canonical devcontainer verification bundle for CI + coverage + docs from one in-container session. Prefer this over bare `cargo xtask ci` for pushes that touch store internals, xtask itself, or CI config, but do not describe it as the full proof chain unless you also run the extra hard gates (`mutants smoke`, perf gates, targeted fuzz/chaos).
-- `cd bpk-lib && cargo xtask ci`
+- `cd bpk-lib && cargo xtask ci`            — full merge bundle (`ci-fast` plus doctor, templates, public-api, package-leak-scan, bench compile, unused-deps advisory)
+- `cd bpk-lib && cargo xtask ci-windows-surface` — native Windows surface lane (not duplicate canonical Linux proof)
 - `cd bpk-lib && cargo xtask structural`
 - `cd bpk-lib && cargo xtask layout` — discoverable alias for the repo layout contract enforced by structural
 - `cd bpk-lib && cargo xtask boundary` — discoverable alias for stack dependency direction and runtime boundary discipline
