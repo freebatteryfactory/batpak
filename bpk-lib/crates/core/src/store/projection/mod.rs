@@ -314,7 +314,11 @@ impl ProjectionCache for NativeCache {
                 Err(_) => {
                     // Corrupt cache file — self-heal by deleting it.
                     tracing::warn!("corrupt cache file, deleting: {}", path.display());
-                    let _ = std::fs::remove_file(&path);
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(StoreError::cache_error(error)),
+                    }
                     Ok(None)
                 }
             },
