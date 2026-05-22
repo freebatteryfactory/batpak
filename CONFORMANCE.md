@@ -37,6 +37,24 @@ Repeated raw commands should become named `just` recipes.
 | `just ship dry` | Release dry run. |
 | `just ship real` | Real release path. |
 
+## Verification tiers
+
+The factory uses tiered verification so humans, agents, and CI all speak the same command language without moving policy into YAML.
+
+| Tier | Human face | Policy face (xtask) | Blocks merge? | Meaning |
+| --- | --- | --- | --- | --- |
+| Inspect | `just inspect` | structural, boundary, architecture IR, ast-grep | Optional/path-based | Fast shape checks before expensive proof. |
+| Fast | `just ci-fast` | `ci-fast` | Yes | Early PR signal: format, clippy, checks, tests, dependency gates, traceability, structural law. |
+| Integrity | `just verify` | `preflight` | Yes | Canonical Linux devcontainer proof: full CI, coverage threshold 80%, docs. |
+| Windows surface | `just ci-windows` | `ci-windows-surface` | Yes | Native Windows compatibility surface, including platform-sensitive cargo/test behavior and kind-collision fixture. |
+| Mutant smoke | `just mutants-smoke` | `mutants smoke` | Yes for Rust paths | Critical seam mutation gates; CI shards by seam, local runs all seams. |
+| Mutant full | `just mutants-full` | `mutants full --shard …` | No | Scheduled/manual repo-wide mutation ratchet. |
+| Release | `just seal`, `just ship dry` | seal / release manifest / dry-run release | Publish only | Packaging, manifests, provenance, and publish dry-run proof. |
+
+Windows does not duplicate the canonical Linux devcontainer philosophy lane. It proves native surface compatibility. `just verify` remains the full merge-confidence bundle.
+
+Linux `just verify` proves full canonical integrity (`ci` + coverage 80% + docs). Windows `just ci-windows` proves native surface compatibility only; the kind-collision composer fixture lives in xtask, not workflow YAML.
+
 ## Machine Law
 
 Machine law lives in:

@@ -447,6 +447,21 @@ pub(super) fn critical_mutation_smoke_lanes() -> Vec<MutationLane> {
         .collect()
 }
 
+pub(super) fn critical_mutation_smoke_lane_for_seam(slug: &str) -> Option<MutationLane> {
+    critical_mutation_seams()
+        .iter()
+        .copied()
+        .find(|seam| seam.slug == slug)
+        .map(MutationLane::critical_smoke)
+}
+
+pub(super) fn critical_seam_slugs() -> Vec<&'static str> {
+    critical_mutation_seams()
+        .iter()
+        .map(|seam| seam.slug)
+        .collect()
+}
+
 pub(super) fn repo_wide_mutation_lanes(
     surfaces: Vec<MutantSurface>,
     shard: Option<&str>,

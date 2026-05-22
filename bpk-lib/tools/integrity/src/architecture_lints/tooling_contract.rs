@@ -549,6 +549,14 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
         justfile_content.contains("stress:\n    cd bpk-lib; cargo xtask stress"),
         "justfile stress recipe must remain a thin alias over `cd bpk-lib; cargo xtask stress`",
     )?;
+    ensure(
+        justfile_content.contains("ci-fast:\n    cd bpk-lib; cargo xtask ci-fast"),
+        "justfile ci-fast recipe must remain a thin alias over `cd bpk-lib; cargo xtask ci-fast`",
+    )?;
+    ensure(
+        justfile_content.contains("ci-windows:\n    cd bpk-lib; cargo xtask ci-windows-surface"),
+        "justfile ci-windows recipe must remain a thin alias over `cd bpk-lib; cargo xtask ci-windows-surface`",
+    )?;
     for command in [
         XtaskDocCommand {
             command: "layout",

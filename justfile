@@ -82,6 +82,12 @@ mutants-smoke:
 mutants-full:
     cd bpk-lib; cargo xtask mutants full
 
+ci-fast:
+    cd bpk-lib; cargo xtask ci-fast
+
+ci-windows:
+    cd bpk-lib; cargo xtask ci-windows-surface
+
 ci:
     cd bpk-lib; cargo xtask ci
 
