@@ -12,7 +12,6 @@ use crate::{
     store_pub_fn_coverage,
 };
 use anyhow::{anyhow, bail, Result};
-use std::fs;
 use std::path::{Path, PathBuf};
 use syn::spanned::Spanned;
 
@@ -24,14 +23,14 @@ pub(crate) fn run() -> Result<()> {
     agent_surface::check(&repo_root)?;
     harness_lints::check(&repo_root, &tracked_files)?;
     invariant_bridge::check(&repo_root, &tracked_files)?;
-    check_no_dead_code_silencers(&repo_root)?;
-    check_no_placeholder_runtime_macros(&repo_root)?;
-    check_canonical_encoding_boundary(&repo_root)?;
-    check_no_store_read_dir_entry_error_swallowing(&repo_root)?;
-    check_store_segment_classification_boundary(&repo_root)?;
-    check_allow_justifications(&repo_root)?;
-    check_rust_file_size_pressure(&repo_root)?;
-    check_inline_test_island_pressure(&repo_root)?;
+    check_no_dead_code_silencers(&repo_root, &mut source_cache)?;
+    check_no_placeholder_runtime_macros(&repo_root, &mut source_cache)?;
+    check_canonical_encoding_boundary(&repo_root, &mut source_cache)?;
+    check_no_store_read_dir_entry_error_swallowing(&repo_root, &mut source_cache)?;
+    check_store_segment_classification_boundary(&repo_root, &mut source_cache)?;
+    check_allow_justifications(&repo_root, &mut source_cache)?;
+    check_rust_file_size_pressure(&repo_root, &mut source_cache)?;
+    check_inline_test_island_pressure(&repo_root, &mut source_cache)?;
     public_surface::check(&repo_root, &mut source_cache)?;
     ci_parity::check(&repo_root)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
@@ -39,7 +38,7 @@ pub(crate) fn run() -> Result<()> {
     Ok(())
 }
 
-fn check_rust_file_size_pressure(repo_root: &Path) -> Result<()> {
+fn check_rust_file_size_pressure(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {
     const DEFAULT_LINE_BUDGET: usize = 850;
     const RATCHELED_OVER_BUDGET_FILES: &[(&str, usize)] = &[
         ("crates/core/src/store/index/mod.rs", 835),
@@ -48,7 +47,7 @@ fn check_rust_file_size_pressure(repo_root: &Path) -> Result<()> {
 
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         let line_count = nonblank_line_count(&content);
         let budget = RATCHELED_OVER_BUDGET_FILES
             .iter()
@@ -66,14 +65,18 @@ fn check_rust_file_size_pressure(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_inline_test_island_pressure(repo_root: &Path) -> Result<()> {
+fn check_inline_test_island_pressure(
+    repo_root: &Path,
+    source_cache: &mut SourceCache,
+) -> Result<()> {
     const DEFAULT_TEST_ISLAND_BUDGET: usize = 200;
     const RATCHELED_OVER_BUDGET_TEST_ISLANDS: &[(&str, usize)] = &[];
 
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
-        let content = fs::read_to_string(&path)?;
-        let file = syn::parse_file(&content)
+        let content = source_cache.read_to_string(&path)?;
+        let file = source_cache
+            .parse_rust(&path)
             .map_err(|err| anyhow!("parse inline test islands in {rel}: {err}"))?;
         let lines = content.lines().collect::<Vec<_>>();
         for island in inline_test_islands(&file, &lines) {
@@ -97,7 +100,10 @@ fn check_inline_test_island_pressure(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_no_placeholder_runtime_macros(repo_root: &Path) -> Result<()> {
+fn check_no_placeholder_runtime_macros(
+    repo_root: &Path,
+    source_cache: &mut SourceCache,
+) -> Result<()> {
     let mut paths = production_rust_files(repo_root);
     paths.extend(rust_files(&repo_root.join("tools/xtask/src")));
     paths.extend(rust_files(&repo_root.join("tools/integrity/src")));
@@ -105,7 +111,7 @@ fn check_no_placeholder_runtime_macros(repo_root: &Path) -> Result<()> {
 
     for path in paths {
         let rel = relative(repo_root, &path);
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         for (line_no, line) in content.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.starts_with("//") {
@@ -132,7 +138,7 @@ fn check_no_placeholder_runtime_macros(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_no_dead_code_silencers(repo_root: &Path) -> Result<()> {
+fn check_no_dead_code_silencers(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {
     let allowlisted = load_dead_code_silencer_allowlist(repo_root).map_err(|err| anyhow!(err))?;
     let mut paths = production_rust_files(repo_root);
     paths.extend(rust_files(&repo_root.join("tools/xtask/src")));
@@ -142,7 +148,7 @@ fn check_no_dead_code_silencers(repo_root: &Path) -> Result<()> {
     paths.extend(rust_files(&core_benches_root(repo_root)));
     paths.push(repo_root.join("crates/core/build.rs"));
     for path in paths {
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         let sites = collect_dead_code_silencer_sites(&content)
             .map_err(|err| anyhow!("parse {}: {}", relative(repo_root, &path), err))?;
         for site in sites {
@@ -167,7 +173,7 @@ fn check_no_dead_code_silencers(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_allow_justifications(repo_root: &Path) -> Result<()> {
+fn check_allow_justifications(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {
     let known_invariants = load_known_invariants(repo_root).map_err(|err| anyhow!(err))?;
     let mut paths = production_rust_files(repo_root);
     paths.extend(rust_files(&repo_root.join("tools/xtask/src")));
@@ -177,7 +183,7 @@ fn check_allow_justifications(repo_root: &Path) -> Result<()> {
     paths.extend(rust_files(&core_benches_root(repo_root)));
     paths.push(repo_root.join("crates/core/build.rs"));
     for path in paths {
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         let lines: Vec<&str> = content.lines().collect();
         let mut index = 0;
         while index < lines.len() {
@@ -228,13 +234,16 @@ fn check_allow_justifications(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_canonical_encoding_boundary(repo_root: &Path) -> Result<()> {
+fn check_canonical_encoding_boundary(
+    repo_root: &Path,
+    source_cache: &mut SourceCache,
+) -> Result<()> {
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
         if rel == "crates/core/src/encoding.rs" {
             continue;
         }
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         for (line_no, line) in content.lines().enumerate() {
             if line.contains("rmp_serde::from_slice")
                 || line.contains("rmp_serde::to_vec")
@@ -252,13 +261,16 @@ fn check_canonical_encoding_boundary(repo_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_no_store_read_dir_entry_error_swallowing(repo_root: &Path) -> Result<()> {
+fn check_no_store_read_dir_entry_error_swallowing(
+    repo_root: &Path,
+    source_cache: &mut SourceCache,
+) -> Result<()> {
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
         if !rel.starts_with("crates/core/src/store/") {
             continue;
         }
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         let lines = content.lines().collect::<Vec<_>>();
         for line_no in 0..lines.len() {
             if read_dir_entry_error_is_swallowed(&lines, line_no) {
@@ -273,7 +285,10 @@ fn check_no_store_read_dir_entry_error_swallowing(repo_root: &Path) -> Result<()
     Ok(())
 }
 
-fn check_store_segment_classification_boundary(repo_root: &Path) -> Result<()> {
+fn check_store_segment_classification_boundary(
+    repo_root: &Path,
+    source_cache: &mut SourceCache,
+) -> Result<()> {
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
         if !rel.starts_with("crates/core/src/store/")
@@ -282,7 +297,7 @@ fn check_store_segment_classification_boundary(repo_root: &Path) -> Result<()> {
         {
             continue;
         }
-        let content = fs::read_to_string(&path)?;
+        let content = source_cache.read_to_string(&path)?;
         let lines = content.lines().collect::<Vec<_>>();
         for line_no in 0..lines.len() {
             if local_segment_extension_classification(&lines, line_no) {
