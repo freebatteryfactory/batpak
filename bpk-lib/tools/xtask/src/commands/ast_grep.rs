@@ -48,7 +48,6 @@ fn ast_grep_devops() -> Result<()> {
         "--globs",
         "justfile",
     ]);
-    run(command).with_context(|| {
-        "run devops ast-grep calipers on .github/workflows/ci.yml and justfile"
-    })
+    run(command)
+        .with_context(|| "run devops ast-grep calipers on .github/workflows/ci.yml and justfile")
 }
