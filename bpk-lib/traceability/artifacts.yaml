@@ -157,19 +157,35 @@
     - crates/netbat/tests/golden/response_ok.hex
     - crates/netbat/tests/golden/response_ok_hi.hex
     - crates/netbat/tests/golden/response_err_malformed.hex
+- id: ART-HBAT-SOURCE
+  kind: source
+  paths:
+    - crates/hbat/src/lib.rs
+    - crates/hbat/src/bank.rs
+    - crates/hbat/src/handlers.rs
+    - crates/hbat/src/manifest.rs
+    - crates/hbat/src/main.rs
+- id: ART-HBAT-TESTS
+  kind: tests
+  paths:
+    - crates/hbat/tests/tcp_e2e.rs
+- id: ART-HBAT-MANIFEST-EXPORT
+  kind: tool
+  paths:
+    - tools/xtask/src/commands/export_ts_manifest.rs
 - id: ART-ADR-SYNCBAT-CONTRACT
   kind: adr
   paths:
-    - 100_ADR_0028_SYNCBAT_RUNTIME_CONTRACT.md
+    - archive/decisions/100_ADR_0028_SYNCBAT_RUNTIME_CONTRACT.md
 - id: ART-ADR-NETBAT-CONTRACT
   kind: adr
   paths:
-    - 100_ADR_0029_NETBAT_BOUNDARY_CONTRACT.md
-    - 100_ADR_0030_NETBAT_STREAMING_CONTRACT.md
+    - archive/decisions/100_ADR_0029_NETBAT_BOUNDARY_CONTRACT.md
+    - archive/decisions/100_ADR_0030_NETBAT_STREAMING_CONTRACT.md
 - id: ART-ADR-RELEASE-PROOF-POSTURE
   kind: adr
   paths:
-    - 100_ADR_0031_0_7_6_RELEASE_PROOF_POSTURE.md
+    - archive/decisions/100_ADR_0031_0_7_6_RELEASE_PROOF_POSTURE.md
 - id: ART-RELEASE-HISTORY
   kind: release-history
   paths:
@@ -252,6 +268,15 @@
   kind: source
   paths:
     - crates/core/src/store/index/mod.rs
+- id: ART-STORE-QUERY-TRAVERSAL
+  kind: source
+  paths:
+    - crates/core/src/store/read_api.rs
+    - crates/core/src/store/index/query.rs
+- id: ART-STORE-QUERY-TRAVERSAL-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/read_api_pagination.rs
 - id: ART-STORE-WRITER
   kind: source
   paths:
@@ -415,47 +440,47 @@
 - id: ART-ADR-SYNC
   kind: adr
   paths:
-    - 100_ADR_0001_SYNC_ONLY_STORE.md
+    - archive/decisions/100_ADR_0001_SYNC_ONLY_STORE.md
 - id: ART-ADR-COMPACTION
   kind: adr
   paths:
-    - 100_ADR_0004_COMPACTION_CONCURRENCY.md
+    - archive/decisions/100_ADR_0004_COMPACTION_CONCURRENCY.md
 - id: ART-ADR-CONTROL-PLANE
   kind: adr
   paths:
-    - 100_ADR_0007_CONTROL_PLANE_AND_FAST_START.md
+    - archive/decisions/100_ADR_0007_CONTROL_PLANE_AND_FAST_START.md
 - id: ART-ADR-DURABLE-FRONTIER
   kind: adr
   paths:
-    - 100_ADR_0014_DURABLE_FRONTIER.md
+    - archive/decisions/100_ADR_0014_DURABLE_FRONTIER.md
 - id: ART-ADR-CHAOS-HARNESS
   kind: adr
   paths:
-    - 100_ADR_0015_CHAOS_HARNESS_DM_FLAKEY.md
+    - archive/decisions/100_ADR_0015_CHAOS_HARNESS_DM_FLAKEY.md
 - id: ART-ADR-DURABILITY-GATING
   kind: adr
   paths:
-    - 100_ADR_0016_DURABILITY_GATING.md
+    - archive/decisions/100_ADR_0016_DURABILITY_GATING.md
 - id: ART-ADR-AT-LEAST-ONCE-WITNESS
   kind: adr
   paths:
-    - 100_ADR_0017_AT_LEAST_ONCE_WITNESS_SURFACE.md
+    - archive/decisions/100_ADR_0017_AT_LEAST_ONCE_WITNESS_SURFACE.md
 - id: ART-ADR-STORE-PLATFORM
   kind: adr
   paths:
-    - 100_ADR_0018_STORE_PLATFORM_BACKEND.md
+    - archive/decisions/100_ADR_0018_STORE_PLATFORM_BACKEND.md
 - id: ART-ADR-RESTORE-PLANNER
   kind: adr
   paths:
-    - 100_ADR_0008_RESTORE_PLANNER_AND_PROJECTION_TRAIT.md
+    - archive/decisions/100_ADR_0008_RESTORE_PLANNER_AND_PROJECTION_TRAIT.md
 - id: ART-ADR-POSITION-HINTS
   kind: adr
   paths:
-    - 100_ADR_0009_POSITION_HINTS_AND_ARTIFACT_UPGRADES.md
+    - archive/decisions/100_ADR_0009_POSITION_HINTS_AND_ARTIFACT_UPGRADES.md
 - id: ART-ADR-CANONICAL-ENCODING
   kind: adr
   paths:
-    - 100_ADR_0019_CANONICAL_ENCODING_CONTRACT.md
+    - archive/decisions/100_ADR_0019_CANONICAL_ENCODING_CONTRACT.md
 - id: ART-SCHEMA-SNAPSHOT
   kind: source
   paths:
@@ -568,9 +593,15 @@
   kind: docs
   paths:
     - README.md
-    - 010_USER_GUIDE.md
-    - 020_TECHNICAL_REFERENCE.md
-    - 060_CONTRIBUTING.md
+    - FACTORY.md
+    - MODEL.md
+    - INVARIANTS.md
+    - TERMINALS.md
+    - EVENTS.md
+    - REPLAY.md
+    - INTEGRATION.md
+    - CONFORMANCE.md
+    - CONTRIBUTING.md
     - AGENTS.md
     - templates/minimal-app/Cargo.toml
 - id: ART-EXAMPLES

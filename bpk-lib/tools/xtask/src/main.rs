@@ -112,6 +112,10 @@ enum XtaskCommand {
     /// stable hardware when you need real interpretation.
     PerfGates,
     DevcontainerExec(DevcontainerExecArgs),
+    /// Early PR signal: format, clippy, checks, tests, dependency gates, machine law.
+    CiFast,
+    /// Native Windows surface compatibility lane.
+    CiWindowsSurface,
     Ci,
     /// Reproduce the canonical verification bundle inside the devcontainer.
     /// The host enters the container once, then CI, coverage, and docs run
@@ -244,6 +248,12 @@ pub(crate) struct MutantsArgs {
     surface: Option<MutantSurface>,
     #[arg(long)]
     shard: Option<String>,
+    /// Run one critical smoke seam (CI matrix shard). Mutually exclusive with `--repo-wide-only`.
+    #[arg(long, conflicts_with = "repo_wide_only")]
+    seam: Option<String>,
+    /// Run only repo-wide smoke ratchet lanes. Mutually exclusive with `--seam`.
+    #[arg(long, conflicts_with = "seam")]
+    repo_wide_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -482,6 +492,8 @@ fn main() -> Result<()> {
         }
         XtaskCommand::PerfGates => commands::perf_gates(),
         XtaskCommand::DevcontainerExec(args) => devcontainer::devcontainer_exec(&args),
+        XtaskCommand::CiFast => commands::ci_fast(),
+        XtaskCommand::CiWindowsSurface => commands::ci_windows_surface(),
         XtaskCommand::Ci => commands::ci(),
         XtaskCommand::Preflight => preflight::preflight(),
         XtaskCommand::PreCommit => {

@@ -167,6 +167,14 @@ pub(crate) fn ci() -> Result<()> {
     ci::ci()
 }
 
+pub(crate) fn ci_fast() -> Result<()> {
+    ci::ci_fast()
+}
+
+pub(crate) fn ci_windows_surface() -> Result<()> {
+    ci::ci_windows_surface()
+}
+
 pub(crate) fn loom() -> Result<()> {
     loom::loom()
 }

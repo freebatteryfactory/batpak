@@ -522,10 +522,17 @@ describe("token vocabulary mapping", () => {
       "u16",
       "u32",
       "u64-safe",
+      "u64-safe-positive",
       "u64-millis",
       "i64-microseconds",
       "option<string>",
+      "option<u128-hex>",
+      "option<u8>",
+      "option<u16>",
+      "option<u64-safe>",
+      "bool",
       "map<string,string>",
+      "array<EventSummary>",
     ] as const;
     const expected: Record<(typeof tokens)[number], string> = {
       string: "string",
@@ -533,10 +540,17 @@ describe("token vocabulary mapping", () => {
       u16: "number",
       u32: "number",
       "u64-safe": "number",
+      "u64-safe-positive": "number",
       "u64-millis": "number",
       "i64-microseconds": "number",
       "option<string>": "string | null",
+      "option<u128-hex>": '(string & Schema.Brand<"EventIdHex">) | null',
+      "option<u8>": "number | null",
+      "option<u16>": "number | null",
+      "option<u64-safe>": "number | null",
+      bool: "boolean",
       "map<string,string>": "Record<string, string>",
+      "array<EventSummary>": "Array<EventSummary>",
     };
     for (const t of tokens) {
       expect(tsTypeForToken(t)).toBe(expected[t]);

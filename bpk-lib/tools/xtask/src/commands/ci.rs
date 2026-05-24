@@ -5,12 +5,52 @@ use crate::util::{cargo, cargo_target_dir_arg};
 use crate::{BenchSurface, PackageLeakScanArgs, PublicApiArgs};
 use anyhow::Result;
 
-pub(crate) fn ci() -> Result<()> {
+/// Early PR signal: format, clippy, checks, tests, dependency gates, machine law.
+pub(crate) fn ci_fast() -> Result<()> {
     super::check_version_pins()?;
-    integrity("doctor", ["--strict"])?;
-    integrity("traceability-check", [])?;
-    integrity("structural-check", [])?;
     cargo(["fmt", "--check"])?;
+    run_workspace_clippy()?;
+    run_family_clippy()?;
+    run_workspace_and_family_checks()?;
+    deny_split()?;
+    run_nextest_ci(["--all-features"])?;
+    cargo(["test", "--doc", "--all-features"])?;
+    run_family_tests()?;
+    integrity("traceability-check", [])?;
+    integrity("structural-check", [])
+}
+
+/// Full merge bundle: fast lane plus release-oriented and compile-heavy gates.
+pub(crate) fn ci() -> Result<()> {
+    ci_fast()?;
+    integrity("doctor", ["--strict"])?;
+    templates()?;
+    doc_deny_warnings()?;
+    crate::public_api::public_api(PublicApiArgs {
+        strict: true,
+        check_baseline: true,
+        bless_baseline: false,
+    })?;
+    super::package_leak_scan(PackageLeakScanArgs {
+        allow_dirty: false,
+        strict_language: true,
+    })?;
+    bench::bench_compile(BenchSurface::Neutral)?;
+    bench::bench_compile(BenchSurface::Native)?;
+    unused_deps_advisory();
+    integrity("structural-check", [])
+}
+
+/// Native Windows surface compatibility: checks, tests, and platform-sensitive fixtures.
+pub(crate) fn ci_windows_surface() -> Result<()> {
+    super::check_version_pins()?;
+    cargo(["fmt", "--check"])?;
+    run_workspace_and_family_checks()?;
+    run_nextest_ci(["--all-features"])?;
+    run_kind_collision_composer_fixture()
+}
+
+fn run_workspace_clippy() -> Result<()> {
     cargo([
         "clippy",
         "--all-features",
@@ -18,7 +58,10 @@ pub(crate) fn ci() -> Result<()> {
         "--",
         "-D",
         "warnings",
-    ])?;
+    ])
+}
+
+fn run_family_clippy() -> Result<()> {
     for package in FAMILY_CRATES {
         cargo([
             "clippy",
@@ -32,46 +75,36 @@ pub(crate) fn ci() -> Result<()> {
             "warnings",
         ])?;
     }
-    deny_split()?;
-    run_nextest_ci(["--all-features"])?;
-    cargo(["test", "--doc", "--all-features"])?;
-    for package in FAMILY_CRATES {
-        cargo(["test", "-p", package, "--all-features"])?;
-    }
+    Ok(())
+}
+
+fn run_workspace_and_family_checks() -> Result<()> {
     cargo(["check", "--all-features"])?;
     cargo(["check", "--no-default-features"])?;
     for package in FAMILY_CRATES {
         cargo(["check", "-p", package, "--all-features"])?;
         cargo(["check", "-p", package, "--no-default-features"])?;
     }
-    templates()?;
-    // tier-1.4: per-PR rustdoc gate. Promotes batpak/syncbat/netbat
-    // missing-doc warnings to errors so docs are kept tight on every
-    // PR — not just on the main-branch `docs` job.
-    doc_deny_warnings()?;
-    crate::public_api::public_api(PublicApiArgs {
-        strict: true,
-        check_baseline: true,
-        bless_baseline: false,
-    })?;
-    super::package_leak_scan(PackageLeakScanArgs {
-        allow_dirty: false,
-        strict_language: true,
-    })?;
-    bench::bench_compile(BenchSurface::Neutral)?;
-    bench::bench_compile(BenchSurface::Native)?;
-    // tier-3: cargo-machete advisory pass. Failure is non-blocking
-    // because cargo-machete is a separate install; the audit's
-    // recommendation was to wire it in advisory-first and harden to
-    // blocking after one clean release.
-    unused_deps_advisory();
-    integrity("structural-check", [])
+    Ok(())
+}
+
+fn run_family_tests() -> Result<()> {
+    for package in FAMILY_CRATES {
+        cargo(["test", "-p", package, "--all-features"])?;
+    }
+    Ok(())
+}
+
+fn run_kind_collision_composer_fixture() -> Result<()> {
+    cargo([
+        "test",
+        "--release",
+        "--manifest-path",
+        "crates/core/fixtures/kind-collision-composer/Cargo.toml",
+    ])
 }
 
 /// Build rustdoc for the three publish crates with `-D warnings`.
-/// Catches missing-docs lints, broken intra-doc links, and stale
-/// doc references between commits — not just on the main-branch
-/// `docs` job.
 fn doc_deny_warnings() -> Result<()> {
     let mut cmd = std::process::Command::new("cargo");
     cmd.args([
@@ -88,9 +121,6 @@ fn doc_deny_warnings() -> Result<()> {
     crate::util::run(cmd)
 }
 
-/// Run `xtask unused-deps` in advisory mode — log the result, never
-/// fail the CI gate. Hardens to blocking after the next clean release
-/// per the gate audit's P1 plan.
 fn unused_deps_advisory() {
     if let Err(error) = super::unused_deps() {
         eprintln!("xtask ci: unused-deps advisory pass reported: {error}");

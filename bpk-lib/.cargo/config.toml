@@ -1,7 +1,12 @@
 # Repository-local Cargo config must stay portable.
-# Put host-specific linker or environment overrides in:
+# Host-specific linker or environment overrides belong in:
 #   - ~/.cargo/config.toml
 # Cargo does not load a repository-local ".cargo/config.local.toml" automatically.
+#
+# Linux mold linking is intentionally not pinned here: Bookworm clang 14 does not
+# accept `-fuse-ld=mold`, and CI image layers may not expose `/usr/bin/mold` even
+# when the package is listed in the Dockerfile. Enable mold locally only after
+# `which mold` succeeds in your devcontainer.
 
 [alias]
 xtask = "run --quiet --package xtask --"

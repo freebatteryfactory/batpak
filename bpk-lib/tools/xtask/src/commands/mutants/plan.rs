@@ -3,8 +3,9 @@ use anyhow::{bail, Result};
 use crate::{MutantMode, MutantSurface, MutantsArgs};
 
 use super::lanes::{
-    critical_mutation_lanes, critical_mutation_smoke_lanes, repo_wide_mutation_lanes,
-    MutationBaseline, MutationLane, MutationSharding,
+    critical_mutation_lanes, critical_mutation_smoke_lane_for_seam, critical_mutation_smoke_lanes,
+    critical_seam_slugs, repo_wide_mutation_lanes, MutationBaseline, MutationLane,
+    MutationSharding,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +25,26 @@ fn with_batched_baseline(mut lanes: Vec<MutationLane>) -> Vec<MutationLane> {
         };
     }
     lanes
+}
+
+fn with_run_baseline(mut lanes: Vec<MutationLane>) -> Vec<MutationLane> {
+    for lane in &mut lanes {
+        lane.baseline = MutationBaseline::Run;
+    }
+    lanes
+}
+
+fn smoke_selection_flags(args: &MutantsArgs) -> Result<()> {
+    if args.seam.is_some() && args.repo_wide_only {
+        bail!("`cargo xtask mutants smoke` accepts `--seam` or `--repo-wide-only`, not both");
+    }
+    if args.surface.is_some() || args.shard.is_some() {
+        bail!(
+            "`cargo xtask mutants smoke` does not accept `--surface` or `--shard`; use \
+             `--seam <slug>` for one critical seam or `--repo-wide-only` for repo-wide smoke"
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn mutants_command(lane: &MutationLane, output_dir: &std::path::Path) -> Vec<String> {
@@ -87,20 +108,37 @@ pub(super) fn mutants_command(lane: &MutationLane, output_dir: &std::path::Path)
 pub(super) fn build_mutant_execution_plan(args: &MutantsArgs) -> Result<MutantExecutionPlan> {
     match args.mode {
         MutantMode::Policy => {
-            if args.surface.is_some() || args.shard.is_some() {
+            if args.surface.is_some()
+                || args.shard.is_some()
+                || args.seam.is_some()
+                || args.repo_wide_only
+            {
                 bail!(
                     "`cargo xtask mutants policy` only describes repo-owned policy; do not pass \
-                     --surface or --shard"
+                     --surface, --shard, --seam, or --repo-wide-only"
                 );
             }
             Ok(MutantExecutionPlan::DescribePolicy)
         }
         MutantMode::Smoke => {
-            if args.surface.is_some() || args.shard.is_some() {
-                bail!(
-                    "`cargo xtask mutants smoke` owns its fixed policy lanes; do not pass \
-                     --surface or --shard"
-                );
+            smoke_selection_flags(args)?;
+
+            if let Some(slug) = args.seam.as_deref() {
+                let lane = match critical_mutation_smoke_lane_for_seam(slug) {
+                    Some(lane) => lane,
+                    None => {
+                        let valid = critical_seam_slugs().join(", ");
+                        bail!("unknown critical seam `{slug}`; valid slugs: {valid}");
+                    }
+                };
+                return Ok(MutantExecutionPlan::Run(with_run_baseline(vec![lane])));
+            }
+
+            if args.repo_wide_only {
+                return Ok(MutantExecutionPlan::Run(with_run_baseline(vec![
+                    MutationLane::repo_wide_smoke(MutantSurface::AllFeatures),
+                    MutationLane::repo_wide_smoke(MutantSurface::NoDefaultFeatures),
+                ])));
             }
 
             let mut lanes = critical_mutation_smoke_lanes();
@@ -111,6 +149,13 @@ pub(super) fn build_mutant_execution_plan(args: &MutantsArgs) -> Result<MutantEx
             Ok(MutantExecutionPlan::Run(with_batched_baseline(lanes)))
         }
         MutantMode::Full => {
+            if args.seam.is_some() || args.repo_wide_only {
+                bail!(
+                    "`cargo xtask mutants full` does not accept `--seam` or `--repo-wide-only`; \
+                     use `cargo xtask mutants smoke`"
+                );
+            }
+
             let surfaces = args.surface.map_or_else(
                 || vec![MutantSurface::AllFeatures, MutantSurface::NoDefaultFeatures],
                 |surface| vec![surface],

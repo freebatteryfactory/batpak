@@ -23,11 +23,10 @@
 - `bpk-lib/crates/macros/`, `bpk-lib/crates/macros-support/`, `bpk-lib/crates/bench-support/`: companion workspace crates
 - `bpk-lib/tools/integrity/`: traceability and structural detectors
 - `bpk-lib/tools/xtask/`: canonical developer command surface
-- `000_REPO_MAP.md`: root reading order and layout contract
 - `README.md`: primary repo entrypoint
-- `010_USER_GUIDE.md`: human-first workflows and usage
-- `020_TECHNICAL_REFERENCE.md`: technical reference and invariants
-- `099_DECISION_INDEX.md`, `100_ADR_*.md`, `cookbook/README.md`, `cookbook/200_*.md`: flat root decision and recipe surface
+- `FACTORY.md`, `MODEL.md`, `INVARIANTS.md`, `BATTERIES.md`, `TERMINALS.md`, `EVENTS.md`, `RECEIPTS.md`, `CIRCUITS.md`, `REPLAY.md`, `PROJECTIONS.md`, `INTEGRATION.md`, `CONFORMANCE.md`, `COOKBOOK.md`: canonical factory reading surface
+- `cookbook/README.md`, `cookbook/200_*.md`: recipe library indexed by `COOKBOOK.md`
+- `archive/decisions/099_DECISION_INDEX.md`, `archive/decisions/100_ADR_*.md`: historical decisions; not the public reading path
 - `bpk-lib/traceability/`: requirements, invariants, flows, artifacts
 
 ## Root Altitudes
@@ -37,18 +36,33 @@
 - Package-owned Cargo examples live under the owning crate. Today that means `bpk-lib/crates/core/examples/` for `batpak`; do not add root `examples/`.
 - Runtime/network crates (`syncbat`, `netbat`) must have integration `tests/`. Proc-macro/support crates may be tested through their owning consumer crates instead of carrying empty `tests/` folders.
 - Repo-owned Rust tools live under `bpk-lib/tools/`, with root `scripts/` reserved for CI/devcontainer boundary wrappers only.
-- Public docs stay flat at root (`README.md`, `001_*.md`, `010_*.md`, `020_*.md`, `100_ADR_*.md`, `cookbook/200_*.md`).
+- Public docs stay flat at root. The canonical reading surface is `README.md` plus the factory docs listed above; historical numbered docs are migration inputs until archived.
 - Tool-standard config paths live where their tools require them: `bpk-lib/.cargo/` and `bpk-lib/.config/` for the Cargo workspace; root `.devcontainer/`, `.github/`, and `.githooks/` for repo/CI entrypoints.
 - Agent/local workspace state (`.cursor/`, `.claude/`, `.codex/`, `.agents/`, `bpk-lib/target/`) is not substrate source.
 
 ## Canonical Commands
 
-Run canonical commands from `bpk-lib/`:
+At repo root, agents use `just`. Raw `cargo`, `npm`, and `pnpm` are implementation details unless routed through an explicit escape hatch.
+
+- `just list` — show the command surface
+- `just inspect` — structural doctrine, boundary checks, architecture IR, and ast-grep calipers
+- `just ci-fast` — early PR signal (format, clippy, checks, tests, dependency gates, traceability, structural)
+- `just verify` — canonical preflight proof bundle
+- `just ci-windows` — native Windows surface compatibility lane
+- `just seal` — release-readiness checks for a clean tree
+- `just ship dry` — release dry run
+- `just cargo -- <args>` — explicit Cargo escape hatch
+- `just pnpm -- <args>` — explicit pnpm escape hatch
+- `just npm -- <args>` — explicit npm escape hatch
+
+Implementation commands still live under `bpk-lib/` and remain valid when a task specifically needs the machinery layer:
 
 - `cd bpk-lib && cargo xtask doctor`
 - `cd bpk-lib && cargo xtask install-hooks`
+- `cd bpk-lib && cargo xtask ci-fast`       — early PR signal; version pins, format, clippy, checks, nextest, deny/audit, traceability, structural
 - `cd bpk-lib && cargo xtask preflight`     — canonical devcontainer verification bundle for CI + coverage + docs from one in-container session. Prefer this over bare `cargo xtask ci` for pushes that touch store internals, xtask itself, or CI config, but do not describe it as the full proof chain unless you also run the extra hard gates (`mutants smoke`, perf gates, targeted fuzz/chaos).
-- `cd bpk-lib && cargo xtask ci`
+- `cd bpk-lib && cargo xtask ci`            — full merge bundle (`ci-fast` plus doctor, templates, public-api, package-leak-scan, bench compile, unused-deps advisory)
+- `cd bpk-lib && cargo xtask ci-windows-surface` — native Windows surface lane (not duplicate canonical Linux proof)
 - `cd bpk-lib && cargo xtask structural`
 - `cd bpk-lib && cargo xtask layout` — discoverable alias for the repo layout contract enforced by structural
 - `cd bpk-lib && cargo xtask boundary` — discoverable alias for stack dependency direction and runtime boundary discipline
@@ -83,13 +97,14 @@ Run canonical commands from `bpk-lib/`:
 ## Change Map
 
 - Public API change:
-  - update `README.md`, `010_USER_GUIDE.md`, or `020_TECHNICAL_REFERENCE.md` as appropriate
+  - update `README.md`, `EVENTS.md`, `RECEIPTS.md`, `REPLAY.md`, `PROJECTIONS.md`, `INTEGRATION.md`, or `CONFORMANCE.md` as appropriate
   - update examples if onboarding changed
-  - update traceability and ADRs if invariants/flows changed
+  - update traceability if invariants/flows changed
 - Store internals change:
-  - run `cargo xtask ci`
+  - run `just inspect`
+  - run `just verify` when the change affects store behavior, xtask itself, or CI config
   - run the relevant perf surface
-  - inspect `bpk-lib/crates/core/tests/perf_gates.rs` and `020_TECHNICAL_REFERENCE.md`
+  - inspect `bpk-lib/crates/core/tests/perf_gates.rs` and the relevant factory root doc
 - Benchmark harness change:
   - update `cargo xtask bench` surfaces in `bpk-lib/tools/xtask/src/bench.rs`
   - refresh baselines intentionally
@@ -99,14 +114,23 @@ Run canonical commands from `bpk-lib/`:
   - keep JSON mode stdout-clean
   - keep retained artifacts under `bpk-lib/target/xtask-cover/last-run/`
 - Docs-only change:
-  - keep `README.md`, `010_USER_GUIDE.md`, and `020_TECHNICAL_REFERENCE.md` consistent
+  - keep `README.md`, `MODEL.md`, `INVARIANTS.md`, `CONFORMANCE.md`, and related factory docs consistent
 
 ## Guardrails
 
 - Do not introduce async runtime dependencies in production.
 - Keep root-first commands and paths accurate.
 - If you add a public item or named flow, update `bpk-lib/traceability/`.
-- Prefer `cargo xtask` over inventing new one-off local commands.
+- Prefer root `just` recipes over inventing new one-off local commands; use `xtask` for machinery that needs parsing, walking, validation, or receipts.
+- **Bidirectional substrate lane** — if a NETBAT terminal can commit substrate
+  events, it must also preserve bounded domain-neutral traversal. The reference
+  loop is `bank.commit` for write, `event.get` for point-read, and `event.query`
+  for log walking. New traversal fields must name the axis as
+  `global_sequence`; do not introduce ambiguous cursor names.
+- **Domain graph boundary** — do not add Downstream, workflow, mission, or
+  receipt-body verbs as batpak/hbat/netbat operations. Domain layers decode
+  envelope payloads above batpak after `event.query` + `event.get`; substrate
+  traversal returns metadata only.
 - **ExtProfile boundary** — batpak may align with the sibling `EXTERNAL_SPEC`, but this crate
   does not implement External-Profile or `contract.external_v1` wire validation. Treat
   `contract.external_v1` as a normative optional ExtProfile profile only when
@@ -115,7 +139,7 @@ Run canonical commands from `bpk-lib/`:
   surface. `authority_required` remains receiver-policy input, never granted
   authority.
 - `.githooks/` is the tracked repo hook surface. `cargo xtask setup --install-tools` will install it when no custom `core.hooksPath` is active; otherwise use `cargo xtask install-hooks` after clearing or changing the custom hook path.
-- **Structural parity checks** — `cd bpk-lib && cargo xtask structural` (called automatically by `cargo xtask ci`) runs two detectors you must not break:
+- **Structural parity checks** — `just inspect` runs the focused structural surface. The underlying `cd bpk-lib && cargo xtask structural` command (called automatically by `cargo xtask ci`) runs two detectors you must not break:
   - `check_ci_parity` — fails if `.github/workflows/ci.yml` drifts from the xtask source tree or `.devcontainer/Dockerfile`. Specifically: every `cargo xtask <subcommand>` referenced in the workflow must exist as a subcommand in xtask; every `taiki-e/install-action` tool must be present in xtask's setup step; tool version pins must agree across all three files. **Rule:** if you modify `bpk-lib/tools/xtask/src/main.rs`, `bpk-lib/tools/xtask/src/commands.rs`, `.github/workflows/ci.yml`, or `.devcontainer/Dockerfile`, run `cd bpk-lib && cargo xtask structural` before push.
   - `check_store_pub_fn_coverage` — uses `syn` to parse `bpk-lib/crates/core/src/store/`, extracts every `pub fn` on `impl Store`, and asserts that each one has at least one method-call reference somewhere in `bpk-lib/crates/core/tests/` or `bpk-lib/crates/core/src/`. Catches orphan public methods that ship untested and invisible to mutation testing. **Rule:** if you add a `pub fn` to `Store`, ensure it has a call site in tests or the check will fail.
 - **Stack boundary checks** — `cd bpk-lib && cargo xtask boundary` is the focused name for the layer checks enforced by structural. It keeps `batpak` below `syncbat` and `syncbat` below `netbat`, while downstream kit/agent layers stay outside this workspace; it also rejects production async runtime dependencies and unsafe/async runtime shapes in the family crates.
@@ -123,7 +147,7 @@ Run canonical commands from `bpk-lib/`:
 
 ## Mutation Testing Gate
 
-The `mutants` job in `ci.yml` runs on every `pull_request` and on main via `workflow_dispatch` or `schedule` — it is **not** report-only. `cargo xtask mutants smoke` is the repo-owned CI surface now: it runs the named critical seams first at an `85%` catch-rate threshold (`writer commit protocol`, `cursor delivery/checkpoint logic`, `projection replay/freshness logic`, `segment scan / corruption handling`, `hash-chain / replay consistency` across the feature lanes, platform backend admission/reverify, and testing-ledger linting), then runs repo-wide `1/48` shards on both feature surfaces under the current ratchet phase. Today the repo-wide phase is `Phase0` record-only, so xtask records the score and prints the next available ratchet floor without enforcing it yet. Run `cargo xtask mutants policy` to see the current thresholds and staged repo-wide floors from xtask itself.
+The `mutants` surface is intentionally **not** automatic on every pull request. Default PR CI is the cheap fast lane. Run mutation proof explicitly with the `run-mutants` or `run-heavy-ci` pull-request label, or via `workflow_dispatch` with the `mutants` / `heavy` proof profile. Scheduled full mutation still runs from `ci.yml` on the weekly cron. `cargo xtask mutants smoke` is the repo-owned CI surface now: it runs the named critical seams first at an `85%` catch-rate threshold (`writer commit protocol`, `cursor delivery/checkpoint logic`, `projection replay/freshness logic`, `segment scan / corruption handling`, `hash-chain / replay consistency` across the feature lanes, platform backend admission/reverify, and testing-ledger linting), then runs repo-wide `1/48` shards on both feature surfaces under the current ratchet phase. Today the repo-wide phase is `Phase0` record-only, so xtask records the score and prints the next available ratchet floor without enforcing it yet. Run `cargo xtask mutants policy` to see the current thresholds and staged repo-wide floors from xtask itself.
 
 **Rule:** if you delete a test, expect either a critical-seam threshold failure or a repo-wide score drop; replace it with an equivalent test or write a stronger one that subsumes its coverage.
 

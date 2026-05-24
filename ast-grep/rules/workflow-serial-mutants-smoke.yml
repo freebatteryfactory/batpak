@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/rule.json
+
+id: workflow-serial-mutants-smoke
+message: >-
+  Serial `cargo xtask mutants smoke` in CI was replaced by seam matrix shards
+  and `mutants smoke --repo-wide-only`.
+severity: error
+language: Yaml
+rule:
+  pattern: cargo xtask mutants smoke

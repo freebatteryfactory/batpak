@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/rule.json
+
+id: workflow-legacy-integrity-jobs
+message: >-
+  Legacy job ids `integrity-linux-container` / `integrity-windows-native` were
+  replaced by `ci-fast-linux`, `verify-linux`, and `ci-windows`.
+severity: error
+language: Yaml
+rule:
+  any:
+    - pattern: integrity-linux-container
+    - pattern: integrity-windows-native

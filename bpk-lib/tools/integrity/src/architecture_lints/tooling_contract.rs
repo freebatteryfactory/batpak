@@ -31,13 +31,23 @@ fn check_project_layout_contract(repo_root: &Path) -> Result<()> {
     )?;
 
     for path in [
-        "000_REPO_MAP.md",
-        "001_BATPAK_SUBSTRATE.md",
-        "002_SYNCBAT_RUNTIME.md",
-        "003_NETBAT_NETWORK.md",
-        "010_USER_GUIDE.md",
-        "020_TECHNICAL_REFERENCE.md",
-        "099_DECISION_INDEX.md",
+        "README.md",
+        "FACTORY.md",
+        "MODEL.md",
+        "INVARIANTS.md",
+        "BATTERIES.md",
+        "TERMINALS.md",
+        "EVENTS.md",
+        "RECEIPTS.md",
+        "CIRCUITS.md",
+        "REPLAY.md",
+        "PROJECTIONS.md",
+        "INTEGRATION.md",
+        "CONFORMANCE.md",
+        "COOKBOOK.md",
+        "CONTRIBUTING.md",
+        "archive/decisions/099_DECISION_INDEX.md",
+        "archive/legacy-docs/041_TESTING_LEDGER.md",
         "cookbook",
         "bpk-lib/Cargo.toml",
         "bpk-lib/.cargo/config.toml",
@@ -103,9 +113,9 @@ fn check_testing_doc_renames_stay_current(repo_root: &Path) -> Result<()> {
     ensure(
         !docs_rs.contains("HARNESS_DIRECTIVE.html")
             && !docs_rs.contains("HARNESS_LEDGER.html")
-            && docs_rs.contains("TESTING_DOCTRINE.html")
-            && docs_rs.contains("TESTING_LEDGER.html"),
-        "generated docs must use TESTING_DOCTRINE.html and TESTING_LEDGER.html names",
+            && !docs_rs.contains("TESTING_DOCTRINE.html")
+            && !docs_rs.contains("TESTING_LEDGER.html"),
+        "generated docs must not render retired harness docs as live pages",
     )?;
     Ok(())
 }
@@ -116,11 +126,12 @@ fn check_no_mdbook_dependency(repo_root: &Path) -> Result<()> {
         project_root.join(".devcontainer/Dockerfile"),
         project_root.join(".github/workflows/ci.yml"),
         project_root.join(".github/workflows/perf.yml"),
-        project_root.join("000_REPO_MAP.md"),
         project_root.join("README.md"),
-        project_root.join("010_USER_GUIDE.md"),
-        project_root.join("020_TECHNICAL_REFERENCE.md"),
-        project_root.join("060_CONTRIBUTING.md"),
+        project_root.join("FACTORY.md"),
+        project_root.join("MODEL.md"),
+        project_root.join("INVARIANTS.md"),
+        project_root.join("CONFORMANCE.md"),
+        project_root.join("CONTRIBUTING.md"),
         project_root.join("AGENTS.md"),
         project_root.join("justfile"),
     ];
@@ -156,16 +167,29 @@ fn check_no_mdbook_dependency(repo_root: &Path) -> Result<()> {
 fn check_justfile_stays_thin(repo_root: &Path) -> Result<()> {
     let path = project_root(repo_root).join("justfile");
     let content = fs::read_to_string(&path).context("read justfile")?;
+    let mut current_recipe = None;
     for (index, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("set ") {
             continue;
         }
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            current_recipe = trimmed.split(':').next();
+        }
         if line.starts_with(' ') || line.starts_with('\t') {
+            let is_escape_hatch = matches!(
+                current_recipe,
+                Some("cargo +args") | Some("pnpm +args") | Some("npm +args")
+            );
             ensure(
-                trimmed.starts_with("cd bpk-lib && cargo xtask ")
+                trimmed.starts_with("cd bpk-lib; cargo xtask ")
+                    || trimmed.starts_with("cd bpk-lib && cargo xtask ")
                     || trimmed.starts_with("cargo xtask ")
-                    || trimmed.starts_with("just "),
+                    || trimmed.starts_with("just ")
+                    || (is_escape_hatch
+                        && (trimmed.starts_with("cd bpk-lib; cargo ")
+                            || trimmed.starts_with("pnpm ")
+                            || trimmed.starts_with("npm "))),
                 format!(
                     "justfile command at line {} must stay a thin alias over cargo xtask or just",
                     index + 1
@@ -514,16 +538,24 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
         "xtask main must expose install-hooks and devcontainer-exec as first-class command surfaces",
     )?;
     ensure(
-        justfile_content.contains("bench-compile:\n    cd bpk-lib && cargo xtask bench --compile"),
-        "justfile bench-compile recipe must remain a thin alias over `cd bpk-lib && cargo xtask bench --compile`",
+        justfile_content.contains("bench-compile:\n    cd bpk-lib; cargo xtask bench --compile"),
+        "justfile bench-compile recipe must remain a thin alias over `cd bpk-lib; cargo xtask bench --compile`",
     )?;
     ensure(
-        justfile_content.contains("install-hooks:\n    cd bpk-lib && cargo xtask install-hooks"),
-        "justfile install-hooks recipe must remain a thin alias over `cd bpk-lib && cargo xtask install-hooks`",
+        justfile_content.contains("install-hooks:\n    cd bpk-lib; cargo xtask install-hooks"),
+        "justfile install-hooks recipe must remain a thin alias over `cd bpk-lib; cargo xtask install-hooks`",
     )?;
     ensure(
-        justfile_content.contains("stress:\n    cd bpk-lib && cargo xtask stress"),
-        "justfile stress recipe must remain a thin alias over `cd bpk-lib && cargo xtask stress`",
+        justfile_content.contains("stress:\n    cd bpk-lib; cargo xtask stress"),
+        "justfile stress recipe must remain a thin alias over `cd bpk-lib; cargo xtask stress`",
+    )?;
+    ensure(
+        justfile_content.contains("ci-fast:\n    cd bpk-lib; cargo xtask ci-fast"),
+        "justfile ci-fast recipe must remain a thin alias over `cd bpk-lib; cargo xtask ci-fast`",
+    )?;
+    ensure(
+        justfile_content.contains("ci-windows:\n    cd bpk-lib; cargo xtask ci-windows-surface"),
+        "justfile ci-windows recipe must remain a thin alias over `cd bpk-lib; cargo xtask ci-windows-surface`",
     )?;
     for command in [
         XtaskDocCommand {
