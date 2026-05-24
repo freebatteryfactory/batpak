@@ -1,6 +1,7 @@
 use crate::util::{cargo_target_dir, repo_root, run_output};
 use crate::{PublicApiArgs, SemverCheckArgs};
 use anyhow::{bail, Context, Result};
+use std::borrow::Cow;
 use std::fs;
 use std::process::Command;
 
@@ -78,9 +79,10 @@ pub(crate) fn public_api(args: PublicApiArgs) -> Result<()> {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let snapshot = normalize_public_api_snapshot(&stdout);
         let current = target_dir.join(package.baseline);
         let stderr_path = target_dir.join(format!("{}.stderr.txt", package.package));
-        fs::write(&current, stdout.as_bytes())
+        fs::write(&current, snapshot.as_ref())
             .with_context(|| format!("write {}", current.display()))?;
         fs::write(&stderr_path, stderr.as_bytes())
             .with_context(|| format!("write {}", stderr_path.display()))?;
@@ -92,14 +94,15 @@ pub(crate) fn public_api(args: PublicApiArgs) -> Result<()> {
                 fs::create_dir_all(parent)
                     .with_context(|| format!("create {}", parent.display()))?;
             }
-            fs::write(&baseline, stdout.as_bytes())
+            fs::write(&baseline, snapshot.as_ref())
                 .with_context(|| format!("write {}", baseline.display()))?;
             println!("public-api: blessed {}", baseline.display());
         }
         if args.check_baseline {
-            let expected = fs::read_to_string(&baseline)
+            let expected_raw = fs::read_to_string(&baseline)
                 .with_context(|| format!("read {}", baseline.display()))?;
-            if expected != stdout {
+            let expected = normalize_public_api_snapshot(&expected_raw);
+            if expected != snapshot {
                 bail!(
                     "public-api baseline for {} drifted; inspect {} and refresh intentionally with `cargo xtask public-api --strict --bless-baseline`",
                     package.package,
@@ -180,6 +183,31 @@ pub(crate) fn semver_check(args: SemverCheckArgs) -> Result<()> {
     Ok(())
 }
 
+/// Collapse platform-specific spellings so Linux devcontainer and Windows hosts
+/// compare the same public-api snapshot text.
+fn normalize_public_api_snapshot(text: &str) -> Cow<'_, str> {
+    let mut normalized = Cow::Borrowed(text);
+    for (from, to) in [
+        ("\r\n", "\n"),
+        ("std::net::tcp::", "std::net::"),
+        ("std::io::error::ErrorKind", "std::io::ErrorKind"),
+        ("std::io::error::Error", "std::io::Error"),
+        (
+            "core::iter::traits::collect::IntoIterator",
+            "core::iter::IntoIterator",
+        ),
+        (
+            "core::iter::traits::iterator::Iterator",
+            "core::iter::Iterator",
+        ),
+    ] {
+        if normalized.contains(from) {
+            normalized = Cow::Owned(normalized.replace(from, to));
+        }
+    }
+    normalized
+}
+
 fn crate_dir(package: &str) -> &str {
     match package {
         "batpak" => "core",
@@ -211,6 +239,34 @@ fn cargo_semver_checks_is_available() -> bool {
 mod tests {
     use super::PUBLIC_API_PACKAGES;
     use crate::publish::PUBLISH_CRATES;
+
+    use super::normalize_public_api_snapshot;
+
+    #[test]
+    fn normalize_public_api_snapshot_collapses_tcp_module_paths() {
+        let input = "pub fn netbat::serve_tcp_listener(listener: std::net::tcp::TcpListener)\r\n";
+        assert_eq!(
+            normalize_public_api_snapshot(input),
+            "pub fn netbat::serve_tcp_listener(listener: std::net::TcpListener)\n"
+        );
+    }
+
+    #[test]
+    fn normalize_public_api_snapshot_collapses_std_path_aliases() {
+        let input = concat!(
+            "impl core::convert::From<std::io::error::Error> for netbat::NetbatError\n",
+            "pub netbat::NetbatError::Io::kind: std::io::error::ErrorKind\n",
+            "pub fn netbat::Server::routes(&self) -> impl core::iter::traits::iterator::Iterator<Item = &netbat::Route>\n",
+            "pub fn netbat::inspect_core_operations<I, S>(core: &syncbat::core::Core, operation_names: I) -> netbat::CoreHealth where I: core::iter::traits::collect::IntoIterator<Item = S>, S: core::convert::AsRef<str>\n",
+        );
+        let expected = concat!(
+            "impl core::convert::From<std::io::Error> for netbat::NetbatError\n",
+            "pub netbat::NetbatError::Io::kind: std::io::ErrorKind\n",
+            "pub fn netbat::Server::routes(&self) -> impl core::iter::Iterator<Item = &netbat::Route>\n",
+            "pub fn netbat::inspect_core_operations<I, S>(core: &syncbat::core::Core, operation_names: I) -> netbat::CoreHealth where I: core::iter::IntoIterator<Item = S>, S: core::convert::AsRef<str>\n",
+        );
+        assert_eq!(normalize_public_api_snapshot(input), expected);
+    }
 
     #[test]
     fn public_api_packages_match_publish_crates() {

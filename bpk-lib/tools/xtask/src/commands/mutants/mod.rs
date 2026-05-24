@@ -49,14 +49,19 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    #[test]
-    fn mutants_smoke_plan_runs_critical_then_repo_wide_ratchet_lanes() {
-        let plan = build_mutant_execution_plan(&MutantsArgs {
+    fn smoke_args() -> MutantsArgs {
+        MutantsArgs {
             mode: MutantMode::Smoke,
             surface: None,
             shard: None,
-        })
-        .expect("smoke plan");
+            seam: None,
+            repo_wide_only: false,
+        }
+    }
+
+    #[test]
+    fn mutants_smoke_plan_runs_critical_then_repo_wide_ratchet_lanes() {
+        let plan = build_mutant_execution_plan(&smoke_args()).expect("smoke plan");
 
         let mut expected = critical_mutation_smoke_lanes()
             .into_iter()
@@ -85,6 +90,8 @@ mod tests {
             mode: MutantMode::Full,
             surface: Some(MutantSurface::AllFeatures),
             shard: Some("3/12".to_owned()),
+            seam: None,
+            repo_wide_only: false,
         })
         .expect("full plan");
 
@@ -119,6 +126,8 @@ mod tests {
                 "crates/core/src/store/write/**/*.rs",
                 "--file",
                 "crates/core/src/store/write/control/**/*.rs",
+                "--exclude-re",
+                lane.exclude_res[0],
                 "--all-features",
                 "--cargo-arg",
                 "--locked",
@@ -183,11 +192,7 @@ mod tests {
             Some(MutationSharding::RoundRobin)
         );
 
-        let plan = build_mutant_execution_plan(&MutantsArgs {
-            mode: MutantMode::Smoke,
-            surface: None,
-            shard: None,
-        })?;
+        let plan = build_mutant_execution_plan(&smoke_args())?;
 
         let MutantExecutionPlan::Run(lanes) = plan else {
             anyhow::bail!("expected runnable smoke plan");
@@ -198,6 +203,63 @@ mod tests {
             .iter()
             .all(|lane| lane.baseline == MutationBaseline::Skip));
         Ok(())
+    }
+
+    #[test]
+    fn mutants_smoke_seam_runs_only_requested_lane_with_run_baseline() {
+        let plan = build_mutant_execution_plan(&MutantsArgs {
+            mode: MutantMode::Smoke,
+            surface: None,
+            shard: None,
+            seam: Some("writer-commit".to_owned()),
+            repo_wide_only: false,
+        })
+        .expect("seam plan");
+
+        let MutantExecutionPlan::Run(lanes) = plan else {
+            panic!("expected runnable seam plan");
+        };
+        assert_eq!(lanes.len(), 1);
+        assert_eq!(lanes[0].slug, "writer-commit");
+        assert_eq!(lanes[0].baseline, MutationBaseline::Run);
+    }
+
+    #[test]
+    fn mutants_smoke_repo_wide_only_runs_repo_wide_lanes_with_run_baseline() {
+        let plan = build_mutant_execution_plan(&MutantsArgs {
+            mode: MutantMode::Smoke,
+            surface: None,
+            shard: None,
+            seam: None,
+            repo_wide_only: true,
+        })
+        .expect("repo-wide plan");
+
+        let MutantExecutionPlan::Run(lanes) = plan else {
+            panic!("expected runnable repo-wide plan");
+        };
+        assert_eq!(lanes.len(), 2);
+        assert!(lanes
+            .iter()
+            .all(|lane| lane.baseline == MutationBaseline::Run));
+        assert!(lanes
+            .iter()
+            .all(|lane| lane.scope == MutationScope::RepoWide));
+    }
+
+    #[test]
+    fn mutants_smoke_unknown_seam_lists_valid_slugs() {
+        let err = build_mutant_execution_plan(&MutantsArgs {
+            mode: MutantMode::Smoke,
+            surface: None,
+            shard: None,
+            seam: Some("nope".to_owned()),
+            repo_wide_only: false,
+        })
+        .expect_err("unknown seam");
+        let message = err.to_string();
+        assert!(message.contains("unknown critical seam `nope`"));
+        assert!(message.contains("writer-commit"));
     }
 
     #[test]

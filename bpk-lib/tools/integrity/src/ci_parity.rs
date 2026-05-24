@@ -5,6 +5,26 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
+/// Human-facing `just` recipes map to one or more xtask policy commands.
+const JUST_TO_XTASK_COMMANDS: &[(&str, &[&str])] = &[
+    ("ci-fast", &["ci-fast"]),
+    ("ci-windows", &["ci-windows-surface"]),
+    ("verify", &["preflight"]),
+    ("mutants-smoke", &["mutants"]),
+    ("mutants-full", &["mutants"]),
+    (
+        "inspect",
+        &["structural", "boundary", "architecture-ir", "ast-grep"],
+    ),
+    (
+        "seal",
+        &["check-version-pins", "evidence-audit", "release-manifest"],
+    ),
+    ("ship-dry", &["release"]),
+    ("ship-real", &["release"]),
+    ("ci", &["ci"]),
+];
+
 /// Assert that the live GitHub Actions workflows do not drift from the local
 /// `cargo xtask` command surface and the canonical devcontainer Dockerfile.
 ///
@@ -83,6 +103,8 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
             }
         }
     }
+    assert_workflow_just_recipes_map_to_xtask(&workflows, &xtask_main)?;
+
     for sub in &found_subcommands {
         // Map kebab-case to PascalCase: "perf-gates" → "PerfGates".
         let pascal: String = sub
@@ -127,6 +149,26 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
         &[
             "1/12", "2/12", "3/12", "4/12", "5/12", "6/12", "7/12", "8/12", "9/12", "10/12",
             "11/12", "12/12",
+        ],
+    )?;
+    assert_workflow_list_values(
+        ".github/workflows/ci.yml",
+        &ci_yml,
+        "seam",
+        &[
+            "writer-commit",
+            "cursor-delivery",
+            "projection-flow",
+            "segment-scan",
+            "hash-chain-replay",
+            "frontier-wait-durable",
+            "frontier-append-gate",
+            "event-payload-registry-validator",
+            "platform-backend",
+            "testing-ledger-structural-lint",
+            "syncbat-runtime-dispatch",
+            "syncbat-register-catalog",
+            "netbat-boundary-protocol",
         ],
     )?;
     assert_workflow_list_values(
@@ -384,6 +426,58 @@ pub(crate) fn workflow_list_values(workflow: &str, key: &str) -> Result<Vec<Stri
 
 fn indentation(line: &str) -> usize {
     line.len() - line.trim_start().len()
+}
+
+fn assert_workflow_just_recipes_map_to_xtask(
+    workflows: &[(&str, &str)],
+    xtask_main: &str,
+) -> Result<()> {
+    let just_re = Regex::new(r"\bjust\s+([a-z][a-z0-9-]*)\b")
+        .expect("internal regex is a compile-time constant and will compile");
+    let mut found_recipes: BTreeSet<(String, String)> = BTreeSet::new();
+    for (workflow_name, workflow) in workflows {
+        for cap in just_re.captures_iter(workflow) {
+            if let Some(recipe) = cap.get(1) {
+                found_recipes.insert((workflow_name.to_string(), recipe.as_str().to_string()));
+            }
+        }
+    }
+    for (workflow_name, recipe) in &found_recipes {
+        let xtask_cmds = match JUST_TO_XTASK_COMMANDS
+            .iter()
+            .find(|(just_recipe, _)| just_recipe == recipe)
+        {
+            Some((_, cmds)) => *cmds,
+            None => {
+                bail!(
+                    "ci-parity: `{workflow_name}` references `just {recipe}` but it is not \
+                     registered in JUST_TO_XTASK_COMMANDS (tools/integrity/src/ci_parity.rs). \
+                     Add the mapping or stop calling the recipe from CI."
+                );
+            }
+        };
+        for xtask_cmd in xtask_cmds {
+            let pascal: String = xtask_cmd
+                .split('-')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    match chars.next() {
+                        Some(c) => c.to_uppercase().chain(chars).collect::<String>(),
+                        None => String::new(),
+                    }
+                })
+                .collect();
+            let needle_a = format!("    {pascal},");
+            let needle_b = format!("    {pascal}(");
+            if !xtask_main.contains(&needle_a) && !xtask_main.contains(&needle_b) {
+                bail!(
+                    "ci-parity: `just {recipe}` maps to `cargo xtask {xtask_cmd}` but no \
+                     matching `XtaskCommand::{pascal}` variant exists in tools/xtask/src/main.rs"
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn xtask_source_text(repo_root: &Path) -> Result<String> {
