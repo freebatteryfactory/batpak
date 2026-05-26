@@ -8,6 +8,7 @@ pub(crate) fn disk_audit() -> Result<()> {
     let workspace_root = repo_root()?;
     let project_root = project_root()?;
     let workspace_target = workspace_root.join("target");
+    let project_target = project_root.join("target");
 
     if workspace_target.exists() {
         let bytes = dir_size(&workspace_target)
@@ -22,6 +23,13 @@ pub(crate) fn disk_audit() -> Result<()> {
     }
 
     let mut violations = Vec::new();
+    if project_target.exists() {
+        violations.push(format!(
+            "repo-root target `{}` is generated cache; use bpk-lib/target/ only",
+            rel(&project_root, &project_target)
+        ));
+    }
+
     for target in nested_targets(&workspace_root)? {
         let relative = rel(&project_root, &target);
         if dir_has_entries(&target)? {
@@ -43,6 +51,13 @@ pub(crate) fn disk_audit() -> Result<()> {
         ));
     }
 
+    for profile in raw_profile_files(&workspace_root)? {
+        violations.push(format!(
+            "raw coverage profile `{}` is generated cache",
+            rel(&project_root, &profile)
+        ));
+    }
+
     if !violations.is_empty() {
         for violation in &violations {
             eprintln!("disk-audit: {violation}");
@@ -60,7 +75,7 @@ pub(crate) fn disk_audit() -> Result<()> {
 pub(crate) fn clean_generated(args: CleanGeneratedArgs) -> Result<()> {
     let workspace_root = repo_root()?;
     let project_root = project_root()?;
-    let artifacts = generated_sprawl(&workspace_root)?;
+    let artifacts = generated_sprawl(&project_root, &workspace_root)?;
 
     if artifacts.is_empty() {
         println!("clean-generated: nothing to remove");
@@ -91,37 +106,48 @@ pub(crate) fn clean_generated(args: CleanGeneratedArgs) -> Result<()> {
 #[derive(Debug, Eq, PartialEq)]
 enum GeneratedArtifact {
     NestedTarget(PathBuf),
+    ProjectTarget(PathBuf),
+    RawProfile(PathBuf),
     TemplateLockfile(PathBuf),
 }
 
 impl GeneratedArtifact {
     fn path(&self) -> &Path {
         match self {
-            Self::NestedTarget(path) | Self::TemplateLockfile(path) => path,
+            Self::NestedTarget(path)
+            | Self::ProjectTarget(path)
+            | Self::RawProfile(path)
+            | Self::TemplateLockfile(path) => path,
         }
     }
 
     fn kind_label(&self) -> &'static str {
         match self {
             Self::NestedTarget(_) => "nested target dir",
+            Self::ProjectTarget(_) => "repo-root target dir",
+            Self::RawProfile(_) => "raw coverage profile",
             Self::TemplateLockfile(_) => "template lockfile",
         }
     }
 
     fn remove(&self) -> Result<()> {
         match self {
-            Self::NestedTarget(path) => {
+            Self::NestedTarget(path) | Self::ProjectTarget(path) => {
                 fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))
             }
-            Self::TemplateLockfile(path) => {
+            Self::RawProfile(path) | Self::TemplateLockfile(path) => {
                 fs::remove_file(path).with_context(|| format!("remove {}", path.display()))
             }
         }
     }
 }
 
-fn generated_sprawl(workspace_root: &Path) -> Result<Vec<GeneratedArtifact>> {
+fn generated_sprawl(project_root: &Path, workspace_root: &Path) -> Result<Vec<GeneratedArtifact>> {
     let mut artifacts = Vec::new();
+    let project_target = project_root.join("target");
+    if project_target.exists() {
+        artifacts.push(GeneratedArtifact::ProjectTarget(project_target));
+    }
     artifacts.extend(
         nested_targets(workspace_root)?
             .into_iter()
@@ -131,6 +157,11 @@ fn generated_sprawl(workspace_root: &Path) -> Result<Vec<GeneratedArtifact>> {
         template_lockfiles(workspace_root)?
             .into_iter()
             .map(GeneratedArtifact::TemplateLockfile),
+    );
+    artifacts.extend(
+        raw_profile_files(workspace_root)?
+            .into_iter()
+            .map(GeneratedArtifact::RawProfile),
     );
     artifacts.sort_by(|left, right| left.path().cmp(right.path()));
     Ok(artifacts)
@@ -189,6 +220,30 @@ fn template_lockfiles(workspace_root: &Path) -> Result<Vec<PathBuf>> {
     Ok(lockfiles)
 }
 
+fn raw_profile_files(workspace_root: &Path) -> Result<Vec<PathBuf>> {
+    let mut profiles = Vec::new();
+    collect_raw_profile_files(workspace_root, &mut profiles)?;
+    profiles.sort();
+    Ok(profiles)
+}
+
+fn collect_raw_profile_files(dir: &Path, profiles: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            if entry.file_name() == "target" || entry.file_name() == ".git" {
+                continue;
+            }
+            collect_raw_profile_files(&path, profiles)?;
+        } else if path.extension().is_some_and(|ext| ext == "profraw") {
+            profiles.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn dir_has_entries(path: &Path) -> Result<bool> {
     Ok(fs::read_dir(path)
         .with_context(|| format!("read {}", path.display()))?
@@ -238,7 +293,8 @@ fn human_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        generated_sprawl, human_bytes, nested_targets, template_lockfiles, GeneratedArtifact,
+        generated_sprawl, human_bytes, nested_targets, raw_profile_files, template_lockfiles,
+        GeneratedArtifact,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -276,18 +332,43 @@ mod tests {
     #[test]
     fn generated_sprawl_combines_only_cleanup_owned_artifacts() {
         let temp = tempdir().expect("tempdir");
-        let root = temp.path();
+        let project = temp.path();
+        let root = project.join("bpk-lib");
         fs::create_dir_all(root.join("crates/core/target/debug")).expect("target");
         fs::create_dir_all(root.join("templates/demo")).expect("template");
+        fs::create_dir_all(project.join("target")).expect("project target");
         fs::write(root.join("templates/demo/Cargo.lock"), "").expect("lock");
+        fs::write(root.join("crates/core/default.profraw"), "").expect("profile");
 
-        let artifacts = generated_sprawl(root).expect("scan generated artifacts");
+        let artifacts = generated_sprawl(project, &root).expect("scan generated artifacts");
         assert_eq!(
             artifacts,
             vec![
-                GeneratedArtifact::NestedTarget(root.join("crates/core/target")),
-                GeneratedArtifact::TemplateLockfile(root.join("templates/demo/Cargo.lock")),
+                GeneratedArtifact::RawProfile(
+                    root.join("crates").join("core").join("default.profraw")
+                ),
+                GeneratedArtifact::NestedTarget(root.join("crates").join("core").join("target")),
+                GeneratedArtifact::TemplateLockfile(
+                    root.join("templates").join("demo").join("Cargo.lock")
+                ),
+                GeneratedArtifact::ProjectTarget(project.join("target")),
             ]
+        );
+    }
+
+    #[test]
+    fn finds_raw_profile_files_outside_target() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path();
+        fs::create_dir_all(root.join("target")).expect("target");
+        fs::create_dir_all(root.join("crates/core")).expect("crate");
+        fs::write(root.join("target/ignored.profraw"), "").expect("target profile");
+        fs::write(root.join("crates/core/default.profraw"), "").expect("profile");
+
+        let profiles = raw_profile_files(root).expect("scan profiles");
+        assert_eq!(
+            profiles,
+            vec![root.join("crates").join("core").join("default.profraw")]
         );
     }
 }

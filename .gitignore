@@ -1,8 +1,7 @@
 .claude/
 .codex/
-# Cargo build artifacts. `**/target/` catches nested targets in any sub-crate
-# or standalone template/fixture package. Keep `/target/` for clarity; the
-# structural gate enforces repo-root target/ as the only target directory.
+# Cargo build artifacts. The canonical Cargo output for this repo is
+# `bpk-lib/target/`; repo-root and nested target dirs are cleanup-owned sprawl.
 /target/
 **/target/
 # Keep bpk-lib/Cargo.lock tracked: this workspace includes binary developer
