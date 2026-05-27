@@ -8,6 +8,7 @@
       "USER_GID": "1000"
     }
   },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/batpak,type=bind,consistency=cached",
   "workspaceFolder": "/workspace/batpak",
   "remoteUser": "dev",
   "containerEnv": {
