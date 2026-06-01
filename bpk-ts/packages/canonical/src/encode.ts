@@ -6,6 +6,8 @@
  * Phase 0 subset (see `./index.ts` for the subset contract).
  */
 
+import { TextEncoder } from "node:util";
+
 import { CanonicalEncodeError, Writer } from "./writer.js";
 
 export interface EncodeOptions {
