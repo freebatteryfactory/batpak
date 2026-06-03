@@ -6,6 +6,8 @@
  * Phase 0 subset (see `./index.ts` for the subset contract).
  */
 
+import { TextDecoder } from "node:util";
+
 import { CanonicalDecodeError, Reader } from "./reader.js";
 
 const POS_FIXINT_MAX = 0x7f;
