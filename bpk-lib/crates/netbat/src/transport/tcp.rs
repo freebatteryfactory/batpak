@@ -17,7 +17,7 @@ pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 1;
 /// Blocking TCP server limits.
 ///
 /// `#[non_exhaustive]` so adding TLS config, listen-backlog, or
-/// connection-accept timeouts post-0.7.6 stays SemVer-safe.
+/// connection-accept timeouts post-0.8.0 stays SemVer-safe.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TcpServerConfig {

@@ -74,7 +74,7 @@
     - ART-STORE-QUERY-TRAVERSAL-TESTS
     - ART-DX-DOCS
 - id: REQ-RELEASE-FAMILY-PUBLIC
-  summary: The 0.7.6 correction cut must ship every publishable batpak-family crate as one public release train with aligned internal version pins, package-local entrypoints, traceability artifacts, and explicit release proof gates.
+  summary: The 0.8.0 release must ship every publishable batpak-family crate as one public release train with aligned internal version pins, package-local entrypoints, traceability artifacts, and explicit release proof gates.
   artifacts:
     - ART-CARGO
     - ART-PACKAGE-READMES

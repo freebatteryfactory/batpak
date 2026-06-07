@@ -10,12 +10,12 @@
  *   2. Exposes the Effect `Schema` namespace so consumers can compose
  *      additional refinements on top of generated types.
  *   3. Exposes `bank.event()` — the long-term TS authoring entry point.
- *      In 0.7.6 this is a typed alias over `Schema.Struct({...})` so
+ *      In 0.8.0 this is a typed alias over `Schema.Struct({...})` so
  *      consumers can begin defining downstream-only event shapes today;
  *      Phase 2+ will round-trip TS declarations back to Rust generation,
  *      but the symbol stays stable across that transition.
  *
- * Authority direction in 0.7.6:
+ * Authority direction in 0.8.0:
  *   - Rust `#[derive(EventPayload)]` + the manifest is still the source
  *     of truth for events that need to ride the canonical wire.
  *   - `bank.event()` is for downstream-only TS event shapes (e.g.
@@ -54,7 +54,7 @@ export function encodeBytes<T, E>(schema: Schema.Codec<T, E>, value: T): Uint8Ar
  * `bank.event()` — declare a TS-side event by specifying its field
  * shape.
  *
- * Phase 0/0.7.6 semantics:
+ * Phase 0/0.8.0 semantics:
  *   - Returns an `effect/Schema.Struct(...)` directly. No magic.
  *   - The schema is REAL — `Schema.decodeUnknownSync(myEvent)` validates
  *     incoming objects and `Schema.encodeUnknownSync(myEvent)` encodes

@@ -25,7 +25,7 @@ let workDir = "";
 const MINIMAL_MANIFEST = {
   manifestVersion: SUPPORTED_MANIFEST_VERSION,
   netbatVersion: "NETBAT/1",
-  batpakVersion: "0.7.6",
+  batpakVersion: "0.8.0",
   canonicalEncoding: {
     kind: "named-field-msgpack",
     rmpSerdeVersion: "1.3.1",

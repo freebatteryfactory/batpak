@@ -9,6 +9,7 @@ struct PublicApiPackage {
     package: &'static str,
     baseline: &'static str,
     features: &'static [&'static str],
+    has_semver_registry_baseline: bool,
 }
 
 const PUBLIC_API_PACKAGES: &[PublicApiPackage] = &[
@@ -16,18 +17,23 @@ const PUBLIC_API_PACKAGES: &[PublicApiPackage] = &[
         package: "batpak",
         baseline: "batpak.txt",
         features: &[],
+        has_semver_registry_baseline: true,
     },
     PublicApiPackage {
         package: "syncbat",
         baseline: "syncbat.txt",
         features: &[],
+        has_semver_registry_baseline: false,
     },
     PublicApiPackage {
         package: "netbat",
         baseline: "netbat.txt",
         features: &[],
+        has_semver_registry_baseline: false,
     },
 ];
+
+const PUBLIC_API_RUSTUP_TOOLCHAIN: &str = "nightly-2025-12-11";
 
 pub(crate) fn public_api(args: PublicApiArgs) -> Result<()> {
     let root = repo_root()?;
@@ -46,6 +52,7 @@ pub(crate) fn public_api(args: PublicApiArgs) -> Result<()> {
         return Ok(());
     }
 
+    let public_api_toolchain = public_api_rustup_toolchain();
     for package in PUBLIC_API_PACKAGES {
         let mut command = Command::new("cargo");
         command
@@ -61,6 +68,9 @@ pub(crate) fn public_api(args: PublicApiArgs) -> Result<()> {
                 "--manifest-path",
                 "Cargo.toml",
             ]);
+        if let Some(toolchain) = public_api_toolchain {
+            command.env("RUSTUP_TOOLCHAIN", toolchain);
+        }
         if !package.features.is_empty() {
             command.arg("--features").arg(package.features.join(","));
         }
@@ -132,6 +142,13 @@ pub(crate) fn semver_check(args: SemverCheckArgs) -> Result<()> {
     let mut combined_stdout = String::new();
     let mut combined_stderr = String::new();
     for package in PUBLIC_API_PACKAGES {
+        if !package.has_semver_registry_baseline {
+            combined_stdout.push_str(&format!(
+                "## {}\nskipped: no crates.io baseline exists yet for this first-publish crate; see traceability/public_api/{}_semver_checklist.yaml\n",
+                package.package, package.package
+            ));
+            continue;
+        }
         let manifest_path = format!("crates/{}/Cargo.toml", crate_dir(package.package));
         let mut command = Command::new("cargo");
         command
@@ -228,6 +245,24 @@ fn cargo_public_api_is_available() -> bool {
 fn cargo_semver_checks_is_available() -> bool {
     Command::new("cargo-semver-checks")
         .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn public_api_rustup_toolchain() -> Option<&'static str> {
+    if std::env::var("RUSTUP_TOOLCHAIN").is_ok_and(|toolchain| toolchain.starts_with("nightly")) {
+        return None;
+    }
+    rustup_toolchain_is_available(PUBLIC_API_RUSTUP_TOOLCHAIN)
+        .then_some(PUBLIC_API_RUSTUP_TOOLCHAIN)
+}
+
+fn rustup_toolchain_is_available(toolchain: &str) -> bool {
+    Command::new("rustup")
+        .args(["run", toolchain, "rustc", "--version"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()

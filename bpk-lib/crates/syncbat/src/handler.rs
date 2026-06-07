@@ -12,7 +12,7 @@ pub type HandlerFn = for<'a> fn(&[u8], &mut Ctx<'a>) -> HandlerResult;
 
 /// Error returned when a handler cannot produce output bytes.
 ///
-/// `#[non_exhaustive]` so we can introduce post-0.7.6 variants (e.g.
+/// `#[non_exhaustive]` so we can introduce post-0.8.0 variants (e.g.
 /// `RateLimited`, `Unauthorized`, `Conflict`) without breaking
 /// downstream exhaustive matches.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -358,7 +358,7 @@ mod tests {
             uname: "Linux test".to_owned(),
             version_pins: vec![VersionPinRow {
                 package: "batpak".to_owned(),
-                version: "0.7.6".to_owned(),
+                version: "0.8.0".to_owned(),
                 manifest: "crates/core/Cargo.toml".to_owned(),
             }],
             baselines: vec![FileEvidence {
