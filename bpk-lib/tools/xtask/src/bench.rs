@@ -328,8 +328,8 @@ mod tests {
     #[test]
     fn explicit_baseline_name_uses_supplied_label() {
         assert_eq!(
-            explicit_baseline_name("linux", BenchSurface::Neutral, "baseline-v0.7.6"),
-            "linux-neutral-baseline-v0.7.6"
+            explicit_baseline_name("linux", BenchSurface::Neutral, "baseline-v0.8.0"),
+            "linux-neutral-baseline-v0.8.0"
         );
     }
 

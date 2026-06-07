@@ -37,7 +37,7 @@ Repeated raw commands should become named `just` recipes.
 | `just verify` | Canonical preflight proof bundle. |
 | `just seal` | Release-readiness checks for a clean tree. |
 | `just ship dry` | Release dry run. |
-| `just ship real` | Real release path. |
+| `just ship real` | Reserved manual publish path; xtask currently refuses non-dry-run release. |
 
 ## Verification tiers
 

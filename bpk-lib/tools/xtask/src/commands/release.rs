@@ -116,7 +116,7 @@ pub(crate) fn consumer_smoke() -> Result<()> {
 
 pub(crate) fn release(args: ReleaseArgs) -> Result<()> {
     ci()?;
-    // 0.7.6: semver-checks runs in STRICT mode in the release path.
+    // semver-checks runs in STRICT mode in the release path.
     // Any breaking-change tripwire fails the release; advisory mode was
     // a 0.7.5 carry-over that silently shipped breakage when the tool
     // was installed but its findings were swallowed.

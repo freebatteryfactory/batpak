@@ -1,6 +1,6 @@
 schema_version: 1
 summary: >
-  Cut 17 substrate/product firewall. Product doctrine informs BatPAK naming and
+  0.8.0 substrate/product firewall. Product doctrine informs BatPAK naming and
   boundaries, but does not authorize product, agent-framework, Moonwalker, or
   PCP-Core semantics inside the substrate.
 entries:

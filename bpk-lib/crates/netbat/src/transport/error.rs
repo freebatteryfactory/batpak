@@ -111,7 +111,7 @@ impl NetbatError {
             Self::Runtime(syncbat::RuntimeError::Handler { .. }) => "handler",
             Self::Runtime(syncbat::RuntimeError::ReceiptSink { .. }) => "receipt_sink",
             // `syncbat::RuntimeError` is `#[non_exhaustive]`; any variant
-            // added post-0.7.6 surfaces under the generic `runtime` code
+            // added post-0.8.0 surfaces under the generic `runtime` code
             // until netbat learns a more specific token for it.
             Self::Runtime(_) => "runtime",
         }

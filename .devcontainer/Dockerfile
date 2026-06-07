@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dmsetup \
     e2fsprogs \
     git \
+    nodejs \
+    npm \
     pkg-config \
     ca-certificates \
     sudo \
@@ -48,6 +50,9 @@ RUN cargo binstall --no-confirm cargo-llvm-cov@0.8.5 || cargo install --locked c
 # canonical 1.92 stable channel.
 RUN rustup toolchain install nightly-2025-12-11 --profile minimal --no-self-update
 RUN cargo binstall --no-confirm cargo-public-api@0.51.0 || cargo install --locked cargo-public-api@0.51.0
+RUN cargo binstall --no-confirm cargo-semver-checks@0.48.0 || cargo install --locked cargo-semver-checks@0.48.0
+RUN cargo binstall --no-confirm ast-grep@0.43.0 || cargo install --locked ast-grep@0.43.0
+RUN npm install -g pnpm@10.33.0
 # The published GNU binary currently requires a newer glibc than bookworm ships,
 # so install cargo-mutants from source in the canonical container.
 RUN cargo install --locked cargo-mutants@27.0.0

@@ -10,6 +10,20 @@ enum InstallStrategy {
     SourceOnly,
 }
 
+#[derive(Clone, Copy)]
+enum ToolCheck {
+    Direct(&'static str),
+    CargoSubcommand(&'static str),
+}
+
+#[derive(Clone, Copy)]
+struct RequiredTool {
+    name: &'static str,
+    spec: &'static str,
+    strategy: InstallStrategy,
+    check: ToolCheck,
+}
+
 const REPO_HOOKS_PATH: &str = ".githooks";
 const PRE_COMMIT_HOOK: &str = ".githooks/pre-commit";
 
@@ -22,56 +36,64 @@ enum HookStatus {
 
 pub(crate) fn setup(args: SetupArgs) -> Result<()> {
     let required = [
-        (
+        RequiredTool::direct(
             "cargo-nextest",
             "cargo-nextest@0.9.132",
             InstallStrategy::PreferBinstall,
         ),
-        (
+        RequiredTool::direct(
             "cargo-deny",
             "cargo-deny@0.19.0",
             InstallStrategy::PreferBinstall,
         ),
-        (
+        RequiredTool::direct(
             "cargo-audit",
             "cargo-audit@0.22.1",
             InstallStrategy::PreferBinstall,
         ),
-        (
+        RequiredTool::cargo_subcommand(
             "cargo-llvm-cov",
+            "llvm-cov",
             "cargo-llvm-cov@0.8.5",
             InstallStrategy::PreferBinstall,
         ),
-        (
+        RequiredTool::direct(
             "cargo-public-api",
             "cargo-public-api@0.51.0",
             InstallStrategy::PreferBinstall,
         ),
-        (
+        RequiredTool::direct(
+            "cargo-semver-checks",
+            "cargo-semver-checks@0.48.0",
+            InstallStrategy::PreferBinstall,
+        ),
+        RequiredTool::direct("sg", "ast-grep@0.43.0", InstallStrategy::PreferBinstall),
+        RequiredTool::cargo_subcommand(
             "cargo-mutants",
+            "mutants",
             "cargo-mutants@27.0.0",
             InstallStrategy::SourceOnly,
         ),
     ];
 
     let mut missing = Vec::new();
-    for (tool, _, _) in required {
-        if !command_succeeds(tool, ["--version"]) {
-            missing.push(tool);
+    for tool in required {
+        if !tool.is_installed() {
+            missing.push(tool.name);
         }
     }
 
     if missing.is_empty() {
         println!("All developer tools are installed.");
     } else if args.install_tools {
-        if required.iter().any(|(tool, _, strategy)| {
-            missing.contains(tool) && *strategy == InstallStrategy::PreferBinstall
+        if required.iter().any(|tool| {
+            missing.contains(&tool.name) && tool.strategy == InstallStrategy::PreferBinstall
         }) {
             ensure_binstall_helper()?;
         }
-        for (tool, spec, strategy) in required {
-            if missing.contains(&tool) {
-                install_tool(spec, strategy)?;
+        for tool in required {
+            if missing.contains(&tool.name) {
+                install_tool(tool.spec, tool.strategy)?;
             }
         }
     } else {
@@ -94,6 +116,52 @@ pub(crate) fn setup(args: SetupArgs) -> Result<()> {
         Err(err) => eprintln!("setup: warning: could not inspect/install repo hooks: {err:#}"),
     }
     Ok(())
+}
+
+impl RequiredTool {
+    fn direct(name: &'static str, spec: &'static str, strategy: InstallStrategy) -> Self {
+        Self {
+            name,
+            spec,
+            strategy,
+            check: ToolCheck::Direct(name),
+        }
+    }
+
+    fn cargo_subcommand(
+        name: &'static str,
+        subcommand: &'static str,
+        spec: &'static str,
+        strategy: InstallStrategy,
+    ) -> Self {
+        Self {
+            name,
+            spec,
+            strategy,
+            check: ToolCheck::CargoSubcommand(subcommand),
+        }
+    }
+
+    fn is_installed(self) -> bool {
+        let mut command = match self.check {
+            ToolCheck::Direct(program) => {
+                let mut command = Command::new(program);
+                command.arg("--version");
+                command
+            }
+            ToolCheck::CargoSubcommand(subcommand) => {
+                let mut command = Command::new("cargo");
+                command.args([subcommand, "--version"]);
+                command
+            }
+        };
+        command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
 }
 
 pub(crate) fn install_hooks() -> Result<()> {

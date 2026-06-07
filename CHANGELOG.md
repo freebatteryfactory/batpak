@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - Added `Store::verify_append_receipt_wire_detailed` so wire-shaped receipt fields can
   be verified without constructing an `AppendReceipt` value first.
 - Added `bpk-lib/traceability/public_api/batpak_semver_checklist.yaml` as the
-  batpak-only semver-check classification ledger for the 0.7.6 correction cut
+  batpak-only semver-check classification ledger for the 0.8.0 release
   (expected red until 0.8 release truth).
 - Added `bpk-lib/traceability/public_api/syncbat_semver_checklist.yaml` and
   `bpk-lib/traceability/public_api/netbat_semver_checklist.yaml` as the family
@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
   is explicit opt-in and never supplies an `AtLeastOnce` witness.
 - Added `cargo xtask public-api --strict --check-baseline` as a checked
   post-cleanup public API snapshot, plus advisory `cargo xtask semver-check`
-  for the intentionally breaking 0.7.6 pre-1.0 correction cut.
+  for the intentionally breaking 0.8.0 pre-1.0 release.
 - Added focused ADR-0009 compatibility proofs for checkpoint v4/v5 and mmap
   v3/v4 artifact restore semantics, completing the named legacy-version matrix
   around the existing v2/v3 checkpoint and v1/v2/v5 mmap tests.
@@ -44,7 +44,7 @@ All notable changes to this project will be documented in this file.
   is checked in; execution remains an explicit machine-budgeted gate.
 - Added ADR-0030 for the netbat streaming contract shape:
   `NETBAT/2 STREAM` is a separate protocol rung from `NETBAT/1 CALL`.
-- Added ADR-0031 for the 0.7.6 release proof posture across `batpak`,
+- Added ADR-0031 for the 0.8.0 release proof posture across `batpak`,
   `syncbat`, `netbat`, and required support crates.
 - Added crate-local READMEs for `batpak`, `syncbat`, `netbat`, and
   `syncbat-macros` so every publishable crate in the release chain carries its
@@ -56,7 +56,7 @@ All notable changes to this project will be documented in this file.
   freshness, and decode helpers. Advanced batteries such as artifact envelopes,
   gates, pipelines, reactors, delivery cursors, schema snapshots, and evidence
   reports remain public under their owning modules instead of default imports.
-- Updated the batpak semver-check checklist to the current Cut 17 witness:
+- Updated the batpak semver-check checklist to the current 0.8.0 witness:
   prelude enum/function/struct/trait alias removals are intentional 0.8
   curriculum changes, not compatibility-shim candidates.
 - Removed the deprecated `Store::compact_with_report` alias. `Store::compact`
@@ -70,7 +70,7 @@ All notable changes to this project will be documented in this file.
 - Refreshed the checked-in `traceability/public_api/batpak.txt` baseline to match
   the current intentional batpak surface (adds read/query pagination helpers,
   removes the internal prefix helper).
-- Aligned `syncbat`, `netbat`, and `syncbat-macros` to the 0.7.6 release train
+- Aligned `syncbat`, `netbat`, and `syncbat-macros` to the 0.8.0 release train
   and updated internal path-dependency pins accordingly.
 - Pinned the canonical MessagePack encoder to the exact `rmp-serde` version
   covered by checked-in golden fixtures, and expanded report-body golden
@@ -149,7 +149,7 @@ All notable changes to this project will be documented in this file.
   message, so callers can distinguish completed-receipt sink failure from
   failed-receipt sink failure without parsing text.
 - `syncbat`, `netbat`, and `syncbat-macros` are publishable crates for the
-  0.7.6 correction cut. The publishable substrate family is `batpak`,
+  0.8.0 release. The publishable substrate family is `batpak`,
   `syncbat`, and `netbat`.
 
 ### Removed

@@ -1,10 +1,10 @@
 # BatPAK semver-check --strict checklist (baseline: crates.io batpak 0.7.0).
-# Expected red until 0.8 release truth (Cut 21). No compatibility shims in 0.7.6.
+# 0.8.0 is the pre-1.0 breaking-change boundary; no compatibility shims retained.
 package: batpak
 baseline_version: 0.7.0
-current_version: 0.7.6
-witness: target/semver-public-api/cut17-semver-raw.txt
-summary: "15 major semver-check rules fail in the Cut 17 witness; prelude narrowing adds intentional enum/function/struct/trait alias removals. All classified intentional_0_8 or path_relocation unless noted."
+current_version: 0.8.0
+witness: target/semver-public-api/semver-checks.txt
+summary: "15 major semver-check rules are classified in the 0.8.0 witness; prelude narrowing adds intentional enum/function/struct/trait alias removals. All classified intentional_0_8 or path_relocation unless noted."
 
 entries:
   - rule: auto_trait_impl_removed
@@ -50,7 +50,7 @@ entries:
     item: batpak::prelude advanced enum aliases
     disposition: intentional_0_8
     changelog: CHANGELOG.md
-    note: Cut 17 keeps owning module paths public while narrowing batpak::prelude to the beginner store path.
+    note: 0.8.0 keeps owning module paths public while narrowing batpak::prelude to the beginner store path.
 
   - rule: enum_struct_variant_field_added
     item: StoreError::PlatformProfileInvalid.kind
@@ -248,7 +248,7 @@ entries:
     item: batpak::prelude advanced trait aliases
     disposition: intentional_0_8
     changelog: CHANGELOG.md
-    note: Gate/reactor traits remain public from owning modules; Cut 17 removes them from the beginner import path.
+    note: Gate/reactor traits remain public from owning modules; 0.8.0 removes them from the beginner import path.
 
 public_api_baseline_additions:
   - item: Store::query_entries_after
@@ -266,8 +266,8 @@ public_api_baseline_removals:
 
   - item: batpak::prelude advanced re-export aliases
     disposition: intentional_0_8
-    note: Cut 17 keeps the owning module paths public while narrowing the default prelude to the beginner store path.
+    note: 0.8.0 keeps the owning module paths public while narrowing the default prelude to the beginner store path.
 
   - item: Store::compact_with_report
     disposition: intentional_0_8
-    note: Cut 17 removes the deprecated alias; Store::compact already returns CompactionResult plus CompactionReportBody.
+    note: 0.8.0 removes the deprecated alias; Store::compact already returns CompactionResult plus CompactionReportBody.

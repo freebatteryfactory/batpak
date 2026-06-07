@@ -1,6 +1,6 @@
-# BatPAK TypeScript SDK — 0.7.6
+# BatPAK TypeScript SDK — 0.8.0
 
-The TypeScript surface for the BatPAK family. Catch-all 0.7.6 release.
+The TypeScript surface for the BatPAK family. 0.8.0 release.
 
 Six reference operations live on NETBAT/1 over TCP today:
 
@@ -172,7 +172,7 @@ ERR `<code>` is one of the 12 stable ASCII tokens from
 A CI step verifies `rm -rf packages/generated/src && pnpm -w build`
 produces a byte-identical tree.
 
-## Out of scope for 0.7.6
+## Out of scope for 0.8.0
 
 - NETBAT/2 STREAM (reserved per ADR-0030).
 - TS-authored events generating Rust kinds (Phase 2; `bank.event()`

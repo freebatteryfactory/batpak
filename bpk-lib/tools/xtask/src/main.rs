@@ -87,9 +87,9 @@ enum XtaskCommand {
     TemplateFreshness,
     /// Inspect staged files for generated artifacts, retired paths, and conflict markers.
     StagedDiff,
-    /// Record the current public API surface. Advisory by default during 0.7.6 cleanup.
+    /// Record the current public API surface. Advisory unless --strict is supplied.
     PublicApi(PublicApiArgs),
-    /// Run release-oriented semver checks. Advisory by default during 0.7.6 cleanup.
+    /// Run release-oriented semver checks. Advisory unless --strict is supplied.
     SemverCheck(SemverCheckArgs),
     /// Write a local release proof manifest under the Cargo workspace target dir.
     ReleaseManifest(ReleaseManifestArgs),
