@@ -7,6 +7,15 @@ use std::io::{Read, Seek, SeekFrom};
 pub(super) const TRAILER_SIZE: u64 = 16;
 const TRAILER_SIZE_USIZE: usize = 16;
 
+/// Size of the CRC32 that sits immediately before the trailer, covering the
+/// contiguous `[string_table_bytes ++ entries]` region.
+pub(super) const SIDX_CRC_LEN: u64 = 4;
+const SIDX_CRC_LEN_USIZE: usize = 4;
+
+pub(super) fn sidx_crc_len_usize() -> usize {
+    SIDX_CRC_LEN_USIZE
+}
+
 pub(super) struct FooterLayout {
     pub(super) string_table_offset: u64,
     pub(super) string_table_len: u64,
@@ -46,8 +55,13 @@ pub(super) fn read_layout<R: Read + Seek>(
             detail: "SIDX entry_count × ENTRY_SIZE overflows u64".into(),
         })?;
 
+    // entries_start = file_len - TRAILER - CRC - entries_block_len. The CRC's 4
+    // bytes sit at [entries_start + entries_block_len .. + 4), immediately before
+    // the 16-byte trailer; subtracting it here keeps the entries/table geometry
+    // byte-identical to the region write_footer hashed.
     let entries_start = file_len
         .checked_sub(TRAILER_SIZE)
+        .and_then(|n| n.checked_sub(SIDX_CRC_LEN))
         .and_then(|n| n.checked_sub(entries_block_len))
         .ok_or_else(|| StoreError::CorruptSegment {
             segment_id,
@@ -69,6 +83,46 @@ pub(super) fn read_layout<R: Read + Seek>(
             segment_id,
             detail: "SIDX string table length underflows".into(),
         })?;
+
+    // Integrity check: recompute CRC32 over the contiguous covered region
+    // [string_table_offset .. entries_start + entries_block_len) and compare it to
+    // the 4 stored CRC bytes that sit immediately after the entries block. A
+    // mismatch (or an old SDX2-era footer that reached here, which it cannot — the
+    // magic gate above already rejected it) means the footer cannot be trusted, so
+    // we return Ok(None) to degrade to the CRC-verified frame-scan rebuild. Only an
+    // actual IO failure surfaces as StoreError::Io.
+    let covered_end = entries_start
+        .checked_add(entries_block_len)
+        .ok_or_else(|| StoreError::CorruptSegment {
+            segment_id,
+            detail: "SIDX covered region end overflows u64".into(),
+        })?;
+    let covered_len = usize::try_from(string_table_len.checked_add(entries_block_len).ok_or_else(
+        || StoreError::CorruptSegment {
+            segment_id,
+            detail: "SIDX covered region length overflows u64".into(),
+        },
+    )?)
+    .map_err(|_| StoreError::CorruptSegment {
+        segment_id,
+        detail: "SIDX covered region length exceeds usize::MAX".into(),
+    })?;
+
+    reader
+        .seek(SeekFrom::Start(string_table_offset))
+        .map_err(StoreError::Io)?;
+    let mut covered = vec![0u8; covered_len];
+    reader.read_exact(&mut covered).map_err(StoreError::Io)?;
+
+    reader
+        .seek(SeekFrom::Start(covered_end))
+        .map_err(StoreError::Io)?;
+    let mut stored_crc = [0u8; 4];
+    reader.read_exact(&mut stored_crc).map_err(StoreError::Io)?;
+
+    if crc32fast::hash(&covered) != u32::from_le_bytes(stored_crc) {
+        return Ok(None);
+    }
 
     Ok(Some(FooterLayout {
         string_table_offset,

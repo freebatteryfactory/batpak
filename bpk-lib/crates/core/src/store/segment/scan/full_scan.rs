@@ -14,20 +14,11 @@ impl Reader {
     /// cross-segment batches; here we return every frame so callers that
     /// need the full event stream always get it.
     pub(crate) fn scan_segment(&self, path: &Path) -> Result<Vec<ScannedEntry>, StoreError> {
-        let mut file = crate::store::platform::fs::open_file(path).map_err(StoreError::Io)?;
-        let file_len = file.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
-        let frames_end = segment::detect_sidx_boundary(&mut file, file_len)?.unwrap_or(file_len);
-        file.seek(SeekFrom::Start(0)).map_err(StoreError::Io)?;
-
-        let mut magic = [0u8; 4];
-        file.read_exact(&mut magic).map_err(StoreError::Io)?;
-        if &magic != SEGMENT_MAGIC {
-            return Err(StoreError::corrupt_magic(0));
-        }
-
         // Extract segment_id from filename: "000042.fbat" → 42.
         // Falls back to 0 if the filename is malformed, but surfaces the parse
         // failure via tracing so a corrupt name on disk is not invisible.
+        // Hoisted above detect_sidx_boundary so the boundary check can stamp a
+        // CorruptSegment error with this segment_id.
         let segment_id = match segment::SegmentId::from_filename(path) {
             Ok(parsed) => parsed.as_u64(),
             Err(error) => {
@@ -39,6 +30,18 @@ impl Reader {
                 0
             }
         };
+
+        let mut file = crate::store::platform::fs::open_file(path).map_err(StoreError::Io)?;
+        let file_len = file.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
+        let frames_end =
+            segment::detect_sidx_boundary(&mut file, file_len, segment_id)?.unwrap_or(file_len);
+        file.seek(SeekFrom::Start(0)).map_err(StoreError::Io)?;
+
+        let mut magic = [0u8; 4];
+        file.read_exact(&mut magic).map_err(StoreError::Io)?;
+        if &magic != SEGMENT_MAGIC {
+            return Err(StoreError::corrupt_magic(segment_id));
+        }
 
         let mut header_len_buf = [0u8; 4];
         file.read_exact(&mut header_len_buf)
@@ -60,6 +63,21 @@ impl Reader {
         .map_err(|_| {
             StoreError::corrupt_segment_with_detail(segment_id, "segment header offset overflow")
         })?; // past magic + header_len + header
+
+        // Lower-bound check: frames_end (the SIDX string_table_offset) must not
+        // fall below the start of the frame region. A corrupt offset < cursor
+        // would make the scan loop break immediately and return zero events —
+        // silent data loss. Error with CorruptSegment instead. frames_end ==
+        // cursor (empty frame region) stays valid.
+        if frames_end < cursor {
+            return Err(StoreError::corrupt_segment_with_detail(
+                segment_id,
+                format!(
+                    "SIDX string_table_offset {frames_end} is below the frame region start \
+                     {cursor} (8 + header_len {header_len})"
+                ),
+            ));
+        }
 
         // Read frames until EOF. Each frame: [len:u32 BE][crc32:u32 BE][msgpack]
         let mut entries = Vec::new();

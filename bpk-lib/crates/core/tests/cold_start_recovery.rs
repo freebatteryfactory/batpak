@@ -114,8 +114,8 @@ fn clean_close_writes_expected_artifacts_and_roundtrips() {
     );
     assert_eq!(
         &bytes[bytes.len() - 4..],
-        b"SDX2",
-        "PROPERTY: the last 4 bytes of the segment must be the SIDX magic b\"SDX2\""
+        b"SDX3",
+        "PROPERTY: the last 4 bytes of the segment must be the SIDX magic b\"SDX3\""
     );
 
     // Reopening must surface every event we wrote.
