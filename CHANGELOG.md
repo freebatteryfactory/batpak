@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- Hardened the public append surface (0.8.3): raw-`kind` append entry points
+  (`append`, `append_with_options`, `submit`/`submit_reaction` and their
+  fenced/`try_*` variants, and both the unfenced and fenced batch paths) now
+  reject reserved system/effect/tombstone `EventKind`s with the new
+  `StoreError::ReservedKind`. This closes a forgery hole where a caller could
+  smuggle a `SYSTEM_BATCH_BEGIN`/`SYSTEM_BATCH_COMMIT` (or other reserved)
+  marker and corrupt crash recovery and SIDX fast-path rebuild. Behavior-
+  changing for callers that previously relied on appending reserved kinds; the
+  only legitimate reserved-kind emitter on the public surface, `append_denial`
+  (`SYSTEM_DENIAL`), is unaffected and still emits its audit receipt.
+
 ### Fixed
 - Corrected `cargo-mutants` shard indices to the 0-based `k/n` convention
   (`0/12`…`11/12` for full CI matrix; smoke lanes use `0/8` and `0/48`).
