@@ -393,6 +393,37 @@ fn scan_segment_index_into_filters_batch_markers_from_sidx_fast_path() {
 }
 
 #[test]
+fn sidx_covers_segment_tail_rejects_offset_length_overflow() {
+    // R15 oracle: round-trip a SIDX entry whose frame_offset + frame_length
+    // overflows u64 through the real writer (SidxEntryCollector::write_footer)
+    // and reader (read_footer). The old saturating_add silently clamped this to
+    // u64::MAX and (since MAX != footer start) fell through to Incomplete by
+    // accident; checked_add now returns Incomplete deliberately on overflow,
+    // never trusting a corrupt offset on the unverified fast path.
+    let overflowing = sample_entry(u64::MAX - 16, 64);
+    let tmp = footer_file(64, &[overflowing]);
+    let (entries, _) = read_footer(tmp.path())
+        .expect("read footer")
+        .expect("footer should be present");
+
+    assert_eq!(
+        entries.len(),
+        1,
+        "SANITY: the overflowing entry must round-trip through the real writer/reader"
+    );
+    assert_eq!(
+        entries[0].frame_offset,
+        u64::MAX - 16,
+        "SANITY: round-trip must preserve the near-MAX frame_offset that triggers overflow"
+    );
+    assert_eq!(
+        Reader::sidx_covers_segment_tail(tmp.path(), &entries),
+        SidxTailCoverage::Incomplete,
+        "PROPERTY: a frame_offset + frame_length that overflows u64 is corruption and must degrade to the frame-scan fallback, not silently saturate"
+    );
+}
+
+#[test]
 fn scan_segment_index_into_ignores_sidx_footer_for_active_segments() {
     let dir = TempDir::new().expect("create temp dir");
     let reader = Reader::new(
