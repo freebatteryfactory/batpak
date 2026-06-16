@@ -70,7 +70,8 @@ impl Reader {
 
         let mut file = crate::store::platform::fs::open_file(path).map_err(StoreError::Io)?;
         let file_len = file.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
-        let frames_end = segment::detect_sidx_boundary(&mut file, file_len)?.unwrap_or(file_len);
+        let frames_end =
+            segment::detect_sidx_boundary(&mut file, file_len, segment_id)?.unwrap_or(file_len);
         file.seek(SeekFrom::Start(0)).map_err(StoreError::Io)?;
 
         let mut magic = [0u8; 4];
@@ -92,6 +93,23 @@ impl Reader {
         }
 
         let mut cursor = (8 + header_len) as u64;
+
+        // Lower-bound check: frames_end (the SIDX string_table_offset) must not
+        // fall below the start of the frame region. A corrupt offset < cursor
+        // would make the scan loop break on the first iteration and return an
+        // empty Ok(()) with zero events — silent data loss. Erroring with
+        // CorruptSegment is the correct DO-178B behavior. frames_end == cursor
+        // (empty frame region) stays valid.
+        if frames_end < cursor {
+            return Err(StoreError::corrupt_segment_with_detail(
+                segment_id,
+                format!(
+                    "SIDX string_table_offset {frames_end} is below the frame region start \
+                     {cursor} (8 + header_len {header_len})"
+                ),
+            ));
+        }
+
         let mut local_state = BatchRecoveryState::default();
         let state_ref: &mut BatchRecoveryState = match batch_state {
             Some(ref mut s) => s,

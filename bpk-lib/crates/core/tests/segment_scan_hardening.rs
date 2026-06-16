@@ -108,7 +108,7 @@ struct RawFramePayload {
 }
 
 fn strip_sidx(mut bytes: Vec<u8>) -> Vec<u8> {
-    if bytes.len() >= 16 && &bytes[bytes.len() - 4..] == b"SDX2" {
+    if bytes.len() >= 16 && &bytes[bytes.len() - 4..] == b"SDX3" {
         let string_table_offset = u64::from_le_bytes(
             bytes[bytes.len() - 16..bytes.len() - 8]
                 .try_into()
@@ -298,7 +298,7 @@ fn pathological_frame_length_is_bounded_not_panicking() {
     );
 
     // Strip the SIDX footer so the cold-start walks the slow path.
-    // The trailer format is [string_table_offset:u64 LE][count:u32 LE][b"SDX2"].
+    // The trailer format is [string_table_offset:u64 LE][count:u32 LE][b"SDX3"].
     let trailer_start = bytes.len() - 16;
     let string_table_offset = u64::from_le_bytes(
         bytes[trailer_start..trailer_start + 8]
@@ -430,7 +430,7 @@ fn sidx_footer_magic_mismatch_falls_back_to_frame_scan() {
     let mut bytes = std::fs::read(&seg).expect("read segment");
     assert_eq!(
         &bytes[bytes.len() - 4..],
-        b"SDX2",
+        b"SDX3",
         "seeded segment must have the SIDX magic"
     );
     // Corrupt the last byte of the SIDX magic.
@@ -474,7 +474,7 @@ fn sidx_footer_entry_count_disagreement_falls_back_to_frame_scan() {
     let mut bytes = std::fs::read(&seg).expect("read segment");
     assert_eq!(
         &bytes[bytes.len() - 4..],
-        b"SDX2",
+        b"SDX3",
         "seeded segment must have the SIDX magic"
     );
     let count_offset = bytes.len() - 8;

@@ -306,7 +306,9 @@ impl Segment<Active> {
         // the frames stop at string_table_offset. Otherwise, frames extend
         // to the end of the file.
         let file_len = source.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
-        let frames_end = detect_sidx_boundary(&mut source, file_len)?.unwrap_or(file_len);
+        // segment_id is only used to stamp a CorruptSegment error on a bad SIDX
+        // offset; this copy path mirrors corrupt_magic(0) above and has no parsed id.
+        let frames_end = detect_sidx_boundary(&mut source, file_len, 0)?.unwrap_or(file_len);
 
         source
             .seek(SeekFrom::Start(frames_start))
@@ -374,6 +376,7 @@ impl Segment<Active> {
 pub(crate) fn detect_sidx_boundary<R: Read + Seek>(
     source: &mut R,
     file_len: u64,
+    segment_id: u64,
 ) -> Result<Option<u64>, StoreError> {
     // SIDX trailer is the last 16 bytes: [string_table_offset:u64 LE][entry_count:u32 LE][magic:4]
     const TRAILER_LEN: u64 = 16;
@@ -395,6 +398,25 @@ pub(crate) fn detect_sidx_boundary<R: Read + Seek>(
         trailer[0], trailer[1], trailer[2], trailer[3], trailer[4], trailer[5], trailer[6],
         trailer[7],
     ]);
+
+    // Upper-bound check: the string table (and therefore the end of the frame
+    // region) cannot start inside or past the 16-byte trailer. An offset past
+    // file_len - 16 would over-run the scan into the trailer. file_len - 16
+    // cannot underflow because file_len >= TRAILER_LEN was checked above.
+    // offset == file_len - 16 (empty string table + zero entries) stays valid,
+    // matching read_layout's boundary semantics. The lower bound (offset >=
+    // 8 + header_len) is validated at each call site, where header_len is known.
+    let max_offset = file_len - TRAILER_LEN;
+    if string_table_offset > max_offset {
+        return Err(StoreError::corrupt_segment_with_detail(
+            segment_id,
+            format!(
+                "SIDX string_table_offset {string_table_offset} is past the frame region \
+                 (max {max_offset} = file_len {file_len} - 16-byte trailer)"
+            ),
+        ));
+    }
+
     Ok(Some(string_table_offset))
 }
 
@@ -425,6 +447,70 @@ mod tests {
         assert!(
             !segment.needs_rotation(1024),
             "PROPERTY: needs_rotation must stay false below the threshold"
+        );
+    }
+
+    /// Build a minimal in-memory buffer whose last 16 bytes are a SIDX trailer
+    /// with the given `string_table_offset`, valid magic, and zero entry_count.
+    fn sidx_trailer_buf(total_len: usize, string_table_offset: u64) -> Vec<u8> {
+        assert!(total_len >= 16, "buffer must hold the 16-byte trailer");
+        let mut bytes = vec![0u8; total_len];
+        let trailer_start = total_len - 16;
+        bytes[trailer_start..trailer_start + 8].copy_from_slice(&string_table_offset.to_le_bytes());
+        bytes[trailer_start + 8..trailer_start + 12].copy_from_slice(&0u32.to_le_bytes());
+        bytes[trailer_start + 12..trailer_start + 16]
+            .copy_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
+        bytes
+    }
+
+    #[test]
+    fn detect_sidx_boundary_rejects_offset_past_trailer() {
+        let bytes = sidx_trailer_buf(64, 63); // offset past file_len - 16 = 48
+        let file_len = bytes.len() as u64;
+        let mut cursor = std::io::Cursor::new(bytes);
+        let result = detect_sidx_boundary(&mut cursor, file_len, 7);
+        assert!(
+            matches!(result, Err(StoreError::CorruptSegment { segment_id: 7, .. })),
+            "PROPERTY: a string_table_offset past file_len - 16 must surface CorruptSegment, not silently over-run; got {result:?}"
+        );
+    }
+
+    #[test]
+    fn detect_sidx_boundary_accepts_offset_at_max() {
+        let file_len = 64u64;
+        let max_offset = file_len - 16; // empty string table boundary, valid
+        let bytes = sidx_trailer_buf(
+            usize::try_from(file_len).expect("file_len fits usize"),
+            max_offset,
+        );
+        let mut cursor = std::io::Cursor::new(bytes);
+        let result = detect_sidx_boundary(&mut cursor, file_len, 7);
+        assert_eq!(
+            result.expect("must not error at the max boundary"),
+            Some(max_offset),
+            "PROPERTY: offset == file_len - 16 is the empty-string-table boundary and must be accepted"
+        );
+    }
+
+    #[test]
+    fn detect_sidx_boundary_no_magic_returns_none() {
+        // A tail without the SIDX magic must read as "no footer", not error.
+        let bytes = vec![0u8; 64];
+        let file_len = bytes.len() as u64;
+        let mut cursor = std::io::Cursor::new(bytes);
+        let result = detect_sidx_boundary(&mut cursor, file_len, 7).expect("must not error");
+        assert_eq!(result, None, "PROPERTY: absent SIDX magic must return None");
+    }
+
+    #[test]
+    fn detect_sidx_boundary_tiny_file_returns_none() {
+        let bytes = vec![0xAA; 8]; // < 16-byte trailer
+        let file_len = bytes.len() as u64;
+        let mut cursor = std::io::Cursor::new(bytes);
+        let result = detect_sidx_boundary(&mut cursor, file_len, 7).expect("must not error");
+        assert_eq!(
+            result, None,
+            "PROPERTY: a file smaller than the trailer must return None"
         );
     }
 }
