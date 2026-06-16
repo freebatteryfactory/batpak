@@ -108,20 +108,32 @@ const PROJECTION_MUTANT_EXCLUDE_RES: &[&str] = &[
     // execute_full_replay — there is no functional behavior to assert without a
     // brittle log-capture test, so the mutant is unkillable by design.
     r"crates/core/src/store/projection/flow/mod\.rs:.*delete ! in execute_full_replay",
-    // Equivalent mutant: the FIRST `&&` (col 26) in execute_external_cache_path's
-    // `!is_fresh && supports_incremental_apply && incremental_projection` guard.
-    // Flipping it to `||` only diverges when the cache entry IS fresh: the real
-    // guard skips the incremental branch, the mutant enters it — but on a fresh
-    // entry the incremental fold filters `global_sequence > cached_watermark`,
-    // which selects zero events, so the returned projection value is identical.
-    // ANCHORED to :540:26 on purpose — the SECOND `&&` (col 61, the
-    // `&& incremental_projection` conjunct) is NOT equivalent: flipping it runs
-    // incremental-apply on a type that does not support it. Re-check this line:col
-    // if execute_external_cache_path moves. The load-bearing apply itself
-    // (:726) is covered by incremental_projection_applies_events_after_cached_watermark.
-    // TODO(0.8.3 backlog): kill :540:61 with a non-incremental-type test instead
-    // of leaving it an honest survivor.
-    r"crates/core/src/store/projection/flow/mod\.rs:540:26: replace && with \|\| in execute_external_cache_path",
+    // The guard's three `&&` conjuncts in execute_external_cache_path's
+    // incremental-apply gate (`!is_fresh && meta.watermark <= replay.watermark &&
+    // supports_incremental_apply() && incremental_projection`) are all killed by
+    // external_cache_path_full_replays_for_non_incremental_type and verified
+    // CAUGHT by `cargo mutants --re 'replace && with ||'` (3/3 caught), so none
+    // are excluded. That test uses a non-incremental, stale Consistent entry:
+    // the real guard is false (-> full replay -> 3), while flipping ANY `&&` to
+    // `||` makes `!is_fresh` (true) carry the guard, wrongly entering the
+    // incremental branch whose no-op apply returns the stale cached 2.
+    // The previously-registered :540:26 equivalence exclusion was removed: it was
+    // only equivalent for supports_incremental_apply()==true types, and the new
+    // non-incremental test proves it is killable, so excluding it was over-broad.
+    //
+    // No exclusion for the `==` checks in execute_external_cache_path: BOTH are
+    // value-/label-affecting and killable.
+    //   * :520 (the Consistent `is_fresh` check) is value-affecting.
+    //   * :607 (`meta.watermark == execution.replay.watermark`) selects the
+    //     reported ProjectionObservedFreshness (Fresh vs StaleAllowed). That label
+    //     is NOT log-only: it flows through projection_run::map_observed_freshness
+    //     onto `body.observed_freshness` on the project_run_evidence outcome, so
+    //     the `== -> !=` mutant is killed by
+    //     external_cache_hit_observed_freshness_distinguishes_fresh_from_stale_allowed,
+    //     which asserts Fresh (watermarks equal) AND StaleAllowed (watermarks
+    //     differ) on that observable field.
+    // The value-affecting age comparison here (`age_us < max_stale_ms * 1000`) is
+    // pinned by maybe_stale_external_cache_age_boundary_is_pinned.
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

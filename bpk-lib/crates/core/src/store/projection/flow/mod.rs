@@ -537,7 +537,11 @@ where
                 }
             };
 
-            if !is_fresh && T::supports_incremental_apply() && store.runtime.incremental_projection
+            // R16: never incrementally apply onto a cache row that is AHEAD of disk (post-rebuild/rollback); fall through to full replay so disk is authoritative.
+            if !is_fresh
+                && meta.watermark <= execution.replay.watermark
+                && T::supports_incremental_apply()
+                && store.runtime.incremental_projection
             {
                 if let Some(mut cached_state) = decode_cached_state::<T>(
                     execution.entity,
