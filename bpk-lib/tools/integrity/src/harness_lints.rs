@@ -227,6 +227,12 @@ const OVERSIZE_HARNESS_ALLOWLIST: &[OversizeDebt] = &[
         reason: "legacy omnibus store suite is being burned down over time",
         target: "move cursor/lifecycle remnants to focused suites during harness cleanup",
     },
+    OversizeDebt {
+        path: "tests/store_error_contract.rs",
+        max_lines: 521,
+        reason: "structured StoreError contract cases share the classification fixture; bumped 500 -> 521 after the ReservedKind contract cases landed (audit R5)",
+        target: "split the classification table from per-variant contract cases during harness cleanup",
+    },
 ];
 
 #[derive(Clone, Default)]
