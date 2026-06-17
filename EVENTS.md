@@ -28,7 +28,7 @@ Payload bytes are part of the event contract. When structured payloads are hashe
 
 ## Schema Evolution
 
-Payloads change shape over time. batpak versions that shape and decodes old bytes on read; it never rewrites stored bytes (that would break the hash chain and signatures).
+Payloads change shape over time. batpak versions that shape and decode old bytes on read; it never rewrites stored bytes (that would break the hash chain and signatures).
 
 Each `#[derive(EventPayload)]` type carries `PAYLOAD_VERSION` (default `1`, set via `#[batpak(version = N)]`). A typed append (`append_typed` and the typed `submit`/`reaction` family) stamps that version into `EventHeader.payload_version`. Untyped / batch / denial / lifecycle appends stamp `0`; `0` means "legacy or app-managed" and is decoded tolerantly as the current shape. The version field rides inside the frame but outside the hashed region: the content hash covers payload bytes only and the signature cover is `event_id + sequence + coord + kind + prev_hash + content_hash + extensions`, so adding or stamping it moves no existing hash or signature.
 
