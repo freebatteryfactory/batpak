@@ -281,6 +281,23 @@ describe("Effect 4 schema round-trip via @batpak/schema", () => {
     expect(encodeHex(bytes)).toBe(Generated.BANK_COMMIT_REQUEST_GOLDEN_HEX);
   });
 
+  it("encodes bank.commit with idempotency_key_hex OMITTED to the same golden bytes (#28)", () => {
+    // `idempotency_key_hex` is backed by a Rust `#[serde(default)] Option<String>`,
+    // so the TS property is omittable. Omitting the key MUST still encode as
+    // present-nil — byte-identical to the `idempotency_key_hex: null` fixture
+    // and to Rust's `to_vec_named` None → nil. This is the load-bearing
+    // proof that making the field omittable did NOT change the wire.
+    const omitted = encodeBytes(Generated.BankCommitRequest, {
+      entity: "fixture:bank",
+      scope: "fixture-scope",
+      kind_category: 15,
+      kind_type_id: 2561,
+      payload_hex: "81a56e6f6e6365b66865617274626561742d666978747572652d30303031",
+      // idempotency_key_hex intentionally OMITTED
+    } as unknown as typeof Generated.BankCommitRequest.Type);
+    expect(encodeHex(omitted)).toBe(Generated.BANK_COMMIT_REQUEST_GOLDEN_HEX);
+  });
+
   it("decodes the event.get ack fixture (Option<string> + Map<string,string>)", () => {
     const bytes = decodeHex(Generated.EVENT_GET_ACK_GOLDEN_HEX);
     const value = decodeBytes(Generated.EventGetAck, bytes);
@@ -324,7 +341,6 @@ describe("Effect 4 schema round-trip via @batpak/schema", () => {
         kind_category: 999,
         kind_type_id: 0,
         payload_hex: "",
-        idempotency_key_hex: null,
       }),
     ).toThrow();
   });

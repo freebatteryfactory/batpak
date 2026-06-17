@@ -6,13 +6,20 @@
 /// Expands to `inventory::submit! { EventDescriptorRegistration { ... } }`.
 /// Field `order` values are assigned by a recursive internal helper (no
 /// repetition index). Fixtures use UFCS on [`crate::EventPayloadFixture`].
+///
+/// Each field is declared as either `(wireName, typeToken)` (required,
+/// `optional: false`) or `(wireName, typeToken, optional)` where
+/// `optional` is a `bool` literal marking the field OMITTABLE on TS input.
+/// Mark `true` ONLY for `#[serde(default)] Option<T>` fields (absent on
+/// the wire → `None`); a plain `Option<T>` stays required-but-nullable.
+/// See [`crate::manifest::FieldDescriptor::optional`].
 #[macro_export]
 macro_rules! hbat_event_descriptor {
     (
         type = $ty:ty,
         schema_ref = $schema_ref:expr,
         ts_name = $ts_name:literal,
-        fields = [ $( ($wire:literal, $token:literal) ),* $(,)? ] $(,)?
+        fields = [ $( ( $($field_spec:tt)+ ) ),* $(,)? ] $(,)?
     ) => {
         inventory::submit! {
             $crate::manifest::EventDescriptorRegistration {
@@ -25,7 +32,7 @@ macro_rules! hbat_event_descriptor {
                 fields: $crate::hbat_event_descriptor!(
                     @fields_inner
                     0usize,
-                    [ $( ($wire, $token) ),* ],
+                    [ $( ( $($field_spec)+ ) ),* ],
                     ACC: []
                 ),
                 fixture_bytes: || {
@@ -48,22 +55,47 @@ macro_rules! hbat_event_descriptor {
         &[ $( $acc ),* ] as &[$crate::manifest::FieldRow]
     };
 
+    // Field spec with an explicit `optional` bool: (wire, token, optional).
     (
         @fields_inner
         $idx:expr,
-        [ ($wire:literal, $token:literal) $(, ($rest_wire:literal, $rest_token:literal) )* $(,)? ],
+        [ ($wire:literal, $token:literal, $optional:literal) $(, ( $($rest:tt)+ ) )* $(,)? ],
         ACC: [ $( $acc:expr ),* $(,)? ]
     ) => {
         $crate::hbat_event_descriptor!(
             @fields_inner
             ($idx + 1usize),
-            [ $( ($rest_wire, $rest_token) ),* ],
+            [ $( ( $($rest)+ ) ),* ],
             ACC: [
                 $( $acc, )*
                 $crate::manifest::FieldRow {
                     wire_name: $wire,
                     type_token: $token,
                     order: $idx,
+                    optional: $optional,
+                }
+            ]
+        )
+    };
+
+    // Field spec without `optional`: (wire, token) → optional defaults false.
+    (
+        @fields_inner
+        $idx:expr,
+        [ ($wire:literal, $token:literal) $(, ( $($rest:tt)+ ) )* $(,)? ],
+        ACC: [ $( $acc:expr ),* $(,)? ]
+    ) => {
+        $crate::hbat_event_descriptor!(
+            @fields_inner
+            ($idx + 1usize),
+            [ $( ( $($rest)+ ) ),* ],
+            ACC: [
+                $( $acc, )*
+                $crate::manifest::FieldRow {
+                    wire_name: $wire,
+                    type_token: $token,
+                    order: $idx,
+                    optional: false,
                 }
             ]
         )

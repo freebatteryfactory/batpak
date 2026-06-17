@@ -406,7 +406,10 @@ crate::hbat_event_descriptor! {
         ("kind_category", "u8"),
         ("kind_type_id", "u16"),
         ("payload_hex", "hex-blob"),
-        ("idempotency_key_hex", "option<u128-hex>"),
+        // `#[serde(default)] Option<String>` on BankCommitRequest →
+        // genuinely additive on the wire (absent → None). Marked optional
+        // so the TS property is omittable while still encoding present-nil.
+        ("idempotency_key_hex", "option<u128-hex>", true),
     ],
 }
 
