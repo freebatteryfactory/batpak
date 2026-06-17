@@ -74,11 +74,6 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
         target: "add header when smoke scenario changes",
     },
     HeaderDebt {
-        path: "tests/chaos_testing.rs",
-        reason: "legacy chaos suite has partial header only",
-        target: "split or normalize during harness cleanup",
-    },
-    HeaderDebt {
         path: "tests/cold_start_recovery.rs",
         reason: "legacy cold-start recovery suite predates module-header doctrine",
         target: "add header when recovery matrix changes",
@@ -162,12 +157,6 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
 
 const OVERSIZE_HARNESS_ALLOWLIST: &[OversizeDebt] = &[
     OversizeDebt {
-        path: "tests/chaos_testing.rs",
-        max_lines: 1017,
-        reason: "legacy chaos matrix remains intact until split",
-        target: "split low-level byte corruption cases during harness cleanup",
-    },
-    OversizeDebt {
         path: "tests/control_plane_surface.rs",
         max_lines: 1055,
         reason: "control-plane proofs share fixtures today",
@@ -226,12 +215,6 @@ const OVERSIZE_HARNESS_ALLOWLIST: &[OversizeDebt] = &[
         max_lines: 1675,
         reason: "legacy omnibus store suite is being burned down over time",
         target: "move cursor/lifecycle remnants to focused suites during harness cleanup",
-    },
-    OversizeDebt {
-        path: "tests/store_error_contract.rs",
-        max_lines: 521,
-        reason: "structured StoreError contract cases share the classification fixture; bumped 500 -> 521 after the ReservedKind contract cases landed (audit R5)",
-        target: "split the classification table from per-variant contract cases during harness cleanup",
     },
 ];
 

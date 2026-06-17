@@ -126,9 +126,13 @@
     - INV-BATCH-CRASH-RECOVERY
   locations:
     - bpk-lib/crates/core/tests/chaos_testing.rs
+    - bpk-lib/crates/core/tests/chaos_testing_byte_corruption.rs
+    - bpk-lib/crates/core/tests/chaos_testing_batch_rotation.rs
     - bpk-lib/crates/core/tests/cold_start_recovery.rs
   commands:
     - cargo test --test chaos_testing --all-features
+    - cargo test --test chaos_testing_byte_corruption --all-features
+    - cargo test --test chaos_testing_batch_rotation --all-features
     - cargo test --test cold_start_recovery
   coverage_delta: unmeasured
   mutation_delta: unmeasured
@@ -416,9 +420,11 @@
     - INV-STORE-ERROR-TAXONOMY
   locations:
     - bpk-lib/crates/core/tests/store_error_contract.rs
+    - bpk-lib/crates/core/tests/store_error_contract_operational.rs
     - bpk-lib/crates/core/src/store/error.rs
   commands:
     - cargo test --test store_error_contract
+    - cargo test --test store_error_contract_operational
     - cargo test store::error::tests
   coverage_delta: >
     targeted rise in crates/core/src/store/error.rs; exact JSON delta not
