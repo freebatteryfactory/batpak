@@ -1,11 +1,22 @@
 pub(crate) mod id;
+pub(crate) mod recovery_manifest;
 pub(crate) mod scan;
 pub(crate) mod sidx;
 
 #[cfg(test)]
 mod boundary_tests;
 
+#[cfg(test)]
+mod manifest_recovery_tests;
+
 pub(crate) use id::SegmentId;
+pub(crate) use recovery_manifest::resolve_untrusted_frames_end;
+// Corroboration internals are surfaced to the inline manifest-recovery test
+// island only; production code reaches them through `resolve_untrusted_frames_end`.
+#[cfg(test)]
+pub(crate) use recovery_manifest::{
+    corroborate_untrusted_entries, RecoveredFrame, RecoveredFrameMap, UntrustedRecovery,
+};
 
 use crate::event::Event;
 use crate::store::{EncodedBytes, ExtensionKey, StoreError};
@@ -369,12 +380,19 @@ impl Segment<Active> {
         // (inside a later CRC-valid frame), or too HIGH (into the corrupt footer);
         // any of those, if trusted as the copy boundary, would either drop
         // CRC-valid frames or splice corrupt footer bytes into the merged segment.
-        // So the hint is discarded entirely: walk the CRC-valid frames bounded only
-        // by `file_len` and copy exactly the span that decodes cleanly. This
-        // recovers ALL CRC-valid frames (the walk is truncation-proof), so no
-        // separate truncation guard is needed for the untrusted path.
+        // So the hint is discarded entirely and recovery routes through the
+        // SIDX-manifest path (`resolve_untrusted_frames_end`): it walks the
+        // CRC-valid frames bounded only by `file_len` (truncation-proof, still
+        // FailClosed on mid-stream corruption), AND corroborates the
+        // CRC-independent SIDX entry table against the recovered frames. If a
+        // corroborated entry attests to a committed frame at/after the recovered
+        // prefix end that the source is missing (torn last committed frame under a
+        // corrupt footer — round-7), the copy FailCloses instead of silently
+        // merging a segment that dropped a committed event. Compaction copy of a
+        // sealed source is strict, so its fall-back posture is FailClosed; with no
+        // corroborated manifest it still recovers the CRC-valid prefix.
         let copy_end = if untrusted_boundary {
-            crc_valid_frames_end(&mut source, frames_start, file_len, 0)?
+            resolve_untrusted_frames_end(&mut source, frames_start, file_len, 0, true)?
         } else {
             frames_end
         };
@@ -576,7 +594,7 @@ pub(crate) fn detect_sidx_boundary<R: Read + Seek>(
 /// # Errors
 /// Returns [`StoreError::Io`] only on a seek failure; a short/EOF read is treated
 /// as "no frame here" (`Ok(None)`), not an error.
-fn try_decode_frame_at<R: Read + Seek>(
+pub(super) fn try_decode_frame_at<R: Read + Seek>(
     source: &mut R,
     at: u64,
     file_len: u64,
@@ -635,7 +653,7 @@ fn try_decode_frame_at<R: Read + Seek>(
 ///
 /// # Errors
 /// Returns [`StoreError::Io`] on a seek failure inside the probe.
-fn crc_valid_frame_exists_after<R: Read + Seek>(
+pub(super) fn crc_valid_frame_exists_after<R: Read + Seek>(
     source: &mut R,
     from: u64,
     file_len: u64,
@@ -696,55 +714,31 @@ fn crc_valid_frame_exists_after<R: Read + Seek>(
 /// Returns [`StoreError::Io`] on seek/read failure, or
 /// [`StoreError::CorruptSegment`] when a CRC-valid frame is found after the first
 /// non-decodable position (mid-stream corruption).
+///
+/// This is the prefix-only primitive: it returns just the recovery stop offset P.
+/// The production untrusted path uses [`crc_valid_frames_end_with_map`] (which
+/// additionally builds the recovered-frame map `R` for SIDX-manifest
+/// corroboration); this thin wrapper preserves the original signature for the
+/// round-5/6 unit tests that pin the mid-stream-corruption / torn-tail behavior
+/// directly, and is the single source of truth for that walk.
+//
+// Production code reaches the walk via `crc_valid_frames_end_with_map`; this
+// prefix-only wrapper is exercised only by the boundary unit tests, so it is
+// gated `#[cfg(test)]` (no dead code in the production lib).
+#[cfg(test)]
 pub(crate) fn crc_valid_frames_end<R: Read + Seek>(
     source: &mut R,
     frames_start: u64,
     file_len: u64,
     segment_id: u64,
 ) -> Result<u64, StoreError> {
-    let mut cursor = frames_start;
-
-    loop {
-        if cursor >= file_len {
-            // Walked every byte of the source as CRC-valid frames (no footer, or
-            // the frames run to EOF): the real frames end at the source end.
-            return Ok(file_len);
-        }
-        match try_decode_frame_at(source, cursor, file_len)? {
-            Some(frame_size) => {
-                cursor = match cursor.checked_add(frame_size) {
-                    Some(next) => next,
-                    None => return Ok(cursor),
-                };
-            }
-            None => {
-                // `cursor` (= P) is the FIRST position that does not decode as a
-                // CRC-valid frame. It is the true end of the frame region ONLY if
-                // nothing valid follows it. Resync-scan from P+1 toward EOF: if a
-                // CRC-valid frame still exists after P, P is mid-stream corruption
-                // and recovery must FailClosed rather than silently truncate to the
-                // prefix. (Probe from P+1 because P itself just failed to decode as
-                // a frame start.)
-                let resync_from = match cursor.checked_add(1) {
-                    Some(next) => next,
-                    None => return Ok(cursor),
-                };
-                if crc_valid_frame_exists_after(source, resync_from, file_len)? {
-                    return Err(StoreError::corrupt_segment_with_detail(
-                        segment_id,
-                        format!(
-                            "mid-stream corruption: frame at offset {cursor} is non-decodable but a \
-                             CRC-valid frame follows before EOF (file_len {file_len}); refusing to \
-                             silently truncate to the prefix during untrusted-footer recovery"
-                        ),
-                    ));
-                }
-                // Nothing valid after P: P is the genuine end of the frame region
-                // (footer / torn-tail bytes follow). Recover the prefix.
-                return Ok(cursor);
-            }
-        }
-    }
+    let (stop, _recovered) = recovery_manifest::crc_valid_frames_end_with_map(
+        source,
+        frames_start,
+        file_len,
+        segment_id,
+    )?;
+    Ok(stop)
 }
 
 #[cfg(test)]

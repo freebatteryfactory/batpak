@@ -517,6 +517,25 @@ pub(crate) fn authenticated_string_table_offset<R: Read + Seek>(
     }
 }
 
+/// Parse the SIDX entry table WITHOUT requiring the footer CRC to authenticate.
+///
+/// This is the untrusted manifest-recovery read used by the segment frame-scan
+/// fallback (the "cake-and-eat-it" resolution): when the footer boundary is
+/// UNTRUSTED (CRC-failed SDX3, legacy SDX2, or a forged trailer), the entries are
+/// still parseable because [`SidxEntry::decode_from`] is CRC-independent. Every
+/// returned entry is an UNTRUSTED HYPOTHESIS the caller MUST corroborate against
+/// the independently CRC-verified recovered frames before trusting it.
+///
+/// Returns ZERO entries (`Ok(Vec::new())`) on any geometry/parse failure so the
+/// caller falls back to the existing tail-policy behavior. Only a real IO failure
+/// surfaces as [`StoreError::Io`]. See [`footer::read_entries_unauthenticated`].
+pub(crate) fn read_entries_unauthenticated<R: Read + Seek>(
+    reader: &mut R,
+    segment_id: u64,
+) -> Result<Vec<SidxEntry>, StoreError> {
+    footer::read_entries_unauthenticated(reader, segment_id)
+}
+
 pub(crate) fn read_footer(path: &Path) -> Result<Option<SidxFooterData>, StoreError> {
     // Derive a segment_id for error messages from the filename ("000042.fbat" → 42).
     // Falls back to 0 if the filename is malformed, but surfaces the parse failure
