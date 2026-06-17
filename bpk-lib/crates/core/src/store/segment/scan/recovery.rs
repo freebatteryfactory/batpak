@@ -132,13 +132,25 @@ impl Reader {
         // (inside a later CRC-valid frame), or too HIGH (into the corrupt footer).
         // Trusting it as a bound either silently drops CRC-valid frames or makes
         // the scan parse footer bytes as frame headers and FailClose. So discard
-        // the hint entirely and walk the CRC-valid frames bounded only by
-        // `file_len`, clamping `frames_end` down to where they actually stop. The
-        // walk is truncation-proof (it never drops a CRC-valid frame and never
-        // admits non-CRC-valid bytes), so no separate truncation guard is needed
-        // for the untrusted path.
+        // the hint entirely and recover via the SIDX-manifest path
+        // (`resolve_untrusted_frames_end`): it walks the CRC-valid frames bounded
+        // only by `file_len` (truncation-proof, still FailClosed on mid-stream
+        // corruption), AND consults the CRC-independent SIDX entry table as a
+        // self-authenticating manifest. If a CORROBORATED entry (matching offset +
+        // length + content event_hash of a recovered frame) attests to a committed
+        // frame at/after the recovered prefix end that the stream is missing — the
+        // torn-last-frame-under-corrupt-footer case (round-7) — it FailCloses
+        // regardless of tail policy. With no corroborated manifest it degrades to
+        // the existing recover-the-prefix behavior, honoring `tail_policy` for that
+        // fall-back.
         let frames_end = if untrusted_boundary {
-            segment::crc_valid_frames_end(&mut file, cursor, file_len, segment_id)?
+            segment::resolve_untrusted_frames_end(
+                &mut file,
+                cursor,
+                file_len,
+                segment_id,
+                !tail_policy.can_recover_torn_tail(),
+            )?
         } else {
             frames_end
         };

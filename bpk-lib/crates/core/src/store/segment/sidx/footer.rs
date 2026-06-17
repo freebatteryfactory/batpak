@@ -1,4 +1,4 @@
-use super::{ENTRY_SIZE, SIDX_MAGIC};
+use super::{SidxEntry, ENTRY_SIZE, SIDX_MAGIC, SIDX_MAGIC_LEGACY_SDX2};
 use crate::store::StoreError;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -147,6 +147,118 @@ pub(super) fn read_layout<R: Read + Seek>(
         string_table_len,
         entry_count,
     }))
+}
+
+/// Parse the SIDX entry table from a footer WITHOUT requiring the footer CRC to
+/// pass — the "cake-and-eat-it" untrusted entry-table read.
+///
+/// This is the manifest-recovery counterpart to [`read_layout`]: it reads the
+/// fixed 16-byte trailer geometry (`string_table_offset` + `entry_count`),
+/// applies the SAME bounds guards that [`read_layout`] uses (entry block must not
+/// extend before the start of the file, `string_table_offset` must not be past
+/// `entries_start`), then decodes `entry_count` raw [`SidxEntry`] records via
+/// [`SidxEntry::decode_from`] — which is CRC-INDEPENDENT — directly from the
+/// entries block. The footer CRC is NEVER verified here, so this works on a
+/// CRC-failed SDX3 footer, a legacy un-CRC'd SDX2 footer, or a partially-forged
+/// trailer.
+///
+/// EVERY entry returned is an UNTRUSTED HYPOTHESIS. The caller MUST corroborate
+/// each entry against the independently CRC-verified recovered-frame set before
+/// trusting any of its fields (see `segment::corroborate_untrusted_entries`). A
+/// forger can fabricate arbitrary entry bytes, but cannot match a real frame's
+/// content-addressed `event_hash` (blake3) — so corroboration, not this parse, is
+/// the trust boundary.
+///
+/// On ANY geometry/parse failure (absurd `entry_count`, `entry_count × ENTRY_SIZE`
+/// overflow, an entries block that runs before the start of the file, a
+/// `string_table_offset` past `entries_start`, a magic that is neither `SDX3` nor
+/// the legacy `SDX2`, or a short/torn read) this returns ZERO entries
+/// (`Ok(Vec::new())`) so the caller cleanly falls back to tail-policy behavior.
+/// Only a genuine non-EOF IO failure surfaces as [`StoreError::Io`].
+///
+/// Both `SDX3` and the legacy `SDX2` magic are accepted because both are
+/// recognized as frame-region boundaries by `detect_sidx_boundary`, and the
+/// untrusted recovery path handles both provenances identically (the entries
+/// block geometry is byte-identical across the two magics).
+pub(super) fn read_entries_unauthenticated<R: Read + Seek>(
+    reader: &mut R,
+    segment_id: u64,
+) -> Result<Vec<SidxEntry>, StoreError> {
+    let file_len = reader.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
+    if file_len < TRAILER_SIZE {
+        return Ok(Vec::new());
+    }
+
+    reader
+        .seek(SeekFrom::End(-(TRAILER_SIZE as i64)))
+        .map_err(StoreError::Io)?;
+    let mut trailer = [0u8; 16];
+    reader.read_exact(&mut trailer).map_err(StoreError::Io)?;
+
+    // Accept BOTH the current SDX3 and legacy SDX2 magics — the boundary detector
+    // recognizes both, and the manifest geometry is identical. A trailer with any
+    // other magic carries no parseable entry table → zero entries.
+    let magic = &trailer[12..16];
+    if magic != SIDX_MAGIC && magic != SIDX_MAGIC_LEGACY_SDX2 {
+        return Ok(Vec::new());
+    }
+
+    let string_table_offset = u64::from_le_bytes([
+        trailer[0], trailer[1], trailer[2], trailer[3], trailer[4], trailer[5], trailer[6],
+        trailer[7],
+    ]);
+    let entry_count = u32::from_le_bytes([trailer[8], trailer[9], trailer[10], trailer[11]]) as u64;
+
+    // Reuse read_layout's geometry guards. ANY failure → zero entries (fall back),
+    // never a hard error: a bogus entry_count, an overflowing entries block, or an
+    // out-of-range offset is exactly the "no trustworthy signal" case.
+    let Some(entries_block_len) = entry_count.checked_mul(ENTRY_SIZE as u64) else {
+        return Ok(Vec::new());
+    };
+    let Some(entries_start) = file_len
+        .checked_sub(TRAILER_SIZE)
+        .and_then(|n| n.checked_sub(SIDX_CRC_LEN))
+        .and_then(|n| n.checked_sub(entries_block_len))
+    else {
+        return Ok(Vec::new());
+    };
+    // string_table_offset must sit at/before the entries block start, same as the
+    // authenticated layout invariant. A violation means the geometry is garbage.
+    if string_table_offset > entries_start {
+        return Ok(Vec::new());
+    }
+
+    // Decode the entries block in place. We do NOT need the string table for
+    // corroboration — only (frame_offset, frame_length, event_hash) — so we skip
+    // straight to entries_start and read the raw fixed-size records. entity_idx /
+    // scope_idx string-table bounds are NOT validated here (corroboration ignores
+    // them; only frames that match a recovered frame's content hash are trusted).
+    reader
+        .seek(SeekFrom::Start(entries_start))
+        .map_err(StoreError::Io)?;
+
+    let count = usize::try_from(entry_count).unwrap_or(usize::MAX);
+    let mut entries = Vec::with_capacity(count.min(1024));
+    let mut buf = [0u8; ENTRY_SIZE];
+    for _ in 0..entry_count {
+        if let Err(e) = reader.read_exact(&mut buf) {
+            // A torn/short entries block → no trustworthy manifest. Return zero
+            // entries so the caller falls back, rather than a partial table that
+            // could falsely corroborate. A real non-EOF IO error still propagates.
+            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                return Ok(Vec::new());
+            }
+            return Err(StoreError::Io(e));
+        }
+        match SidxEntry::decode_from(&buf, segment_id) {
+            Ok(entry) => entries.push(entry),
+            // decode_from only errors on a wrong buffer length, which cannot happen
+            // here (buf is exactly ENTRY_SIZE); treat defensively as "no manifest".
+            Err(_) => return Ok(Vec::new()),
+        }
+    }
+
+    Ok(entries)
 }
 
 fn read_trailer_u64(bytes: &[u8], segment_id: u64) -> Result<u64, StoreError> {
