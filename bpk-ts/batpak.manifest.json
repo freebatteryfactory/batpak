@@ -1,5 +1,5 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "netbatVersion": "NETBAT/1",
   "batpakVersion": "0.8.2",
   "canonicalEncoding": {
@@ -13,6 +13,7 @@
       "tsName": "SystemHeartbeatRequest",
       "category": 15,
       "typeId": 2561,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "nonce",
@@ -32,6 +33,7 @@
       "tsName": "SystemHeartbeatAck",
       "category": 15,
       "typeId": 2562,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "nonce",
@@ -58,6 +60,7 @@
       "tsName": "BankCommitRequest",
       "category": 15,
       "typeId": 2576,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entity",
@@ -105,6 +108,7 @@
       "tsName": "BankCommitAck",
       "category": 15,
       "typeId": 2577,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -161,6 +165,7 @@
       "tsName": "EventGetRequest",
       "category": 15,
       "typeId": 2592,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -180,6 +185,7 @@
       "tsName": "EventGetAck",
       "category": 15,
       "typeId": 2593,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -269,6 +275,7 @@
       "tsName": "EventQueryRequest",
       "category": 15,
       "typeId": 2594,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entity",
@@ -323,6 +330,7 @@
       "tsName": "EventSummary",
       "category": 15,
       "typeId": 2595,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -412,6 +420,7 @@
       "tsName": "EventQueryAck",
       "category": 15,
       "typeId": 2596,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entries",
@@ -459,6 +468,7 @@
       "tsName": "ReceiptVerifyRequest",
       "category": 15,
       "typeId": 2608,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -513,6 +523,7 @@
       "tsName": "ReceiptVerifyAck",
       "category": 15,
       "typeId": 2609,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "valid",
@@ -546,6 +557,7 @@
       "tsName": "EventWalkRequest",
       "category": 15,
       "typeId": 2624,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -572,6 +584,7 @@
       "tsName": "EventWalkAck",
       "category": 15,
       "typeId": 2625,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entries",
@@ -605,6 +618,7 @@
       "tsName": "ChainWalkEvidenceRequest",
       "category": 15,
       "typeId": 2640,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "start_event_id_hex",
@@ -645,6 +659,7 @@
       "tsName": "ChainWalkEvidenceAck",
       "category": 15,
       "typeId": 2641,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
@@ -678,6 +693,7 @@
       "tsName": "StoreResourceEvidenceRequest",
       "category": 15,
       "typeId": 2656,
+      "payloadVersion": 1,
       "fields": [],
       "fixtureValue": {},
       "goldenPayloadHex": "80"
@@ -688,6 +704,7 @@
       "tsName": "StoreResourceEvidenceAck",
       "category": 15,
       "typeId": 2657,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
@@ -721,6 +738,7 @@
       "tsName": "ReadWalkEvidenceRequest",
       "category": 15,
       "typeId": 2672,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entity",
@@ -796,6 +814,7 @@
       "tsName": "ReadWalkEvidenceAck",
       "category": 15,
       "typeId": 2673,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
@@ -829,6 +848,7 @@
       "tsName": "ProjectionRunEvidenceRequest",
       "category": 15,
       "typeId": 2688,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "projection",
@@ -862,6 +882,7 @@
       "tsName": "ProjectionRunEvidenceAck",
       "category": 15,
       "typeId": 2689,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",

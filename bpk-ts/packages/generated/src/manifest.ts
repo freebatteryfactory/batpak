@@ -3,11 +3,11 @@
 // by codegen) to refresh this directory.
 
 // Source manifest: batpak.manifest.json
-export const MANIFEST_VERSION = 1 as const;
+export const MANIFEST_VERSION = 2 as const;
 export const BATPAK_VERSION = "0.8.2" as const;
 export const CANONICAL_ENCODING = {"kind":"named-field-msgpack","rmpSerdeVersion":"1.3.1"} as const;
 export const BATPAK_TS_MANIFEST = {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "netbatVersion": "NETBAT/1",
   "batpakVersion": "0.8.2",
   "canonicalEncoding": {
@@ -21,6 +21,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "SystemHeartbeatRequest",
       "category": 15,
       "typeId": 2561,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "nonce",
@@ -40,6 +41,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "SystemHeartbeatAck",
       "category": 15,
       "typeId": 2562,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "nonce",
@@ -66,6 +68,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "BankCommitRequest",
       "category": 15,
       "typeId": 2576,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entity",
@@ -113,6 +116,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "BankCommitAck",
       "category": 15,
       "typeId": 2577,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -169,6 +173,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventGetRequest",
       "category": 15,
       "typeId": 2592,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -188,6 +193,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventGetAck",
       "category": 15,
       "typeId": 2593,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -277,6 +283,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventQueryRequest",
       "category": 15,
       "typeId": 2594,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entity",
@@ -331,6 +338,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventSummary",
       "category": 15,
       "typeId": 2595,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -420,6 +428,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventQueryAck",
       "category": 15,
       "typeId": 2596,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entries",
@@ -467,6 +476,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ReceiptVerifyRequest",
       "category": 15,
       "typeId": 2608,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -521,6 +531,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ReceiptVerifyAck",
       "category": 15,
       "typeId": 2609,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "valid",
@@ -554,6 +565,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventWalkRequest",
       "category": 15,
       "typeId": 2624,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "event_id_hex",
@@ -580,6 +592,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "EventWalkAck",
       "category": 15,
       "typeId": 2625,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entries",
@@ -613,6 +626,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ChainWalkEvidenceRequest",
       "category": 15,
       "typeId": 2640,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "start_event_id_hex",
@@ -653,6 +667,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ChainWalkEvidenceAck",
       "category": 15,
       "typeId": 2641,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
@@ -686,6 +701,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "StoreResourceEvidenceRequest",
       "category": 15,
       "typeId": 2656,
+      "payloadVersion": 1,
       "fields": [],
       "fixtureValue": {},
       "goldenPayloadHex": "80"
@@ -696,6 +712,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "StoreResourceEvidenceAck",
       "category": 15,
       "typeId": 2657,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
@@ -729,6 +746,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ReadWalkEvidenceRequest",
       "category": 15,
       "typeId": 2672,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "entity",
@@ -804,6 +822,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ReadWalkEvidenceAck",
       "category": 15,
       "typeId": 2673,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
@@ -837,6 +856,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ProjectionRunEvidenceRequest",
       "category": 15,
       "typeId": 2688,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "projection",
@@ -870,6 +890,7 @@ export const BATPAK_TS_MANIFEST = {
       "tsName": "ProjectionRunEvidenceAck",
       "category": 15,
       "typeId": 2689,
+      "payloadVersion": 1,
       "fields": [
         {
           "wireName": "report_hex",
