@@ -217,8 +217,8 @@ const OVERSIZE_HARNESS_ALLOWLIST: &[OversizeDebt] = &[
     },
     OversizeDebt {
         path: "tests/segment_scan_hardening.rs",
-        max_lines: 1161,
-        reason: "segment corruption shapes share frame-building helpers; grew across audit rounds (legacy-SDX2 fallback, forged-truncate reject, corrupt-SDX3 too-high recover, round-4 untrusted-offset recover-all, round-5 mid-stream-corruption FailClosed via look-ahead + torn-last-frame recover); 1161 is the rustfmt-final count after the round-5 tests",
+        max_lines: 1406,
+        reason: "segment corruption shapes share frame-building helpers; grew across audit rounds (legacy-SDX2 fallback, forged-truncate reject, corrupt-SDX3 too-high recover, round-4 untrusted-offset recover-all, round-5 mid-stream-corruption FailClosed via look-ahead + torn-last-frame recover, round-6 out-of-bounds untrusted offset recover + torn-trailer recover + coincidental-magic recover + adversarial-offset property battery); 1406 is the rustfmt-final count after the round-6 tests. Split is already tracked as separate cleanup; bumping for now per round-6 directive",
         target: "split helper module from case table during harness cleanup",
     },
     OversizeDebt {

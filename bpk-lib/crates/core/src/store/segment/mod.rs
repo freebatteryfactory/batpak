@@ -509,35 +509,47 @@ pub(crate) fn detect_sidx_boundary<R: Read + Seek>(
         trailer[7],
     ]);
 
-    // Upper-bound check: the string table (and therefore the end of the frame
-    // region) cannot start inside or past the 16-byte trailer. An offset past
-    // file_len - 16 would over-run the scan into the trailer. file_len - 16
-    // cannot underflow because file_len >= TRAILER_LEN was checked above.
-    // offset == file_len - 16 (empty string table + zero entries) stays valid,
-    // matching read_layout's boundary semantics. The lower bound (offset >=
-    // 8 + header_len) is validated at each call site, where header_len is known.
-    let max_offset = file_len - TRAILER_LEN;
-    if string_table_offset > max_offset {
-        return Err(StoreError::corrupt_segment_with_detail(
-            segment_id,
-            format!(
-                "SIDX string_table_offset {string_table_offset} is past the frame region \
-                 (max {max_offset} = file_len {file_len} - 16-byte trailer)"
-            ),
-        ));
-    }
-
-    // Trust provenance: re-run the SDX3 footer CRC verification over the same
-    // reader. Only a CRC-valid SDX3 footer authenticates the offset; a CRC-fail
-    // SDX3 footer or a legacy SDX2 footer (no CRC) yields `Ok(None)` here, so the
-    // boundary is recognized but flagged untrusted. The CRC check is bounded
-    // (chunked hashing in `read_layout`) so a forged footer cannot drive an
-    // unbounded allocation here. An authenticated offset must equal the trailer
-    // offset we read above — if `read_layout`'s reconstructed offset disagrees
-    // with the raw trailer, do not trust it.
+    // Trust is determined FIRST, before any validation of the offset value.
+    //
+    // GOVERNING PRINCIPLE: an unauthenticated SIDX trailer offset must NEVER cause
+    // a hard failure OR data loss — it always degrades to CRC-valid-frame recovery.
+    // So the offset's *value* may be validated (and turned into a hard error) only
+    // once it is known TRUSTED. An UNTRUSTED offset is FULLY INERT: never validated
+    // as an error, never used as a boundary; callers discard `frames_end` for an
+    // untrusted boundary and recover via `crc_valid_frames_end` (bounded only by
+    // `file_len`).
+    //
+    // Only a CRC-valid SDX3 footer authenticates the offset. A CRC-fail SDX3
+    // footer, a legacy SDX2 footer (no CRC), a torn/truncated footer, or a
+    // no-footer segment whose last bytes coincidentally equal the magic all yield
+    // `Ok(None)` -> UNTRUSTED. The CRC check is bounded (chunked hashing in
+    // `read_layout`). An authenticated offset must equal the trailer offset read
+    // above, else it is not trusted.
     let trusted =
         crate::store::segment::sidx::authenticated_string_table_offset(source, segment_id)?
             == Some(string_table_offset);
+
+    // Upper-bound check — TRUSTED offsets ONLY. The string table cannot start
+    // inside/past the 16-byte trailer. `file_len - 16` cannot underflow (checked
+    // `file_len >= TRAILER_LEN` above); `offset == file_len - 16` (empty table)
+    // stays valid. The lower bound is validated per call site. Gated on `trusted`
+    // so it can NEVER hard-error an untrusted footer: a CRC-authenticated offset
+    // is consistent by construction (read_layout already proved it <= entries_start
+    // <= file_len - 16), so this never fires for a trusted offset, while a garbage
+    // untrusted offset of ANY shape (0, mid-frame, file_len, > file_len-16, huge,
+    // torn) downgrades to CRC-valid-frame recovery, not CorruptSegment (round-6 P1).
+    if trusted {
+        let max_offset = file_len - TRAILER_LEN;
+        if string_table_offset > max_offset {
+            return Err(StoreError::corrupt_segment_with_detail(
+                segment_id,
+                format!(
+                    "SIDX string_table_offset {string_table_offset} is past the frame region \
+                     (max {max_offset} = file_len {file_len} - 16-byte trailer)"
+                ),
+            ));
+        }
+    }
 
     Ok(Some(SidxBoundary {
         frames_end: string_table_offset,
@@ -821,18 +833,6 @@ mod tests {
         bytes[trailer_start + 12..trailer_start + 16]
             .copy_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
         bytes
-    }
-
-    #[test]
-    fn detect_sidx_boundary_rejects_offset_past_trailer() {
-        let bytes = sidx_trailer_buf(64, 63); // offset past file_len - 16 = 48
-        let file_len = bytes.len() as u64;
-        let mut cursor = std::io::Cursor::new(bytes);
-        let result = detect_sidx_boundary(&mut cursor, file_len, 7);
-        assert!(
-            matches!(result, Err(StoreError::CorruptSegment { segment_id: 7, .. })),
-            "PROPERTY: a string_table_offset past file_len - 16 must surface CorruptSegment, not silently over-run; got {result:?}"
-        );
     }
 
     #[test]
