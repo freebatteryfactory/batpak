@@ -133,6 +133,19 @@ pub struct FieldDescriptor {
     pub type_token: String,
     /// Declaration order, starting at 0.
     pub order: usize,
+    /// Whether this field is OMITTABLE on TS input.
+    ///
+    /// `true` only for fields whose Rust struct field is genuinely
+    /// additive on the wire (`#[serde(default)] Option<T>`): absent →
+    /// decodes to `None`. The codegen emits such fields as omittable
+    /// Effect Schema properties that still encode as present-nil, so
+    /// byte-parity with Rust's `to_vec_named` (None → nil) holds whether
+    /// the TS caller omits the key or passes `null`. A plain `Option<T>`
+    /// WITHOUT `#[serde(default)]` (absent → decode error) stays
+    /// `optional: false` (required-but-nullable). Defaults `false` so
+    /// older manifest JSON stays backward-compatible.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 /// Descriptor for one syncbat operation exposed to the TS-binding manifest.
@@ -195,6 +208,10 @@ pub struct FieldRow {
     pub type_token: &'static str,
     /// Declaration order, starting at 0.
     pub order: usize,
+    /// Whether this field is OMITTABLE on TS input. See
+    /// [`FieldDescriptor::optional`]. Set `true` only for fields whose
+    /// Rust struct field is `#[serde(default)] Option<T>`.
+    pub optional: bool,
 }
 
 /// Compile-time inventory entry for one `EventPayload`-deriving struct.
@@ -285,6 +302,7 @@ impl EventDescriptorRegistration {
                     ts_name: row.wire_name.to_owned(),
                     type_token: row.type_token.to_owned(),
                     order: row.order,
+                    optional: row.optional,
                 })
                 .collect(),
             fixture_value,

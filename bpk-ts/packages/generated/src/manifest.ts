@@ -27,7 +27,8 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "nonce",
           "tsName": "nonce",
           "typeToken": "string",
-          "order": 0
+          "order": 0,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -47,13 +48,15 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "nonce",
           "tsName": "nonce",
           "typeToken": "string",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "server_ts_ms",
           "tsName": "server_ts_ms",
           "typeToken": "u64-millis",
-          "order": 1
+          "order": 1,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -74,37 +77,43 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "entity",
           "tsName": "entity",
           "typeToken": "string",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "scope",
           "tsName": "scope",
           "typeToken": "string",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "kind_category",
           "tsName": "kind_category",
           "typeToken": "u8",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "kind_type_id",
           "tsName": "kind_type_id",
           "typeToken": "u16",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "payload_hex",
           "tsName": "payload_hex",
           "typeToken": "hex-blob",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "idempotency_key_hex",
           "tsName": "idempotency_key_hex",
           "typeToken": "option<u128-hex>",
-          "order": 5
+          "order": 5,
+          "optional": true
         }
       ],
       "fixtureValue": {
@@ -129,37 +138,43 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "event_id_hex",
           "tsName": "event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "sequence",
           "tsName": "sequence",
           "typeToken": "u64-safe",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "content_hash_hex",
           "tsName": "content_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "key_id_hex",
           "tsName": "key_id_hex",
           "typeToken": "key-id-hex",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "signature_hex",
           "tsName": "signature_hex",
           "typeToken": "option<ed25519-sig-hex>",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "extensions",
           "tsName": "extensions",
           "typeToken": "map<string,hex-blob>",
-          "order": 5
+          "order": 5,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -186,7 +201,8 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "event_id_hex",
           "tsName": "event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -206,67 +222,78 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "event_id_hex",
           "tsName": "event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "sequence",
           "tsName": "sequence",
           "typeToken": "u64-safe",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "timestamp_us",
           "tsName": "timestamp_us",
           "typeToken": "i64-microseconds",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "correlation_id_hex",
           "tsName": "correlation_id_hex",
           "typeToken": "u128-hex",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "causation_id_hex",
           "tsName": "causation_id_hex",
           "typeToken": "option<u128-hex>",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "kind_category",
           "tsName": "kind_category",
           "typeToken": "u8",
-          "order": 5
+          "order": 5,
+          "optional": false
         },
         {
           "wireName": "kind_type_id",
           "tsName": "kind_type_id",
           "typeToken": "u16",
-          "order": 6
+          "order": 6,
+          "optional": false
         },
         {
           "wireName": "entity",
           "tsName": "entity",
           "typeToken": "string",
-          "order": 7
+          "order": 7,
+          "optional": false
         },
         {
           "wireName": "scope",
           "tsName": "scope",
           "typeToken": "string",
-          "order": 8
+          "order": 8,
+          "optional": false
         },
         {
           "wireName": "payload_hex",
           "tsName": "payload_hex",
           "typeToken": "hex-blob",
-          "order": 9
+          "order": 9,
+          "optional": false
         },
         {
           "wireName": "content_hash_hex",
           "tsName": "content_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 10
+          "order": 10,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -296,37 +323,43 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "entity",
           "tsName": "entity",
           "typeToken": "option<string>",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "scope",
           "tsName": "scope",
           "typeToken": "option<string>",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "kind_category",
           "tsName": "kind_category",
           "typeToken": "option<u8>",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "kind_type_id",
           "tsName": "kind_type_id",
           "typeToken": "option<u16>",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "after_global_sequence",
           "tsName": "after_global_sequence",
           "typeToken": "option<u64-safe>",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "limit",
           "tsName": "limit",
           "typeToken": "u64-safe-positive",
-          "order": 5
+          "order": 5,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -351,67 +384,78 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "event_id_hex",
           "tsName": "event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "global_sequence",
           "tsName": "global_sequence",
           "typeToken": "u64-safe",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "wall_ms",
           "tsName": "wall_ms",
           "typeToken": "u64-millis",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "clock",
           "tsName": "clock",
           "typeToken": "u32",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "correlation_id_hex",
           "tsName": "correlation_id_hex",
           "typeToken": "u128-hex",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "causation_id_hex",
           "tsName": "causation_id_hex",
           "typeToken": "option<u128-hex>",
-          "order": 5
+          "order": 5,
+          "optional": false
         },
         {
           "wireName": "kind_category",
           "tsName": "kind_category",
           "typeToken": "u8",
-          "order": 6
+          "order": 6,
+          "optional": false
         },
         {
           "wireName": "kind_type_id",
           "tsName": "kind_type_id",
           "typeToken": "u16",
-          "order": 7
+          "order": 7,
+          "optional": false
         },
         {
           "wireName": "entity",
           "tsName": "entity",
           "typeToken": "string",
-          "order": 8
+          "order": 8,
+          "optional": false
         },
         {
           "wireName": "scope",
           "tsName": "scope",
           "typeToken": "string",
-          "order": 9
+          "order": 9,
+          "optional": false
         },
         {
           "wireName": "content_hash_hex",
           "tsName": "content_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 10
+          "order": 10,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -441,19 +485,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "entries",
           "tsName": "entries",
           "typeToken": "array<EventSummary>",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "next_after_global_sequence",
           "tsName": "next_after_global_sequence",
           "typeToken": "option<u64-safe>",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "truncated",
           "tsName": "truncated",
           "typeToken": "bool",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -489,37 +536,43 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "event_id_hex",
           "tsName": "event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "sequence",
           "tsName": "sequence",
           "typeToken": "u64-safe",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "content_hash_hex",
           "tsName": "content_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "key_id_hex",
           "tsName": "key_id_hex",
           "typeToken": "key-id-hex",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "signature_hex",
           "tsName": "signature_hex",
           "typeToken": "option<ed25519-sig-hex>",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "extensions",
           "tsName": "extensions",
           "typeToken": "map<string,hex-blob>",
-          "order": 5
+          "order": 5,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -544,19 +597,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "valid",
           "tsName": "valid",
           "typeToken": "bool",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "outcome",
           "tsName": "outcome",
           "typeToken": "string",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "reason_code",
           "tsName": "reason_code",
           "typeToken": "option<string>",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -578,13 +634,15 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "event_id_hex",
           "tsName": "event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "limit",
           "tsName": "limit",
           "typeToken": "u64-safe-positive",
-          "order": 1
+          "order": 1,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -605,7 +663,8 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "entries",
           "tsName": "entries",
           "typeToken": "array<EventSummary>",
-          "order": 0
+          "order": 0,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -639,25 +698,29 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "start_event_id_hex",
           "tsName": "start_event_id_hex",
           "typeToken": "u128-hex",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "start_expected_hash_hex",
           "tsName": "start_expected_hash_hex",
           "typeToken": "option<blake3-32-hex>",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "end_event_id_hex",
           "tsName": "end_event_id_hex",
           "typeToken": "option<u128-hex>",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "limit",
           "tsName": "limit",
           "typeToken": "u64-safe-positive",
-          "order": 3
+          "order": 3,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -680,19 +743,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "report_hex",
           "tsName": "report_hex",
           "typeToken": "hex-blob",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "body_hash_hex",
           "tsName": "body_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "truncated",
           "tsName": "truncated",
           "typeToken": "bool",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -725,19 +791,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "report_hex",
           "tsName": "report_hex",
           "typeToken": "hex-blob",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "body_hash_hex",
           "tsName": "body_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "truncated",
           "tsName": "truncated",
           "typeToken": "bool",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -759,55 +828,64 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "entity",
           "tsName": "entity",
           "typeToken": "option<string>",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "scope",
           "tsName": "scope",
           "typeToken": "option<string>",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "kind_category",
           "tsName": "kind_category",
           "typeToken": "option<u8>",
-          "order": 2
+          "order": 2,
+          "optional": false
         },
         {
           "wireName": "kind_type_id",
           "tsName": "kind_type_id",
           "typeToken": "option<u16>",
-          "order": 3
+          "order": 3,
+          "optional": false
         },
         {
           "wireName": "start_clock",
           "tsName": "start_clock",
           "typeToken": "option<u32>",
-          "order": 4
+          "order": 4,
+          "optional": false
         },
         {
           "wireName": "end_clock",
           "tsName": "end_clock",
           "typeToken": "option<u32>",
-          "order": 5
+          "order": 5,
+          "optional": false
         },
         {
           "wireName": "limit",
           "tsName": "limit",
           "typeToken": "option<u64-safe-positive>",
-          "order": 6
+          "order": 6,
+          "optional": false
         },
         {
           "wireName": "include_proof_refs",
           "tsName": "include_proof_refs",
           "typeToken": "bool",
-          "order": 7
+          "order": 7,
+          "optional": false
         },
         {
           "wireName": "max_stale_ms",
           "tsName": "max_stale_ms",
           "typeToken": "option<u64-safe>",
-          "order": 8
+          "order": 8,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -835,19 +913,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "report_hex",
           "tsName": "report_hex",
           "typeToken": "hex-blob",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "body_hash_hex",
           "tsName": "body_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "truncated",
           "tsName": "truncated",
           "typeToken": "bool",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -869,19 +950,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "projection",
           "tsName": "projection",
           "typeToken": "string",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "entity",
           "tsName": "entity",
           "typeToken": "string",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "max_stale_ms",
           "tsName": "max_stale_ms",
           "typeToken": "option<u64-safe>",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {
@@ -903,19 +987,22 @@ export const BATPAK_TS_MANIFEST = {
           "wireName": "report_hex",
           "tsName": "report_hex",
           "typeToken": "hex-blob",
-          "order": 0
+          "order": 0,
+          "optional": false
         },
         {
           "wireName": "body_hash_hex",
           "tsName": "body_hash_hex",
           "typeToken": "blake3-32-hex",
-          "order": 1
+          "order": 1,
+          "optional": false
         },
         {
           "wireName": "truncated",
           "tsName": "truncated",
           "typeToken": "bool",
-          "order": 2
+          "order": 2,
+          "optional": false
         }
       ],
       "fixtureValue": {

@@ -73,6 +73,17 @@ export interface ManifestField {
   tsName: string;
   typeToken: string;
   order: number;
+  /**
+   * Whether this field is OMITTABLE on TS input. Mirrors the Rust
+   * `FieldDescriptor::optional` flag, set `true` only for
+   * `#[serde(default)] Option<T>` fields. When `true`, the codegen emits
+   * an omittable Effect Schema property (via the generated
+   * `optionalNullable(...)` helper) that STILL encodes as present-nil, so
+   * byte-parity with Rust's `to_vec_named` (None → nil) holds whether the
+   * caller omits the key or passes `null`. Optional/defaulted JSON field
+   * (manifest v2+ additive); absent → treated as `false`.
+   */
+  optional?: boolean;
 }
 
 export interface ManifestEvent {
@@ -213,6 +224,17 @@ function validateManifest(value: unknown, source: string): BatpakTsManifest {
           `${source}: ${event.name}.${field.wireName} uses unsupported typeToken ${JSON.stringify(field.typeToken)}; supported: ${[...SUPPORTED_FIELD_TYPES].join(", ")}`,
         );
       }
+      // `optional: true` is only meaningful for nullable (`option<…>`)
+      // tokens: the omittable-input/present-nil-encode wrapper assumes a
+      // wire-side nil for the absent case. A non-option token has no nil
+      // representation, so marking it optional is a manifest authoring
+      // error — fail loudly rather than emit a schema that can't round-trip.
+      if (field.optional === true && !field.typeToken.startsWith("option<")) {
+        throw new CodegenError(
+          "optional_non_option_field",
+          `${source}: ${event.name}.${field.wireName} is marked optional but its typeToken ${JSON.stringify(field.typeToken)} is not an option<…> type; only nullable fields can be omittable (absent → present-nil)`,
+        );
+      }
     }
   }
   return manifest as BatpakTsManifest;
@@ -265,7 +287,23 @@ function renderManifestModule(manifest: BatpakTsManifest, options: GenerateOptio
 }
 
 function renderEventsModule(manifest: BatpakTsManifest): string {
-  const lines: string[] = [FILE_HEADER, `import * as Schema from "effect/Schema";`, ""];
+  // Does any event declare an omittable (`optional: true`) field? If so we
+  // emit the `optionalNullable` helper plus its extra imports. Keeping the
+  // imports conditional means events.ts for a manifest with no optional
+  // fields stays byte-identical to the pre-#28 output.
+  const hasOptionalField = manifest.events.some((event) =>
+    event.fields.some((field) => field.optional === true),
+  );
+
+  const lines: string[] = [FILE_HEADER, `import * as Schema from "effect/Schema";`];
+  if (hasOptionalField) {
+    lines.push(`import { Option } from "effect";`);
+    lines.push(`import * as SchemaGetter from "effect/SchemaGetter";`);
+  }
+  lines.push("");
+  if (hasOptionalField) {
+    lines.push(...OPTIONAL_NULLABLE_HELPER_LINES, "");
+  }
   // Manifest validation does not enforce `tsName` uniqueness, but we
   // emit `export const ${tsName}` AND `export type ${tsName}` for
   // every event — two events sharing a `tsName` would produce
@@ -287,7 +325,18 @@ function renderEventsModule(manifest: BatpakTsManifest): string {
     );
     lines.push(`export const ${event.tsName} = Schema.Struct({`);
     for (const field of event.fields) {
-      lines.push(`  ${field.wireName}: ${schemaForToken(field.typeToken)},`);
+      if (field.optional === true) {
+        // Omittable-input/present-nil-encode property: wrap the field's
+        // NON-OPTION inner schema in the generated `optionalNullable`
+        // helper. The TS property becomes `key?: T | null`; encoding an
+        // omitted key still emits present-nil, byte-identical to passing
+        // `key: null` and to Rust's `to_vec_named` None → nil.
+        lines.push(
+          `  ${field.wireName}: optionalNullable(${innerSchemaForOptionToken(field.typeToken)}),`,
+        );
+      } else {
+        lines.push(`  ${field.wireName}: ${schemaForToken(field.typeToken)},`);
+      }
     }
     lines.push(`});`);
     // Type alias derived from the schema (same name; lives in type
@@ -479,6 +528,58 @@ function renderIndexModule(): string {
 
 const SAFE_MIN = Number.MIN_SAFE_INTEGER;
 const SAFE_MAX = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Source lines for the `optionalNullable` helper emitted into
+ * `events.ts` whenever the manifest declares an omittable field.
+ *
+ * The helper bridges an OMITTABLE TS-input property (`key?: T | null`) to
+ * a REQUIRED present-nil wire field:
+ *   - decode (wire → type): a present `null` survives as `null`; a missing
+ *     key (old producer) decodes to an absent property.
+ *   - encode (type → wire): a missing key fills in `null`, so the encoded
+ *     object always carries the key as present-nil. The canonical encoder
+ *     then emits msgpack nil → byte-identical to Rust's `to_vec_named`
+ *     None → nil and to the `key: null` form.
+ *
+ * Verified against Effect 4 (effect@4.0.0-beta.78) — see the #28 parity
+ * test that asserts omit, `null`, and the Rust golden all produce the same
+ * bytes.
+ */
+const OPTIONAL_NULLABLE_HELPER_LINES: readonly string[] = [
+  "/**",
+  " * Omittable-input / present-nil-encode wrapper for fields backed by a",
+  " * Rust `#[serde(default)] Option<T>`. Input may OMIT the key or pass",
+  " * `null`; both encode as present-nil (byte-identical to Rust None → nil).",
+  " */",
+  "function optionalNullable<S extends Schema.Top>(inner: S) {",
+  "  return Schema.NullOr(inner).pipe(",
+  "    Schema.decodeTo(Schema.optionalKey(Schema.NullOr(inner)), {",
+  "      decode: SchemaGetter.passthrough({ strict: false }),",
+  "      encode: SchemaGetter.transformOptional(",
+  "        (ot: Option.Option<S[\"Type\"] | null>): Option.Option<S[\"Type\"] | null> =>",
+  "          Option.isNone(ot) ? Option.some(null) : ot,",
+  "      ),",
+  "    }),",
+  "  );",
+  "}",
+];
+
+/**
+ * Map an `option<X>` token to the Schema source for its NON-OPTION inner
+ * `X` — i.e. the value schema without the `Schema.NullOr(...)` wrapper.
+ * Used to feed `optionalNullable(...)`, which applies its own nullability.
+ */
+function innerSchemaForOptionToken(token: string): string {
+  if (!token.startsWith("option<") || !token.endsWith(">")) {
+    throw new CodegenError(
+      "optional_non_option_field",
+      `internal: innerSchemaForOptionToken called with non-option token ${JSON.stringify(token)}`,
+    );
+  }
+  const inner = token.slice("option<".length, -1);
+  return schemaForToken(inner);
+}
 
 // Re-export the schema generator for unit tests.
 export function schemaForToken(token: string): string {
