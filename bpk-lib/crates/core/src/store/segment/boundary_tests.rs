@@ -259,6 +259,120 @@ fn crc_valid_frames_end_recovers_prefix_for_torn_last_frame() {
     );
 }
 
+/// Build a minimal in-memory buffer whose last 16 bytes are a SIDX trailer with
+/// the given `string_table_offset`, valid magic, and zero entry_count. The body
+/// is zero-filled, so the footer CRC cannot authenticate — the footer is always
+/// UNTRUSTED. Mirrors the helper that used to live in `segment/mod.rs`.
+fn sidx_trailer_buf(total_len: usize, string_table_offset: u64) -> Vec<u8> {
+    assert!(total_len >= 16, "buffer must hold the 16-byte trailer");
+    let mut bytes = vec![0u8; total_len];
+    let trailer_start = total_len - 16;
+    bytes[trailer_start..trailer_start + 8].copy_from_slice(&string_table_offset.to_le_bytes());
+    bytes[trailer_start + 8..trailer_start + 12].copy_from_slice(&0u32.to_le_bytes());
+    bytes[trailer_start + 12..trailer_start + 16]
+        .copy_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
+    bytes
+}
+
+#[test]
+fn detect_sidx_boundary_untrusted_offset_past_trailer_does_not_error() {
+    // ROUND-6 P1: a synthetic SDX3 trailer with an offset PAST file_len - 16 but
+    // NO CRC-valid footer behind it (zero-filled body, so the footer CRC cannot
+    // authenticate). Trust is determined FIRST: the offset is UNTRUSTED, so it is
+    // FULLY INERT — it must NOT hard-error as CorruptSegment even though it is out
+    // of bounds. The boundary is reported untrusted so callers discard the garbage
+    // offset and recover via crc_valid_frames_end. (Pre-round-6 code ran the
+    // upper-bound check before trust and returned CorruptSegment here, bricking
+    // cold start / compaction.)
+    let bytes = sidx_trailer_buf(64, 63); // offset past file_len - 16 = 48
+    let file_len = bytes.len() as u64;
+    let mut cursor = Cursor::new(bytes);
+    let result = detect_sidx_boundary(&mut cursor, file_len, 7).expect(
+        "PROPERTY: an out-of-bounds UNTRUSTED offset must NOT error — it must downgrade to the \
+         CRC-valid-frame recovery scan",
+    );
+    assert_eq!(
+        result,
+        Some(SidxBoundary {
+            frames_end: 63,
+            trusted: false,
+        }),
+        "PROPERTY: an out-of-bounds offset on an unauthenticated footer is recognized as an \
+         untrusted boundary (offset discarded by callers), never a hard error; got {result:?}"
+    );
+}
+
+#[test]
+fn detect_sidx_boundary_synthetic_footer_is_never_trusted() {
+    // A synthetic (un-CRC'd) footer at the exact upper bound is recognized as a
+    // boundary but flagged untrusted — proving the upper-bound hard-error path is
+    // unreachable for any unauthenticated footer (the gate is `trusted`-only).
+    let file_len = 64u64;
+    let max_offset = file_len - 16;
+    let bytes = sidx_trailer_buf(
+        usize::try_from(file_len).expect("file_len fits usize"),
+        max_offset,
+    );
+    let mut cursor = Cursor::new(bytes);
+    let result = detect_sidx_boundary(&mut cursor, file_len, 7).expect("must not error");
+    assert_eq!(
+        result.map(|b| b.trusted),
+        Some(false),
+        "PROPERTY: a synthetic (un-CRC'd) footer is never trusted"
+    );
+}
+
+#[test]
+fn detect_sidx_boundary_untrusted_out_of_bounds_offset_is_inert() {
+    // ROUND-6 P1 (unit-level): a CRC-failed SDX3 footer whose `string_table_offset`
+    // is forged OUT OF BOUNDS (> file_len - 16). detect_sidx_boundary must
+    // determine trust FIRST and treat the out-of-bounds untrusted offset as FULLY
+    // INERT — returning an untrusted boundary, NOT a CorruptSegment hard error.
+    // (The upper-bound check is gated on `trusted` so it can never fire on an
+    // unauthenticated footer.)
+    let (mut bytes, _frames_end) = frames_then_sdx3_footer(&["a", "b", "c"]);
+    let n = bytes.len() as u64;
+    let off_pos = bytes.len() - 16;
+    // Forge offset = file_len (strictly past the file_len - 16 upper bound). This
+    // also breaks the footer CRC, so trust fails -> untrusted.
+    bytes[off_pos..off_pos + 8].copy_from_slice(&n.to_le_bytes());
+    let mut cursor = Cursor::new(bytes);
+    let boundary = detect_sidx_boundary(&mut cursor, n, 7).expect(
+        "PROPERTY: an out-of-bounds offset on an UNTRUSTED footer must NOT hard-error — it must \
+         return an untrusted boundary so the caller falls back to crc_valid_frames_end",
+    );
+    assert_eq!(
+        boundary.map(|b| b.trusted),
+        Some(false),
+        "PROPERTY: an out-of-bounds unauthenticated footer is an untrusted boundary, never a hard \
+         error; got {boundary:?}"
+    );
+}
+
+#[test]
+fn crc_valid_frames_end_recovers_all_frames_for_adversarial_untrusted_offsets() {
+    // PROPERTY (round-6, unit-level): the untrusted-recovery walker ignores the
+    // offset entirely and recovers ALL CRC-valid frames regardless of what
+    // adversarial value the (discarded) hint held. The walker is bounded only by
+    // `file_len`, so the hint's value cannot change its result. We assert the
+    // walker returns the true frame end for an intact frame region; combined with
+    // detect_sidx_boundary marking these footers untrusted, no offset value can
+    // ever error or drop a frame.
+    let (bytes, real_frames_end) = frames_then_sdx3_footer(&["alpha", "beta", "gamma", "delta"]);
+    let file_len = bytes.len() as u64;
+    // The walker takes `frames_start` and `file_len`, never the offset — so any
+    // adversarial offset is irrelevant by construction. Run it and confirm it lands
+    // exactly on the true frame end (all four frames recovered).
+    let mut cursor = Cursor::new(bytes);
+    let recovered = crc_valid_frames_end(&mut cursor, 0, file_len, 7)
+        .expect("PROPERTY: the untrusted walker never errors over intact CRC-valid frames");
+    assert_eq!(
+        recovered, real_frames_end,
+        "PROPERTY: the untrusted-recovery walker recovers ALL CRC-valid frames bounded only by \
+         file_len, independent of any (discarded) offset hint"
+    );
+}
+
 #[test]
 fn append_frames_from_segment_recovers_all_frames_for_untrusted_too_low_offset() {
     // Merge-compaction copy path: a sealed source segment whose SIDX trailer has a
@@ -317,6 +431,80 @@ fn append_frames_from_segment_recovers_all_frames_for_untrusted_too_low_offset()
         copied >= frame.len() as u64,
         "PROPERTY: compaction must copy the full CRC-valid frame for an untrusted too-low \
          offset (recover-what-was-found), not zero/prefix bytes; copied {copied}, frame {}",
+        frame.len()
+    );
+}
+
+#[test]
+fn append_frames_from_segment_recovers_all_frames_for_untrusted_out_of_bounds_offset() {
+    // ROUND-6 P1 (compaction copy): a sealed source segment whose SIDX trailer has
+    // a forged (unauthenticated) string_table_offset that is OUT OF BOUNDS (set to
+    // file_len, strictly past file_len - 16). The forged offset breaks footer CRC
+    // authentication -> UNTRUSTED. Pre-round-6, detect_sidx_boundary ran its
+    // upper-bound check BEFORE trust and returned CorruptSegment, so the merge
+    // compaction copy ERRORED — bricking compaction even though the CRC-valid frame
+    // is recoverable. The definitive behavior: the out-of-bounds untrusted offset
+    // is FULLY INERT, so the copy walks the CRC-valid frames bounded by file_len and
+    // preserves the real frame in the merged segment.
+    use std::io::Write as _;
+
+    let dir = TempDir::new().expect("tmpdir");
+
+    let mut source: Segment<Active> =
+        Segment::create_with_created_ns(dir.path(), 1, 0).expect("create source");
+    let frame = frame_encode(&serde_json::json!({"payload": "compaction-oob-recover"}))
+        .expect("encode frame");
+    source.write_frame(&frame).expect("write frame");
+    let source_path = source.path.clone();
+    source
+        .sync_with_mode(&crate::store::SyncMode::default())
+        .expect("sync source");
+    drop(source);
+
+    // Append a 16-byte SIDX trailer whose string_table_offset is set to a value
+    // strictly past file_len - 16 (out of bounds). We do not yet know file_len, so
+    // append the trailer with a placeholder offset, then compute file_len and
+    // rewrite the offset to file_len (guaranteed > file_len - 16). Valid magic so it
+    // is recognized as a boundary; the forged offset fails CRC auth -> UNTRUSTED.
+    let mut trailer = [0u8; 16];
+    trailer[8..12].copy_from_slice(&0u32.to_le_bytes());
+    trailer[12..16].copy_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
+    let file_len = {
+        use std::io::Seek as _;
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&source_path)
+            .expect("open source for trailer append");
+        f.write_all(&trailer).expect("append forged trailer");
+        // Determine the new file length via a seek-to-end (no fs::metadata, which
+        // the structural-check ratchet forbids in store-layer code).
+        f.seek(SeekFrom::End(0)).expect("seek to end for file_len")
+    };
+    // Now set the offset field to file_len (out of bounds) in place.
+    {
+        use std::io::Seek as _;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&source_path)
+            .expect("open source to rewrite offset");
+        f.seek(SeekFrom::End(-16)).expect("seek to trailer offset");
+        f.write_all(&file_len.to_le_bytes())
+            .expect("write out-of-bounds offset");
+    }
+
+    let mut dest: Segment<Active> =
+        Segment::create_with_created_ns(dir.path(), 2, 0).expect("create dest");
+    let dest_header_bytes = dest.written_bytes;
+    dest.append_frames_from_segment(&source_path).expect(
+        "PROPERTY: an out-of-bounds untrusted offset must recover the real frame during \
+         compaction, not error (round-6 P1)",
+    );
+
+    let copied = dest.written_bytes - dest_header_bytes;
+    assert!(
+        copied >= frame.len() as u64,
+        "PROPERTY: compaction must copy the full CRC-valid frame for an out-of-bounds untrusted \
+         offset (recover-what-was-found), not error or copy zero bytes; copied {copied}, frame {}",
         frame.len()
     );
 }
