@@ -19,7 +19,7 @@
 //! # Registration
 //!
 //! Steps register link-time through the same `inventory` pattern as the
-//! `EventPayload` kind registry. Use [`register_upcast!`] on an [`Upcast`] impl;
+//! `EventPayload` kind registry. Use [`register_upcast!`](crate::register_upcast) on an [`Upcast`] impl;
 //! each impl supplies a `(KIND, FROM_VERSION)` key and a pure value migration.
 
 use crate::event::{EventKind, EventPayload};
@@ -28,7 +28,7 @@ use serde::de::DeserializeOwned;
 /// A single vN -> vN+1 migration for one [`EventKind`].
 ///
 /// Implement this for each non-additive hop, then register it with
-/// [`register_upcast!`]. The migration is a *pure* value transform: given a
+/// [`register_upcast!`](crate::register_upcast). The migration is a *pure* value transform: given a
 /// decoded value of version [`Upcast::FROM_VERSION`], produce a value of version
 /// `FROM_VERSION + 1`. It must not perform I/O and must be deterministic so a
 /// replay is byte-stable.
