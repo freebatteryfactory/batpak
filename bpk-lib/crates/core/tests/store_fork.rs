@@ -437,3 +437,28 @@ fn fork_after_compaction_and_fork_of_fork_are_openable() -> TestResult {
     store.close()?;
     Ok(())
 }
+
+#[test]
+fn fork_refuses_destination_equal_to_source() -> TestResult {
+    // A fork onto the store's own data directory must be rejected BEFORE the
+    // destination-clearing pass — otherwise clear_fork_store_artifacts would
+    // delete the live store's files (data loss). The source must stay intact.
+    let source_dir = TempDir::new()?;
+    let store = store_with_small_segments(&source_dir)?;
+    append_blob_events(&store, "entity:fork:self", 5)?;
+    let n = store.stats().event_count;
+
+    assert!(
+        store.fork(source_dir.path()).is_err(),
+        "forking a store onto its own data directory must be rejected, not silently destroy it"
+    );
+
+    store.sync()?;
+    assert_eq!(
+        store.stats().event_count,
+        n,
+        "a rejected self-fork must leave the source store's events fully intact"
+    );
+    store.close()?;
+    Ok(())
+}

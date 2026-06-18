@@ -214,6 +214,11 @@ pub(crate) fn import_events<S>(
     let chunk_size = options.chunk_size.max(1).min(destination_batch_max).max(1);
     let mut after = selector.after_global_sequence;
     let pre_import_frontier = destination.frontier().visible_hlc.global_sequence;
+    // Bound the import to the source frontier captured at call time. Without this,
+    // a same-store import (source == destination) would keep paginating into the
+    // events it just appended — they carry higher global sequences and fresh import
+    // keys, so they would re-import endlessly until a disk/idempotency limit.
+    let import_ceiling = source.frontier().visible_hlc.global_sequence;
     let mut report = ImportReport::default();
 
     loop {
@@ -224,7 +229,14 @@ pub(crate) fn import_events<S>(
         after = page.last().map(IndexEntry::global_sequence);
 
         let mut new_items = Vec::new();
+        let mut reached_ceiling = false;
         for entry in page {
+            if entry.global_sequence() > import_ceiling {
+                // Past the call-time source frontier: stop before re-importing
+                // events appended by this import itself (same-store guard).
+                reached_ceiling = true;
+                break;
+            }
             report.source_high_watermark = Some(
                 report
                     .source_high_watermark
@@ -273,17 +285,19 @@ pub(crate) fn import_events<S>(
             ));
         }
 
-        if new_items.is_empty() {
-            continue;
+        if !new_items.is_empty() {
+            let receipts = destination.append_batch(new_items)?;
+            for receipt in receipts {
+                if receipt.sequence < pre_import_frontier {
+                    report.deduplicated = report.deduplicated.saturating_add(1);
+                } else {
+                    report.imported = report.imported.saturating_add(1);
+                }
+            }
         }
 
-        let receipts = destination.append_batch(new_items)?;
-        for receipt in receipts {
-            if receipt.sequence < pre_import_frontier {
-                report.deduplicated = report.deduplicated.saturating_add(1);
-            } else {
-                report.imported = report.imported.saturating_add(1);
-            }
+        if reached_ceiling {
+            break;
         }
     }
 

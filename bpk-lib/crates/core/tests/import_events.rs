@@ -183,9 +183,10 @@ fn import_events_preserves_correlation_clears_causation_and_records_provenance()
         provenance_body.source_global_sequence,
         source_entries[0].global_sequence()
     );
+    let source_raw = source.read_raw(EventId::from(source_entries[0].event_id()))?;
     assert_eq!(
-        provenance_body.source_content_hash,
-        source_entries[0].hash_chain().event_hash
+        provenance_body.source_content_hash, source_raw.event.header.content_hash,
+        "provenance must record the source CONTENT hash, not the chain event hash"
     );
 
     let ordinary_receipt = dest.append(
@@ -462,5 +463,28 @@ fn import_events_oversized_destination_item_is_rejected_cleanly() -> TestResult 
 
     source.close()?;
     dest.close()?;
+    Ok(())
+}
+
+#[test]
+fn import_events_from_same_store_is_bounded_not_self_amplifying() -> TestResult {
+    // Same-store import must import exactly the events present at call time and
+    // then terminate — it must never re-import its own freshly-appended output
+    // (which carries higher sequences and fresh import keys).
+    let dir = TempDir::new()?;
+    let store = test_store(&dir)?;
+    let coord = Coordinate::new("entity:import:self", "scope:import")?;
+    let kind = EventKind::custom(0xF, 0x75);
+    for i in 0..4 {
+        store.append(&coord, kind, &serde_json::json!({ "i": i }))?;
+    }
+
+    let options = ImportOptions::new("self-source")?;
+    let report = store.import_events(&store, &ImportSelector::all(), &options)?;
+    assert_eq!(
+        report.imported, 4,
+        "same-store import must import exactly the 4 pre-call events, then stop"
+    );
+    store.close()?;
     Ok(())
 }

@@ -179,6 +179,19 @@ pub(crate) fn fork(
 
     platform_fs::reject_symlink_leaf(dest, "fork destination")?;
     platform_fs::create_dir_all(dest).map_err(StoreError::Io)?;
+    // Refuse forking a store onto its own data dir: the clear pass below would
+    // delete the live store's files before copying (data loss).
+    let dest_canon = platform_fs::canonicalize(dest).map_err(StoreError::Io)?;
+    let src_canon = platform_fs::canonicalize(&store.config.data_dir).map_err(StoreError::Io)?;
+    if dest_canon == src_canon {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "fork destination {} resolves to the source data directory",
+                dest.display()
+            ),
+        )));
+    }
     let cleared_artifact_count = clear_fork_store_artifacts(dest)?;
     let entries = platform_fs::read_dir(&store.config.data_dir).map_err(StoreError::Io)?;
 
