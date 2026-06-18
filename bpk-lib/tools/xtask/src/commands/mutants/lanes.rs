@@ -139,11 +139,11 @@ pub(super) const MUTANT_EXCLUDE_RES: &[&str] = &[INDEX_TOPOLOGY_DEFAULT_EQUIVALE
 //   * fs.rs:233 — `#[cfg(target_os = "macos")] reflink_impl -> Ok(())`
 //   * fs.rs:252 — the macOS `result == 0` flipped to `!=`
 //   * fs.rs:260 — `#[cfg(not(any(linux, macos)))] reflink_impl -> Ok(())`
-const PLATFORM_BACKEND_MUTANT_EXCLUDE_RES: &[&str] = &[
-    r"fs\.rs:233:.*reflink_impl",
-    r"fs\.rs:252:.*replace == with != in reflink_impl",
-    r"fs\.rs:260:.*reflink_impl",
-];
+// The macOS and non-Linux `reflink_impl` cfg variants (fs.rs ~lines 232-265,
+// below the Linux FICLONE variant at ~215) are not compiled on the Linux CI
+// runner, so cargo-mutants cannot exercise them there. Match the 230-269 line
+// band — robust to small line shifts, and never the Linux variant at line 21x.
+const PLATFORM_BACKEND_MUTANT_EXCLUDE_RES: &[&str] = &[r"fs\.rs:2[3-6][0-9]:.*reflink_impl"];
 // Fork-isolation seam equivalent-mutant registry. Each entry is proven to have
 // no observable effect on fork classification; excluding them keeps the
 // mutation-score denominator honest. Every entry carries its equivalence proof.
