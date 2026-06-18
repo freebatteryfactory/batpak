@@ -3,6 +3,25 @@
 // by codegen) to refresh this directory.
 
 import * as Schema from "effect/Schema";
+import { Option } from "effect";
+import * as SchemaGetter from "effect/SchemaGetter";
+
+/**
+ * Omittable-input / present-nil-encode wrapper for fields backed by a
+ * Rust `#[serde(default)] Option<T>`. Input may OMIT the key or pass
+ * `null`; both encode as present-nil (byte-identical to Rust None → nil).
+ */
+function optionalNullable<S extends Schema.Top>(inner: S) {
+  return Schema.NullOr(inner).pipe(
+    Schema.decodeTo(Schema.optionalKey(Schema.NullOr(inner)), {
+      decode: SchemaGetter.passthrough({ strict: false }),
+      encode: SchemaGetter.transformOptional(
+        (ot: Option.Option<S["Type"] | null>): Option.Option<S["Type"] | null> =>
+          Option.isNone(ot) ? Option.some(null) : ot,
+      ),
+    }),
+  );
+}
 
 /** Source: hbat::heartbeat::SystemHeartbeatRequest; category=15, typeId=2561 */
 export const SystemHeartbeatRequest = Schema.Struct({
@@ -39,7 +58,7 @@ export const BankCommitRequest = Schema.Struct({
   kind_category: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 255 }))),
   kind_type_id: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 65535 }))),
   payload_hex: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]*$/u)), Schema.brand("HexBlob")),
-  idempotency_key_hex: Schema.NullOr(Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{32}$/u)), Schema.brand("EventIdHex"))),
+  idempotency_key_hex: optionalNullable(Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{32}$/u)), Schema.brand("EventIdHex"))),
 });
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export type BankCommitRequest = typeof BankCommitRequest.Type;
