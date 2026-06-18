@@ -144,6 +144,54 @@ describe("readManifest validates the envelope", () => {
     }
   });
 
+  it("rejects a non-boolean field.optional flag", () => {
+    const path = writeManifest({
+      ...MINIMAL_MANIFEST,
+      events: [
+        {
+          ...MINIMAL_MANIFEST.events[0],
+          fields: [
+            { wireName: "f", tsName: "f", typeToken: "option<string>", order: 0, optional: "true" },
+          ],
+        },
+      ],
+    });
+    try {
+      readManifest(path);
+      throw new Error("expected throw");
+    } catch (error) {
+      if (error instanceof CodegenError) {
+        expect(error.code).toBe("invalid_optional_flag");
+      } else {
+        throw error;
+      }
+    }
+  });
+
+  it("rejects optional:true on a non-option (non-nullable) token", () => {
+    const path = writeManifest({
+      ...MINIMAL_MANIFEST,
+      events: [
+        {
+          ...MINIMAL_MANIFEST.events[0],
+          fields: [
+            { wireName: "f", tsName: "f", typeToken: "string", order: 0, optional: true },
+          ],
+        },
+      ],
+    });
+    try {
+      readManifest(path);
+      throw new Error("expected throw");
+    } catch (error) {
+      if (error instanceof CodegenError) {
+        expect(error.code).toBe("optional_non_option_field");
+      } else {
+        throw error;
+      }
+    }
+  });
+
   it("rejects canonicalEncoding.kind that is not named-field-msgpack", () => {
     const path = writeManifest({
       ...MINIMAL_MANIFEST,
