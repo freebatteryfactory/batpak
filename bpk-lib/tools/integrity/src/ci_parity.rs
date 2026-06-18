@@ -170,6 +170,8 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
             "syncbat-runtime-dispatch",
             "syncbat-register-catalog",
             "netbat-boundary-protocol",
+            "fork-isolation",
+            "import-reapply",
         ],
     )?;
     assert_workflow_list_values(

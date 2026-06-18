@@ -1423,6 +1423,8 @@ pub fn batpak::store::Store<batpak::store::Open>::writer_pressure(&self) -> batp
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::close(self) -> core::result::Result<batpak::store::Closed, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::store::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::fork(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::fork_with_evidence(&self, dest: &std::path::Path, options: batpak::store::ForkOptions) -> core::result::Result<batpak::store::ForkReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence(&self, dest: &std::path::Path) -> core::result::Result<batpak::store::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
@@ -1431,6 +1433,8 @@ pub fn batpak::store::Store<batpak::store::Open>::wait_for_durable(&self, point:
 pub fn batpak::store::Store<batpak::store::Open>::wait_for_visible(&self, point: batpak::store::stats::HlcPoint, timeout: core::time::Duration) -> core::result::Result<(), batpak::prelude::StoreError>
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::cursor_worker<F>(self: &alloc::sync::Arc<Self>, region: &batpak::coordinate::Region, config: batpak::store::CursorWorkerConfig, handler: F) -> core::result::Result<batpak::store::CursorWorkerHandle, batpak::prelude::StoreError> where F: core::ops::function::FnMut(&[batpak::store::index::IndexEntry], &batpak::store::Store<batpak::store::Open>, core::option::Option<&batpak::store::delivery::observation::AtLeastOnce>) -> batpak::store::CursorWorkerAction + core::marker::Send + 'static
+impl batpak::store::Store<batpak::store::Open>
+pub fn batpak::store::Store<batpak::store::Open>::import_events<S>(&self, source: &batpak::store::Store<S>, selector: &batpak::store::ImportSelector, options: &batpak::store::ImportOptions) -> core::result::Result<batpak::store::ImportReport, batpak::prelude::StoreError>
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::open(config: batpak::prelude::StoreConfig) -> core::result::Result<Self, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::open_with_cache(config: batpak::prelude::StoreConfig, cache: alloc::boxed::Box<dyn batpak::store::projection::ProjectionCache>) -> core::result::Result<Self, batpak::prelude::StoreError>
@@ -2433,6 +2437,22 @@ pub batpak::store::ExtensionKeyError::TooLong
 impl core::error::Error for batpak::store::ExtensionKeyError
 impl core::fmt::Display for batpak::store::ExtensionKeyError
 pub fn batpak::store::ExtensionKeyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum batpak::store::ForkCopyStrategy
+pub batpak::store::ForkCopyStrategy::DeepCopy
+pub batpak::store::ForkCopyStrategy::Hardlink
+pub batpak::store::ForkCopyStrategy::Reflink
+pub enum batpak::store::ForkFinding
+pub batpak::store::ForkFinding::CacheRegenerableExcluded
+pub batpak::store::ForkFinding::CacheRegenerableExcluded::file_name: alloc::string::String
+pub batpak::store::ForkFinding::DestinationCleared
+pub batpak::store::ForkFinding::DestinationCleared::artifact_count: usize
+pub batpak::store::ForkFinding::FenceTokenCancelled
+pub batpak::store::ForkFinding::FileCopied
+pub batpak::store::ForkFinding::FileCopied::file_name: alloc::string::String
+pub batpak::store::ForkFinding::FileCopied::strategy: batpak::store::ForkCopyStrategy
+pub batpak::store::ForkFinding::FileExcluded
+pub batpak::store::ForkFinding::FileExcluded::file_name: alloc::string::String
+pub batpak::store::ForkFinding::FileExcluded::reason: alloc::string::String
 #[non_exhaustive] pub enum batpak::store::Freshness
 pub batpak::store::Freshness::Consistent
 pub batpak::store::Freshness::MaybeStale
@@ -3077,6 +3097,40 @@ pub struct batpak::store::ExtensionKey(_)
 impl batpak::store::ExtensionKey
 pub fn batpak::store::ExtensionKey::as_str(&self) -> &str
 pub fn batpak::store::ExtensionKey::new(key: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, batpak::store::ExtensionKeyError>
+pub struct batpak::store::ForkOptions
+pub batpak::store::ForkOptions::exclude_caches: bool
+pub batpak::store::ForkOptions::use_hardlink: bool
+pub batpak::store::ForkOptions::use_reflink: bool
+impl core::default::Default for batpak::store::ForkOptions
+pub fn batpak::store::ForkOptions::default() -> Self
+pub struct batpak::store::ForkReport
+pub batpak::store::ForkReport::batpak_version: core::option::Option<alloc::string::String>
+pub batpak::store::ForkReport::body: batpak::store::ForkReportBody
+pub batpak::store::ForkReport::body_hash: batpak::store::ForkEvidenceHash
+pub batpak::store::ForkReport::diagnostics: alloc::vec::Vec<alloc::string::String>
+pub batpak::store::ForkReport::generated_at_unix_ms: core::option::Option<u64>
+pub struct batpak::store::ForkReportBody
+pub batpak::store::ForkReportBody::active_segment_id: u64
+pub batpak::store::ForkReportBody::copied_idempotency_store_present: bool
+pub batpak::store::ForkReportBody::copied_pending_compaction_marker_present: bool
+pub batpak::store::ForkReportBody::copied_visibility_ranges_present: bool
+pub batpak::store::ForkReportBody::deep_copied_segment_ids_sorted: alloc::vec::Vec<u64>
+pub batpak::store::ForkReportBody::destination_path_digest: batpak::store::ForkEvidenceHash
+pub batpak::store::ForkReportBody::fence_token: batpak::store::SnapshotFenceTokenRef
+pub batpak::store::ForkReportBody::findings: alloc::vec::Vec<batpak::store::ForkFinding>
+pub batpak::store::ForkReportBody::fork_id: batpak::store::ForkEvidenceHash
+pub batpak::store::ForkReportBody::schema_version: u16
+pub batpak::store::ForkReportBody::shared_segment_ids_sorted: alloc::vec::Vec<u64>
+pub batpak::store::ForkReportBody::source_watermark: batpak::store::SnapshotWatermarkRef
+pub batpak::store::ForkReportBody::strategy_counts: batpak::store::ForkStrategyCounts
+impl batpak::store::ForkReportBody
+pub fn batpak::store::ForkReportBody::body_hash(&self) -> core::result::Result<batpak::store::ForkEvidenceHash, rmp_serde::encode::Error>
+pub struct batpak::store::ForkStrategyCounts
+pub batpak::store::ForkStrategyCounts::cache_regenerable: usize
+pub batpak::store::ForkStrategyCounts::deep_copy: usize
+pub batpak::store::ForkStrategyCounts::excluded: usize
+pub batpak::store::ForkStrategyCounts::hardlink: usize
+pub batpak::store::ForkStrategyCounts::reflink: usize
 pub struct batpak::store::FrontierView
 pub batpak::store::FrontierView::accepted_hlc: batpak::store::stats::HlcPoint
 pub batpak::store::FrontierView::applied_hlc: batpak::store::stats::HlcPoint
@@ -3108,6 +3162,37 @@ pub struct batpak::store::IdempotencyKey(_)
 impl batpak::store::delivery::observation::IdempotencyKey
 pub const fn batpak::store::delivery::observation::IdempotencyKey::as_bytes(&self) -> &[u8; 32]
 pub const fn batpak::store::delivery::observation::IdempotencyKey::from_bytes(bytes: [u8; 32]) -> Self
+pub struct batpak::store::ImportOptions
+impl batpak::store::ImportOptions
+pub fn batpak::store::ImportOptions::chunk_size(&self) -> usize
+pub fn batpak::store::ImportOptions::new(source_namespace: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, batpak::prelude::StoreError>
+pub fn batpak::store::ImportOptions::source_namespace(&self) -> &str
+pub fn batpak::store::ImportOptions::with_chunk_size(self, chunk_size: usize) -> Self
+pub fn batpak::store::ImportOptions::with_filter(self, filter: batpak::store::ImportFilter) -> Self
+pub fn batpak::store::ImportOptions::with_source_namespace_from_data_dir(path: impl core::convert::AsRef<std::path::Path>) -> core::result::Result<Self, batpak::prelude::StoreError>
+#[non_exhaustive] pub struct batpak::store::ImportProvenance
+pub batpak::store::ImportProvenance::schema_version: u16
+pub batpak::store::ImportProvenance::source_content_hash: [u8; 32]
+pub batpak::store::ImportProvenance::source_event_id: u128
+pub batpak::store::ImportProvenance::source_global_sequence: u64
+pub batpak::store::ImportProvenance::source_kind: u16
+pub batpak::store::ImportProvenance::source_namespace: alloc::string::String
+#[non_exhaustive] pub struct batpak::store::ImportReport
+pub batpak::store::ImportReport::deduplicated: u64
+pub batpak::store::ImportReport::imported: u64
+pub batpak::store::ImportReport::skipped_filtered: u64
+pub batpak::store::ImportReport::skipped_reserved: u64
+pub batpak::store::ImportReport::source_high_watermark: core::option::Option<u64>
+pub struct batpak::store::ImportSelector
+impl batpak::store::ImportSelector
+pub fn batpak::store::ImportSelector::after(after_global_sequence: u64) -> Self
+pub fn batpak::store::ImportSelector::after_global_sequence(&self) -> core::option::Option<u64>
+pub fn batpak::store::ImportSelector::all() -> Self
+pub fn batpak::store::ImportSelector::region(region: batpak::coordinate::Region) -> Self
+pub fn batpak::store::ImportSelector::region_ref(&self) -> &batpak::coordinate::Region
+pub fn batpak::store::ImportSelector::with_after_global_sequence(self, after_global_sequence: u64) -> Self
+impl core::default::Default for batpak::store::ImportSelector
+pub fn batpak::store::ImportSelector::default() -> Self
 pub struct batpak::store::IndexConfig
 pub batpak::store::IndexConfig::enable_checkpoint: bool
 pub batpak::store::IndexConfig::enable_mmap_index: bool
@@ -3349,6 +3434,8 @@ pub fn batpak::store::Store<batpak::store::Open>::writer_pressure(&self) -> batp
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::close(self) -> core::result::Result<batpak::store::Closed, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::store::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::fork(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::fork_with_evidence(&self, dest: &std::path::Path, options: batpak::store::ForkOptions) -> core::result::Result<batpak::store::ForkReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence(&self, dest: &std::path::Path) -> core::result::Result<batpak::store::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
@@ -3357,6 +3444,8 @@ pub fn batpak::store::Store<batpak::store::Open>::wait_for_durable(&self, point:
 pub fn batpak::store::Store<batpak::store::Open>::wait_for_visible(&self, point: batpak::store::stats::HlcPoint, timeout: core::time::Duration) -> core::result::Result<(), batpak::prelude::StoreError>
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::cursor_worker<F>(self: &alloc::sync::Arc<Self>, region: &batpak::coordinate::Region, config: batpak::store::CursorWorkerConfig, handler: F) -> core::result::Result<batpak::store::CursorWorkerHandle, batpak::prelude::StoreError> where F: core::ops::function::FnMut(&[batpak::store::index::IndexEntry], &batpak::store::Store<batpak::store::Open>, core::option::Option<&batpak::store::delivery::observation::AtLeastOnce>) -> batpak::store::CursorWorkerAction + core::marker::Send + 'static
+impl batpak::store::Store<batpak::store::Open>
+pub fn batpak::store::Store<batpak::store::Open>::import_events<S>(&self, source: &batpak::store::Store<S>, selector: &batpak::store::ImportSelector, options: &batpak::store::ImportOptions) -> core::result::Result<batpak::store::ImportReport, batpak::prelude::StoreError>
 impl batpak::store::Store<batpak::store::Open>
 pub fn batpak::store::Store<batpak::store::Open>::open(config: batpak::prelude::StoreConfig) -> core::result::Result<Self, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::open_with_cache(config: batpak::prelude::StoreConfig, cache: alloc::boxed::Box<dyn batpak::store::projection::ProjectionCache>) -> core::result::Result<Self, batpak::prelude::StoreError>
@@ -3601,6 +3690,8 @@ pub fn batpak::store::stats::WriterPressure::is_idle(&self) -> bool
 pub fn batpak::store::stats::WriterPressure::utilization(&self) -> f64
 pub const batpak::store::CHAIN_WALK_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::COMPACTION_REPORT_SCHEMA_VERSION: u16
+pub const batpak::store::FORK_EVIDENCE_REPORT_SCHEMA_VERSION: u16
+pub const batpak::store::IMPORT_PROVENANCE_SCHEMA_VERSION: u16
 pub const batpak::store::MAX_CHECKPOINT_ID_LEN: usize
 pub const batpak::store::PROJECTION_RUN_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::READ_WALK_REPORT_SCHEMA_VERSION: u16
@@ -3670,6 +3761,9 @@ pub const batpak::store::ReceiptExtensionNamespace::PREFIX: &'static str
 impl batpak::store::ReceiptExtensionNamespace for batpak::store::SigningExtensionNamespace
 pub const batpak::store::SigningExtensionNamespace::PREFIX: &'static str
 pub fn batpak::store::compaction_strategy_shape(strategy: &batpak::store::CompactionStrategy) -> batpak::store::CompactionStrategyShape
+pub fn batpak::store::fork_report_body_hash(body: &batpak::store::ForkReportBody) -> core::result::Result<batpak::store::ForkEvidenceHash, rmp_serde::encode::Error>
+pub fn batpak::store::provenance(receipt: &batpak::prelude::AppendReceipt) -> core::option::Option<batpak::store::ImportProvenance>
+pub fn batpak::store::provenance_from_extensions(extensions: &alloc::collections::btree::map::BTreeMap<batpak::store::ExtensionKey, batpak::store::EncodedBytes>) -> core::option::Option<batpak::store::ImportProvenance>
 pub fn batpak::store::report_for_run(config: &batpak::store::CompactionConfig, active_segment_id: u64, sealed: &[(u64, std::path::PathBuf)], merged_segment_id: core::option::Option<u64>, result: &batpak::store::segment::CompactionResult, merged_segment_path_for_hash: core::option::Option<&std::path::Path>) -> core::result::Result<batpak::store::CompactionReportBody, rmp_serde::encode::Error>
 pub fn batpak::store::report_skipped(config: &batpak::store::CompactionConfig, active_segment_id: u64, sealed: &[(u64, std::path::PathBuf)]) -> core::result::Result<batpak::store::CompactionReportBody, rmp_serde::encode::Error>
 pub fn batpak::store::snapshot_report_body_hash(body: &batpak::store::SnapshotReportBody) -> core::result::Result<batpak::store::SnapshotEvidenceHash, rmp_serde::encode::Error>
@@ -3680,6 +3774,8 @@ pub fn batpak::store::store_resource_report_body_hash(body: &batpak::store::Stor
 pub type batpak::store::ChainWalkHash = [u8; 32]
 pub type batpak::store::CompactionEvidenceHash = [u8; 32]
 pub type batpak::store::EncodedBytes = alloc::vec::Vec<u8>
+pub type batpak::store::ForkEvidenceHash = [u8; 32]
+pub type batpak::store::ImportFilter = alloc::boxed::Box<(dyn core::ops::function::Fn(&batpak::store::index::IndexEntry) -> bool + core::marker::Send + core::marker::Sync)>
 pub type batpak::store::OpenReportObserver = alloc::sync::Arc<(dyn core::ops::function::Fn(&batpak::store::cold_start::rebuild::OpenIndexReport) + core::marker::Send + core::marker::Sync)>
 pub type batpak::store::ProjectionRunHash = [u8; 32]
 pub type batpak::store::ReadWalkHash = [u8; 32]

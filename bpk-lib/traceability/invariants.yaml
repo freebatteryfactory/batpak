@@ -211,6 +211,36 @@
     - ART-STORE-REBUILD
     - ART-CONTROL-PLANE-TESTS
     - ART-ADR-CONTROL-PLANE
+- id: INV-FORK-ISOLATION
+  statement: >-
+    Store fork materializes a self-contained directory at a drained visibility
+    boundary: immutable sealed segments may be shared by reflink or hardlink,
+    but the active segment and mutable correctness authorities such as
+    index.idemp and visibility_ranges.fbv are deep-copied, regenerable caches
+    are excluded by default, symlink leaves are rejected, and writes or
+    visibility cancellations after the fork cannot mutate the fork view.
+  artifacts:
+    - ART-STORE-FORK-IMPORT-SOURCE
+    - ART-STORE-FORK-IMPORT-TESTS
+    - ART-STORE-FORK-BENCH
+- id: INV-IMPORT-CONTENT-ISOMORPHISM
+  statement: >-
+    Store import is re-application rather than merge: source event identity,
+    sequence, and causation are regenerated or cleared, while raw MessagePack
+    payload bytes, content hashes, correlation metadata, deterministic
+    source-namespace idempotency keys, and provenance receipt extensions are
+    preserved across chunking, replay, and compaction.
+  artifacts:
+    - ART-STORE-FORK-IMPORT-SOURCE
+    - ART-STORE-FORK-IMPORT-TESTS
+- id: INV-STORE-ISOMORPHISM-LAWS
+  statement: >-
+    Serialization seams that define durable store identity round-trip generated
+    values without loss: DagPosition MessagePack encoding, SIDX entry encoding,
+    lane-neutral JSON-to-MessagePack upcast, and raw imported payload hashing all
+    preserve their intended value or byte identity.
+  artifacts:
+    - ART-STORE-FORK-IMPORT-TESTS
 - id: INV-SCHEMA-VERSION-ISOLATION
   statement: Cached projections are keyed by entity + schema_version. Different versions get separate cache slots, preventing stale cached values from being served to new code.
   artifacts:

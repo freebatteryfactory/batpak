@@ -715,6 +715,56 @@
     restore-artifact mismatches outside this pure query surface, which still
     belong to cold-start parity suites rather than the overlay oracle itself.
 
+- title: Store fork preserves filesystem aliasing isolation
+  section: State-Machine Harness
+  pattern: State-Machine Harness
+  status: green
+  invariants:
+    - INV-FORK-ISOLATION
+  locations:
+    - bpk-lib/crates/core/tests/store_fork.rs
+    - bpk-lib/crates/core/src/store/lifecycle.rs
+    - bpk-lib/crates/core/src/store/file_classification.rs
+    - bpk-lib/crates/core/src/store/platform/fs.rs
+  commands:
+    - cargo test --test store_fork
+  coverage_delta: >
+    adds fork reopen parity, parent/fork write isolation, hardlink-only sealed
+    sharing, active/idempotency/visibility deep-copy checks, cache exclusion,
+    symlink rejection, compaction, reused destination, and fork-of-fork coverage.
+  mutation_delta: unmeasured
+  blind_spots: >
+    reflink behavior is platform/filesystem dependent and is represented by the
+    strategy report plus hardlink-only deterministic lane; concurrent compaction
+    serialization is covered by the lifecycle gate shape shared with snapshot.
+
+- title: Store import re-applies source logs without changing content bytes
+  section: Property Harness
+  pattern: Property Harness
+  status: green
+  invariants:
+    - INV-IMPORT-CONTENT-ISOMORPHISM
+    - INV-STORE-ISOMORPHISM-LAWS
+  locations:
+    - bpk-lib/crates/core/tests/import_events.rs
+    - bpk-lib/crates/core/tests/isomorphism_laws.rs
+    - bpk-lib/crates/core/src/event/upcast.rs
+    - bpk-lib/crates/core/src/store/segment/sidx/tests.rs
+  commands:
+    - cargo test --test import_events
+    - cargo test --test isomorphism_laws
+    - cargo test event::upcast::tests::value_from_json_and_msgpack_agree
+    - cargo test store::segment::sidx::tests::encode_decode_round_trip_property
+  coverage_delta: >
+    adds import replay, partial-overlap, compaction noop, deterministic key,
+    chunk-size equivalence, provenance, reserved skip, oversized-item, raw
+    payload hash, DagPosition, SIDX, and upcast isomorphism properties.
+  mutation_delta: unmeasured
+  blind_spots: >
+    import_events returns an aggregate report, not the replayed receipts; tests
+    verify provenance through stored receipt extensions and idempotent replay
+    counts rather than a per-dedup receipt stream.
+
 - title: Frozen payload bytes keep decoding as event schemas evolve
   section: Property Harness
   pattern: Property Harness

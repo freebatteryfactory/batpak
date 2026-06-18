@@ -155,3 +155,7 @@ harness = false
 [[bench]]
 name = "recovery_lanes"
 harness = false
+
+[[bench]]
+name = "fork_cost"
+harness = false

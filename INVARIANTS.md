@@ -24,6 +24,18 @@ Stored payload bytes are never rewritten. A payload's `PAYLOAD_VERSION` rides in
 
 A keyed append (`with_idempotency`) is a durable no-op: within its retention window a retry returns the original receipt regardless of compaction, cold-start, or load. The window is the inviolable guarantee; the size cap may only ever evict keys already outside it.
 
+## Forks Do Not Alias Mutable Authorities
+
+A fork may share immutable sealed segments, but it must own its active segment,
+visibility ranges, idempotency sidecar, and pending compaction state. Parent
+writes or cancellations after the fork do not affect the fork.
+
+## Import Preserves Content, Not Identity
+
+Import re-applies source events. Payload bytes and content hashes survive
+unchanged, but event ids, global sequences, predecessors, and causation are
+destination-local.
+
 ## Receipts Describe Outcomes
 
 A receipt records what the system accepted, denied, replayed, verified, projected, imported, exported, or inspected. A receipt is structured evidence, not a debug log.

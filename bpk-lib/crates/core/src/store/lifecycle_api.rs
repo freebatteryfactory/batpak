@@ -75,6 +75,34 @@ impl Store<Open> {
         self.snapshot_with_evidence(dest).map(|_| ())
     }
 
+    /// Fork the current store into a self-contained destination directory and
+    /// return deterministic fork evidence.
+    ///
+    /// The destination is not opened by this method. Callers that want to use
+    /// the fork should open it explicitly after this method returns, preserving
+    /// the copied directory without appending lifecycle events during the copy.
+    ///
+    /// # Errors
+    /// Returns `StoreError::Io` if creating the destination, clearing stale
+    /// store artifacts, or copying/linking source files fails.
+    pub fn fork_with_evidence(
+        &self,
+        dest: &std::path::Path,
+        options: ForkOptions,
+    ) -> Result<ForkReport, StoreError> {
+        lifecycle::fork(self, dest, options)
+    }
+
+    /// Fork the current store with default [`ForkOptions`], dropping the
+    /// deterministic evidence report.
+    ///
+    /// # Errors
+    /// Returns any error surfaced by [`Store::fork_with_evidence`].
+    pub fn fork(&self, dest: &std::path::Path) -> Result<(), StoreError> {
+        self.fork_with_evidence(dest, ForkOptions::default())
+            .map(|_| ())
+    }
+
     /// Compact: merge sealed segments, optionally filtering events.
     /// The active (currently-written) segment is never touched.
     ///

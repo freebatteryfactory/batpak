@@ -20,9 +20,12 @@ mod error;
 )]
 pub mod fault;
 mod file_classification;
+mod fork_report;
 mod frontier_api;
 mod gate;
 mod hidden_ranges;
+mod import;
+mod import_api;
 /// In-memory 2D event index, rebuilt from segments on startup.
 pub mod index;
 mod lifecycle;
@@ -96,7 +99,15 @@ pub use error::{
 pub use fault::{
     CountdownAction, CountdownInjector, FaultInjector, InjectionPoint, ProbabilisticInjector,
 };
+pub use fork_report::{
+    fork_report_body_hash, ForkCopyStrategy, ForkEvidenceHash, ForkFinding, ForkOptions,
+    ForkReport, ForkReportBody, ForkStrategyCounts, FORK_EVIDENCE_REPORT_SCHEMA_VERSION,
+};
 pub use gate::DurabilityGate;
+pub use import::{
+    provenance, provenance_from_extensions, ImportFilter, ImportOptions, ImportProvenance,
+    ImportReport, ImportSelector, IMPORT_PROVENANCE_SCHEMA_VERSION,
+};
 pub use platform::clock::{Clock, SystemClock};
 pub use projection::watch::{CursorWatcherError, ProjectionWatcher, WatcherError};
 pub use projection::{

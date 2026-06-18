@@ -289,6 +289,29 @@
   kind: source
   paths:
     - crates/core/src/store/lifecycle.rs
+- id: ART-STORE-FORK-IMPORT-SOURCE
+  kind: source
+  paths:
+    - crates/core/src/store/file_classification.rs
+    - crates/core/src/store/fork_report.rs
+    - crates/core/src/store/import.rs
+    - crates/core/src/store/import_api.rs
+    - crates/core/src/store/lifecycle.rs
+    - crates/core/src/store/lifecycle_api.rs
+    - crates/core/src/store/platform/fs.rs
+    - crates/core/src/store/write_api.rs
+- id: ART-STORE-FORK-IMPORT-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/store_fork.rs
+    - crates/core/tests/import_events.rs
+    - crates/core/tests/isomorphism_laws.rs
+    - crates/core/src/event/upcast.rs
+    - crates/core/src/store/segment/sidx/tests.rs
+- id: ART-STORE-FORK-BENCH
+  kind: benchmark
+  paths:
+    - crates/core/benches/fork_cost.rs
 - id: ART-STORE-DANGEROUS-TEST-HOOKS
   kind: source
   paths:
