@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-06-17
+
 ### Added
 - Event schema evolution (0.8.3): `#[derive(EventPayload)]` types carry a
   `PAYLOAD_VERSION` (set via `#[batpak(version = N)]`) stamped into a new
