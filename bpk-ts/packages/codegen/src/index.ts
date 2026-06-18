@@ -224,6 +224,15 @@ function validateManifest(value: unknown, source: string): BatpakTsManifest {
           `${source}: ${event.name}.${field.wireName} uses unsupported typeToken ${JSON.stringify(field.typeToken)}; supported: ${[...SUPPORTED_FIELD_TYPES].join(", ")}`,
         );
       }
+      // `optional` must be a real boolean: a stray `"true"`/`1` would slip
+      // past the `=== true` check below and silently emit the non-optional
+      // schema, so reject a non-boolean as a manifest authoring error.
+      if (field.optional !== undefined && typeof field.optional !== "boolean") {
+        throw new CodegenError(
+          "invalid_optional_flag",
+          `${source}: ${event.name}.${field.wireName}.optional must be a boolean when present (got ${JSON.stringify(field.optional)})`,
+        );
+      }
       // `optional: true` is only meaningful for nullable (`option<…>`)
       // tokens: the omittable-input/present-nil-encode wrapper assumes a
       // wire-side nil for the absent case. A non-option token has no nil
