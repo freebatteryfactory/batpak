@@ -1,0 +1,134 @@
+# Assurance Levels (AL-DEF) — the spine datum.
+#
+# Every production source file carries a declared assurance level by path glob.
+# Gate DEPTH is a function of AL, not of which CI label happened to fire.
+#
+#   L0  hygiene/format/lint-only surfaces
+#   L1  normal library code (default for any unmatched production file)
+#   L2  contracts: public API + on-disk / serialized / wire shapes
+#   L3  deterministic runtime: writer/visibility/projection/frontier/cold-start
+#   L4  "if it lies, downstream trusts a forged reality": durability,
+#       idempotency, hash-chain, fsync / crash recovery
+#
+# ANTI-DRIFT LOCKSTEP (enforced by `assurance::check_seam_lockstep`):
+# every glob in an L3 or L4 entry is mirrored from the `*_MUTANT_FILES`
+# arrays behind `critical_mutation_seams()`
+# (bpk-lib/tools/xtask/src/commands/mutants/lanes.rs). The L3 ∪ L4 glob set
+# MUST equal the union of those seam glob arrays exactly, so assurance level
+# and mutation criticality cannot drift apart. Each L3/L4 entry's `seam:`
+# value must equal a slug in `critical_mutation_seams()`.
+
+# --- L4: lies-downstream durability / idempotency / hash-chain / crash recovery ---
+- level: L4
+  seam: hash-chain-replay
+  rationale: "if the chain lies, every downstream replay trusts a forged reality"
+  globs:
+    - crates/core/src/store/ancestry/by_hash.rs
+    - crates/core/src/store/cold_start/rebuild.rs
+    - crates/core/src/store/chain_walk.rs
+    - crates/core/src/store/read_walk.rs
+
+- level: L4
+  seam: writer-commit
+  rationale: "commit/staging/publish ordering is the durability boundary"
+  globs:
+    - crates/core/src/store/write/**/*.rs
+    - crates/core/src/store/write/control/**/*.rs
+
+- level: L4
+  seam: segment-scan
+  rationale: "segment scan + corruption handling decides what recovered reality is"
+  globs:
+    - crates/core/src/store/segment/scan/**/*.rs
+
+- level: L4
+  seam: frontier-wait-durable
+  rationale: "wait_for_durable is the fsync/durability acknowledgement boundary"
+  globs:
+    - crates/core/src/store/write/writer.rs
+
+- level: L4
+  seam: frontier-append-gate
+  rationale: "the append gate decides admission against the durable frontier"
+  globs:
+    - crates/core/src/store/gate.rs
+
+- level: L4
+  seam: event-payload-registry-validator
+  rationale: "registry validation / open-time policy gates what bytes are trusted"
+  globs:
+    - crates/core/src/event/payload.rs
+    - crates/core/src/store/config.rs
+    - crates/core/src/store/mod.rs
+
+- level: L4
+  seam: platform-backend
+  rationale: "platform admission + fail-closed reverify guards on-disk trust"
+  globs:
+    - crates/core/src/store/platform/**/*.rs
+
+# --- L3: deterministic runtime (writer/visibility/projection/frontier/cold-start) ---
+- level: L3
+  seam: cursor-delivery
+  rationale: "cursor delivery, checkpoints, and witnesses drive visibility"
+  globs:
+    - crates/core/src/store/delivery/cursor.rs
+    - crates/core/src/store/delivery/observation.rs
+    - crates/core/src/store/reactor_typed.rs
+
+- level: L3
+  seam: projection-flow
+  rationale: "projection replay and freshness are deterministic runtime"
+  globs:
+    - crates/core/src/store/projection/flow/**/*.rs
+    - crates/core/src/store/projection/registry.rs
+    - crates/core/src/store/projection/mod.rs
+    - crates/core/src/store/projection/watch.rs
+
+- level: L3
+  seam: testing-ledger-structural-lint
+  rationale: "the structural-lint grader is deterministic gauntlet machinery"
+  globs:
+    - tools/integrity/src/harness_lints.rs
+
+- level: L3
+  seam: syncbat-runtime-dispatch
+  rationale: "syncbat dispatch/receipt semantics are deterministic runtime"
+  globs:
+    - crates/syncbat/src/builder.rs
+    - crates/syncbat/src/core.rs
+    - crates/syncbat/src/error.rs
+    - crates/syncbat/src/handler.rs
+    - crates/syncbat/src/operation.rs
+    - crates/syncbat/src/receipt.rs
+    - crates/syncbat/src/store_sink.rs
+
+- level: L3
+  seam: syncbat-register-catalog
+  rationale: "durable register catalog rebuild is deterministic runtime"
+  globs:
+    - crates/syncbat/src/register.rs
+    - crates/syncbat/src/register_store.rs
+
+- level: L3
+  seam: netbat-boundary-protocol
+  rationale: "netbat framing/limit/error mapping is deterministic boundary runtime"
+  globs:
+    - crates/netbat/src/lib.rs
+    - crates/netbat/src/route.rs
+    - crates/netbat/src/transport.rs
+
+# --- L2: public API + on-disk / serialized / wire contracts ---
+- level: L2
+  contract: serialized
+  rationale: "on-disk / wire byte shapes are frozen contracts"
+  globs:
+    - crates/core/src/wire.rs
+    - crates/core/src/schema.rs
+    - crates/core/src/encoding.rs
+
+# --- L0: hygiene / format-only surfaces ---
+- level: L0
+  rationale: "build-time hygiene scaffolding, no runtime behavior"
+  globs:
+    - crates/core/build.rs

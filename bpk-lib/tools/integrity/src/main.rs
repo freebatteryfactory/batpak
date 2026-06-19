@@ -30,9 +30,11 @@ mod agent_doctor;
 mod agent_surface;
 mod architecture_ir;
 mod architecture_lints;
+mod assurance;
 mod ci_parity;
 mod doctor;
 mod evidence_audit;
+mod file_size_ceilings;
 mod harness_lints;
 mod invariant_bridge;
 mod public_surface;
@@ -64,6 +66,10 @@ enum CommandKind {
     },
     TraceabilityCheck,
     StructuralCheck,
+    /// Regenerate `traceability/file_size_ceilings.lock` from the current tree.
+    /// Ceilings may only ratchet DOWN: this fails if any file would raise its
+    /// recorded ceiling (split the file instead of bumping it).
+    BlessFileSizeCeilings,
     /// Static checks for evidence report bodies and public export vocabulary.
     EvidenceAudit,
     /// Validate the machine-readable agent intent/API/test surface map.
@@ -85,6 +91,7 @@ fn main() -> Result<()> {
         CommandKind::Doctor { strict } => doctor::run(strict),
         CommandKind::TraceabilityCheck => traceability::run(),
         CommandKind::StructuralCheck => structural::run(),
+        CommandKind::BlessFileSizeCeilings => structural::bless_file_size_ceilings(),
         CommandKind::EvidenceAudit => evidence_audit::run(&repo_surface::repo_root()?),
         CommandKind::AgentSurfaceCheck => agent_surface::run(&repo_surface::repo_root()?),
         CommandKind::AgentDoctor => agent_doctor::run(&repo_surface::repo_root()?),
@@ -178,7 +185,7 @@ RUN cargo install --locked cargo-mutants@27.0.0
         assert!(validate_observation_evidence(
             &repo_root,
             "OBS-TEST",
-            "tests/durable_frontier_waits.rs :: append_with_visible_gate_returns_after_publish",
+            "tests/durable_frontier_waits_append_gate.rs :: append_with_visible_gate_returns_after_publish",
         )
         .is_ok());
 
