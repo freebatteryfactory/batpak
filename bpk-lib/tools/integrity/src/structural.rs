@@ -38,6 +38,7 @@ pub(crate) fn run() -> Result<()> {
     ci_parity::check(&repo_root)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
     crate::assurance::check(&repo_root)?;
+    crate::typed_waivers::check(&repo_root)?;
     println!("structural-check: ok");
     Ok(())
 }

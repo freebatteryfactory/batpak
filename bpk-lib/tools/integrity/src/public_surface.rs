@@ -1,107 +1,22 @@
-use crate::repo_surface::{
-    core_src_root, core_tests_root, ensure, load_yaml, relative, resolve_repo_or_core_path,
-    rust_files,
-};
+use crate::repo_surface::{core_src_root, core_tests_root, ensure, relative, rust_files};
 use crate::shared_checks::{ast_references_name, public_item_names};
 use crate::source_cache::SourceCache;
+use crate::typed_waivers::{self, WaiverKind};
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-#[derive(Debug, Deserialize)]
-struct AllowlistEntry {
-    name: String,
-    justification: String,
-    witness: Vec<AllowlistWitness>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AllowlistWitness {
-    path: String,
-    // justifies: INV-TRACEABILITY-COMPLETE; lines is supplementary line-number metadata for human review; the AST walker in tools/integrity/src/structural.rs verifies the path contains the item regardless of specific lines
-    #[serde(default)]
-    lines: Vec<u32>,
-}
-
-impl AllowlistWitness {
-    fn line_hints(&self) -> &[u32] {
-        &self.lines
-    }
-}
 
 pub(crate) fn check(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {
     check_doc_hidden_public_surface(repo_root, source_cache)?;
 
-    let allowlist: Vec<AllowlistEntry> =
-        load_yaml(&repo_root.join("traceability/pub_item_allowlist.yaml"))?;
-    check_internal_justification_grace(&allowlist)?;
-    let allowed: HashMap<&str, &AllowlistEntry> = allowlist
-        .iter()
-        .map(|entry| (entry.name.as_str(), entry))
-        .collect();
-
-    // For every allowlist entry, validate every witness path:
-    //   - file must exist
-    //   - file must parse as Rust
-    //   - file must contain a real AST reference to the item name (not just a
-    //     substring in a string literal or comment)
-    for entry in &allowlist {
-        ensure(
-            !entry.justification.trim().is_empty(),
-            format!(
-                "pub_item_allowlist entry `{}` must include a non-empty supplementary `justification:`",
-                entry.name
-            ),
-        )?;
-        ensure(
-            !entry.witness.is_empty(),
-            format!(
-                "pub_item_allowlist entry `{}` must declare at least one `witness:` path pointing at a test that uses the item; narrative `justification:` is supplementary, not load-bearing",
-                entry.name
-            ),
-        )?;
-        for witness in &entry.witness {
-            ensure(
-                witness.path.starts_with("tests/")
-                    || witness.path.starts_with("crates/core/tests/"),
-                format!(
-                    "pub_item_allowlist entry `{}` witness `{}` must point at a file under tests/, not production code",
-                    entry.name, witness.path
-                ),
-            )?;
-            ensure(
-                !witness.line_hints().is_empty(),
-                format!(
-                    "pub_item_allowlist entry `{}` witness `{}` must include at least one concrete line hint",
-                    entry.name, witness.path
-                ),
-            )?;
-            let abs = resolve_repo_or_core_path(repo_root, &witness.path);
-            ensure(
-                abs.exists(),
-                format!(
-                    "pub_item_allowlist entry `{}` declares witness path `{}` but that file does not exist",
-                    entry.name, witness.path
-                ),
-            )?;
-            let file = source_cache
-                .parse_rust(&abs)
-                .with_context(|| format!("parse witness {}", witness.path))?;
-            ensure(
-                ast_references_name(&file, &entry.name),
-                format!(
-                    "pub_item_allowlist entry `{}` witness `{}` (line hints {:?}) does not contain a real path-position reference to `{}`; either update the witness path or hide the item via `#[doc(hidden)]`",
-                    entry.name,
-                    witness.path,
-                    witness.line_hints(),
-                    entry.name,
-                ),
-            )?;
-        }
-    }
+    // The silent `pub_item_allowlist.yaml` is gone. The ONLY remaining
+    // exemption path is a loud, expiring, owned typed waiver of kind `pub-item`
+    // (`traceability/typed_waivers.yaml`). After the P0-2 triage this set is
+    // empty: every public item is named directly by an AST-visible reference in
+    // a test file, so the loop below proves coverage with zero waivers.
+    let waivers = typed_waivers::load_waivers(repo_root)?;
+    let waived: BTreeSet<String> = typed_waivers::targets_for(&waivers, WaiverKind::PubItem);
 
     let test_files: Vec<PathBuf> = rust_files(&core_tests_root(repo_root));
     let mut parsed_tests: Vec<(PathBuf, Arc<syn::File>)> = Vec::with_capacity(test_files.len());
@@ -120,7 +35,7 @@ pub(crate) fn check(repo_root: &Path, source_cache: &mut SourceCache) -> Result<
             .parse_rust(&path)
             .with_context(|| format!("parse {}", relative(repo_root, &path)))?;
         for name in public_item_names(&file) {
-            if allowed.contains_key(name.as_str()) {
+            if waived.contains(name.as_str()) {
                 continue;
             }
             let found = parsed_tests
@@ -129,7 +44,7 @@ pub(crate) fn check(repo_root: &Path, source_cache: &mut SourceCache) -> Result<
             ensure(
                 found,
                 format!(
-                    "pub item `{}` declared at {} has no test reference (checked {} test files via AST); either add a real test use, add an allowlist entry with a `witness:` path that points to an actual use, or hide the item via `#[doc(hidden)]`.",
+                    "pub item `{}` declared at {} has no test reference (checked {} test files via AST); either add a real test use, hide the item via `#[doc(hidden)]`, or — only if it genuinely cannot be directly test-named — add a typed expiring waiver of kind `pub-item` in traceability/typed_waivers.yaml.",
                     name,
                     relative(repo_root, &path),
                     parsed_tests.len(),
@@ -138,26 +53,6 @@ pub(crate) fn check(repo_root: &Path, source_cache: &mut SourceCache) -> Result<
         }
     }
     Ok(())
-}
-
-fn check_internal_justification_grace(allowlist: &[AllowlistEntry]) -> Result<()> {
-    let mut unexpected = Vec::new();
-
-    for entry in allowlist {
-        let justification = entry.justification.to_ascii_lowercase();
-        if !justification.contains("internal") {
-            continue;
-        }
-        unexpected.push(entry.name.clone());
-    }
-
-    ensure(
-        unexpected.is_empty(),
-        format!(
-            "pub_item_allowlist justification may not describe public API as internal; fix or hide: {}",
-            unexpected.join(", ")
-        ),
-    )
 }
 
 fn check_doc_hidden_public_surface(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {

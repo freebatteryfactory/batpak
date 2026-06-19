@@ -1,0 +1,34 @@
+# Typed, expiring, owned waivers (P0-2) — the ONLY remaining exemption path.
+#
+# The owner's decision is "kill silent allowlists": no silent permanent
+# exemption may survive. Genuine-indirect exemptions become LOUD, TYPED,
+# EXPIRING waivers — validated on every `structural-check` by
+# `tools/integrity/src/typed_waivers.rs`.
+#
+# This file is currently EMPTY by design. The 32 entries of the deleted
+# `pub_item_allowlist.yaml` were all triaged to direct test references (each
+# public item is named directly by an AST-visible reference in a test file), so
+# the `public-surface` gate passes with zero waivers. A waiver is added here
+# only when an item GENUINELY cannot be directly test-named (e.g. a future
+# macro-generated entrypoint or a typestate ZST exercised purely indirectly).
+#
+# Schema (every field below is REQUIRED unless marked optional):
+#
+#   - id: WAIVER-<GATE>-<NNNN>     # unique, stable
+#     kind: pub-item               # which gate family: pub-item | invariant-citation | ...
+#     target: SegmentHeader        # the item / name / id the waiver exempts
+#     owner: heyoub                # a real human; agents may not self-assign L4
+#     expiry: 2026-12-16           # ISO-8601 (YYYY-MM-DD); gate FAILS the day AFTER
+#     justification: "..."         # >= 5 words naming why a direct ref is impossible
+#     blast_radius: L2             # the assurance level of what breaks if this lie is wrong
+#     debt_score: 3                # 1-5; feeds an aggregate debt budget
+#     adr: ADR-0026                # resolvable anchor (INV-* or ADR-NNNN), reused from invariant_bridge
+#     independent_signoff: true    # REQUIRED only when blast_radius is L4 (two-person rule)
+#
+# RULES enforced by the gate (all fail RED):
+#   - expiry < today                          -> expired waiver is a hard fail
+#   - any required field blank/missing        -> fail
+#   - adr does not resolve to a real anchor   -> fail (anti-laundering)
+#   - debt_score outside 1..=5                -> fail
+#   - blast_radius: L4 without independent_signoff: true -> fail (raccoon rule)
+[]

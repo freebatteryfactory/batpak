@@ -37,7 +37,8 @@
 - id: ART-PUB-ALLOWLIST
   kind: registry
   paths:
-    - traceability/pub_item_allowlist.yaml
+    - traceability/typed_waivers.yaml
+    - tools/integrity/src/typed_waivers.rs
 - id: ART-PUBLIC-API-BASELINE
   kind: public-api
   paths:

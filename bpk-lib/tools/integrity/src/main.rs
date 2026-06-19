@@ -44,6 +44,7 @@ mod source_cache;
 mod store_pub_fn_coverage;
 mod structural;
 mod traceability;
+mod typed_waivers;
 
 #[path = "../../shared/shared_checks.rs"]
 mod shared_checks;
