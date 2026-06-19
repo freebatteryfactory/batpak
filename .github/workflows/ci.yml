@@ -318,13 +318,15 @@ jobs:
   mutants-smoke:
     name: Mutation smoke (${{ matrix.seam }})
     runs-on: ubuntu-latest
+    # Default-on for every Rust-touching PR: the smoke lanes are `--in-diff`,
+    # so they only mutate lines the PR changed (cheap). This closes the gap
+    # where a PR could merge with new critical seams never mutation-tested.
+    # Repo-wide and full mutation lanes stay label/manual-gated below.
     if: >-
-      ((github.event_name == 'workflow_dispatch' &&
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'mutants' ||
-         github.event.inputs.proof == 'heavy')) ||
-       (github.event_name == 'pull_request' &&
-        (contains(github.event.pull_request.labels.*.name, 'run-heavy-ci') ||
-         contains(github.event.pull_request.labels.*.name, 'run-mutants')))) &&
+         github.event.inputs.proof == 'heavy'))) &&
       needs.rust-changed.outputs.rust == 'true'
     needs: [ci-fast-linux, rust-changed]
     strategy:
