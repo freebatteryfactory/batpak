@@ -47,6 +47,9 @@ mod runtime_contracts;
 /// On-disk segment format, frame encoding/decoding, and compaction helpers.
 pub mod segment;
 mod signing;
+/// Cooperative single-thread seeded simulation runtime (test hooks only).
+#[cfg(feature = "dangerous-test-hooks")]
+pub(crate) mod sim;
 mod snapshot_report;
 /// Runtime statistics and diagnostic snapshots.
 pub mod stats;
