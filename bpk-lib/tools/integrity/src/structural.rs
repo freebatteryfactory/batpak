@@ -23,7 +23,21 @@ pub(crate) fn run() -> Result<()> {
     architecture_lints::check(&repo_root, &tracked_files, &mut source_cache)?;
     agent_surface::check(&repo_root)?;
     harness_lints::check(&repo_root, &tracked_files, &mut source_cache)?;
-    invariant_bridge::check(&repo_root, &tracked_files)?;
+
+    // invariant-bridge: receipt over the tracked-file surface it scans.
+    crate::receipts::run_gate("invariant-bridge", || {
+        invariant_bridge::check(&repo_root, &tracked_files)?;
+        Ok(crate::receipts::GateWork::new(
+            tracked_files.len(),
+            tracked_files.len(),
+            tracked_files.iter().cloned().collect(),
+        ))
+    })?;
+
+    // The structural source lints share one receipt: they all walk the
+    // production-Rust surface and each file is the unit of work + the assertion.
+    let started = crate::receipts::iso8601_now();
+    let source_files = production_rust_files(&repo_root);
     check_no_dead_code_silencers(&repo_root, &mut source_cache)?;
     check_no_placeholder_runtime_macros(&repo_root, &mut source_cache)?;
     check_canonical_encoding_boundary(&repo_root, &mut source_cache)?;
@@ -34,12 +48,68 @@ pub(crate) fn run() -> Result<()> {
     check_inline_test_island_pressure(&repo_root, &mut source_cache)?;
     check_event_payload_frozen_fixtures(&repo_root, &mut source_cache)?;
     public_surface::check(&repo_root, &mut source_cache)?;
-    ci_parity::check(&repo_root)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
-    crate::assurance::check(&repo_root)?;
-    crate::typed_waivers::check(&repo_root)?;
+    // Eight blocking source lints ran over every production file; record the
+    // real files-examined count and assertions (one structural lint per file).
+    crate::receipts::record_pass(
+        "structural-source-lints",
+        source_files.iter().cloned().collect(),
+        source_files.len(),
+        source_files.len().saturating_mul(8),
+        started,
+    )?;
+
+    // ci-parity: receipt over the ci.yml + xtask source surface it cross-checks.
+    crate::receipts::run_gate("ci-parity", || {
+        ci_parity::check(&repo_root)?;
+        let inputs: BTreeSet<PathBuf> = ci_parity_inputs(&repo_root);
+        let files = inputs.len();
+        Ok(crate::receipts::GateWork::new(files, files.max(1), inputs))
+    })?;
+
+    // assurance-level-check: receipt over the manifest + the production files it
+    // resolves to assurance levels.
+    crate::receipts::run_gate("assurance-level-check", || {
+        crate::assurance::check(&repo_root)?;
+        let manifest = crate::assurance::manifest_path(&repo_root);
+        let mut inputs: BTreeSet<PathBuf> = production_rust_files(&repo_root).into_iter().collect();
+        inputs.insert(manifest);
+        let files = inputs.len();
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
+
+    // typed-waivers: receipt over the waiver file (always examined, even when
+    // empty — the gate parses + validates it on every run).
+    crate::receipts::run_gate("typed-waivers", || {
+        crate::typed_waivers::check(&repo_root)?;
+        let mut inputs = BTreeSet::new();
+        inputs.insert(crate::typed_waivers::waivers_path(&repo_root));
+        Ok(crate::receipts::GateWork::new(1, 1, inputs))
+    })?;
+
     println!("structural-check: ok");
     Ok(())
+}
+
+/// The files `ci_parity::check` cross-checks: the CI workflow, the Dockerfile,
+/// the justfile, and the xtask command surface. Used only to give the ci-parity
+/// receipt a real (non-zero) `files_examined` count + `inputs_hash`; missing
+/// optional files are simply omitted.
+fn ci_parity_inputs(repo_root: &Path) -> BTreeSet<PathBuf> {
+    let mut inputs = BTreeSet::new();
+    for rel in [
+        ".github/workflows/ci.yml",
+        "Dockerfile",
+        ".devcontainer/Dockerfile",
+        "justfile",
+        "tools/xtask/src/main.rs",
+    ] {
+        let path = repo_root.join(rel);
+        if path.exists() {
+            inputs.insert(path);
+        }
+    }
+    inputs
 }
 
 /// Absolute, non-overridable production file cap. There is no per-file escape

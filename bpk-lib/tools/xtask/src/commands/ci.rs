@@ -17,7 +17,11 @@ pub(crate) fn ci_fast() -> Result<()> {
     cargo(["test", "--doc", "--all-features"])?;
     run_family_tests()?;
     integrity("traceability-check", [])?;
-    integrity("structural-check", [])
+    integrity("structural-check", [])?;
+    // Tool-qualification anti-vacuity gate (P1-3): every registered gate must
+    // have left a non-vacuous execution receipt. Runs AFTER structural-check so
+    // the receipts it validates were just (re)generated in this same invocation.
+    integrity("gauntlet-receipts-present", [])
 }
 
 /// Full merge bundle: fast lane plus release-oriented and compile-heavy gates.

@@ -34,9 +34,11 @@ mod assurance;
 mod ci_parity;
 mod doctor;
 mod evidence_audit;
+mod gate_registry;
 mod harness_lints;
 mod invariant_bridge;
 mod public_surface;
+mod receipts;
 mod repo_surface;
 mod rust_ast;
 mod source_cache;
@@ -66,6 +68,14 @@ enum CommandKind {
     },
     TraceabilityCheck,
     StructuralCheck,
+    /// Verify every registered gate emitted a non-vacuous execution receipt
+    /// (`target/gauntlet-receipts/*.json`). Fails on a missing or zero-count
+    /// (vacuous-pass) receipt; `SKIPPED_PACKAGED` receipts may carry zero counts.
+    GauntletReceiptsPresent,
+    /// Enforce the DO-178B tool-qualification law: no gate may have blocking
+    /// authority without naming an existing red-fixture test. Reports any
+    /// blocking gate that lacks a red fixture (a finding, not a failure path).
+    GateRegistryCheck,
     /// Static checks for evidence report bodies and public export vocabulary.
     EvidenceAudit,
     /// Validate the machine-readable agent intent/API/test surface map.
@@ -87,6 +97,20 @@ fn main() -> Result<()> {
         CommandKind::Doctor { strict } => doctor::run(strict),
         CommandKind::TraceabilityCheck => traceability::run(),
         CommandKind::StructuralCheck => structural::run(),
+        CommandKind::GauntletReceiptsPresent => {
+            let validated = receipts::check_present(gate_registry::RECEIPT_REQUIRED_GATES)?;
+            println!(
+                "gauntlet-receipts-present: ok ({} non-vacuous receipt(s) validated)",
+                validated.len()
+            );
+            Ok(())
+        }
+        CommandKind::GateRegistryCheck => {
+            let repo_root = repo_surface::repo_root()?;
+            gate_registry::check(&repo_root)?;
+            gate_registry::report(&repo_root);
+            Ok(())
+        }
         CommandKind::EvidenceAudit => evidence_audit::run(&repo_surface::repo_root()?),
         CommandKind::AgentSurfaceCheck => agent_surface::run(&repo_surface::repo_root()?),
         CommandKind::AgentDoctor => agent_doctor::run(&repo_surface::repo_root()?),
