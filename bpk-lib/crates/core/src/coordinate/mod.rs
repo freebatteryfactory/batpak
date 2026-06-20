@@ -418,6 +418,7 @@ pub(crate) fn namespace_prefix_matches(prefix: &str, candidate: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{namespace_prefix_matches, Coordinate, CoordinateError, Region};
+    use crate::event::EventKind;
     use std::sync::Arc;
 
     #[test]
@@ -441,6 +442,42 @@ mod tests {
         assert!(region.matches_entity("alpha:a"));
         assert!(region.matches_entity("alpha:a:child"));
         assert!(!region.matches_entity("alpha:aa"));
+    }
+
+    #[test]
+    fn matches_event_rejects_non_matching_entity_and_scope() {
+        // A region scoped to entity `alpha:a` in scope `room` must filter out
+        // events that fall outside either dimension. The negative assertions
+        // pin `matches_event`'s predicate: a body that always returned `true`
+        // would let these foreign events through.
+        let region = Region::entity("alpha:a").with_scope("room");
+        let kind = EventKind::custom(0xF, 1);
+
+        // Positive: same entity prefix + exact scope must match.
+        assert!(
+            region.matches_event("alpha:a", "room", kind),
+            "region must accept events on its own entity prefix and scope"
+        );
+        assert!(
+            region.matches_event("alpha:a:child", "room", kind),
+            "region must accept descendants of its entity prefix"
+        );
+
+        // Negative: a different entity must NOT match.
+        assert!(
+            !region.matches_event("beta", "room", kind),
+            "region must reject events on a foreign entity"
+        );
+        // Negative: an adjacent (non-namespace-boundary) entity must NOT match.
+        assert!(
+            !region.matches_event("alpha:aa", "room", kind),
+            "region must reject adjacent entity namespaces"
+        );
+        // Negative: a different scope must NOT match.
+        assert!(
+            !region.matches_event("alpha:a", "lobby", kind),
+            "region must reject events outside its exact scope"
+        );
     }
 
     #[test]

@@ -310,7 +310,62 @@ impl WriterState<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::broadcast_all;
+    use super::{broadcast_all, lane_publish_points_from_notifications, Notification};
+    use crate::coordinate::{Coordinate, DagPosition};
+    use crate::event::EventKind;
+
+    fn notification_for(lane: u32, sequence: u64, wall_ms: u64) -> Notification {
+        Notification {
+            event_id: 0,
+            correlation_id: 0,
+            causation_id: None,
+            coord: Coordinate::new("entity", "scope").expect("valid coordinate"),
+            kind: EventKind::DATA,
+            sequence,
+            position: DagPosition::with_hlc(
+                wall_ms,
+                0,
+                0,
+                lane,
+                u32::try_from(sequence).unwrap_or(u32::MAX),
+            ),
+        }
+    }
+
+    #[test]
+    fn lane_publish_points_keep_first_on_equal_publish_up_to() {
+        // Two notifications on the SAME lane with the SAME sequence (hence the
+        // same `publish_up_to = sequence + 1`) but DIFFERENT wall_ms. The
+        // `and_modify` only overwrites when the new `publish_up_to` is strictly
+        // greater, so equal values must keep the FIRST point. The `> -> >=`
+        // mutant would overwrite with the second (wall_ms = 222) instead.
+        let notifications = vec![notification_for(7, 5, 111), notification_for(7, 5, 222)];
+
+        let points = lane_publish_points_from_notifications(&notifications);
+        let point = points.get(&7).expect("lane 7 must be present");
+
+        assert_eq!(
+            point.publish_up_to, 6,
+            "PROPERTY: publish_up_to is sequence + 1"
+        );
+        assert_eq!(
+            point.frontier_point.wall_ms, 111,
+            "PROPERTY: equal publish_up_to must NOT overwrite the first lane point"
+        );
+    }
+
+    #[test]
+    fn lane_publish_points_advance_on_strictly_greater() {
+        // Sanity companion: a strictly greater publish_up_to DOES overwrite, so
+        // the test above is pinning the equality boundary, not blanket no-update.
+        let notifications = vec![notification_for(3, 5, 111), notification_for(3, 9, 222)];
+
+        let points = lane_publish_points_from_notifications(&notifications);
+        let point = points.get(&3).expect("lane 3 must be present");
+
+        assert_eq!(point.publish_up_to, 10);
+        assert_eq!(point.frontier_point.wall_ms, 222);
+    }
 
     #[test]
     fn broadcast_all_counts_every_pushed_item() {

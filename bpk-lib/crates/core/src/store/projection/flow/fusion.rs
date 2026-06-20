@@ -184,3 +184,96 @@ fn notify_projection_applied_lanes<T, State>(
             .notify_applied_on_lane(projection_id.clone(), *lane, *point);
     }
 }
+
+#[cfg(test)]
+mod relevant_kinds_tests {
+    use super::{collect_relevant_kinds, fused_relevant_kinds, fused_relevant_kinds3};
+    use crate::event::{Event, EventKind, EventSourced, JsonValueInput};
+
+    const A_KIND: EventKind = EventKind::custom(0xE, 11);
+    const B_KIND: EventKind = EventKind::custom(0xE, 12);
+    const C_KIND: EventKind = EventKind::custom(0xE, 13);
+
+    struct FoldA;
+    struct FoldB;
+    struct FoldC;
+
+    macro_rules! single_kind_fold {
+        ($ty:ty, $kind:expr) => {
+            impl EventSourced for $ty {
+                type Input = JsonValueInput;
+
+                fn from_events(_events: &[Event<serde_json::Value>]) -> Option<Self> {
+                    None
+                }
+
+                fn apply_event(&mut self, _event: &Event<serde_json::Value>) {}
+
+                fn relevant_event_kinds() -> &'static [EventKind] {
+                    &[$kind]
+                }
+            }
+        };
+    }
+
+    single_kind_fold!(FoldA, A_KIND);
+    single_kind_fold!(FoldB, B_KIND);
+    single_kind_fold!(FoldC, C_KIND);
+
+    #[test]
+    fn fused_relevant_kinds_returns_union_of_both_folds() {
+        let kinds = fused_relevant_kinds::<FoldA, FoldB>();
+
+        // Kills `-> vec![]`: the union must be the two declared, non-empty kinds.
+        assert_eq!(
+            kinds,
+            vec![A_KIND, B_KIND],
+            "PROPERTY: fused_relevant_kinds must return the union of both folds' declared kinds"
+        );
+    }
+
+    #[test]
+    fn fused_relevant_kinds3_returns_union_of_three_folds() {
+        let kinds = fused_relevant_kinds3::<FoldA, FoldB, FoldC>();
+
+        // Kills `-> vec![]`: the union must contain all three declared kinds.
+        assert_eq!(
+            kinds,
+            vec![A_KIND, B_KIND, C_KIND],
+            "PROPERTY: fused_relevant_kinds3 must return the union of all three folds' declared kinds"
+        );
+    }
+
+    #[test]
+    fn collect_relevant_kinds_dedups_overlapping_slices() {
+        let first: &[EventKind] = &[A_KIND];
+        let second: &[EventKind] = &[A_KIND, B_KIND];
+        let kinds = collect_relevant_kinds(&[first, second]);
+
+        // Kills `-> vec![]` (non-empty) AND `delete !` at the dedup guard: with the
+        // `!` deleted the guard becomes `if kinds.contains(&kind)`, so nothing is
+        // ever pushed (kinds starts empty) and the result would be empty/wrong. The
+        // correct deduped union is exactly [A_KIND, B_KIND] with no duplicate A_KIND.
+        assert_eq!(
+            kinds,
+            vec![A_KIND, B_KIND],
+            "PROPERTY: collect_relevant_kinds must dedup overlapping kinds into a non-empty union"
+        );
+    }
+
+    #[test]
+    fn collect_relevant_kinds_repeated_kind_appears_once() {
+        let first: &[EventKind] = &[A_KIND, A_KIND];
+        let second: &[EventKind] = &[A_KIND];
+        let kinds = collect_relevant_kinds(&[first, second]);
+
+        // With the `!` dedup guard deleted, a repeated kind would either vanish
+        // (guard never true on empty start) or duplicate; the correct result is a
+        // single A_KIND.
+        assert_eq!(
+            kinds,
+            vec![A_KIND],
+            "PROPERTY: a kind repeated across slices must appear exactly once"
+        );
+    }
+}

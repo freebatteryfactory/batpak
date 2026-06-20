@@ -138,6 +138,59 @@ mod tests {
     }
 
     #[test]
+    fn unregister_removes_only_the_target_projections_lane_progress() {
+        // Kills registry.rs:87 `!=` -> `==`: `unregister` must retain the lane
+        // progress of OTHER projections and drop only the target's. Flipping the
+        // predicate keeps ONLY the target, so the surviving projection's frontier
+        // is lost and a subsequent lane recompute regresses to the dropped entry.
+        let origin = HlcPoint::ORIGIN;
+        let low = HlcPoint {
+            wall_ms: 100,
+            global_sequence: 10,
+        };
+        let mid = HlcPoint {
+            wall_ms: 200,
+            global_sequence: 20,
+        };
+        let high = HlcPoint {
+            wall_ms: 300,
+            global_sequence: 30,
+        };
+        let handle = WatermarkState::bootstrap_handle(high, Arc::new(SystemClock::new()));
+        handle
+            .lock()
+            .reset_to_bootstrap_lanes(high, high, [(1, high)], [(1, high)]);
+        // Lower the lane applied frontier below visible so newly-registered
+        // projections inherit a low baseline (visible stays HIGH so no frontier
+        // invariant is violated when applied later regresses).
+        handle.lock().set_applied_on_lane(1, origin);
+        let registry = ProjectionRegistry::new(handle.clone());
+
+        // "drop" registers first at LOW, then "keep" registers at HIGH; the lane
+        // applied frontier is the min over both = LOW.
+        registry.notify_applied_on_lane("projection:drop", 1, low);
+        registry.notify_applied_on_lane("projection:keep", 1, high);
+
+        registry.unregister("projection:drop");
+
+        // Force a lane recompute via the surviving "keep" projection. With the
+        // correct retain, only "keep"=HIGH remains, so the lane rises to HIGH.
+        // Under the `==` mutant, "keep" was dropped and "drop"=LOW survives, so
+        // the recompute regresses the lane back down to LOW.
+        registry.notify_applied_on_lane("projection:keep", 1, mid);
+
+        let lane = handle
+            .lock()
+            .snapshot_view()
+            .lane(1)
+            .expect("lane 1 frontier exists");
+        assert_eq!(
+            lane.applied_hlc, high,
+            "PROPERTY: unregister must drop only the target projection and preserve the survivor's lane frontier"
+        );
+    }
+
+    #[test]
     fn first_lane_projection_notification_does_not_regress_existing_lane_applied_frontier() {
         let high = HlcPoint {
             wall_ms: 100,
