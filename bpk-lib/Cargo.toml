@@ -11,6 +11,13 @@ members = [
     "crates/netbat",
     "crates/hbat",
 ]
+# The cargo-fuzz crate (`fuzz/`) is its own workspace: it pulls in nightly-only
+# libfuzzer-sys / -Z build-std machinery and a `-C panic=abort` profile that
+# must NOT leak into the main workspace's build graph or feature unification.
+# It depends on `crates/core` by path, so it always fuzzes the real code.
+exclude = [
+    "fuzz",
+]
 default-members = ["crates/core"]
 resolver = "2"
 
@@ -37,6 +44,11 @@ missing_errors_doc = "warn"
 
 [workspace.lints.rust]
 deprecated = "deny"
+# Gauntlet Phase 0B sentinel RED fixtures compile only under this cfg (set via
+# RUSTFLAGS="--cfg gauntlet_red_fixture"); it is intentionally NOT a Cargo
+# feature so `--all-features` never enables a fixture designed to fail. Register
+# it here so the every-PR build does not warn/deny on the unexpected cfg.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(gauntlet_red_fixture)'] }
 
 # Profile settings (NOT in .cargo/config.toml — they're ignored there)
 [profile.dev]

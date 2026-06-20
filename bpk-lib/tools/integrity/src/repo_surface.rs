@@ -82,6 +82,23 @@ pub(crate) fn rust_files(root: &Path) -> Vec<PathBuf> {
     files_with_extension(root, "rs")
 }
 
+/// The non-core production crate `src` roots (core's `src` is handled separately
+/// via [`core_src_root`]). Shared by structural file-size checks and the
+/// assurance manifest's unleveled-file advisory so both walk the same surface.
+pub(crate) fn production_rust_roots(repo_root: &Path) -> Vec<PathBuf> {
+    [
+        "crates/macros/src",
+        "crates/macros-support/src",
+        "crates/syncbat-macros/src",
+        "crates/syncbat/src",
+        "crates/netbat/src",
+        "crates/hbat/src",
+    ]
+    .iter()
+    .map(|rel| repo_root.join(rel))
+    .collect()
+}
+
 pub(crate) fn files_with_extension(root: &Path, extension: &str) -> Vec<PathBuf> {
     if !root.exists() {
         return Vec::new();

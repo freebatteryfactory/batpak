@@ -29,6 +29,14 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["blake3"]
 blake3 = []
 dangerous-test-hooks = ["dep:fastrand"]
+# Gauntlet Phase 0B sentinel RED fixtures are gated behind the
+# `--cfg gauntlet_red_fixture` compile flag, NOT a Cargo feature. A red fixture
+# is designed to FAIL (it asserts the illegal/old behavior), so it must never be
+# swept up by `--all-features`. Setting the cfg flips each sentinel's assertion
+# to the deliberately-wrong expectation so the fixture fails — proving the
+# sentinel detects the illegal state rather than passing vacuously. Run it
+# deliberately with `RUSTFLAGS="--cfg gauntlet_red_fixture"`; never in a normal
+# build. The cfg is registered in `[workspace.lints.rust]` check-cfg.
 
 [dependencies]
 uuid = { version = ">=1.20, <1.24", default-features = false, features = ["std", "v7"] }

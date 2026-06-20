@@ -800,7 +800,7 @@ fn fixture() {
         .expect("parse config_propagation fixture");
         assert!(
             super::ast_references_name(&config_propagation, "ClockKey"),
-            "pub_item_allowlist witnesses may use struct-literal construction as behavioral coverage"
+            "public-surface coverage may be satisfied by struct-literal construction in a test"
         );
     }
 }
