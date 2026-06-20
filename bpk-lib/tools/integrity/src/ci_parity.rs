@@ -492,3 +492,251 @@ fn xtask_source_text(repo_root: &Path) -> Result<String> {
     }
     Ok(combined)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // justifies: INV-TEST-PANIC-AS-ASSERTION; setup panics signal fixture breakage, see tools/integrity/src/main.rs
+    fn temp_project(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "batpak-ci-parity-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("create temp project");
+        path
+    }
+
+    /// Minimal `cargo xtask` source surface that satisfies every parity rule
+    /// reachable from a synthetic green fixture: it declares the handful of
+    /// `XtaskCommand` variants the green `ci.yml` references and pins each tool
+    /// to the same version used by the green workflow + Dockerfile.
+    const GREEN_XTASK_MAIN: &str = r#"
+enum XtaskCommand {
+    CiFast,
+    Preflight,
+    Mutants,
+    Setup,
+    Release(ReleaseArgs),
+}
+
+fn install_tools() {
+    let tools = [
+        ("cargo-nextest", "cargo-nextest@0.9.132"),
+        ("cargo-mutants", "cargo-mutants@27.0.0"),
+    ];
+}
+"#;
+
+    /// Green workflow body: every `cargo xtask <cmd>` maps to a variant in
+    /// [`GREEN_XTASK_MAIN`]; the only pinned tool (`cargo-nextest@0.9.132`)
+    /// matches both the xtask source and the Dockerfile; every workflow-owned
+    /// list value matches the hardcoded expected set in [`check`].
+    fn green_ci_yml() -> String {
+        let mut yml = String::new();
+        yml.push_str("name: ci\n");
+        yml.push_str("jobs:\n");
+        yml.push_str("  fast:\n");
+        yml.push_str("    steps:\n");
+        yml.push_str("      - run: cargo xtask ci-fast\n");
+        yml.push_str("      - run: cargo xtask preflight\n");
+        yml.push_str("      - uses: taiki-e/install-action@v2\n");
+        yml.push_str("        with:\n");
+        yml.push_str("          tool: cargo-nextest@0.9.132\n");
+        yml.push_str("  matrix-surface:\n");
+        yml.push_str("    strategy:\n");
+        yml.push_str("      matrix:\n");
+        yml.push_str("        surface: [all-features, no-default-features]\n");
+        yml.push_str(
+            "        shard: [\"0/12\", \"1/12\", \"2/12\", \"3/12\", \"4/12\", \"5/12\", \"6/12\", \"7/12\", \"8/12\", \"9/12\", \"10/12\", \"11/12\"]\n",
+        );
+        yml.push_str("        seam:\n");
+        for seam in GREEN_SEAMS {
+            yml.push_str(&format!("          - {seam}\n"));
+        }
+        yml.push_str("        features:\n");
+        yml.push_str("          - \"\"\n");
+        yml.push_str("          - \"--features dangerous-test-hooks\"\n");
+        yml.push_str("          - \"--no-default-features\"\n");
+        yml.push_str("          - \"--no-default-features --features dangerous-test-hooks\"\n");
+        yml.push_str("          - \"--all-features\"\n");
+        yml
+    }
+
+    const GREEN_SEAMS: &[&str] = &[
+        "writer-commit",
+        "cursor-delivery",
+        "projection-flow",
+        "segment-scan",
+        "hash-chain-replay",
+        "frontier-wait-durable",
+        "frontier-append-gate",
+        "event-payload-registry-validator",
+        "platform-backend",
+        "testing-ledger-structural-lint",
+        "syncbat-runtime-dispatch",
+        "syncbat-register-catalog",
+        "netbat-boundary-protocol",
+    ];
+
+    const GREEN_PERF_YML: &str = "name: perf\njobs:\n  bench:\n    strategy:\n      matrix:\n        surface: [neutral, native]\n";
+
+    const GREEN_RELEASE_YML: &str = "name: release\njobs:\n  ship:\n    steps:\n      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask release --dry-run'\n";
+
+    const GREEN_DOCKERFILE: &str = "FROM rust\nRUN cargo install --locked cargo-nextest@0.9.132\n";
+
+    /// Write a complete green project tree under `<tmp>/bpk-lib` (the
+    /// `repo_root` passed to [`check`]) and return that `repo_root`.
+    fn write_green_project(name: &str, ci_yml: &str) -> PathBuf {
+        let project = temp_project(name);
+        let repo_root = project.join("bpk-lib");
+        fs::create_dir_all(project.join(".github/workflows")).expect("workflows dir");
+        fs::create_dir_all(project.join(".devcontainer")).expect("devcontainer dir");
+        fs::create_dir_all(repo_root.join("tools/xtask/src")).expect("xtask src dir");
+        fs::write(project.join(".github/workflows/ci.yml"), ci_yml).expect("ci.yml");
+        fs::write(project.join(".github/workflows/perf.yml"), GREEN_PERF_YML).expect("perf.yml");
+        fs::write(
+            project.join(".github/workflows/release.yml"),
+            GREEN_RELEASE_YML,
+        )
+        .expect("release.yml");
+        fs::write(project.join(".devcontainer/Dockerfile"), GREEN_DOCKERFILE).expect("Dockerfile");
+        fs::write(repo_root.join("tools/xtask/src/main.rs"), GREEN_XTASK_MAIN).expect("xtask main");
+        repo_root
+    }
+
+    fn cleanup(repo_root: &Path) {
+        if let Some(project) = repo_root.parent() {
+            let _ = fs::remove_dir_all(project);
+        }
+    }
+
+    #[test]
+    fn ci_parity_green_fixture_passes() {
+        // Sanity floor for every planted-violation test below: the unmodified
+        // synthetic tree must pass, otherwise a later Err could be spurious.
+        let repo_root = write_green_project("green", &green_ci_yml());
+        check(&repo_root).expect("synthetic green fixture must pass ci-parity");
+        cleanup(&repo_root);
+    }
+
+    #[test]
+    fn ci_parity_rejects_unknown_xtask_command() {
+        // Green passes; planting `cargo xtask doesnotexist` (no matching
+        // XtaskCommand variant) must make rule 1 bail.
+        let mut yml = green_ci_yml();
+        yml.push_str("      - run: cargo xtask doesnotexist\n");
+        let repo_root = write_green_project("unknown-xtask", &yml);
+        let err = check(&repo_root).expect_err("unknown xtask subcommand must fail");
+        assert!(
+            err.to_string().contains("Doesnotexist") || err.to_string().contains("doesnotexist"),
+            "unexpected error: {err:#}"
+        );
+        cleanup(&repo_root);
+    }
+
+    #[test]
+    fn ci_parity_rejects_unpinned_tool() {
+        // Green passes; an unpinned `tool: cargo-nextest` line (no @version)
+        // must trip the bare-tool rejection up front.
+        let yml = green_ci_yml().replace("cargo-nextest@0.9.132", "cargo-nextest");
+        let repo_root = write_green_project("unpinned", &yml);
+        let err = check(&repo_root).expect_err("unpinned tool must fail");
+        assert!(
+            err.to_string().contains("without a version pin"),
+            "unexpected error: {err:#}"
+        );
+        cleanup(&repo_root);
+    }
+
+    #[test]
+    fn ci_parity_rejects_dockerfile_version_mismatch() {
+        // Green passes; bumping ONLY the Dockerfile pin (so workflow says
+        // 0.9.132 but Dockerfile says 0.9.999) must trip the Dockerfile parity
+        // rule.
+        let repo_root = write_green_project("docker-mismatch", &green_ci_yml());
+        fs::write(
+            repo_root
+                .parent()
+                .expect("project root")
+                .join(".devcontainer/Dockerfile"),
+            "FROM rust\nRUN cargo install --locked cargo-nextest@0.9.999\n",
+        )
+        .expect("rewrite Dockerfile");
+        let err = check(&repo_root).expect_err("dockerfile version mismatch must fail");
+        assert!(
+            err.to_string().contains("Dockerfile") && err.to_string().contains("cargo-nextest"),
+            "unexpected error: {err:#}"
+        );
+        cleanup(&repo_root);
+    }
+
+    #[test]
+    fn ci_parity_rejects_xtask_version_mismatch() {
+        // Green passes; pinning the xtask source to a different version than
+        // the workflow must trip the xtask-vs-workflow parity rule.
+        let xtask = GREEN_XTASK_MAIN.replace("cargo-nextest@0.9.132", "cargo-nextest@0.8.0");
+        let repo_root = write_green_project("xtask-mismatch", &green_ci_yml());
+        fs::write(repo_root.join("tools/xtask/src/main.rs"), xtask).expect("rewrite xtask");
+        let err = check(&repo_root).expect_err("xtask version mismatch must fail");
+        assert!(
+            err.to_string().contains("cargo xtask setup")
+                && err.to_string().contains("cargo-nextest"),
+            "unexpected error: {err:#}"
+        );
+        cleanup(&repo_root);
+    }
+
+    #[test]
+    fn ci_parity_rejects_seam_matrix_missing_registry_seam() {
+        // Green passes; dropping `platform-backend` from the ci.yml `seam:`
+        // matrix must make the seam lockstep rule bail because the registry
+        // (the hardcoded expected set) still declares it.
+        let yml = green_ci_yml().replace("          - platform-backend\n", "");
+        let repo_root = write_green_project("seam-missing", &yml);
+        let err = check(&repo_root).expect_err("missing seam must fail");
+        assert!(
+            err.to_string().contains("seam"),
+            "unexpected error: {err:#}"
+        );
+        cleanup(&repo_root);
+    }
+
+    #[test]
+    fn ci_parity_assert_workflow_list_values_detects_missing_value() {
+        // Drive the factored list-lockstep helper directly: green set matches,
+        // a workflow missing one expected value Errs.
+        let green = "matrix:\n  surface: [neutral, native]\n";
+        assert_workflow_list_values("perf.yml", green, "surface", &["neutral", "native"])
+            .expect("matching list passes");
+        let planted = "matrix:\n  surface: [neutral]\n";
+        let err =
+            assert_workflow_list_values("perf.yml", planted, "surface", &["neutral", "native"])
+                .expect_err("missing value must fail");
+        assert!(err.to_string().contains("surface"), "unexpected: {err:#}");
+    }
+
+    #[test]
+    fn ci_parity_rejects_unregistered_just_recipe() {
+        // Drive the just-recipe lockstep helper directly: a registered recipe
+        // whose mapped xtask command exists passes; an unregistered recipe
+        // Errs.
+        let xtask_main = "enum XtaskCommand {\n    CiFast,\n}\n";
+        let green = [("ci.yml", "run: just ci-fast\n")];
+        assert_workflow_just_recipes_map_to_xtask(&green, xtask_main)
+            .expect("registered recipe passes");
+        let planted = [("ci.yml", "run: just totally-made-up\n")];
+        let err = assert_workflow_just_recipes_map_to_xtask(&planted, xtask_main)
+            .expect_err("unregistered recipe must fail");
+        assert!(
+            err.to_string().contains("totally-made-up"),
+            "unexpected: {err:#}"
+        );
+    }
+}
