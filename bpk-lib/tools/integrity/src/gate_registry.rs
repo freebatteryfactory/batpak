@@ -6,15 +6,30 @@
 //! violation. The law, enforced by [`tests::no_blocking_gate_without_a_red_fixture`]:
 //!
 //!   > No gate may carry `has_blocking_authority: true` without naming an
-//!   > EXISTING `red_fixture_test`.
+//!   > EXISTING, ANTI-VACUOUS `red_fixture_test`.
 //!
-//! This is the Rust analog of DO-178B Tool Qualification (TQL): a tool's output
-//! may be trusted only if the tool itself is verified — and SQLite TH3's
-//! anti-vacuous rule that a test which cannot fail proves nothing. A gate that
-//! blocks merges but has no test proving it can flag a bad input is exactly such
-//! a vacuous trust.
+//! "Anti-vacuous" is the part SQLite TH3 and DO-178B Tool Qualification insist
+//! on: a test that *cannot fail* proves nothing, so naming a green-only tautology
+//! as a "red fixture" launders authority. We classify each fixture by
+//! [`RedFixtureKind`] and source-scan it so the registry rejects a fixture that
+//! lacks a real failing path:
 //!
-//! A gate that genuinely blocks today but has no dedicated RED fixture yet is
+//! - [`RedFixtureKind::GateNegativePath`]: a normal green test that plants a
+//!   VIOLATING input and asserts the gate's `check(..)` returns `Err`. Its
+//!   failing path is exercised in normal CI (it runs and passes by taking the
+//!   Err branch); the registry additionally requires the test body to contain an
+//!   explicit failure-expecting assertion (`is_err`/`expect_err`/`Err(`/
+//!   `should_panic`/…), so a budget-less "consistent OR typed error" tautology
+//!   cannot qualify.
+//! - [`RedFixtureKind::ProductionFlip`]: a test gated by
+//!   `#[cfg(gauntlet_red_fixture)]` — green on correct production, RED when the
+//!   cfg flips production (or the test's expectation) to the broken variant. Its
+//!   red half is PROVEN in automation by the `gauntlet-red-fixtures-bite` CI lane
+//!   (and `cargo xtask prove-gates-bite`), which builds with the cfg and asserts
+//!   the fixture FAILS. The registry requires the file to contain a
+//!   `gauntlet_red_fixture` branch.
+//!
+//! A gate that genuinely blocks today but has no qualified RED fixture yet is
 //! recorded with `has_blocking_authority: false` and listed in
 //! [`UNQUALIFIED_BLOCKING_GATES`] as an explicit finding — we do NOT fabricate a
 //! fixture to launder authority it has not earned.
@@ -22,31 +37,52 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+/// How a gate's red fixture proves it is anti-vacuous (not a green-only
+/// tautology). See the module docs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RedFixtureKind {
+    /// Green test that plants a violation and asserts the gate `Err`s. Must
+    /// contain an explicit failure-expecting assertion in its body.
+    GateNegativePath,
+    /// `#[cfg(gauntlet_red_fixture)]`-gated test, proven to red by the
+    /// `gauntlet-red-fixtures-bite` lane. Must contain a `gauntlet_red_fixture`
+    /// branch.
+    ProductionFlip,
+}
+
 /// One gauntlet gate's qualification record.
 pub(crate) struct Gate {
     /// Stable slug (matches the receipt `gate` field where the gate emits one).
     pub slug: &'static str,
     /// `Some("<repo-relative file>::<test_fn_name>")` naming the anti-vacuous RED
-    /// fixture; `None` when the gate has no red fixture yet (then it must NOT be
-    /// blocking).
+    /// fixture; `None` when the gate has no qualified red fixture yet (then it
+    /// must NOT be blocking).
     pub red_fixture_test: Option<&'static str>,
+    /// How the red fixture proves it is anti-vacuous. `Some` exactly when
+    /// `red_fixture_test` is `Some`.
+    pub red_fixture_kind: Option<RedFixtureKind>,
     /// Whether the gate's `Err` fails a real default-path CI run.
     pub has_blocking_authority: bool,
 }
 
 /// The registry. Slugs that emit receipts use the same slug as their receipt.
+///
+/// NOTE: these are explicit struct literals (not constructor helpers) ON PURPOSE
+/// — `meta_gate.rs` detects gate-weakening by text-scanning this file's diff for
+/// `has_blocking_authority: true` and `red_fixture_test: Some(` lines. Keep the
+/// literal form so a weakening edit stays visible to the agent-safety meta-gate.
 pub(crate) const GATES: &[Gate] = &[
     // --- Graders with anti-vacuous self-tests (blocking, qualified). ---
     Gate {
         slug: "assurance-level-check",
-        red_fixture_test: Some(
-            "tools/integrity/src/assurance.rs::missing_seam_glob_fails_lockstep",
-        ),
+        red_fixture_test: Some("tools/integrity/src/assurance.rs::missing_seam_glob_fails_lockstep"),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
         slug: "typed-waivers",
         red_fixture_test: Some("tools/integrity/src/typed_waivers.rs::expired_waiver_fails"),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -54,6 +90,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/ci_parity.rs::ci_parity_rejects_unknown_xtask_command",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -61,6 +98,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/invariant_bridge.rs::invariant_bridge_rejects_uncited_invariant",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -68,6 +106,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/receipts.rs::zero_files_pass_receipt_is_rejected",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     // --- Agent-safety meta-gate ("raccoon with commit access", P1-4). ---
@@ -76,6 +115,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/meta_gate_tests.rs::lowering_critical_seam_threshold_without_approval_errs",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     // --- Harness structural lints (blocking, qualified). ---
@@ -84,6 +124,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/harness_lints.rs::check_line_caps_is_non_overridable_at_the_absolute_cap",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -91,6 +132,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/harness_lints.rs::synthetic_malformed_ledger_entry_is_rejected",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -98,14 +140,18 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/harness_lints.rs::check_module_headers_requires_canonical_fields_or_allowlist",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
-    // --- Runtime durability sentinels (blocking, qualified by `gauntlet_red_fixture`). ---
+    // --- Runtime durability sentinels (blocking, qualified ProductionFlip via
+    //     `gauntlet_red_fixture`). Their red half is proven by the
+    //     `gauntlet-red-fixtures-bite` lane. ---
     Gate {
         slug: "sentinel-s2-future-version-refusal",
         red_fixture_test: Some(
             "crates/core/tests/gauntlet_s2_future_version_refusal.rs::future_version_mmap_index_is_canonical_refusal_not_silent_rebuild",
         ),
+        red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
         has_blocking_authority: true,
     },
     Gate {
@@ -113,32 +159,38 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "crates/core/tests/gauntlet_s3_recovery_oracle.rs::post_fsync_committed_batch_recovers_committed_or_canonical_refusal",
         ),
+        red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
         has_blocking_authority: true,
     },
-    // --- Phase-2 perf/fault sentinels (blocking, qualified). Each names a
-    //     dedicated single-test binary whose `#[test]` is the anti-vacuous RED
-    //     fixture: it arms a real allocation/IO fault (or budget) and asserts the
-    //     hot path stays consistent / typed-errors / within budget. ---
+    // --- Phase-2 perf sentinel (blocking, qualified ProductionFlip). Under
+    //     `gauntlet_red_fixture` the allocation budget is flipped to 0, so a real
+    //     append exceeds it and the gate reds — proving the budget assertion bites. ---
     Gate {
         slug: "perf-alloc-count",
         red_fixture_test: Some(
             "crates/core/tests/gauntlet_perf_alloc_count.rs::single_append_stays_under_allocation_budget",
         ),
+        red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
         has_blocking_authority: true,
     },
+    // --- Phase-2 fault sentinels: run on every PR via `--all-features` nextest,
+    //     but NOT yet qualified — their tests assert "consistent OR typed error"
+    //     without a proven failing path, and the OOM test only exercises the
+    //     allocator shim, not a Store property. Authority WITHHELD (advisory) until
+    //     Phase B3 (recovery_oracle) subsumes them with an op-log-model red fixture
+    //     (a lost-commit / undead recovered state must fail). See
+    //     UNQUALIFIED_BLOCKING_GATES. ---
     Gate {
         slug: "fault-kth-io",
-        red_fixture_test: Some(
-            "crates/core/tests/gauntlet_fault_kth_recovery_io.rs::kth_io_fault_on_scan_path_is_consistent_or_typed_error",
-        ),
-        has_blocking_authority: true,
+        red_fixture_test: None,
+        red_fixture_kind: None,
+        has_blocking_authority: false,
     },
     Gate {
         slug: "fault-alloc-oom",
-        red_fixture_test: Some(
-            "crates/core/tests/gauntlet_fault_alloc_oom.rs::failing_alloc_arms_and_disarms_deterministically",
-        ),
-        has_blocking_authority: true,
+        red_fixture_test: None,
+        red_fixture_kind: None,
+        has_blocking_authority: false,
     },
     // --- Fuzz-replay gate (GAUNT-FUZZ-1, blocking, self-proving). The replay
     //     `#[test]` re-runs every committed corpus + regression input through the
@@ -147,19 +199,19 @@ pub(crate) const GATES: &[Gate] = &[
     //     `[[bin]]` loses its regression dir or its dispatcher wiring. ---
     Gate {
         slug: "fuzz-replay",
-        red_fixture_test: Some(
-            "crates/core/tests/fuzz_replay.rs::fuzz_replay_covers_every_target",
-        ),
+        red_fixture_test: Some("crates/core/tests/fuzz_replay.rs::fuzz_replay_covers_every_target"),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
-    // --- Structural source lints (blocking, qualified). Each now carries a
-    //     dedicated end-to-end RED fixture: a green baseline temp tree plus a
-    //     planted violation asserting the full `check(..)` returns `Err`. ---
+    // --- Structural source lints (blocking, qualified). Each carries a dedicated
+    //     end-to-end RED fixture: a green baseline temp tree plus a planted
+    //     violation asserting the full `check(..)` returns `Err`. ---
     Gate {
         slug: "file-size-pressure",
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::file_size_pressure_rejects_oversized_production_file",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -167,6 +219,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::inline_test_island_pressure_rejects_oversized_island",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -174,6 +227,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::dead_code_silencers_reject_dead_code_allow",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -181,6 +235,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::allow_justifications_rejects_unanchored_allow",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -188,6 +243,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/public_surface.rs::pub_items_have_tests_rejects_unwitnessed_pub_item",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     Gate {
@@ -195,6 +251,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/store_pub_fn_coverage.rs::store_pub_fn_coverage_rejects_uncovered_store_method",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     // --- Phase-2 structural gates (blocking, qualified). ---
@@ -206,6 +263,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::glob_coverage_rejects_nonexistent_mutation_glob",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     // Function-complexity gate (GAUNT-CPLX-6): syn-based per-fn line/nesting/
@@ -215,6 +273,7 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::function_complexity_rejects_over_budget_function",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
     // Wall-clock-in-correctness-tests detector (GAUNT-FLAKE-7): Instant::now()
@@ -224,22 +283,23 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_test: Some(
             "tools/integrity/src/structural_tests.rs::no_wallclock_asserts_rejects_elapsed_assertion",
         ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
 ];
 
 /// Gates that block a real run today but are recorded as `has_blocking_authority:
-/// false` because they lack a dedicated anti-vacuous RED fixture. This is a
-/// surfaced finding, NOT a fabricated qualification: each needs an end-to-end red
-/// fixture (plant a violating tree, assert the gate's `check(..)` returns `Err`)
-/// before it may flip to blocking in the registry.
+/// false` because they lack a qualified anti-vacuous RED fixture. This is a
+/// surfaced finding, NOT a fabricated qualification.
 ///
-/// This list is now EMPTY: every previously-unqualified structural source lint
-/// earned its blocking authority by landing a dedicated end-to-end RED fixture
-/// (see the `structural-source-lints` family in [`GATES`]). The list stays so the
-/// honesty-ledger test below keeps it permanently empty — a regression that
-/// withholds authority again must re-list the gate here.
-pub(crate) const UNQUALIFIED_BLOCKING_GATES: &[&str] = &[];
+/// `fault-kth-io` / `fault-alloc-oom` run on every PR (via `--all-features`
+/// nextest, so a failure fails CI) but their assertions ("consistent OR typed
+/// error"; the OOM test only proves the shim arms/disarms) have no proven failing
+/// path. They re-qualify in Phase B3 when the full `recovery_oracle` family
+/// subsumes them with an op-log-model red fixture (a lost-commit / exposed-
+/// uncommitted / undead recovered state must fail). Until then authority is
+/// honestly withheld.
+pub(crate) const UNQUALIFIED_BLOCKING_GATES: &[&str] = &["fault-kth-io", "fault-alloc-oom"];
 
 /// Slugs of gates that emit an execution receipt the `gauntlet-receipts-present`
 /// check requires. Kept narrow to the gates whose receipts the integrity binary
@@ -250,6 +310,27 @@ pub(crate) const RECEIPT_REQUIRED_GATES: &[&str] = &[
     "ci-parity",
     "invariant-bridge",
     "structural-source-lints",
+];
+
+/// Tokens that signal a [`RedFixtureKind::GateNegativePath`] test body asserts a
+/// rejection/error/emptiness condition — the signature of a real negative-path
+/// test, not a green-only "consistent OR typed error" tautology. This is a CHEAP
+/// heuristic, deliberately not a proof: the rigorous anti-vacuity proof is
+/// reserved for [`RedFixtureKind::ProductionFlip`] gates, whose red half the
+/// `gauntlet-red-fixtures-bite` lane actually exercises. The tokens are chosen to
+/// match rejection assertions (`is_err`/`Err(`) and completeness/wiring assertions
+/// (`is_empty` — "a required set must not be empty") while NOT matching the loose
+/// `value <= bound` tautologies the audit flagged on the fault gates.
+const FAILURE_ASSERTION_TOKENS: &[&str] = &[
+    "is_err",
+    "expect_err",
+    "unwrap_err",
+    "Err(",
+    "should_panic",
+    "panic!",
+    "is_none",  // negative-path gates assert a rejected item resolves to None
+    "is_empty", // completeness/wiring gates assert a required set is non-empty
+    "assert_ne!",
 ];
 
 /// Split `"<file>::<test_fn>"` into its parts.
@@ -274,9 +355,83 @@ fn red_fixture_resolves(repo_root: &Path, reference: &str) -> Result<bool> {
     Ok(content.contains(&needle))
 }
 
+/// Extract the `{ .. }` body of `fn <test_fn>` by brace-matching from the first
+/// `{` after the signature. Returns `None` if the fn or its body is not found.
+fn extract_fn_body<'a>(content: &'a str, test_fn: &str) -> Option<&'a str> {
+    let sig = format!("fn {test_fn}(");
+    let start = content.find(&sig)?;
+    let open_rel = content[start..].find('{')?;
+    let open = start + open_rel;
+    let bytes = content.as_bytes();
+    let mut depth = 0usize;
+    for (i, &b) in bytes.iter().enumerate().skip(open) {
+        match b {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&content[open..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Verify the named red fixture is ANTI-VACUOUS for its kind. This is what stops
+/// a green-only tautology from laundering blocking authority.
+fn red_fixture_is_antivacuous(
+    repo_root: &Path,
+    reference: &str,
+    kind: RedFixtureKind,
+) -> Result<std::result::Result<(), String>> {
+    let Some((rel, test_fn)) = split_reference(reference) else {
+        return Ok(Err(format!("malformed reference `{reference}`")));
+    };
+    let path = repo_root.join(rel);
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(_) => return Ok(Err(format!("file `{rel}` not found"))),
+    };
+    match kind {
+        RedFixtureKind::ProductionFlip => {
+            // The whole file must carry a gauntlet_red_fixture branch; the
+            // `gauntlet-red-fixtures-bite` lane proves the branch actually reds.
+            if content.contains("gauntlet_red_fixture") {
+                Ok(Ok(()))
+            } else {
+                Ok(Err(format!(
+                    "ProductionFlip fixture `{reference}` has no `gauntlet_red_fixture` branch — \
+                     its red half can never be exercised by the bite lane"
+                )))
+            }
+        }
+        RedFixtureKind::GateNegativePath => {
+            let Some(body) = extract_fn_body(&content, test_fn) else {
+                return Ok(Err(format!(
+                    "GateNegativePath fixture `{reference}`: could not extract test body"
+                )));
+            };
+            if FAILURE_ASSERTION_TOKENS
+                .iter()
+                .any(|tok| body.contains(tok))
+            {
+                Ok(Ok(()))
+            } else {
+                Ok(Err(format!(
+                    "GateNegativePath fixture `{reference}` has no failure-expecting assertion \
+                     ({:?}) in its body — it may be a green-only tautology and cannot qualify a \
+                     blocking gate",
+                    FAILURE_ASSERTION_TOKENS
+                )))
+            }
+        }
+    }
+}
+
 /// Production entry: the registry law, checked against the live tree. Reusable by
-/// a future `gate-registry-check` subcommand; today it backs the `#[cfg(test)]`
-/// law below.
+/// the `gate-registry-check` subcommand and `cargo xtask`.
 pub(crate) fn check(repo_root: &Path) -> Result<()> {
     for gate in GATES {
         if !gate.has_blocking_authority {
@@ -289,6 +444,13 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
                 gate.slug
             )
         })?;
+        let kind = gate.red_fixture_kind.with_context(|| {
+            format!(
+                "gate_registry: gate `{}` is blocking with a red fixture but no RedFixtureKind \
+                 (cannot verify it is anti-vacuous).",
+                gate.slug
+            )
+        })?;
         let resolves = red_fixture_resolves(repo_root, reference)
             .with_context(|| format!("resolve red fixture for `{}`", gate.slug))?;
         anyhow::ensure!(
@@ -298,13 +460,34 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
             gate.slug,
             reference
         );
+        let antivacuous = red_fixture_is_antivacuous(repo_root, reference, kind)
+            .with_context(|| format!("anti-vacuity scan for `{}`", gate.slug))?;
+        if let Err(why) = antivacuous {
+            anyhow::bail!(
+                "gate_registry: gate `{}` red fixture is not anti-vacuous: {}",
+                gate.slug,
+                why
+            );
+        }
     }
     Ok(())
 }
 
-/// Print the qualification ledger: each gate, whether it blocks, and its red
-/// fixture (with a resolved/MISSING marker). Lists the unqualified blocking
-/// gates as an explicit finding. Diagnostic only — `check` is the gate.
+/// Slugs + references of the [`RedFixtureKind::ProductionFlip`] fixtures the
+/// `gauntlet-red-fixtures-bite` lane must build under `--cfg gauntlet_red_fixture`
+/// and assert FAIL. Exposed so the lane and `cargo xtask prove-gates-bite` stay
+/// in lockstep with the registry (no hand-maintained second list).
+pub(crate) fn production_flip_fixtures() -> Vec<&'static str> {
+    GATES
+        .iter()
+        .filter(|g| g.has_blocking_authority)
+        .filter(|g| g.red_fixture_kind == Some(RedFixtureKind::ProductionFlip))
+        .filter_map(|g| g.red_fixture_test)
+        .collect()
+}
+
+/// Print the qualification ledger: each gate, whether it blocks, its red fixture
+/// kind, and a resolved/MISSING marker. Diagnostic only — `check` is the gate.
 pub(crate) fn report(repo_root: &Path) {
     println!(
         "gate-registry-check: ok ({} gate(s) registered)",
@@ -320,9 +503,14 @@ pub(crate) fn report(repo_root: &Path) {
             Some(reference) => {
                 let resolves = red_fixture_resolves(repo_root, reference).unwrap_or(false);
                 let marker = if resolves { "resolved" } else { "MISSING" };
+                let kind = match gate.red_fixture_kind {
+                    Some(RedFixtureKind::GateNegativePath) => "neg-path",
+                    Some(RedFixtureKind::ProductionFlip) => "prod-flip",
+                    None => "?",
+                };
                 let (file, test_fn) = split_reference(reference).unwrap_or((reference, "?"));
                 println!(
-                    "  - {} [{authority}] red fixture {file}::{test_fn} ({marker})",
+                    "  - {} [{authority}] {kind} red fixture {file}::{test_fn} ({marker})",
                     gate.slug
                 );
             }
@@ -331,8 +519,8 @@ pub(crate) fn report(repo_root: &Path) {
     }
     if !UNQUALIFIED_BLOCKING_GATES.is_empty() {
         println!(
-            "gate-registry-check: {} gate(s) block a real run but are NOT yet qualified (no red \
-             fixture); blocking authority withheld until each lands one:",
+            "gate-registry-check: {} gate(s) run today but are NOT yet qualified (no anti-vacuous \
+             red fixture); blocking authority withheld until each lands one:",
             UNQUALIFIED_BLOCKING_GATES.len()
         );
         for slug in UNQUALIFIED_BLOCKING_GATES {
@@ -350,10 +538,10 @@ mod tests {
         repo_root().expect("repo root resolves from tools/integrity")
     }
 
-    /// THE LAW: every blocking gate names an existing red fixture test.
+    /// THE LAW: every blocking gate names an existing, anti-vacuous red fixture.
     #[test]
     fn no_blocking_gate_without_a_red_fixture() {
-        check(&repo()).expect("every blocking gate must name an existing red fixture test");
+        check(&repo()).expect("every blocking gate must name an existing anti-vacuous red fixture");
     }
 
     /// Slugs are unique (a duplicate slug would let one gate's qualification mask
@@ -365,6 +553,19 @@ mod tests {
             assert!(
                 seen.insert(gate.slug),
                 "duplicate gate slug `{}`",
+                gate.slug
+            );
+        }
+    }
+
+    /// `red_fixture_test` and `red_fixture_kind` are present together or not at all.
+    #[test]
+    fn fixture_reference_and_kind_are_paired() {
+        for gate in GATES {
+            assert_eq!(
+                gate.red_fixture_test.is_some(),
+                gate.red_fixture_kind.is_some(),
+                "gate `{}`: red_fixture_test and red_fixture_kind must agree",
                 gate.slug
             );
         }
@@ -392,17 +593,43 @@ mod tests {
         .expect("a real test fn must resolve"));
     }
 
-    /// The honesty ledger: the unqualified-blocking list is now EMPTY — every
-    /// structural source lint earned a red fixture and flipped to blocking. Any
-    /// gate re-added to the list must still be recorded `has_blocking_authority:
-    /// false` with no red fixture (so we never quietly flip one to blocking
-    /// without giving it a red fixture and removing it from this list).
+    /// Anti-vacuity for the anti-vacuity scan: a GateNegativePath fixture whose
+    /// body has no failure-expecting assertion is rejected, and a ProductionFlip
+    /// fixture with no `gauntlet_red_fixture` branch is rejected.
+    #[test]
+    fn antivacuity_scan_rejects_green_only_fixtures() {
+        // The real S2 ProductionFlip fixture passes (it has a cfg branch).
+        assert!(red_fixture_is_antivacuous(
+            &repo(),
+            "crates/core/tests/gauntlet_s2_future_version_refusal.rs::future_version_mmap_index_is_canonical_refusal_not_silent_rebuild",
+            RedFixtureKind::ProductionFlip,
+        )
+        .expect("scan must not error")
+        .is_ok());
+        // ...but classifying a file WITHOUT a cfg branch as ProductionFlip fails.
+        assert!(red_fixture_is_antivacuous(
+            &repo(),
+            "crates/core/tests/gauntlet_fault_alloc_oom.rs::failing_alloc_arms_and_disarms_deterministically",
+            RedFixtureKind::ProductionFlip,
+        )
+        .expect("scan must not error")
+        .is_err());
+        // A real GateNegativePath fixture (asserts Err) passes.
+        assert!(red_fixture_is_antivacuous(
+            &repo(),
+            "tools/integrity/src/typed_waivers.rs::expired_waiver_fails",
+            RedFixtureKind::GateNegativePath,
+        )
+        .expect("scan must not error")
+        .is_ok());
+    }
+
+    /// The honesty ledger: every slug in the unqualified list is recorded
+    /// `has_blocking_authority: false` with NO red fixture, so we never quietly
+    /// flip one to blocking without giving it a qualified red fixture and removing
+    /// it from this list.
     #[test]
     fn unqualified_blocking_gates_are_recorded_nonblocking() {
-        assert!(
-            UNQUALIFIED_BLOCKING_GATES.is_empty(),
-            "every structural source lint now has a red fixture; the unqualified list must be empty"
-        );
         for slug in UNQUALIFIED_BLOCKING_GATES {
             let gate = GATES
                 .iter()
@@ -415,6 +642,24 @@ mod tests {
             assert!(
                 gate.red_fixture_test.is_none(),
                 "unqualified gate `{slug}` should not name a red fixture"
+            );
+        }
+    }
+
+    /// The bite lane's fixture list is derived from the registry and non-empty
+    /// (S2/S3/perf-alloc are ProductionFlip), so the lane can never silently
+    /// cover zero fixtures.
+    #[test]
+    fn production_flip_fixtures_are_derivable_and_nonempty() {
+        let fixtures = production_flip_fixtures();
+        assert!(
+            fixtures.len() >= 3,
+            "expected the S2/S3/perf-alloc ProductionFlip fixtures, got {fixtures:?}"
+        );
+        for reference in fixtures {
+            assert!(
+                red_fixture_resolves(&repo(), reference).expect("resolve"),
+                "ProductionFlip fixture `{reference}` must resolve"
             );
         }
     }

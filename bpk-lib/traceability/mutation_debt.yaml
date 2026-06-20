@@ -2,10 +2,15 @@
 #
 # GAUNT-MUT-4. This file is the canonical record of mutants that the repo-wide
 # mutation lane currently fails to catch. Each surviving mutant must be tracked
-# here as explicit, typed debt rather than silently tolerated. A structural check
-# (owned elsewhere — NOT defined here) consumes this file and reds the build when a
-# NEW missed mutant appears that is not recorded below. Mirrors the existing
-# allowlist patterns (e.g. FROZEN_FIXTURE_DEBT, dead_code_silencer_allowlist).
+# here as explicit, typed debt rather than silently tolerated. Consumers (split by
+# what each can see):
+#   LOCAL  — tools/integrity/src/mutation_debt.rs::check schema-validates every
+#            entry on each `structural-check` (fields present, ISO `first_seen`,
+#            `file` exists, `line` >= 1); a malformed or rotted entry reds the build.
+#   CLOUD  — the repo-wide mutation lane reds when a NEW surviving mutant appears
+#            that is not recorded below (needs the cloud missed.txt, so it cannot be
+#            a pure structural check; see decision-1 baseline).
+# Mirrors the existing allowlist patterns (e.g. FROZEN_FIXTURE_DEBT).
 #
 # Schema — a list of entries, each with the following fields:
 #   mutant:     str  - the cargo-mutants mutant description (the exact line printed
