@@ -609,6 +609,44 @@ jobs:
           bash ./scripts/run-in-devcontainer.sh
           'cargo test -p batpak --test fuzz_replay --features dangerous-test-hooks'
 
+  gauntlet-red-fixtures-bite:
+    # GAUNTLET-TQL — "prove the gates bite". The gate registry records each blocking
+    # gate's anti-vacuous red fixture; for ProductionFlip fixtures (S2/S3 durability
+    # sentinels + the perf-alloc budget) anti-vacuity means the fixture FAILS under
+    # `--cfg gauntlet_red_fixture` (its expectation flips to the illegal/old
+    # behavior). This lane rebuilds those fixtures under the cfg and asserts each
+    # test actually reds — a fixture that PASSES under the cfg has no real red half,
+    # so its gate's blocking authority is laundered. The fixture list comes from the
+    # registry (`batpak-integrity production-flip-fixtures`), so this lane and the
+    # registry can never drift. Runs every PR (gated only by rust-changed), like the
+    # fuzz-replay gate above.
+    name: Gauntlet — prove the gates bite
+    runs-on: ubuntu-latest
+    needs: [ci-fast-linux, rust-changed]
+    if: >-
+      needs.rust-changed.outputs.rust == 'true' &&
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.proof == 'verify' ||
+         github.event.inputs.proof == 'chaos' ||
+         github.event.inputs.proof == 'heavy')))
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: gauntlet-bite
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Prove every ProductionFlip red fixture reds under the cfg
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: >-
+          bash ./scripts/run-in-devcontainer.sh
+          'cargo xtask prove-gates-bite'
+
   fuzz-smoke:
     # Gauntlet Phase 0B — SENTINEL S1: cargo-fuzz smoke on `frame_decode`.
     #
