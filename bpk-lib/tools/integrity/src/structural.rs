@@ -59,6 +59,7 @@ pub(crate) fn run() -> Result<()> {
     complexity::check(&repo_root, &mut source_cache)?;
     wallclock::check(&repo_root, &mut source_cache)?;
     glob_coverage::check(&repo_root)?;
+    crate::mutation_debt::check(&repo_root)?;
     public_surface::check(&repo_root, &mut source_cache)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
     // Eleven blocking source lints ran over every production file; record the

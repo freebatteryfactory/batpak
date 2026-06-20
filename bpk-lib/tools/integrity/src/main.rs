@@ -41,6 +41,7 @@ mod glob_coverage;
 mod harness_lints;
 mod invariant_bridge;
 mod meta_gate;
+mod mutation_debt;
 mod public_surface;
 mod receipts;
 mod repo_ir;
@@ -80,9 +81,15 @@ enum CommandKind {
     /// (vacuous-pass) receipt; `SKIPPED_PACKAGED` receipts may carry zero counts.
     GauntletReceiptsPresent,
     /// Enforce the DO-178B tool-qualification law: no gate may have blocking
-    /// authority without naming an existing red-fixture test. Reports any
-    /// blocking gate that lacks a red fixture (a finding, not a failure path).
+    /// authority without naming an existing, anti-vacuous red-fixture test.
+    /// Reports any blocking gate that lacks a qualified red fixture.
     GateRegistryCheck,
+    /// Print the registry's `ProductionFlip` red-fixture test references (one per
+    /// line, `<file>::<test_fn>`). The `gauntlet-red-fixtures-bite` CI lane
+    /// consumes this list, rebuilds with `--cfg gauntlet_red_fixture`, and asserts
+    /// each test FAILS — proving the gates actually red in automation, not just in
+    /// source. This is the registry as the single source of truth for the lane.
+    ProductionFlipFixtures,
     /// Agent-safety meta-gate (P1-4): classify a `base..HEAD` diff and FAIL if it
     /// WEAKENS the assurance machinery without the required human approval. The
     /// pure classifier lives in `meta_gate.rs`; this subcommand is the
@@ -160,6 +167,12 @@ fn main() -> Result<()> {
             let repo_root = repo_surface::repo_root()?;
             gate_registry::check(&repo_root)?;
             gate_registry::report(&repo_root);
+            Ok(())
+        }
+        CommandKind::ProductionFlipFixtures => {
+            for reference in gate_registry::production_flip_fixtures() {
+                println!("{reference}");
+            }
             Ok(())
         }
         CommandKind::MetaGateCheck {

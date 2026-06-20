@@ -30,7 +30,16 @@ const KIND: EventKind = EventKind::custom(0xA, 1);
 /// Picked from a quick observed count with comfortable headroom; the point is
 /// that the gate exists and is deterministic, not that it is tight. If a change
 /// legitimately raises the floor, bump this with a one-line justification.
+#[cfg(not(gauntlet_red_fixture))]
 const MAX_ALLOCS_PER_APPEND: u64 = 4_096;
+
+/// RED fixture: under `--cfg gauntlet_red_fixture` the budget is flipped to 0, so
+/// a real steady-state `append` (which always allocates) EXCEEDS it and the
+/// assertions below fail. This proves the budget gate is anti-vacuous — it
+/// actually reds on an over-budget append — and is exercised by the
+/// `gauntlet-red-fixtures-bite` CI lane / `cargo xtask prove-gates-bite`.
+#[cfg(gauntlet_red_fixture)]
+const MAX_ALLOCS_PER_APPEND: u64 = 0;
 
 #[test]
 fn single_append_stays_under_allocation_budget() {
