@@ -40,13 +40,6 @@ struct HeaderDebt {
     target: &'static str,
 }
 
-struct OversizeDebt {
-    path: &'static str,
-    max_lines: usize,
-    reason: &'static str,
-    target: &'static str,
-}
-
 const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
     HeaderDebt {
         path: "tests/chaos.rs",
@@ -124,8 +117,6 @@ const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
         target: "split by seam during harness cleanup",
     },
 ];
-
-const OVERSIZE_HARNESS_ALLOWLIST: &[OversizeDebt] = &[];
 
 #[derive(Clone, Default)]
 struct LedgerEntry {
@@ -529,33 +520,26 @@ fn check_module_headers(
     Ok(())
 }
 
+/// Absolute, non-overridable line cap for a doctrine-bearing harness file. A
+/// harness over this cap must be split, never bumped: there is no per-file
+/// oversize allowlist anymore ("split, don't bump").
+const HARNESS_LINE_CAP: usize = 500;
+
 fn check_line_caps(
     repo_root: &Path,
     rust_files: &BTreeSet<String>,
     source_cache: &mut SourceCache,
 ) -> Result<()> {
-    let allowlist = oversize_allowlist()?;
     for path in rust_files {
         let resolved = resolve_repo_or_core_path(repo_root, path);
         let content = source_cache
             .read_to_string(&resolved)
             .with_context(|| format!("read {path}"))?;
         let line_count = content.lines().count();
-        if line_count <= 500 {
-            ensure(
-                !allowlist.contains_key(path.as_str()),
-                format!("oversize harness allowlist entry for `{path}` is stale; remove it"),
-            )?;
-            continue;
-        }
-        let Some(debt) = allowlist.get(path.as_str()) else {
-            bail!("doctrine-bearing harness `{path}` has {line_count} lines; split it or add an explicit capped debt entry");
-        };
         ensure(
-            line_count <= debt.max_lines,
+            line_count <= HARNESS_LINE_CAP,
             format!(
-                "oversize harness `{path}` grew from cap {} to {line_count} lines; split it before adding more",
-                debt.max_lines
+                "doctrine-bearing harness `{path}` has {line_count} lines, exceeding the absolute cap {HARNESS_LINE_CAP}; split it. The cap is non-overridable — there is no oversize harness allowlist anymore."
             ),
         )?;
     }
@@ -600,18 +584,6 @@ impl DebtEntry for HeaderDebt {
     }
 }
 
-impl DebtEntry for OversizeDebt {
-    fn path(&self) -> &'static str {
-        self.path
-    }
-    fn reason(&self) -> &'static str {
-        self.reason
-    }
-    fn target(&self) -> &'static str {
-        self.target
-    }
-}
-
 /// Validate a static debt allowlist: every entry must carry a non-empty reason
 /// and target, and no path may appear twice. `noun` names the debt kind in
 /// error messages (e.g. "header debt", "oversize debt").
@@ -639,10 +611,6 @@ fn validate_debt_allowlist<T: DebtEntry>(
 
 fn header_allowlist() -> Result<HashMap<&'static str, &'static HeaderDebt>> {
     validate_debt_allowlist(HEADER_DEBT_ALLOWLIST, "header debt")
-}
-
-fn oversize_allowlist() -> Result<HashMap<&'static str, &'static OversizeDebt>> {
-    validate_debt_allowlist(OVERSIZE_HARNESS_ALLOWLIST, "oversize debt")
 }
 
 fn tracked_set(repo_root: &Path, tracked_files: &[PathBuf]) -> BTreeSet<String> {
@@ -1230,18 +1198,29 @@ mod tests {
     }
 
     #[test]
-    fn oversize_debt_entry_reports_its_own_reason_and_target() {
-        // Pins the DebtEntry accessors for OversizeDebt: a stubbed accessor
-        // returning a constant would defeat the empty-reason/empty-target
-        // validation in `validate_debt_allowlist`.
-        let debt = OversizeDebt {
-            path: "tests/example.rs",
-            max_lines: 600,
-            reason: "documented split debt",
-            target: "split during next pass",
-        };
-        assert_eq!(DebtEntry::reason(&debt), "documented split debt");
-        assert_eq!(DebtEntry::target(&debt), "split during next pass");
-        assert_eq!(DebtEntry::path(&debt), "tests/example.rs");
+    fn check_line_caps_is_non_overridable_at_the_absolute_cap() {
+        // RED-equivalent: a harness one line over the cap is rejected, and there
+        // is no allowlist path to exempt it anymore ("split, don't bump").
+        let repo = temp_repo("line-cap-absolute");
+        let path = "tests/over_cap.rs";
+        fs::create_dir_all(repo.join("tests")).expect("create tests dir");
+        let over = (0..super::HARNESS_LINE_CAP + 1)
+            .map(|line| format!("// line {line}\n"))
+            .collect::<String>();
+        fs::write(repo.join(path), over).expect("write oversize harness");
+        let files = BTreeSet::from([path.to_owned()]);
+        let mut source_cache = SourceCache::new(&repo);
+        let err = check_line_caps(&repo, &files, &mut source_cache).expect_err("over-cap rejected");
+        assert!(err.to_string().contains("non-overridable"), "{err:?}");
+
+        // GREEN: a harness at exactly the cap passes.
+        let at_cap = (0..super::HARNESS_LINE_CAP)
+            .map(|line| format!("// line {line}\n"))
+            .collect::<String>();
+        fs::write(repo.join(path), at_cap).expect("write at-cap harness");
+        let mut fresh_cache = SourceCache::new(&repo);
+        check_line_caps(&repo, &files, &mut fresh_cache).expect("at-cap harness accepted");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
     }
 }

@@ -30,6 +30,7 @@ mod agent_doctor;
 mod agent_surface;
 mod architecture_ir;
 mod architecture_lints;
+mod assurance;
 mod ci_parity;
 mod doctor;
 mod evidence_audit;
@@ -42,6 +43,7 @@ mod source_cache;
 mod store_pub_fn_coverage;
 mod structural;
 mod traceability;
+mod typed_waivers;
 
 #[path = "../../shared/shared_checks.rs"]
 mod shared_checks;
@@ -178,7 +180,7 @@ RUN cargo install --locked cargo-mutants@27.0.0
         assert!(validate_observation_evidence(
             &repo_root,
             "OBS-TEST",
-            "tests/durable_frontier_waits.rs :: append_with_visible_gate_returns_after_publish",
+            "tests/durable_frontier_waits_append_gate.rs :: append_with_visible_gate_returns_after_publish",
         )
         .is_ok());
 

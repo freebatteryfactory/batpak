@@ -1,6 +1,6 @@
 use crate::repo_surface::{
-    core_benches_root, core_examples_root, core_src_root, core_tests_root, ensure, relative,
-    repo_root, rust_files, tracked_repo_files,
+    core_benches_root, core_examples_root, core_src_root, core_tests_root, ensure,
+    production_rust_roots, relative, repo_root, rust_files, tracked_repo_files,
 };
 use crate::shared_checks::{
     collect_dead_code_silencer_sites, line_carries_justification,
@@ -36,28 +36,29 @@ pub(crate) fn run() -> Result<()> {
     public_surface::check(&repo_root, &mut source_cache)?;
     ci_parity::check(&repo_root)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
+    crate::assurance::check(&repo_root)?;
+    crate::typed_waivers::check(&repo_root)?;
     println!("structural-check: ok");
     Ok(())
 }
 
-fn check_rust_file_size_pressure(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {
-    const DEFAULT_LINE_BUDGET: usize = 850;
-    const RATCHELED_OVER_BUDGET_FILES: &[(&str, usize)] = &[];
+/// Absolute, non-overridable production file cap. There is no per-file escape
+/// hatch and no per-file ceiling: a file over this cap must be split, never
+/// bumped ("split, don't bump"); a file under the cap passes regardless of its
+/// prior size.
+const DEFAULT_LINE_BUDGET: usize = 850;
 
+fn check_rust_file_size_pressure(repo_root: &Path, source_cache: &mut SourceCache) -> Result<()> {
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
         let content = source_cache.read_to_string(&path)?;
         let line_count = nonblank_line_count(&content);
-        let budget = RATCHELED_OVER_BUDGET_FILES
-            .iter()
-            .find_map(|(known_rel, budget)| (*known_rel == rel).then_some(*budget))
-            .unwrap_or(DEFAULT_LINE_BUDGET);
         ensure(
-            line_count <= budget,
+            line_count <= DEFAULT_LINE_BUDGET,
             format!(
-                "structural-check: production Rust file size pressure in {rel}: {line_count} lines exceeds budget {budget}.\n\
-                 New production files must stay at or below {DEFAULT_LINE_BUDGET} nonblank lines. \
-                 Existing oversized files are ratcheted at their current ceiling until they are extracted."
+                "structural-check: production Rust file size pressure in {rel}: {line_count} lines exceeds the absolute cap {DEFAULT_LINE_BUDGET}.\n\
+                 The cap is non-overridable: split the file, do not bump a budget. \
+                 There is no per-file size allowlist anymore."
             ),
         )?;
     }
@@ -69,7 +70,6 @@ fn check_inline_test_island_pressure(
     source_cache: &mut SourceCache,
 ) -> Result<()> {
     const DEFAULT_TEST_ISLAND_BUDGET: usize = 200;
-    const RATCHELED_OVER_BUDGET_TEST_ISLANDS: &[(&str, usize)] = &[];
 
     for path in production_rust_files(repo_root) {
         let rel = relative(repo_root, &path);
@@ -79,16 +79,12 @@ fn check_inline_test_island_pressure(
             .map_err(|err| anyhow!("parse inline test islands in {rel}: {err}"))?;
         let lines = content.lines().collect::<Vec<_>>();
         for island in inline_test_islands(&file, &lines) {
-            let budget = RATCHELED_OVER_BUDGET_TEST_ISLANDS
-                .iter()
-                .find_map(|(known_rel, budget)| (*known_rel == rel).then_some(*budget))
-                .unwrap_or(DEFAULT_TEST_ISLAND_BUDGET);
             ensure(
-                island.nonblank_lines <= budget,
+                island.nonblank_lines <= DEFAULT_TEST_ISLAND_BUDGET,
                 format!(
-                    "structural-check: oversized inline `mod tests` island in {rel}:{}-{} has {} nonblank lines, exceeding budget {budget}.\n\
-                     New inline test islands in production src files must stay at or below {DEFAULT_TEST_ISLAND_BUDGET} nonblank lines. \
-                     Existing oversized islands are ratcheted at their current ceiling; extract growth into integration tests or focused test modules.",
+                    "structural-check: oversized inline `mod tests` island in {rel}:{}-{} has {} nonblank lines, exceeding the absolute cap {DEFAULT_TEST_ISLAND_BUDGET}.\n\
+                     The cap is non-overridable: extract growth into integration tests or focused test modules. \
+                     There is no per-island size allowlist anymore.",
                     island.start_line,
                     island.end_line,
                     island.nonblank_lines
@@ -100,7 +96,7 @@ fn check_inline_test_island_pressure(
 }
 
 /// One `#[derive(EventPayload)]` type that does not yet have a frozen-decode
-/// fixture. Mirrors `harness_lints::HeaderDebt` / `OversizeDebt`: a pre-seeded
+/// fixture. Mirrors `harness_lints::HeaderDebt`: a pre-seeded
 /// allowlist so the warn-first lint lands green while the fixture backlog
 /// (Phase 2, `ART-EVENT-PAYLOAD-FROZEN-GOLDENS`) is burned down.
 struct FrozenFixtureDebt {
@@ -713,15 +709,8 @@ fn nonblank_line_count_in_range(lines: &[&str], start_line: usize, end_line: usi
 
 fn production_rust_files(repo_root: &Path) -> Vec<PathBuf> {
     let mut paths = rust_files(&core_src_root(repo_root));
-    for rel in [
-        "crates/macros/src",
-        "crates/macros-support/src",
-        "crates/syncbat-macros/src",
-        "crates/syncbat/src",
-        "crates/netbat/src",
-        "crates/hbat/src",
-    ] {
-        paths.extend(rust_files(&repo_root.join(rel)));
+    for root in production_rust_roots(repo_root) {
+        paths.extend(rust_files(&root));
     }
     paths
 }
@@ -734,7 +723,7 @@ mod tests {
     };
 
     #[test]
-    fn file_size_ratchet_counts_nonblank_lines() {
+    fn file_size_pressure_counts_nonblank_lines() {
         assert_eq!(nonblank_line_count("one\n\n  \n two\n"), 2);
     }
 

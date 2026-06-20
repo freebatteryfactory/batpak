@@ -22,19 +22,18 @@ fn fail(msg: &str) -> ! {
     panic!("build.rs invariant failed: {msg}")
 }
 
+/// Mirror of a `traceability/typed_waivers.yaml` entry, build-time view. The
+/// authoritative validator (expiry, owner, adr resolution, L4 sign-off) lives in
+/// `tools/integrity/src/typed_waivers.rs`; here build.rs only needs each
+/// `pub-item` waiver's `target` so the public-surface check can skip it without
+/// false-failing the build. `serde(default)` on unused fields keeps this view
+/// tolerant of the full schema.
 #[derive(Debug, Deserialize)]
-struct PubItemAllowlistEntry {
-    name: String,
-    justification: String,
+struct TypedWaiverEntry {
     #[serde(default)]
-    witness: Vec<PubItemAllowlistWitness>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PubItemAllowlistWitness {
-    path: String,
+    kind: String,
     #[serde(default)]
-    lines: Vec<u32>,
+    target: String,
 }
 
 // build.rs runs before every cargo build/check/test. Cannot be skipped.
@@ -58,7 +57,7 @@ fn main() {
         println!("cargo:rerun-if-changed=../../tools/xtask/src/");
         println!("cargo:rerun-if-changed=../../tools/integrity/src/");
         println!("cargo:rerun-if-changed=../../traceability/dead_code_silencer_allowlist.yaml");
-        println!("cargo:rerun-if-changed=../../traceability/pub_item_allowlist.yaml");
+        println!("cargo:rerun-if-changed=../../traceability/typed_waivers.yaml");
         println!("cargo:rerun-if-changed=../../traceability/invariants.yaml");
         println!("cargo:rerun-if-changed=../../../README.md");
         println!("cargo:rerun-if-changed=../../../MODEL.md");
@@ -98,7 +97,7 @@ fn repo_invariant_surface_available() -> bool {
     [
         repo_root.join("Cargo.toml"),
         repo_root.join("traceability/dead_code_silencer_allowlist.yaml"),
-        repo_root.join("traceability/pub_item_allowlist.yaml"),
+        repo_root.join("traceability/typed_waivers.yaml"),
         repo_root.join("traceability/invariants.yaml"),
         repo_root.join("tools/xtask/src"),
         repo_root.join("tools/integrity/src"),
@@ -783,62 +782,16 @@ impl Visit<'_> for StoreConfigFieldAccessCollector<'_> {
 
 /// Public-surface post-mortem defense: every public item in src/ must have at least
 /// one real path-position reference in a test file (verified via AST walk, not
-/// substring match). Allowlisted items must declare a `witness:` path that the
-/// AST walker confirms contains a real reference — a bogus witness fails the
-/// build. LAW-003 (No Orphan Infrastructure), FM-007 (Island Syndrome).
+/// substring match). The only exemption is a typed `pub-item` waiver in
+/// `traceability/typed_waivers.yaml`; the authoritative waiver validation
+/// (expiry, owner, adr, L4 sign-off) lives in
+/// `tools/integrity/src/typed_waivers.rs`. LAW-003 (No Orphan Infrastructure),
+/// FM-007 (Island Syndrome).
 fn check_pub_items_have_tests() {
-    let allowlist = load_pub_item_allowlist();
-    let allowed_names: BTreeSet<&str> = allowlist.iter().map(|entry| entry.name.as_str()).collect();
-
-    // Validate every allowlist entry's witness paths via the AST walker. A
-    // single real reference in the referenced file is sufficient. Bogus
-    // witnesses (path missing, file does not reference the item) fail here.
-    for entry in &allowlist {
-        if entry.witness.is_empty() {
-            fail(&format!(
-                "pub_item_allowlist entry `{}` must declare at least one `witness:` path pointing at a test that uses the item; narrative `justification:` is supplementary, not load-bearing",
-                entry.name
-            ));
-        }
-        for witness in &entry.witness {
-            if !witness.path.starts_with("tests/")
-                && !witness.path.starts_with("crates/core/tests/")
-            {
-                fail(&format!(
-                    "pub_item_allowlist entry `{}` witness `{}` must point at a file under tests/, not production code",
-                    entry.name, witness.path
-                ));
-            }
-            if witness.lines.is_empty() {
-                fail(&format!(
-                    "pub_item_allowlist entry `{}` witness `{}` must include at least one concrete line hint",
-                    entry.name, witness.path
-                ));
-            }
-            let witness_path =
-                shared_checks::resolve_repo_or_core_path(&repo_root(), Path::new(&witness.path));
-            let content = match fs::read_to_string(&witness_path) {
-                Ok(c) => c,
-                Err(err) => fail(&format!(
-                    "pub_item_allowlist entry `{}` witness `{}` cannot be read: {err}",
-                    entry.name, witness.path
-                )),
-            };
-            let file = match syn::parse_file(&content) {
-                Ok(f) => f,
-                Err(err) => fail(&format!(
-                    "pub_item_allowlist entry `{}` witness `{}` does not parse: {err}",
-                    entry.name, witness.path
-                )),
-            };
-            if !shared_checks::ast_references_name(&file, &entry.name) {
-                fail(&format!(
-                    "pub_item_allowlist entry `{}` witness `{}` (line hints {:?}) has no real path-position reference to the item; update the witness path or hide the item via `#[doc(hidden)]`",
-                    entry.name, witness.path, witness.lines,
-                ));
-            }
-        }
-    }
+    // After the P0-2 triage this set is empty: every public item is named
+    // directly in a test file, so the walk below proves coverage with zero
+    // waivers. A typed `pub-item` waiver target is skipped here.
+    let allowed_names: BTreeSet<String> = load_pub_item_waiver_targets();
 
     // Parse every test file once.
     let test_files: Vec<(std::path::PathBuf, syn::File)> = collect_rs_file_asts(Path::new("tests"));
@@ -858,7 +811,7 @@ fn check_pub_items_have_tests() {
             ))
         });
         for name in shared_checks::public_item_names(&file) {
-            if allowed_names.contains(name.as_str()) {
+            if allowed_names.contains(&name) {
                 continue;
             }
             let witnessed = test_files
@@ -867,7 +820,7 @@ fn check_pub_items_have_tests() {
             if !witnessed {
                 let (line, _col) = item_line_in_file(contents, &name);
                 fail(&format!(
-                    "pub item `{name}` declared at {path_str}:{line} has no test reference (checked {n} test files via AST); either add a real test use, add an allowlist entry with a `witness:` path that points to an actual use, or hide the item via `#[doc(hidden)]`.",
+                    "pub item `{name}` declared at {path_str}:{line} has no test reference (checked {n} test files via AST); either add a real test use, hide the item via `#[doc(hidden)]`, or — only if it genuinely cannot be directly test-named — add a typed `pub-item` waiver in traceability/typed_waivers.yaml.",
                     n = test_files.len(),
                 ));
             }
@@ -921,30 +874,25 @@ fn item_line_in_file(contents: &str, name: &str) -> (usize, usize) {
     (0, 0)
 }
 
-fn load_pub_item_allowlist() -> Vec<PubItemAllowlistEntry> {
+/// Build-time view of the typed-waiver targets for the `pub-item` gate kind. A
+/// missing file means zero waivers (the desired end state). Full schema
+/// validation is the integrity gate's job (`typed_waivers::check`); build.rs only
+/// reads `target` for `kind: pub-item` so it can skip those names.
+fn load_pub_item_waiver_targets() -> BTreeSet<String> {
     let repo_root = repo_root();
-    let path = repo_root.join("traceability/pub_item_allowlist.yaml");
-    let contents = fs::read_to_string(&path)
-        .unwrap_or_else(|err| fail(&format!("failed to read {}: {err}", path.display())));
-    let entries: Vec<PubItemAllowlistEntry> = yaml_serde::from_str(&contents)
+    let path = repo_root.join("traceability/typed_waivers.yaml");
+    let contents = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return BTreeSet::new(),
+    };
+    let entries: Vec<TypedWaiverEntry> = yaml_serde::from_str(&contents)
         .unwrap_or_else(|err| fail(&format!("failed to parse {}: {err}", path.display())));
-    for entry in &entries {
-        if entry.name.trim().is_empty() {
-            fail(&format!(
-                "invalid {} entry: `name` must not be empty (justification: {})",
-                path.display(),
-                entry.justification
-            ));
-        }
-        if entry.justification.trim().is_empty() {
-            fail(&format!(
-                "invalid {} entry for `{}`: `justification` must not be empty",
-                path.display(),
-                entry.name
-            ));
-        }
-    }
     entries
+        .into_iter()
+        .filter(|entry| entry.kind == "pub-item")
+        .map(|entry| entry.target)
+        .filter(|target| !target.trim().is_empty())
+        .collect()
 }
 
 fn walk_rs_files(dir: &Path, check: &mut dyn FnMut(&Path, &str)) {
