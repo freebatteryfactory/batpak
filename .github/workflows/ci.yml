@@ -533,6 +533,11 @@ jobs:
         with:
           toolchain: nightly
           components: rust-src
+          # ASan/libFuzzer require a dynamically-linked (glibc) target: musl is
+          # statically linked (+crt-static) and the sanitizer refuses to link
+          # against it ("sanitizer is incompatible with statically linked
+          # libc"). Pin gnu explicitly so the target std is present.
+          targets: x86_64-unknown-linux-gnu
       - uses: taiki-e/install-action@56545b37b57562edd73171cb6c62cc509db4c34e # v2
         with:
           tool: cargo-fuzz@0.13.2
@@ -540,16 +545,20 @@ jobs:
         with:
           shared-key: fuzz-smoke
           workspaces: bpk-lib/fuzz
+      # cargo-fuzz defaults `--target` to the triple its own prebuilt binary was
+      # compiled for (via the `current_platform` crate), which the taiki-e
+      # install-action resolves to the statically-linked musl triple — fatal for
+      # ASan. Pin the gnu target on BOTH build and run so the sanitizer links.
       - name: Build frame_decode fuzz target
         working-directory: bpk-lib/fuzz
-        run: cargo +nightly fuzz build frame_decode
+        run: cargo +nightly fuzz build frame_decode --target x86_64-unknown-linux-gnu
       - name: Fuzz smoke (60s, RSS-bounded)
         working-directory: bpk-lib/fuzz
         # `corpus/frame_decode` seeds the run; libFuzzer also replays the RED
         # regression dir. -max_total_time caps the budget; -rss_limit_mb makes an
         # unbounded-allocation regression a hard crash.
         run: >-
-          cargo +nightly fuzz run frame_decode --
+          cargo +nightly fuzz run frame_decode --target x86_64-unknown-linux-gnu --
           -max_total_time=60
           -rss_limit_mb=2048
       - name: Upload fuzz crash artifacts on failure
