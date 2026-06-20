@@ -172,6 +172,35 @@ pub(crate) const GATES: &[Gate] = &[
         ),
         has_blocking_authority: true,
     },
+    // --- Phase-2 structural gates (blocking, qualified). ---
+    // Vacuous-glob killer (GAUNT-FAULT-3): a typo'd mutation-seam glob matches no
+    // tracked file -> 0 mutants -> vacuous PASS in cloud. Reds on a planted
+    // `crates/core/src/NONEXISTENT.rs` glob.
+    Gate {
+        slug: "mutation-glob-coverage",
+        red_fixture_test: Some(
+            "tools/integrity/src/structural_tests.rs::glob_coverage_rejects_nonexistent_mutation_glob",
+        ),
+        has_blocking_authority: true,
+    },
+    // Function-complexity gate (GAUNT-CPLX-6): syn-based per-fn line/nesting/
+    // cyclomatic budgets, ratcheted by traceability/complexity_ratchet.yaml.
+    Gate {
+        slug: "function-complexity",
+        red_fixture_test: Some(
+            "tools/integrity/src/structural_tests.rs::function_complexity_rejects_over_budget_function",
+        ),
+        has_blocking_authority: true,
+    },
+    // Wall-clock-in-correctness-tests detector (GAUNT-FLAKE-7): Instant::now()
+    // paired with an elapsed/Duration assert in a non-perf test, a flake source.
+    Gate {
+        slug: "no-wallclock-asserts",
+        red_fixture_test: Some(
+            "tools/integrity/src/structural_tests.rs::no_wallclock_asserts_rejects_elapsed_assertion",
+        ),
+        has_blocking_authority: true,
+    },
 ];
 
 /// Gates that block a real run today but are recorded as `has_blocking_authority:

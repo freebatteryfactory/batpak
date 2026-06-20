@@ -32,9 +32,11 @@ mod architecture_ir;
 mod architecture_lints;
 mod assurance;
 mod ci_parity;
+mod complexity;
 mod doctor;
 mod evidence_audit;
 mod gate_registry;
+mod glob_coverage;
 mod harness_lints;
 mod invariant_bridge;
 mod meta_gate;
@@ -47,6 +49,7 @@ mod store_pub_fn_coverage;
 mod structural;
 mod traceability;
 mod typed_waivers;
+mod wallclock;
 
 #[path = "../../shared/shared_checks.rs"]
 mod shared_checks;

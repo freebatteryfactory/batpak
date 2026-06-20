@@ -8,8 +8,8 @@ use crate::shared_checks::{
 };
 use crate::source_cache::SourceCache;
 use crate::{
-    agent_surface, architecture_lints, ci_parity, harness_lints, invariant_bridge, public_surface,
-    store_pub_fn_coverage,
+    agent_surface, architecture_lints, ci_parity, complexity, glob_coverage, harness_lints,
+    invariant_bridge, public_surface, store_pub_fn_coverage, wallclock,
 };
 use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeSet;
@@ -51,15 +51,18 @@ pub(crate) fn run() -> Result<()> {
     check_rust_file_size_pressure(&repo_root, &mut source_cache)?;
     check_inline_test_island_pressure(&repo_root, &mut source_cache)?;
     check_event_payload_frozen_fixtures(&repo_root, &mut source_cache)?;
+    complexity::check(&repo_root, &mut source_cache)?;
+    wallclock::check(&repo_root, &mut source_cache)?;
+    glob_coverage::check(&repo_root)?;
     public_surface::check(&repo_root, &mut source_cache)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
-    // Eight blocking source lints ran over every production file; record the
+    // Eleven blocking source lints ran over every production file; record the
     // real files-examined count and assertions (one structural lint per file).
     crate::receipts::record_pass(
         "structural-source-lints",
         source_files.iter().cloned().collect(),
         source_files.len(),
-        source_files.len().saturating_mul(8),
+        source_files.len().saturating_mul(11),
         started,
     )?;
 
@@ -832,12 +835,18 @@ fn nonblank_line_count_in_range(lines: &[&str], start_line: usize, end_line: usi
         .count()
 }
 
-fn production_rust_files(repo_root: &Path) -> Vec<PathBuf> {
+pub(crate) fn production_rust_files(repo_root: &Path) -> Vec<PathBuf> {
     let mut paths = rust_files(&core_src_root(repo_root));
     for root in production_rust_roots(repo_root) {
         paths.extend(rust_files(&root));
     }
     paths
+}
+
+/// True when `attrs` carries `#[cfg(test)]`. Shared with the complexity gate so
+/// both detectors skip the same test-only module surface.
+pub(crate) fn module_is_cfg_test(attrs: &[syn::Attribute]) -> bool {
+    is_cfg_test(attrs)
 }
 
 #[cfg(test)]
