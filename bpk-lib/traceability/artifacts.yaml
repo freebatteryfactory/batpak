@@ -622,6 +622,18 @@
   paths:
     - crates/core/tests/monad_laws.rs
     - crates/core/tests/outcome_combinators.rs
+- id: ART-PROJECTION-FUSION-LAW-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/projection_fusion_laws.rs
+- id: ART-HLC-SEMILATTICE-LAW-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/hlc_semilattice_laws.rs
+- id: ART-OUTCOME-EVENTKIND-LAW-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/outcome_eventkind_laws.rs
 - id: ART-HASH-CHAIN-TESTS
   kind: tests
   paths:

@@ -391,6 +391,22 @@
   statement: Public outcome and monadic combinators preserve their type-level success, retry, cancelled, and error law shapes under property tests.
   artifacts:
     - ART-COMBINATOR-LAW-TESTS
+- id: INV-PROJECTION-FUSION-EQUIVALENCE
+  statement: Folding multiple catamorphisms in one fused banana-split traversal equals folding each fold separately, for any generated event stream and any fold pair or triple, while reading the stream exactly once.
+  artifacts:
+    - ART-PROJECTION-FUSION-LAW-TESTS
+- id: INV-HLC-JOIN-SEMILATTICE
+  statement: The hybrid logical clock merge forms a bounded join-semilattice that is commutative, associative, idempotent, and bottomed at ORIGIN, with the dual meet behaving symmetrically and the lexicographic tiebreak preserved.
+  artifacts:
+    - ART-HLC-SEMILATTICE-LAW-TESTS
+- id: INV-OUTCOME-FUNCTOR-COMPOSITION
+  statement: Outcome map distributes over function composition through every variant including the Batch arm, Batch concatenation is an associative monoid with the empty batch as unit, and zip selects the maximum-priority variant of its two inputs.
+  artifacts:
+    - ART-OUTCOME-EVENTKIND-LAW-TESTS
+- id: INV-EVENTKIND-PARSE-ROUNDTRIP
+  statement: Every value built by the fallible EventKind try_custom parser decomposes back to its originating category and type id, and try_custom accepts exactly the inputs the strict const constructor would accept without panicking.
+  artifacts:
+    - ART-OUTCOME-EVENTKIND-LAW-TESTS
 - id: INV-HASH-CHAIN-INTEGRITY
   statement: Hash-chain tests preserve append-order integrity by detecting reordered, missing, or mutated event payload links.
   artifacts:
