@@ -1,5 +1,3 @@
-// justifies: pins NativeCache backend mechanics, anchors INV-CACHE-CAPABILITIES-EXPLICIT in src/store/projection/mod.rs
-#![allow(clippy::too_many_lines)]
 //! Direct ProjectionCache backend MECHANICS: the NoCache no-op contract and the
 //! built-in file-backed NativeCache (get/put round-trips, prefix deletes,
 //! reopen persistence, and the Store + NativeCache projection round-trip).

@@ -1,5 +1,3 @@
-// justifies: INV-TEST-PANIC-AS-ASSERTION, INV-MACRO-BOUNDED-CAST; perf-gate tests in tests/perf_gates_throughput_latency.rs stream benchmark timings to stderr, panic! on regressions, and narrow timing counters into smaller integer types.
-#![allow(clippy::panic, clippy::print_stderr, clippy::cast_possible_truncation)]
 //! PROVES: LAW-004 (Composition Over Construction — quadratic dogfooding) for the
 //! write-throughput, query-latency, and projection-replay catastrophic-regression
 //! gates, plus the multi-gate `evaluate_all` ordering/feedback contract.
@@ -19,6 +17,7 @@
 #[path = "support/mod.rs"]
 mod support;
 use batpak::store::{Store, StoreConfig};
+use std::io::Write;
 use std::time::Instant;
 use support::prelude::*;
 use tempfile::TempDir;
@@ -208,28 +207,31 @@ fn multi_gate_performance_feedback() {
     let denials = gates.evaluate_all(&ctx);
 
     // Report — this IS the benchmark feedback
-    eprintln!("\n  SELF-BENCHMARK REPORT ({n} events):");
-    eprintln!("    Write throughput:  {events_per_sec:.0} events/sec");
-    eprintln!("    Query latency:     {query_us:.1} µs/query");
-    eprintln!("    Projection replay: {projection_ms:.1} ms");
-
-    if denials.is_empty() {
-        eprintln!("    Result: ALL GATES PASSED");
-    } else {
-        eprintln!("    Result: {} GATES FAILED:", denials.len());
-        for d in &denials {
-            eprintln!("      [{gate}] {msg}", gate = d.gate, msg = d.message);
-            for (k, v) in &d.context {
-                eprintln!("        {k} = {v}");
-            }
+    let mut report = format!("\n  SELF-BENCHMARK REPORT ({n} events):");
+    report.push_str(&format!(
+        "\n    Write throughput:  {events_per_sec:.0} events/sec"
+    ));
+    report.push_str(&format!("\n    Query latency:     {query_us:.1} µs/query"));
+    report.push_str(&format!("\n    Projection replay: {projection_ms:.1} ms"));
+    for d in &denials {
+        report.push_str(&format!(
+            "\n      [{gate}] {msg}",
+            gate = d.gate,
+            msg = d.message
+        ));
+        for (k, v) in &d.context {
+            report.push_str(&format!("\n        {k} = {v}"));
         }
-        panic!(
-            "SELF-BENCHMARK FAILED: {} performance gate(s) denied.\n\
-             The denials above point to the likely investigation sites.\n\
-             This is the library using the shared guard primitives to catch gross regressions.",
-            denials.len()
-        );
     }
+    let _ = writeln!(std::io::stderr(), "{report}");
+
+    assert!(
+        denials.is_empty(),
+        "SELF-BENCHMARK FAILED: {} performance gate(s) denied.\n\
+         The denials above point to the likely investigation sites.\n\
+         This is the library using the shared guard primitives to catch gross regressions.{report}",
+        denials.len()
+    );
 
     store.close().expect("close");
 }
@@ -350,19 +352,22 @@ fn append_throughput_gate() {
     };
     let denials = gates.evaluate_all(&ctx);
 
-    eprintln!("\n  APPEND THROUGHPUT GATE ({n} events):");
-    eprintln!("    Throughput: {events_per_sec:.0} events/sec");
-
-    if !denials.is_empty() {
-        for d in &denials {
-            eprintln!("    DENIED: [{gate}] {msg}", gate = d.gate, msg = d.message);
-        }
-        panic!(
-            "APPEND THROUGHPUT GATE FAILED: {:.0} events/sec < 5000 minimum.\n\
-             Investigate: src/store/write/writer.rs handle_append.",
-            events_per_sec
-        );
+    let mut report = format!("\n  APPEND THROUGHPUT GATE ({n} events):");
+    report.push_str(&format!("\n    Throughput: {events_per_sec:.0} events/sec"));
+    for d in &denials {
+        report.push_str(&format!(
+            "\n    DENIED: [{gate}] {msg}",
+            gate = d.gate,
+            msg = d.message
+        ));
     }
+    let _ = writeln!(std::io::stderr(), "{report}");
+
+    assert!(
+        denials.is_empty(),
+        "APPEND THROUGHPUT GATE FAILED: {events_per_sec:.0} events/sec < 5000 minimum.\n\
+         Investigate: src/store/write/writer.rs handle_append.{report}"
+    );
 
     store.close().expect("close");
 }
@@ -402,19 +407,22 @@ fn projection_latency_gate() {
     };
     let denials = gates.evaluate_all(&ctx);
 
-    eprintln!("\n  PROJECTION LATENCY GATE ({n} events):");
-    eprintln!("    Replay: {projection_ms:.1} ms");
-
-    if !denials.is_empty() {
-        for d in &denials {
-            eprintln!("    DENIED: [{gate}] {msg}", gate = d.gate, msg = d.message);
-        }
-        panic!(
-            "PROJECTION LATENCY GATE FAILED: {:.1}ms > 5000ms max.\n\
-             Investigate: src/store/projection/flow.rs project(), src/store/segment/scan.rs.",
-            projection_ms
-        );
+    let mut report = format!("\n  PROJECTION LATENCY GATE ({n} events):");
+    report.push_str(&format!("\n    Replay: {projection_ms:.1} ms"));
+    for d in &denials {
+        report.push_str(&format!(
+            "\n    DENIED: [{gate}] {msg}",
+            gate = d.gate,
+            msg = d.message
+        ));
     }
+    let _ = writeln!(std::io::stderr(), "{report}");
+
+    assert!(
+        denials.is_empty(),
+        "PROJECTION LATENCY GATE FAILED: {projection_ms:.1}ms > 5000ms max.\n\
+         Investigate: src/store/projection/flow.rs project(), src/store/segment/scan.rs.{report}"
+    );
 
     store.close().expect("close");
 }
@@ -461,19 +469,22 @@ fn projection_cold_path_gate() {
     };
     let denials = gates.evaluate_all(&ctx);
 
-    eprintln!("\n  PROJECTION COLD-PATH GATE ({n} events):");
-    eprintln!("    First-pass replay: {projection_ms:.1} ms");
-
-    if !denials.is_empty() {
-        for d in &denials {
-            eprintln!("    DENIED: [{gate}] {msg}", gate = d.gate, msg = d.message);
-        }
-        panic!(
-            "PROJECTION COLD-PATH GATE FAILED: {:.1}ms > 50ms max.\n\
-             Investigate: src/store/projection/flow.rs, src/store/segment/scan.rs read_events_batch.",
-            projection_ms
-        );
+    let mut report = format!("\n  PROJECTION COLD-PATH GATE ({n} events):");
+    report.push_str(&format!("\n    First-pass replay: {projection_ms:.1} ms"));
+    for d in &denials {
+        report.push_str(&format!(
+            "\n    DENIED: [{gate}] {msg}",
+            gate = d.gate,
+            msg = d.message
+        ));
     }
+    let _ = writeln!(std::io::stderr(), "{report}");
+
+    assert!(
+        denials.is_empty(),
+        "PROJECTION COLD-PATH GATE FAILED: {projection_ms:.1}ms > 50ms max.\n\
+         Investigate: src/store/projection/flow.rs, src/store/segment/scan.rs read_events_batch.{report}"
+    );
 
     store.close().expect("close");
 }

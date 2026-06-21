@@ -16,7 +16,6 @@
 //! Extends the existing monad-law suite (left/right identity, associativity,
 //! functor identity) with the missing functor-composition half plus the monoid
 //! and parse laws that example tests never generalized.
-#![allow(clippy::wildcard_enum_match_arm)] // justifies: INV-TEST-PANIC-AS-ASSERTION; proptest assertions report counterexamples without enumerating every variant.
 
 use proptest::prelude::*;
 use support::prelude::*;
