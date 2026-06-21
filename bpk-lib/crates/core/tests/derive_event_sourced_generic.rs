@@ -1,5 +1,3 @@
-// justifies: INV-TEST-PANIC-AS-ASSERTION; test body in tests/derive_event_sourced_generic.rs exercises precondition-holds invariants; .unwrap is acceptable in test code where a panic is a test failure.
-#![allow(clippy::unwrap_used, clippy::panic)]
 //! Generic-projection coverage for `#[derive(EventSourced)]`.
 //! Harness pattern: Equivalence Harness (parity lane).
 //!
@@ -50,20 +48,26 @@ where
 
 #[test]
 fn generic_projection_compiles_and_projects() {
-    let (_dir, store) = small_segment_store().unwrap();
-    let coord = Coordinate::new("entity:generic", "scope:test").unwrap();
-    store.append_typed(&coord, &Bumped { amount: 2 }).unwrap();
-    store.append_typed(&coord, &Bumped { amount: 5 }).unwrap();
-    store.append_typed(&coord, &Bumped { amount: 11 }).unwrap();
+    let (_dir, store) = small_segment_store().expect("open small segment store");
+    let coord = Coordinate::new("entity:generic", "scope:test").expect("valid coord");
+    store
+        .append_typed(&coord, &Bumped { amount: 2 })
+        .expect("append amount 2");
+    store
+        .append_typed(&coord, &Bumped { amount: 5 })
+        .expect("append amount 5");
+    store
+        .append_typed(&coord, &Bumped { amount: 11 })
+        .expect("append amount 11");
 
     let projected = store
         .project::<Foo<u64>>("entity:generic", &Freshness::Consistent)
-        .unwrap()
+        .expect("project generic Foo")
         .expect("generic projection has state");
 
     assert_eq!(
         projected.state, 18u64,
         "PROPERTY: generic Foo<T=u64> replays through the store and accumulates"
     );
-    store.close().unwrap();
+    store.close().expect("close store");
 }
