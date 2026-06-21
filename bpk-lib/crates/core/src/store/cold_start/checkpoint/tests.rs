@@ -12,8 +12,8 @@ fn make_index(n: u64) -> StoreIndex {
     let idx = StoreIndex::new();
     for i in 0..n {
         let coord = Coordinate::new(format!("entity:{i}"), "test-scope").expect("valid coordinate");
-        let entity_id = idx.interner.intern(coord.entity());
-        let scope_id = idx.interner.intern(coord.scope());
+        let entity_id = idx.interner.intern(coord.entity()).expect("intern");
+        let scope_id = idx.interner.intern(coord.scope()).expect("intern");
         let entry = IndexEntry {
             event_id: (i + 1) as u128,
             correlation_id: (i + 1) as u128,
@@ -159,8 +159,8 @@ fn current_version_checkpoint_restores_receipt_extensions_directly() {
 
     let idx = StoreIndex::new();
     let coord = Coordinate::new("entity:checkpoint-ext", "scope:test").expect("coord");
-    let entity_id = idx.interner.intern(coord.entity());
-    let scope_id = idx.interner.intern(coord.scope());
+    let entity_id = idx.interner.intern(coord.entity()).expect("intern");
+    let scope_id = idx.interner.intern(coord.scope()).expect("intern");
     let mut receipt_extensions = BTreeMap::new();
     receipt_extensions.insert(
         ExtensionKey::new("app.audit").expect("valid extension key"),

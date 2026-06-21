@@ -234,6 +234,14 @@ pub enum StoreError {
         /// Actual entry count that exceeded the supported `u32` range.
         count: u64,
     },
+    /// The `u32` interner id domain is exhausted: every one of the ~4 billion
+    /// available [`InternId`](crate::store::index::interner::InternId) slots has
+    /// been allocated, so no further entity/scope string can be interned.
+    InternerExhausted {
+        /// The interned-string count at the point of exhaustion (the last id
+        /// successfully assigned before the domain overflowed).
+        count: u64,
+    },
     /// The data directory contains a file that does not match the expected
     /// segment-filename convention (`NNNNNN.fbat`).
     DataDirMalformed {
@@ -452,6 +460,7 @@ impl StoreError {
             | Self::InvalidPayloadVersion { .. }
             | Self::CorruptFrame { .. }
             | Self::SegmentTooManyEntries { .. }
+            | Self::InternerExhausted { .. }
             | Self::DataDirMalformed { .. }
             | Self::AncestryCorrupt { .. }
             | Self::RangeMalformed { .. }
@@ -599,6 +608,10 @@ impl std::fmt::Display for StoreError {
                 f,
                 "segment {segment_id} has {count} entries, exceeding the u32 footer capacity"
             ),
+            Self::InternerExhausted { count } => write!(
+                f,
+                "string interner has {count} entries, exhausting the u32 interner id domain"
+            ),
             Self::DataDirMalformed { path } => {
                 write!(
                     f,
@@ -729,6 +742,7 @@ impl std::error::Error for StoreError {
             | Self::InvalidPayloadVersion { .. }
             | Self::CorruptFrame { .. }
             | Self::SegmentTooManyEntries { .. }
+            | Self::InternerExhausted { .. }
             | Self::DataDirMalformed { .. }
             | Self::AncestryCorrupt { .. }
             | Self::RangeMalformed { .. }

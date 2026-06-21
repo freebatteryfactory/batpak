@@ -64,6 +64,21 @@ pub(super) struct CommitInternedIds {
     pub(super) scope_id: crate::store::index::interner::InternId,
 }
 
+impl CommitInternedIds {
+    /// Intern a coordinate's entity and scope strings into compact ids. Returns
+    /// [`crate::store::StoreError::InternerExhausted`] if the `u32` interner id
+    /// domain is exhausted.
+    pub(super) fn for_coord(
+        index: &crate::store::index::StoreIndex,
+        coord: &crate::coordinate::Coordinate,
+    ) -> Result<Self, crate::store::StoreError> {
+        Ok(Self {
+            entity_id: index.interner.intern(coord.entity())?,
+            scope_id: index.interner.intern(coord.scope())?,
+        })
+    }
+}
+
 pub(super) struct BatchCommitArtifacts {
     pub(super) entries: Vec<IndexEntry>,
     pub(super) sidx_entries: Vec<SidxEntry>,
@@ -182,23 +197,24 @@ impl WriterState<'_> {
         prepared: &PreparedBatch,
         staged: &[StagedCommittedEvent],
         receipts: &[AppendReceipt],
-    ) -> BatchCommitArtifacts {
+    ) -> Result<BatchCommitArtifacts, crate::store::StoreError> {
         let emit_envelope = self.reactor_subscribers.has_subscribers();
         let mut artifacts = BatchCommitArtifacts::with_capacity(staged.len());
-        let interned_ids = prepared.interned_ids(self.index);
+        let interned = prepared.interned_ids(self.index)?;
 
-        for ((item, staged), receipt) in prepared
+        for (((item, staged), receipt), ids) in prepared
             .items()
             .iter()
             .zip(staged.iter())
             .zip(receipts.iter())
+            .zip(interned.iter())
         {
             let committed = self.materialize_commit_artifacts(
                 staged,
                 receipt.disk_pos,
                 CommitInternedIds {
-                    entity_id: interned_ids.entity_id(item),
-                    scope_id: interned_ids.scope_id(item),
+                    entity_id: ids.entity_id,
+                    scope_id: ids.scope_id,
                 },
                 CommitFrameView {
                     payload_bytes: item.payload_bytes(),
@@ -210,7 +226,7 @@ impl WriterState<'_> {
             artifacts.push(committed);
         }
 
-        artifacts
+        Ok(artifacts)
     }
 
     pub(super) fn broadcast_commit_artifacts(

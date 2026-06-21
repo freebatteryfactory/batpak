@@ -139,6 +139,7 @@ fn one_of_every_variant() -> Vec<StoreError> {
             segment_id: 1,
             count: 1,
         },
+        StoreError::InternerExhausted { count: 1 },
         StoreError::DataDirMalformed {
             path: PathBuf::from("p"),
         },
@@ -245,6 +246,7 @@ fn one_of_every_variant() -> Vec<StoreError> {
             | StoreError::InvalidPayloadVersion { .. }
             | StoreError::CorruptFrame { .. }
             | StoreError::SegmentTooManyEntries { .. }
+            | StoreError::InternerExhausted { .. }
             | StoreError::DataDirMalformed { .. }
             | StoreError::AncestryCorrupt { .. }
             | StoreError::RangeMalformed { .. }

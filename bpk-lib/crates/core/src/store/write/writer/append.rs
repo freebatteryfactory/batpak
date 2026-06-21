@@ -183,15 +183,11 @@ impl WriterState<'_> {
             },
         );
         let emit_envelope = self.reactor_subscribers.has_subscribers();
-        let entity_id = self.index.interner.intern(coord.entity());
-        let scope_id = self.index.interner.intern(coord.scope());
+        let interned = CommitInternedIds::for_coord(self.index, coord)?;
         let committed = self.materialize_commit_artifacts(
             &staged,
             disk_pos,
-            CommitInternedIds {
-                entity_id,
-                scope_id,
-            },
+            interned,
             CommitFrameView {
                 payload_bytes: &event.payload,
                 flags: event.header.flags,

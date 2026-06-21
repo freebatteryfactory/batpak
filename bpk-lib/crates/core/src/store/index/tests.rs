@@ -86,8 +86,8 @@ fn clock_key_orders_by_wall_then_clock_then_uuid() {
 #[test]
 fn bulk_restore_keeps_entries_invisible_until_publish() {
     let index = StoreIndex::new();
-    let entity_id = index.interner.intern("entity:bulk");
-    let scope_id = index.interner.intern("scope:bulk");
+    let entity_id = index.interner.intern("entity:bulk").expect("intern");
+    let scope_id = index.interner.intern("scope:bulk").expect("intern");
     let entries = (0..3)
         .map(|seq| {
             let mut entry = make_entry(seq, "entity:bulk", "scope:bulk");
@@ -118,8 +118,8 @@ fn bulk_restore_keeps_entries_invisible_until_publish() {
 #[test]
 fn upgrade_with_visibility_snapshot_rejects_cancelled_ranges() {
     let index = StoreIndex::new();
-    let entity_id = index.interner.intern("entity:visibility");
-    let scope_id = index.interner.intern("scope:visibility");
+    let entity_id = index.interner.intern("entity:visibility").expect("intern");
+    let scope_id = index.interner.intern("scope:visibility").expect("intern");
     for seq in 0..3 {
         let mut entry = make_entry(seq, "entity:visibility", "scope:visibility");
         entry.entity_id = entity_id;
@@ -171,8 +171,8 @@ fn cancel_visibility_fence_only_records_lanes_inside_half_open_range() {
     //   seq 4 (lane 12): == end  -> EXCLUDED (kills `<=` and `==`)
     //   seq 5 (lane 13): > end   -> EXCLUDED (kills `>`)
     let index = StoreIndex::new();
-    let entity_id = index.interner.intern("entity:fence");
-    let scope_id = index.interner.intern("scope:fence");
+    let entity_id = index.interner.intern("entity:fence").expect("intern");
+    let scope_id = index.interner.intern("scope:fence").expect("intern");
     for (seq, lane) in [(2u64, 10u32), (3, 11), (4, 12), (5, 13)] {
         let mut entry = make_entry(seq, "entity:fence", "scope:fence");
         entry.entity_id = entity_id;
@@ -230,8 +230,8 @@ fn query_any_hits_after_excludes_wrong_lane_or_hidden_entries() {
     //   seq 1 (lane 9, visible): wrong lane              -> skipped
     //   seq 2 (lane 7, visible): right lane, visible     -> KEPT (control)
     let index = StoreIndex::new();
-    let entity_id = index.interner.intern("entity:lane");
-    let scope_id = index.interner.intern("scope:lane");
+    let entity_id = index.interner.intern("entity:lane").expect("intern");
+    let scope_id = index.interner.intern("scope:lane").expect("intern");
     for (seq, lane) in [(0u64, 7u32), (1, 9), (2, 7)] {
         let mut entry = make_entry(seq, "entity:lane", "scope:lane");
         entry.entity_id = entity_id;
@@ -268,8 +268,14 @@ fn projection_replay_plan_preserves_scan_watermark_when_tail_candidate_is_hidden
         topology: IndexTopology::entity_local(),
         ..IndexConfig::default()
     });
-    let entity_id = index.interner.intern("entity:projection-hidden-tail");
-    let scope_id = index.interner.intern("scope:projection-hidden-tail");
+    let entity_id = index
+        .interner
+        .intern("entity:projection-hidden-tail")
+        .expect("intern");
+    let scope_id = index
+        .interner
+        .intern("scope:projection-hidden-tail")
+        .expect("intern");
     for seq in 0..2 {
         let mut entry = make_entry(
             seq,

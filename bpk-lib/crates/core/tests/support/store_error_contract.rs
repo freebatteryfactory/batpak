@@ -93,6 +93,7 @@ pub fn classify(error: &StoreError) -> HandlingClass {
         | StoreError::SequenceGateViolation { .. }
         | StoreError::CorruptFrame { .. }
         | StoreError::SegmentTooManyEntries { .. }
+        | StoreError::InternerExhausted { .. }
         | StoreError::DataDirMalformed { .. }
         | StoreError::AncestryCorrupt { .. }
         | StoreError::IdempotencyFutureVersion { .. }
@@ -698,6 +699,15 @@ pub fn fail_closed_operational_cases() -> Vec<Case> {
             class: HandlingClass::FailClosedOperational,
             source_needle: None,
             display_needles: &["segment 12", "5000000000 entries", "u32 footer capacity"],
+        },
+        Case {
+            name: "interner_exhausted",
+            error: StoreError::InternerExhausted {
+                count: 4_294_967_295,
+            },
+            class: HandlingClass::FailClosedOperational,
+            source_needle: None,
+            display_needles: &["4294967295 entries", "u32 interner id domain"],
         },
         Case {
             name: "data_dir_malformed",

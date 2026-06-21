@@ -49,8 +49,8 @@ fn sample_index_entries(count: u64, segment_id: u64) -> (Vec<IndexEntry>, Vec<St
     let mut entries = Vec::new();
     for i in 0..count {
         let coord = Coordinate::new(format!("entity:{i}"), "scope:rebuild").expect("valid coord");
-        let entity_id = interner.intern(coord.entity());
-        let scope_id = interner.intern(coord.scope());
+        let entity_id = interner.intern(coord.entity()).expect("intern");
+        let scope_id = interner.intern(coord.scope()).expect("intern");
         entries.push(IndexEntry {
             event_id: (i + 1) as u128,
             correlation_id: (i + 1) as u128,
