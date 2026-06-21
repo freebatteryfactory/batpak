@@ -1,5 +1,3 @@
-// justifies: pins MaybeStale freshness-window decisions, anchors INV-CLOCK-NOW-US-LIVE in src/store/projection/flow.rs
-#![allow(clippy::too_many_lines)]
 //! Cache-FRESHNESS window semantics for projection reads: the watermark and
 //! age-window decisions that pick between serving a cached value and forcing a
 //! fresh replay under `Freshness::MaybeStale` and `Freshness::Consistent`.

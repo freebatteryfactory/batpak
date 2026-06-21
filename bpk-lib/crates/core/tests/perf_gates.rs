@@ -1,5 +1,3 @@
-// justifies: INV-TEST-PANIC-AS-ASSERTION, INV-MACRO-BOUNDED-CAST; lifecycle perf-gate tests in tests/perf_gates.rs panic! on regressions and narrow wall-clock timing counters into smaller integer types.
-#![allow(clippy::panic, clippy::cast_possible_truncation)]
 //! PROVES: LAW-004 (Composition Over Construction — quadratic dogfooding) for the
 //! store-lifecycle latency gates: open-only and close-only cold start across
 //! single-entity and mixed-entity 100K corpora, plus mmap-restore and
@@ -115,12 +113,12 @@ fn assert_lifecycle_under_threshold(
         event_count,
     };
     let proposal = Proposal::new(elapsed_ms);
-    if let Err(denial) = gates.evaluate(&ctx, proposal) {
-        panic!(
-            "LIFECYCLE PERF GATE FAILED: {denial}\nContext: {:?}",
-            denial.context
-        );
-    }
+    let outcome = gates.evaluate(&ctx, proposal);
+    assert!(
+        outcome.is_ok(),
+        "LIFECYCLE PERF GATE FAILED: {:?}",
+        outcome.err()
+    );
 }
 
 #[test]

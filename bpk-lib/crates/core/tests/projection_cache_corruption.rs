@@ -1,5 +1,3 @@
-// justifies: pins cache-corruption fall-back shapes, anchors INV-CACHE-CAPABILITIES-EXPLICIT in src/store/projection/flow.rs
-#![allow(clippy::too_many_lines)]
 //! Cache-CORRUPTION shapes for projection reads: garbage files, single-bit
 //! flips, metadata-only/truncated payloads, and a failing cache backend. Every
 //! shape must degrade to an honest replay (or a clean cache miss) instead of
