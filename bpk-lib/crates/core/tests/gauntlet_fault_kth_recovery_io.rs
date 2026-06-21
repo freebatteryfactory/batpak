@@ -59,10 +59,21 @@ fn reopen_with_kth_fault(dir: &TempDir, k: usize, mmap: bool, checkpoint: bool) 
             // query must not panic and visible history must be a subset of what
             // we wrote.
             let visible = store.query(&batpak::coordinate::Region::all()).len();
+            #[cfg(not(gauntlet_red_fixture))]
             assert!(
                 visible <= 256,
                 "PROPERTY: a consistently-opened store must not invent events \
                  beyond the seeded history (saw {visible})"
+            );
+            // RED fixture: under `--cfg gauntlet_red_fixture` assert the ILLEGAL
+            // invented-events outcome. The cured loader opens consistently
+            // (visible <= 256), so this assertion FAILS under the cfg — proving the
+            // gate detects a faulted cold start that fabricates events past the
+            // seeded history rather than passing vacuously.
+            #[cfg(gauntlet_red_fixture)]
+            assert!(
+                visible > 256,
+                "RED FIXTURE: a faulted cold start must not be asserted legal (saw {visible})"
             );
             store.close().expect("close recovered store");
         }
@@ -77,10 +88,18 @@ fn reopen_with_kth_fault(dir: &TempDir, k: usize, mmap: bool, checkpoint: bool) 
                     | StoreError::Serialization(_)
                     | StoreError::MmapFutureVersion { .. }
             );
+            #[cfg(not(gauntlet_red_fixture))]
             assert!(
                 typed,
                 "PROPERTY: a faulted cold start must refuse with a typed \
                  StoreError, got: {err:?}"
+            );
+            // RED fixture: assert the ILLEGAL untyped-failure outcome. The cured
+            // loader returns a typed StoreError, so this FAILS under the cfg.
+            #[cfg(gauntlet_red_fixture)]
+            assert!(
+                !typed,
+                "RED FIXTURE: a faulted cold start must not be asserted typed"
             );
         }
     }

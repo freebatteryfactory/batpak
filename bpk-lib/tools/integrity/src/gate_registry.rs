@@ -237,25 +237,29 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
-    // --- Phase-2 fault sentinels: run on every PR via `--all-features` nextest,
-    //     but NOT yet qualified — their tests assert "consistent OR typed error"
-    //     without a proven failing path, and the OOM test only exercises the
-    //     allocator shim, not a Store property. Authority WITHHELD (advisory) until
-    //     Phase B3 (recovery_oracle) subsumes them with an op-log-model red fixture
-    //     (a lost-commit / undead recovered state must fail). See
-    //     UNQUALIFIED_BLOCKING_GATES. ---
+    // --- Phase-2 Kth-I/O cold-start fault sentinel (blocking, qualified
+    //     ProductionFlip). A real Store is reopened with a Kth-recovery-I/O fault
+    //     armed on the read/scan/cold-start path; the recovered state must be a
+    //     legal terminal outcome (opens consistently with no invented events OR a
+    //     typed StoreError refusal, never a panic/untyped failure). Under
+    //     `gauntlet_red_fixture` the test asserts the illegal counterpart
+    //     (invented events / untyped failure), so its red half fails — proving the
+    //     gate bites. This injects on the REAL platform-fs read path, distinct from
+    //     `recovery-oracle`'s SimFs fsync-interposition matrix, so both are kept. ---
     Gate {
         slug: "fault-kth-io",
-        red_fixture_test: None,
-        red_fixture_kind: None,
-        has_blocking_authority: false,
+        red_fixture_test: Some(
+            "crates/core/tests/gauntlet_fault_kth_recovery_io.rs::kth_io_fault_on_scan_path_is_consistent_or_typed_error",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
+        has_blocking_authority: true,
     },
-    Gate {
-        slug: "fault-alloc-oom",
-        red_fixture_test: None,
-        red_fixture_kind: None,
-        has_blocking_authority: false,
-    },
+    // NOTE: `gauntlet_fault_alloc_oom` is intentionally NOT a registered gate. It
+    // is a unit test of the `FailingAlloc` shim (arms/disarms), not a gauntlet
+    // property: Rust aborts on allocation failure and batpak does not claim
+    // graceful-OOM (a real OOM gate would require pervasive fallible allocation,
+    // out of scope), so there is no honest blocking property to assert. The test
+    // stays as plain coverage; we do not pretend it is a gate.
     // --- Fuzz-replay gate (GAUNT-FUZZ-1, blocking, self-proving). The replay
     //     `#[test]` re-runs every committed corpus + regression input through the
     //     real `__fuzz::*` decode entry points and asserts none panics. Its
@@ -371,14 +375,14 @@ pub(crate) const GATES: &[Gate] = &[
 /// false` because they lack a qualified anti-vacuous RED fixture. This is a
 /// surfaced finding, NOT a fabricated qualification.
 ///
-/// `fault-kth-io` / `fault-alloc-oom` run on every PR (via `--all-features`
-/// nextest, so a failure fails CI) but their assertions ("consistent OR typed
-/// error"; the OOM test only proves the shim arms/disarms) have no proven failing
-/// path. They re-qualify in Phase B3 when the full `recovery_oracle` family
-/// subsumes them with an op-log-model red fixture (a lost-commit / exposed-
-/// uncommitted / undead recovered state must fail). Until then authority is
-/// honestly withheld.
-pub(crate) const UNQUALIFIED_BLOCKING_GATES: &[&str] = &["fault-kth-io", "fault-alloc-oom"];
+/// This list is EMPTY: `fault-kth-io` was CURED into a real blocking ProductionFlip
+/// gate (it now carries a `gauntlet_red_fixture` red branch asserting the illegal
+/// recovery counterpart), and `fault-alloc-oom` was DE-REGISTERED (it is a shim
+/// unit test, not a gauntlet property — Rust aborts on OOM and batpak does not
+/// claim graceful-OOM). So no gate sits in advisory limbo: every registered
+/// blocking gate is anti-vacuous and bite-proven. The list stays so the
+/// honesty-ledger test below keeps it accurate if a gate is ever withheld again.
+pub(crate) const UNQUALIFIED_BLOCKING_GATES: &[&str] = &[];
 
 /// Slugs of gates that emit an execution receipt the `gauntlet-receipts-present`
 /// check requires. Kept narrow to the gates whose receipts the integrity binary
