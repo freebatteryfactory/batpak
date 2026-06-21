@@ -169,8 +169,14 @@ impl StoreIndex {
 
         // Intern entity and scope strings. IDs stored in IndexEntry for
         // compact checkpoint serialization and future InternId-only index.
-        debug_assert_eq!(entry.entity_id, self.interner.intern(entry.coord.entity()));
-        debug_assert_eq!(entry.scope_id, self.interner.intern(entry.coord.scope()));
+        debug_assert!(self
+            .interner
+            .intern(entry.coord.entity())
+            .is_ok_and(|id| id == entry.entity_id));
+        debug_assert!(self
+            .interner
+            .intern(entry.coord.scope())
+            .is_ok_and(|id| id == entry.scope_id));
 
         let key = ClockKey {
             wall_ms: entry.wall_ms,
@@ -518,7 +524,7 @@ impl StoreIndex {
         // re-prepend the sentinel here (same shape cold-start uses).
         let mut interner_full = vec![String::new()];
         interner_full.extend(fresh.interner.to_snapshot());
-        self.interner.replace_from_full_snapshot(&interner_full);
+        self.interner.replace_from_full_snapshot(&interner_full)?;
 
         // Streams: drain fresh, insert into self.
         for (entity, stream) in fresh.streams.into_iter() {

@@ -63,10 +63,6 @@
   lines: 233
   nesting: 3
   cyclomatic: 21
-- key: "crates/core/src/store/write/writer/batch.rs::WriterState::handle_prepared_batch"
-  lines: 133
-  nesting: 3
-  cyclomatic: 19
 - key: "crates/core/src/store/write/writer.rs::WriterState::execute_command"
   lines: 129
   nesting: 3

@@ -207,7 +207,7 @@ impl<'a> RestorePlanner<'a> {
             hydrate_receipt_extensions(self.reader, &mut snapshot.entries)?;
         }
         let interner = StringInterner::new();
-        interner.replace_from_full_snapshot(&snapshot.interner_strings);
+        interner.replace_from_full_snapshot(&snapshot.interner_strings)?;
         let tail_entries = collect_tail_entries(
             &interner,
             self.reader,
@@ -275,7 +275,7 @@ pub(crate) fn open_index(
     let t_interner = clock.now_mono_ns();
     index
         .interner
-        .replace_from_full_snapshot(&plan.interner_strings);
+        .replace_from_full_snapshot(&plan.interner_strings)?;
     let phase_interner_us = elapsed_us(clock, t_interner);
 
     let t_restore = clock.now_mono_ns();
@@ -501,8 +501,8 @@ fn entry_from_scan(
     global_sequence: u64,
 ) -> Result<IndexEntry, StoreError> {
     let coord = Coordinate::new(&se.entity, &se.scope)?;
-    let entity_id = interner.intern(&se.entity);
-    let scope_id = interner.intern(&se.scope);
+    let entity_id = interner.intern(&se.entity)?;
+    let scope_id = interner.intern(&se.scope)?;
     let clock = se.header.position.sequence;
     use crate::id::EntityIdType;
     Ok(IndexEntry {
@@ -750,7 +750,9 @@ pub(crate) fn rebuild_from_segments(
 ) -> Result<(), StoreError> {
     let (_, entries, interner_strings, allocator_hint, chunk_count, _) =
         collect_rebuild_entries(reader, data_dir, NO_FAULT_INJECTOR)?;
-    index.interner.replace_from_full_snapshot(&interner_strings);
+    index
+        .interner
+        .replace_from_full_snapshot(&interner_strings)?;
     let routing = RoutingSummary::from_sorted_entries(&entries, chunk_count.max(1));
     index.restore_sorted_entries_with_routing(entries, allocator_hint, &routing)?;
     Ok(())

@@ -253,7 +253,8 @@ pub(crate) fn try_restore_mmap_index(
     let loaded = try_load_mmap_snapshot(data_dir, &clock)?;
     index
         .interner
-        .replace_from_full_snapshot(&loaded.interner_strings);
+        .replace_from_full_snapshot(&loaded.interner_strings)
+        .ok()?;
     index
         .restore_sorted_entries(loaded.entries, loaded.stored_allocator)
         .ok()?;
