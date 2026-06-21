@@ -1,5 +1,3 @@
-// justifies: INV-TEST-PANIC-AS-ASSERTION, ADR-0007; this control-plane smoke harness treats invariant violations as test failures; panic! is the assertion style throughout this file.
-#![allow(clippy::panic)]
 //! PROVES: the end-to-end control-plane surface -- ticket submit/reaction,
 //! try_submit, batch + outbox staging/flush, scan folding, generation-gated
 //! projection, visibility-fence commit and cancel, cursor worker shutdown, and
@@ -384,10 +382,9 @@ fn control_plane_surface_smoke() {
         capacity: 10,
     };
 
-    let store = match Arc::try_unwrap(store) {
-        Ok(store) => store,
-        Err(_) => panic!("PROPERTY: cursor worker should release the last Arc"),
-    };
+    let store = Arc::try_unwrap(store)
+        .map_err(|_| "shared")
+        .expect("PROPERTY: cursor worker should release the last Arc");
     let visible_before_close = store.by_fact(kind).len();
     store.close().expect("close");
     let native_cache_dir = dir.path().join("native-cache");

@@ -1,5 +1,3 @@
-// justifies: INV-TEST-PANIC-AS-ASSERTION; witness plumbing tests use panic/expect as ordinary integration-test assertions.
-#![allow(clippy::unwrap_used, clippy::panic)]
 //! Integration coverage for at-least-once witness delivery through cursor and
 //! typed-reactor handler surfaces.
 //! PROVES: INV-DELIVERY-AT-LEAST-ONCE-WITNESS.
