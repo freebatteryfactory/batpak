@@ -59,11 +59,11 @@
   lines: 120
   nesting: 7
   cyclomatic: 15
-- key: "crates/core/src/store/write/writer/append.rs::WriterState::handle_append"
+- key: "crates/core/src/store/write/writer/append.rs::WriterCore::handle_append"
   lines: 233
   nesting: 3
   cyclomatic: 21
-- key: "crates/core/src/store/write/writer.rs::WriterState::execute_command"
+- key: "crates/core/src/store/write/writer.rs::WriterCore::execute_command"
   lines: 129
   nesting: 3
   cyclomatic: 25

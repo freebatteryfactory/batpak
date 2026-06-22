@@ -3,7 +3,7 @@ use super::super::staging::{
 };
 use super::{
     segment, DagPosition, DiskPos, Event, EventHeader, EventKind, FenceLedger, FramePayloadRef,
-    HashChain, WriterState,
+    HashChain, WriterCore,
 };
 use crate::store::append::{checked_append_bytes, BatchAppendItem};
 use crate::store::stats::HlcPoint;
@@ -34,7 +34,7 @@ fn batch_failed(
     StoreError::batch_failed(item_index, source)
 }
 
-impl WriterState<'_> {
+impl WriterCore {
     /// STEPs 1-2: Validate batch size, total bytes, and reject CAS in batches.
     fn validate_batch(&self, items: &[BatchAppendItem]) -> Result<(), StoreError> {
         if items.len() > self.config.batch.max_size as usize {
@@ -549,7 +549,7 @@ impl WriterState<'_> {
                 event_id: crate::id::EventId::from(staged.event_id()),
                 sequence: staged.global_sequence(),
                 disk_pos: DiskPos {
-                    segment_id: *self.segment_id,
+                    segment_id: self.segment_id,
                     offset: 0,
                     length: 0,
                 },
@@ -587,7 +587,7 @@ impl WriterState<'_> {
             );
 
             receipt.disk_pos = DiskPos {
-                segment_id: *self.segment_id,
+                segment_id: self.segment_id,
                 offset,
                 length: u32::try_from(frame.len()).map_err(|_| {
                     batch_failed(

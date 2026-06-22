@@ -1,6 +1,6 @@
 use super::super::fanout::CommittedEventEnvelope;
 use super::super::staging::{PreparedBatch, StagedCommittedEvent};
-use super::{kind_to_raw, Notification, WriterState};
+use super::{kind_to_raw, Notification, WriterCore};
 use crate::store::index::{DiskPos, IndexEntry};
 use crate::store::segment::sidx::SidxEntry;
 use crate::store::stats::HlcPoint;
@@ -114,7 +114,7 @@ impl BatchCommitArtifacts {
     }
 }
 
-impl WriterState<'_> {
+impl WriterCore {
     pub(super) fn materialize_commit_artifacts(
         &self,
         staged: &StagedCommittedEvent,
@@ -200,7 +200,7 @@ impl WriterState<'_> {
     ) -> Result<BatchCommitArtifacts, crate::store::StoreError> {
         let emit_envelope = self.reactor_subscribers.has_subscribers();
         let mut artifacts = BatchCommitArtifacts::with_capacity(staged.len());
-        let interned = prepared.interned_ids(self.index)?;
+        let interned = prepared.interned_ids(&self.index)?;
 
         for (((item, staged), receipt), ids) in prepared
             .items()

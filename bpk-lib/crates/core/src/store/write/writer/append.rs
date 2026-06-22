@@ -2,7 +2,7 @@ use super::fence_runtime::FenceLedger;
 use super::publish::{CommitFrameView, CommitInternedIds};
 use super::{
     segment, Coordinate, DagPosition, DiskPos, Event, EventKind, FramePayloadRef, HashChain,
-    StoreError, WriterState,
+    StoreError, WriterCore,
 };
 use super::{StagedCommitMeta, StagedCommitTiming, StagedCommittedEvent};
 use crate::store::stats::HlcPoint;
@@ -24,7 +24,7 @@ pub(crate) struct AppendGuards {
     pub extensions: BTreeMap<ExtensionKey, EncodedBytes>,
 }
 
-impl WriterState<'_> {
+impl WriterCore {
     /// The 10-step commit protocol.
     pub(super) fn handle_append(
         &mut self,
@@ -110,7 +110,7 @@ impl WriterState<'_> {
             event_id: event.header.event_id,
             sequence: global_seq,
             disk_pos: DiskPos {
-                segment_id: *self.segment_id,
+                segment_id: self.segment_id,
                 offset: 0,
                 length: 0,
             },
@@ -132,7 +132,7 @@ impl WriterState<'_> {
         let frame = segment::frame_encode(&frame_payload)?;
 
         if self.maybe_rotate_segment()? {
-            info!(segment_id = *self.segment_id, "segment rotated");
+            info!(segment_id = self.segment_id, "segment rotated");
         }
 
         let offset = self.active_segment.write_frame(&frame)?;
@@ -150,7 +150,7 @@ impl WriterState<'_> {
         )?;
 
         let disk_pos = DiskPos {
-            segment_id: *self.segment_id,
+            segment_id: self.segment_id,
             offset,
             length: u32::try_from(frame.len())
                 .map_err(|_| StoreError::ser_msg("encoded frame length exceeds u32::MAX"))?,
@@ -183,7 +183,7 @@ impl WriterState<'_> {
             },
         );
         let emit_envelope = self.reactor_subscribers.has_subscribers();
-        let interned = CommitInternedIds::for_coord(self.index, coord)?;
+        let interned = CommitInternedIds::for_coord(&self.index, coord)?;
         let committed = self.materialize_commit_artifacts(
             &staged,
             disk_pos,
