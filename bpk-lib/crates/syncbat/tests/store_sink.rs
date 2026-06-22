@@ -1,7 +1,6 @@
 //! PROVES: INV-SYNCBAT-DISPATCH-RECEIPTS
 //! CATCHES: receipt-envelope persistence drift between syncbat receipts and batpak append receipts.
 //! SEEDED: tempfile-backed batpak stores and fixed operation descriptors.
-#![allow(clippy::panic)]
 
 use std::sync::Arc;
 
@@ -52,10 +51,9 @@ fn syncbat_key(field: &str) -> ExtensionKey {
 }
 
 fn close_store(store: Arc<Store>) {
-    let store = match Arc::try_unwrap(store) {
-        Ok(store) => store,
-        Err(_) => panic!("expected test to release all Store references before close"),
-    };
+    let store = Arc::try_unwrap(store)
+        .map_err(|_| ())
+        .expect("expected test to release all Store references before close");
     store.close().expect("close store");
 }
 

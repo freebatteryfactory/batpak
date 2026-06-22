@@ -1,7 +1,6 @@
 //! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
 //! CATCHES: duplicate operation names, lookup drift, and cache-register projection mismatch.
 //! SEEDED: fixed register descriptor sets.
-#![allow(clippy::panic)]
 
 use syncbat::{EffectClass, OperationDescriptor, Register};
 
@@ -81,10 +80,9 @@ fn register_as_map_exposes_inserted_operations() {
 
 #[test]
 fn duplicate_operation_names_are_rejected() {
-    let err = match Register::from_operations([ALPHA, ALPHA]) {
-        Ok(_) => panic!("expected duplicate rejection"),
-        Err(error) => error,
-    };
+    let err = Register::from_operations([ALPHA, ALPHA])
+        .map(|_| ())
+        .expect_err("expected duplicate rejection");
 
     assert!(matches!(
         err,

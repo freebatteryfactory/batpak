@@ -1,7 +1,6 @@
 //! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
 //! CATCHES: malformed catalog rows, invalid lifecycle transitions, tombstone reuse, and nondeterministic rebuilds.
 //! SEEDED: tempfile-backed batpak stores with fixed operation descriptors.
-#![allow(clippy::panic)]
 
 use std::sync::Arc;
 
@@ -83,10 +82,9 @@ fn other_coord() -> Coordinate {
 }
 
 fn close_store(store: Arc<Store>) {
-    let store = match Arc::try_unwrap(store) {
-        Ok(store) => store,
-        Err(_) => panic!("expected test to release all Store references before close"),
-    };
+    let store = Arc::try_unwrap(store)
+        .map_err(|_| ())
+        .expect("expected test to release all Store references before close");
     store.close().expect("close store");
 }
 
@@ -187,10 +185,10 @@ fn persist_operation_rejects_implicit_replacement_put() {
     let catalog = StoreRegisterCatalog::new(Arc::clone(&store), register_coord());
     catalog.persist_operation(&ALPHA).expect("persist alpha");
 
-    let err = match catalog.persist_operation(&ALPHA_V2) {
-        Ok(_) => panic!("expected implicit put replacement rejection"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .persist_operation(&ALPHA_V2)
+        .map(|_| ())
+        .expect_err("expected implicit put replacement rejection");
 
     assert!(matches!(
         err,
@@ -210,10 +208,10 @@ fn update_operation_rejects_missing_operation() {
     let (store, _dir) = test_store();
     let catalog = StoreRegisterCatalog::new(Arc::clone(&store), register_coord());
 
-    let err = match catalog.update_operation(&ALPHA_V2) {
-        Ok(_) => panic!("expected update-before-put rejection"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .update_operation(&ALPHA_V2)
+        .map(|_| ())
+        .expect_err("expected update-before-put rejection");
 
     assert!(matches!(
         err,
@@ -260,10 +258,9 @@ fn rebuild_rejects_put_after_tombstone() {
         )
         .expect("append put after tombstone");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected tombstone conflict"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected tombstone conflict");
 
     assert!(matches!(
         err,
@@ -287,10 +284,9 @@ fn rebuild_rejects_put_row_with_supersedes_field() {
         .append_typed(&register_coord(), &row)
         .expect("append malformed put");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected malformed put row"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected malformed put row");
 
     assert!(matches!(
         err,
@@ -310,10 +306,9 @@ fn rebuild_rejects_delete_before_put() {
         .append_typed(&register_coord(), &RegisterOperationRowV1::delete("alpha"))
         .expect("append delete before put");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected delete-before-put conflict"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected delete-before-put conflict");
 
     assert!(matches!(
         err,
@@ -360,10 +355,10 @@ fn delete_operation_rejects_after_supersession() {
     catalog
         .supersede_operation("alpha", &CHARLIE)
         .expect("supersede alpha");
-    let err = match catalog.delete_operation("alpha") {
-        Ok(_) => panic!("expected delete-after-supersede rejection"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .delete_operation("alpha")
+        .map(|_| ())
+        .expect_err("expected delete-after-supersede rejection");
 
     assert!(matches!(
         err,
@@ -383,10 +378,10 @@ fn rebuild_rejects_supersession_from_missing_source() {
     let (store, _dir) = test_store();
     let catalog = StoreRegisterCatalog::new(Arc::clone(&store), register_coord());
 
-    let err = match catalog.supersede_operation("alpha", &CHARLIE) {
-        Ok(_) => panic!("expected missing-source conflict"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .supersede_operation("alpha", &CHARLIE)
+        .map(|_| ())
+        .expect_err("expected missing-source conflict");
 
     assert!(matches!(
         err,
@@ -408,10 +403,10 @@ fn rebuild_rejects_supersession_after_delete_without_matching_replacement() {
     catalog.persist_operation(&ALPHA).expect("persist alpha");
     catalog.delete_operation("alpha").expect("delete alpha");
 
-    let err = match catalog.supersede_operation("alpha", &CHARLIE) {
-        Ok(_) => panic!("expected supersede-after-delete conflict"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .supersede_operation("alpha", &CHARLIE)
+        .map(|_| ())
+        .expect_err("expected supersede-after-delete conflict");
 
     assert!(matches!(
         err,
@@ -435,10 +430,9 @@ fn rebuild_rejects_supersede_row_missing_supersedes_name() {
         .append_typed(&register_coord(), &row)
         .expect("append malformed supersede");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected malformed supersede row"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected malformed supersede row");
 
     assert!(matches!(
         err,
@@ -459,10 +453,9 @@ fn rebuild_rejects_same_name_supersede_row() {
         .append_typed(&register_coord(), &row)
         .expect("append malformed same-name supersede");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected same-name supersede rejection"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected same-name supersede rejection");
 
     assert!(matches!(
         err,
@@ -485,10 +478,10 @@ fn supersede_operation_rejects_tombstoned_replacement_name() {
     catalog.delete_operation("charlie").expect("delete charlie");
     catalog.persist_operation(&ALPHA).expect("persist alpha");
 
-    let err = match catalog.supersede_operation("alpha", &CHARLIE) {
-        Ok(_) => panic!("expected tombstoned replacement conflict"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .supersede_operation("alpha", &CHARLIE)
+        .map(|_| ())
+        .expect_err("expected tombstoned replacement conflict");
 
     assert!(matches!(
         err,
@@ -512,10 +505,10 @@ fn supersede_operation_rejects_active_replacement_with_different_fields() {
         .persist_operation(&CHARLIE)
         .expect("persist charlie");
 
-    let err = match catalog.supersede_operation("alpha", &CHARLIE_V2) {
-        Ok(_) => panic!("expected replacement conflict"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .supersede_operation("alpha", &CHARLIE_V2)
+        .map(|_| ())
+        .expect_err("expected replacement conflict");
 
     assert!(matches!(
         err,
@@ -542,10 +535,9 @@ fn rebuild_rejects_malformed_catalog_payload() {
         )
         .expect("append malformed row");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected decode failure"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected decode failure");
 
     assert!(matches!(err, StoreRegisterCatalogError::Decode(_)));
     close_store(store);
@@ -560,10 +552,9 @@ fn rebuild_rejects_malformed_lifecycle_row_shape() {
         .append_typed(&register_coord(), &malformed_delete)
         .expect("append malformed delete");
 
-    let err = match rebuild_register_from_store(store.as_ref(), &register_coord()) {
-        Ok(_) => panic!("expected malformed lifecycle row"),
-        Err(error) => error,
-    };
+    let err = rebuild_register_from_store(store.as_ref(), &register_coord())
+        .map(|_| ())
+        .expect_err("expected malformed lifecycle row");
 
     assert!(matches!(
         err,
@@ -637,10 +628,10 @@ fn update_operation_rejects_tombstoned_operation() {
     catalog.persist_operation(&ALPHA).expect("persist alpha");
     catalog.delete_operation("alpha").expect("delete alpha");
 
-    let err = match catalog.update_operation(&ALPHA_V2) {
-        Ok(_) => panic!("expected update on tombstoned operation rejection"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .update_operation(&ALPHA_V2)
+        .map(|_| ())
+        .expect_err("expected update on tombstoned operation rejection");
 
     assert!(matches!(
         err,
@@ -662,10 +653,10 @@ fn delete_operation_rejects_already_deleted_operation() {
     catalog.persist_operation(&ALPHA).expect("persist alpha");
     catalog.delete_operation("alpha").expect("delete alpha");
 
-    let err = match catalog.delete_operation("alpha") {
-        Ok(_) => panic!("expected delete-on-deleted rejection"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .delete_operation("alpha")
+        .map(|_| ())
+        .expect_err("expected delete-on-deleted rejection");
 
     assert!(matches!(
         err,
@@ -689,10 +680,10 @@ fn supersede_operation_rejects_idempotent_duplicate() {
         .supersede_operation("alpha", &CHARLIE)
         .expect("supersede alpha");
 
-    let err = match catalog.supersede_operation("alpha", &CHARLIE) {
-        Ok(_) => panic!("expected duplicate supersede rejection"),
-        Err(error) => error,
-    };
+    let err = catalog
+        .supersede_operation("alpha", &CHARLIE)
+        .map(|_| ())
+        .expect_err("expected duplicate supersede rejection");
 
     assert!(matches!(
         err,

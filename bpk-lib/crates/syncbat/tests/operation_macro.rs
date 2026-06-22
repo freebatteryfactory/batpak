@@ -1,7 +1,6 @@
 //! PROVES: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC
 //! CATCHES: macro-generated descriptor/register item drift before runtime registration.
 //! SEEDED: fixed operation macro declarations.
-#![allow(clippy::panic)]
 
 use syncbat::{Core, HandlerError, RuntimeError};
 
@@ -74,10 +73,10 @@ fn generated_register_function_maps_handler_failure() {
     register_failing(&mut builder).expect("register");
     let mut core = builder.build().expect("core builds");
 
-    let err = match core.invoke("failing", Vec::new()) {
-        Ok(_) => panic!("expected handler failure"),
-        Err(error) => error,
-    };
+    let err = core
+        .invoke("failing", Vec::new())
+        .map(|_| ())
+        .expect_err("expected handler failure");
 
     assert!(
         matches!(

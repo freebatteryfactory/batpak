@@ -1,7 +1,6 @@
 //! PROVES: INV-NETBAT-LINE-PROTOCOL-STABLE, INV-NETBAT-BOUNDARY-THIN
 //! CATCHES: TCP listener response-shape drift, limit accounting regressions, and shutdown-loop ownership bugs.
 //! SEEDED: localhost listeners with fixed request frames.
-#![allow(clippy::panic)]
 
 use netbat as nb;
 use std::io::{self, BufRead, BufReader, Write};
@@ -116,7 +115,13 @@ fn tcp_listener_enforces_request_limit_per_connection() {
         Ok(0) => true,
         Ok(_) => false,
         Err(error) if error.kind() == io::ErrorKind::ConnectionReset => true,
-        Err(error) => panic!("unexpected second-read error: {error}"),
+        Err(error) => {
+            assert!(
+                std::hint::black_box(false),
+                "unexpected second-read error: {error}"
+            );
+            unreachable!()
+        }
     };
 
     let stats = handle.join().expect("server thread joins");
