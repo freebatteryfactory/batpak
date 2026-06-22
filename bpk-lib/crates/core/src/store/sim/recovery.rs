@@ -17,17 +17,22 @@
 //! fault schedule, so the recovered op-set and the op-trace digest are identical
 //! across runs. `BATPAK_SEED=N` selects the seed.
 //!
-//! Scheduler note: the writer runs on the production [`ThreadSpawn`], NOT the
-//! cooperative [`super::SimScheduler`]. The writer's command loop blocks on its
-//! flume channel and `append`/`sync` block on the one-shot reply, so a single
-//! cooperative thread would deadlock at the first op (it would block inside the
-//! writer body and never return to feed it). The request/response protocol
-//! serializes the driver and the writer (the driver waits for each receipt
-//! before issuing the next op), so a real OS thread is still fully deterministic:
-//! the only fault source is the seeded [`SimFs`] schedule, consulted in a fixed
-//! order. See GAUNTLET_ISSUES.md.
+//! Scheduler note: this recovery oracle drives the writer on the production
+//! [`ThreadSpawn`] by design. The deadlock that once blocked a cooperative
+//! drive (the writer's command loop blocks on its flume channel, so a
+//! run-to-completion cooperative thread would never return to feed it) is now
+//! resolved by the cooperative [`WriterMode`] inline drive (#63): the writer is
+//! never spawned and is pumped at the reply funnel instead of run as a blocking
+//! loop. This oracle deliberately keeps the threaded path because its
+//! request/response protocol already serializes the driver and the writer (the
+//! driver waits for each receipt before issuing the next op), so a real OS
+//! thread is fully deterministic here — the only fault source is the seeded
+//! [`SimFs`] schedule, consulted in a fixed order. The cooperative inline drive
+//! is the substrate for the deterministic mutation/DST corpus (#64), where
+//! concurrent interleavings need a no-OS-thread, replayable writer.
 //!
 //! [`ThreadSpawn`]: crate::store::platform::spawn::ThreadSpawn
+//! [`WriterMode`]: crate::store::config::WriterMode
 
 use super::fs::SimFs;
 use super::seed_from_env;
