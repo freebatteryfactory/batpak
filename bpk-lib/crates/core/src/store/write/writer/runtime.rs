@@ -1,7 +1,7 @@
 use super::fence_runtime::CommandResult;
 use super::{
     ignore_closed_response_channel, Active, Receiver, RestartPolicy, Segment, StoreConfig,
-    StoreError, ValidatedStoreConfig, WriterCommand, WriterLoopPhase, WriterState,
+    StoreError, ValidatedStoreConfig, WriterCommand, WriterCore, WriterLoopPhase,
 };
 use crate::store::file_classification::StoreFileKind;
 use crate::store::index::StoreIndex;
@@ -9,16 +9,16 @@ use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct WriterRuntime<'a> {
     pub(super) rx: &'a Receiver<WriterCommand>,
-    pub(super) config: &'a StoreConfig,
-    pub(super) validated_cfg: &'a ValidatedStoreConfig,
-    pub(super) index: &'a StoreIndex,
-    pub(super) subscribers: &'a super::SubscriberList,
-    pub(super) reactor_subscribers: &'a super::ReactorSubscriberList,
-    pub(super) reader: &'a Arc<crate::store::segment::scan::Reader>,
-    pub(super) watermark_handle: &'a super::WatermarkAdvanceHandle,
+    pub(super) config: Arc<StoreConfig>,
+    pub(super) validated_cfg: Arc<ValidatedStoreConfig>,
+    pub(super) index: Arc<StoreIndex>,
+    pub(super) subscribers: Arc<super::SubscriberList>,
+    pub(super) reactor_subscribers: Arc<super::ReactorSubscriberList>,
+    pub(super) reader: Arc<crate::store::segment::scan::Reader>,
+    pub(super) watermark_handle: super::WatermarkAdvanceHandle,
 }
 
 pub(super) fn writer_thread_name(data_dir: &Path) -> String {
@@ -50,7 +50,7 @@ struct LoopOutcome {
 /// outside catch_unwind. Segments are re-created on restart since the
 /// previous one is dropped during unwind.
 pub(super) fn writer_thread_main(
-    runtime: WriterRuntime<'_>,
+    runtime: &WriterRuntime<'_>,
     initial_segment: Segment<Active>,
     initial_segment_id: u64,
 ) {
@@ -60,22 +60,9 @@ pub(super) fn writer_thread_main(
     let mut window_start = runtime.validated_cfg.now_mono_ns();
 
     loop {
-        let rdr = Arc::clone(runtime.reader);
+        let loop_runtime = runtime.clone();
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            writer_loop(
-                WriterRuntime {
-                    rx: runtime.rx,
-                    config: runtime.config,
-                    validated_cfg: runtime.validated_cfg,
-                    index: runtime.index,
-                    subscribers: runtime.subscribers,
-                    reactor_subscribers: runtime.reactor_subscribers,
-                    reader: &rdr,
-                    watermark_handle: runtime.watermark_handle,
-                },
-                segment,
-                seg_id,
-            );
+            writer_loop(loop_runtime, segment, seg_id);
         }));
 
         match result {
@@ -161,7 +148,7 @@ pub(super) fn writer_thread_main(
                         return;
                     }
                 };
-                segment = match recreate_restart_segment(&runtime, seg_id) {
+                segment = match recreate_restart_segment(runtime, seg_id) {
                     Some(s) => s,
                     None => return,
                 };
@@ -241,35 +228,32 @@ fn group_commit_drain_budget_remaining(drained: u32, extra_budget: u32) -> bool 
 
 /// The writer's main loop. Runs on the background thread.
 /// The spawn closure owns the Arcs; this function borrows them.
-fn writer_loop(
-    runtime: WriterRuntime<'_>,
-    mut active_segment: Segment<Active>,
-    mut segment_id: u64,
-) {
+fn writer_loop(runtime: WriterRuntime<'_>, active_segment: Segment<Active>, segment_id: u64) {
     let mut events_since_sync: u32 = 0;
 
-    let mut state = WriterState {
+    let rx = runtime.rx;
+    let config = Arc::clone(&runtime.config);
+    let validated_cfg = Arc::clone(&runtime.validated_cfg);
+
+    let mut state = WriterCore {
         index: runtime.index,
-        active_segment: &mut active_segment,
-        segment_id: &mut segment_id,
+        active_segment,
+        segment_id,
         config: runtime.config,
         runtime: runtime.validated_cfg,
         subscribers: runtime.subscribers,
         reactor_subscribers: runtime.reactor_subscribers,
-        reader: Arc::clone(runtime.reader),
-        watermark_handle: runtime.watermark_handle.clone(),
+        reader: runtime.reader,
+        watermark_handle: runtime.watermark_handle,
         sidx_collector: crate::store::segment::sidx::SidxEntryCollector::new(),
         fence_ledger: None,
     };
 
-    for cmd in runtime.rx.iter() {
+    for cmd in rx.iter() {
         let result = state.execute_command(WriterLoopPhase::Main, cmd);
         if let Some(respond) = result.shutdown_drain_respond {
-            let shutdown_result = drain_shutdown_queue(
-                &mut state,
-                runtime.rx,
-                runtime.validated_cfg.shutdown_drain_limit,
-            );
+            let shutdown_result =
+                drain_shutdown_queue(&mut state, rx, validated_cfg.shutdown_drain_limit);
             ignore_closed_response_channel(respond.send(shutdown_result));
             return;
         }
@@ -280,10 +264,10 @@ fn writer_loop(
         }
 
         if outcome.enter_group_commit_drain {
-            let extra_budget = runtime.validated_cfg.group_commit_drain_budget;
+            let extra_budget = validated_cfg.group_commit_drain_budget;
             let mut drained = 0u32;
             while group_commit_drain_budget_remaining(drained, extra_budget) {
-                let Ok(next_cmd) = runtime.rx.try_recv() else {
+                let Ok(next_cmd) = rx.try_recv() else {
                     break;
                 };
                 let drain_result =
@@ -300,7 +284,7 @@ fn writer_loop(
             }
         }
 
-        if events_since_sync >= runtime.config.sync.every_n_events {
+        if events_since_sync >= config.sync.every_n_events {
             if let Err(error) = state.sync_active_segment() {
                 tracing::error!("periodic sync failed: {error}");
             }
@@ -310,7 +294,7 @@ fn writer_loop(
 }
 
 fn settle_command_result(
-    state: &mut WriterState<'_>,
+    state: &mut WriterCore,
     events_since_sync: &mut u32,
     result: CommandResult,
 ) -> LoopOutcome {
@@ -334,7 +318,7 @@ fn settle_command_result(
 }
 
 fn drain_shutdown_queue(
-    state: &mut WriterState<'_>,
+    state: &mut WriterCore,
     rx: &Receiver<WriterCommand>,
     shutdown_drain_limit: usize,
 ) -> Result<(), StoreError> {

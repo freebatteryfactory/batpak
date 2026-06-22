@@ -176,15 +176,15 @@ impl WriterHandle {
                 config.writer.stack_size,
                 Box::new(move || {
                     writer_thread_main(
-                        WriterRuntime {
+                        &WriterRuntime {
                             rx: &rx,
-                            config: &cfg,
-                            validated_cfg: &validated,
-                            index: &idx,
-                            subscribers: &subs,
-                            reactor_subscribers: &reactor_subs,
-                            reader: &rdr,
-                            watermark_handle: &watermark_for_thread,
+                            config: cfg,
+                            validated_cfg: validated,
+                            index: idx,
+                            subscribers: subs,
+                            reactor_subscribers: reactor_subs,
+                            reader: rdr,
+                            watermark_handle: watermark_for_thread,
                         },
                         initial_segment,
                         initial_segment_id,
@@ -270,14 +270,14 @@ impl WriterHandle {
 }
 
 /// Writer's mutable runtime state, grouped to reduce handle_append param count.
-struct WriterState<'a> {
-    index: &'a StoreIndex,
-    active_segment: &'a mut Segment<Active>,
-    segment_id: &'a mut u64,
-    config: &'a StoreConfig,
-    runtime: &'a ValidatedStoreConfig,
-    subscribers: &'a SubscriberList,
-    reactor_subscribers: &'a ReactorSubscriberList,
+struct WriterCore {
+    index: Arc<StoreIndex>,
+    active_segment: Segment<Active>,
+    segment_id: u64,
+    config: Arc<StoreConfig>,
+    runtime: Arc<ValidatedStoreConfig>,
+    subscribers: Arc<SubscriberList>,
+    reactor_subscribers: Arc<ReactorSubscriberList>,
     /// Reader handle — updated on segment rotation so mmap dispatch is correct.
     reader: Arc<crate::store::segment::scan::Reader>,
     /// Shared frontier state for coherent watermark snapshots.
@@ -446,7 +446,7 @@ enum WriterLoopPhase {
     ShutdownDrain,
 }
 
-impl WriterState<'_> {
+impl WriterCore {
     fn execute_command(&mut self, phase: WriterLoopPhase, cmd: WriterCommand) -> CommandResult {
         match cmd {
             WriterCommand::BeginVisibilityFence { token, respond } => match phase {
@@ -600,9 +600,9 @@ impl WriterState<'_> {
             return Ok(false);
         }
         #[cfg(feature = "dangerous-test-hooks")]
-        let old_segment = *self.segment_id;
+        let old_segment = self.segment_id;
         #[cfg(feature = "dangerous-test-hooks")]
-        let new_segment = *self.segment_id + 1;
+        let new_segment = self.segment_id + 1;
         // Create + fsync the NEW segment FIRST, before touching the old segment
         // or the collector. `create_with_created_ns` performs the file create
         // plus the file/dir fsync (Batch F/C4), and is the only step here that
@@ -632,7 +632,7 @@ impl WriterState<'_> {
         )?;
         let new_active = Segment::<Active>::create_with_created_ns_on(
             &self.config.data_dir,
-            *self.segment_id + 1,
+            self.segment_id + 1,
             self.runtime.now_wall_ns(),
             self.config.fs(),
         )?;
@@ -662,11 +662,11 @@ impl WriterState<'_> {
             tracing::warn!("SIDX footer durability flush failed (non-fatal): {e}");
         }
         self.sidx_collector = crate::store::segment::sidx::SidxEntryCollector::new();
-        let old = std::mem::replace(self.active_segment, new_active);
+        let old = std::mem::replace(&mut self.active_segment, new_active);
         let _sealed = old.seal();
-        *self.segment_id += 1;
+        self.segment_id += 1;
         // Notify the reader of the new active segment so mmap dispatch is correct.
-        self.reader.set_active_segment(*self.segment_id);
+        self.reader.set_active_segment(self.segment_id);
         // Inject a crash during rotation AFTER in-memory state is fully rolled
         // forward (active segment swapped, id incremented, reader advanced), so a
         // returned injected error leaves writer state CONSISTENT — a real crash
