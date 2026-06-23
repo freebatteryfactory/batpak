@@ -9,7 +9,7 @@ use crate::contract::plan::{
     AdmittedRequirement, BoundaryPlan, BoundaryRequirement, BoundarySpec, PlanError,
     BOUNDARY_PLAN_SCHEMA_VERSION,
 };
-use crate::contract::report::{BoundaryReport, BoundaryReportBody};
+use crate::contract::report::{BoundaryReport, BoundaryReportBody, ObservedFact};
 use crate::contract::support::{BackendProfile, BackendProfileSnapshot};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -208,6 +208,69 @@ struct PlanFingerprint<'a> {
     evidence: String,
 }
 
+/// One discrete step of a driven boundary run.
+///
+/// The steppable core (mirrors `WriterCore::drive_command -> DriveStep`): a run
+/// surfaces each observed fact, then exactly one terminal step (`Sealed` or
+/// `Faulted`). The crash-injection points the [`crate::__sim`] supervisor uses
+/// are the gaps BETWEEN steps — a sim crash before `Sealed` leaves no report,
+/// which reconciliation then classifies (§13).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RunStep {
+    /// The backend observed a fact; the run continues.
+    Observed(ObservedFact),
+    /// Terminal: the observed body sealed into a [`BoundaryReport`]. SEAL is
+    /// hashed + canonical; it is NOT persisted (the host appends it). Boxed so a
+    /// per-fact [`RunStep::Observed`] does not carry the sealed report's size.
+    Sealed(Box<BoundaryReport>),
+    /// Terminal: the run could not seal (canonical-encode failure). Stable detail.
+    Faulted(String),
+}
+
+/// A driven boundary run: pumped one [`RunStep`] at a time.
+///
+/// Created by [`BoundaryRunner::begin`]. Drive it with [`BoundaryRun::drive_step`]
+/// or, equivalently, `for step in run` (it is an [`Iterator`]). Prod pumps to the
+/// terminal step on the calling thread; the sim supervisor pumps the IDENTICAL
+/// core, injecting a crash between any two steps. Both share one core — there is
+/// no second execution path to drift.
+pub struct BoundaryRun {
+    facts: std::vec::IntoIter<ObservedFact>,
+    /// The observed body, taken at the seal step. `None` once terminal.
+    body: Option<BoundaryReportBody>,
+    backend: BackendId,
+}
+
+impl BoundaryRun {
+    /// Advance the run by one step. Yields each [`RunStep::Observed`] fact, then
+    /// the terminal [`RunStep::Sealed`]/[`RunStep::Faulted`], then `None`.
+    pub fn drive_step(&mut self) -> Option<RunStep> {
+        if let Some(fact) = self.facts.next() {
+            return Some(RunStep::Observed(fact));
+        }
+        // Facts exhausted: seal the body exactly once, then go terminal.
+        let body = self.body.take()?;
+        match body.body_hash() {
+            Ok(body_hash) => Some(RunStep::Sealed(Box::new(BoundaryReport {
+                body,
+                body_hash,
+            }))),
+            Err(error) => Some(RunStep::Faulted(format!(
+                "report sealing failed on {}: {error}",
+                self.backend
+            ))),
+        }
+    }
+}
+
+impl Iterator for BoundaryRun {
+    type Item = RunStep;
+    fn next(&mut self) -> Option<RunStep> {
+        self.drive_step()
+    }
+}
+
 /// Executes a plan via its bound backend, then SEALS the observed body.
 pub struct BoundaryRunner<'r> {
     registry: &'r BackendRegistry,
@@ -220,29 +283,57 @@ impl<'r> BoundaryRunner<'r> {
         Self { registry }
     }
 
-    /// Execute via the bound backend (which OBSERVES), then SEAL the observed
-    /// body = canonicalize + compute `body_hash` → [`BoundaryReport`]. SEAL
-    /// means hashed + canonical; it does NOT persist. The host appends it.
+    /// Begin a steppable run: the backend OBSERVES (executes) now; sealing is
+    /// deferred to the terminal [`RunStep`] so a sim crash can land before it.
     ///
     /// # Errors
-    /// Returns [`PlanError::UnknownBackend`] if the plan's bound backend is no
-    /// longer registered, or [`PlanError::ProfileInsufficient`] if sealing the
-    /// observed body fails to canonical-encode.
-    pub fn run(&self, plan: &BoundaryPlan) -> Result<BoundaryReport, PlanError> {
+    /// [`PlanError::UnknownBackend`] if the plan's bound backend is no longer
+    /// registered.
+    pub fn begin(&self, plan: &BoundaryPlan) -> Result<BoundaryRun, PlanError> {
         let backend =
             self.registry
                 .backend(&plan.backend)
                 .ok_or_else(|| PlanError::UnknownBackend {
                     backend: plan.backend.clone(),
                 })?;
-
         let body: BoundaryReportBody = backend.execute(plan);
-        let body_hash = body
-            .body_hash()
-            .map_err(|error| PlanError::ProfileInsufficient {
-                backend: plan.backend.clone(),
-                detail: format!("report sealing failed: {error}"),
-            })?;
-        Ok(BoundaryReport { body, body_hash })
+        Ok(BoundaryRun {
+            facts: body.observed.clone().into_iter(),
+            body: Some(body),
+            backend: plan.backend.clone(),
+        })
+    }
+
+    /// Execute via the bound backend (which OBSERVES), then SEAL the observed
+    /// body = canonicalize + compute `body_hash` → [`BoundaryReport`]. SEAL
+    /// means hashed + canonical; it does NOT persist. The host appends it.
+    ///
+    /// Pumps the same [`BoundaryRun`] core as the sim supervisor (one core, no
+    /// drift): drive to the terminal step and surface it.
+    ///
+    /// # Errors
+    /// Returns [`PlanError::UnknownBackend`] if the plan's bound backend is no
+    /// longer registered, or [`PlanError::ProfileInsufficient`] if sealing the
+    /// observed body fails to canonical-encode.
+    pub fn run(&self, plan: &BoundaryPlan) -> Result<BoundaryReport, PlanError> {
+        let mut run = self.begin(plan)?;
+        loop {
+            match run.drive_step() {
+                Some(RunStep::Observed(_)) => {}
+                Some(RunStep::Sealed(report)) => return Ok(*report),
+                Some(RunStep::Faulted(detail)) => {
+                    return Err(PlanError::ProfileInsufficient {
+                        backend: plan.backend.clone(),
+                        detail,
+                    })
+                }
+                None => {
+                    return Err(PlanError::ProfileInsufficient {
+                        backend: plan.backend.clone(),
+                        detail: "run ended with no terminal step".to_string(),
+                    })
+                }
+            }
+        }
     }
 }

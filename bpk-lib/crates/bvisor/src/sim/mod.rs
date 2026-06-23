@@ -20,6 +20,7 @@ pub(crate) mod backend;
 pub(crate) mod grid;
 pub(crate) mod ground_truth;
 pub(crate) mod reconciliation_matrix;
+pub(crate) mod supervisor;
 
 /// FNV-1a 64-bit offset basis, matching batpak's recovery-matrix digest
 /// (`crates/core/src/store/sim/recovery.rs`).
