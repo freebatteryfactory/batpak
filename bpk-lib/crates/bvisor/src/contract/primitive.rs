@@ -62,6 +62,25 @@ pub enum LoweringPhase {
     Teardown,
 }
 
+impl LoweringPhase {
+    /// A stable wire code for canonical schedule encoding (NEVER reorder — the
+    /// schedule digest `H_L` and the cross-path membrane depend on these being
+    /// frozen; the derived `Ord` governs *setup* order, this governs *bytes*).
+    #[must_use]
+    pub fn code(self) -> u8 {
+        match self {
+            Self::NamespaceCreate => 0,
+            Self::FsSetup => 1,
+            Self::PrivilegeDrop => 2,
+            Self::FdHygiene => 3,
+            Self::PolicyInstall => 4,
+            Self::Launch => 5,
+            Self::Observe => 6,
+            Self::Teardown => 7,
+        }
+    }
+}
+
 /// Stable identity of a [`ConfinePrimitive`] within a backend's primitive set.
 ///
 /// Used to express prerequisite and conflict relations between primitives and to
@@ -85,6 +104,37 @@ impl PrimitiveId {
 impl std::fmt::Display for PrimitiveId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// A primitive declaration's revision, paired with [`PrimitiveId`] to bind a
+/// schedule entry to the EXACT declaration it was compiled from.
+///
+/// `(PrimitiveId, PrimitiveVersion)` is the link between the pure declaration
+/// (here) and the effectful backend implementation: the backend resolves the pair
+/// to an impl, and the admission schedule membrane checks the declaration digest so
+/// a stale or forged declaration cannot masquerade behind a known id. Monotonic per
+/// id; a behavioural change to a primitive bumps it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PrimitiveVersion(u32);
+
+impl PrimitiveVersion {
+    /// Construct a version from its revision number.
+    #[must_use]
+    pub fn new(version: u32) -> Self {
+        Self(version)
+    }
+
+    /// The revision number (for canonical encoding + ordering).
+    #[must_use]
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for PrimitiveVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "v{}", self.0)
     }
 }
 
@@ -120,11 +170,22 @@ impl std::fmt::Display for Privilege {
 /// the module-level layering note for why `lower`/`rollback` arrive with the
 /// executor.
 ///
-/// Object-safe so a backend can hold its primitives as `&[&dyn ConfinePrimitive]`
-/// and feed them to [`compile_lowering_plan`] / [`classify_via_primitives`].
-pub trait ConfinePrimitive {
+/// Object-safe so a backend can hold its primitives as `&[&dyn PrimitiveDecl]`
+/// and feed them to [`crate::contract::lowering::compile_schedule`] /
+/// [`classify_via_primitives`].
+///
+/// This is the **pure declaration** half of the primitive split: identity, version,
+/// phase, coverage, prerequisites, conflicts, profile-predicated verdict, and
+/// evidence — all batpak-free and provable here. The effectful half (prepare /
+/// construct-visibility / scrub / install / launch / observe / terminate / recover)
+/// is backend-owned and resolved by `(id, version)`.
+pub trait PrimitiveDecl {
     /// This primitive's stable identity (for prerequisite/conflict relations).
     fn id(&self) -> PrimitiveId;
+
+    /// This declaration's revision; with [`PrimitiveDecl::id`] it binds a compiled
+    /// schedule entry to the exact declaration (the schedule membrane checks it).
+    fn version(&self) -> PrimitiveVersion;
 
     /// The requirement kinds this primitive contributes to confining. Used to
     /// select the primitives that classify a given requirement.
@@ -163,7 +224,7 @@ pub trait ConfinePrimitive {
 /// admitted. Order-independent (`meet` is commutative + associative).
 #[must_use]
 pub fn classify_via_primitives(
-    primitives: &[&dyn ConfinePrimitive],
+    primitives: &[&dyn PrimitiveDecl],
     req: &BoundaryRequirement,
     profile: &BackendProfile,
 ) -> SupportVerdict {
@@ -301,10 +362,10 @@ impl std::error::Error for LoweringError {}
 /// # Errors
 /// Any [`LoweringError`] above.
 pub fn compile_lowering_plan(
-    primitives: &[&dyn ConfinePrimitive],
+    primitives: &[&dyn PrimitiveDecl],
 ) -> Result<LoweringPlan, LoweringError> {
     // 1. Index by id; reject duplicates.
-    let mut by_id: BTreeMap<PrimitiveId, &dyn ConfinePrimitive> = BTreeMap::new();
+    let mut by_id: BTreeMap<PrimitiveId, &dyn PrimitiveDecl> = BTreeMap::new();
     for primitive in primitives {
         if by_id.insert(primitive.id(), *primitive).is_some() {
             return Err(LoweringError::DuplicatePrimitive { id: primitive.id() });
@@ -397,8 +458,8 @@ pub fn compile_lowering_plan(
 #[cfg(test)]
 mod primitive_tests {
     use super::{
-        classify_via_primitives, compile_lowering_plan, ConfinePrimitive, LoweringError,
-        LoweringPhase, LoweringPlan, PrimitiveId, Privilege,
+        classify_via_primitives, compile_lowering_plan, LoweringError, LoweringPhase, LoweringPlan,
+        PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
     };
     use crate::contract::capability::{Enforcement, EvidenceClaim, EvidenceSet, SupportVerdict};
     use crate::contract::host_control::HostControl;
@@ -409,6 +470,7 @@ mod primitive_tests {
     /// A minimal in-test primitive: fixed metadata + a fixed classify verdict.
     struct FakePrim {
         id: PrimitiveId,
+        version: PrimitiveVersion,
         covers: Vec<RequirementKind>,
         phase: LoweringPhase,
         prereqs: Vec<PrimitiveId>,
@@ -421,6 +483,7 @@ mod primitive_tests {
         fn new(id: &str, phase: LoweringPhase) -> Self {
             Self {
                 id: PrimitiveId::new(id),
+                version: PrimitiveVersion::new(1),
                 covers: Vec::new(),
                 phase,
                 prereqs: Vec::new(),
@@ -447,9 +510,12 @@ mod primitive_tests {
         }
     }
 
-    impl ConfinePrimitive for FakePrim {
+    impl PrimitiveDecl for FakePrim {
         fn id(&self) -> PrimitiveId {
             self.id.clone()
+        }
+        fn version(&self) -> PrimitiveVersion {
+            self.version
         }
         fn covers(&self) -> &[RequirementKind] {
             &self.covers

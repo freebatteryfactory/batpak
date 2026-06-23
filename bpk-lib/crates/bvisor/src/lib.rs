@@ -75,8 +75,8 @@ pub use contract::plan::{
     PlanError, Workload, BOUNDARY_PLAN_SCHEMA_VERSION,
 };
 pub use contract::primitive::{
-    classify_via_primitives, compile_lowering_plan, ConfinePrimitive, LoweringError, LoweringPhase,
-    LoweringPlan, PrimitiveId, Privilege,
+    classify_via_primitives, compile_lowering_plan, LoweringError, LoweringPhase, LoweringPlan,
+    PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
 };
 pub use contract::recovery::{
     reconcile, ArtifactFix, ArtifactReality, DispositionState, QuarantineRecord, RecoveryAction,
