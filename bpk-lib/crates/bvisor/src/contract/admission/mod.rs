@@ -40,7 +40,11 @@ pub use program::{
     NodeOp, Outputs, ProgramCertificate, ProgramError, Width, ADMISSION_PROGRAM_SCHEMA_VERSION,
     MAX_WIDTH,
 };
-pub use qf_bv::{budget_membrane_equivalence_smt, translate, QfBvError, TranslatedCircuit};
+pub use qf_bv::{
+    budget_membrane_equivalence_smt, budget_planted_disagreement_smt, smt_digest, translate,
+    verify_receipt, ProofGateError, ProofReceipt, ProofStatus, QfBvError, TranslatedCircuit,
+    ADMISSION_CIRCUIT_PROOF,
+};
 pub use shadow::{
     reference_admission, shadow_check, AdmissionDivergence, AdmissionInputs, AdmissionOutcome,
     BudgetInputs, RequirementInputs,
