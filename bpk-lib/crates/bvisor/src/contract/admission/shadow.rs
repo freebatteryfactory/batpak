@@ -42,13 +42,28 @@ pub struct RequirementInputs {
     pub conflict_forbidden: u64,
 }
 
-/// One budget dimension's request vs availability (the `B` slice).
+/// One budget dimension's full admission inputs (the per-dimension `B` slice): the
+/// request `(limit, derived-minimum, guarantee, evidence)` vs the backend's
+/// availability `(available, guarantee, evidence)`. The membrane passes the
+/// dimension iff `D ≤ L ∧ L ≤ A ∧ G_req ≤ G_avail ∧ E_req ⊆ E_avail` (the two-phase
+/// admission of [`crate::contract::budget`], flattened to a single pass bit here —
+/// the per-dimension reason selector is a later step).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BudgetPair {
-    /// Requested limit.
-    pub requested: u64,
-    /// Backend-available limit.
+pub struct BudgetInputs {
+    /// Requested limit `L_d`.
+    pub limit: u64,
+    /// Backend-available limit `A_d`.
     pub available: u64,
+    /// Derived structural minimum `D_d` (the intrinsic floor, `L_d ≥ D_d`).
+    pub derived_min: u64,
+    /// Required guarantee code `G_d`: `1` Mediated, `2` Enforced.
+    pub guarantee_required: u8,
+    /// Backend guarantee code `E_d`: `0` Unsupported, `1` Mediated, `2` Enforced.
+    pub guarantee_available: u8,
+    /// Required evidence bitset `Q_d`.
+    pub evidence_required: u64,
+    /// Backend-available evidence bitset `C_d`.
+    pub evidence_available: u64,
 }
 
 /// The normalized, immutable admission inputs — `(S,P,V,L,Q,B)` reduced to the
@@ -62,7 +77,7 @@ pub struct AdmissionInputs {
     /// Per-requirement inputs.
     pub requirements: Vec<RequirementInputs>,
     /// Per-dimension budget inputs.
-    pub budget: Vec<BudgetPair>,
+    pub budget: Vec<BudgetInputs>,
 }
 
 /// The canonical admission decision both paths must agree on.
@@ -142,10 +157,18 @@ fn reference_trace(inputs: &AdmissionInputs) -> Vec<bool> {
     let evidence = inputs.requirements.iter().all(|r| {
         (mask(r.evidence_required, FIELD_BITS) & !mask(r.evidence_available, FIELD_BITS)) == 0
     });
-    let budget = inputs
-        .budget
-        .iter()
-        .all(|d| mask(d.requested, FIELD_BITS) <= mask(d.available, FIELD_BITS));
+    let budget = inputs.budget.iter().all(|d| {
+        let limit = mask(d.limit, FIELD_BITS);
+        let available = mask(d.available, FIELD_BITS);
+        let derived = mask(d.derived_min, FIELD_BITS);
+        let g_req = mask(u64::from(d.guarantee_required), ENFORCEMENT_BITS);
+        let g_avail = mask(u64::from(d.guarantee_available), ENFORCEMENT_BITS);
+        let e_req = mask(d.evidence_required, FIELD_BITS);
+        let e_avail = mask(d.evidence_available, FIELD_BITS);
+        // Two-phase, flattened to one pass bit: intrinsic (D ≤ L) then adjudication
+        // (L ≤ A ∧ G_req ≤ G_avail ∧ Q ⊆ C).
+        derived <= limit && limit <= available && g_req <= g_avail && (e_req & !e_avail) == 0
+    });
     let conflict = inputs.requirements.iter().all(|r| {
         (mask(r.conflict_present, FIELD_BITS) & mask(r.conflict_forbidden, FIELD_BITS)) == 0
     });
@@ -224,17 +247,45 @@ fn encode(inputs: &AdmissionInputs) -> Vec<Lane> {
             .iter()
             .map(|r| encode_lane(r.evidence_available, field)),
     );
-    lanes.extend(
-        inputs
-            .budget
-            .iter()
-            .map(|d| encode_lane(d.requested, field)),
-    );
+    // Budget section, canonical lane order (must match `compile_admission`):
+    // limit, available, derived-min, guarantee-required, guarantee-available,
+    // evidence-required, evidence-available — each × dims.
+    lanes.extend(inputs.budget.iter().map(|d| encode_lane(d.limit, field)));
     lanes.extend(
         inputs
             .budget
             .iter()
             .map(|d| encode_lane(d.available, field)),
+    );
+    lanes.extend(
+        inputs
+            .budget
+            .iter()
+            .map(|d| encode_lane(d.derived_min, field)),
+    );
+    lanes.extend(
+        inputs
+            .budget
+            .iter()
+            .map(|d| encode_lane(u64::from(d.guarantee_required), enf)),
+    );
+    lanes.extend(
+        inputs
+            .budget
+            .iter()
+            .map(|d| encode_lane(u64::from(d.guarantee_available), enf)),
+    );
+    lanes.extend(
+        inputs
+            .budget
+            .iter()
+            .map(|d| encode_lane(d.evidence_required, field)),
+    );
+    lanes.extend(
+        inputs
+            .budget
+            .iter()
+            .map(|d| encode_lane(d.evidence_available, field)),
     );
     lanes.extend(
         inputs
@@ -297,7 +348,7 @@ pub fn shadow_check(inputs: &AdmissionInputs) -> Result<AdmissionOutcome, Admiss
 mod shadow_tests {
     use super::{
         decide, reference_admission, shadow_check, AdmissionDivergence, AdmissionInputs,
-        AdmissionOutcome, BudgetPair, RequirementInputs,
+        AdmissionOutcome, BudgetInputs, RequirementInputs,
     };
 
     /// One requirement, one budget dim, all membranes passing.
@@ -312,9 +363,14 @@ mod shadow_tests {
                 conflict_present: 0b0001,
                 conflict_forbidden: 0b0010, // disjoint
             }],
-            budget: vec![BudgetPair {
-                requested: 10,
+            budget: vec![BudgetInputs {
+                limit: 10,
                 available: 20,
+                derived_min: 0,
+                guarantee_required: 1,  // Mediated
+                guarantee_available: 2, // Enforced (>= required)
+                evidence_required: 0b0001,
+                evidence_available: 0b1111, // superset
             }],
         }
     }
@@ -348,8 +404,8 @@ mod shadow_tests {
         assert_refused_at(&evidence, 3);
 
         let mut budget = all_pass();
-        budget.budget[0].requested = 99;
-        budget.budget[0].available = 1;
+        budget.budget[0].limit = 99;
+        budget.budget[0].available = 1; // 99 > 1 -> capacity fail
         assert_refused_at(&budget, 4);
 
         let mut conflict = all_pass();
