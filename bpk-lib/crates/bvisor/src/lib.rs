@@ -28,9 +28,9 @@ mod sim;
 pub use backend::inert::InertBackend;
 
 pub use contract::admission::{
-    AdmissionProgram, CertNode, CompareRel, InputDecl, InputSlot, LimitViolation, LookupTable,
-    Node, NodeId, NodeOp, Outputs, ProgramCertificate, ProgramError, ProgramLimits, Width,
-    ADMISSION_PROGRAM_SCHEMA_VERSION, FROZEN_LIMITS, MAX_WIDTH,
+    evaluate, AdmissionProgram, CertNode, CompareRel, Decision, EvalError, InputDecl, InputSlot,
+    Lane, LimitViolation, LookupTable, Node, NodeId, NodeOp, Outputs, ProgramCertificate,
+    ProgramError, ProgramLimits, Width, ADMISSION_PROGRAM_SCHEMA_VERSION, FROZEN_LIMITS, MAX_WIDTH,
 };
 pub use contract::backend::Backend;
 pub use contract::capability::{
