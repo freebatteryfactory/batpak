@@ -58,7 +58,9 @@ pub use contract::recovery::{
     reconcile, ArtifactFix, ArtifactReality, DispositionState, QuarantineRecord, RecoveryAction,
     RecoveryClassification, RecoveryProbe, RunView,
 };
-pub use contract::registry::{BackendRegistry, BoundaryPlanner, BoundaryRunner};
+pub use contract::registry::{
+    BackendRegistry, BoundaryPlanner, BoundaryRun, BoundaryRunner, RunStep,
+};
 pub use contract::report::{
     BoundaryFinding, BoundaryReport, BoundaryReportBody, CaptureRefs, DeniedAttempt, ExitStatus,
     ObservedFact, Outcome, StagedArtifact, BOUNDARY_REPORT_SCHEMA_VERSION,
@@ -87,4 +89,5 @@ pub mod __sim {
         all_crash_boundaries, reconciliation_replay_seed, run_reconciliation_matrix, CrashBoundary,
         ReconCell, ReconClass, ReconViolation,
     };
+    pub use crate::sim::supervisor::{SimProbe, SimRun, SimSupervisor};
 }
