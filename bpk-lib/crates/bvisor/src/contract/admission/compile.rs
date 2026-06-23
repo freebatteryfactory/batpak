@@ -101,6 +101,16 @@ impl CircuitBuilder {
         self.push(NodeOp::BitsetSubset, vec![a, b], Width::one())
     }
 
+    /// Bitwise intersection `a & b` over two equal-width lanes → a width-`width` lane.
+    pub fn bitset_intersection(&mut self, a: NodeId, b: NodeId, width: Width) -> NodeId {
+        self.push(NodeOp::BitsetIntersection, vec![a, b], width)
+    }
+
+    /// Equality of two equal-width lanes → 1-bit predicate.
+    pub fn equal(&mut self, a: NodeId, b: NodeId) -> NodeId {
+        self.push(NodeOp::Eq, vec![a, b], Width::one())
+    }
+
     /// AND-reduce 1-bit lanes into a **balanced** tree (depth `⌈log₂ n⌉`). An empty
     /// slice reduces to the constant `1` (the identity of AND).
     pub fn and_reduce(&mut self, items: &[NodeId]) -> NodeId {
@@ -246,6 +256,49 @@ pub fn compile_support_membrane(reqs: usize) -> Result<AdmissionProgram, Program
     finish_single_membrane(builder, admit)
 }
 
+/// Compile the conflict-freedom membrane: admit iff no present-primitive set
+/// intersects its forbidden set (`present_i ∩ forbidden_i = ∅`), computed as
+/// `Eq(BitsetIntersection(present, forbidden), 0)` per requirement.
+///
+/// Reads `2·reqs` bitset lanes of `width` — the `reqs` present sets, then the
+/// `reqs` forbidden sets.
+///
+/// # Errors
+/// [`ProgramError`] only on `u32` node-index overflow, which a membrane never hits.
+pub fn compile_conflict_membrane(
+    reqs: usize,
+    width: Width,
+) -> Result<AdmissionProgram, ProgramError> {
+    let mut builder = CircuitBuilder::new();
+    let present: Vec<NodeId> = (0..reqs).map(|_| builder.input(width)).collect();
+    let forbidden: Vec<NodeId> = (0..reqs).map(|_| builder.input(width)).collect();
+    let zero = builder.constant(vec![0u8; usize::from(width.get()).div_ceil(8)], width);
+    let checks: Vec<NodeId> = present
+        .iter()
+        .zip(&forbidden)
+        .map(|(p, f)| {
+            let intersection = builder.bitset_intersection(*p, *f, width);
+            builder.equal(intersection, zero)
+        })
+        .collect();
+    let admit = builder.and_reduce(&checks);
+    finish_single_membrane(builder, admit)
+}
+
+/// Compile the profile-drift membrane: admit iff the planned backend-profile hash
+/// equals the live (re-probed) one — the run fails closed if the machine changed
+/// between admission and execution.
+///
+/// # Errors
+/// [`ProgramError`] only on `u32` node-index overflow, which a membrane never hits.
+pub fn compile_profile_drift_membrane(hash_width: Width) -> Result<AdmissionProgram, ProgramError> {
+    let mut builder = CircuitBuilder::new();
+    let planned = builder.input(hash_width);
+    let live = builder.input(hash_width);
+    let same = builder.equal(planned, live);
+    finish_single_membrane(builder, same)
+}
+
 #[cfg(test)]
 mod compile_tests {
     use super::super::eval::{evaluate, Lane};
@@ -253,8 +306,9 @@ mod compile_tests {
     use super::super::program::{Outputs, Width};
     use super::super::validate::validate;
     use super::{
-        compile_budget_membrane, compile_evidence_membrane, compile_support_membrane,
-        compose_membranes, CircuitBuilder,
+        compile_budget_membrane, compile_conflict_membrane, compile_evidence_membrane,
+        compile_profile_drift_membrane, compile_support_membrane, compose_membranes,
+        CircuitBuilder,
     };
 
     fn w(bits: u16) -> Width {
@@ -407,6 +461,53 @@ mod compile_tests {
                     let reference = e0 >= 1 && e1 >= 1 && e2 >= 1;
                     assert_eq!(decision.admit, reference, "enf=[{e0},{e1},{e2}]");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn conflict_membrane_equivalent_to_reference_exhaustively() {
+        // admit iff present_i ∩ forbidden_i == 0, per requirement. 2 reqs, 3-bit.
+        let width = w(3);
+        let program = compile_conflict_membrane(2, width).expect("compile");
+        validate(&program, &FROZEN_LIMITS).expect("valid");
+        for p0 in 0..8u64 {
+            for p1 in 0..8u64 {
+                for f0 in 0..8u64 {
+                    for f1 in 0..8u64 {
+                        let inputs = [
+                            lane(p0, width),
+                            lane(p1, width),
+                            lane(f0, width),
+                            lane(f1, width),
+                        ];
+                        let decision = evaluate(&program, &inputs).expect("eval");
+                        let reference = (p0 & f0) == 0 && (p1 & f1) == 0;
+                        assert_eq!(
+                            decision.admit, reference,
+                            "mismatch present=[{p0:03b},{p1:03b}] forbidden=[{f0:03b},{f1:03b}]"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn profile_drift_membrane_admits_iff_hashes_match_exhaustively() {
+        // admit iff planned == live. 4-bit hash lane => 16^2 = 256.
+        let width = w(4);
+        let program = compile_profile_drift_membrane(width).expect("compile");
+        validate(&program, &FROZEN_LIMITS).expect("valid");
+        for planned in 0..16u64 {
+            for live in 0..16u64 {
+                let inputs = [lane(planned, width), lane(live, width)];
+                let decision = evaluate(&program, &inputs).expect("eval");
+                assert_eq!(
+                    decision.admit,
+                    planned == live,
+                    "drift mismatch planned={planned} live={live}"
+                );
             }
         }
     }
