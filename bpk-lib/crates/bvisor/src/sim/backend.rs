@@ -17,6 +17,7 @@
 
 use crate::contract::backend::Backend;
 use crate::contract::budget::{BudgetAvailability, BudgetProfile};
+use crate::contract::budget_witness::BudgetWitnesses;
 use crate::contract::capability::{Enforcement, EvidenceClaim, EvidenceSet, SupportVerdict};
 use crate::contract::host_control::HostControl;
 use crate::contract::ids::BackendId;
@@ -518,6 +519,10 @@ impl RunState {
             denied: self.denied,
             exit: self.exit,
             captured: CaptureRefs::default(),
+            // Budget witnessing at execution is the next vertical slice; until then the
+            // monster echoes the admitted contract with usage unobserved. Lie modes
+            // will misreport these and GroundTruth will catch the mismatch.
+            budget: BudgetWitnesses::unwitnessed(&plan.budgets),
             artifacts: Vec::new(),
             findings,
         }

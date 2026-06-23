@@ -6,6 +6,7 @@
 //! `body_hash` is the blake3 digest of those bytes. "Sealed" = hashed +
 //! canonical; it is NOT persisted — the host appends it as a 0xE event.
 
+use crate::contract::budget_witness::BudgetWitnesses;
 use crate::contract::capability::Enforcement;
 use crate::contract::ids::{
     ArtifactId, BackendId, BoundaryPlanHash, BoundaryReportHash, ContentHash,
@@ -132,6 +133,11 @@ pub struct BoundaryReportBody {
     pub captured: CaptureRefs,
     /// Artifacts the boundary STAGED (quarantined; disposition is post-report).
     pub artifacts: Vec<StagedArtifact>,
+    /// The seven per-dimension execution-budget witnesses `W_d = (L,G,E,M,O,R,F)` —
+    /// the admitted contract echoed plus observed usage + terminal finding. A backend
+    /// that does not yet witness a dimension emits an UNWITNESSED echo (usage
+    /// unobserved, finding `ObservationUnavailable`) — uncertainty is never fabricated.
+    pub budget: BudgetWitnesses,
     /// Structural findings, sorted before hashing (canonical).
     pub findings: Vec<BoundaryFinding>,
 }
