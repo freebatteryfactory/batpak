@@ -70,13 +70,13 @@ pub use contract::ids::{
 pub use contract::lifecycle::{
     Boundary, BoundaryState, LifecycleError, Planned, Reported, Spec, Started,
 };
+pub use contract::lowering::{compile_schedule, LoweringError, LoweringSchedule, ScheduleEntry};
 pub use contract::plan::{
     AdmittedRequirement, BoundaryPlan, BoundaryRequirement, BoundarySpec, EvidenceRequirements,
     PlanError, Workload, BOUNDARY_PLAN_SCHEMA_VERSION,
 };
 pub use contract::primitive::{
-    classify_via_primitives, compile_lowering_plan, LoweringError, LoweringPhase, LoweringPlan,
-    PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
+    classify_via_primitives, LoweringPhase, PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
 };
 pub use contract::recovery::{
     reconcile, ArtifactFix, ArtifactReality, DispositionState, QuarantineRecord, RecoveryAction,
