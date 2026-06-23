@@ -32,7 +32,6 @@ use crate::contract::capability::{EvidenceSet, SupportVerdict};
 use crate::contract::plan::BoundaryRequirement;
 use crate::contract::report::BoundaryReportBody;
 use crate::contract::support::{BackendProfile, RequirementKind};
-use std::collections::{BTreeMap, BTreeSet};
 
 /// The ordered setup phase a primitive lowers in.
 ///
@@ -242,224 +241,11 @@ pub fn classify_via_primitives(
     verdict.unwrap_or_else(SupportVerdict::unsupported)
 }
 
-/// A validated, ordered sequence of primitive ids to lower.
-///
-/// Constructed ONLY by [`compile_lowering_plan`], so possessing one is proof the
-/// sequence is phase-ordered, prerequisite-respecting, conflict-free, and
-/// acyclic. The runner lowers `steps()` in order; rollback walks them in reverse.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LoweringPlan {
-    steps: Vec<PrimitiveId>,
-}
-
-impl LoweringPlan {
-    /// The primitive ids in validated lowering order.
-    #[must_use]
-    pub fn steps(&self) -> &[PrimitiveId] {
-        &self.steps
-    }
-
-    /// Number of steps.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.steps.len()
-    }
-
-    /// Whether the plan lowers nothing (a no-confinement plan).
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.steps.is_empty()
-    }
-}
-
-/// Why a set of primitives could not be compiled into a [`LoweringPlan`]. The
-/// compiler fails closed: any inconsistency aborts rather than emitting a partial
-/// or out-of-order plan.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum LoweringError {
-    /// Two primitives share the same [`PrimitiveId`].
-    DuplicatePrimitive {
-        /// The duplicated id.
-        id: PrimitiveId,
-    },
-    /// A primitive names a prerequisite that is not in the compiled set.
-    MissingPrerequisite {
-        /// The primitive declaring the prerequisite.
-        primitive: PrimitiveId,
-        /// The absent prerequisite id.
-        missing: PrimitiveId,
-    },
-    /// Two composed primitives declare a conflict (named on either side).
-    ConflictingPrimitives {
-        /// The lexicographically smaller id.
-        a: PrimitiveId,
-        /// The lexicographically larger id.
-        b: PrimitiveId,
-    },
-    /// A prerequisite lowers in a LATER phase than the primitive that needs it —
-    /// a contradiction (a dependency cannot run after its dependent).
-    PhaseOrderViolation {
-        /// The prerequisite primitive.
-        prerequisite: PrimitiveId,
-        /// Its (later) phase.
-        prerequisite_phase: LoweringPhase,
-        /// The dependent primitive.
-        dependent: PrimitiveId,
-        /// Its (earlier) phase.
-        dependent_phase: LoweringPhase,
-    },
-    /// The prerequisite graph contains a cycle; the named primitives are the ones
-    /// that could not be ordered.
-    CyclicDependency {
-        /// The primitives left unordered (in id order).
-        involved: Vec<PrimitiveId>,
-    },
-}
-
-impl std::fmt::Display for LoweringError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::DuplicatePrimitive { id } => write!(f, "duplicate confine primitive {id}"),
-            Self::MissingPrerequisite { primitive, missing } => write!(
-                f,
-                "primitive {primitive} requires {missing}, which is not in the compiled set"
-            ),
-            Self::ConflictingPrimitives { a, b } => {
-                write!(f, "primitives {a} and {b} conflict and cannot be composed")
-            }
-            Self::PhaseOrderViolation {
-                prerequisite,
-                prerequisite_phase,
-                dependent,
-                dependent_phase,
-            } => write!(
-                f,
-                "prerequisite {prerequisite} (phase {prerequisite_phase:?}) lowers after its \
-                 dependent {dependent} (phase {dependent_phase:?})"
-            ),
-            Self::CyclicDependency { involved } => {
-                write!(f, "cyclic prerequisite dependency among {involved:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for LoweringError {}
-
-/// Compile a set of primitives into a validated [`LoweringPlan`], FAIL-CLOSED.
-///
-/// Validation, in order:
-/// 1. duplicate ids → [`LoweringError::DuplicatePrimitive`];
-/// 2. declared conflicts present together → [`LoweringError::ConflictingPrimitives`];
-/// 3. prerequisite absent → [`LoweringError::MissingPrerequisite`];
-/// 4. prerequisite in a later phase than its dependent →
-///    [`LoweringError::PhaseOrderViolation`];
-/// 5. topological sort over the prerequisite edges, breaking ties by
-///    `(phase, id)` so phase order governs independent primitives and the result
-///    is deterministic; a remaining cycle → [`LoweringError::CyclicDependency`].
-///
-/// # Errors
-/// Any [`LoweringError`] above.
-pub fn compile_lowering_plan(
-    primitives: &[&dyn PrimitiveDecl],
-) -> Result<LoweringPlan, LoweringError> {
-    // 1. Index by id; reject duplicates.
-    let mut by_id: BTreeMap<PrimitiveId, &dyn PrimitiveDecl> = BTreeMap::new();
-    for primitive in primitives {
-        if by_id.insert(primitive.id(), *primitive).is_some() {
-            return Err(LoweringError::DuplicatePrimitive { id: primitive.id() });
-        }
-    }
-
-    // 2. Conflicts (symmetric): id-sorted iteration → deterministic first hit.
-    for (id, primitive) in &by_id {
-        for other in primitive.conflicts() {
-            if by_id.contains_key(other) {
-                let (a, b) = if id <= other {
-                    (id.clone(), other.clone())
-                } else {
-                    (other.clone(), id.clone())
-                };
-                return Err(LoweringError::ConflictingPrimitives { a, b });
-            }
-        }
-    }
-
-    // 3 + 4. Prerequisites present and phase-consistent (dedup per node).
-    let mut prereqs: BTreeMap<PrimitiveId, BTreeSet<PrimitiveId>> = BTreeMap::new();
-    for (id, primitive) in &by_id {
-        let mut set = BTreeSet::new();
-        for pre in primitive.prerequisites() {
-            let Some(pre_primitive) = by_id.get(pre) else {
-                return Err(LoweringError::MissingPrerequisite {
-                    primitive: id.clone(),
-                    missing: pre.clone(),
-                });
-            };
-            if pre_primitive.phase() > primitive.phase() {
-                return Err(LoweringError::PhaseOrderViolation {
-                    prerequisite: pre.clone(),
-                    prerequisite_phase: pre_primitive.phase(),
-                    dependent: id.clone(),
-                    dependent_phase: primitive.phase(),
-                });
-            }
-            set.insert(pre.clone());
-        }
-        prereqs.insert(id.clone(), set);
-    }
-
-    // 5. Kahn's topological sort; ready set ordered by (phase, id).
-    let mut indegree: BTreeMap<PrimitiveId, usize> =
-        by_id.keys().map(|id| (id.clone(), 0usize)).collect();
-    let mut dependents: BTreeMap<PrimitiveId, Vec<PrimitiveId>> = BTreeMap::new();
-    for (id, set) in &prereqs {
-        for pre in set {
-            *indegree.get_mut(id).expect("id is in the set") += 1;
-            dependents.entry(pre.clone()).or_default().push(id.clone());
-        }
-    }
-
-    let mut ready: BTreeSet<(LoweringPhase, PrimitiveId)> = indegree
-        .iter()
-        .filter(|(_, deg)| **deg == 0)
-        .map(|(id, _)| (by_id[id].phase(), id.clone()))
-        .collect();
-
-    let mut steps = Vec::with_capacity(by_id.len());
-    while let Some(entry) = ready.iter().next().cloned() {
-        ready.remove(&entry);
-        let (_, id) = entry;
-        if let Some(children) = dependents.get(&id) {
-            for child in children {
-                let deg = indegree.get_mut(child).expect("child is in the set");
-                *deg -= 1;
-                if *deg == 0 {
-                    ready.insert((by_id[child].phase(), child.clone()));
-                }
-            }
-        }
-        steps.push(id);
-    }
-
-    if steps.len() != by_id.len() {
-        let involved = indegree
-            .iter()
-            .filter(|(_, deg)| **deg > 0)
-            .map(|(id, _)| id.clone())
-            .collect();
-        return Err(LoweringError::CyclicDependency { involved });
-    }
-
-    Ok(LoweringPlan { steps })
-}
-
 #[cfg(test)]
 mod primitive_tests {
     use super::{
-        classify_via_primitives, compile_lowering_plan, LoweringError, LoweringPhase, LoweringPlan,
-        PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
+        classify_via_primitives, LoweringPhase, PrimitiveDecl, PrimitiveId, PrimitiveVersion,
+        Privilege,
     };
     use crate::contract::capability::{Enforcement, EvidenceClaim, EvidenceSet, SupportVerdict};
     use crate::contract::host_control::HostControl;
@@ -491,14 +277,6 @@ mod primitive_tests {
                 privileges: Vec::new(),
                 verdict: SupportVerdict::unsupported(),
             }
-        }
-        fn prereqs(mut self, ids: &[&str]) -> Self {
-            self.prereqs = ids.iter().map(|i| PrimitiveId::new(*i)).collect();
-            self
-        }
-        fn conflicts(mut self, ids: &[&str]) -> Self {
-            self.conflicts = ids.iter().map(|i| PrimitiveId::new(*i)).collect();
-            self
         }
         fn covers(mut self, kinds: &[RequirementKind]) -> Self {
             self.covers = kinds.to_vec();
@@ -543,125 +321,12 @@ mod primitive_tests {
         }
     }
 
-    fn ids(plan: &LoweringPlan) -> Vec<&str> {
-        plan.steps().iter().map(PrimitiveId::as_str).collect()
-    }
-
     fn launch_req() -> BoundaryRequirement {
         BoundaryRequirement::HostControl(HostControl::LaunchWorkload)
     }
 
     fn empty_profile() -> BackendProfile {
         BackendProfile::from_ceiling(BTreeMap::new())
-    }
-
-    #[test]
-    fn empty_set_compiles_to_an_empty_plan() {
-        let plan = compile_lowering_plan(&[]).expect("empty set is valid");
-        assert!(plan.is_empty());
-        assert_eq!(plan.len(), 0);
-    }
-
-    #[test]
-    fn independent_primitives_order_by_phase_then_id() {
-        // Declared out of order; the compiler sorts by (phase, id).
-        let launch = FakePrim::new("z_launch", LoweringPhase::Launch);
-        let ns = FakePrim::new("a_ns", LoweringPhase::NamespaceCreate);
-        let policy = FakePrim::new("m_policy", LoweringPhase::PolicyInstall);
-        let plan = compile_lowering_plan(&[&launch, &ns, &policy]).expect("valid");
-        assert_eq!(ids(&plan), ["a_ns", "m_policy", "z_launch"]);
-    }
-
-    #[test]
-    fn same_phase_ties_break_by_id_deterministically() {
-        let b = FakePrim::new("b", LoweringPhase::FsSetup);
-        let a = FakePrim::new("a", LoweringPhase::FsSetup);
-        let c = FakePrim::new("c", LoweringPhase::FsSetup);
-        let plan = compile_lowering_plan(&[&b, &a, &c]).expect("valid");
-        assert_eq!(ids(&plan), ["a", "b", "c"]);
-    }
-
-    #[test]
-    fn prerequisite_forces_order_within_a_phase() {
-        // Same phase, but "second" requires "first" → first lowers first even
-        // though its id sorts later.
-        let first = FakePrim::new("zzz_first", LoweringPhase::PolicyInstall);
-        let second =
-            FakePrim::new("aaa_second", LoweringPhase::PolicyInstall).prereqs(&["zzz_first"]);
-        let plan = compile_lowering_plan(&[&second, &first]).expect("valid");
-        assert_eq!(ids(&plan), ["zzz_first", "aaa_second"]);
-    }
-
-    #[test]
-    fn duplicate_ids_fail_closed() {
-        let one = FakePrim::new("dup", LoweringPhase::FsSetup);
-        let two = FakePrim::new("dup", LoweringPhase::Launch);
-        let err = compile_lowering_plan(&[&one, &two]).expect_err("duplicate");
-        assert_eq!(
-            err,
-            LoweringError::DuplicatePrimitive {
-                id: PrimitiveId::new("dup")
-            }
-        );
-    }
-
-    #[test]
-    fn missing_prerequisite_fails_closed() {
-        let p = FakePrim::new("needs", LoweringPhase::Launch).prereqs(&["absent"]);
-        let err = compile_lowering_plan(&[&p]).expect_err("missing prereq");
-        assert_eq!(
-            err,
-            LoweringError::MissingPrerequisite {
-                primitive: PrimitiveId::new("needs"),
-                missing: PrimitiveId::new("absent"),
-            }
-        );
-    }
-
-    #[test]
-    fn conflicting_primitives_fail_closed_with_sorted_pair() {
-        // Conflict declared on only one side still aborts; pair is id-sorted.
-        let z = FakePrim::new("z", LoweringPhase::FsSetup).conflicts(&["a"]);
-        let a = FakePrim::new("a", LoweringPhase::FsSetup);
-        let err = compile_lowering_plan(&[&z, &a]).expect_err("conflict");
-        assert_eq!(
-            err,
-            LoweringError::ConflictingPrimitives {
-                a: PrimitiveId::new("a"),
-                b: PrimitiveId::new("z"),
-            }
-        );
-    }
-
-    #[test]
-    fn prerequisite_in_a_later_phase_fails_closed() {
-        // "early" (NamespaceCreate) requires "late" (Launch) — impossible.
-        let early = FakePrim::new("early", LoweringPhase::NamespaceCreate).prereqs(&["late"]);
-        let late = FakePrim::new("late", LoweringPhase::Launch);
-        let err = compile_lowering_plan(&[&early, &late]).expect_err("phase order");
-        assert_eq!(
-            err,
-            LoweringError::PhaseOrderViolation {
-                prerequisite: PrimitiveId::new("late"),
-                prerequisite_phase: LoweringPhase::Launch,
-                dependent: PrimitiveId::new("early"),
-                dependent_phase: LoweringPhase::NamespaceCreate,
-            }
-        );
-    }
-
-    #[test]
-    fn cyclic_prerequisites_fail_closed() {
-        // a → b → a within one phase (so no phase-order short-circuit fires).
-        let a = FakePrim::new("a", LoweringPhase::PolicyInstall).prereqs(&["b"]);
-        let b = FakePrim::new("b", LoweringPhase::PolicyInstall).prereqs(&["a"]);
-        let err = compile_lowering_plan(&[&a, &b]).expect_err("cycle");
-        assert_eq!(
-            err,
-            LoweringError::CyclicDependency {
-                involved: vec![PrimitiveId::new("a"), PrimitiveId::new("b")],
-            }
-        );
     }
 
     #[test]
