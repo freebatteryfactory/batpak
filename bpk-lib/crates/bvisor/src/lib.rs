@@ -32,7 +32,7 @@ pub use contract::admission::{
     compile_evidence_membrane, compile_profile_drift_membrane, compile_support_membrane,
     compose_membranes, decode_validated, evaluate, planner_reference, planner_shadow_check,
     reference_admission, shadow_check, validate, verify_certificate, AdmissionDivergence,
-    AdmissionInputs, AdmissionOutcome, AdmissionProgram, AdmissionShape, BudgetPair, CertNode,
+    AdmissionInputs, AdmissionOutcome, AdmissionProgram, AdmissionShape, BudgetInputs, CertNode,
     CircuitBuilder, CompareRel, Decision, EvalError, InputDecl, InputSlot, Lane, LimitViolation,
     LookupTable, Node, NodeId, NodeOp, Outputs, PlannerInputs, ProgramCertificate, ProgramError,
     ProgramLimits, RequirementInputs, ValidationError, Width, ADMISSION_PROGRAM_SCHEMA_VERSION,

@@ -10,11 +10,12 @@
 //! the IR invariant, and it lowers variable-width reductions into **balanced binary
 //! trees** ([`CircuitBuilder::and_reduce`]) so depth is `⌈log₂ n⌉`, not `n`.
 //!
-//! [`compile_budget_membrane`] is the first real membrane: admit iff every
-//! requested budget dimension is within the available budget
-//! (`∀d : req[d] ≤ avail[d]`). Its equivalence to the imperative reference is
-//! proven exhaustively over the small-width domain (the discrete half of the
-//! step-5 equivalence pipeline; the QF_BV solver half lands separately).
+//! [`compile_budget_membrane`] is the budget membrane: admit iff every dimension
+//! passes the two-phase admission `D_d ≤ L_d ∧ L_d ≤ A_d ∧ G_d ≤ E_d ∧ Q_d ⊆ C_d`
+//! (intrinsic derived-minimum, then capacity, guarantee, evidence). Its equivalence
+//! to the imperative reference is proven exhaustively over the small-width domain
+//! (the discrete half of the step-5 equivalence pipeline; the QF_BV solver half
+//! lands separately). The per-dimension reason selector is a later step.
 
 use super::program::{
     AdmissionProgram, InputDecl, InputSlot, Node, NodeId, NodeOp, Outputs, ProgramError, Width,
@@ -194,18 +195,39 @@ fn enforcement_width() -> Width {
 // returning the membrane's 1-bit pass node. The `compile_*_membrane` wrappers add
 // inputs around a check; `compile_admission` shares inputs across all of them.
 
-/// `∀d : req[d] ≤ avail[d]`.
-fn budget_check(
-    builder: &mut CircuitBuilder,
-    requested: &[NodeId],
-    available: &[NodeId],
-) -> NodeId {
-    let checks: Vec<NodeId> = requested
-        .iter()
-        .zip(available)
-        .map(|(req, avail)| builder.compare_ule(*req, *avail))
+/// The per-dimension budget lanes the membrane reads, in canonical order.
+struct BudgetLanes<'a> {
+    /// Requested limits `L_d`.
+    limit: &'a [NodeId],
+    /// Backend-available limits `A_d`.
+    available: &'a [NodeId],
+    /// Derived structural minimums `D_d`.
+    derived_min: &'a [NodeId],
+    /// Required guarantee codes `G_d` (2-bit).
+    guarantee_req: &'a [NodeId],
+    /// Backend guarantee codes `E_d` (2-bit).
+    guarantee_avail: &'a [NodeId],
+    /// Required evidence bitsets `Q_d`.
+    evidence_req: &'a [NodeId],
+    /// Backend evidence bitsets `C_d`.
+    evidence_avail: &'a [NodeId],
+}
+
+/// The two-phase budget admission flattened to one pass bit:
+/// `∀d : D_d ≤ L_d ∧ L_d ≤ A_d ∧ G_d ≤ E_d ∧ Q_d ⊆ C_d` (intrinsic derived-minimum,
+/// then capacity, guarantee, evidence). The per-dimension reason selector is a later
+/// step; here every dimension contributes a single AND-reduced pass bit.
+fn budget_check(builder: &mut CircuitBuilder, lanes: &BudgetLanes) -> NodeId {
+    let per_dim: Vec<NodeId> = (0..lanes.limit.len())
+        .map(|d| {
+            let intrinsic = builder.compare_ule(lanes.derived_min[d], lanes.limit[d]);
+            let capacity = builder.compare_ule(lanes.limit[d], lanes.available[d]);
+            let guarantee = builder.compare_ule(lanes.guarantee_req[d], lanes.guarantee_avail[d]);
+            let evidence = builder.bitset_subset(lanes.evidence_req[d], lanes.evidence_avail[d]);
+            builder.and_reduce(&[intrinsic, capacity, guarantee, evidence])
+        })
         .collect();
-    builder.and_reduce(&checks)
+    builder.and_reduce(&per_dim)
 }
 
 /// `∀i : required[i] ⊆ available[i]`.
@@ -262,19 +284,40 @@ fn profile_drift_check(builder: &mut CircuitBuilder, planned: NodeId, live: Node
     builder.equal(planned, live)
 }
 
-/// Compile the budget membrane: admit iff `∀d : req[d] ≤ avail[d]`. Reads `2·dims`
-/// input lanes of `width` (the `dims` requested values, then the `dims` available).
+/// Compile the budget membrane: admit iff every dimension passes the two-phase
+/// check `D_d ≤ L_d ∧ L_d ≤ A_d ∧ G_d ≤ E_d ∧ Q_d ⊆ C_d`. Reads `7·dims` input lanes
+/// in canonical order: limit, available, derived-min (each `budget_width`),
+/// guarantee-required, guarantee-available (each 2-bit), evidence-required,
+/// evidence-available (each `evidence_width`).
 ///
 /// # Errors
 /// [`ProgramError`] only on `u32` node-index overflow, which a membrane never hits.
 pub fn compile_budget_membrane(
     dims: usize,
-    width: Width,
+    budget_width: Width,
+    evidence_width: Width,
 ) -> Result<AdmissionProgram, ProgramError> {
     let mut builder = CircuitBuilder::new();
-    let requested: Vec<NodeId> = (0..dims).map(|_| builder.input(width)).collect();
-    let available: Vec<NodeId> = (0..dims).map(|_| builder.input(width)).collect();
-    let admit = budget_check(&mut builder, &requested, &available);
+    let enf_width = enforcement_width();
+    let limit: Vec<NodeId> = (0..dims).map(|_| builder.input(budget_width)).collect();
+    let available: Vec<NodeId> = (0..dims).map(|_| builder.input(budget_width)).collect();
+    let derived_min: Vec<NodeId> = (0..dims).map(|_| builder.input(budget_width)).collect();
+    let guarantee_req: Vec<NodeId> = (0..dims).map(|_| builder.input(enf_width)).collect();
+    let guarantee_avail: Vec<NodeId> = (0..dims).map(|_| builder.input(enf_width)).collect();
+    let evidence_req: Vec<NodeId> = (0..dims).map(|_| builder.input(evidence_width)).collect();
+    let evidence_avail: Vec<NodeId> = (0..dims).map(|_| builder.input(evidence_width)).collect();
+    let admit = budget_check(
+        &mut builder,
+        &BudgetLanes {
+            limit: &limit,
+            available: &available,
+            derived_min: &derived_min,
+            guarantee_req: &guarantee_req,
+            guarantee_avail: &guarantee_avail,
+            evidence_req: &evidence_req,
+            evidence_avail: &evidence_avail,
+        },
+    );
     finish_single_membrane(builder, admit)
 }
 
@@ -359,10 +402,12 @@ pub struct AdmissionShape {
 ///
 /// Input lane order (so a caller can encode `x`): `planned_hash, live_hash`, then
 /// `enforcement × requirements`, then `required × requirements`,
-/// `available × requirements`, then `budget_req × dims`, `budget_avail × dims`,
-/// then `present × requirements`, `forbidden × requirements`. Membrane order (the
-/// refusal index): `1` profile-drift, `2` support, `3` evidence, `4` budget,
-/// `5` conflict.
+/// `available × requirements`, then the budget section in canonical order —
+/// `budget_limit × dims`, `budget_available × dims`, `budget_derived × dims`,
+/// `budget_guarantee_req × dims`, `budget_guarantee_avail × dims`,
+/// `budget_evidence_req × dims`, `budget_evidence_avail × dims` — then
+/// `present × requirements`, `forbidden × requirements`. Membrane order (the refusal
+/// index): `1` profile-drift, `2` support, `3` evidence, `4` budget, `5` conflict.
 ///
 /// # Errors
 /// [`ProgramError`] only on `u32` node-index overflow, which admission never hits.
@@ -387,13 +432,38 @@ pub fn compile_admission(shape: &AdmissionShape) -> Result<AdmissionProgram, Pro
         .collect();
     let evidence = evidence_check(&mut builder, &required, &available);
 
-    let budget_req: Vec<NodeId> = (0..dims)
+    // Budget section, canonical lane order (must match shadow `encode`): limit,
+    // available, derived-min (budget_width); guarantee-req, guarantee-avail
+    // (enforcement width); evidence-req, evidence-avail (evidence width) — each × dims.
+    let budget_limit: Vec<NodeId> = (0..dims)
         .map(|_| builder.input(shape.budget_width))
         .collect();
     let budget_avail: Vec<NodeId> = (0..dims)
         .map(|_| builder.input(shape.budget_width))
         .collect();
-    let budget = budget_check(&mut builder, &budget_req, &budget_avail);
+    let budget_derived: Vec<NodeId> = (0..dims)
+        .map(|_| builder.input(shape.budget_width))
+        .collect();
+    let budget_g_req: Vec<NodeId> = (0..dims).map(|_| builder.input(enf_width)).collect();
+    let budget_g_avail: Vec<NodeId> = (0..dims).map(|_| builder.input(enf_width)).collect();
+    let budget_e_req: Vec<NodeId> = (0..dims)
+        .map(|_| builder.input(shape.evidence_width))
+        .collect();
+    let budget_e_avail: Vec<NodeId> = (0..dims)
+        .map(|_| builder.input(shape.evidence_width))
+        .collect();
+    let budget = budget_check(
+        &mut builder,
+        &BudgetLanes {
+            limit: &budget_limit,
+            available: &budget_avail,
+            derived_min: &budget_derived,
+            guarantee_req: &budget_g_req,
+            guarantee_avail: &budget_g_avail,
+            evidence_req: &budget_e_req,
+            evidence_avail: &budget_e_avail,
+        },
+    );
 
     let present: Vec<NodeId> = (0..reqs)
         .map(|_| builder.input(shape.conflict_width))
@@ -433,14 +503,34 @@ mod compile_tests {
         Lane::from_le_bytes(&value.to_le_bytes(), width)
     }
 
-    /// The imperative reference decision the circuit must match.
-    fn budget_reference(req: &[u64], avail: &[u64]) -> bool {
-        req.iter().zip(avail).all(|(r, a)| r <= a)
+    /// One budget dimension as `(limit, available, derived, g_req, g_avail, e_req,
+    /// e_avail)` — the tuple the test helpers build lanes / a reference from.
+    type Dim = (u64, u64, u64, u64, u64, u64, u64);
+
+    /// The imperative reference for ONE dimension the circuit must match: the
+    /// two-phase admission `D ≤ L ∧ L ≤ A ∧ G_req ≤ G_avail ∧ Q ⊆ C`.
+    fn budget_dim_reference(d: Dim) -> bool {
+        let (limit, available, derived, g_req, g_avail, e_req, e_avail) = d;
+        derived <= limit && limit <= available && g_req <= g_avail && (e_req & !e_avail) == 0
+    }
+
+    /// Build the `7·dims` budget lane vector in canonical order from per-dim tuples.
+    fn budget_lanes(dims: &[Dim], vw: Width, ew: Width) -> Vec<Lane> {
+        let enf = w(2);
+        let mut lanes = Vec::new();
+        lanes.extend(dims.iter().map(|d| lane(d.0, vw))); // limit
+        lanes.extend(dims.iter().map(|d| lane(d.1, vw))); // available
+        lanes.extend(dims.iter().map(|d| lane(d.2, vw))); // derived
+        lanes.extend(dims.iter().map(|d| lane(d.3, enf))); // guarantee-required
+        lanes.extend(dims.iter().map(|d| lane(d.4, enf))); // guarantee-available
+        lanes.extend(dims.iter().map(|d| lane(d.5, ew))); // evidence-required
+        lanes.extend(dims.iter().map(|d| lane(d.6, ew))); // evidence-available
+        lanes
     }
 
     #[test]
     fn compiler_emits_a_program_the_validator_accepts() {
-        let program = compile_budget_membrane(7, w(64)).expect("compile");
+        let program = compile_budget_membrane(7, w(64), w(8)).expect("compile");
         validate(&program, &FROZEN_LIMITS).expect("C emits valid programs");
     }
 
@@ -463,58 +553,64 @@ mod compile_tests {
 
     #[test]
     fn budget_membrane_equivalent_to_reference_exhaustively() {
-        // The discrete half of step-5 equivalence: exhaustive over the full domain
-        // of a small instance (2 dims, 3-bit lanes => 8^4 = 4096 inputs).
-        let width = w(3);
-        let program = compile_budget_membrane(2, width).expect("compile");
+        // The discrete half of step-5 equivalence: exhaustive over the FULL per-
+        // dimension domain of a 1-dim instance with 2-bit value + 2-bit evidence
+        // lanes — all seven inputs, 4^7 = 16384 points. Flattened to one counter to
+        // keep nesting shallow.
+        let vw = w(2);
+        let ew = w(2);
+        let program = compile_budget_membrane(1, vw, ew).expect("compile");
         validate(&program, &FROZEN_LIMITS).expect("valid");
-        for r0 in 0..8u64 {
-            for r1 in 0..8u64 {
-                for a0 in 0..8u64 {
-                    for a1 in 0..8u64 {
-                        let inputs = [
-                            lane(r0, width),
-                            lane(r1, width),
-                            lane(a0, width),
-                            lane(a1, width),
-                        ];
-                        let decision = evaluate(&program, &inputs).expect("eval");
-                        let reference = budget_reference(&[r0, r1], &[a0, a1]);
-                        assert_eq!(
-                            decision.admit, reference,
-                            "mismatch at req=[{r0},{r1}] avail=[{a0},{a1}]"
-                        );
-                    }
-                }
-            }
+        for code in 0..4u64.pow(7) {
+            let dim: Dim = (
+                code % 4,
+                (code / 4) % 4,
+                (code / 16) % 4,
+                (code / 64) % 4,
+                (code / 256) % 4,
+                (code / 1024) % 4,
+                (code / 4096) % 4,
+            );
+            let decision = evaluate(&program, &budget_lanes(&[dim], vw, ew)).expect("eval");
+            assert_eq!(
+                decision.admit,
+                budget_dim_reference(dim),
+                "mismatch at dim={dim:?}"
+            );
         }
     }
 
     #[test]
     fn refusal_code_is_zero_on_admit_and_one_on_refuse() {
-        let width = w(64);
-        let program = compile_budget_membrane(3, width).expect("compile");
-        let within = [
-            lane(1, width),
-            lane(2, width),
-            lane(3, width),
-            lane(10, width),
-            lane(10, width),
-            lane(10, width),
-        ];
+        let vw = w(64);
+        let ew = w(8);
+        let program = compile_budget_membrane(3, vw, ew).expect("compile");
+        // All three dimensions admit: derived <= limit <= available, guarantee met,
+        // evidence a subset.
+        let within = budget_lanes(
+            &[
+                (1, 10, 0, 1, 2, 0, 0),
+                (2, 10, 0, 1, 2, 0, 0),
+                (3, 10, 0, 1, 2, 0, 0),
+            ],
+            vw,
+            ew,
+        );
         let admitted = evaluate(&program, &within).expect("eval");
         assert!(admitted.admit);
         assert_eq!(admitted.refusal_code, 0);
 
-        // Dimension 1 requests more than available.
-        let over = [
-            lane(1, width),
-            lane(99, width),
-            lane(3, width),
-            lane(10, width),
-            lane(10, width),
-            lane(10, width),
-        ];
+        // A dimension requests more than available -> the single membrane fails
+        // (refusal code 1 = this membrane's index).
+        let over = budget_lanes(
+            &[
+                (99, 1, 0, 1, 2, 0, 0),
+                (2, 10, 0, 1, 2, 0, 0),
+                (3, 10, 0, 1, 2, 0, 0),
+            ],
+            vw,
+            ew,
+        );
         let refused = evaluate(&program, &over).expect("eval");
         assert!(!refused.admit);
         assert_eq!(refused.refusal_code, 1);
@@ -522,7 +618,7 @@ mod compile_tests {
 
     #[test]
     fn zero_dimension_membrane_admits_vacuously() {
-        let program = compile_budget_membrane(0, w(8)).expect("compile");
+        let program = compile_budget_membrane(0, w(8), w(8)).expect("compile");
         let decision = evaluate(&program, &[]).expect("eval");
         assert!(decision.admit, "an empty conjunction admits");
     }
@@ -668,15 +764,21 @@ mod compile_tests {
         }
     }
 
-    /// The nine per-aspect input values, in `compile_admission`'s lane order.
+    /// The per-aspect input values, in `compile_admission`'s lane order (one
+    /// requirement, one budget dimension).
     struct Aspects {
         planned: u64,
         live: u64,
         enforcement: u64,
         required: u64,
         available: u64,
-        budget_req: u64,
-        budget_avail: u64,
+        budget_limit: u64,
+        budget_available: u64,
+        budget_derived: u64,
+        budget_g_req: u64,
+        budget_g_avail: u64,
+        budget_e_req: u64,
+        budget_e_avail: u64,
         present: u64,
         forbidden: u64,
     }
@@ -688,9 +790,14 @@ mod compile_tests {
             live: 1,        // == planned -> drift passes
             enforcement: 2, // Enforced >= Mediated -> support passes
             required: 1,
-            available: 3, // 0b01 ⊆ 0b11 -> evidence passes
-            budget_req: 1,
-            budget_avail: 3, // 1 <= 3 -> budget passes
+            available: 3,    // 0b01 ⊆ 0b11 -> evidence passes
+            budget_limit: 1, // 0 <= 1 <= 3 -> intrinsic + capacity pass
+            budget_available: 3,
+            budget_derived: 0,
+            budget_g_req: 1,   // Mediated
+            budget_g_avail: 2, // Enforced >= Mediated -> guarantee passes
+            budget_e_req: 1,
+            budget_e_avail: 3, // 0b01 ⊆ 0b11 -> budget evidence passes
             present: 1,
             forbidden: 2, // 0b01 ∩ 0b10 = 0 -> conflict passes
         }
@@ -703,8 +810,13 @@ mod compile_tests {
             lane(a.enforcement, w(2)),
             lane(a.required, w(2)),
             lane(a.available, w(2)),
-            lane(a.budget_req, w(2)),
-            lane(a.budget_avail, w(2)),
+            lane(a.budget_limit, w(2)),
+            lane(a.budget_available, w(2)),
+            lane(a.budget_derived, w(2)),
+            lane(a.budget_g_req, w(2)),
+            lane(a.budget_g_avail, w(2)),
+            lane(a.budget_e_req, w(2)),
+            lane(a.budget_e_avail, w(2)),
             lane(a.present, w(2)),
             lane(a.forbidden, w(2)),
         ]
@@ -747,8 +859,8 @@ mod compile_tests {
         assert_refuses(3, &evidence);
 
         let mut budget = all_pass();
-        budget.budget_req = 3;
-        budget.budget_avail = 1; // 3 > 1
+        budget.budget_limit = 3;
+        budget.budget_available = 1; // 3 > 1 -> capacity fail
         assert_refuses(4, &budget);
 
         let mut conflict = all_pass();
