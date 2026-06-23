@@ -278,8 +278,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y z3
           z3 --version
-      - name: Install cvc5 (independent confirmation, best-effort)
-        continue-on-error: true
+      - name: Install cvc5 (independent solver, HARD-required)
         run: |
           set -euo pipefail
           CVC5_VERSION=1.2.0
@@ -288,11 +287,18 @@ jobs:
           chmod +x "$RUNNER_TEMP/cvc5"
           "$RUNNER_TEMP/cvc5" --version
           echo "BVISOR_CVC5=$RUNNER_TEMP/cvc5" >> "$GITHUB_ENV"
-      - name: Prove admission-circuit equivalence (UNSAT + non-vacuity + independent UNSAT)
+      - name: QF_BV qualification gate (two-solver UNSAT + planted SAT + non-vacuity)
         working-directory: bpk-lib
         env:
           BVISOR_Z3: z3
+          BVISOR_PROOF_RECEIPT: ${{ runner.temp }}/qf-bv-budget-receipt.hex
         run: cargo test -p bvisor --features qf-bv -- --ignored --nocapture
+      - name: Archive the proof receipt (gate evidence)
+        uses: actions/upload-artifact@v4
+        with:
+          name: qf-bv-budget-proof-receipt
+          path: ${{ runner.temp }}/qf-bv-budget-receipt.hex
+          if-no-files-found: error
 
   smoke-consumers:
     name: Smoke (quickstart, packaged consumer, template)

@@ -21,6 +21,126 @@
 
 use super::compile::compile_budget_membrane;
 use super::program::{AdmissionProgram, CompareRel, NodeId, NodeOp, Width};
+use serde::{Deserialize, Serialize};
+
+/// Whether the compiled admission circuit has passed its full-width equivalence proof
+/// and may be treated as authoritative, or is still a candidate behind the
+/// authoritative imperative reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProofStatus {
+    /// The circuit is wired + load-bearing as a SHADOW, but the imperative reference
+    /// is authoritative and the circuit bears NO durable identity (`H_A` unbound). It
+    /// may not be promoted to authority until the QF_BV qualification gate passes.
+    PromotionCandidate,
+    /// The qualification gate passed — genuine `UNSAT` on two independent pinned
+    /// solvers, planted-disagreement `SAT`, and non-vacuity — with archived proof.
+    ProvenAuthority,
+}
+
+/// The admission circuit's source-declared proof status. It STAYS
+/// `PromotionCandidate`: promoting the circuit to authority (binding `H_A`) requires
+/// the QF_BV qualification gate, and a release that treats the circuit as authority is
+/// blocked until a valid [`ProofReceipt`] covering the current circuit exists. The
+/// dual path stays fail-closed meanwhile — the imperative reference decides.
+pub const ADMISSION_CIRCUIT_PROOF: ProofStatus = ProofStatus::PromotionCandidate;
+
+/// Archived evidence that the QF_BV qualification gate ran and PASSED for a specific
+/// circuit (identified by the canonical SMT input digest). Retained as gate evidence;
+/// a release that treats the circuit as authority must carry a receipt whose
+/// `smt_digest` matches the current circuit and whose verdicts are all correct.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProofReceipt {
+    /// Hex blake3 digest of the canonical genuine-equivalence SMT-LIB2 input.
+    pub smt_digest: String,
+    /// Primary pinned solver identity (e.g. `"z3 4.13.4"`).
+    pub primary_solver: String,
+    /// Independent pinned solver identity (e.g. `"cvc5 1.2.0"`).
+    pub independent_solver: String,
+    /// Primary solver's genuine verdicts: must be `[unsat, sat, sat]` (equivalence,
+    /// admit-reachable, refusal-reachable).
+    pub primary_verdicts: Vec<String>,
+    /// Independent solver's genuine equivalence verdict: must be `unsat`.
+    pub independent_verdict: String,
+    /// Planted-disagreement verdict: must be `sat` (the method detects a real bug).
+    pub planted_verdict: String,
+}
+
+/// Why a proof receipt does NOT qualify the circuit as authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProofGateError {
+    /// The receipt covers a different circuit than the one being released.
+    DigestMismatch {
+        /// The current circuit's digest.
+        expected: String,
+        /// The receipt's digest.
+        found: String,
+    },
+    /// The primary solver did not return `[unsat, sat, sat]`.
+    EquivalenceNotProven {
+        /// The primary verdicts seen.
+        verdicts: Vec<String>,
+    },
+    /// The independent solver did not return `unsat`.
+    IndependentNotConfirmed {
+        /// The independent verdict seen.
+        verdict: String,
+    },
+    /// The planted disagreement was not detected (`sat` expected).
+    PlantedNotDetected {
+        /// The planted verdict seen.
+        verdict: String,
+    },
+}
+
+/// The canonical digest of an SMT input — the circuit's proof identity. A receipt must
+/// carry this exact digest (over the genuine equivalence script) to qualify the
+/// circuit.
+#[must_use]
+pub fn smt_digest(smt: &str) -> String {
+    batpak::event::hash::compute_hash(smt.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Verify a receipt qualifies the circuit identified by `expected_digest` as
+/// authority: matching digest, primary `[unsat, sat, sat]`, independent `unsat`,
+/// planted `sat`. Any failure leaves the circuit a [`ProofStatus::PromotionCandidate`].
+///
+/// # Errors
+/// [`ProofGateError`] on digest mismatch or any missing/incorrect verdict.
+pub fn verify_receipt(receipt: &ProofReceipt, expected_digest: &str) -> Result<(), ProofGateError> {
+    if receipt.smt_digest != expected_digest {
+        return Err(ProofGateError::DigestMismatch {
+            expected: expected_digest.to_string(),
+            found: receipt.smt_digest.clone(),
+        });
+    }
+    let expected_primary = ["unsat", "sat", "sat"];
+    if receipt.primary_verdicts.len() != expected_primary.len()
+        || receipt
+            .primary_verdicts
+            .iter()
+            .zip(expected_primary)
+            .any(|(seen, want)| seen != want)
+    {
+        return Err(ProofGateError::EquivalenceNotProven {
+            verdicts: receipt.primary_verdicts.clone(),
+        });
+    }
+    if receipt.independent_verdict != "unsat" {
+        return Err(ProofGateError::IndependentNotConfirmed {
+            verdict: receipt.independent_verdict.clone(),
+        });
+    }
+    if receipt.planted_verdict != "sat" {
+        return Err(ProofGateError::PlantedNotDetected {
+            verdict: receipt.planted_verdict.clone(),
+        });
+    }
+    Ok(())
+}
 
 /// Why an admission circuit could not be translated to SMT-LIB2.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,7 +342,13 @@ fn slot(group: usize, dims: usize, d: usize) -> usize {
 
 /// The imperative reference predicate as a 1-bit SMT expression over the budget
 /// membrane's input lanes — the independent twin the circuit is asserted equal to.
-fn reference_admit_expr(dims: usize, evidence_width: Width) -> String {
+///
+/// When `planted_bug` is set, dimension 0's capacity check is DELIBERATELY weakened
+/// from `≤` to `<` (strict): the circuit (`≤`) and this mutated reference then differ
+/// at `limit == available`. The planted-disagreement query asserts those differ and a
+/// conforming solver must return SAT — proving the equivalence METHOD is non-vacuous
+/// (a genuinely wrong circuit would be caught, so the genuine UNSAT is meaningful).
+fn reference_admit_expr(dims: usize, evidence_width: Width, planted_bug: bool) -> String {
     if dims == 0 {
         return "(_ bv1 1)".to_string();
     }
@@ -236,8 +362,13 @@ fn reference_admit_expr(dims: usize, evidence_width: Width) -> String {
             let g_avail = format!("in{}", slot(4, dims, d));
             let e_req = format!("in{}", slot(5, dims, d));
             let e_avail = format!("in{}", slot(6, dims, d));
+            let capacity = if planted_bug && d == 0 {
+                "bvult"
+            } else {
+                "bvule"
+            };
             format!(
-                "(and (bvule {derived} {limit}) (bvule {limit} {available}) \
+                "(and (bvule {derived} {limit}) ({capacity} {limit} {available}) \
                  (bvule {g_req} {g_avail}) (= (bvand {e_req} (bvnot {e_avail})) (_ bv0 {ew})))"
             )
         })
@@ -260,7 +391,7 @@ pub fn budget_membrane_equivalence_smt(
     let program = compile_budget_membrane(dims, budget_width, evidence_width)
         .map_err(|_| QfBvError::Compile)?;
     let circuit = translate(&program)?;
-    let reference = reference_admit_expr(dims, evidence_width);
+    let reference = reference_admit_expr(dims, evidence_width, false);
 
     let mut smt = String::new();
     smt.push_str("(set-logic QF_BV)\n");
@@ -291,14 +422,119 @@ pub fn budget_membrane_equivalence_smt(
     Ok(smt)
 }
 
+/// Emit the PLANTED-DISAGREEMENT script: the same compiled circuit against a
+/// reference with a deliberately weakened dimension-0 capacity check (`<` not `≤`).
+/// A conforming solver MUST return `sat` — a model where they differ. This is the
+/// negative control: it proves the equivalence query can DETECT a real disagreement,
+/// so the genuine `unsat` is not vacuously true over an always-equal encoding.
+///
+/// # Errors
+/// [`QfBvError`] if the membrane fails to compile or translate.
+pub fn budget_planted_disagreement_smt(
+    dims: usize,
+    budget_width: Width,
+    evidence_width: Width,
+) -> Result<String, QfBvError> {
+    let program = compile_budget_membrane(dims, budget_width, evidence_width)
+        .map_err(|_| QfBvError::Compile)?;
+    let circuit = translate(&program)?;
+    let mutated = reference_admit_expr(dims, evidence_width, true);
+
+    let mut smt = String::new();
+    smt.push_str("(set-logic QF_BV)\n");
+    smt.push_str("; --- compiled budget-membrane circuit ---\n");
+    smt.push_str(&circuit.body);
+    smt.push_str("; --- PLANTED-BUG reference (dim-0 capacity weakened < not <=) ---\n");
+    smt.push_str(&format!(
+        "(define-fun bad_admit () (_ BitVec 1) {mutated})\n"
+    ));
+    smt.push_str("; --- SAT proves the method detects a genuine disagreement ---\n");
+    smt.push_str(&format!(
+        "(assert (distinct {} bad_admit))\n",
+        circuit.admit
+    ));
+    smt.push_str("(check-sat)\n");
+    Ok(smt)
+}
+
 #[cfg(test)]
 mod generator_tests {
     use super::super::program::Width;
-    use super::{budget_membrane_equivalence_smt, translate, QfBvError};
+    use super::{
+        budget_membrane_equivalence_smt, budget_planted_disagreement_smt, smt_digest, translate,
+        verify_receipt, ProofGateError, ProofReceipt, QfBvError,
+    };
     use crate::contract::admission::compile_budget_membrane;
 
     fn w(bits: u16) -> Width {
         Width::new(bits).expect("valid width")
+    }
+
+    /// A receipt with all-correct verdicts for `digest` — the qualifying shape.
+    fn passing_receipt(digest: &str) -> ProofReceipt {
+        ProofReceipt {
+            smt_digest: digest.to_string(),
+            primary_solver: "z3 4.13.4".to_string(),
+            independent_solver: "cvc5 1.2.0".to_string(),
+            primary_verdicts: vec!["unsat".to_string(), "sat".to_string(), "sat".to_string()],
+            independent_verdict: "unsat".to_string(),
+            planted_verdict: "sat".to_string(),
+        }
+    }
+
+    #[test]
+    fn planted_disagreement_is_a_single_sat_query_over_a_weakened_reference() {
+        let smt = budget_planted_disagreement_smt(1, w(8), w(8)).expect("emit");
+        assert!(
+            smt.contains("bad_admit"),
+            "the mutated reference is defined"
+        );
+        assert!(
+            smt.contains("bvult"),
+            "dim-0 capacity is weakened to strict <"
+        );
+        assert_eq!(smt.matches("(check-sat)").count(), 1);
+        assert_eq!(smt.matches("(distinct").count(), 1);
+    }
+
+    #[test]
+    fn a_valid_receipt_qualifies_the_matching_circuit() {
+        let smt = budget_membrane_equivalence_smt(3, w(64), w(16)).expect("emit");
+        let digest = smt_digest(&smt);
+        assert!(verify_receipt(&passing_receipt(&digest), &digest).is_ok());
+    }
+
+    #[test]
+    fn a_receipt_for_a_different_circuit_is_rejected() {
+        let receipt = passing_receipt("deadbeef");
+        assert!(matches!(
+            verify_receipt(&receipt, "cafef00d"),
+            Err(ProofGateError::DigestMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn a_circuit_whose_planted_bug_went_undetected_does_not_qualify() {
+        // If the planted disagreement did NOT return sat, the proof METHOD failed to
+        // catch a known bug — so even a genuine unsat must NOT qualify the circuit.
+        let digest = "abc123";
+        let mut receipt = passing_receipt(digest);
+        receipt.planted_verdict = "unsat".to_string();
+        assert!(matches!(
+            verify_receipt(&receipt, digest),
+            Err(ProofGateError::PlantedNotDetected { .. })
+        ));
+    }
+
+    #[test]
+    fn a_circuit_without_independent_confirmation_does_not_qualify() {
+        let digest = "abc123";
+        let mut receipt = passing_receipt(digest);
+        receipt.independent_verdict = "unknown".to_string();
+        assert!(matches!(
+            verify_receipt(&receipt, digest),
+            Err(ProofGateError::IndependentNotConfirmed { .. })
+        ));
     }
 
     #[test]
@@ -380,15 +616,20 @@ mod generator_tests {
     }
 }
 
-/// The pinned-solver harness — CLOUD-ONLY, behind the `qf-bv` feature so it never
-/// runs on the local potato. It writes the equivalence script, runs the pinned
-/// solver(s), and checks `unsat, sat, sat`; a second solver re-confirms the UNSAT
-/// (independent confirmation). Solver binaries come from `BVISOR_Z3` / `BVISOR_CVC5`
-/// (CI pins the versions); absent, the harness fails CLOSED.
+/// The pinned-solver QUALIFICATION harness — CLOUD-ONLY, behind the `qf-bv` feature so
+/// it never runs on the local potato. It discharges the full gate: genuine UNSAT on
+/// TWO independent pinned solvers (z3 + cvc5, both HARD-required), the planted
+/// disagreement returning SAT (the method is non-vacuous), and admit/refuse
+/// reachability. It archives a [`ProofReceipt`] and asserts [`verify_receipt`]
+/// qualifies THIS circuit. CI: `BVISOR_Z3` + `BVISOR_CVC5` pin the versions,
+/// `BVISOR_PROOF_RECEIPT` names the archive path. Absent any pin, it fails CLOSED.
 #[cfg(all(test, feature = "qf-bv"))]
 mod solver_harness {
     use super::super::program::Width;
-    use super::budget_membrane_equivalence_smt;
+    use super::{
+        budget_membrane_equivalence_smt, budget_planted_disagreement_smt, smt_digest,
+        verify_receipt, ProofReceipt,
+    };
     use std::process::Command;
 
     fn w(bits: u16) -> Width {
@@ -418,32 +659,56 @@ mod solver_harness {
             .collect()
     }
 
+    /// The solver's self-reported version line (pinned identity for the receipt).
+    fn solver_version(solver: &str) -> String {
+        let output = Command::new(solver)
+            .arg("--version")
+            .output()
+            .expect("solver --version");
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .unwrap_or("unknown")
+            .trim()
+            .to_string()
+    }
+
     #[test]
-    #[ignore = "QF_BV solver harness — CLOUD-ONLY; CI runs it with pinned z3/cvc5 via \
+    #[ignore = "QF_BV qualification gate — CLOUD-ONLY; CI runs it with pinned z3+cvc5 via \
                 `cargo test -p bvisor --features qf-bv -- --ignored`"]
-    fn budget_membrane_is_equivalence_proven_over_full_width() {
+    fn budget_membrane_qualification_gate() {
         let z3 = std::env::var("BVISOR_Z3").unwrap_or_else(|_| "z3".to_string());
+        // cvc5 is HARD-required — independent confirmation is not optional.
+        let cvc5 = std::env::var("BVISOR_CVC5")
+            .expect("BVISOR_CVC5 must pin an INDEPENDENT solver — confirmation is hard-required");
+
         // Full-width lanes: 64-bit budget values, 16-bit evidence bitsets, 3 dims.
-        let smt = budget_membrane_equivalence_smt(3, w(64), w(16)).expect("emit");
+        let genuine = budget_membrane_equivalence_smt(3, w(64), w(16)).expect("emit genuine");
+        let planted = budget_planted_disagreement_smt(3, w(64), w(16)).expect("emit planted");
 
-        // The primary, HARD proof: z3 must return UNSAT (equivalence) then SAT, SAT
-        // (non-vacuity — an admitting and a refusing model both exist).
-        let z3_verdicts = run_solver(&z3, &smt);
-        assert_eq!(
-            z3_verdicts,
-            vec!["unsat", "sat", "sat"],
-            "z3: equivalence UNSAT, admit reachable, refusal reachable (non-vacuous)"
-        );
+        let primary = run_solver(&z3, &genuine);
+        let independent = run_solver(&cvc5, &genuine);
+        let planted_verdict = run_solver(&z3, &planted);
 
-        // INDEPENDENT confirmation by a second pinned solver, when one is pinned via
-        // BVISOR_CVC5 (CI sets it only when the pinned cvc5 binary is available).
-        if let Ok(cvc5) = std::env::var("BVISOR_CVC5") {
-            let cvc5_verdicts = run_solver(&cvc5, &smt);
-            assert_eq!(
-                cvc5_verdicts.first().map(String::as_str),
-                Some("unsat"),
-                "cvc5 independently confirms equivalence is UNSAT"
-            );
+        let receipt = ProofReceipt {
+            smt_digest: smt_digest(&genuine),
+            primary_solver: solver_version(&z3),
+            independent_solver: solver_version(&cvc5),
+            primary_verdicts: primary,
+            independent_verdict: independent.first().cloned().unwrap_or_default(),
+            planted_verdict: planted_verdict.first().cloned().unwrap_or_default(),
+        };
+
+        // Archive the evidence (canonical hex) for the release gate to re-verify.
+        if let Ok(path) = std::env::var("BVISOR_PROOF_RECEIPT") {
+            let bytes = batpak::canonical::to_bytes(&receipt).expect("encode receipt");
+            let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+            std::fs::write(&path, hex).expect("write proof receipt");
         }
+
+        // The gate: the receipt must qualify THIS circuit — genuine UNSAT (z3),
+        // independent UNSAT (cvc5), planted SAT, admit + refuse reachable.
+        verify_receipt(&receipt, &smt_digest(&genuine))
+            .expect("QF_BV qualification: two-solver UNSAT + planted SAT + non-vacuity must hold");
     }
 }

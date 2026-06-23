@@ -28,7 +28,9 @@ mod sim;
 pub use backend::inert::InertBackend;
 
 pub use contract::admission::{
-    budget_membrane_equivalence_smt, translate, QfBvError, TranslatedCircuit,
+    budget_membrane_equivalence_smt, budget_planted_disagreement_smt, smt_digest, translate,
+    verify_receipt, ProofGateError, ProofReceipt, ProofStatus, QfBvError, TranslatedCircuit,
+    ADMISSION_CIRCUIT_PROOF,
 };
 pub use contract::admission::{
     compile_admission, compile_budget_detail, compile_budget_membrane, compile_conflict_membrane,
