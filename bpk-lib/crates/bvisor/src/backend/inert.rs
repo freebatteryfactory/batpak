@@ -14,6 +14,7 @@
 
 use crate::contract::backend::Backend;
 use crate::contract::budget::BudgetProfile;
+use crate::contract::budget_witness::BudgetWitnesses;
 use crate::contract::capability::{Enforcement, EvidenceClaim, SupportVerdict};
 use crate::contract::host_control::HostControl;
 use crate::contract::ids::BackendId;
@@ -156,6 +157,10 @@ impl Backend for InertBackend {
             denied: Vec::<DeniedAttempt>::new(),
             exit,
             captured,
+            // Inert confines nothing and does not yet witness budgets at execution:
+            // it echoes the admitted contract with usage unobserved (the execution
+            // slice wires real counters). Uncertainty is preserved, never fabricated.
+            budget: BudgetWitnesses::unwitnessed(&plan.budgets),
             artifacts: Vec::<StagedArtifact>::new(),
             findings,
         }

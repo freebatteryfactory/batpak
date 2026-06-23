@@ -285,6 +285,7 @@ fn sample_report_body() -> BoundaryReportBody {
         denied: Vec::new(),
         exit: Some(ExitStatus::Code(0)),
         captured: CaptureRefs::default(),
+        budget: bvisor::BudgetWitnesses::unwitnessed(&sample_admitted_budgets()),
         artifacts: Vec::new(),
         findings: vec![
             BoundaryFinding::RequirementAdmitted {
