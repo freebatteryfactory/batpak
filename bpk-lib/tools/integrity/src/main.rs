@@ -37,6 +37,7 @@ mod glob_coverage;
 mod harness_lints;
 mod invariant_bridge;
 mod meta_gate;
+mod model_bindings;
 mod mutation_debt;
 mod overclaim;
 mod public_surface;

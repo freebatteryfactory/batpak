@@ -222,6 +222,7 @@ pub(crate) fn run() -> Result<()> {
         )?;
     }
     check_examples_artifact_complete(&repo_root, &artifacts)?;
+    crate::model_bindings::check(&repo_root)?;
 
     outln!("traceability-check: ok");
     Ok(())
