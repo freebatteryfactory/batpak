@@ -101,7 +101,7 @@
   dst_coverage: false
   globs:
     - crates/syncbat/src/register.rs
-    - crates/syncbat/src/register_store.rs
+    - crates/syncbat/src/register_store/**/*.rs
 
 - slug: netbat-boundary-protocol
   assurance_level: L3
@@ -109,7 +109,7 @@
   globs:
     - crates/netbat/src/lib.rs
     - crates/netbat/src/route.rs
-    - crates/netbat/src/transport.rs
+    - crates/netbat/src/transport/**/*.rs
 
 - slug: fork-isolation
   assurance_level: L4

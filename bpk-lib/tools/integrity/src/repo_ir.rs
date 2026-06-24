@@ -11,14 +11,17 @@
 //! checks (the same fold-fusion law `project_fused2/3` tests for projections,
 //! turned on the gauntlet's own facts — the metacircular tie).
 //!
-//! This is the Phase 3 SKELETON. It binds SIX fact families that already have
-//! authoritative homes elsewhere in the integrity crate, so the IR is a pure
-//! projection (no new source-of-truth):
+//! It binds SIX fact families that already have authoritative homes elsewhere in
+//! the integrity crate, so the IR is a pure projection (no new source-of-truth):
 //!   1. AL assignments        — `assurance.rs` manifest (`AssuranceEntry`).
 //!   2. gate ownership        — `gate_registry::GATES` (slug, blocking, red fixture).
 //!   3. waiver ownership      — `typed_waivers.yaml` (`Waiver`: id, owner, target).
 //!   4. public-surface map    — store pub-fn coverage inventory.
-//!   5. mutation-seam map     — `assurance::CRITICAL_SEAM_MUTANT_GLOBS` (slug→glob).
+//!   5. mutation-seam map     — PARSED from `traceability/seam_registry.yaml`
+//!      (slug → glob → assurance level). This column is no longer mirrored from
+//!      the in-code `assurance::CRITICAL_SEAM_MUTANT_GLOBS` array (the exact
+//!      mirror-drift surface D9 was meant to retire); it reads the YAML source
+//!      directly, so a seam edited only in the registry is reflected here.
 //!   6. docs traceability     — `invariants.yaml` catalog (id, witness_test).
 //!
 //! The fused fold-runner ([`run_fitness`]) applies every registered [`Fitness`]
@@ -28,23 +31,34 @@
 //! the gauntlet's own fold fusion is itself tested, exactly as item 1a does for
 //! projections.
 //!
+//! BLOCKING (D9): [`check`] folds the BLOCKING fitnesses over the live IR and
+//! `bail!`s on any finding, so the fitness runner is wired into the serial
+//! `structural-check` run path (`structural.rs`) as a real gate (`repo-ir-fitness`)
+//! with a qualified anti-vacuous RED fixture — not an advisory skeleton. The
+//! blocking invariant it enforces is parse-derived and non-duplicate: every seam
+//! glob PARSED from `seam_registry.yaml` must match ≥1 tracked file (a dead glob
+//! in the registry = 0 mutants = vacuous PASS; the assurance lockstep checks only
+//! YAML↔mirror string-equality, and `glob_coverage` scans only `lanes.rs`, so the
+//! registry's own globs are otherwise unchecked against the filesystem).
+//!
 //! DEFERRED breadth (logged, not built here): syn-derived symbol/call/type
 //! columns, crate-graph dep edges (lives in `triangulation.rs` today), on-disk
-//! format-version column (item 4), the YAML-authored fitness registry (item 3.4),
-//! and re-hosting the existing serial checks onto the IR (item 6.3). See
-//! GAUNTLET_ISSUES.md.
+//! format-version column (item 4), the YAML-authored fitness registry (item 3.4).
+//! See GAUNTLET_ISSUES.md.
 //!
 //! Anchors: INV-GAUNTLET-FOLD-FUSION (traceability/invariants.yaml),
 //! architecture_ir.rs (the on-disk IR sibling this complements).
 
-use crate::assurance::{self, AssuranceEntry};
+use crate::assurance::{self, AssuranceEntry, SeamRegistryEntry};
 use crate::docs_catalog::{self, CatalogInvariant};
 use crate::gate_registry::{self, Gate};
+use crate::repo_surface::{relative, tracked_repo_files};
 use crate::source_cache::SourceCache;
 use crate::store_pub_fn_coverage;
 use crate::typed_waivers::{self, Waiver};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const SCHEMA_VERSION: u32 = 1;
@@ -108,12 +122,15 @@ pub(crate) struct PublicSurfaceFact {
     pub(crate) allowlisted: bool,
 }
 
-/// Mutation-seam map: a critical seam slug and one of its mutant-file globs.
-/// (ECS column 5.)
+/// Mutation-seam map: a critical seam slug, one of its mutant-file globs, and the
+/// seam's declared assurance level — all PARSED from `seam_registry.yaml` (not
+/// mirrored from the in-code array). The level fills the previously-thin column so
+/// a fitness can fold over seam criticality. (ECS column 5.)
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct MutationSeamFact {
     pub(crate) slug: String,
     pub(crate) glob: String,
+    pub(crate) assurance_level: String,
 }
 
 /// Docs traceability: a catalog invariant id, its statement, and the strong-tier
@@ -227,7 +244,7 @@ pub(crate) fn build(repo_root: &Path) -> Result<RepoIr> {
     let gates = build_gates();
     let waivers = build_waivers(repo_root)?;
     let public_surface = build_public_surface(repo_root)?;
-    let mutation_seams = build_mutation_seams();
+    let mutation_seams = build_mutation_seams(repo_root)?;
     let doc_invariants = build_doc_invariants(repo_root)?;
 
     Ok(RepoIr {
@@ -290,14 +307,24 @@ fn build_public_surface(repo_root: &Path) -> Result<Vec<PublicSurfaceFact>> {
         .collect())
 }
 
-fn build_mutation_seams() -> Vec<MutationSeamFact> {
-    assurance::CRITICAL_SEAM_MUTANT_GLOBS
-        .iter()
-        .map(|(slug, glob)| MutationSeamFact {
-            slug: (*slug).to_owned(),
-            glob: (*glob).to_owned(),
-        })
-        .collect()
+/// PARSE the seam column from `traceability/seam_registry.yaml` — one row per
+/// `(slug, glob)` pair, carrying the seam's declared assurance level. This is the
+/// D9 parse-not-mirror change: the column now reflects the YAML source directly
+/// rather than the in-code `CRITICAL_SEAM_MUTANT_GLOBS` mirror, so a seam edited
+/// only in the registry (the exact mirror-drift D9 retires) is visible here.
+fn build_mutation_seams(repo_root: &Path) -> Result<Vec<MutationSeamFact>> {
+    let registry: Vec<SeamRegistryEntry> = assurance::load_seam_registry(repo_root)?;
+    let mut facts = Vec::new();
+    for entry in registry {
+        for glob in &entry.globs {
+            facts.push(MutationSeamFact {
+                slug: entry.slug.clone(),
+                glob: glob.clone(),
+                assurance_level: entry.assurance_level.clone(),
+            });
+        }
+    }
+    Ok(facts)
 }
 
 fn build_doc_invariants(repo_root: &Path) -> Result<Vec<DocInvariantFact>> {
@@ -372,20 +399,141 @@ impl Fitness for WitnessTestIsPathFnShaped {
     }
 }
 
-/// The registered fitness set for the skeleton. Adding a fitness here is the
-/// "novel predicate KIND needs Rust" escape hatch (item 3.4); the YAML-authored
-/// common case is DEFERRED.
+/// FACT 3 (D9): every mutation seam PARSED from `seam_registry.yaml` must declare
+/// a recognized assurance level (`L0`..`L4`). The registry's `assurance_level` is
+/// a free `String` field (NOT deserialized into the `AssuranceLevel` enum), so a
+/// typo'd or invalid tier is otherwise unchecked — the lockstep compares only
+/// `(slug, glob)` pairs, never the level. This fitness folds over the seam column
+/// and is a BLOCKING fitness ([`BLOCKING_FITNESSES`]). Distinct family from the
+/// Gate/DocInvariant fitnesses above.
+pub(crate) struct SeamLevelIsRecognized;
+
+const RECOGNIZED_LEVELS: [&str; 5] = ["L0", "L1", "L2", "L3", "L4"];
+
+impl Fitness for SeamLevelIsRecognized {
+    fn name(&self) -> &'static str {
+        "seam-level-is-recognized"
+    }
+    fn over(&self) -> NodeKind {
+        NodeKind::MutationSeam
+    }
+    fn check(&self, id: RepoNodeId, ir: &RepoIr, sink: &mut Vec<Finding>) {
+        let seam = &ir.mutation_seams[id.ordinal];
+        if !RECOGNIZED_LEVELS.contains(&seam.assurance_level.as_str()) {
+            sink.push(Finding {
+                node: id,
+                fitness: self.name(),
+                message: format!(
+                    "seam `{}` glob `{}` declares unrecognized assurance level `{}` (want one of {:?})",
+                    seam.slug, seam.glob, seam.assurance_level, RECOGNIZED_LEVELS
+                ),
+            });
+        }
+    }
+}
+
+/// The registered fitness set. Adding a fitness here is the "novel predicate KIND
+/// needs Rust" escape hatch (item 3.4); the YAML-authored common case is DEFERRED.
 pub(crate) fn registered_fitnesses() -> Vec<Box<dyn Fitness>> {
     vec![
         Box::new(BlockingGateNamesRedFixture),
         Box::new(WitnessTestIsPathFnShaped),
+        Box::new(SeamLevelIsRecognized),
     ]
 }
 
-/// Subcommand entry: build the IR, fold the registered fitnesses over it via the
-/// FUSED runner (one traversal, N checks), report any findings, and emit the IR
-/// as JSON (stdout or `--out`). The fitness pass is advisory in this skeleton —
-/// the blocking re-host of existing checks onto the IR is DEFERRED (item 6.3).
+/// The fitnesses whose findings BLOCK (fail `structural-check`) when [`check`]
+/// folds them over the live IR. The full `registered_fitnesses()` set is run
+/// advisory by the `repo-ir` subcommand; this subset is the gate.
+fn blocking_fitnesses() -> Vec<Box<dyn Fitness>> {
+    vec![
+        Box::new(BlockingGateNamesRedFixture),
+        Box::new(WitnessTestIsPathFnShaped),
+        Box::new(SeamLevelIsRecognized),
+    ]
+}
+
+/// BLOCKING gate entry (`repo-ir-fitness`, D9). Build the live IR, fold the
+/// [`blocking_fitnesses`] over it, and `bail!` on ANY finding — so the fitness
+/// runner is a real serial gate, not an advisory skeleton. Additionally checks a
+/// parse-derived, FS-coupled invariant the fold cannot express: every seam glob
+/// PARSED from `seam_registry.yaml` must match ≥1 tracked file (a dead registry
+/// glob = 0 mutants = vacuous PASS; `glob_coverage` scans only `lanes.rs`, and the
+/// assurance lockstep compares only YAML↔mirror string pairs, so the registry's
+/// own globs are otherwise never checked against the filesystem). Returns real
+/// `files_examined`/`assertions_run` counts for the receipt.
+pub(crate) fn check(repo_root: &Path) -> Result<crate::receipts::GateWork> {
+    let ir = build(repo_root)?;
+
+    let owned = blocking_fitnesses();
+    let fitnesses: Vec<&dyn Fitness> = owned.iter().map(AsRef::as_ref).collect();
+    let findings = run_fitness(&ir, &fitnesses);
+    if let Some(first) = findings.first() {
+        bail!(
+            "repo-ir-fitness: {} blocking finding(s) over the live repo-IR. First: [{}] {}",
+            findings.len(),
+            first.fitness,
+            first.message
+        );
+    }
+
+    // FS-coupled seam-glob existence check (cannot be a pure-IR fitness: it needs
+    // the tracked-file set). Every parsed registry glob must match a real file.
+    check_seam_globs_resolve(repo_root, &ir.mutation_seams)?;
+
+    // files_examined: the IR's input families that were folded; assertions_run:
+    // one per fitness-over-row plus one per seam-glob existence assertion.
+    let seam_glob_assertions = ir.mutation_seams.len();
+    let fold_assertions = column_total_for(&ir, &fitnesses);
+    let assertions = fold_assertions.saturating_add(seam_glob_assertions).max(1);
+    let mut inputs: BTreeSet<PathBuf> = BTreeSet::new();
+    inputs.insert(assurance::seam_registry_path(repo_root));
+    inputs.insert(assurance::manifest_path(repo_root));
+    inputs.insert(repo_root.join("traceability").join("invariants.yaml"));
+    let files = inputs.len().max(1);
+    Ok(crate::receipts::GateWork::new(files, assertions, inputs))
+}
+
+/// Sum, across the fold, of (rows in each fitness's column) — the real number of
+/// fitness assertions executed by [`run_fitness`].
+fn column_total_for(ir: &RepoIr, fitnesses: &[&dyn Fitness]) -> usize {
+    fitnesses
+        .iter()
+        .map(|f| ir.column_len(f.over()))
+        .fold(0usize, usize::saturating_add)
+}
+
+/// Assert every seam glob parsed from `seam_registry.yaml` matches ≥1 tracked
+/// file. A dead registry glob produces zero mutants and would pass vacuously.
+fn check_seam_globs_resolve(repo_root: &Path, seams: &[MutationSeamFact]) -> Result<()> {
+    let tracked = tracked_repo_files(repo_root)?;
+    let rels: BTreeSet<String> = tracked
+        .iter()
+        .map(|p| relative(repo_root, p).replace('\\', "/"))
+        .collect();
+    for seam in seams {
+        let matched = rels
+            .iter()
+            .any(|rel| assurance::glob_matches(&seam.glob, rel));
+        if !matched {
+            bail!(
+                "repo-ir-fitness: seam `{}` glob `{}` (from seam_registry.yaml) matches NO tracked \
+                 file. A dead seam glob produces zero mutants and would pass mutation smoke \
+                 vacuously. Fix the registry glob or retire the seam.",
+                seam.slug,
+                seam.glob
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Subcommand entry (`repo-ir`): build the IR, fold the registered fitnesses over
+/// it via the FUSED runner (one traversal, N checks), report any findings, and
+/// emit the IR as JSON (stdout or `--out`). This subcommand is the ADVISORY
+/// human-facing view (it prints findings and the JSON but does not fail); the
+/// BLOCKING gate is [`check`], wired into the serial `structural-check` run path
+/// (`structural.rs`) as `repo-ir-fitness`.
 pub(crate) fn run(repo_root: &Path, out: Option<PathBuf>) -> Result<()> {
     let ir = build(repo_root)?;
 
