@@ -37,7 +37,19 @@ host = ["dep:syncbat", "dep:hostbat"]
 # data is ALWAYS compiled regardless of feature, so the per-platform honesty
 # tables stay cross-platform testable. Real OS deps land per build-ladder step in
 # the matching `[target.'cfg(target_os="..")'.dependencies]` table below.
-backend-linux = []
+#
+# CARGO PATTERN (compiles cleanly BOTH on Linux and non-Linux):
+#   `backend-linux` activates `dep:libc` + `dep:landlock`, which live in the
+#   `[target.'cfg(target_os = "linux")'.dependencies]` table below as
+#   `optional = true`. The `dep:` syntax suppresses the implicit feature, so the
+#   deps appear ONLY when the feature is on AND the host is Linux:
+#     - Non-Linux build (any feature set): the target table is not resolved, so
+#       libc/landlock are never fetched — no error, no unused-dep warning.
+#     - Linux WITHOUT `backend-linux`: the optional deps stay inactive (the
+#       `backend_impl`/`sys` modules are cfg-gated off) — no unused-dep warning.
+#     - Linux WITH `backend-linux`: both deps activate and the real LinuxBackend
+#       (probe ABI / landlock confinement / pre_exec basement) compiles.
+backend-linux = ["dep:libc", "dep:landlock"]
 backend-wasm = []
 backend-windows = []
 backend-macos = []
@@ -73,6 +85,16 @@ tempfile = ">=3.24, <3.25"
 # Wasm (step c) deps (wasmi / wasmtime) are host-OS-independent, so they live in
 # the plain `[dependencies]` behind `backend-wasm`, not in a target table.
 [target.'cfg(target_os = "linux")'.dependencies]
+# Step (b) — REAL filesystem confinement. Both `optional = true` + activated by
+# the `backend-linux` feature via `dep:` (see the feature comment above), so a
+# default Linux build never resolves them and a non-Linux build never sees this
+# target table at all.
+#   libc      — the raw landlock-ABI probe syscall + the `pre_exec` basement that
+#               applies the ruleset in the child before exec (`linux/sys.rs`).
+#   landlock  — the safe ABI-floor + ruleset builder used from the basement to
+#               restrict FS access to exactly the declared roots.
+libc = { version = "0.2", optional = true }
+landlock = { version = "0.4.5", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 
