@@ -237,6 +237,19 @@
     - ART-STORE-FORK-BENCH
     - ART-STORE-FORK-IMPORT-EXAMPLES
   witness_test: crates/core/tests/store_fork_isolation.rs::fork_isolates_parent_writes_on_fresh_reopen
+- id: INV-FORK-HOSTILE-FS-REFUSAL
+  statement: >-
+    Store fork fails closed under hostile filesystem conditions: a symlink
+    destination leaf is refused with an IO error, a destination canonicalizing
+    to the source data dir is refused as InvalidInput, a destination holding
+    stale store artifacts is positively cleared (DestinationCleared) before the
+    fork so the result is the source state rather than a merge, and an ENOSPC
+    that strikes mid-copy returns a StorageFull error with no openable partial
+    fork published at the destination.
+  artifacts:
+    - ART-STORE-FORK-IMPORT-SOURCE
+    - ART-FORK-HOSTILE-TESTS
+  witness_test: crates/core/tests/fork_hostile_fs.rs::fork_enospc_mid_copy_publishes_nothing
 - id: INV-IMPORT-CONTENT-ISOMORPHISM
   statement: >-
     Store import is re-application rather than merge: source event identity,

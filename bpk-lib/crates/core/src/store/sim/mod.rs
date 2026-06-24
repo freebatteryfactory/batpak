@@ -34,6 +34,7 @@
 pub mod clock;
 pub(crate) mod corpus;
 pub(crate) mod fault_model;
+pub(crate) mod fork_hostile;
 pub(crate) mod fork_recovery;
 pub(crate) mod fs;
 pub(crate) mod import_recovery;

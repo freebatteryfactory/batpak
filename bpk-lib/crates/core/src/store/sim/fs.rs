@@ -56,6 +56,21 @@ pub(crate) struct SimFs {
     /// 1-in-N fsync-drop rate. A value of `0` disables drops entirely (every
     /// fsync is honored), so the crash boundary is purely the unsynced tail.
     fsync_drop_one_in: u32,
+    /// ENOSPC injection schedule for file-materialization ops
+    /// ([`StoreFs::cow_copy_file`] / [`StoreFs::copy`]). `None` disables it.
+    /// When `Some`, the materialize counter is advanced once per such op and
+    /// the op whose 1-based index EQUALS the threshold fails with `ENOSPC`
+    /// (`io::ErrorKind::StorageFull`) — modelling a disk that fills mid-fork.
+    /// Deterministic: the same threshold fails the same op every run.
+    enospc_on_copy: Mutex<EnospcSchedule>,
+}
+
+/// ENOSPC-mid-copy injection bookkeeping. `fail_at` is the 1-based
+/// materialize-op index that fails; `seen` counts materialize ops reached.
+#[derive(Default)]
+struct EnospcSchedule {
+    fail_at: Option<u32>,
+    seen: u32,
 }
 
 impl SimFs {
@@ -67,7 +82,39 @@ impl SimFs {
             rng: Mutex::new(fastrand::Rng::with_seed(seed)),
             durable: Mutex::new(BTreeMap::new()),
             fsync_drop_one_in,
+            enospc_on_copy: Mutex::new(EnospcSchedule::default()),
         }
+    }
+
+    /// Arm deterministic ENOSPC injection: the `fail_at`-th file-materialization
+    /// op (1-based; `cow_copy_file` or `copy`) fails with
+    /// [`io::ErrorKind::StorageFull`]. Used by the offensive `fork_hostile_fs`
+    /// fixture to force a disk-full mid-fork and prove the fork does not
+    /// publish a partial copy.
+    pub(crate) fn with_enospc_on_copy(self, fail_at: u32) -> Self {
+        {
+            let mut sched = self
+                .enospc_on_copy
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            sched.fail_at = Some(fail_at);
+            sched.seen = 0;
+        }
+        self
+    }
+
+    /// Advance the materialize counter and return `true` when THIS op must fail
+    /// with ENOSPC. A no-op (returns `false`) when no schedule is armed.
+    fn enospc_strikes_now(&self) -> bool {
+        let mut sched = self
+            .enospc_on_copy
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(fail_at) = sched.fail_at else {
+            return false;
+        };
+        sched.seen = sched.seen.saturating_add(1);
+        sched.seen == fail_at
     }
 
     /// Decide whether THIS fsync is dropped, advancing the PRNG exactly once.
@@ -211,12 +258,24 @@ impl StoreFs for SimFs {
         to: &Path,
         preference: crate::store::CopyPreference,
     ) -> io::Result<crate::store::platform::fs::CowStrategyUsed> {
+        if self.enospc_strikes_now() {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "SimFs: injected ENOSPC mid-fork on cow_copy_file",
+            ));
+        }
         let used = crate::store::platform::fs::cow_copy_file(from, to, preference)?;
         self.track_materialized_file(to);
         Ok(used)
     }
 
     fn copy(&self, from: &Path, to: &Path) -> io::Result<u64> {
+        if self.enospc_strikes_now() {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "SimFs: injected ENOSPC mid-fork on copy",
+            ));
+        }
         let bytes = crate::store::platform::fs::copy(from, to)?;
         self.track_materialized_file(to);
         Ok(bytes)
