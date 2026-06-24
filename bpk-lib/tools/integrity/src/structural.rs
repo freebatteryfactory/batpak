@@ -92,6 +92,12 @@ pub(crate) fn run() -> Result<()> {
 
     crate::receipts::run_gate("overclaim", || crate::overclaim::check(&repo_root))?;
 
+    // repo-ir-fitness (D9): fold the BLOCKING fitnesses over the live repo-IR and
+    // additionally assert every seam glob PARSED from seam_registry.yaml resolves
+    // to a tracked file. A finding fails the run — the IR is a real gate now, not
+    // an advisory skeleton; its seam column is parsed (not mirrored).
+    crate::receipts::run_gate("repo-ir-fitness", || crate::repo_ir::check(&repo_root))?;
+
     // assurance-level-check: receipt over the manifest + the production files it
     // resolves to assurance levels.
     crate::receipts::run_gate("assurance-level-check", || {

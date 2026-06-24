@@ -121,7 +121,7 @@
   rationale: "durable register catalog rebuild is deterministic runtime"
   globs:
     - crates/syncbat/src/register.rs
-    - crates/syncbat/src/register_store.rs
+    - crates/syncbat/src/register_store/**/*.rs
 
 - level: L3
   seam: netbat-boundary-protocol
@@ -129,7 +129,7 @@
   globs:
     - crates/netbat/src/lib.rs
     - crates/netbat/src/route.rs
-    - crates/netbat/src/transport.rs
+    - crates/netbat/src/transport/**/*.rs
 
 # --- L2: public API + on-disk / serialized / wire contracts ---
 - level: L2

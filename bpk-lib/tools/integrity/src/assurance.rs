@@ -153,12 +153,15 @@ pub(crate) const CRITICAL_SEAM_MUTANT_GLOBS: &[(&str, &str)] = &[
     ("syncbat-register-catalog", "crates/syncbat/src/register.rs"),
     (
         "syncbat-register-catalog",
-        "crates/syncbat/src/register_store.rs",
+        "crates/syncbat/src/register_store/**/*.rs",
     ),
     // netbat-boundary-protocol (NETBAT_BOUNDARY_MUTANT_FILES)
     ("netbat-boundary-protocol", "crates/netbat/src/lib.rs"),
     ("netbat-boundary-protocol", "crates/netbat/src/route.rs"),
-    ("netbat-boundary-protocol", "crates/netbat/src/transport.rs"),
+    (
+        "netbat-boundary-protocol",
+        "crates/netbat/src/transport/**/*.rs",
+    ),
     // fork-isolation (FORK_MUTANT_FILES)
     (
         "fork-isolation",

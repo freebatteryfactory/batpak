@@ -428,6 +428,20 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
         has_blocking_authority: true,
     },
+    // --- D9 repo-IR fitness gate (GAUNTLET-REPO-IR, blocking, qualified
+    //     GateNegativePath). The fitness runner is no longer advisory: `repo_ir::check`
+    //     folds the blocking fitnesses over the live IR and asserts every seam glob
+    //     PARSED from seam_registry.yaml resolves to a tracked file. The red fixture
+    //     plants a synthetic IR with an unrecognized seam assurance level and asserts
+    //     the seam fitness flags exactly it. ---
+    Gate {
+        slug: "repo-ir-fitness",
+        red_fixture_test: Some(
+            "tools/integrity/src/repo_ir_tests.rs::detector_rejects_planted_bad_seam_level",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
 ];
 
 /// Gates that block a real run today but are recorded as `has_blocking_authority:
@@ -453,6 +467,7 @@ pub(crate) const RECEIPT_REQUIRED_GATES: &[&str] = &[
     "invariant-bridge",
     "structural-source-lints",
     "overclaim",
+    "repo-ir-fitness",
 ];
 
 /// Tokens that signal a [`RedFixtureKind::GateNegativePath`] test body asserts a
