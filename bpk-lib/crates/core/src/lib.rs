@@ -142,7 +142,8 @@ pub mod __fuzz;
 #[doc(hidden)]
 pub mod __sim {
     pub use crate::store::sim::corpus::{
-        assert_corpus_rows_current, graduate_corpus_seed, verify_corpus_row,
+        assert_corpus_rows_current, graduate_corpus_cell, graduate_corpus_seed, verify_corpus_row,
+        verify_corpus_row_cell, CorpusRowDescriptor, GraduationRequest,
     };
     pub use crate::store::sim::fork_recovery::{
         fork_fault_replay_seed, run_seeded_fork_fault_public, ForkFaultOutcomePublic,
