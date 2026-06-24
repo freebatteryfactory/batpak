@@ -145,6 +145,11 @@ pub mod __sim {
         assert_corpus_rows_current, graduate_corpus_cell, graduate_corpus_seed, verify_corpus_row,
         verify_corpus_row_cell, CorpusRowDescriptor, GraduationRequest,
     };
+    pub use crate::store::sim::fork_hostile::{
+        run_fork_dest_equals_source, run_fork_enospc_mid_copy, run_fork_stale_dest,
+        run_fork_symlink_dest, DestEqualsSourceOutcome, EnospcMidCopyOutcome, StaleDestOutcome,
+        SymlinkDestOutcome, STALE_RANGES_FILE, STALE_SEGMENT_FILE,
+    };
     pub use crate::store::sim::fork_recovery::{
         fork_fault_replay_seed, run_seeded_fork_fault_public, ForkFaultOutcomePublic,
     };
