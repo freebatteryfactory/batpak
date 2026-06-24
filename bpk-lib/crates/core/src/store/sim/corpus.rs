@@ -1,13 +1,17 @@
 //! DST corpus graduation + sweep harness (Thread #64-B).
 //!
-//! The durable corpus lives in `traceability/dst_corpus.yaml`. Each entry records
-//! a seeded honest-disk recovery run over the real `Store` + `SimFs` composition
-//! ([`super::recovery`]). Cloud lanes may sweep candidate seeds via
-//! [`run_corpus_sweep`]; only seeds that pass [`check_graduation`] graduate into
-//! the YAML ledger (deterministic digest + legality oracle pass + declared seam).
+//! The durable corpus lives in `traceability/dst_corpus.yaml` and is a GROWING
+//! oracle: each entry records a seeded crash-recovery run over the real `Store` +
+//! `SimFs` composition under one cell of the hostile-fs fault matrix —
+//! honest-disk crash ([`super::recovery`]), lying-disk fsync-drop, or
+//! crash-before-fsync at a durability [`Boundary`] ([`recovery_matrix`]). Only
+//! seeds that pass graduation ([`check_graduation_for`]: deterministic digest
+//! across two runs + legality-oracle pass + a declared seam) graduate into the
+//! YAML ledger, where the `dst_corpus_currency` gate re-graduates every row and
+//! checks both the digest AND the recovered outcome label.
 
 use super::recovery::{run, RecoveryOutcome};
-use super::recovery_matrix::Boundary;
+use super::recovery_matrix::{self, Boundary, Classification, FaultMode};
 
 /// Legal recovery classification stored in the corpus ledger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +48,8 @@ impl CorpusOutcome {
 pub(crate) struct CorpusEntry {
     /// Seeded PRNG / SimFs schedule selector (`BATPAK_SEED` replay).
     pub seed: u64,
-    /// Hostile-fs mode exercised (honest-disk only until SIM-2b broadens routing).
+    /// Hostile-fs mode exercised (honest-disk crash, lying-disk fsync-drop, or
+    /// crash-before-fsync at a durability boundary).
     pub fault_mode: FaultModeLabel,
     /// Durability boundary when `fault_mode` is crash-before-fsync; absent otherwise.
     pub boundary: Option<Boundary>,
@@ -52,7 +57,7 @@ pub(crate) struct CorpusEntry {
     pub seam_touched: String,
     /// Declared assurance level (`L3` / `L4`) for AL-graded consumers.
     pub assurance_level: String,
-    /// Op-plan length passed to [`super::recovery::run`].
+    /// Op-plan length passed to the recovery oracle that owns `fault_mode`.
     pub steps: usize,
     /// FNV-1a digest identity — two runs with the same seed must reproduce it.
     pub op_trace_digest: u64,
@@ -60,24 +65,81 @@ pub(crate) struct CorpusEntry {
     pub outcome: CorpusOutcome,
 }
 
-/// Serializable fault-mode label for the corpus YAML (honest disk today).
+/// Serializable fault-mode label for the corpus YAML.
+///
+/// Honest disk routes through [`super::recovery::run`]; the lying-disk and
+/// crash-before-fsync modes route through [`recovery_matrix::run`] so the corpus
+/// covers the full hostile-fs matrix the recovery oracle models, not just one
+/// honest-disk path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FaultModeLabel {
+    /// Honest disk — every fsync honored; a crash loses only the unsynced tail.
     HonestDiskCrash,
+    /// Lying disk — roughly one fsync in `one_in` is silently dropped.
+    LyingDiskFsyncDrop {
+        /// 1-in-N fsync-drop rate (`>= 1`).
+        one_in: u32,
+    },
+    /// Mid-write abort at a durability boundary, leaving a torn/partial frame.
+    /// The boundary is carried in the entry's `boundary` field.
+    CrashBeforeFsync,
 }
 
 impl FaultModeLabel {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::HonestDiskCrash => "HonestDiskCrash",
+            Self::LyingDiskFsyncDrop { .. } => "LyingDiskFsyncDrop",
+            Self::CrashBeforeFsync => "CrashBeforeFsync",
         }
     }
 
     pub(crate) fn parse(raw: &str) -> Option<Self> {
         match raw {
             "HonestDiskCrash" => Some(Self::HonestDiskCrash),
+            // The `one_in` rate is carried in the corpus row's dedicated column and
+            // supplied to [`parse_with_rate`]; the bare label parses to a rate that
+            // [`resolve_matrix_mode`] re-fills from the row, so a `0` placeholder
+            // here is never routed directly.
+            "LyingDiskFsyncDrop" => Some(Self::LyingDiskFsyncDrop { one_in: 0 }),
+            "CrashBeforeFsync" => Some(Self::CrashBeforeFsync),
             _ => None,
         }
+    }
+
+    /// Parse a label together with the corpus row's optional drop-rate column,
+    /// re-attaching the lying-disk `one_in` rate the bare label cannot carry.
+    pub(crate) fn parse_with_rate(raw: &str, one_in: Option<u32>) -> Option<Self> {
+        match Self::parse(raw)? {
+            Self::LyingDiskFsyncDrop { .. } => Some(Self::LyingDiskFsyncDrop {
+                one_in: one_in?.max(1),
+            }),
+            mode @ (Self::HonestDiskCrash | Self::CrashBeforeFsync) => Some(mode),
+        }
+    }
+}
+
+/// Map a corpus (label, boundary) pair onto the recovery-matrix [`FaultMode`] the
+/// non-honest-disk rows replay through. Honest-disk rows do NOT route here (they
+/// use [`super::recovery::run`]); `None` signals "not a matrix-routed mode".
+fn resolve_matrix_mode(label: FaultModeLabel, boundary: Option<Boundary>) -> Option<FaultMode> {
+    match label {
+        FaultModeLabel::HonestDiskCrash => None,
+        FaultModeLabel::LyingDiskFsyncDrop { one_in } => Some(FaultMode::LyingDiskFsyncDrop {
+            one_in: one_in.max(1),
+        }),
+        FaultModeLabel::CrashBeforeFsync => {
+            boundary.map(|boundary| FaultMode::CrashBeforeFsync { boundary })
+        }
+    }
+}
+
+/// Map the recovery-matrix [`Classification`] onto the corpus outcome label.
+fn classification_to_outcome(class: Classification) -> CorpusOutcome {
+    match class {
+        Classification::CommittedPrefix => CorpusOutcome::CommittedPrefix,
+        Classification::RolledBack => CorpusOutcome::RolledBack,
+        Classification::CanonicalRefusal => CorpusOutcome::CanonicalRefusal,
     }
 }
 
@@ -133,37 +195,64 @@ pub(crate) struct CorpusReplay {
     pub outcome: CorpusOutcome,
 }
 
-/// Replay one corpus entry through the honest-disk recovery oracle and return
-/// the live digest plus recovered outcome (for currency checks against the YAML
-/// identity).
+/// Replay one (seed, steps, mode, boundary) cell through the recovery oracle that
+/// owns it: honest-disk routes through [`super::recovery::run`]; lying-disk and
+/// crash-before-fsync route through [`recovery_matrix::run`]. A
+/// `CrashBeforeFsync` mode without a boundary is a malformed row and is refused.
+///
+/// # Errors
+/// Seed-tagged violation string when recovery is illegal or the row is malformed.
+fn replay_cell(
+    seed: u64,
+    steps: usize,
+    fault_mode: FaultModeLabel,
+    boundary: Option<Boundary>,
+) -> Result<CorpusReplay, String> {
+    match fault_mode {
+        FaultModeLabel::HonestDiskCrash => {
+            if boundary.is_some() {
+                return Err(format!(
+                    "corpus replay (seed=0x{seed:X}): HonestDiskCrash must not declare a boundary"
+                ));
+            }
+            run(seed, steps).map(|o| CorpusReplay {
+                digest: o.digest,
+                outcome: classify_honest_recovery(&o),
+            })
+        }
+        FaultModeLabel::LyingDiskFsyncDrop { .. } | FaultModeLabel::CrashBeforeFsync => {
+            let mode = resolve_matrix_mode(fault_mode, boundary).ok_or_else(|| {
+                format!(
+                    "corpus replay (seed=0x{seed:X}): {} requires a boundary cell",
+                    fault_mode.as_str()
+                )
+            })?;
+            recovery_matrix::run(seed, steps, mode).map(|o| CorpusReplay {
+                digest: o.digest,
+                outcome: classification_to_outcome(o.classification),
+            })
+        }
+    }
+}
+
+/// Replay one corpus entry through the recovery oracle that owns its fault mode
+/// and return the live digest plus recovered outcome (for currency checks against
+/// the YAML identity).
 ///
 /// # Errors
 /// Seed-tagged violation string when recovery is illegal.
 pub(crate) fn replay_corpus_entry(entry: &CorpusEntry) -> Result<CorpusReplay, String> {
-    if entry.fault_mode != FaultModeLabel::HonestDiskCrash {
-        return Err(format!(
-            "corpus replay (seed=0x{:X}): fault_mode {} is not routed; only HonestDiskCrash today",
-            entry.seed,
-            entry.fault_mode.as_str()
-        ));
-    }
-    if entry.boundary.is_some() {
-        return Err(format!(
-            "corpus replay (seed=0x{:X}): boundary cells require recovery_matrix (deferred)",
-            entry.seed
-        ));
-    }
-    run(entry.seed, entry.steps).map(|o| CorpusReplay {
-        digest: o.digest,
-        outcome: classify_honest_recovery(&o),
-    })
+    replay_cell(entry.seed, entry.steps, entry.fault_mode, entry.boundary)
 }
 
 /// Graduation criterion (#64-B): (a) deterministic across two runs, (b) names a
-/// target seam, (c) the legality oracle passes on both runs.
-pub(crate) fn check_graduation(
+/// target seam, (c) the legality oracle passes on both runs. Routes the seed
+/// through the oracle that owns `fault_mode` (honest-disk or recovery-matrix).
+pub(crate) fn check_graduation_for(
     seed: u64,
     steps: usize,
+    fault_mode: FaultModeLabel,
+    boundary: Option<Boundary>,
     seam_touched: &str,
     assurance_level: &str,
 ) -> Result<GraduationCandidate, GraduationRefusal> {
@@ -171,10 +260,10 @@ pub(crate) fn check_graduation(
         return Err(GraduationRefusal::EmptySeam { seed });
     }
 
-    let first =
-        run(seed, steps).map_err(|reason| GraduationRefusal::IllegalRecovery { seed, reason })?;
-    let second =
-        run(seed, steps).map_err(|reason| GraduationRefusal::IllegalRecovery { seed, reason })?;
+    let first = replay_cell(seed, steps, fault_mode, boundary)
+        .map_err(|reason| GraduationRefusal::IllegalRecovery { seed, reason })?;
+    let second = replay_cell(seed, steps, fault_mode, boundary)
+        .map_err(|reason| GraduationRefusal::IllegalRecovery { seed, reason })?;
 
     if first.digest != second.digest {
         return Err(GraduationRefusal::NonDeterministic {
@@ -184,17 +273,16 @@ pub(crate) fn check_graduation(
         });
     }
 
-    let outcome = classify_honest_recovery(&first);
     Ok(GraduationCandidate {
         entry: CorpusEntry {
             seed,
-            fault_mode: FaultModeLabel::HonestDiskCrash,
-            boundary: None,
+            fault_mode,
+            boundary,
             seam_touched: seam_touched.to_owned(),
             assurance_level: assurance_level.to_owned(),
             steps,
             op_trace_digest: first.digest,
-            outcome,
+            outcome: first.outcome,
         },
     })
 }
@@ -210,20 +298,31 @@ pub fn verify_corpus_row(
     fault_mode: &str,
     expected_digest: u64,
 ) -> Result<(), String> {
-    let mode = FaultModeLabel::parse(fault_mode).ok_or_else(|| {
+    verify_corpus_row_cell(seed, steps, fault_mode, None, None, expected_digest)
+}
+
+/// Boundary/lying-disk-aware variant of [`verify_corpus_row`]: replays the cell
+/// owned by `(fault_mode, boundary, one_in)` and asserts the digest identity.
+///
+/// `one_in` carries the lying-disk drop rate; `boundary` the crash-before-fsync
+/// durability boundary. Both are `None` for an honest-disk row.
+///
+/// # Errors
+/// Seed-tagged violation when the labels are unknown, recovery is illegal, or the
+/// digest drifts.
+pub fn verify_corpus_row_cell(
+    seed: u64,
+    steps: usize,
+    fault_mode: &str,
+    boundary: Option<&str>,
+    one_in: Option<u32>,
+    expected_digest: u64,
+) -> Result<(), String> {
+    let mode = FaultModeLabel::parse_with_rate(fault_mode, one_in).ok_or_else(|| {
         format!("corpus row (seed=0x{seed:X}): unknown fault_mode `{fault_mode}`")
     })?;
-    let entry = CorpusEntry {
-        seed,
-        fault_mode: mode,
-        boundary: None,
-        seam_touched: String::new(),
-        assurance_level: String::new(),
-        steps,
-        op_trace_digest: expected_digest,
-        outcome: CorpusOutcome::CommittedPrefix,
-    };
-    let live = replay_corpus_entry(&entry)?;
+    let boundary = parse_boundary(seed, boundary)?;
+    let live = replay_cell(seed, steps, mode, boundary)?;
     if live.digest != expected_digest {
         return Err(format!(
             "corpus currency (seed=0x{seed:X}): expected digest 0x{expected_digest:X}, replay 0x{:X}",
@@ -233,14 +332,22 @@ pub fn verify_corpus_row(
     Ok(())
 }
 
-/// Graduate a single candidate seed through the full sweep engine and return
-/// its deterministic op-trace digest.
+/// Parse an optional corpus boundary label into the typed [`Boundary`].
+fn parse_boundary(seed: u64, boundary: Option<&str>) -> Result<Option<Boundary>, String> {
+    boundary
+        .map(|raw| {
+            Boundary::parse(raw)
+                .ok_or_else(|| format!("corpus row (seed=0x{seed:X}): unknown boundary `{raw}`"))
+        })
+        .transpose()
+}
+
+/// Graduate a single honest-disk candidate seed and return its op-trace digest.
 ///
 /// This is the public, doc-hidden entry point the `dst_corpus_currency`
 /// integration gate uses to exercise the real graduation path
-/// ([`run_corpus_sweep`] → [`check_graduation`] → [`classify_honest_recovery`])
-/// against a committed corpus seed. A graduated seed's digest must equal the
-/// `op_trace_digest` recorded in `traceability/dst_corpus.yaml`.
+/// ([`run_corpus_sweep`] → [`check_graduation_for`]) for honest-disk rows. A
+/// graduated seed's digest must equal the `op_trace_digest` recorded in the YAML.
 ///
 /// # Errors
 /// Returns the [`GraduationRefusal`] rendered as a string when the seed fails
@@ -251,54 +358,156 @@ pub fn graduate_corpus_seed(
     seam_touched: &str,
     assurance_level: &str,
 ) -> Result<u64, String> {
-    let (mut graduated, refused) = run_corpus_sweep(&[seed], steps, seam_touched, assurance_level);
-    if let Some(refusal) = refused.into_iter().next() {
-        return Err(refusal.to_string());
-    }
-    let candidate = graduated
-        .pop()
-        .ok_or_else(|| format!("seed 0x{seed:X} produced no graduation candidate"))?;
+    graduate_corpus_cell(&GraduationRequest {
+        seed,
+        steps,
+        fault_mode: "HonestDiskCrash",
+        boundary: None,
+        one_in: None,
+        seam_touched,
+        assurance_level,
+    })
+}
+
+/// A full graduation request for an arbitrary matrix cell, passed to
+/// [`graduate_corpus_cell`]. Bundling the labels avoids a long argument list.
+#[derive(Debug, Clone, Copy)]
+pub struct GraduationRequest<'a> {
+    /// SimFs / op-plan seed.
+    pub seed: u64,
+    /// Op-plan length.
+    pub steps: usize,
+    /// Fault-mode label.
+    pub fault_mode: &'a str,
+    /// Durability boundary label, when `fault_mode == CrashBeforeFsync`.
+    pub boundary: Option<&'a str>,
+    /// 1-in-N fsync-drop rate, when `fault_mode == LyingDiskFsyncDrop`.
+    pub one_in: Option<u32>,
+    /// Critical mutation seam slug this seed stresses.
+    pub seam_touched: &'a str,
+    /// Assurance level at graduation (`L3`/`L4`).
+    pub assurance_level: &'a str,
+}
+
+/// Boundary/lying-disk-aware graduation: drives the full graduation engine for an
+/// arbitrary matrix cell and returns its deterministic op-trace digest. The gate
+/// uses this to re-graduate every committed corpus row, honest-disk or otherwise.
+///
+/// # Errors
+/// Returns the refusal string when the labels are unknown or the seed fails
+/// determinism, legality, or names an empty seam.
+pub fn graduate_corpus_cell(req: &GraduationRequest<'_>) -> Result<u64, String> {
+    let mode = FaultModeLabel::parse_with_rate(req.fault_mode, req.one_in).ok_or_else(|| {
+        format!(
+            "corpus row (seed=0x{:X}): unknown fault_mode `{}`",
+            req.seed, req.fault_mode
+        )
+    })?;
+    let boundary = parse_boundary(req.seed, req.boundary)?;
+    let candidate = check_graduation_for(
+        req.seed,
+        req.steps,
+        mode,
+        boundary,
+        req.seam_touched,
+        req.assurance_level,
+    )
+    .map_err(|r| r.to_string())?;
     Ok(candidate.entry.op_trace_digest)
 }
 
-/// Replay committed corpus rows through the honest-disk recovery oracle and
-/// assert each stored digest AND outcome label is still current.
+/// Replay committed corpus rows through the recovery oracle that owns each fault
+/// mode and assert each stored digest AND outcome label is still current.
 ///
-/// Public, doc-hidden entry point for the `dst_corpus_currency` integration
-/// gate. Each tuple mirrors a `traceability/dst_corpus.yaml` row as
-/// `(seed, steps, fault_mode, outcome, op_trace_digest)`. Drives
-/// [`assert_corpus_currency`] over reconstructed [`CorpusEntry`] rows,
+/// Public, doc-hidden entry point for the `dst_corpus_currency` integration gate.
+/// Each [`CorpusRowDescriptor`] mirrors a `traceability/dst_corpus.yaml` row.
+/// Drives [`assert_corpus_currency`] over reconstructed [`CorpusEntry`] rows,
 /// exercising both the digest and the outcome-label identity.
 ///
 /// # Errors
-/// Returns a descriptive string when the row set is empty, a `fault_mode` or
-/// `outcome` label is unknown, replay is illegal, or a stored digest/outcome no
-/// longer matches.
-pub fn assert_corpus_rows_current(rows: &[(u64, usize, &str, &str, u64)]) -> Result<(), String> {
+/// Returns a descriptive string when the row set is empty, a label is unknown,
+/// replay is illegal, or a stored digest/outcome no longer matches.
+pub fn assert_corpus_rows_current(rows: &[CorpusRowDescriptor<'_>]) -> Result<(), String> {
     let mut entries = Vec::with_capacity(rows.len());
-    for &(seed, steps, fault_mode, outcome, op_trace_digest) in rows {
-        let fault_mode = FaultModeLabel::parse(fault_mode).ok_or_else(|| {
-            format!("corpus row (seed=0x{seed:X}): unknown fault_mode `{fault_mode}`")
+    for row in rows {
+        let fault_mode =
+            FaultModeLabel::parse_with_rate(row.fault_mode, row.one_in).ok_or_else(|| {
+                format!(
+                    "corpus row (seed=0x{:X}): unknown fault_mode `{}`",
+                    row.seed, row.fault_mode
+                )
+            })?;
+        let boundary = parse_boundary(row.seed, row.boundary)?;
+        let outcome = CorpusOutcome::parse(row.outcome).ok_or_else(|| {
+            format!(
+                "corpus row (seed=0x{:X}): unknown outcome `{}`",
+                row.seed, row.outcome
+            )
         })?;
-        let outcome = CorpusOutcome::parse(outcome)
-            .ok_or_else(|| format!("corpus row (seed=0x{seed:X}): unknown outcome `{outcome}`"))?;
+        let steps = usize::try_from(row.steps).map_err(|_| {
+            format!(
+                "corpus row (seed=0x{:X}): steps {} must fit usize",
+                row.seed, row.steps
+            )
+        })?;
         entries.push(CorpusEntry {
-            seed,
+            seed: row.seed,
             fault_mode,
-            boundary: None,
+            boundary,
             seam_touched: String::new(),
             assurance_level: String::new(),
             steps,
-            op_trace_digest,
+            op_trace_digest: row.op_trace_digest,
             outcome,
         });
     }
     assert_corpus_currency(&entries)
 }
 
-/// Sweep `seeds` and emit graduation candidates for those that pass
+/// A public, doc-hidden mirror of one `traceability/dst_corpus.yaml` row, passed
+/// to [`assert_corpus_rows_current`]. Carries the boundary + lying-disk drop rate
+/// the broadened corpus needs (both `None` for an honest-disk row).
+#[derive(Debug, Clone, Copy)]
+pub struct CorpusRowDescriptor<'a> {
+    /// SimFs / op-plan seed.
+    pub seed: u64,
+    /// Op-plan length.
+    pub steps: u32,
+    /// Fault-mode label (`HonestDiskCrash` / `LyingDiskFsyncDrop` / `CrashBeforeFsync`).
+    pub fault_mode: &'a str,
+    /// Durability boundary label, when `fault_mode == CrashBeforeFsync`.
+    pub boundary: Option<&'a str>,
+    /// 1-in-N fsync-drop rate, when `fault_mode == LyingDiskFsyncDrop`.
+    pub one_in: Option<u32>,
+    /// Recovered classification label.
+    pub outcome: &'a str,
+    /// Stored FNV-1a digest identity.
+    pub op_trace_digest: u64,
+}
+
+/// Honest-disk graduation shim (`fault_mode == HonestDiskCrash`, no boundary),
+/// retained for the in-module unit tests and the honest-disk sweep.
+#[cfg(test)]
+pub(crate) fn check_graduation(
+    seed: u64,
+    steps: usize,
+    seam_touched: &str,
+    assurance_level: &str,
+) -> Result<GraduationCandidate, GraduationRefusal> {
+    check_graduation_for(
+        seed,
+        steps,
+        FaultModeLabel::HonestDiskCrash,
+        None,
+        seam_touched,
+        assurance_level,
+    )
+}
+
+/// Sweep `seeds` (honest-disk) and emit graduation candidates for those that pass
 /// [`check_graduation`]. Refusals are returned alongside successes so cloud
 /// lanes can log why a seed did not graduate.
+#[cfg(test)]
 pub(crate) fn run_corpus_sweep(
     seeds: &[u64],
     steps: usize,
@@ -350,6 +559,59 @@ pub(crate) fn assert_corpus_currency(entries: &[CorpusEntry]) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fault_mode_label_round_trips_through_serialized_form() {
+        // The corpus YAML is the wire form; `as_str`/`parse` are its (de)serializer.
+        // A drift here would silently mis-route a corpus row to the wrong oracle.
+        for (label, expect) in [
+            (FaultModeLabel::HonestDiskCrash, "HonestDiskCrash"),
+            (
+                FaultModeLabel::LyingDiskFsyncDrop { one_in: 3 },
+                "LyingDiskFsyncDrop",
+            ),
+            (FaultModeLabel::CrashBeforeFsync, "CrashBeforeFsync"),
+        ] {
+            assert_eq!(label.as_str(), expect, "label must serialize stably");
+            // Bare-label parse drops the rate (carried in its own column); compare
+            // by serialized identity rather than struct equality.
+            let parsed = FaultModeLabel::parse(label.as_str()).expect("label must re-parse");
+            assert_eq!(
+                parsed.as_str(),
+                label.as_str(),
+                "parse∘as_str must be identity on the label"
+            );
+        }
+        assert!(
+            FaultModeLabel::parse("NotARealMode").is_none(),
+            "unknown labels must not parse"
+        );
+        // `parse_with_rate` re-attaches and clamps the lying-disk rate.
+        assert_eq!(
+            FaultModeLabel::parse_with_rate("LyingDiskFsyncDrop", Some(0)),
+            Some(FaultModeLabel::LyingDiskFsyncDrop { one_in: 1 }),
+            "a zero drop-rate must clamp to the legal floor of 1"
+        );
+        assert!(
+            FaultModeLabel::parse_with_rate("LyingDiskFsyncDrop", None).is_none(),
+            "a lying-disk row without a drop-rate column must be rejected"
+        );
+    }
+
+    #[test]
+    fn boundary_round_trips_through_serialized_form() {
+        for boundary in Boundary::ALL {
+            let parsed = Boundary::parse(boundary.as_str()).expect("boundary must re-parse");
+            assert_eq!(
+                parsed, boundary,
+                "parse∘as_str must be identity on every boundary"
+            );
+        }
+        assert!(
+            Boundary::parse("NotABoundary").is_none(),
+            "unknown boundary labels must not parse"
+        );
+    }
 
     #[test]
     fn graduation_refuses_nondeterministic_seed() -> Result<(), Box<dyn std::error::Error>> {

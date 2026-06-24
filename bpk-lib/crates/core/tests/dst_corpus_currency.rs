@@ -27,6 +27,10 @@ fn corpus_path() -> PathBuf {
 struct DstCorpusRow {
     seed: u64,
     fault_mode: String,
+    #[serde(default)]
+    boundary: Option<String>,
+    #[serde(default)]
+    fsync_drop_one_in: Option<u32>,
     seam_touched: String,
     assurance_level: String,
     steps: u32,
@@ -52,20 +56,24 @@ fn dst_corpus_currency_replays_committed_corpus() -> Result<(), Box<dyn std::err
         return Err(std::io::Error::other("PROPERTY: dst_corpus.yaml must be non-empty").into());
     }
 
-    // Drive the real graduation engine (run_corpus_sweep -> check_graduation ->
-    // classify_honest_recovery) over every committed seed and assert it
-    // re-graduates to the stored digest identity. This is the live exercise of
-    // the corpus engine through the gate, not just a replay helper.
+    // Drive the real graduation engine (check_graduation_for over the oracle that
+    // owns each fault mode) over every committed seed and assert it re-graduates
+    // to the stored digest identity. This is the live exercise of the corpus
+    // engine through the gate, not just a replay helper. Routes honest-disk,
+    // lying-disk, and crash-before-fsync boundary cells alike.
     for row in &rows {
         let steps = usize::try_from(row.steps).map_err(|_| {
             std::io::Error::other(format!("PROPERTY: steps {} must fit usize", row.steps))
         })?;
-        let graduated = batpak::__sim::graduate_corpus_seed(
-            row.seed,
+        let graduated = batpak::__sim::graduate_corpus_cell(&batpak::__sim::GraduationRequest {
+            seed: row.seed,
             steps,
-            &row.seam_touched,
-            &row.assurance_level,
-        )
+            fault_mode: row.fault_mode.as_str(),
+            boundary: row.boundary.as_deref(),
+            one_in: row.fsync_drop_one_in,
+            seam_touched: &row.seam_touched,
+            assurance_level: &row.assurance_level,
+        })
         .map_err(std::io::Error::other)?;
         if graduated != row.op_trace_digest {
             return Err(std::io::Error::other(format!(
@@ -78,28 +86,55 @@ fn dst_corpus_currency_replays_committed_corpus() -> Result<(), Box<dyn std::err
 
     // Replay every committed row through the corpus currency oracle by identity
     // (digest + recovered outcome label).
-    let row_tuples: Vec<(u64, usize, &str, &str, u64)> = rows
+    let descriptors: Vec<batpak::__sim::CorpusRowDescriptor<'_>> = rows
         .iter()
-        .map(|row| {
-            let steps = usize::try_from(row.steps).expect("steps must fit usize (checked above)");
-            (
-                row.seed,
-                steps,
-                row.fault_mode.as_str(),
-                row.outcome.as_str(),
-                row.op_trace_digest,
-            )
+        .map(|row| batpak::__sim::CorpusRowDescriptor {
+            seed: row.seed,
+            steps: row.steps,
+            fault_mode: row.fault_mode.as_str(),
+            boundary: row.boundary.as_deref(),
+            one_in: row.fsync_drop_one_in,
+            outcome: row.outcome.as_str(),
+            op_trace_digest: row.op_trace_digest,
         })
         .collect();
-    batpak::__sim::assert_corpus_rows_current(&row_tuples).map_err(std::io::Error::other)?;
+    batpak::__sim::assert_corpus_rows_current(&descriptors).map_err(std::io::Error::other)?;
 
-    // Cross-check the single-row replay helper still agrees per row.
+    // Cross-check the single-row replay helpers still agree per row. The honest-
+    // disk shim covers honest rows; the cell-aware helper covers every row
+    // (boundary + lying-disk rate carried explicitly).
     for row in &rows {
         let steps = usize::try_from(row.steps).map_err(|_| {
             std::io::Error::other(format!("PROPERTY: steps {} must fit usize", row.steps))
         })?;
-        batpak::__sim::verify_corpus_row(row.seed, steps, &row.fault_mode, row.op_trace_digest)
+        if row.fault_mode == "HonestDiskCrash" && row.boundary.is_none() {
+            batpak::__sim::verify_corpus_row(row.seed, steps, &row.fault_mode, row.op_trace_digest)
+                .map_err(std::io::Error::other)?;
+            // The honest-disk convenience must also re-graduate to the same digest.
+            let honest = batpak::__sim::graduate_corpus_seed(
+                row.seed,
+                steps,
+                &row.seam_touched,
+                &row.assurance_level,
+            )
             .map_err(std::io::Error::other)?;
+            if honest != row.op_trace_digest {
+                return Err(std::io::Error::other(format!(
+                    "PROPERTY: honest-disk seed {} re-graduated to {honest}, stored {}",
+                    row.seed, row.op_trace_digest
+                ))
+                .into());
+            }
+        }
+        batpak::__sim::verify_corpus_row_cell(
+            row.seed,
+            steps,
+            &row.fault_mode,
+            row.boundary.as_deref(),
+            row.fsync_drop_one_in,
+            row.op_trace_digest,
+        )
+        .map_err(std::io::Error::other)?;
     }
 
     #[cfg(gauntlet_red_fixture)]

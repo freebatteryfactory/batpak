@@ -235,14 +235,14 @@ pub trait MultiReactive<Input: ProjectionInput>: Send + 'static {
 /// let region = Region::entity("order:*");
 /// let sub = store.subscribe_lossy(&region);
 /// while let Some(notif) = sub.recv() {
-///     let stored = store.get(batpak::id::EventId::from(notif.event_id)).unwrap();
+///     let stored = store.get(notif.event_id).unwrap();
 ///     for (coord, kind, payload) in reactor.react(&stored.event) {
 ///         store.append_reaction(
 ///             &coord,
 ///             kind,
 ///             &payload,
 ///             batpak::id::CorrelationId::from(notif.correlation_id),
-///             batpak::id::CausationId::from(notif.event_id),
+///             batpak::id::CausationId::from(u128::from(notif.event_id)),
 ///         ).unwrap();
 ///     }
 /// }

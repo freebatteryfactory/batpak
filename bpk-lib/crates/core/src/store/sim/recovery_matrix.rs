@@ -85,6 +85,30 @@ impl Boundary {
         Boundary::SegmentRotationCreate,
     ];
 
+    /// Serialized label for the corpus ledger (`traceability/dst_corpus.yaml`).
+    /// The inverse of [`Boundary::parse`]; used to author the corpus YAML and
+    /// asserted as a round-trip identity by the corpus tests.
+    #[cfg(test)]
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Boundary::SingleAppendFrame => "SingleAppendFrame",
+            Boundary::BatchCommitMarker => "BatchCommitMarker",
+            Boundary::BatchPostFsyncPrePublish => "BatchPostFsyncPrePublish",
+            Boundary::SegmentRotationCreate => "SegmentRotationCreate",
+        }
+    }
+
+    /// Parse a corpus-ledger boundary label back into the typed boundary.
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "SingleAppendFrame" => Some(Boundary::SingleAppendFrame),
+            "BatchCommitMarker" => Some(Boundary::BatchCommitMarker),
+            "BatchPostFsyncPrePublish" => Some(Boundary::BatchPostFsyncPrePublish),
+            "SegmentRotationCreate" => Some(Boundary::SegmentRotationCreate),
+            _ => None,
+        }
+    }
+
     /// A stable token folded into the determinism digest so each boundary's
     /// recovered classification is distinguishable.
     fn token(self) -> u64 {
