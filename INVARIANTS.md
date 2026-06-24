@@ -192,7 +192,7 @@ _Generated from `bpk-lib/traceability/invariants.yaml` by `just docs`. Do not ed
 | `INV-STORE-LIFECYCLE-HONESTY` | Store sync and drop paths must surface writer failures honestly and send best-effort shutdown rather than silently succeeding. |
 | `INV-STORE-SYNC-ONLY` | The Store public API remains synchronous. |
 | `INV-SUBSCRIPTION-STATE-MACHINE` | Subscription delivery follows the open, receive, close state machine without fabricating events or hiding a closed producer. |
-| `INV-SUBSTRATE-TRAVERSAL-DOMAIN-NEUTRAL` | Traversal terminals return substrate metadata only; they must not expose Downstream missions, workflow verbs, movement-graph semantics, receipt_kind dispatch, decoded envelope bodies, or domain replay names. |
+| `INV-SUBSTRATE-TRAVERSAL-DOMAIN-NEUTRAL` | Traversal terminals return substrate metadata only; they must not expose any downstream domain entities, workflow verbs, application graph semantics, receipt_kind dispatch, decoded envelope bodies, or domain replay names. |
 | `INV-SYNCBAT-DISPATCH-RECEIPTS` | syncbat checkout dispatch emits at most one completed or failed runtime receipt for resolved operations, emits no receipt for unknown operations, and fails closed when the configured receipt sink fails. |
 | `INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC` | syncbat durable register catalog rows fold in store sequence order, reject malformed or conflicting lifecycle transitions, and rebuild the same active register after reopen. |
 | `INV-TEST-PANIC-AS-ASSERTION` | Test bodies signal failure via assert!/assert!(matches!(..))/expect/expect_err/`#[test] -> Result`. panic! is not used as an assertion (use assert!), unwrap is not used (use expect). No file-level or item-level allow is permitted in tests. |
