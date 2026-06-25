@@ -18,13 +18,16 @@
 //! delivers, gated on the live probes —
 //!   - `Filesystem` (landlock) — Enforced at/above the ABI floor, else Unsupported;
 //!   - `LaunchWorkload` + `CaptureStreams` — always (process spawn + pipe capture);
+//!   - `Environment` — always Enforced: the launcher serves an EXPLICIT envp to
+//!     `fexecve` (nothing inherited from launcher/host), proven by the independent
+//!     `tests/launcher_env_linux.rs` env-isolation oracle;
 //!   - `Kill{RunTree,Atomic}` (cgroup `cgroup.kill`) — Enforced ONLY when a cgroup base
 //!     with atomic kill was probed, else ABSENT ⇒ Unsupported;
 //!   - Budget `process_count` (cgroup `pids.max`, witnessed from `pids.peak`) — Enforced
 //!     ONLY when a cgroup base was probed; every OTHER budget dimension stays `Mediated`
 //!     (observed-not-capped — no cap installed, so claiming Enforced would over-claim).
 //!
-//! EVERYTHING ELSE (`ChildSpawn`, `NetworkDenyAll`, `TempRoot`, …) is ABSENT from the
+//! EVERYTHING ELSE (`ChildSpawn`, `NetworkDenyAll`, `TempRoot`, `ExposePath`, …) is ABSENT from the
 //! ceiling ⇒ `Unsupported` ⇒ `plan()` fails closed. The family `support_matrix()` keeps
 //! the §4 aspiration; the machine ceiling reflects reality. Claiming more than
 //! `execute()` delivers is the exact lie the gauntlet must catch — so we do not.
@@ -232,6 +235,21 @@ impl LinuxBackend {
             SupportVerdict::new(
                 Enforcement::Enforced,
                 [EvidenceClaim::CapturedStreams].into_iter().collect(),
+            ),
+        );
+        // Environment is Enforced structurally: the launcher serves the workload an
+        // EXPLICIT envp to `fexecve` (`launcher/linux/sys.rs::build_target`) — nothing
+        // is inherited from the launcher or host, so a host secret in an env var cannot
+        // reach the confined workload. The mechanism (the declared envp + the exec
+        // phase) is attestable via the plan + the launcher transcript. INDEPENDENT
+        // ORACLE: `tests/launcher_env_linux.rs::workload_environment_is_exactly_the_declared_envp`
+        // proves the workload's own `env` output is the declared set, with the
+        // launcher's `BVISOR_*_FD` channel vars absent (no inheritance).
+        ceiling.insert(
+            RequirementKind::Environment,
+            SupportVerdict::new(
+                Enforcement::Enforced,
+                [EvidenceClaim::MechanismAttestation].into_iter().collect(),
             ),
         );
         // Kill{RunTree,Atomic} is Enforced ONLY when a cgroup confinement base with
