@@ -8,12 +8,14 @@
 //! *validates* everything here, installs confinement, and execs the workload.
 //!
 //! ## Identity binding (fail-closed)
-//! The body binds the planning-time plan-identity digests — `plan_id`
+//! The body CARRIES the planning-time plan-identity digests — `plan_id`
 //! ([`BoundaryPlanHash`]), `h_a` ([`AdmissionProgramHash`]), `h_p`
 //! ([`BackendProfileHash`]), and `h_l` (the canonical [`LoweringSchedule`] digest,
-//! a [`Digest32`]). The launcher recomputes and compares these against the
-//! independently-reconstructed schedule and the live machine profile; ANY mismatch
-//! ⇒ nothing executes (the launcher may deny more, never report less danger).
+//! a [`Digest32`]) — as provenance. TODAY the launcher VERIFIES exactly ONE of them:
+//! it recomputes `blake3(canonical(body.lowering))` and refuses (`IdentityMismatch`,
+//! nothing executes) unless it equals `h_l`. The independent schedule reconstruction
+//! through the admission membrane and the `h_a`/`h_p` profile-drift checks are a LATER
+//! step (#75) — NOT claimed here. The launcher may deny more, never report less danger.
 //!
 //! ## Why a wire view of the schedule, not the schedule type itself
 //! The real [`LoweringSchedule`]/[`ScheduleEntry`] are *proof-carrying*: possessing

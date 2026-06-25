@@ -1,5 +1,4 @@
-//! The single-threaded Linux confinement LAUNCHER binary (kernel plan §10.8) —
-//! NO-CONFINEMENT honest skeleton.
+//! The single-threaded Linux confinement LAUNCHER binary (kernel plan §10.8).
 //!
 //! Topology (PERMANENT — the launcher NEVER self-execs):
 //! ```text
@@ -7,10 +6,13 @@
 //! ```
 //! The COORDINATOR (this `main.rs`, fully SAFE) validates the host-supplied
 //! [`LinuxLaunchPlanV1`], decides whether the launch may proceed, and — only if it
-//! may — creates ONE child via raw `clone3` (in the [`sys`] basement). The CHILD
-//! scrubs ambient authority (closes the non-allowlisted fds) and `fexecve`s the
-//! target. The coordinator holds the `ReadyToExec` gate; the child runs ONLY because
-//! the coordinator already determined the launch ready.
+//! may — creates ONE child via raw `clone3` (in the [`sys`] basement), placing it INTO
+//! the prepared cgroup leaf at birth when a `CgroupDir` slot is present
+//! (`CLONE_INTO_CGROUP`). The CHILD, in its async-signal-safe window, scrubs ambient
+//! authority (closes the non-allowlisted fds), applies the parent-built landlock ruleset
+//! (`restrict_self`) when a confinement action was scheduled, then `fexecve`s the target.
+//! The coordinator holds the `ReadyToExec` gate; the child runs ONLY because the
+//! coordinator already determined the launch ready.
 //!
 //! ## No-fd-escape (G6) is enforced by the CHILD SCRUB, not a coordinator refusal
 //! The launcher is spawned by FORKING a host process, so it inherits whatever fds the
@@ -27,12 +29,15 @@
 //! deterministic declared-slot `fstat` SHAPE verification (kind/writability mismatch ⇒
 //! `HandleMismatch`).
 //!
-//! ## What this skeleton implements (and what it deliberately does NOT)
-//! EXACTLY two lowering primitives — `linux.ambient.scrub.v1` (the AmbientAuthority
-//! phase, the child's fd scrub) and `linux.exec.v1` (the launch, `fexecve`). It
-//! advertises NO confinement profile. Any OTHER scheduled action (any namespace /
-//! landlock / seccomp / cgroup primitive) ⇒ `SetupRefused{MissingPrimitive}` BEFORE
-//! any child is created.
+//! ## What this launcher serves (and what it deliberately does NOT)
+//! Lowering primitives: `linux.ambient.scrub.v1` (AmbientAuthority — the child's fd
+//! scrub, mandatory), `linux.landlock.apply.v1` (Confinement — the parent builds the
+//! ruleset, the child `restrict_self`s it; optional), and `linux.exec.v1` (the launch,
+//! `fexecve`). Resource confinement rides the descriptor table, NOT a lowering action: a
+//! `DescriptorRole::CgroupDir` slot ⇒ the child is born into that leaf via
+//! `CLONE_INTO_CGROUP`. NOT YET served (a later step) — seccomp and namespace primitives;
+//! any such scheduled action ⇒ `SetupRefused{MissingPrimitive}` BEFORE any child is
+//! created (the launcher never advertises a confinement it cannot install).
 //!
 //! ## `IdentityVerified` is the SCHEDULE-DIGEST binding ONLY (not over-claimed)
 //! The coordinator binds `observed_schedule_digest = blake3(canonical(body.lowering))`
@@ -42,12 +47,15 @@
 //! `LoweringSchedule` through the admission membrane, and the profile-drift check vs
 //! `h_p`) is a LATER step (#75) and is NOT claimed by this skeleton.
 //!
-//! ## Honesty of the phase results (exec-only plan)
-//! For a scrub+exec plan: Identity / Visibility / Confinement have ZERO scheduled
-//! actions ⇒ each resolves [`PhaseResult::NotRequired`] (verified via
-//! `phase_resolution_consistent`). AmbientAuthority has the scrub action and the
-//! child WILL run it ⇒ [`PhaseResult::Applied`]. `confinement_installed(0, …)` is
-//! therefore `false` — the skeleton never claims an install it did not perform.
+//! ## Honesty of the phase results
+//! Each phase resolves per `phase_resolution_consistent`: `NotRequired` ⟺ 0 scheduled
+//! actions, `Applied` ⟺ observed == scheduled. For a scrub+exec plan, Identity /
+//! Visibility / Confinement have ZERO scheduled actions ⇒ each `NotRequired`;
+//! AmbientAuthority has the scrub the child WILL run ⇒ `Applied`. When a
+//! `linux.landlock.apply.v1` action IS scheduled, Confinement resolves `Applied` ONLY
+//! when the ruleset was built and the child will `restrict_self` it — so
+//! `confinement_installed` is true IFF a confinement action was scheduled AND applied,
+//! never an install the launcher did not perform.
 //!
 //! ## Safety posture
 //! This file is SAFE Rust (the 4a runtime-shape gate FAILS the build on any `unsafe`
