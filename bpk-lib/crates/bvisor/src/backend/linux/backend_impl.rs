@@ -27,8 +27,12 @@
 //!   - `Environment` (explicit envp) — Enforced: the admitted `Environment::Exact`
 //!     policy is lowered to the launcher's explicit env (literals + parent-resolved
 //!     secret leases), served verbatim to `fexecve` with no ambient inheritance.
+//!   - `InheritedFds::None` (fd-scrub) — Enforced: the admitted `FdPolicy::None` drives
+//!     the launcher's child-side fd-scrub, which closes every undeclared inherited fd
+//!     before `fexecve` (only the declared descriptor-table authority + stdio survive).
+//!     `InheritedFds::Only` stays absent (Unsupported) — the scrub realizes only `None`.
 //!
-//! EVERYTHING ELSE (`InheritedFds`, `ChildSpawn`, `NetworkDenyAll`, `TempRoot`, …) is ABSENT from the
+//! EVERYTHING ELSE (`InheritedFds::Only`, `ChildSpawn`, `NetworkDenyAll`, `TempRoot`, …) is ABSENT from the
 //! ceiling ⇒ `Unsupported` ⇒ `plan()` fails closed. The family `support_matrix()` keeps
 //! the §4 aspiration; the machine ceiling reflects reality. Claiming more than
 //! `execute()` delivers is the exact lie the gauntlet must catch — so we do not.
@@ -49,10 +53,9 @@ use crate::backend::linux::cgroup_run::{cgroup_for_run, finish};
 use crate::backend::linux::launch::{self, LaunchObservation};
 use crate::backend::linux::{cgroup, plan_build, sys};
 use crate::contract::backend::Backend;
-use crate::contract::budget::{BudgetAvailability, BudgetProfile};
 use crate::contract::budget_witness::BudgetWitnesses;
 use crate::contract::capability::{
-    Capability, Enforcement, EvidenceClaim, EvidenceSet, FsAccess, PathSet, SupportVerdict,
+    Capability, Enforcement, EvidenceClaim, FsAccess, PathSet, SupportVerdict,
 };
 use crate::contract::ids::BackendId;
 use crate::contract::plan::{BoundaryPlan, BoundaryRequirement, Workload};
@@ -277,11 +280,26 @@ impl LinuxBackend {
         // oracle (`tests/env_exact_linux.rs`) and coupled to the Proven ledger row. The
         // mechanism is `linux:explicit_env:Enforced`; the evidence is a mechanism
         // attestation (the host independently confirms the child's /proc/<pid>/environ
-        // equals the admitted table). InheritedFds is STILL absent from the ceiling
-        // (Unsupported ⇒ fails closed): the scrub realises `FdPolicy::None` as a
-        // launcher mechanism but the contract path is not yet proven (S5 completes it).
+        // equals the admitted table).
         ceiling.insert(
             RequirementKind::Environment,
+            SupportVerdict::new(
+                Enforcement::Enforced,
+                [EvidenceClaim::MechanismAttestation].into_iter().collect(),
+            ),
+        );
+        // InheritedFds::None is ENFORCED (proof-spine S5 completion): the admitted
+        // FdPolicy::None DRIVES the launcher's child-side fd-scrub, which closes EVERY
+        // undeclared inherited fd (the allowlist complement) before fexecve — only the
+        // declared descriptor-table authority + stdio survive, so a leaked host handle
+        // cannot reach the confined workload. Proven end-to-end by the dual-channel +
+        // fail-closed oracle (`tests/inherited_fds_none_linux.rs`) and coupled to the
+        // Proven ledger row; the mechanism is `linux:fd_scrub:Enforced`, the evidence a
+        // mechanism attestation (the host independently confirms a non-CLOEXEC sentinel
+        // fd is ABSENT from the child's /proc/<pid>/fd). InheritedFds::Only STAYS absent
+        // from the ceiling (Unsupported ⇒ fails closed) — the scrub realizes only `None`.
+        ceiling.insert(
+            RequirementKind::InheritedFdsNone,
             SupportVerdict::new(
                 Enforcement::Enforced,
                 [EvidenceClaim::MechanismAttestation].into_iter().collect(),
@@ -316,57 +334,20 @@ mod proof_hooks;
 mod env_lowering;
 use env_lowering::lower_environment;
 
+// The InheritedFds::None lowering gate (admitted FdPolicy → the launcher fd-scrub),
+// split out to hold this file under the size cap. SAFE std; the scrub is the launcher's.
+#[path = "backend_impl_fds.rs"]
+mod fds_lowering;
+use fds_lowering::lower_inherited_fds;
+
+// The honest budget profile derivation, split out to hold this file under the size cap.
+#[path = "backend_impl_budget.rs"]
+mod budget_profile;
+use budget_profile::observed_budget_profile;
+
 impl Default for LinuxBackend {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// The honest budget profile. PROCESS COUNT is STRUCTURALLY enforced via the cgroup
-/// v2 `pids` controller (`pids.max`) when a cgroup base was probed (`cgroup_pids_enforced`)
-/// — then it is `Enforced`/Hard. The `ResourceUsage` evidence claim (the `pids.peak`
-/// usage witness) is advertised SEPARATELY, ONLY when `pids_peak_witness` was probed: a
-/// kernel can cap pids (≥ 4.3) WITHOUT exposing `pids.peak` (≥ 6.1), so a Hard cap does
-/// NOT imply a witness — advertising the witness off the cap would be the over-claim
-/// codex caught. Every OTHER dimension is `Mediated` (supervised, not structurally capped)
-/// with no resource evidence — no cap is installed, so claiming `Enforced` there would
-/// over-claim. With no cgroup base, process count is `Mediated` too (no unbacked cap).
-fn observed_budget_profile(cgroup_pids_enforced: bool, pids_peak_witness: bool) -> BudgetProfile {
-    let observed = |mechanism: &str| BudgetAvailability {
-        // Headroom only — we do NOT cap, so we never refuse on capacity here; the
-        // honest signal is the `Mediated` (not `Enforced`) guarantee + empty
-        // evidence, which forbids a spec from demanding a witnessed/enforced cap.
-        available: u64::MAX,
-        enforcement: Enforcement::Mediated,
-        evidence: EvidenceSet::new(),
-        mechanism: mechanism.to_string(),
-    };
-    // ProcessCount: a real structural cap (cgroup pids.max) when cgroup is available. The
-    // ResourceUsage evidence is advertised ONLY when the pids.peak witness is also present.
-    let process_count = if cgroup_pids_enforced {
-        let evidence = if pids_peak_witness {
-            [EvidenceClaim::ResourceUsage].into_iter().collect()
-        } else {
-            EvidenceSet::new()
-        };
-        BudgetAvailability {
-            // The pids controller caps any count up to the kernel's pid ceiling.
-            available: u64::MAX,
-            enforcement: Enforcement::Enforced,
-            evidence,
-            mechanism: "cgroup_v2_pids:enforced".to_string(),
-        }
-    } else {
-        observed("os_process:observed-not-capped")
-    };
-    BudgetProfile {
-        wall_micros: observed("os_process_wait:observed-not-capped"),
-        cpu_micros: observed("os_rusage:observed-not-capped"),
-        resident_bytes: observed("os_rusage:observed-not-capped"),
-        process_count,
-        handle_count: observed("os_fd:observed-not-capped"),
-        storage_bytes: observed("os_fs:observed-not-capped"),
-        network_bytes: observed("os_net:observed-not-capped"),
     }
 }
 
@@ -427,11 +408,14 @@ impl Backend for LinuxBackend {
             // Environment::Exact rides the launcher's explicit envp (the admitted table
             // is lowered to the env served to fexecve; nothing inherited).
             RequirementKind::Environment => "explicit_env",
+            // InheritedFds::None rides the launcher's child-side fd-scrub: the admitted
+            // FdPolicy::None drives the scrub close-list (every undeclared inherited fd
+            // is closed before fexecve). InheritedFds::Only is NOT realized (below).
+            RequirementKind::InheritedFdsNone => "fd_scrub",
             RequirementKind::NetworkDenyAll
             | RequirementKind::NetworkAllowList
             | RequirementKind::ChildSpawnDeny
             | RequirementKind::ChildSpawnAllow
-            | RequirementKind::InheritedFdsNone
             | RequirementKind::InheritedFdsOnly
             | RequirementKind::TempRoot
             | RequirementKind::ExposePath
@@ -494,6 +478,16 @@ fn execute_confined(backend: &LinuxBackend, plan: &BoundaryPlan) -> BoundaryRepo
             observed = facts;
             envp
         }
+        Err(facts) => return fail_closed(backend, plan, Outcome::Unsupported, facts),
+    };
+
+    // LOWER the admitted InheritedFds policy onto the launcher fd-scrub (proof-spine S5).
+    // The descriptor-table-driven scrub realizes `FdPolicy::None` (every undeclared
+    // inherited fd closed before fexecve). FAIL CLOSED if the admitted policy is one this
+    // backend does not realize (`Only`): the workload never runs under an unrealized fd
+    // guarantee.
+    observed = match lower_inherited_fds(backend, plan, observed) {
+        Ok(facts) => facts,
         Err(facts) => return fail_closed(backend, plan, Outcome::Unsupported, facts),
     };
 
