@@ -65,6 +65,9 @@ const SLOT_READ_ROOT: RawFd = 15;
 /// The single declared write root (`DescriptorRole::WriteRoot`), when the access
 /// grants writing.
 const SLOT_WRITE_ROOT: RawFd = 16;
+/// The cgroup leaf directory (`DescriptorRole::CgroupDir`), when the host created a
+/// per-run leaf — the launcher births the child INTO it via `CLONE_INTO_CGROUP`.
+const SLOT_CGROUP: RawFd = 17;
 /// The base fd for the read-only system-exec roots (loader/libs), one per present
 /// dir at `SLOT_SYS_ROOT_BASE + i`.
 const SLOT_SYS_ROOT_BASE: RawFd = 20;
@@ -90,6 +93,7 @@ pub(super) fn prepare_launch(
     args: &[String],
     plan: &BoundaryPlan,
     fs: Option<&(FsAccess, PathSet)>,
+    cgroup_dir_fd: Option<OwnedFd>,
 ) -> Result<Prepared, String> {
     let mut table: Vec<DescriptorSlotV1> = Vec::new();
     let mut authority: Vec<AuthorityFd> = Vec::new();
@@ -145,6 +149,20 @@ pub(super) fn prepare_launch(
         }
     }
 
+    // 2b. The cgroup leaf directory, when the host created a per-run leaf: the launcher
+    //     resolves this singleton CgroupDir slot and births the workload child INSIDE the
+    //     leaf via CLONE_INTO_CGROUP (no post-fork migration race). The fd is a
+    //     non-writable directory (File::open is O_RDONLY); it is NOT a lowering action, so
+    //     it does NOT enter the schedule / H_L — it is driven purely by the slot's
+    //     presence.
+    if let Some(fd) = cgroup_dir_fd {
+        authority.push(AuthorityFd {
+            slot_index: SLOT_CGROUP,
+            handle: fd,
+        });
+        table.push(cgroup_slot());
+    }
+
     // 3. The lowering schedule the launcher SERVES: scrub (mandatory) + landlock-apply
     //    (only when confining) + exec. Mirrors the launcher's served ids/phase codes
     //    exactly, else the launcher refuses MissingPrimitive. (If the BoundaryPlan
@@ -196,6 +214,19 @@ fn root_slot(fd: RawFd, role: DescriptorRole) -> DescriptorSlotV1 {
     DescriptorSlotV1 {
         slot_index: slot_u32(fd),
         role,
+        expected: DescriptorShape {
+            kind: DescriptorKind::Directory,
+            writable: false,
+        },
+    }
+}
+
+/// The `DescriptorRole::CgroupDir` slot declaration (a directory, read-only — the
+/// launcher passes it to `clone3(CLONE_INTO_CGROUP)`; the kernel consumes it at fork).
+fn cgroup_slot() -> DescriptorSlotV1 {
+    DescriptorSlotV1 {
+        slot_index: slot_u32(SLOT_CGROUP),
+        role: DescriptorRole::CgroupDir,
         expected: DescriptorShape {
             kind: DescriptorKind::Directory,
             writable: false,
