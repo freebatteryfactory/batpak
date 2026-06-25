@@ -259,11 +259,17 @@ pub fn linux_mechanism(primitive: &str, enforcement: Enforcement) -> String {
 /// leak), with the fail-closed branches (an unresolvable lease means the target never
 /// runs; an invalid policy means admission refuses) proven by the same oracle.
 ///
+/// `InheritedFdsNone` (fd-scrub) — the admitted `FdPolicy::None` drives the launcher's
+/// child-side fd-scrub; the child's open fds (read HOST-SIDE from `/proc/<pid>/fd`)
+/// contain ONLY the declared allowlist, a parent-opened non-CLOEXEC sentinel fd is ABSENT
+/// (scrubbed), with the fail-closed branches (an undeclared fd is scrubbed before the
+/// workload; an unrealized fd policy ⇒ the target never runs) proven by the oracle.
+///
 /// NON-PROVEN cells are stated explicitly (the coupling test asserts they are NOT
-/// advertised `Enforced` in production): `InheritedFdsNone` / `InheritedFdsOnly` are
-/// `Incomplete` (launcher scrub mechanism exists, but no contract-level admission +
-/// spec→allowlist lowering + oracle); every other capability — including both
-/// `ChildSpawn` policy keys (proof-spine §2 split) — is `FailClosed`.
+/// advertised `Enforced` in production): `InheritedFdsOnly` is `Incomplete` (the scrub
+/// realizes only `None`; the selective-keep allowlist has no lowering + no oracle); every
+/// other capability — including both `ChildSpawn` policy keys (proof-spine §2 split) — is
+/// `FailClosed`.
 pub const LINUX_QUALIFICATION_LEDGER: &[QualificationRow] = &[
     QualificationRow {
         backend: "linux",
@@ -359,10 +365,31 @@ pub const LINUX_QUALIFICATION_LEDGER: &[QualificationRow] = &[
     QualificationRow {
         backend: "linux",
         key: RequirementKind::InheritedFdsNone,
+        // The fd-scrub is structural (no kernel-version floor): the launcher reads
+        // /proc/self/fd + raw SYS_close on any Linux. The proof transfers to every
+        // machine of the platform.
         profile_floor: ProfileFloor::structural(),
-        mechanism: "linux:none/unimplemented-this-chunk:Unsupported",
-        status: QualificationStatus::Incomplete,
-        proof_receipts: &[],
+        mechanism: "linux:fd_scrub:Enforced",
+        status: QualificationStatus::Proven,
+        // §4 BOTH branches, dual-channel:
+        //  - guarantee-holds: the child's open fds (read HOST-SIDE from
+        //    /proc/<child_pid>/fd — kernel state, independent) contain ONLY the declared
+        //    allowlist (stdio); a parent-opened non-CLOEXEC SENTINEL fd is ABSENT from the
+        //    child (scrubbed), witnessed both host-side AND by the workload's own attempt
+        //    to write to it failing (no leak across the boundary);
+        //  - fail-closed: an undeclared inherited fd is scrubbed BEFORE the workload (the
+        //    launcher mechanism proof), AND a contract-level setup failure ⇒ the target
+        //    NEVER runs (the full execute()/BoundaryRunner path refuses an unrealized fd
+        //    policy). The execute()-path witness proves the lowering rides the production
+        //    contract, not only a run_launcher-direct plan.
+        proof_receipts: &[
+            "crates/bvisor/tests/inherited_fds_none_linux.rs::child_inherits_only_the_declared_fds_no_sentinel_leak",
+            "crates/bvisor/tests/launcher_inherited_fds_linux.rs::undeclared_inherited_fd_is_scrubbed_before_the_workload",
+            "crates/bvisor/tests/inherited_fds_none_linux.rs::an_unrealized_fd_policy_fails_closed_and_the_target_never_runs",
+            // The full execute()/BoundaryRunner contract-path witness (vs the launcher-
+            // direct /proc oracle above): a None-policy spec runs to a clean verdict.
+            "crates/bvisor/tests/inherited_fds_none_linux.rs::a_none_policy_spec_runs_through_the_execute_path",
+        ],
     },
     QualificationRow {
         backend: "linux",

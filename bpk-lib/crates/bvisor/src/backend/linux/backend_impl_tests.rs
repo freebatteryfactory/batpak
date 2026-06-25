@@ -74,9 +74,8 @@ fn unimplemented_kinds_fail_closed_this_chunk() {
         RequirementKind::ChildSpawnDeny,
         RequirementKind::ChildSpawnAllow,
         RequirementKind::TempRoot,
-        // InheritedFds is still backed out of the ceiling: the launcher scrub realises
-        // `FdPolicy::None` as a mechanism but the contract path is not yet proven (S5).
-        RequirementKind::InheritedFdsNone,
+        // InheritedFds::None is now Enforced (proof-spine S5) — see the dedicated test.
+        // InheritedFds::Only STAYS backed out: the scrub realizes only `None`.
         RequirementKind::InheritedFdsOnly,
     ] {
         assert_eq!(
@@ -103,9 +102,30 @@ fn environment_is_enforced_in_the_ceiling() {
     );
 }
 
-// (The InheritedFds positive ceiling test stays removed — InheritedFds is still backed
-// out of the ceiling. Its launcher MECHANISM proof lives in
-// tests/launcher_inherited_fds_linux.rs.)
+#[test]
+fn inherited_fds_none_is_enforced_in_the_ceiling() {
+    // proof-spine S5 completion: InheritedFds::None is Enforced — the admitted
+    // FdPolicy::None drives the launcher's child-side fd-scrub (every undeclared
+    // inherited fd closed before fexecve), proven end-to-end by
+    // tests/inherited_fds_none_linux.rs + coupled to the Proven ledger row.
+    let backend = LinuxBackend::with_abi_for_test(LANDLOCK_ABI_FLOOR);
+    let profile = backend.profile(&backend.probe());
+    assert_eq!(
+        profile
+            .ceiling_for(RequirementKind::InheritedFdsNone)
+            .enforcement,
+        Enforcement::Enforced,
+        "InheritedFds::None must be Enforced in the production ceiling"
+    );
+    // InheritedFds::Only STAYS Unsupported (the scrub realizes only `None`).
+    assert_eq!(
+        profile
+            .ceiling_for(RequirementKind::InheritedFdsOnly)
+            .enforcement,
+        Enforcement::Unsupported,
+        "InheritedFds::Only must stay Unsupported (no selective-keep lowering)"
+    );
+}
 
 #[test]
 fn kill_is_enforced_with_a_cgroup_base_and_unsupported_without() {
