@@ -31,11 +31,12 @@
 //!
 //! ## What the launcher path observes vs. the OLD self-spawn path
 //! The launcher reports its honest setup transcript (terminal + phase resolutions +
-//! `confinement_installed`), NOT the workload's stdout/stderr — the workload
-//! inherits the launcher's stdio (a captured-stdio descriptor-slot wiring is a
-//! later step). So `execute()` no longer parses workload stderr for a denial; a
-//! landlock denial is proven by the INDEPENDENT on-disk oracle in the G-grid, and
-//! the report's honest confinement evidence is the launcher's
+//! `confinement_installed`) on its control fd, AND the host CAPTURES the workload's
+//! stdout/stderr (step 7b): the launcher is stdio-silent on every workload-running path,
+//! so the workload's inherited stdio flows through the launcher's piped fd 1/2 and the
+//! host reads it back — backing `CaptureStreams=Enforced` + the `stream_captured` fact.
+//! A landlock DENIAL is still proven by the INDEPENDENT on-disk oracle in the G-grid
+//! (not parsed from stderr); the report's honest confinement evidence is the launcher's
 //! `confinement_installed` mechanism attestation. The terminal maps to the
 //! [`Outcome`] via [`super::launch::LaunchObservation::outcome`]
 //! (ExecSucceeded→Completed, SetupRefused→Unsupported, SetupFaulted→SupervisorFault).

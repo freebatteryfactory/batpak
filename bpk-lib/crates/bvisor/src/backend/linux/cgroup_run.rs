@@ -111,11 +111,16 @@ pub(super) fn cgroup_for_run(
             .and_then(|l| l.dir().ok())
             .map(|d| d.display().to_string())
             .unwrap_or_default();
+        // HONEST timing (codex review #2): this runs BEFORE the launcher — the backend
+        // only KNOWS it created the leaf and is passing the dir fd for CLONE_INTO_CGROUP.
+        // Actual placement is proven by the launcher's own `cgroup_placement` note
+        // (recorded by map_observation); do NOT claim "placed" here or a later launcher
+        // fault would leave a stronger claim than the observation point supports.
         observed.push(ObservedFact {
-            kind: "cgroup_confined".to_string(),
+            kind: "cgroup_leaf_prepared".to_string(),
             detail: format!(
-                "workload placed in cgroup leaf {leaf_path} via launcher CLONE_INTO_CGROUP; \
-                 atomic run-tree teardown available (cgroup.kill)"
+                "cgroup leaf {leaf_path} created + dir fd passed to the launcher for \
+                 CLONE_INTO_CGROUP placement; atomic run-tree teardown available (cgroup.kill)"
             ),
         });
         return Ok((leaf, dir_fd, observed));

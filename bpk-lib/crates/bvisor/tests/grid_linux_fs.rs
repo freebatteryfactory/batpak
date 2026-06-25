@@ -22,13 +22,12 @@
 //! applies the landlock ruleset in its single-threaded child window
 //! (`restrict_self`, after the fd scrub, before `fexecve`). So:
 //!   - the SAFETY verdict is STILL the independent on-disk oracle (the secret did
-//!     not leak / the escape did not land);
-//!   - the launcher does NOT capture the workload's stdout/stderr back to the
-//!     backend (the workload inherits the launcher's stdio — captured-stdio slot
-//!     wiring is a later step), so the report no longer carries a stderr-derived
-//!     `denied`. A held confinement is an HONEST `Outcome::Completed` with the
-//!     launcher's `confinement_installed` mechanism attestation; the DENIAL is
-//!     proven by the disk (no danger to report because confinement held).
+//!     not leak / the escape did not land), NEVER the report;
+//!   - the launcher is stdio-silent, so the host DOES capture the workload's inherited
+//!     stdout/stderr through the launcher's piped fds (CaptureStreams=Enforced); but the
+//!     report carries no stderr-derived `denied` — a held confinement is an HONEST
+//!     `Outcome::Completed` with the launcher's `confinement_installed` attestation, and
+//!     the DENIAL is proven by the disk (no danger to report because confinement held).
 //!
 //! G1 (secret-read-denied): the workload `cat`s a secret OUTSIDE the declared root
 //! and redirects into a file INSIDE the (writable) root. If landlock blocks the
@@ -361,9 +360,9 @@ fn control_in_root_write_is_allowed_and_completes() {
 /// 8b-ii-b1: on a cgroup-capable host, `execute()` runs the workload IN a per-run
 /// cgroup leaf — placed at birth by the launcher's `CLONE_INTO_CGROUP` — and the
 /// report HONESTLY records it, proving the PRODUCTION path wires the cgroup (not just
-/// the ceiling claim). The two facts triangulate: the backend's `cgroup_confined`
-/// (the host created + passed the leaf) AND the launcher's own
-/// `cgroup_placement=clone_into_cgroup` note (the launcher set the clone3 flag). The
+/// the ceiling claim). The two facts triangulate: the backend's `cgroup_leaf_prepared`
+/// (the host created + passed the leaf — emitted at prep, claims only that) AND the
+/// launcher's own `cgroup_placement=clone_into_cgroup` note (the actual placement). The
 /// leaf is torn down after the run (no leak — the whole suite's leak check covers it).
 /// Skips with an explicit message on a host without `pids` delegation.
 #[test]
@@ -392,13 +391,16 @@ fn cgroup_leaf_is_created_and_reported_through_execute() {
         "the workload runs to success in the cgroup leaf: {:?}",
         body.observed
     );
-    // BACKEND side: the host created the leaf + passed its dir fd as the CgroupDir slot.
+    // BACKEND side: the host created the leaf + passed its dir fd (claims only PREP, not
+    // placement — placement is the launcher's job, asserted next).
     assert!(
-        body.observed.iter().any(|f| f.kind == "cgroup_confined"),
-        "execute() must report placing the workload in a cgroup leaf: {:?}",
+        body.observed
+            .iter()
+            .any(|f| f.kind == "cgroup_leaf_prepared"),
+        "execute() must report preparing the cgroup leaf: {:?}",
         body.observed
     );
-    // LAUNCHER side (independent attestation): it set clone3 CLONE_INTO_CGROUP.
+    // LAUNCHER side (independent attestation of actual placement): it set CLONE_INTO_CGROUP.
     assert!(
         body.observed.iter().any(|f| f.kind == "launcher_note"
             && f.detail.contains("cgroup_placement=clone_into_cgroup")),
