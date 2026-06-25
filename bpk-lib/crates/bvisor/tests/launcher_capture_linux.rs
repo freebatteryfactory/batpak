@@ -198,3 +198,38 @@ fn launcher_captures_workload_streams_cleanly_and_deterministically() {
         );
     }
 }
+
+/// A workload that floods stdout far past one kernel pipe buffer (~64 KiB) is captured
+/// IN FULL without deadlock. This is the regression guard for the concurrent-drain fix:
+/// the old read-AFTER-wait capture would hang here — the workload blocks writing to a
+/// full pipe, never exits, so `child.wait()` never returns. Draining stdout/stderr on
+/// scoped threads while the launcher runs keeps the pipe emptying so the workload always
+/// makes progress. 256 KiB > 4x a default pipe buffer.
+#[test]
+fn large_workload_output_is_fully_captured_without_deadlock() {
+    const FLOOD_BYTES: usize = 256 * 1024;
+    let argv = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        // `head -c N /dev/zero | tr` emits exactly N printable bytes to stdout.
+        format!("head -c {FLOOD_BYTES} /dev/zero | tr '\\0' 'X'"),
+    ];
+    let plan = exec_only_plan(argv);
+    let obs = launch::run_launcher(&launcher_path(), &plan, vec![exe_authority()])
+        .expect("the launcher harness runs the flood workload to a verdict");
+    assert!(
+        obs.exec_succeeded(),
+        "the flood workload must reach ExecSucceeded; terminal={:?} notes={:?}",
+        obs.terminal,
+        obs.notes
+    );
+    assert_eq!(
+        obs.captured_stdout.len(),
+        FLOOD_BYTES,
+        "every flooded byte must be captured (no deadlock, no truncation)"
+    );
+    assert!(
+        obs.captured_stdout.iter().all(|&b| b == b'X'),
+        "the captured flood must be exactly the workload's bytes"
+    );
+}
