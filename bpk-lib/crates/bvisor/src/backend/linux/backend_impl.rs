@@ -33,7 +33,7 @@
 //! (ExecSucceeded→Completed, SetupRefused→Unsupported, SetupFaulted→SupervisorFault).
 
 use crate::backend::linux::launch::{self, LaunchObservation};
-use crate::backend::linux::{plan_build, sys};
+use crate::backend::linux::{cgroup, plan_build, sys};
 use crate::contract::backend::Backend;
 use crate::contract::budget::{BudgetAvailability, BudgetProfile};
 use crate::contract::budget_witness::BudgetWitnesses;
@@ -75,6 +75,24 @@ pub struct LinuxBackend {
     /// launcher, so the integration tests inject the compile-time launcher path here
     /// instead of racing the process environment.
     launcher_path: Option<std::path::PathBuf>,
+    /// The cgroup v2 confinement base, PROBED ONCE at construction (the nearest
+    /// writable `pids`-delegating ancestor that ALSO exposes atomic `cgroup.kill`).
+    /// `Some` ⇒ `execute()` runs the workload in a real cgroup leaf (placed at birth
+    /// via the launcher's `CLONE_INTO_CGROUP`) whose run tree the host can atomically
+    /// `cgroup.kill`, so the ceiling backs `Kill{RunTree,Atomic}=Enforced`. `None` ⇒
+    /// no cgroup confinement, so `Kill` is absent from the ceiling ⇒ Unsupported ⇒
+    /// `plan()` fails closed for a kill spec (no unbacked guarantee).
+    cgroup_base: Option<std::path::PathBuf>,
+}
+
+/// Probe the cgroup v2 confinement base ONCE at construction: the nearest writable
+/// `pids`-delegating ancestor (where a leaf can be created and a child placed via
+/// `CLONE_INTO_CGROUP`) that ALSO exposes atomic `cgroup.kill`. `Some(base)` ⇒ the
+/// backend can run the workload in a real cgroup leaf and atomically kill its run
+/// tree; `None` ⇒ no cgroup confinement (the `Kill` capability is honestly absent).
+fn probe_cgroup_base() -> Option<std::path::PathBuf> {
+    let base = cgroup::probe_controller_base(&["pids"])?;
+    cgroup::probe_atomic_kill(&base).then_some(base)
 }
 
 impl LinuxBackend {
@@ -90,6 +108,7 @@ impl LinuxBackend {
             support: super::support_matrix(),
             landlock_abi: sys::probe_landlock_abi(),
             launcher_path: None,
+            cgroup_base: probe_cgroup_base(),
         }
     }
 
@@ -104,11 +123,13 @@ impl LinuxBackend {
             support: super::support_matrix(),
             landlock_abi: sys::probe_landlock_abi(),
             launcher_path: Some(launcher_path),
+            cgroup_base: probe_cgroup_base(),
         }
     }
 
     /// Construct a backend with a FORCED landlock ABI, for proving the below-floor
     /// fail-closed path on a host whose live ABI is above the floor. Test-only.
+    /// `cgroup_base` is `None` so these FS-focused tests see `Kill` Unsupported.
     #[cfg(test)]
     fn with_abi_for_test(landlock_abi: i64) -> Self {
         Self {
@@ -116,6 +137,22 @@ impl LinuxBackend {
             support: super::support_matrix(),
             landlock_abi,
             launcher_path: None,
+            cgroup_base: None,
+        }
+    }
+
+    /// Construct a backend with a FORCED cgroup confinement base (at the FS ABI floor),
+    /// for proving the `Kill{RunTree,Atomic}=Enforced` ceiling WITHOUT a real cgroup —
+    /// the ceiling never touches disk, so a placeholder base path exercises the claim.
+    /// Test-only.
+    #[cfg(test)]
+    fn with_cgroup_for_test() -> Self {
+        Self {
+            id: BackendId::new(Self::ID),
+            support: super::support_matrix(),
+            landlock_abi: LANDLOCK_ABI_FLOOR,
+            launcher_path: None,
+            cgroup_base: Some(std::path::PathBuf::from("/sys/fs/cgroup/test-placeholder")),
         }
     }
 
@@ -163,6 +200,20 @@ impl LinuxBackend {
                 [EvidenceClaim::CapturedStreams].into_iter().collect(),
             ),
         );
+        // Kill{RunTree,Atomic} is Enforced ONLY when a cgroup confinement base with
+        // atomic `cgroup.kill` was probed: the workload runs in a cgroup leaf (placed
+        // at birth by the launcher's CLONE_INTO_CGROUP), so the host can SIGKILL the
+        // ENTIRE run tree atomically with no escape window. With no cgroup base, Kill is
+        // absent ⇒ Unsupported ⇒ plan() fails closed (no unbacked kill guarantee).
+        if self.cgroup_base.is_some() {
+            ceiling.insert(
+                RequirementKind::Kill,
+                SupportVerdict::new(
+                    Enforcement::Enforced,
+                    [EvidenceClaim::MechanismAttestation].into_iter().collect(),
+                ),
+            );
+        }
         BackendProfile::from_ceiling(ceiling)
     }
 }
@@ -251,6 +302,10 @@ impl Backend for LinuxBackend {
             RequirementKind::Filesystem => "landlock",
             RequirementKind::LaunchWorkload => "process_spawn",
             RequirementKind::CaptureStreams => "pipe_capture",
+            // Kill rides cgroup v2 `cgroup.kill` (atomic run-tree teardown) — backed
+            // ONLY when a cgroup base was probed (the ceiling gates the actual claim;
+            // this names the mechanism this backend uses for Kill).
+            RequirementKind::Kill => "cgroup_kill",
             RequirementKind::NetworkDenyAll
             | RequirementKind::NetworkAllowList
             | RequirementKind::ChildSpawn
@@ -260,7 +315,6 @@ impl Backend for LinuxBackend {
             | RequirementKind::ExposePath
             | RequirementKind::CommitArtifact
             | RequirementKind::DiscardArtifact
-            | RequirementKind::Kill
             | RequirementKind::ListOutputs => "none/unimplemented-this-chunk",
         };
         format!("{}:{primitive}:{enforcement:?}", self.id)
@@ -310,17 +364,28 @@ fn execute_confined(backend: &LinuxBackend, plan: &BoundaryPlan) -> BoundaryRepo
         return fail_closed(backend, plan, Outcome::Unsupported, observed);
     }
 
-    // Build the launcher plan + the pre-opened authority handles host-side. A host
-    // wiring fault (a root/exe that cannot be opened, a slot that does not fit)
-    // fails closed — the workload never runs.
-    let prepared = match plan_build::prepare_launch(&exe, &args, plan, fs.as_ref()) {
+    // Create the per-run cgroup leaf (placement + atomic kill) when a confinement base
+    // was probed, recording the honest placement evidence. The launcher births the
+    // workload child INTO the leaf via CLONE_INTO_CGROUP; the host tears it down (kill →
+    // drain → remove) AFTER the run via `finish`. A `None` leaf ⇒ no cgroup confinement
+    // this run (the workload runs in the launcher's own cgroup) — never a silent claim.
+    let (cgroup_leaf, cgroup_dir_fd) = setup_cgroup_leaf(backend, &mut observed);
+
+    // Build the launcher plan + the pre-opened authority handles host-side (now
+    // including the optional CgroupDir slot). A host wiring fault (a root/exe that
+    // cannot be opened, a slot that does not fit) fails closed — the workload never
+    // runs, and the leaf is torn down via `finish`.
+    let prepared = match plan_build::prepare_launch(&exe, &args, plan, fs.as_ref(), cgroup_dir_fd) {
         Ok(prepared) => prepared,
         Err(detail) => {
             observed.push(ObservedFact {
                 kind: "launch_plan_construction_failed".to_string(),
                 detail,
             });
-            return fail_closed(backend, plan, Outcome::SupervisorFault, observed);
+            return finish(
+                cgroup_leaf,
+                fail_closed(backend, plan, Outcome::SupervisorFault, observed),
+            );
         }
     };
     let plan_build::Prepared {
@@ -356,12 +421,16 @@ fn execute_confined(backend: &LinuxBackend, plan: &BoundaryPlan) -> BoundaryRepo
                 kind: "launcher_unresolvable".to_string(),
                 detail,
             });
-            return fail_closed(backend, plan, Outcome::Unsupported, observed);
+            return finish(
+                cgroup_leaf,
+                fail_closed(backend, plan, Outcome::Unsupported, observed),
+            );
         }
     };
 
-    // Run the launcher; map its honest observation onto the report contract.
-    match launch::run_launcher(&launcher_path, &launch_plan, authority) {
+    // Run the launcher; map its honest observation onto the report contract, then ALWAYS
+    // tear down the leaf (kill → drain → remove) via `finish`.
+    let report = match launch::run_launcher(&launcher_path, &launch_plan, authority) {
         Ok(obs) => map_observation(backend, plan, &exe, confined, &obs, observed),
         Err(error) => {
             // A harness fault BEFORE the launcher produced a verdict (encode/slot/OS):
@@ -372,7 +441,76 @@ fn execute_confined(backend: &LinuxBackend, plan: &BoundaryPlan) -> BoundaryRepo
             });
             fail_closed(backend, plan, Outcome::SupervisorFault, observed)
         }
+    };
+    finish(cgroup_leaf, report)
+}
+
+/// Create the per-run cgroup leaf (when a base was probed) and record the honest
+/// placement evidence onto `observed`, returning `(the leaf to tear down, the dir fd for
+/// the launcher's CgroupDir slot)`. A `None` dir fd with a probed base records the honest
+/// `cgroup_placement_unavailable` fact (the run proceeds uncgrouped); no base ⇒ neither.
+fn setup_cgroup_leaf(
+    backend: &LinuxBackend,
+    observed: &mut Vec<ObservedFact>,
+) -> (Option<cgroup::CgroupLeaf>, Option<std::os::fd::OwnedFd>) {
+    let leaf = backend
+        .cgroup_base
+        .as_ref()
+        .and_then(|base| create_run_leaf(base));
+    // A SEPARATE dir fd (`File::open` on the leaf) the launcher inherits for the
+    // CgroupDir slot; the `CgroupLeaf` retains its path for teardown.
+    let dir_fd = leaf.as_ref().and_then(|l| l.dir_fd().ok());
+    if dir_fd.is_some() {
+        let leaf_path = leaf
+            .as_ref()
+            .and_then(|l| l.dir().ok())
+            .map(|d| d.display().to_string())
+            .unwrap_or_default();
+        observed.push(ObservedFact {
+            kind: "cgroup_confined".to_string(),
+            detail: format!(
+                "workload placed in cgroup leaf {leaf_path} via launcher CLONE_INTO_CGROUP; \
+                 atomic run-tree teardown available (cgroup.kill)"
+            ),
+        });
+    } else if backend.cgroup_base.is_some() {
+        observed.push(ObservedFact {
+            kind: "cgroup_placement_unavailable".to_string(),
+            detail: "cgroup base probed but the per-run leaf could not be created; the \
+                     workload runs without cgroup placement this run"
+                .to_string(),
+        });
     }
+    (leaf, dir_fd)
+}
+
+/// Tear down the per-run cgroup leaf (kill → bounded drain → remove) and return the
+/// report unchanged. `cgroup.kill` is async, so the bounded drain bridges the SIGKILL
+/// window the rmdir would race; a still-running workload (a hang) is atomically killed
+/// here — the atomic run-tree teardown the `Kill` ceiling claims. A `None` leaf (no
+/// cgroup confinement this run) is a no-op. Called on EVERY post-creation return path so
+/// a leaf can never leak.
+fn finish(leaf: Option<cgroup::CgroupLeaf>, report: BoundaryReportBody) -> BoundaryReportBody {
+    if let Some(mut leaf) = leaf {
+        let _ = leaf.kill();
+        let _ = leaf.wait_until_empty(50, std::time::Duration::from_millis(10));
+        let _ = leaf.remove();
+    }
+    report
+}
+
+/// Create the per-run cgroup leaf under the probed confinement `base` for placement +
+/// atomic kill. A unique name (pid + a process-local counter, no clock/RNG). NO resource
+/// cap is installed in this step (Budget stays Mediated — honest); the leaf exists so the
+/// workload runs in a cgroup whose run tree the host can atomically `cgroup.kill`. `None`
+/// on any create failure (the launch then proceeds WITHOUT cgroup placement, reported
+/// honestly — the workload simply runs in the launcher's cgroup).
+fn create_run_leaf(base: &std::path::Path) -> Option<cgroup::CgroupLeaf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let suffix = RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!("bvisor-run-{}-{suffix}", std::process::id());
+    cgroup::CgroupLeaf::create(base, &name, cgroup::CgroupLimits::default()).ok()
 }
 
 /// Resolve the launcher binary path, failing closed if unresolvable. Resolution
@@ -642,13 +780,13 @@ mod tests {
 
     #[test]
     fn unimplemented_kinds_fail_closed_this_chunk() {
-        // HONESTY: this chunk backs ONLY Filesystem/LaunchWorkload/CaptureStreams.
-        // Kill / NetworkDenyAll / ChildSpawn / TempRoot are NOT in the ceiling, so
-        // they floor to Unsupported and plan() fails closed for them.
+        // HONESTY: this chunk backs Filesystem/LaunchWorkload/CaptureStreams (+ Kill
+        // ONLY with a cgroup base — see the dedicated test). NetworkDenyAll / ChildSpawn
+        // / TempRoot are NOT in the ceiling, so they floor to Unsupported and plan()
+        // fails closed for them.
         let backend = LinuxBackend::with_abi_for_test(LANDLOCK_ABI_FLOOR);
         let profile = backend.profile(&backend.probe());
         for kind in [
-            RequirementKind::Kill,
             RequirementKind::NetworkDenyAll,
             RequirementKind::ChildSpawn,
             RequirementKind::TempRoot,
@@ -659,5 +797,30 @@ mod tests {
                 "{kind:?} must stay Unsupported until its chunk lands (no inflation)"
             );
         }
+    }
+
+    #[test]
+    fn kill_is_enforced_with_a_cgroup_base_and_unsupported_without() {
+        // WITH a probed cgroup base (atomic cgroup.kill): Kill{RunTree,Atomic} is
+        // Enforced — the workload runs in a cgroup leaf the host can SIGKILL atomically.
+        let with = LinuxBackend::with_cgroup_for_test();
+        assert_eq!(
+            with.profile(&with.probe())
+                .ceiling_for(RequirementKind::Kill)
+                .enforcement,
+            Enforcement::Enforced,
+            "a cgroup base with atomic cgroup.kill backs Kill Enforced"
+        );
+        // WITHOUT a cgroup base: Kill is absent from the ceiling ⇒ Unsupported ⇒ plan()
+        // fails closed for a kill spec (NO unbacked atomic-kill guarantee — no inflation).
+        let without = LinuxBackend::with_abi_for_test(LANDLOCK_ABI_FLOOR);
+        assert_eq!(
+            without
+                .profile(&without.probe())
+                .ceiling_for(RequirementKind::Kill)
+                .enforcement,
+            Enforcement::Unsupported,
+            "no cgroup base ⇒ Kill Unsupported (no unbacked atomic-kill guarantee)"
+        );
     }
 }

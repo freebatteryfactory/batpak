@@ -357,6 +357,55 @@ fn control_in_root_write_is_allowed_and_completes() {
     );
 }
 
+/// 8b-ii-b1: on a cgroup-capable host, `execute()` runs the workload IN a per-run
+/// cgroup leaf — placed at birth by the launcher's `CLONE_INTO_CGROUP` — and the
+/// report HONESTLY records it, proving the PRODUCTION path wires the cgroup (not just
+/// the ceiling claim). The two facts triangulate: the backend's `cgroup_confined`
+/// (the host created + passed the leaf) AND the launcher's own
+/// `cgroup_placement=clone_into_cgroup` note (the launcher set the clone3 flag). The
+/// leaf is torn down after the run (no leak — the whole suite's leak check covers it).
+/// Skips with an explicit message on a host without `pids` delegation.
+#[test]
+fn cgroup_leaf_is_created_and_reported_through_execute() {
+    if !landlock_available() {
+        skip("cgroup_leaf (landlock unavailable, the FS spec cannot admit)");
+        return;
+    }
+    if bvisor::linux::cgroup::probe_controller_base(&["pids"]).is_none() {
+        skip("cgroup_leaf (no pids-delegating cgroup base on this host)");
+        return;
+    }
+    let scratch = Scratch::new("cgroup-run");
+    let root = scratch.path("quarantine");
+    std::fs::create_dir_all(&root).expect("quarantine dir");
+    // A trivial in-root workload that simply succeeds; the point is the placement.
+    let body = run(&fs_spec(
+        vec!["-c".into(), "true".into()],
+        FsAccess::Write,
+        &root,
+    ));
+
+    assert_eq!(
+        body.outcome,
+        Outcome::Completed,
+        "the workload runs to success in the cgroup leaf: {:?}",
+        body.observed
+    );
+    // BACKEND side: the host created the leaf + passed its dir fd as the CgroupDir slot.
+    assert!(
+        body.observed.iter().any(|f| f.kind == "cgroup_confined"),
+        "execute() must report placing the workload in a cgroup leaf: {:?}",
+        body.observed
+    );
+    // LAUNCHER side (independent attestation): it set clone3 CLONE_INTO_CGROUP.
+    assert!(
+        body.observed.iter().any(|f| f.kind == "launcher_note"
+            && f.detail.contains("cgroup_placement=clone_into_cgroup")),
+        "the launcher must note CLONE_INTO_CGROUP placement: {:?}",
+        body.observed
+    );
+}
+
 /// RED FIXTURE: simulate a LYING backend that runs the SAME G3 workload UNCONFINED
 /// (claiming confinement it did not apply). GroundTruth then sees the escape land,
 /// so the "clean" assertion is FALSE and the red half FAILS — proving the oracle

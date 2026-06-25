@@ -400,6 +400,26 @@ pub fn probe_cgroup_delegation() -> Option<PathBuf> {
     None
 }
 
+/// Probe whether cgroup v2 ATOMIC kill (`cgroup.kill`, kernel ≥ 5.14) is available
+/// under `base`, by creating a throwaway probe leaf, checking the kernel materialised
+/// `cgroup.kill`, and removing it. Returns `false` on any failure (cannot create the
+/// probe leaf, or no `cgroup.kill` file) — an HONEST "atomic kill unavailable", never
+/// an assumption from the kernel version. This backs the backend's
+/// `Kill{RunTree,Atomic}=Enforced` ceiling: atomic, no-escape-window subtree teardown
+/// is claimed ONLY when this probe confirms the mechanism is really present.
+#[must_use]
+pub fn probe_atomic_kill(base: &Path) -> bool {
+    let suffix = PROBE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let probe = base.join(format!(".bvisor-kill-probe-{pid}-{suffix}"));
+    if fs::create_dir(&probe).is_err() {
+        return false;
+    }
+    let has_kill = probe.join(KILL_FILE).exists();
+    let _ = fs::remove_dir(&probe);
+    has_kill
+}
+
 /// Probe for the nearest WRITABLE ancestor cgroup that DELEGATES every controller
 /// in `required` to its children (each present in that ancestor's
 /// `cgroup.subtree_control`), returning it or an honest `None`.
@@ -853,6 +873,19 @@ mod topology_tests {
         assert!(
             find_delegating_base(root, &leaf, &["pids"]).is_none(),
             "no pids-delegating ancestor ⇒ honest None, never a guess"
+        );
+    }
+
+    #[test]
+    fn probe_atomic_kill_is_false_when_no_kill_file_materialises() {
+        // A plain tempdir is not a real cgroup, so a probe leaf created under it gets
+        // NO kernel `cgroup.kill` file ⇒ honest false (never assumed-present). The
+        // true path (a real delegated leaf does expose cgroup.kill) is proven live by
+        // the backend integration test.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        assert!(
+            !probe_atomic_kill(tmp.path()),
+            "no cgroup.kill under a non-cgroup dir ⇒ atomic kill unavailable"
         );
     }
 
