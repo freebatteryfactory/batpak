@@ -83,6 +83,28 @@ fn unimplemented_kinds_fail_closed_this_chunk() {
 }
 
 #[test]
+fn environment_is_enforced_via_explicit_envp() {
+    // The launcher serves an EXPLICIT envp to fexecve (nothing inherited), so the
+    // ceiling backs Environment=Enforced unconditionally. The independent effect
+    // oracle is tests/launcher_env_linux.rs (the workload's own env output shows the
+    // declared set with the launcher's channel vars absent).
+    let backend = LinuxBackend::with_abi_for_test(LANDLOCK_ABI_FLOOR);
+    let profile = backend.profile(&backend.probe());
+    let verdict = profile.ceiling_for(RequirementKind::Environment);
+    assert_eq!(
+        verdict.enforcement,
+        Enforcement::Enforced,
+        "Environment must be Enforced (explicit envp, no inheritance)"
+    );
+    assert!(
+        verdict
+            .evidence
+            .contains(EvidenceClaim::MechanismAttestation),
+        "Environment carries MechanismAttestation (the declared envp + exec phase)"
+    );
+}
+
+#[test]
 fn kill_is_enforced_with_a_cgroup_base_and_unsupported_without() {
     // WITH a probed cgroup base (atomic cgroup.kill): Kill{RunTree,Atomic} is
     // Enforced — the workload runs in a cgroup leaf the host can SIGKILL atomically.
