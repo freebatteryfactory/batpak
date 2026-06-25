@@ -276,32 +276,30 @@ pub fn run_launcher(
     // child write copy). `control_host` is intentionally KEPT (the host reads it).
     drop(relocated);
 
-    // 6. Take the piped stdout/stderr handles BEFORE wait (so the child still owns the
-    //    write ends), drain the control transcript to EOF, then wait the launcher.
-    let mut launcher_stdout = child.stdout.take();
-    let mut launcher_stderr = child.stderr.take();
-    let mut transcript_text = String::new();
-    {
-        let mut control = control_host;
-        control.read_to_string(&mut transcript_text)?;
-    }
-    let launcher_exit = child.wait()?;
-
-    // 7. READ-AFTER-EXIT capture of the workload's inherited stdout/stderr. The launcher
-    //    (and its workload child) have terminated, so the pipe write ends are closed and
-    //    these reads see clean EOF without deadlock for the small workloads here.
+    // 6. Drain the workload's piped stdout/stderr CONCURRENTLY with the run (on scoped
+    //    threads) while THIS thread drains the control transcript, THEN wait the launcher.
     //
-    //    LARGE-OUTPUT CAVEAT / FOLLOW-UP: reading AFTER wait can DEADLOCK if a workload
-    //    floods a pipe past its kernel buffer before the host drains it (the workload
-    //    blocks on a full pipe, never exits, so `wait` above never returns). The control
-    //    transcript is drained concurrently with the run, but stdout/stderr are not. The
-    //    workloads driven through this path today are small (sh one-liners), so
-    //    read-after-exit is sufficient; a CONCURRENT-DRAIN / bounded-capture rework
-    //    (drain stdout+stderr on threads or via poll while the launcher runs) is the
-    //    follow-up before any large-output workload uses this path. We do NOT silently
-    //    cap the capture — we read it all.
-    let captured_stdout = read_pipe_to_end(launcher_stdout.as_mut())?;
-    let captured_stderr = read_pipe_to_end(launcher_stderr.as_mut())?;
+    //    Reading the workload streams AFTER `wait` would DEADLOCK a workload that floods a
+    //    pipe past its kernel buffer: it blocks writing to the full pipe, never exits, so
+    //    `wait` never returns and the post-wait read is never reached. Concurrent draining
+    //    keeps all three pipes (control + stdout + stderr) emptying as the workload runs,
+    //    so the workload always makes progress regardless of output size. The scoped
+    //    threads own the stream handles and their join() yields the captured bytes — no
+    //    channel needed. We do NOT cap the capture — every byte is read to EOF.
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let mut transcript_text = String::new();
+    let (captured_stdout, captured_stderr) =
+        std::thread::scope(|scope| -> Result<(Vec<u8>, Vec<u8>), HarnessError> {
+            let out = scope.spawn(move || drain_owned(stdout));
+            let err = scope.spawn(move || drain_owned(stderr));
+            let mut control = control_host;
+            control.read_to_string(&mut transcript_text)?;
+            let captured_stdout = out.join().map_err(|_| drain_panicked("stdout"))??;
+            let captured_stderr = err.join().map_err(|_| drain_panicked("stderr"))??;
+            Ok((captured_stdout, captured_stderr))
+        })?;
+    let launcher_exit = child.wait()?;
 
     Ok(parse_observation(
         &transcript_text,
@@ -311,15 +309,24 @@ pub fn run_launcher(
     ))
 }
 
-/// Read a piped child stream fully to EOF, returning the captured bytes. `None` (the
-/// stream handle was not present) yields empty bytes — never a fault. Generic over the
-/// concrete pipe type so the same drain serves both `ChildStdout` and `ChildStderr`.
-fn read_pipe_to_end<R: Read>(stream: Option<&mut R>) -> Result<Vec<u8>, HarnessError> {
+/// Read an owned piped child stream fully to EOF, returning the captured bytes. `None`
+/// (the stream handle was not present) yields empty bytes — never a fault. Owns the
+/// stream so it can be moved onto a scoped drain thread; generic so the same drain serves
+/// both `ChildStdout` and `ChildStderr`.
+fn drain_owned<R: Read>(stream: Option<R>) -> Result<Vec<u8>, HarnessError> {
     let mut buf = Vec::new();
-    if let Some(s) = stream {
+    if let Some(mut s) = stream {
         s.read_to_end(&mut buf)?;
     }
     Ok(buf)
+}
+
+/// Map a panicked drain thread to an OS fault (a drain thread only panics on a bug, never
+/// in normal operation — a pipe read errors via `io::Error`, which propagates as `Os`).
+fn drain_panicked(which: &str) -> HarnessError {
+    HarnessError::Os(std::io::Error::other(format!(
+        "{which} drain thread panicked"
+    )))
 }
 
 /// Parse the launcher's newline-delimited transcript into a structured observation.
