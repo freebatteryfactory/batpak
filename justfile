@@ -1,5 +1,10 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
+# Integration tests (netbat TCP listeners, temp dirs) need a host temp root.
+# Cursor sandboxes and some CI images block binds under the default TMPDIR;
+# override by exporting TMPDIR before `just`.
+export TMPDIR := env_var_or_default("TMPDIR", "/tmp")
+
 default:
     just --list
 
