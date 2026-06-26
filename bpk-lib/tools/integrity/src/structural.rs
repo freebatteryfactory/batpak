@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use syn::spanned::Spanned;
+use syn::visit::Visit;
 
 #[cfg(test)]
 #[path = "structural_tests.rs"]
@@ -71,6 +72,12 @@ pub(crate) fn run() -> Result<()> {
         source_files.len().saturating_mul(12),
         started,
     )?;
+
+    crate::receipts::run_gate("examples-observable-output", || {
+        let inputs = check_examples_observable_output(&repo_root, &mut source_cache)?;
+        let files = inputs.len().max(1);
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
 
     // ci-parity: receipt over the ci.yml + xtask source surface it cross-checks.
     crate::receipts::run_gate("ci-parity", || {
@@ -557,6 +564,87 @@ fn check_no_dead_code_silencers(repo_root: &Path, source_cache: &mut SourceCache
     paths.extend(rust_files(&core_benches_root(repo_root)));
     paths.push(repo_root.join("crates/core/build.rs"));
     check_no_dead_code_silencers_over(repo_root, &paths, source_cache)
+}
+
+fn check_examples_observable_output(
+    repo_root: &Path,
+    source_cache: &mut SourceCache,
+) -> Result<BTreeSet<PathBuf>> {
+    let paths = rust_files(&core_examples_root(repo_root));
+    let inputs = paths.iter().cloned().collect::<BTreeSet<_>>();
+    check_examples_observable_output_over(repo_root, &paths, source_cache)?;
+    Ok(inputs)
+}
+
+/// Testable core for INV-EXAMPLES-OBSERVABLE-OUTPUT. Examples must use the
+/// explicit `Write` API (`writeln!(stdout().lock(), ..)` or an equivalent locked
+/// handle), not `print!`/`println!`, so observable output remains visible to
+/// static review and cannot be hidden behind the formatting macros' global lock.
+fn check_examples_observable_output_over(
+    repo_root: &Path,
+    paths: &[PathBuf],
+    source_cache: &mut SourceCache,
+) -> Result<()> {
+    for path in paths {
+        let rel = relative(repo_root, path);
+        let file = source_cache
+            .parse_rust(path)
+            .map_err(|err| anyhow!("parse example output gate target {rel}: {err}"))?;
+        let offenders = collect_print_macro_sites(&file);
+        if let Some(offender) = offenders.first() {
+            bail!(
+                "structural-check (INV-EXAMPLES-OBSERVABLE-OUTPUT): `{}` macro in {}:{}.\n\
+                 Examples must emit observable output through the explicit Write API, e.g. \
+                 `let mut out = std::io::stdout().lock(); let _ = writeln!(out, ...)`.",
+                offender.macro_name,
+                rel,
+                offender.line,
+            );
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct PrintMacroSite {
+    line: usize,
+    macro_name: &'static str,
+}
+
+fn collect_print_macro_sites(file: &syn::File) -> Vec<PrintMacroSite> {
+    let mut visitor = PrintMacroVisitor::default();
+    visitor.visit_file(file);
+    visitor.sites.sort_by_key(|site| site.line);
+    visitor.sites
+}
+
+#[derive(Default)]
+struct PrintMacroVisitor {
+    sites: Vec<PrintMacroSite>,
+}
+
+impl<'ast> Visit<'ast> for PrintMacroVisitor {
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        if macro_ends_with(&node.path, "println") {
+            self.sites.push(PrintMacroSite {
+                line: node.span().start().line,
+                macro_name: "println!",
+            });
+        }
+        if macro_ends_with(&node.path, "print") {
+            self.sites.push(PrintMacroSite {
+                line: node.span().start().line,
+                macro_name: "print!",
+            });
+        }
+        syn::visit::visit_macro(self, node);
+    }
+}
+
+fn macro_ends_with(path: &syn::Path, ident: &str) -> bool {
+    path.segments
+        .last()
+        .is_some_and(|segment| segment.ident == ident)
 }
 
 /// Testable core of [`check_no_dead_code_silencers`]: scan `paths` for

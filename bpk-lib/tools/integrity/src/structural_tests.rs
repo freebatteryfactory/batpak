@@ -7,8 +7,9 @@
 //! each gate its blocking authority.
 
 use super::{
-    check_allow_justifications_over, check_inline_test_island_pressure_over,
-    check_no_dead_code_silencers_over, check_rust_file_size_pressure_over,
+    check_allow_justifications_over, check_examples_observable_output_over,
+    check_inline_test_island_pressure_over, check_no_dead_code_silencers_over,
+    check_rust_file_size_pressure_over,
 };
 use crate::source_cache::SourceCache;
 use std::fs;
@@ -397,7 +398,54 @@ fn glob_matcher_handles_doublestar_and_single_star() {
     assert!(!glob_matches("a/b/c.rs", "a/b/d.rs"));
 }
 
-// --- Gate 8: test-assertion-rigor -----------------------------------------
+// --- Gate 8: examples-observable-output -----------------------------------
+
+#[test]
+fn examples_observable_output_rejects_print_macros() {
+    let repo = temp_repo("examples-output");
+    let rel = "crates/examples/examples/synthetic.rs";
+
+    let path = write_file(
+        &repo,
+        rel,
+        "use std::io::Write as _;\n\
+         fn main() {\n\
+             let mut out = std::io::stdout().lock();\n\
+             let _ = writeln!(out, \"visible\");\n\
+         }\n",
+    );
+    let mut cache = SourceCache::new(&repo);
+    check_examples_observable_output_over(&repo, std::slice::from_ref(&path), &mut cache)
+        .expect("explicit Write API is accepted");
+
+    write_file(
+        &repo,
+        rel,
+        "fn main() {\n\
+             println!(\"hidden global stdout lock\");\n\
+         }\n",
+    );
+    let mut cache = SourceCache::new(&repo);
+    let err = check_examples_observable_output_over(&repo, std::slice::from_ref(&path), &mut cache)
+        .expect_err("println! in examples must be rejected");
+    assert!(err.to_string().contains("println!"), "{err:?}");
+
+    write_file(
+        &repo,
+        rel,
+        "fn main() {\n\
+             print!(\"hidden global stdout lock\");\n\
+         }\n",
+    );
+    let mut cache = SourceCache::new(&repo);
+    let err = check_examples_observable_output_over(&repo, &[path], &mut cache)
+        .expect_err("print! in examples must be rejected");
+    assert!(err.to_string().contains("print!"), "{err:?}");
+
+    fs::remove_dir_all(repo).expect("remove temp repo");
+}
+
+// --- Gate 9: test-assertion-rigor -----------------------------------------
 
 fn test_assertion_fixture(body: &str) -> String {
     format!(

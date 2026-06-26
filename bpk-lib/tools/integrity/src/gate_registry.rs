@@ -315,6 +315,14 @@ pub(crate) const GATES: &[Gate] = &[
         has_blocking_authority: true,
     },
     Gate {
+        slug: "examples-observable-output",
+        red_fixture_test: Some(
+            "tools/integrity/src/structural_tests.rs::examples_observable_output_rejects_print_macros",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
+    Gate {
         slug: "pub-items-have-tests",
         red_fixture_test: Some(
             "tools/integrity/src/public_surface.rs::pub_items_have_tests_rejects_unwitnessed_pub_item",
@@ -579,6 +587,7 @@ pub(crate) const RECEIPT_REQUIRED_GATES: &[&str] = &[
     "typed-waivers",
     "capability-snapshot",
     "ci-parity",
+    "examples-observable-output",
     "invariant-bridge",
     "structural-source-lints",
     "overclaim",
