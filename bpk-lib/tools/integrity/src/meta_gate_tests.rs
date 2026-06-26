@@ -49,6 +49,24 @@ fn no_approval() -> ApprovalContext {
     ApprovalContext::default()
 }
 
+fn assert_denied_for(diff: &str, kind: WeakeningKind, message: &str) {
+    assert_denied_for_context(diff, kind, &no_approval(), message);
+}
+
+fn assert_denied_for_context(
+    diff: &str,
+    kind: WeakeningKind,
+    ctx: &ApprovalContext,
+    message: &str,
+) {
+    let err = evaluate(diff, &l4_manifest(), ctx).expect_err(message);
+    assert!(
+        err.to_string().contains(kind.as_str()),
+        "expected denial for {}, got: {err}",
+        kind.as_str()
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Threshold lowered (CRITICAL_SEAM_MIN_CATCH_PCT 85 -> 70)
 // ---------------------------------------------------------------------------
@@ -138,8 +156,11 @@ fn raising_default_line_budget_without_approval_errs() {
     let findings = classify_weakening(RAISE_LINE_BUDGET_DIFF, &l4_manifest());
     assert_eq!(findings.len(), 1, "got {findings:?}");
     assert_eq!(findings[0].kind, WeakeningKind::BudgetRaised);
-    evaluate(RAISE_LINE_BUDGET_DIFF, &l4_manifest(), &no_approval())
-        .expect_err("raising the line budget without approval must Err");
+    assert_denied_for(
+        RAISE_LINE_BUDGET_DIFF,
+        WeakeningKind::BudgetRaised,
+        "raising the line budget without approval must Err",
+    );
 }
 
 #[test]
@@ -238,7 +259,11 @@ diff --git a/tools/xtask/src/commands/mutants/policy.rs b/tools/xtask/src/comman
     assert!(findings
         .iter()
         .any(|w| w.kind == WeakeningKind::MutationEnforcementWeakened));
-    evaluate(diff, &l4_manifest(), &no_approval()).expect_err("phase regression must Err");
+    assert_denied_for(
+        diff,
+        WeakeningKind::MutationEnforcementWeakened,
+        "phase regression must Err",
+    );
 }
 
 #[test]
@@ -257,7 +282,11 @@ diff --git a/tools/xtask/src/commands/mutants/lanes.rs b/tools/xtask/src/command
     assert!(findings
         .iter()
         .any(|w| w.kind == WeakeningKind::MutationEnforcementWeakened));
-    evaluate(diff, &l4_manifest(), &no_approval()).expect_err("Threshold -> RecordOnly must Err");
+    assert_denied_for(
+        diff,
+        WeakeningKind::MutationEnforcementWeakened,
+        "Threshold -> RecordOnly must Err",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +335,11 @@ diff --git a/tools/xtask/src/commands/ci.rs b/tools/xtask/src/commands/ci.rs
     assert!(findings
         .iter()
         .any(|w| w.kind == WeakeningKind::GateReburied));
-    evaluate(diff, &l4_manifest(), &no_approval()).expect_err("re-burying a gate must Err");
+    assert_denied_for(
+        diff,
+        WeakeningKind::GateReburied,
+        "re-burying a gate must Err",
+    );
 }
 
 #[test]
@@ -322,8 +355,11 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
     assert!(findings
         .iter()
         .any(|w| w.kind == WeakeningKind::GateReburied));
-    evaluate(diff, &l4_manifest(), &no_approval())
-        .expect_err("label-gating a default-on step must Err");
+    assert_denied_for(
+        diff,
+        WeakeningKind::GateReburied,
+        "label-gating a default-on step must Err",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -345,8 +381,11 @@ diff --git a/tools/integrity/src/gate_registry.rs b/tools/integrity/src/gate_reg
         .iter()
         .any(|w| w.kind == WeakeningKind::BlockingAuthorityRemoved));
     assert!(findings.iter().any(|w| w.blast_radius == BlastRadius::L4));
-    evaluate(diff, &l4_manifest(), &no_approval())
-        .expect_err("removing blocking authority must Err");
+    assert_denied_for(
+        diff,
+        WeakeningKind::BlockingAuthorityRemoved,
+        "removing blocking authority must Err",
+    );
 }
 
 #[test]
@@ -365,7 +404,11 @@ diff --git a/tools/integrity/src/gate_registry.rs b/tools/integrity/src/gate_reg
     assert!(findings
         .iter()
         .any(|w| w.kind == WeakeningKind::BlockingAuthorityRemoved));
-    evaluate(diff, &l4_manifest(), &no_approval()).expect_err("deleting a red fixture must Err");
+    assert_denied_for(
+        diff,
+        WeakeningKind::BlockingAuthorityRemoved,
+        "deleting a red fixture must Err",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -465,8 +508,12 @@ fn standard_weakening_needs_both_label_and_trailer() {
         labels: vec![WEAKEN_APPROVED_LABEL.to_string()],
         ..ApprovalContext::default()
     };
-    evaluate(LOWER_CRITICAL_SEAM_DIFF, &l4_manifest(), &label_only)
-        .expect_err("label without trailer must Err");
+    assert_denied_for_context(
+        LOWER_CRITICAL_SEAM_DIFF,
+        WeakeningKind::ThresholdLowered,
+        &label_only,
+        "label without trailer must Err",
+    );
     // Trailer only -> still Err.
     let trailer_only = ApprovalContext {
         weaken_ok_trailers: vec![WeakenTrailer {
@@ -475,8 +522,12 @@ fn standard_weakening_needs_both_label_and_trailer() {
         }],
         ..ApprovalContext::default()
     };
-    evaluate(LOWER_CRITICAL_SEAM_DIFF, &l4_manifest(), &trailer_only)
-        .expect_err("trailer without label must Err");
+    assert_denied_for_context(
+        LOWER_CRITICAL_SEAM_DIFF,
+        WeakeningKind::ThresholdLowered,
+        &trailer_only,
+        "trailer without label must Err",
+    );
 }
 
 #[test]
@@ -519,8 +570,11 @@ fn enforcement_weakened_errs() {
                 && w.detail.contains("Enforced -> Mediated")),
         "Enforced->Mediated must be a capability downgrade; got {findings:?}"
     );
-    evaluate(&diff, &l4_manifest(), &no_approval())
-        .expect_err("an unapproved capability downgrade must Err");
+    assert_denied_for(
+        &diff,
+        WeakeningKind::CapabilityDowngraded,
+        "an unapproved capability downgrade must Err",
+    );
 }
 
 #[test]

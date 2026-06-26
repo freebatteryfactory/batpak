@@ -182,7 +182,10 @@ mod tests {
             safe_package_name("my__app").expect("agent input should normalize"),
             "my-app"
         );
-        assert!(safe_package_name("99-app").is_err());
+        assert!(
+            safe_package_name("99-app").is_err(),
+            "PROPERTY: generated package names must start with an ASCII letter"
+        );
     }
 
     #[test]

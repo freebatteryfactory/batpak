@@ -168,7 +168,7 @@ witnesses:
   - { id: INV-SYNCBAT-DISPATCH-RECEIPTS, witnessed: true }
   - { id: INV-SYNCBAT-EFFECT-ROW-ENFORCEMENT, witnessed: true }
   - { id: INV-SYNCBAT-REGISTER-CATALOG-DETERMINISTIC, witnessed: true }
-  - { id: INV-TEST-PANIC-AS-ASSERTION, witnessed: false }
+  - { id: INV-TEST-PANIC-AS-ASSERTION, witnessed: true }
   - { id: INV-TRACEABILITY-COMPLETE, witnessed: true }
   - { id: INV-TYPELEVEL-COMBINATOR-LAWS, witnessed: true }
   - { id: INV-TYPESTATE-OPEN-HAS-WRITER, witnessed: true }

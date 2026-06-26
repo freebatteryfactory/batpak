@@ -847,9 +847,15 @@ fn batch_subscription_atomicity_no_partial_visibility() {
     ];
 
     let result = store.append_batch(items);
-    result.expect_err(
+    let err = result.expect_err(
         "PROPERTY: batch with after_batch_items(1) fault must fail. If this \
          passes, fault injection is silently swallowed.",
+    );
+    assert!(
+        err.to_string().contains("injected")
+            || err.to_string().contains("fault")
+            || err.to_string().contains("Fault"),
+        "PROPERTY: batch failure must surface the injected fault, got: {err}"
     );
 
     let notifications_received = drain(&sub);

@@ -461,7 +461,10 @@ mod tests {
     fn cache_meta_decode_rejects_short_buffer() {
         let short = [0u8; 8];
         let result = CacheMeta::decode_from_bytes(&short);
-        assert!(result.is_err());
+        assert!(
+            result.is_err(),
+            "PROPERTY: cache metadata shorter than the fixed header is rejected before decode"
+        );
     }
 
     #[test]

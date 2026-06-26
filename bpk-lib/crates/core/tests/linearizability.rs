@@ -305,7 +305,6 @@ fn checker_rejects_inverted_gapped_and_duplicate_histories() {
         Err(Violation::SeqInversion { prev: 1, next: 0 }),
         "a real-time/seq inversion must be REJECTED"
     );
-    assert!(check_linearizable(&inverted).is_err());
 
     // GAP / NON-PREFIX / PREMATURE VISIBILITY: sequence 1 is missing, so 2 is
     // visible while its predecessor is not — a hole in the prefix.
@@ -318,7 +317,6 @@ fn checker_rejects_inverted_gapped_and_duplicate_histories() {
         }),
         "a gap below the visible high-water (non-prefix) must be REJECTED"
     );
-    assert!(check_linearizable(&gapped).is_err());
 
     // DUPLICATE: two visible events share a global_sequence.
     let duplicate = vec![ev(0, 100), ev(1, 101), ev(1, 102)];
@@ -327,5 +325,4 @@ fn checker_rejects_inverted_gapped_and_duplicate_histories() {
         Err(Violation::DuplicateSequence { sequence: 1 }),
         "a duplicate global_sequence must be REJECTED"
     );
-    assert!(check_linearizable(&duplicate).is_err());
 }
