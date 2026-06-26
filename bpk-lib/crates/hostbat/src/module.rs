@@ -14,7 +14,8 @@ use syncbat::{AdmissionGuard, Handler, OperationDescriptor};
 
 use crate::descriptor::{GuardDescriptor, HookDescriptor, HookPhase, JobDescriptor};
 use crate::error::HostError;
-use crate::manifest::HostModuleManifest;
+use crate::manifest::{HostModuleManifest, SealedParts};
+use crate::schema::SchemaDescriptor;
 
 type BoxedHandler = Box<dyn Handler + 'static>;
 type BoxedGuard = Box<dyn AdmissionGuard + 'static>;
@@ -121,6 +122,7 @@ pub struct HostModuleBuilder {
     guard: Option<(GuardDescriptor, BoxedGuard)>,
     hooks: Vec<(HookDescriptor, BoxedHook)>,
     jobs: BTreeMap<String, (JobDescriptor, BoxedJob)>,
+    schemas: BTreeMap<(String, u32, crate::schema::SchemaRole), SchemaDescriptor>,
 }
 
 impl HostModuleBuilder {
@@ -135,6 +137,7 @@ impl HostModuleBuilder {
             guard: None,
             hooks: Vec::new(),
             jobs: BTreeMap::new(),
+            schemas: BTreeMap::new(),
         }
     }
 
@@ -200,6 +203,31 @@ impl HostModuleBuilder {
         Ok(self)
     }
 
+    /// Declare a language-neutral wire schema this module owns (an operation
+    /// input/output, an exported event payload, or a receipt payload). The schema
+    /// identity `(SchemaId, SchemaVersion, role)` is folded into the module digest
+    /// via its canonical encoding; the composition later aggregates it and detects
+    /// cross-module collisions.
+    ///
+    /// # Errors
+    /// [`HostError::SchemaInvalid`] if this module already declares a schema with
+    /// the same `(id, version, role)` identity.
+    pub fn schema(mut self, descriptor: SchemaDescriptor) -> Result<Self, HostError> {
+        let (id, version, role) = descriptor.identity_key();
+        let key = (id.to_owned(), version, role);
+        if self.schemas.contains_key(&key) {
+            return Err(HostError::SchemaInvalid {
+                schema: id.to_owned(),
+                detail: format!(
+                    "schema {id:?} {version} ({role}) is declared twice in module {:?}",
+                    self.id
+                ),
+            });
+        }
+        self.schemas.insert(key, descriptor);
+        Ok(self)
+    }
+
     /// Register a lifecycle hook in `phase` with module-local `order`.
     pub fn hook<H>(mut self, phase: HookPhase, name: impl Into<String>, order: u32, hook: H) -> Self
     where
@@ -242,10 +270,11 @@ impl HostModuleBuilder {
             && self.hooks.is_empty()
             && self.jobs.is_empty()
             && self.guard.is_none()
+            && self.schemas.is_empty()
         {
             return Err(HostError::coherence(
                 &self.id,
-                "module declares no operations, hooks, jobs, or guard",
+                "module declares no operations, hooks, jobs, guard, or schemas",
             ));
         }
 
@@ -280,15 +309,19 @@ impl HostModuleBuilder {
         let mut receipt_namespaces = self.receipt_namespaces;
         receipt_namespaces.sort();
 
-        let manifest = HostModuleManifest::seal(
-            self.id,
-            self.version,
-            operation_descriptors,
+        // The BTreeMap already holds schemas in canonical (id, version, role) order.
+        let schemas: Vec<SchemaDescriptor> = self.schemas.into_values().collect();
+
+        let manifest = HostModuleManifest::seal(SealedParts {
+            id: self.id,
+            version: self.version,
+            operations: operation_descriptors,
             receipt_namespaces,
-            guard_descriptor,
-            hook_descriptors,
-            job_descriptors,
-        )?;
+            guard: guard_descriptor,
+            hooks: hook_descriptors,
+            jobs: job_descriptors,
+            schemas,
+        })?;
 
         Ok(HostModule {
             manifest,

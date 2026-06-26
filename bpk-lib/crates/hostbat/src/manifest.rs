@@ -19,6 +19,7 @@ use syncbat::OperationDescriptor;
 use crate::descriptor::{GuardDescriptor, HookDescriptor, JobDescriptor};
 use crate::error::HostError;
 use crate::identity::{canonical_digest, ModuleDigest};
+use crate::schema::{SchemaDescriptor, SchemaManifestView};
 
 /// Domain separator for the module-manifest digest.
 const MODULE_DIGEST_DOMAIN: &str = "hostbat.module.v1";
@@ -37,6 +38,7 @@ pub struct HostModuleManifest {
     guard: Option<GuardDescriptor>,
     hooks: Vec<HookDescriptor>,
     jobs: Vec<JobDescriptor>,
+    schemas: Vec<SchemaDescriptor>,
     digest: ModuleDigest,
 }
 
@@ -76,28 +78,54 @@ struct ManifestView<'a> {
     guard: Option<&'a GuardDescriptor>,
     hooks: &'a [HookDescriptor],
     jobs: &'a [JobDescriptor],
+    // Identity-bearing schema views only (id/version/role/encoding); the
+    // diagnostic Rust type is excluded so renaming/dropping it changes no digest.
+    schemas: Vec<SchemaManifestView<'a>>,
 }
 
-fn compute_digest(
-    id: &str,
+/// Borrowed view of the canonically ordered parts a manifest digest is sealed
+/// over. Bundling them keeps `compute_digest` single-argument and the seal /
+/// verify call sites symmetric.
+struct ManifestParts<'a> {
+    id: &'a str,
     version: u32,
-    operations: &[OperationDescriptor],
-    receipt_namespaces: &[String],
-    guard: Option<&GuardDescriptor>,
-    hooks: &[HookDescriptor],
-    jobs: &[JobDescriptor],
-) -> Result<ModuleDigest, HostError> {
+    operations: &'a [OperationDescriptor],
+    receipt_namespaces: &'a [String],
+    guard: Option<&'a GuardDescriptor>,
+    hooks: &'a [HookDescriptor],
+    jobs: &'a [JobDescriptor],
+    schemas: &'a [SchemaDescriptor],
+}
+
+fn compute_digest(parts: &ManifestParts<'_>) -> Result<ModuleDigest, HostError> {
     let view = ManifestView {
         domain: MODULE_DIGEST_DOMAIN,
-        id,
-        version,
-        operations: operations.iter().map(OperationView::from).collect(),
-        receipt_namespaces,
-        guard,
-        hooks,
-        jobs,
+        id: parts.id,
+        version: parts.version,
+        operations: parts.operations.iter().map(OperationView::from).collect(),
+        receipt_namespaces: parts.receipt_namespaces,
+        guard: parts.guard,
+        hooks: parts.hooks,
+        jobs: parts.jobs,
+        schemas: parts
+            .schemas
+            .iter()
+            .map(SchemaDescriptor::manifest_view)
+            .collect(),
     };
     canonical_digest(&view).map(ModuleDigest)
+}
+
+/// Owned, canonically ordered parts handed to [`HostModuleManifest::seal`].
+pub(crate) struct SealedParts {
+    pub(crate) id: String,
+    pub(crate) version: u32,
+    pub(crate) operations: Vec<OperationDescriptor>,
+    pub(crate) receipt_namespaces: Vec<String>,
+    pub(crate) guard: Option<GuardDescriptor>,
+    pub(crate) hooks: Vec<HookDescriptor>,
+    pub(crate) jobs: Vec<JobDescriptor>,
+    pub(crate) schemas: Vec<SchemaDescriptor>,
 }
 
 impl HostModuleManifest {
@@ -107,24 +135,27 @@ impl HostModuleManifest {
     /// # Errors
     /// [`HostError::CanonicalEncoding`] if the canonical encoder rejects the
     /// parts (unreachable for the frozen wire shapes).
-    pub(crate) fn seal(
-        id: String,
-        version: u32,
-        operations: Vec<OperationDescriptor>,
-        receipt_namespaces: Vec<String>,
-        guard: Option<GuardDescriptor>,
-        hooks: Vec<HookDescriptor>,
-        jobs: Vec<JobDescriptor>,
-    ) -> Result<Self, HostError> {
-        let digest = compute_digest(
-            &id,
+    pub(crate) fn seal(parts: SealedParts) -> Result<Self, HostError> {
+        let SealedParts {
+            id,
             version,
-            &operations,
-            &receipt_namespaces,
-            guard.as_ref(),
-            &hooks,
-            &jobs,
-        )?;
+            operations,
+            receipt_namespaces,
+            guard,
+            hooks,
+            jobs,
+            schemas,
+        } = parts;
+        let digest = compute_digest(&ManifestParts {
+            id: &id,
+            version,
+            operations: &operations,
+            receipt_namespaces: &receipt_namespaces,
+            guard: guard.as_ref(),
+            hooks: &hooks,
+            jobs: &jobs,
+            schemas: &schemas,
+        })?;
         Ok(Self {
             id,
             version,
@@ -133,6 +164,7 @@ impl HostModuleManifest {
             guard,
             hooks,
             jobs,
+            schemas,
             digest,
         })
     }
@@ -143,15 +175,16 @@ impl HostModuleManifest {
     /// # Errors
     /// [`HostError::CanonicalEncoding`] if re-encoding fails.
     pub fn verify_hash(&self) -> Result<bool, HostError> {
-        let recomputed = compute_digest(
-            &self.id,
-            self.version,
-            &self.operations,
-            &self.receipt_namespaces,
-            self.guard.as_ref(),
-            &self.hooks,
-            &self.jobs,
-        )?;
+        let recomputed = compute_digest(&ManifestParts {
+            id: &self.id,
+            version: self.version,
+            operations: &self.operations,
+            receipt_namespaces: &self.receipt_namespaces,
+            guard: self.guard.as_ref(),
+            hooks: &self.hooks,
+            jobs: &self.jobs,
+            schemas: &self.schemas,
+        })?;
         Ok(recomputed == self.digest)
     }
 
@@ -197,6 +230,13 @@ impl HostModuleManifest {
     /// Supervised-job kinds in canonical (kind) order.
     pub fn jobs(&self) -> impl Iterator<Item = &JobDescriptor> {
         self.jobs.iter()
+    }
+
+    /// Schema descriptors this module owns, in canonical `(id, version, role)`
+    /// order. These are the language-neutral wire-shape declarations the
+    /// composition aggregates and S12's TypeScript codegen consumes.
+    pub fn schemas(&self) -> impl Iterator<Item = &SchemaDescriptor> {
+        self.schemas.iter()
     }
 
     /// Replace the sealed digest with a corrupt value. **Test-only**, behind the
