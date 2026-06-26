@@ -537,9 +537,7 @@
     - ART-BUILD-RS
 - id: INV-EXAMPLES-OBSERVABLE-OUTPUT
   statement: "Examples emit output via `writeln!(std::io::stdout().lock(), ..)` (the explicit Write API), not the println!/print! macros; no print allow is used."
-  # weak-tier (GAP): no structural gate or red fixture enforces "examples use
-  # writeln!(stdout().lock()) not println!". cli_out.rs only USES the pattern; there
-  # is no falsifying test. Not cited rather than fabricate; candidate GateNegativePath.
+  witness_test: tools/integrity/src/structural_tests.rs::examples_observable_output_rejects_print_macros
   artifacts:
     - ART-EXAMPLES
 - id: INV-MACRO-BOUNDED-CAST

@@ -100,7 +100,7 @@ witnesses:
   - { id: INV-DST-RECOVERY-LEGAL, witnessed: true }
   - { id: INV-EVENT-PAYLOAD-DECODE-BACKCOMPAT, witnessed: true }
   - { id: INV-EVENTKIND-PARSE-ROUNDTRIP, witnessed: true }
-  - { id: INV-EXAMPLES-OBSERVABLE-OUTPUT, witnessed: false }
+  - { id: INV-EXAMPLES-OBSERVABLE-OUTPUT, witnessed: true }
   - { id: INV-EXTERNAL-REPLAY-NO-SIDECAR-TRUTH, witnessed: true }
   - { id: INV-FAULT-INJECT-GATED, witnessed: true }
   - { id: INV-FENCE-CANCELLED-STAYS-HIDDEN, witnessed: true }
