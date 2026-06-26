@@ -276,8 +276,14 @@ fn read_active_frame_into_reads_the_full_requested_slice() {
 
 #[test]
 fn checked_frame_range_rejects_overflow_and_oversized_lengths() {
-    assert!(Reader::checked_frame_range(1, u64::MAX, 16, 1024).is_err());
-    assert!(Reader::checked_frame_len(1, 4).is_err());
+    assert!(
+        Reader::checked_frame_range(1, u64::MAX, 16, 1024).is_err(),
+        "PROPERTY: a frame range that overflows u64 must be rejected"
+    );
+    assert!(
+        Reader::checked_frame_len(1, 4).is_err(),
+        "PROPERTY: a frame shorter than the fixed header must be rejected"
+    );
     assert!(
         Reader::checked_frame_len(
             1,
@@ -292,13 +298,19 @@ fn checked_frame_range_rejects_overflow_and_oversized_lengths() {
             .expect("max frame length fits u32")
     )
     .is_ok());
-    assert!(Reader::checked_frame_len(
-        1,
-        u32::try_from(FRAME_HEADER_BYTES + segment::MAX_FRAME_PAYLOAD + 1)
-            .expect("one-past-max frame length fits u32")
-    )
-    .is_err());
-    assert!(Reader::checked_frame_len(1, u32::MAX).is_err());
+    assert!(
+        Reader::checked_frame_len(
+            1,
+            u32::try_from(FRAME_HEADER_BYTES + segment::MAX_FRAME_PAYLOAD + 1)
+                .expect("one-past-max frame length fits u32")
+        )
+        .is_err(),
+        "PROPERTY: a frame one byte above MAX_FRAME_PAYLOAD must be rejected"
+    );
+    assert!(
+        Reader::checked_frame_len(1, u32::MAX).is_err(),
+        "PROPERTY: a frame length at u32::MAX must be rejected before allocation"
+    );
 }
 
 #[test]
@@ -336,8 +348,14 @@ fn checked_header_len_respects_the_exact_boundary() {
 
 #[test]
 fn checked_batch_count_rejects_vacuous_or_implausible_counts() {
-    assert!(Reader::checked_batch_count(1, 0, 0).is_err());
-    assert!(Reader::checked_batch_count(1, 0, MAX_BATCH_RECOVERY_ITEMS + 1).is_err());
+    assert!(
+        Reader::checked_batch_count(1, 0, 0).is_err(),
+        "PROPERTY: a batch count of zero is malformed and must be rejected"
+    );
+    assert!(
+        Reader::checked_batch_count(1, 0, MAX_BATCH_RECOVERY_ITEMS + 1).is_err(),
+        "PROPERTY: a batch count above MAX_BATCH_RECOVERY_ITEMS is refused before allocation"
+    );
     assert_eq!(
         Reader::checked_batch_count(1, 0, MAX_BATCH_RECOVERY_ITEMS)
             .expect("max batch count remains valid"),

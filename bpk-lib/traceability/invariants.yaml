@@ -568,10 +568,7 @@
     - ART-DOCTOR
 - id: INV-TEST-PANIC-AS-ASSERTION
   statement: "Test bodies signal failure via assert!/assert!(matches!(..))/expect/expect_err/`#[test] -> Result`. panic! is not used as an assertion (use assert!), unwrap is not used (use expect). No file-level or item-level allow is permitted in tests."
-  # weak-tier (GAP): no structural lint rejects bare panic!/unwrap in test bodies;
-  # the id appears only as // justifies: header comments. No red fixture plants a
-  # panic!/unwrap test and asserts rejection. Not cited rather than fabricate;
-  # candidate GateNegativePath.
+  witness_test: tools/integrity/src/structural_tests.rs::test_assertion_rigor_rejects_weak_negative_tests
   artifacts:
     - ART-TESTS
     - ART-FRONTIER-CHAOS-TESTS

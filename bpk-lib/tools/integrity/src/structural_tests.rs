@@ -396,3 +396,76 @@ fn glob_matcher_handles_doublestar_and_single_star() {
     assert!(glob_matches("a/b/c.rs", "a/b/c.rs"));
     assert!(!glob_matches("a/b/c.rs", "a/b/d.rs"));
 }
+
+// --- Gate 8: test-assertion-rigor -----------------------------------------
+
+fn test_assertion_fixture(body: &str) -> String {
+    format!(
+        "#[test]\nfn planted_negative_path() {{\n{}\n}}\n",
+        body.lines()
+            .map(|line| format!("    {line}\n"))
+            .collect::<String>()
+    )
+}
+
+fn collect_test_assertion_offenders(repo: &Path, path: &Path) -> Vec<String> {
+    let mut cache = SourceCache::new(repo);
+    crate::test_assertions::collect_offenders(repo, &[path.to_path_buf()], &mut cache)
+        .expect("collect test assertion offenders")
+}
+
+#[test]
+fn test_assertion_rigor_rejects_weak_negative_tests() {
+    let repo = temp_repo("test-assertions");
+    let rel = "crates/core/tests/synthetic_negative_path.rs";
+
+    // GREEN: setup may use expect, and negative paths bind the error before
+    // asserting the variant/code-bearing surface.
+    let good = test_assertion_fixture(
+        "let value: Result<u8, &'static str> = Err(\"bad\");\n\
+         let err = value.expect_err(\"fixture must reject\");\n\
+         assert_eq!(err, \"bad\");",
+    );
+    let path = write_file(&repo, rel, &good);
+    let offenders = collect_test_assertion_offenders(&repo, &path);
+    assert!(offenders.is_empty(), "{offenders:?}");
+
+    // RED: direct panic is not an assertion shape in this repo.
+    let panic_macro = format!("{}!(\"use assert instead\");", "panic");
+    write_file(&repo, rel, &test_assertion_fixture(&panic_macro));
+    let offenders = collect_test_assertion_offenders(&repo, &path);
+    assert_eq!(offenders.len(), 1, "{offenders:?}");
+    assert!(offenders[0].contains("panic"), "{offenders:?}");
+
+    // RED: unwrap in a test body gives no diagnostic contract.
+    write_file(
+        &repo,
+        rel,
+        &test_assertion_fixture("let _value = Ok::<u8, &'static str>(1).unwrap();"),
+    );
+    let offenders = collect_test_assertion_offenders(&repo, &path);
+    assert_eq!(offenders.len(), 1, "{offenders:?}");
+    assert!(offenders[0].contains("unwrap"), "{offenders:?}");
+
+    // RED: expect_err without inspecting the returned error is vacuous.
+    write_file(
+        &repo,
+        rel,
+        &test_assertion_fixture("Err::<u8, &'static str>(\"bad\").expect_err(\"must fail\");"),
+    );
+    let offenders = collect_test_assertion_offenders(&repo, &path);
+    assert_eq!(offenders.len(), 1, "{offenders:?}");
+    assert!(offenders[0].contains("expect_err"), "{offenders:?}");
+
+    // RED: assert!(..is_err()) accepts the wrong error.
+    write_file(
+        &repo,
+        rel,
+        &test_assertion_fixture("assert!(Err::<u8, &'static str>(\"bad\").is_err());"),
+    );
+    let offenders = collect_test_assertion_offenders(&repo, &path);
+    assert_eq!(offenders.len(), 1, "{offenders:?}");
+    assert!(offenders[0].contains("is_err"), "{offenders:?}");
+
+    fs::remove_dir_all(repo).expect("remove temp repo");
+}

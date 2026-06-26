@@ -51,6 +51,7 @@ mod source_cache;
 mod store_pub_fn_coverage;
 mod store_sync_gate;
 mod structural;
+mod test_assertions;
 mod traceability;
 mod triangulation;
 mod typed_waivers;

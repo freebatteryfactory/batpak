@@ -54,6 +54,7 @@ pub(crate) fn run() -> Result<()> {
     check_rust_file_size_pressure(&repo_root, &mut source_cache)?;
     check_inline_test_island_pressure(&repo_root, &mut source_cache)?;
     check_event_payload_frozen_fixtures(&repo_root, &mut source_cache)?;
+    crate::test_assertions::check(&repo_root, &mut source_cache)?;
     complexity::check(&repo_root, &mut source_cache)?;
     wallclock::check(&repo_root, &mut source_cache)?;
     glob_coverage::check(&repo_root)?;
@@ -61,13 +62,13 @@ pub(crate) fn run() -> Result<()> {
     crate::dst_corpus::check(&repo_root)?;
     public_surface::check(&repo_root, &mut source_cache)?;
     store_pub_fn_coverage::check(&repo_root, &mut source_cache)?;
-    // Eleven blocking source lints ran over every production file; record the
+    // Twelve blocking source lints ran over every production file; record the
     // real files-examined count and assertions (one structural lint per file).
     crate::receipts::record_pass(
         "structural-source-lints",
         &source_files.iter().cloned().collect(),
         source_files.len(),
-        source_files.len().saturating_mul(11),
+        source_files.len().saturating_mul(12),
         started,
     )?;
 

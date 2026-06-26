@@ -362,6 +362,17 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
+    // Test assertion rigor (INV-TEST-PANIC-AS-ASSERTION): test bodies must not
+    // use `panic!`/`.unwrap()`, discard `.expect_err(..)`, or settle for a bare
+    // `assert!(..is_err())` that can pass on the wrong error.
+    Gate {
+        slug: "test-assertion-rigor",
+        red_fixture_test: Some(
+            "tools/integrity/src/structural_tests.rs::test_assertion_rigor_rejects_weak_negative_tests",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
     // --- Phase-B5 complexity-EXPONENT + WCET gate (GAUNT-CPLX-EXP, blocking,
     //     qualified GateNegativePath). The live measurement fits a log-log slope
     //     of a real `Store::query(Region::all())`'s ALLOCATION COUNT (not
@@ -869,13 +880,17 @@ mod tests {
         .expect("scan must not error")
         .is_ok());
         // ...but classifying a file WITHOUT a cfg branch as ProductionFlip fails.
-        assert!(red_fixture_is_antivacuous(
+        let green_only = red_fixture_is_antivacuous(
             &repo(),
             "crates/core/tests/gauntlet_fault_alloc_oom.rs::failing_alloc_arms_and_disarms_deterministically",
             RedFixtureKind::ProductionFlip,
         )
         .expect("scan must not error")
-        .is_err());
+        .expect_err("a ProductionFlip fixture with no red branch must be rejected");
+        assert!(
+            green_only.contains("gauntlet_red_fixture"),
+            "wrong anti-vacuity denial: {green_only}"
+        );
         // A real GateNegativePath fixture (asserts Err) passes.
         assert!(red_fixture_is_antivacuous(
             &repo(),
