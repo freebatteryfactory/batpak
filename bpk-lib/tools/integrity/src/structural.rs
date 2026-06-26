@@ -79,6 +79,12 @@ pub(crate) fn run() -> Result<()> {
         Ok(crate::receipts::GateWork::new(files, files, inputs))
     })?;
 
+    crate::receipts::run_gate("perf-gates-contract", || {
+        let inputs = crate::perf_gates_contract::check(&repo_root, &mut source_cache)?;
+        let files = inputs.len().max(1);
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
+
     // ci-parity: receipt over the ci.yml + xtask source surface it cross-checks.
     crate::receipts::run_gate("ci-parity", || {
         ci_parity::check(&repo_root)?;

@@ -581,11 +581,7 @@
   witness_test: crates/core/tests/wire_format.rs::coordinate_msgpack_round_trip
 - id: INV-PERFORMANCE-GATES-ENFORCED
   statement: Hardware-dependent performance gates remain explicit ignored tests and are runnable only through the repo-owned perf-gates command surface.
-  # weak-tier (GAP): perf_gates_throughput_latency.rs::multi_gate_collects_all_denials
-  # genuinely witnesses that gates DENY on over-budget input, but the INV's stated
-  # property is that gates stay #[ignore]'d and are run only via the repo-owned
-  # command surface — which no test witnesses. Not cited (the available red fixture
-  # witnesses a different, narrower property); candidate GateNegativePath.
+  witness_test: tools/integrity/src/perf_gates_contract.rs::perf_contract_rejects_unignored_hardware_gate_and_missing_xtask_surface
   artifacts:
     - ART-PERF-GATES
     - ART-XTASK

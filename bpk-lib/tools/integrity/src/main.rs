@@ -42,6 +42,7 @@ mod model_bindings;
 mod mutation_debt;
 mod no_runtime_gate;
 mod overclaim;
+mod perf_gates_contract;
 mod public_surface;
 mod receipts;
 mod repo_ir;

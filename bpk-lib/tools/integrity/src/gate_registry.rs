@@ -323,6 +323,14 @@ pub(crate) const GATES: &[Gate] = &[
         has_blocking_authority: true,
     },
     Gate {
+        slug: "perf-gates-contract",
+        red_fixture_test: Some(
+            "tools/integrity/src/perf_gates_contract.rs::perf_contract_rejects_unignored_hardware_gate_and_missing_xtask_surface",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
+    Gate {
         slug: "pub-items-have-tests",
         red_fixture_test: Some(
             "tools/integrity/src/public_surface.rs::pub_items_have_tests_rejects_unwitnessed_pub_item",
@@ -589,6 +597,7 @@ pub(crate) const RECEIPT_REQUIRED_GATES: &[&str] = &[
     "ci-parity",
     "examples-observable-output",
     "invariant-bridge",
+    "perf-gates-contract",
     "structural-source-lints",
     "overclaim",
     "repo-ir-fitness",
