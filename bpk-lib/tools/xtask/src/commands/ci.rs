@@ -22,6 +22,7 @@ pub(crate) fn ci_fast() -> Result<()> {
     run_nextest_ci(["--workspace", "--all-features"])?;
     cargo(["test", "--doc", "--all-features"])?;
     run_family_tests()?;
+    templates()?;
     integrity("traceability-check", [])?;
     integrity("structural-check", [])?;
     // L2+ contract gates on the DEFAULT PR path (P1-1). These used to live only
@@ -62,7 +63,6 @@ pub(crate) fn ci_fast() -> Result<()> {
 /// release-oriented extras on top of the fast lane.
 pub(crate) fn ci() -> Result<()> {
     ci_fast()?;
-    templates()?;
     doc_deny_warnings()?;
     bench::bench_compile(BenchSurface::Neutral)?;
     bench::bench_compile(BenchSurface::Native)?;

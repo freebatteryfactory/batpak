@@ -500,6 +500,7 @@ fn assert_workflow_just_recipes_map_to_xtask(
 /// lanes, or drops it entirely), the marker disappears from the `ci_fast` body
 /// and this gate fails — preventing silent re-burial.
 const CI_FAST_REQUIRED_GATE_MARKERS: &[(&str, &str)] = &[
+    ("template compile", "templates()?"),
     ("coverage floor", "coverage::cover(CoverArgs"),
     (
         "public-api baseline",
@@ -626,6 +627,7 @@ enum XtaskCommand {
 }
 
 pub(crate) fn ci_fast() -> Result<()> {
+    templates()?;
     coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })?;
     crate::public_api::public_api(PublicApiArgs { strict: true, check_baseline: true, bless_baseline: false })?;
     super::package_leak_scan(PackageLeakScanArgs { allow_dirty: false, strict_language: true })?;
@@ -846,6 +848,7 @@ fn install_tools() {
     const GREEN_CI_FAST_SOURCE: &str = r#"
 pub(crate) fn ci_fast() -> Result<()> {
     cargo(["fmt", "--check"])?;
+    templates()?;
     coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })?;
     crate::public_api::public_api(PublicApiArgs { strict: true, check_baseline: true, bless_baseline: false })?;
     super::package_leak_scan(PackageLeakScanArgs { allow_dirty: false, strict_language: true })?;
@@ -871,6 +874,19 @@ pub(crate) fn ci_fast() -> Result<()> {
             .expect_err("ci_fast missing the coverage gate must fail anti-rebury");
         assert!(
             err.to_string().contains("coverage floor"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn ci_parity_rejects_ci_fast_missing_template_gate() {
+        // Template compilation must stay in the every-PR fast lane, not only in
+        // the heavier consumer-smoke lane.
+        let reburied = GREEN_CI_FAST_SOURCE.replace("    templates()?;\n", "");
+        let err = assert_ci_fast_keeps_default_path_gates(&reburied)
+            .expect_err("ci_fast missing the template gate must fail anti-rebury");
+        assert!(
+            err.to_string().contains("template compile"),
             "unexpected error: {err:#}"
         );
     }
