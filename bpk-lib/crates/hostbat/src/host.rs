@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use syncbat::{CheckoutResult, Core, RuntimeError};
 
+use crate::composition::HostCompositionManifest;
 use crate::descriptor::{HookDescriptor, HookPhase};
 use crate::error::{HookFailure, HostRuntimeError};
 use crate::identity::HostFingerprint;
@@ -65,25 +66,41 @@ pub struct Host {
     core: Core,
     supervisor: Supervisor,
     fingerprint: HostFingerprint,
+    composition_schemas: HostCompositionManifest,
     startup: Vec<HostHook>,
     shutdown: Vec<HostHook>,
     job_factories: BTreeMap<String, BoxedJob>,
     started: bool,
 }
 
+/// The owned parts a built [`Host`] is assembled from. Bundling them keeps the
+/// constructor single-argument as the host grows new content-identity axes.
+pub(crate) struct HostParts {
+    pub(crate) core: Core,
+    pub(crate) supervisor: Supervisor,
+    pub(crate) fingerprint: HostFingerprint,
+    pub(crate) composition_schemas: HostCompositionManifest,
+    pub(crate) startup: Vec<HostHook>,
+    pub(crate) shutdown: Vec<HostHook>,
+    pub(crate) job_factories: BTreeMap<String, BoxedJob>,
+}
+
 impl Host {
-    pub(crate) fn new(
-        core: Core,
-        supervisor: Supervisor,
-        fingerprint: HostFingerprint,
-        startup: Vec<HostHook>,
-        shutdown: Vec<HostHook>,
-        job_factories: BTreeMap<String, BoxedJob>,
-    ) -> Self {
+    pub(crate) fn new(parts: HostParts) -> Self {
+        let HostParts {
+            core,
+            supervisor,
+            fingerprint,
+            composition_schemas,
+            startup,
+            shutdown,
+            job_factories,
+        } = parts;
         Self {
             core,
             supervisor,
             fingerprint,
+            composition_schemas,
             startup,
             shutdown,
             job_factories,
@@ -95,6 +112,14 @@ impl Host {
     #[must_use]
     pub fn fingerprint(&self) -> HostFingerprint {
         self.fingerprint
+    }
+
+    /// The content-addressed composition schema manifest aggregating every
+    /// mounted module's schema descriptors (collision-checked at build). This is
+    /// the surface S12's TypeScript codegen consumes.
+    #[must_use]
+    pub fn composition_schemas(&self) -> &HostCompositionManifest {
+        &self.composition_schemas
     }
 
     /// Whether [`start`](Self::start) has completed successfully.

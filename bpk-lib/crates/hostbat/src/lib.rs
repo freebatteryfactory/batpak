@@ -34,19 +34,26 @@
 mod composition_tests;
 
 pub mod builder;
+pub mod composition;
 pub mod descriptor;
 pub mod error;
 pub mod host;
 pub mod identity;
 pub mod manifest;
 pub mod module;
+pub mod schema;
 pub mod supervisor;
 
 pub use builder::HostBuilder;
+pub use composition::{CompositionSchema, HostCompositionManifest};
 pub use descriptor::{GuardDescriptor, HookDescriptor, HookPhase, JobDescriptor};
-pub use error::{HookFailure, HostError, HostRuntimeError};
+pub use error::{HookFailure, HostError, HostRuntimeError, SchemaCollision};
 pub use host::Host;
 pub use identity::{Digest, HostFingerprint, ModuleDigest};
 pub use manifest::HostModuleManifest;
 pub use module::{HostModule, HostModuleBuilder, JobBody, LifecycleHook};
+pub use schema::{
+    CanonicalEncoding, DiagnosticRustType, GoldenVector, SchemaDescriptor, SchemaId, SchemaRole,
+    SchemaVersion,
+};
 pub use supervisor::Supervisor;

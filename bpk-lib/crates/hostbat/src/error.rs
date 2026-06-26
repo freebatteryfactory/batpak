@@ -9,6 +9,27 @@
 
 use crate::descriptor::HookPhase;
 
+/// Detail of a cross-module schema-identity collision (see
+/// [`HostError::SchemaCollision`]). Boxed inside the error so the common
+/// `Result<_, HostError>` stays small.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaCollision {
+    /// The conflicting schema id.
+    pub schema: String,
+    /// The conflicting schema version.
+    pub version: u32,
+    /// The conflicting schema role (lowercase spelling).
+    pub role: String,
+    /// The module that first declared this identity.
+    pub first_module: String,
+    /// The first declaration's canonical encoding (hex).
+    pub first_encoding: String,
+    /// The module whose differing declaration was rejected.
+    pub second_module: String,
+    /// The rejected declaration's canonical encoding (hex).
+    pub second_encoding: String,
+}
+
 /// Why a host composition refused.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -63,6 +84,20 @@ pub enum HostError {
         /// Stable detail from the canonical encoder.
         detail: String,
     },
+    /// A schema descriptor is malformed (e.g. an invalid [`crate::schema::SchemaId`]
+    /// grammar or a duplicated golden-vector case).
+    SchemaInvalid {
+        /// The offending schema id (or attempted id).
+        schema: String,
+        /// Stable detail describing the violation.
+        detail: String,
+    },
+    /// Two mounted modules declare the same `(SchemaId, SchemaVersion, role)`
+    /// with *different* canonical encodings — a wire-identity conflict the
+    /// composition refuses to seal (fail-closed). Identical re-declarations are
+    /// allowed; this fires only on a byte divergence at a fixed identity. The
+    /// payload is boxed to keep [`HostError`] small.
+    SchemaCollision(Box<SchemaCollision>),
     /// `build` was called with no mounted modules — an empty host has no
     /// operations to serve and no identity to fingerprint.
     EmptyHost,
@@ -129,6 +164,26 @@ impl std::fmt::Display for HostError {
             Self::CanonicalEncoding { detail } => {
                 write!(f, "canonical encoding failed: {detail}")
             }
+            Self::SchemaInvalid { schema, detail } => {
+                write!(f, "schema {schema:?} is invalid: {detail}")
+            }
+            Self::SchemaCollision(collision) => {
+                let SchemaCollision {
+                    schema,
+                    version,
+                    role,
+                    first_module,
+                    first_encoding,
+                    second_module,
+                    second_encoding,
+                } = collision.as_ref();
+                write!(
+                    f,
+                    "schema {schema:?} v{version} ({role}) declared with conflicting encodings: \
+                     module {first_module:?} => {first_encoding}, \
+                     module {second_module:?} => {second_encoding}"
+                )
+            }
             Self::EmptyHost => write!(f, "cannot build a host with no mounted modules"),
             Self::Build(error) => write!(f, "lowering into the syncbat runtime failed: {error}"),
         }
@@ -146,6 +201,8 @@ impl std::error::Error for HostError {
             | Self::ModuleHashMismatch { .. }
             | Self::ModuleCoherence { .. }
             | Self::CanonicalEncoding { .. }
+            | Self::SchemaInvalid { .. }
+            | Self::SchemaCollision(_)
             | Self::EmptyHost => None,
         }
     }

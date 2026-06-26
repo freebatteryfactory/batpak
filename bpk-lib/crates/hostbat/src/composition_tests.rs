@@ -15,6 +15,9 @@ use crate::descriptor::{GuardDescriptor, HookPhase};
 use crate::error::{HostError, HostRuntimeError};
 use crate::host::Host;
 use crate::module::HostModule;
+use crate::schema::{
+    DiagnosticRustType, GoldenVector, SchemaDescriptor, SchemaId, SchemaRole, SchemaVersion,
+};
 use crate::HostBuilder;
 
 fn op(name: &'static str) -> OperationDescriptor {
@@ -107,6 +110,93 @@ fn host_fingerprint_changes_with_module_set() {
         .expect("build")
         .fingerprint();
     assert_ne!(two, one, "dropping a module changes H_host");
+}
+
+// ---- green: schema descriptors fold into module identity ----------------
+
+fn schema(id: &str, bytes: &[u8]) -> SchemaDescriptor {
+    SchemaDescriptor::new(
+        SchemaId::new(id).expect("id"),
+        SchemaVersion(1),
+        SchemaRole::OperationInput,
+        vec![GoldenVector::new("c", bytes.to_vec())],
+    )
+    .expect("descriptor")
+}
+
+#[test]
+fn declaring_a_schema_changes_module_identity() {
+    let plain = single_op_module("mod.a", "mod.a.echo");
+    let with_schema = HostModule::builder("mod.a", 1)
+        .operation(op("mod.a.echo"), echo)
+        .expect("op")
+        .schema(schema("hostbat.op.a.in", b"shape"))
+        .expect("schema")
+        .build()
+        .expect("module");
+    assert_ne!(
+        plain.manifest().digest(),
+        with_schema.manifest().digest(),
+        "a declared schema is sealed into H_module",
+    );
+    assert!(with_schema.manifest().verify_hash().expect("verify"));
+    assert_eq!(with_schema.manifest().schemas().count(), 1);
+}
+
+#[test]
+fn schema_bytes_change_module_identity() {
+    let make = |bytes: &[u8]| {
+        HostModule::builder("mod.a", 1)
+            .operation(op("mod.a.echo"), echo)
+            .expect("op")
+            .schema(schema("hostbat.op.a.in", bytes))
+            .expect("schema")
+            .build()
+            .expect("module")
+    };
+    assert_ne!(
+        make(b"shape-a").manifest().digest(),
+        make(b"shape-b").manifest().digest(),
+        "a wire-shape byte change changes the module digest",
+    );
+}
+
+/// The diagnostic Rust type does NOT touch module identity: renaming or removing
+/// it leaves H_module unchanged. This is the structural guarantee that deleting a
+/// Rust type (the `refbat::*` failure) cannot break wire identity.
+#[test]
+fn diagnostic_rust_type_does_not_change_module_identity() {
+    let bare = HostModule::builder("mod.a", 1)
+        .operation(op("mod.a.echo"), echo)
+        .expect("op")
+        .schema(schema("hostbat.op.a.in", b"shape"))
+        .expect("schema")
+        .build()
+        .expect("module");
+    let with_type = HostModule::builder("mod.a", 1)
+        .operation(op("mod.a.echo"), echo)
+        .expect("op")
+        .schema(
+            schema("hostbat.op.a.in", b"shape")
+                .with_diagnostic_rust_type(DiagnosticRustType::new("any_crate::AnyType")),
+        )
+        .expect("schema")
+        .build()
+        .expect("module");
+    assert_eq!(
+        bare.manifest().digest(),
+        with_type.manifest().digest(),
+        "the informational Rust type is excluded from H_module",
+    );
+}
+
+#[test]
+fn red_duplicate_schema_identity_within_module_is_rejected() {
+    let outcome = HostModule::builder("mod.a", 1)
+        .schema(schema("hostbat.op.a.in", b"x"))
+        .expect("first schema")
+        .schema(schema("hostbat.op.a.in", b"y"));
+    assert!(matches!(outcome, Err(HostError::SchemaInvalid { .. })));
 }
 
 // ---- green: dispatch + guard --------------------------------------------

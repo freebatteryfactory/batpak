@@ -17,9 +17,10 @@ use syncbat::{
     AdmissionDecision, AdmissionGuard, CoreBuilder, Ctx, OperationDescriptor, ReceiptSink,
 };
 
+use crate::composition::CompositionSchemaBuilder;
 use crate::descriptor::HookPhase;
 use crate::error::HostError;
-use crate::host::{Host, HostHook};
+use crate::host::{Host, HostHook, HostParts};
 use crate::identity::{canonical_digest, HostFingerprint};
 use crate::module::{BoxedJob, HostModule, HostModuleParts};
 
@@ -36,6 +37,7 @@ pub struct HostBuilder {
     operation_owners: BTreeMap<String, String>,
     receipt_namespaces: BTreeMap<String, String>,
     job_owners: BTreeMap<String, String>,
+    schemas: CompositionSchemaBuilder,
     spawn: Arc<dyn Spawn>,
     receipt_sink: Option<BoxedReceiptSink>,
 }
@@ -48,6 +50,7 @@ impl Default for HostBuilder {
             operation_owners: BTreeMap::new(),
             receipt_namespaces: BTreeMap::new(),
             job_owners: BTreeMap::new(),
+            schemas: CompositionSchemaBuilder::default(),
             spawn: Arc::new(ThreadSpawn),
             receipt_sink: None,
         }
@@ -136,6 +139,11 @@ impl HostBuilder {
                 });
             }
         }
+        // Aggregate this module's schemas into the composition, failing closed on
+        // a cross-module identity collision with a differing canonical encoding.
+        for descriptor in parts.manifest.schemas() {
+            self.schemas.add(&id, descriptor)?;
+        }
 
         self.modules.push(parts);
         Ok(self)
@@ -154,6 +162,7 @@ impl HostBuilder {
         }
 
         let fingerprint = compute_fingerprint(&self.modules)?;
+        let composition_schemas = self.schemas.seal()?;
 
         let mut core_builder = CoreBuilder::new();
         let mut guard = CompositeGuard::default();
@@ -209,14 +218,15 @@ impl HostBuilder {
         shutdown.sort_by(|a, b| a.order_key().cmp(&b.order_key()));
 
         let core = core_builder.build()?;
-        Ok(Host::new(
+        Ok(Host::new(HostParts {
             core,
             supervisor,
             fingerprint,
+            composition_schemas,
             startup,
             shutdown,
             job_factories,
-        ))
+        }))
     }
 }
 
