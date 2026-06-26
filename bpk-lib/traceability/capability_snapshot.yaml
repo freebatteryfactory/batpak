@@ -147,7 +147,7 @@ witnesses:
   - { id: INV-PAYLOAD-LENGTH-EXACT, witnessed: true }
   - { id: INV-PAYLOAD-VERSION-NONZERO, witnessed: true }
   - { id: INV-PER-LANE-FRONTIER, witnessed: true }
-  - { id: INV-PERFORMANCE-GATES-ENFORCED, witnessed: false }
+  - { id: INV-PERFORMANCE-GATES-ENFORCED, witnessed: true }
   - { id: INV-PLATFORM-EVIDENCE-NOT-MEANING, witnessed: true }
   - { id: INV-POSITION-HINT-PERSISTENCE, witnessed: true }
   - { id: INV-PREPARED-BATCH-STAGING-EQUIVALENCE, witnessed: true }
