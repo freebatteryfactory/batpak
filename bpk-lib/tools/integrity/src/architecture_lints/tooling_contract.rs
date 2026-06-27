@@ -73,6 +73,18 @@ fn check_project_layout_contract(repo_root: &Path) -> Result<()> {
         repo_root.join("clippy.toml").is_file(),
         "project layout contract requires bpk-lib/clippy.toml",
     )?;
+    ensure(
+        !project_root.join("sgconfig.yml").exists(),
+        "sgconfig.yml belongs under bpk-lib/tools/ast-grep/",
+    )?;
+    ensure(
+        !project_root.join("ast-grep").exists(),
+        "ast-grep calipers belong under bpk-lib/tools/ast-grep/",
+    )?;
+    ensure(
+        repo_root.join("tools/ast-grep/sgconfig.yml").is_file(),
+        "project layout contract requires bpk-lib/tools/ast-grep/sgconfig.yml",
+    )?;
 
     for path in [
         "Cargo.toml",

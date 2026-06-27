@@ -69,7 +69,7 @@ Machine law lives in:
 - `bpk-lib/traceability/`
 - `bpk-lib/tools/integrity/`
 - `bpk-lib/tools/xtask/`
-- `sgconfig.yml` and `ast-grep/rules/`
+- `bpk-lib/tools/ast-grep/sgconfig.yml` and rule YAML under `bpk-lib/tools/ast-grep/`
 - tests, benches, fixtures, and release manifests
 
 Docs explain the current contract. Gates decide whether the contract still holds.
