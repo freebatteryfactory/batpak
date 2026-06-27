@@ -23,6 +23,53 @@ pub trait EffectBackend {
     /// # Errors
     /// Returns [`EffectError`] when the backend cannot perform the append.
     fn append_event(&mut self, kind: EventKind, payload: &[u8]) -> Result<(), EffectError>;
+
+    /// Mediate one declared event-category read for this invocation.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when this backend does not support event reads or
+    /// rejects the read.
+    fn read_event(&mut self, event_category: &str) -> Result<(), EffectError> {
+        let _ = event_category;
+        Err(EffectError::new(
+            "event reads are not supported by this effect backend",
+        ))
+    }
+
+    /// Mediate one declared projection query for this invocation.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when this backend does not support projection
+    /// queries or rejects the query.
+    fn query_projection(&mut self, projection_id: &str) -> Result<(), EffectError> {
+        let _ = projection_id;
+        Err(EffectError::new(
+            "projection queries are not supported by this effect backend",
+        ))
+    }
+
+    /// Mediate one declared receipt emission for this invocation.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when this backend does not support receipt
+    /// emission or rejects the emission.
+    fn emit_receipt(&mut self, receipt_kind: &str) -> Result<(), EffectError> {
+        let _ = receipt_kind;
+        Err(EffectError::new(
+            "receipt emission is not supported by this effect backend",
+        ))
+    }
+
+    /// Mediate one declared host-control use for this invocation.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when this backend does not support host controls
+    /// or rejects the use.
+    fn use_host_control(&mut self) -> Result<(), EffectError> {
+        Err(EffectError::new(
+            "host controls are not supported by this effect backend",
+        ))
+    }
 }
 
 /// Failure performing a durable effect through an [`EffectBackend`].

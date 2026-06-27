@@ -35,6 +35,22 @@ impl ValidatingEffectBackend {
 }
 
 impl EffectBackend for ValidatingEffectBackend {
+    fn read_event(&mut self, event_category: &str) -> Result<(), EffectError> {
+        self.inner.read_event(event_category)
+    }
+
+    fn query_projection(&mut self, projection_id: &str) -> Result<(), EffectError> {
+        self.inner.query_projection(projection_id)
+    }
+
+    fn emit_receipt(&mut self, receipt_kind: &str) -> Result<(), EffectError> {
+        self.inner.emit_receipt(receipt_kind)
+    }
+
+    fn use_host_control(&mut self) -> Result<(), EffectError> {
+        self.inner.use_host_control()
+    }
+
     fn append_event(&mut self, kind: EventKind, payload: &[u8]) -> Result<(), EffectError> {
         let kind_raw = kind.as_raw_u16();
         let schema_ref = self.bindings.get(&kind_raw).ok_or_else(|| {

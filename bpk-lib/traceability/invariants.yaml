@@ -39,8 +39,8 @@
     - ART-SYNCBAT-WIRE-GOLDENS
     - ART-ADR-SYNCBAT-CONTRACT
 - id: INV-SYNCBAT-EFFECT-ROW-ENFORCEMENT
-  statement: syncbat operation descriptors declare an effect row consistent with their EffectClass (validated at registration); cross-module effect conflicts are rejected at composition; and operations append events only through a Ctx capability handle that performs the append through the runtime-owned effect backend and records it in the same step, so the observed appends are authoritative. checkout fails closed with a denied receipt when an operation appends an event kind outside its declared row, and an append with no backend bound fails closed rather than reaching a store the runtime did not mediate.
-  witness_test: crates/syncbat/tests/effect_enforcement.rs::dispatch_denies_append_outside_declared_row
+  statement: syncbat operation descriptors declare an effect row consistent with their EffectClass (validated at registration); cross-module effect conflicts are rejected at composition; and every observed effect axis (reads_events, appends_events, queries_projections, emits_receipts, uses_host_controls) flows only through a Ctx capability handle that performs the effect through the runtime-owned effect backend and records it in the same step, so the observed row is authoritative. checkout fails closed with a denied receipt when an operation observes an effect outside its declared row, and an effect attempt with no backend bound or with a rejecting backend fails closed rather than recording the observation.
+  witness_test: crates/syncbat/tests/effect_enforcement.rs::dispatch_denies_read_event_outside_declared_row
   artifacts:
     - ART-SYNCBAT-SOURCE
     - ART-SYNCBAT-TESTS

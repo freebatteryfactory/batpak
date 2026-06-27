@@ -1,17 +1,12 @@
 //! Declared and observed operation effect rows.
 //!
-//! The **append** path is an enforced boundary, not a cooperative one. An
-//! operation appends events ONLY through [`EventAppendHandle`], which performs
-//! the append through the runtime-owned [`EffectBackend`] and records it into the
-//! observed row in the same step. The runtime owns its store privately and hands
-//! it to handlers only through `Ctx`, so an operation cannot append an event the
-//! runtime did not mediate; `checkout` then fails closed when the observed
-//! appends are not a subset of the declared appends.
-//!
-//! Reads, projection queries, receipt kinds, and host-control are recorded for
-//! audit and composition but are declarations, not mutations performed through
-//! the backend; appends are the enforced surface because they are the only
-//! durable write an operation can make to the runtime's event log.
+//! Every observed effect axis is an enforced boundary, not a cooperative audit
+//! trail. An operation may read events, append events, query projections, emit
+//! receipts, or use host controls ONLY through the matching `Ctx` capability
+//! handle. Each handle performs its effect through the runtime-owned
+//! [`EffectBackend`] and records it into the observed row in the same step, so
+//! an operation cannot observe an effect the runtime did not mediate; `checkout`
+//! then fails closed when the observed row is not a subset of the declared row.
 
 use serde::{Deserialize, Serialize};
 
@@ -515,68 +510,133 @@ impl<'a> EventAppendHandle<'a> {
     }
 }
 
-/// Capability handle used to record event reads (declaration, not a mutation).
+/// Capability handle that performs and records event-category reads.
 pub struct EventReadHandle<'a> {
     row: &'a mut OperationEffectRow,
+    backend: Option<&'a mut (dyn EffectBackend + 'static)>,
 }
 
 impl<'a> EventReadHandle<'a> {
-    pub(crate) fn new(row: &'a mut OperationEffectRow) -> Self {
-        Self { row }
+    pub(crate) fn new(
+        row: &'a mut OperationEffectRow,
+        backend: Option<&'a mut (dyn EffectBackend + 'static)>,
+    ) -> Self {
+        Self { row, backend }
     }
 
-    /// Record that this handler read one event category through this handle.
-    pub fn read_event(&mut self, event_category: impl Into<String>) {
+    /// Read one event category through the runtime backend and record it as an
+    /// observed read.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when no backend is bound for this invocation or
+    /// the backend rejects the read.
+    pub fn read_event(&mut self, event_category: impl Into<String>) -> Result<(), EffectError> {
+        let event_category = event_category.into();
+        let backend = require_effect_backend(self.backend.as_deref_mut(), "read events")?;
+        backend.read_event(&event_category)?;
         self.row.record_reads_event(event_category);
+        Ok(())
     }
 }
 
-/// Capability handle used to record projection queries (declaration).
+/// Capability handle that performs and records projection queries.
 pub struct ProjectionReadHandle<'a> {
     row: &'a mut OperationEffectRow,
+    backend: Option<&'a mut (dyn EffectBackend + 'static)>,
 }
 
 impl<'a> ProjectionReadHandle<'a> {
-    pub(crate) fn new(row: &'a mut OperationEffectRow) -> Self {
-        Self { row }
+    pub(crate) fn new(
+        row: &'a mut OperationEffectRow,
+        backend: Option<&'a mut (dyn EffectBackend + 'static)>,
+    ) -> Self {
+        Self { row, backend }
     }
 
-    /// Record that this handler queried one projection id through this handle.
-    pub fn query_projection(&mut self, projection_id: impl Into<String>) {
+    /// Query one projection id through the runtime backend and record it as an
+    /// observed projection query.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when no backend is bound for this invocation or
+    /// the backend rejects the query.
+    pub fn query_projection(
+        &mut self,
+        projection_id: impl Into<String>,
+    ) -> Result<(), EffectError> {
+        let projection_id = projection_id.into();
+        let backend = require_effect_backend(self.backend.as_deref_mut(), "query projections")?;
+        backend.query_projection(&projection_id)?;
         self.row.record_queries_projection(projection_id);
+        Ok(())
     }
 }
 
-/// Capability handle used to record receipt emission (declaration).
+/// Capability handle that performs and records receipt emission.
 pub struct ReceiptEmitHandle<'a> {
     row: &'a mut OperationEffectRow,
+    backend: Option<&'a mut (dyn EffectBackend + 'static)>,
 }
 
 impl<'a> ReceiptEmitHandle<'a> {
-    pub(crate) fn new(row: &'a mut OperationEffectRow) -> Self {
-        Self { row }
+    pub(crate) fn new(
+        row: &'a mut OperationEffectRow,
+        backend: Option<&'a mut (dyn EffectBackend + 'static)>,
+    ) -> Self {
+        Self { row, backend }
     }
 
-    /// Record that this handler emitted one receipt kind through this handle.
-    pub fn emit_receipt(&mut self, receipt_kind: impl Into<String>) {
+    /// Emit one receipt kind through the runtime backend and record it as an
+    /// observed emission.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when no backend is bound for this invocation or
+    /// the backend rejects the emission.
+    pub fn emit_receipt(&mut self, receipt_kind: impl Into<String>) -> Result<(), EffectError> {
+        let receipt_kind = receipt_kind.into();
+        let backend = require_effect_backend(self.backend.as_deref_mut(), "emit receipts")?;
+        backend.emit_receipt(&receipt_kind)?;
         self.row.record_emits_receipt(receipt_kind);
+        Ok(())
     }
 }
 
-/// Capability handle used to record host-control use (declaration).
+/// Capability handle that performs and records host-control use.
 pub struct HostControlHandle<'a> {
     row: &'a mut OperationEffectRow,
+    backend: Option<&'a mut (dyn EffectBackend + 'static)>,
 }
 
 impl<'a> HostControlHandle<'a> {
-    pub(crate) fn new(row: &'a mut OperationEffectRow) -> Self {
-        Self { row }
+    pub(crate) fn new(
+        row: &'a mut OperationEffectRow,
+        backend: Option<&'a mut (dyn EffectBackend + 'static)>,
+    ) -> Self {
+        Self { row, backend }
     }
 
-    /// Record that this handler used host-control authority through this handle.
-    pub fn use_host_control(&mut self) {
+    /// Use host-control authority through the runtime backend and record it as
+    /// an observed host-control effect.
+    ///
+    /// # Errors
+    /// Returns [`EffectError`] when no backend is bound for this invocation or
+    /// the backend rejects the use.
+    pub fn use_host_control(&mut self) -> Result<(), EffectError> {
+        let backend = require_effect_backend(self.backend.as_deref_mut(), "use host controls")?;
+        backend.use_host_control()?;
         self.row.record_uses_host_control();
+        Ok(())
     }
+}
+
+fn require_effect_backend<'a>(
+    backend: Option<&'a mut (dyn EffectBackend + 'static)>,
+    capability: &str,
+) -> Result<&'a mut (dyn EffectBackend + 'static), EffectError> {
+    backend.ok_or_else(|| {
+        EffectError::new(format!(
+            "no effect backend is bound for this invocation; cannot {capability}"
+        ))
+    })
 }
 
 fn first_missing(
