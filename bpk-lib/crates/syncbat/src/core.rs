@@ -540,7 +540,10 @@ impl<'a> Ctx<'a> {
 
     /// Borrow an event-read capability handle for this invocation.
     pub fn event_read_handle(&mut self) -> EventReadHandle<'_> {
-        EventReadHandle::new(&mut self.observed_effects)
+        EventReadHandle::new(
+            &mut self.observed_effects,
+            self.effect_backend.as_deref_mut(),
+        )
     }
 
     /// Borrow an event-append capability handle for this invocation. This is the
@@ -555,17 +558,26 @@ impl<'a> Ctx<'a> {
 
     /// Borrow a projection-read capability handle for this invocation.
     pub fn projection_read_handle(&mut self) -> ProjectionReadHandle<'_> {
-        ProjectionReadHandle::new(&mut self.observed_effects)
+        ProjectionReadHandle::new(
+            &mut self.observed_effects,
+            self.effect_backend.as_deref_mut(),
+        )
     }
 
     /// Borrow a receipt-emission capability handle for this invocation.
     pub fn receipt_emit_handle(&mut self) -> ReceiptEmitHandle<'_> {
-        ReceiptEmitHandle::new(&mut self.observed_effects)
+        ReceiptEmitHandle::new(
+            &mut self.observed_effects,
+            self.effect_backend.as_deref_mut(),
+        )
     }
 
     /// Borrow a host-control capability handle for this invocation.
     pub fn host_control_handle(&mut self) -> HostControlHandle<'_> {
-        HostControlHandle::new(&mut self.observed_effects)
+        HostControlHandle::new(
+            &mut self.observed_effects,
+            self.effect_backend.as_deref_mut(),
+        )
     }
 
     /// Effects observed so far through this invocation context.
