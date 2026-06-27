@@ -47,6 +47,7 @@ mod mutation_debt;
 mod no_runtime_gate;
 mod overclaim;
 mod perf_gates_contract;
+mod platform_qualification_matrix;
 mod public_surface;
 mod receipts;
 mod release_status;
@@ -174,6 +175,13 @@ enum CommandKind {
         #[arg(long)]
         check: bool,
     },
+    /// Platform qualification matrix: regenerate (or `--check`) the committed
+    /// `traceability/platform_qualification_matrix.yaml` mirror. Folded into
+    /// `structural-check`.
+    PlatformQualificationMatrix {
+        #[arg(long)]
+        check: bool,
+    },
     /// GAUNTLET-REPO-IR (Phase 3, item 6): emit the minimal queryable repo-IR as
     /// JSON. ONE column-store binding AL assignments + gate ownership + waiver
     /// ownership + public-surface map + mutation-seam map + docs traceability,
@@ -250,6 +258,9 @@ fn main() -> Result<()> {
         CommandKind::DocsCatalog { check } => docs_catalog::run(&repo_surface::repo_root()?, check),
         CommandKind::CapabilitySnapshot { check } => {
             capability_snapshot::run(&repo_surface::repo_root()?, check)
+        }
+        CommandKind::PlatformQualificationMatrix { check } => {
+            platform_qualification_matrix::run(&repo_surface::repo_root()?, check)
         }
         CommandKind::RepoIr { out } => repo_ir::run(&repo_surface::repo_root()?, out),
     }

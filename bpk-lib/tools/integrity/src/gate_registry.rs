@@ -542,6 +542,14 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
         has_blocking_authority: true,
     },
+    Gate {
+        slug: "bvisor-platform-matrix",
+        red_fixture_test: Some(
+            "tools/integrity/src/platform_qualification_matrix_tests.rs::incomplete_status_is_rejected",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
     // --- Phase-B6 DST corpus currency (Thread #64-B, blocking, qualified
     //     ProductionFlip). The committed `traceability/dst_corpus.yaml` must be
     //     non-empty and every row's FNV-1a digest must replay through the real
@@ -642,6 +650,7 @@ pub(crate) const RECEIPT_REQUIRED_GATES: &[&str] = &[
     "assurance-level-check",
     "typed-waivers",
     "capability-snapshot",
+    "bvisor-platform-matrix",
     "ci-parity",
     "canonical-container-ci",
     "chaos-linux-only-contract",

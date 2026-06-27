@@ -140,6 +140,8 @@ enum XtaskCommand {
     /// `support_matrix()` best-case table + the witnessed-invariant set. The
     /// matching `--check` mode runs inside `structural-check` (drift => fail).
     CapabilitySnapshot,
+    /// Platform qualification matrix mirror for bvisor backend cells.
+    PlatformQualificationMatrix,
     /// Validate the release terminal-status ledger (`traceability/releases/*.yaml`).
     ReleaseStatus(ReleaseStatusArgs),
     Release(ReleaseArgs),
@@ -696,6 +698,9 @@ fn main() -> Result<()> {
         }
         XtaskCommand::Docs(args) => docs::docs(args),
         XtaskCommand::CapabilitySnapshot => commands::integrity("capability-snapshot", []),
+        XtaskCommand::PlatformQualificationMatrix => {
+            commands::integrity("platform-qualification-matrix", [])
+        }
         XtaskCommand::ReleaseStatus(args) => commands::release_status(args),
         XtaskCommand::Release(args) => commands::release(args),
     }
