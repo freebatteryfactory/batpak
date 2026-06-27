@@ -76,7 +76,7 @@ struct MatrixCell {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-struct MatrixFile {
+pub(crate) struct MatrixFile {
     schema_version: u32,
     cells: Vec<MatrixCell>,
 }
