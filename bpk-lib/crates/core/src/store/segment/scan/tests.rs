@@ -368,6 +368,30 @@ fn checked_batch_count_rejects_vacuous_or_implausible_counts() {
     );
 }
 
+#[test]
+fn scan_oom_posture_is_input_bounded_fail_closed() {
+    use crate::store::segment;
+
+    assert_eq!(
+        segment::MAX_FRAME_PAYLOAD,
+        256 * 1024 * 1024,
+        "PROPERTY: frame payload cap is fixed before vec allocation"
+    );
+    assert_eq!(
+        segment::MAX_SEGMENT_HEADER,
+        64 * 1024,
+        "PROPERTY: segment header cap is fixed before vec allocation"
+    );
+    assert!(
+        Reader::payload_len_exceeds_max(segment::MAX_FRAME_PAYLOAD + 1),
+        "PROPERTY: oversize frame claims are refused before allocation (no try_reserve path)"
+    );
+    assert!(
+        Reader::checked_batch_count(1, 0, MAX_BATCH_RECOVERY_ITEMS + 1).is_err(),
+        "PROPERTY: oversize recovery batch counts are refused before allocation"
+    );
+}
+
 /// Build a valid single-frame sealed segment on disk via the real `Segment`
 /// writer (which routes all file contact through `crate::store::platform`),
 /// returning the `DiskPos` of the written frame and its expected event payload.

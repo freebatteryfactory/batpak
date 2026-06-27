@@ -83,7 +83,7 @@ pub mod subscription_runtime;
 pub use admission::{AdmissionDecision, AdmissionGuard};
 pub use batpak_macros::operation;
 pub use builder::CoreBuilder;
-pub use core::{Checkout, CheckoutFrame, CheckoutResult, Core, Ctx};
+pub use core::{Checkout, CheckoutFrame, CheckoutResult, Core, CoreFactory, Ctx};
 pub use effect::{
     append_target, EffectIdentity, EffectIdentityError, EventAppendHandle, EventReadHandle,
     HostControlHandle, ObservedEffectViolation, OperationEffectRow, ProjectionReadHandle,

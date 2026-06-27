@@ -333,6 +333,10 @@ pub(crate) fn read_exact_at(
     }
 }
 
+// Platform free functions not yet routed through [`StoreFs`] (release row
+// `STORE-PLATFORM-FS-ROUTING`, terminal FAIL-CLOSED boundary). Listed in
+// `store_fs_fail_closed_boundary_lists_unrouted_tail_ops`.
+
 /// Filesystem seam for production and (future) deterministic simulation.
 ///
 /// Boundary: this is the narrow trait through which store code reaches the
@@ -348,19 +352,12 @@ pub(crate) fn read_exact_at(
 /// `Send + Sync` so it can live behind `Arc<dyn StoreFs>` on `StoreConfig` and
 /// be shared across threads, mirroring the [`super::spawn::Spawn`] seam.
 ///
-/// Scope note: this is the routed subset of the platform fs/sync surface — the
-/// two ops that had a `StoreConfig`-bearing, non-ratcheted call site to route
-/// through in this pass: `create_dir_all` (`open_components`,
-/// `WriterHandle::spawn`) and `read_dir` (`clear_snapshot_store_artifacts`).
-/// The remaining ops (`metadata`, `remove_file`, `rename`, `copy`,
-/// `reject_symlink_leaf`, and the durability cluster `read`, `named_temp_in`,
-/// `read_exact_at`, `sync_file_all_io`, `sync_parent_dir`,
-/// `persist_temp_with_parent_sync`) live behind deep `data_dir`-only free fns,
-/// the config-less `Reader`, or complexity-ratcheted `lifecycle` fns with no
-/// line headroom; they join this trait in the follow-up that threads
-/// `&dyn StoreFs` through those signatures (and splits the ratcheted fns).
-/// Until then their `RealFs` free fns remain the live path. See
-/// GAUNTLET_ISSUES.md for the deferred set.
+/// Scope note: routed subset of the platform fs/sync surface. The trait covers
+/// directory iteration, directory creation, segment file creation, the sync
+/// cluster, symlink/canonicalize guards, copy/metadata, and cow copy paths.
+/// Call sites still using direct `platform::fs::*` free functions (notably
+/// `persist_temp_with_parent_sync`) are tracked under release row
+/// `STORE-PLATFORM-FS-ROUTING`.
 pub(crate) trait StoreFs: Send + Sync {
     /// Iterate a directory's entries. Mirrors [`std::fs::read_dir`].
     fn read_dir(&self, path: &Path) -> io::Result<ReadDir>;
@@ -493,6 +490,14 @@ impl StoreFs for RealFs {
 
 #[cfg(test)]
 mod tests {
+    const UNROUTED_STORE_FS_TAIL_OPS: &[&str] = &[
+        "remove_file",
+        "rename",
+        "named_temp_in",
+        "read_exact_at",
+        "persist_temp_with_parent_sync",
+    ];
+
     use super::{reject_copy_source, remove_dir_all};
     use super::{RealFs, StoreFs};
     use std::error::Error;
@@ -592,5 +597,22 @@ mod tests {
             "PROPERTY: reject_copy_source must reject a symlink source (no link dereference)"
         );
         Ok(())
+    }
+
+    #[test]
+    fn store_fs_fail_closed_boundary_lists_unrouted_tail_ops() {
+        assert_eq!(
+            UNROUTED_STORE_FS_TAIL_OPS.len(),
+            5,
+            "PROPERTY: fail-closed boundary — these platform ops are not on StoreFs yet"
+        );
+        assert!(
+            UNROUTED_STORE_FS_TAIL_OPS.contains(&"remove_file"),
+            "PROPERTY: remove_file remains a direct platform free fn"
+        );
+        assert!(
+            UNROUTED_STORE_FS_TAIL_OPS.contains(&"persist_temp_with_parent_sync"),
+            "PROPERTY: persist_temp_with_parent_sync remains a direct platform free fn"
+        );
     }
 }
