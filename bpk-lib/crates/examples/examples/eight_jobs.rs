@@ -1,6 +1,7 @@
 //! # eight_jobs
 //!
-//! **Teaches:** the canonical BatPAK store path for 0.8.
+//! **Teaches:** the canonical BatPAK store path for 0.8, including lifecycle
+//! open observation, query, walk, receipt verification, and projection.
 //!
 //! This example keeps `batpak::prelude::*` honest: it uses only the beginner
 //! substrate jobs and leaves pipelines, reactors, delivery cursors, cache
@@ -38,8 +39,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dir = tempfile::tempdir()?;
 
-    // 1. Open.
+    // 1. Open — mutable open emits durable SYSTEM_OPEN_COMPLETED.
     let store = Store::open(StoreConfig::new(dir.path()))?;
+    let lifecycle_entries = store.by_fact(EventKind::SYSTEM_OPEN_COMPLETED);
+    let open_entry = lifecycle_entries
+        .first()
+        .ok_or("mutable open should emit SYSTEM_OPEN_COMPLETED")?;
+    let open_event = store.read_raw(open_entry.event_id())?;
+    assert_eq!(open_event.coordinate.entity(), "batpak:store");
+    assert_eq!(open_event.coordinate.scope(), "batpak:lifecycle");
     let coord = Coordinate::new("entity:eight-jobs", "scope:eight-jobs")?;
 
     // 2. Append typed events.

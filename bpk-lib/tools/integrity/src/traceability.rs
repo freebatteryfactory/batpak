@@ -234,6 +234,8 @@ struct ConceptRow {
     concept_id: String,
     canonical_example: String,
     summary: String,
+    #[serde(default)]
+    example_family: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -330,6 +332,31 @@ fn check_concept_canonical_over(
              Every example must be the canonical example of exactly one concept (add a concept \
              row, or fold the example into an existing canonical one).",
             uncovered.join(", ")
+        ),
+    )?;
+    check_durability_example_family_cap(catalog)?;
+    Ok(())
+}
+
+const DURABILITY_EXAMPLE_FAMILY: &str = "durability";
+const DURABILITY_CANONICAL_CAP: usize = 2;
+
+/// #68 durability dedup: at most two distinct runnable examples may carry
+/// `example_family: durability`.
+fn check_durability_example_family_cap(catalog: &ConceptCatalog) -> Result<()> {
+    let canonical: BTreeSet<&str> = catalog
+        .concepts
+        .iter()
+        .filter(|row| row.example_family.as_deref() == Some(DURABILITY_EXAMPLE_FAMILY))
+        .map(|row| row.canonical_example.as_str())
+        .collect();
+    ensure(
+        canonical.len() <= DURABILITY_CANONICAL_CAP,
+        format!(
+            "concept-canonical: `{DURABILITY_EXAMPLE_FAMILY}` example_family allows at most \
+             {DURABILITY_CANONICAL_CAP} distinct canonical examples; got {} ({})",
+            canonical.len(),
+            canonical.into_iter().collect::<Vec<_>>().join(", ")
         ),
     )?;
     Ok(())
@@ -571,5 +598,41 @@ concepts:
         let err = check_concept_canonical_over(&repo, &c, &registered)
             .expect_err("missing canonical file must fail");
         assert!(format!("{err:#}").contains("does not exist"));
+    }
+
+    /// RED: more than two distinct durability-family canonical examples.
+    #[test]
+    fn rejects_durability_family_over_cap() {
+        let repo = repo_root().expect("repo root");
+        let c = catalog(
+            r#"
+concepts:
+  - concept_id: a
+    canonical_example: crates/examples/examples/append_with_gate.rs
+    example_family: durability
+    summary: a
+  - concept_id: b
+    canonical_example: crates/examples/examples/signed_receipts.rs
+    example_family: durability
+    summary: b
+  - concept_id: c
+    canonical_example: crates/examples/examples/quickstart.rs
+    example_family: durability
+    summary: c
+"#,
+        );
+        let registered: BTreeSet<&str> = [
+            "crates/examples/examples/append_with_gate.rs",
+            "crates/examples/examples/signed_receipts.rs",
+            "crates/examples/examples/quickstart.rs",
+        ]
+        .into_iter()
+        .collect();
+        let err = check_concept_canonical_over(&repo, &c, &registered)
+            .expect_err("durability family over cap must fail");
+        assert!(
+            format!("{err:#}").contains("example_family"),
+            "error must mention example_family cap, got: {err:#}"
+        );
     }
 }

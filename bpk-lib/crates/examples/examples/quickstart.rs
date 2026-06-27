@@ -1,6 +1,9 @@
 //! # quickstart
 //!
-//! **Teaches:** basic typed append + retrieval.
+//! **Teaches:** basic typed append + retrieval (thin release-smoke entry).
+//!
+//! For the full 0.8 store path (query, walk, verify, project, lifecycle), see
+//! `eight_jobs`.
 //!
 //! Run: `cargo run --example quickstart`
 
