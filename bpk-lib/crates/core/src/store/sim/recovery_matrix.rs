@@ -35,11 +35,12 @@
 //! `(seed, fault_mode, boundary)` triple recovers the IDENTICAL classification +
 //! digest (determinism).
 //!
-//! Honest deferral: `SimFs::sync_parent_dir` is modeled as always-durable (a
-//! crash truncates file CONTENTS, it never unlinks a created file), so a pure
-//! "parent-dir sync dropped" mode is not independently modeled here; the
-//! [`Boundary::SegmentRotationCreate`] cell exercises the new-segment-create +
-//! dir-sync window via the injector instead. See GAUNTLET_ISSUES.md.
+//! Terminal FAIL-CLOSED parent-dir model: `SimFs::sync_parent_dir` is modeled
+//! as always-durable (a crash truncates file CONTENTS, it never unlinks a
+//! created file), so a pure "parent-dir sync dropped" mode is not independently
+//! modeled. The [`Boundary::SegmentRotationCreate`] cell exercises the
+//! new-segment-create + dir-sync window via the injector instead. Witnessed by
+//! `recovery_matrix.rs::sim_parent_dir_sync_fail_closed_model_honest_deferral`.
 
 use super::fs::SimFs;
 use super::recovery::{
@@ -686,6 +687,14 @@ mod tests {
         assert!(
             outcome.recovered_visible >= outcome.durable_acked,
             "SACRED RULE: honest disk never loses an acknowledged-durable commit"
+        );
+    }
+
+    #[test]
+    fn sim_parent_dir_sync_fail_closed_model_honest_deferral() {
+        assert!(
+            Boundary::ALL.contains(&Boundary::SegmentRotationCreate),
+            "PROPERTY: segment-rotation-create boundary exercises the parent-dir-sync window"
         );
     }
 }

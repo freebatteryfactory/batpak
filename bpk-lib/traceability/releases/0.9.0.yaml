@@ -447,6 +447,91 @@ rows:
       - fork-isolation
       - import-reapply
 
+  # ── 0.8.3 audit carryover (terminal on 0.9.0; closed by H1–H7 packets) ─────
+
+  - id: STORE-DIR-LOCK-TWO-PROCESS
+    title: Cross-process store dir lock refuses second writer (audit C3)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_invariants:
+      - INV-JOURNAL-SINGLE-LIVE-OWNER
+    witness_tests:
+      - crates/core/tests/dir_lock_two_process.rs::second_writer_open_refuses_while_other_process_holds_lock
+    proof_commands:
+      - just cargo test -p batpak --test dir_lock_two_process
+
+  - id: NETBAT-TCP-CONCURRENT-ACCEPT
+    title: TCP listener accepts concurrent clients without head-of-line blocking (audit C2)
+    status: PROVEN
+    terminal_required: true
+    surface: netbat
+    witness_tests:
+      - crates/netbat/tests/tcp_transport.rs::concurrent_accept_slow_client_does_not_block_fast_client
+    proof_commands:
+      - cargo test -p netbat --test tcp_transport
+
+  - id: STORE-PROJECTION-INCREMENTAL-XCHECK
+    title: Incremental projection apply matches full replay (audit R9)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/tests/projection_incremental_xcheck.rs::incremental_apply_matches_full_replay_cross_check
+    proof_commands:
+      - just cargo test -p batpak incremental_apply_matches_full_replay_cross_check
+
+  - id: STORE-PROJECTION-CACHE-HEADER
+    title: Projection cache header policy terminal (audit R18)
+    status: FAIL-CLOSED
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/src/store/projection/mod.rs::cache_meta_rebuild_only_policy_uses_trailing_magic_not_leading_header
+    proof_commands:
+      - just cargo test -p batpak cache_meta_rebuild_only_policy
+
+  - id: STORE-PROJECTION-CACHE-DISCRIMINANT
+    title: Projection cache discriminant policy terminal (audit R17)
+    status: FAIL-CLOSED
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/src/store/projection/flow/cache_identity.rs::projection_cache_key_type_discriminant_is_type_id_fail_closed_portability
+    proof_commands:
+      - just cargo test -p batpak projection_cache_key_type_discriminant
+
+  - id: STORE-SEGMENT-SCAN-OOM
+    title: Segment scan OOM posture terminal
+    status: FAIL-CLOSED
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/src/store/segment/scan/tests.rs::scan_oom_posture_is_input_bounded_fail_closed
+    proof_commands:
+      - just cargo test -p batpak scan_oom_posture
+
+  - id: STORE-SIM-PARENT-DIR-SYNC
+    title: Sim parent-dir sync model bound terminal
+    status: FAIL-CLOSED
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/src/store/sim/recovery_matrix.rs::sim_parent_dir_sync_fail_closed_model_honest_deferral
+    proof_commands:
+      - just cargo test -p batpak sim_parent_dir_sync
+
+  - id: STORE-PLATFORM-FS-ROUTING
+    title: Remaining StoreFs routing boundary terminal
+    status: FAIL-CLOSED
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/src/store/platform/fs.rs::store_fs_fail_closed_boundary_lists_unrouted_tail_ops
+      - crates/core/src/store/platform/fs.rs::real_fs_delegates_routed_ops_like_the_platform_free_fns
+    proof_commands:
+      - just cargo test -p batpak store_fs_fail_closed
+
   # ── Cut ceremony ─────────────────────────────────────────────────────────────
 
   - id: CUT-VERSION-091

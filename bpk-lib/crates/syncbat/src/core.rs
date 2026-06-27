@@ -624,6 +624,26 @@ impl CheckoutResult {
     }
 }
 
+/// Factory for opening independent [`Core`] instances.
+///
+/// Concurrent netbat TCP listeners call this once per accepted connection
+/// because [`Core`] dispatch is `&mut` and handlers are not required to be
+/// `Send`. Implementors must be [`Send`] so the accept loop can share the
+/// factory across worker threads behind a mutex.
+pub trait CoreFactory: Send {
+    /// Open a fresh core for one connection or invocation scope.
+    fn open_core(&mut self) -> Core;
+}
+
+impl<F> CoreFactory for F
+where
+    F: FnMut() -> Core + Send,
+{
+    fn open_core(&mut self) -> Core {
+        self()
+    }
+}
+
 #[cfg(test)]
 mod checkout_tests {
     use super::Checkout;

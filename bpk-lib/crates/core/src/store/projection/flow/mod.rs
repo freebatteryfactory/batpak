@@ -613,11 +613,10 @@ where
 /// Fold post-watermark events onto a decoded cached state.
 ///
 /// Correctness rests on the [`EventSourced::supports_incremental_apply`]
-/// contract: `from_events` must equal a fold over `apply_event`. That contract
-/// is documented but NOT machine-enforced here — a projection that violates it
-/// silently diverges from a full replay. A debug-only cross-check is deferred
-/// (0.8.3 audit R9); only call this for types whose `supports_incremental_apply`
-/// returns `true`.
+/// contract: `from_events` must equal a fold over `apply_event`. Only call
+/// this for types whose `supports_incremental_apply` returns `true`. The
+/// incremental-vs-full-replay equivalence is witnessed by
+/// `crates/core/tests/projection_incremental_xcheck.rs::incremental_apply_matches_full_replay_cross_check` (audit R9).
 fn apply_incremental_events<T, I, State: crate::store::StoreState>(
     store: &Store<State>,
     execution: &ReplayExecution<'_>,
