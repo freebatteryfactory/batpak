@@ -217,6 +217,15 @@ pub(crate) fn run() -> Result<()> {
         Ok(crate::receipts::GateWork::new(files, files, inputs))
     })?;
 
+    crate::receipts::run_gate("bvisor-platform-matrix", || {
+        crate::platform_qualification_matrix::check(&repo_root)?;
+        let mut inputs = BTreeSet::new();
+        inputs.insert(repo_root.join(crate::platform_qualification_matrix::MATRIX_REL));
+        inputs.insert(repo_root.join("tools/integrity/src/platform_qualification_matrix.rs"));
+        let files = inputs.len();
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
+
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "structural-check: ok");
     Ok(())

@@ -72,10 +72,24 @@ fn read_family_version(root: &std::path::Path) -> Result<String> {
 
 fn stale_patch_versions(current: &str) -> Result<Vec<String>> {
     let (major, minor, patch) = parse_family_version(current)?;
-    if major != 0 || minor != 8 {
-        bail!("ast-grep-family-version: unsupported family version line `{current}`");
+    let mut stale = Vec::new();
+    match (major, minor) {
+        (0, 9) => {
+            for value in 0..=3 {
+                stale.push(format!("0.8.{value}"));
+            }
+            for value in 0..patch {
+                stale.push(format!("0.9.{value}"));
+            }
+        }
+        (0, 8) => {
+            for value in 0..patch {
+                stale.push(format!("0.8.{value}"));
+            }
+        }
+        _ => bail!("ast-grep-family-version: unsupported family version line `{current}`"),
     }
-    Ok((0..patch).map(|value| format!("0.8.{value}")).collect())
+    Ok(stale)
 }
 
 fn parse_family_version(version: &str) -> Result<(u64, u64, u64)> {
@@ -108,11 +122,15 @@ fn scan_family_cargo_versions(
 ) -> Result<()> {
     let family_roots = [
         "bpk-lib/crates/bench-support",
+        "bpk-lib/crates/bvisor",
         "bpk-lib/crates/core",
+        "bpk-lib/crates/examples",
+        "bpk-lib/crates/hostbat",
         "bpk-lib/crates/macros-support",
         "bpk-lib/crates/macros",
         "bpk-lib/crates/netbat",
         "bpk-lib/crates/syncbat",
+        "bpk-lib/crates/testkit",
         "bpk-lib/tools/xtask",
     ];
     let mut hits = Vec::new();
