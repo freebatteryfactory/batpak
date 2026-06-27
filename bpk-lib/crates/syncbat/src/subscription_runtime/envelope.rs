@@ -183,3 +183,60 @@ fn freshness_label(
         )),
     }
 }
+
+/// Canonical operation-status-stream payload envelope encoded with `batpak::canonical::to_bytes`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OperationStatusStreamEnvelopeV1 {
+    /// Envelope schema version.
+    pub schema_version: u32,
+    /// Globally unique subscription id.
+    pub subscription_id: String,
+    /// Route-declared operation name.
+    pub operation: String,
+    /// Entity coordinate watched for operation-status facts.
+    pub entity: String,
+    /// Entity generation at which the status was materialized.
+    pub entity_generation: u64,
+    /// Freshness mode used to materialize the status view.
+    pub freshness: String,
+    /// Optional inner status schema ref declared by the route.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_status_schema_ref: Option<String>,
+    /// Blake3 digest of the canonical status bytes.
+    pub status_hash: [u8; 32],
+    /// Canonical bytes of the typed operation-status view.
+    pub status: Vec<u8>,
+}
+
+impl OperationStatusStreamEnvelopeV1 {
+    /// Build and canonically encode an envelope for one operation-status update.
+    ///
+    /// # Errors
+    /// [`SubscriptionRuntimeError::EnvelopeEncoding`].
+    pub fn encode(
+        subscription_id: &str,
+        operation: &str,
+        entity: &str,
+        entity_generation: u64,
+        freshness: &batpak::store::Freshness,
+        inner_status_schema_ref: Option<&str>,
+        status: &crate::operation_status::OperationStatusView,
+    ) -> Result<Vec<u8>, SubscriptionRuntimeError> {
+        let status_bytes = batpak::canonical::to_bytes(status)
+            .map_err(|error| SubscriptionRuntimeError::EnvelopeEncoding(error.to_string()))?;
+        let status_hash = blake3_state_hash(&status_bytes);
+        let envelope = Self {
+            schema_version: 1,
+            subscription_id: subscription_id.to_owned(),
+            operation: operation.to_owned(),
+            entity: entity.to_owned(),
+            entity_generation,
+            freshness: freshness_label(freshness)?,
+            inner_status_schema_ref: inner_status_schema_ref.map(str::to_owned),
+            status_hash,
+            status: status_bytes,
+        };
+        batpak::canonical::to_bytes(&envelope)
+            .map_err(|error| SubscriptionRuntimeError::EnvelopeEncoding(error.to_string()))
+    }
+}

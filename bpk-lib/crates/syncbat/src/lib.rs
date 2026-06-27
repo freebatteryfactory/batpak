@@ -71,6 +71,8 @@ pub mod handler;
 pub mod module;
 pub mod operation;
 pub mod operation_name;
+pub mod operation_status;
+pub mod operation_status_sink;
 pub mod receipt;
 pub mod register;
 pub mod register_store;
@@ -96,6 +98,14 @@ pub use operation::{
     OperationRegisterItem, MAX_DESCRIPTOR_REF_BYTES, MAX_OPERATION_NAME_BYTES,
 };
 pub use operation_name::{OperationName, OperationNameError};
+pub use operation_status::{
+    OperationStatusFactV1, OperationStatusLifecycle, OperationStatusView,
+    SYNCBAT_OPERATION_STATUS_EVENT_KIND,
+};
+pub use operation_status_sink::{
+    operation_status_entity, OperationStatusSink, OperationStatusSinkError,
+    StoreOperationStatusSink,
+};
 pub use receipt::{
     BatpakReceiptFields, ReceiptEnvelope, ReceiptExtensionDrawer, ReceiptHash, ReceiptHashPolicy,
     ReceiptHasher, ReceiptMetadata, ReceiptOutcome, ReceiptSink, ReceiptSinkError, RecordedReceipt,
@@ -111,12 +121,15 @@ pub use store_sink::{StoreReceiptSink, StoreReceiptSinkError};
 pub use subscription_runtime::{
     cursor_invalid_error, cursor_mismatch_error, unknown_subscription_error,
     CompositeSubscriptionRuntime, EventStreamCursorV1, EventStreamEnvelopeV1, EventStreamSession,
-    EventSubscriptionRuntime, ProjectionStreamCursorV1, ProjectionStreamEnvelopeV1,
-    ProjectionStreamSession, RuntimeCursor, SessionControl, SessionDelivery, SessionEnd,
-    SessionError, SessionEventDelivery, SessionPoll, SessionWatermarkDelivery, SubscriptionId,
-    SubscriptionRegistry, SubscriptionRoute, SubscriptionRuntimeConfig, SubscriptionRuntimeError,
-    SubscriptionSession, SubscriptionSessionFactory, SubscriptionStore, TypedProjectionProjector,
-    CURSOR_V1_LEN, PROJECTION_CURSOR_V1_LEN, SOURCE_KIND_EVENT_CATEGORY, SOURCE_KIND_PROJECTION,
+    EventSubscriptionRuntime, OperationStatusRouteBinding, OperationStatusStreamCursorV1,
+    OperationStatusStreamEnvelopeV1, OperationStatusStreamSession, ProjectionStreamCursorV1,
+    ProjectionStreamEnvelopeV1, ProjectionStreamSession, RuntimeCursor, SessionControl,
+    SessionDelivery, SessionEnd, SessionError, SessionEventDelivery, SessionPoll,
+    SessionWatermarkDelivery, SubscriptionId, SubscriptionRegistry, SubscriptionRoute,
+    SubscriptionRuntimeConfig, SubscriptionRuntimeError, SubscriptionSession,
+    SubscriptionSessionFactory, SubscriptionStore, TypedProjectionProjector, CURSOR_V1_LEN,
+    OPERATION_STATUS_CURSOR_V1_LEN, PROJECTION_CURSOR_V1_LEN, SOURCE_KIND_EVENT_CATEGORY,
+    SOURCE_KIND_OPERATION_STATUS, SOURCE_KIND_PROJECTION,
 };
 
 /// Receipt-extension namespace owned by the syncbat runtime layer.

@@ -128,6 +128,8 @@
   rationale: "store-backed subscription replay/live delivery is deterministic runtime"
   globs:
     - crates/syncbat/src/subscription_runtime/**/*.rs
+    - crates/syncbat/src/operation_status.rs
+    - crates/syncbat/src/operation_status_sink.rs
 
 - level: L3
   seam: netbat-boundary-protocol

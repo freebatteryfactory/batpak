@@ -97,8 +97,11 @@ pub(super) const SYNCBAT_CATALOG_MUTANT_FILES: &[&str] = &[
     "crates/syncbat/src/register.rs",
     "crates/syncbat/src/register_store/**/*.rs",
 ];
-pub(super) const SYNCBAT_SUBSCRIPTION_RUNTIME_MUTANT_FILES: &[&str] =
-    &["crates/syncbat/src/subscription_runtime/**/*.rs"];
+pub(super) const SYNCBAT_SUBSCRIPTION_RUNTIME_MUTANT_FILES: &[&str] = &[
+    "crates/syncbat/src/subscription_runtime/**/*.rs",
+    "crates/syncbat/src/operation_status.rs",
+    "crates/syncbat/src/operation_status_sink.rs",
+];
 pub(super) const NETBAT_BOUNDARY_MUTANT_FILES: &[&str] = &[
     "crates/netbat/src/lib.rs",
     "crates/netbat/src/route.rs",

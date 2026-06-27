@@ -4,10 +4,32 @@ use std::sync::Arc;
 use batpak::coordinate::EventCategory;
 use batpak::store::Freshness;
 
+use crate::operation_name::OperationName;
+use crate::operation_status_sink::operation_status_entity;
+
 use super::error::SubscriptionRuntimeError;
 use super::projector::{ProjectionProjector, ProjectionRouteBinding};
 
 const MAX_SUBSCRIPTION_ID_BYTES: usize = 128;
+
+/// Binding fields needed to open an operation-status subscription session.
+#[derive(Clone, Debug)]
+pub struct OperationStatusRouteBinding {
+    /// Globally unique subscription id.
+    pub subscription_id: String,
+    /// Route-declared operation name.
+    pub operation: OperationName,
+    /// Entity coordinate bound to the operation-status facts.
+    pub entity: String,
+    /// Wire payload schema ref token.
+    pub wire_payload_schema_ref: String,
+    /// Optional inner status schema ref.
+    pub inner_status_schema_ref: Option<String>,
+    /// Freshness mode for status materialization.
+    pub freshness: Freshness,
+    /// Optional route-specific queue clamp.
+    pub backpressure_capacity: Option<usize>,
+}
 
 /// Globally unique subscription id (`orders.open.v1` grammar).
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -63,6 +85,21 @@ pub enum SubscriptionRoute {
         /// syncbat-owned projector that opens typed projection sessions.
         projector: Arc<dyn ProjectionProjector>,
     },
+    /// Operation-scoped status stream.
+    OperationStatus {
+        /// Route-declared operation name.
+        operation: OperationName,
+        /// Entity coordinate bound to the operation-status facts.
+        entity: String,
+        /// Wire `payload_schema_ref` token for stream envelopes.
+        wire_payload_schema_ref: String,
+        /// Optional inner status schema ref carried inside the envelope.
+        inner_status_schema_ref: Option<String>,
+        /// Freshness mode for status materialization.
+        freshness: Freshness,
+        /// Optional route-specific queue clamp.
+        backpressure_capacity: Option<usize>,
+    },
 }
 
 impl SubscriptionRoute {
@@ -71,7 +108,7 @@ impl SubscriptionRoute {
     pub fn event_category(&self) -> Option<u8> {
         match self {
             Self::EventCategory { category, .. } => Some(*category),
-            Self::Projection { .. } => None,
+            Self::Projection { .. } | Self::OperationStatus { .. } => None,
         }
     }
 
@@ -97,6 +134,34 @@ impl SubscriptionRoute {
                 backpressure_capacity: *backpressure_capacity,
             }),
             Self::EventCategory { .. } => None,
+            Self::OperationStatus { .. } => None,
+        }
+    }
+
+    /// Build an operation-status route binding for session open.
+    #[must_use]
+    pub fn operation_status_binding(
+        &self,
+        subscription_id: &str,
+    ) -> Option<OperationStatusRouteBinding> {
+        match self {
+            Self::OperationStatus {
+                operation,
+                entity,
+                wire_payload_schema_ref,
+                inner_status_schema_ref,
+                freshness,
+                backpressure_capacity,
+            } => Some(OperationStatusRouteBinding {
+                subscription_id: subscription_id.to_owned(),
+                operation: operation.clone(),
+                entity: entity.clone(),
+                wire_payload_schema_ref: wire_payload_schema_ref.clone(),
+                inner_status_schema_ref: inner_status_schema_ref.clone(),
+                freshness: freshness.clone(),
+                backpressure_capacity: *backpressure_capacity,
+            }),
+            Self::EventCategory { .. } | Self::Projection { .. } => None,
         }
     }
 }
@@ -136,6 +201,22 @@ impl std::fmt::Debug for SubscriptionRoute {
                 .field("freshness", freshness)
                 .field("backpressure_capacity", backpressure_capacity)
                 .field("projector", &"Arc<dyn ProjectionProjector>")
+                .finish(),
+            Self::OperationStatus {
+                operation,
+                entity,
+                wire_payload_schema_ref,
+                inner_status_schema_ref,
+                freshness,
+                backpressure_capacity,
+            } => f
+                .debug_struct("OperationStatus")
+                .field("operation", operation)
+                .field("entity", entity)
+                .field("wire_payload_schema_ref", wire_payload_schema_ref)
+                .field("inner_status_schema_ref", inner_status_schema_ref)
+                .field("freshness", freshness)
+                .field("backpressure_capacity", backpressure_capacity)
                 .finish(),
         }
     }
@@ -184,6 +265,31 @@ impl PartialEq for SubscriptionRoute {
                 },
             ) => {
                 left_projection == right_projection
+                    && left_entity == right_entity
+                    && left_wire == right_wire
+                    && left_inner == right_inner
+                    && freshness_same(left_freshness, right_freshness)
+                    && left_cap == right_cap
+            }
+            (
+                Self::OperationStatus {
+                    operation: left_operation,
+                    entity: left_entity,
+                    wire_payload_schema_ref: left_wire,
+                    inner_status_schema_ref: left_inner,
+                    freshness: left_freshness,
+                    backpressure_capacity: left_cap,
+                },
+                Self::OperationStatus {
+                    operation: right_operation,
+                    entity: right_entity,
+                    wire_payload_schema_ref: right_wire,
+                    inner_status_schema_ref: right_inner,
+                    freshness: right_freshness,
+                    backpressure_capacity: right_cap,
+                },
+            ) => {
+                left_operation == right_operation
                     && left_entity == right_entity
                     && left_wire == right_wire
                     && left_inner == right_inner
@@ -290,6 +396,40 @@ fn validate_route(route: &SubscriptionRoute) -> Result<(), SubscriptionRuntimeEr
             if entity.is_empty() {
                 return Err(SubscriptionRuntimeError::InvalidRoute {
                     reason: "entity is empty",
+                });
+            }
+            if wire_payload_schema_ref.is_empty() {
+                return Err(SubscriptionRuntimeError::InvalidRoute {
+                    reason: "wire payload schema ref is empty",
+                });
+            }
+            if matches!(backpressure_capacity, Some(0)) {
+                return Err(SubscriptionRuntimeError::InvalidRoute {
+                    reason: "backpressure capacity is zero",
+                });
+            }
+            Ok(())
+        }
+        SubscriptionRoute::OperationStatus {
+            operation,
+            entity,
+            wire_payload_schema_ref,
+            backpressure_capacity,
+            ..
+        } => {
+            if entity.is_empty() {
+                return Err(SubscriptionRuntimeError::InvalidRoute {
+                    reason: "entity is empty",
+                });
+            }
+            let expected = operation_status_entity(operation.as_str()).map_err(|_| {
+                SubscriptionRuntimeError::InvalidRoute {
+                    reason: "operation name produces invalid status entity",
+                }
+            })?;
+            if *entity != expected {
+                return Err(SubscriptionRuntimeError::InvalidRoute {
+                    reason: "entity does not match operation-status entity helper",
                 });
             }
             if wire_payload_schema_ref.is_empty() {
