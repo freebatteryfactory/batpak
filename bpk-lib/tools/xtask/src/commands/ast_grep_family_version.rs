@@ -35,7 +35,7 @@ rule:
     command.current_dir(&root).args([
         "scan",
         "--config",
-        "sgconfig.yml",
+        "bpk-lib/tools/ast-grep/sgconfig.yml",
         "--inline-rules",
         &inline_rules,
         "--report-style",

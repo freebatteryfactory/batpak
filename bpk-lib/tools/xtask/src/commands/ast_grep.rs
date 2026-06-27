@@ -16,7 +16,7 @@ fn ast_grep_store() -> Result<()> {
     command.current_dir(&root).args([
         "scan",
         "--config",
-        "sgconfig.yml",
+        "bpk-lib/tools/ast-grep/sgconfig.yml",
         "--report-style",
         "short",
         "--globs",
@@ -41,7 +41,7 @@ fn ast_grep_devops() -> Result<()> {
     command.current_dir(&root).args([
         "scan",
         "--config",
-        "sgconfig.yml",
+        "bpk-lib/tools/ast-grep/sgconfig.yml",
         "--report-style",
         "short",
         "--globs",
