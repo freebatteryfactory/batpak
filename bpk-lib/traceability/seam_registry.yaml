@@ -108,6 +108,8 @@
   dst_coverage: false
   globs:
     - crates/syncbat/src/subscription_runtime/**/*.rs
+    - crates/syncbat/src/operation_status.rs
+    - crates/syncbat/src/operation_status_sink.rs
 
 - slug: netbat-boundary-protocol
   assurance_level: L3

@@ -259,11 +259,31 @@ rows:
 
   - id: S12-SUBSCRIPTION-RUNTIME-OPERATION-STATUS
     title: Subscription runtime operation-status stream delivery
-    status: INCOMPLETE
+    status: PROVEN
     terminal_required: true
     surface: netbat
-    blocked_by:
-      - event runtime is PROVEN; operation-status depends on projection runtime plus OperationStatusView
+    witness_tests:
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_checkout_writes_started_and_completed_facts
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_catch_up_snapshot_and_live_update
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_watermark_for_empty_fold
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_cumulative_ack_frees_delivery_window
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_slow_consumer_closes_with_err
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_cancel_emits_client_cancelled_end
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_open_rejects_invalid_cursor
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_open_rejects_cursor_mismatch
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_unknown_route_rejected_at_open
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_status_sink_failure_before_handler_fails_closed
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_denied_after_started_counts_one_attempt
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_missing_handler_records_failed_terminal_status
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_cursor_v1_roundtrip_and_resume_rules
+      - crates/syncbat/src/subscription_runtime/operation_status_stream_tests.rs::subscription_runtime_operation_status_resume_honors_cursor_after_entity_generation
+      - crates/netbat/tests/stream_runtime_operation_status.rs::stream_runtime_operation_status_tcp_maps_snapshot_watermark_and_ack_wake
+      - crates/netbat/tests/stream_runtime_operation_status.rs::stream_runtime_operation_status_unknown_subscription_emits_sub_err
+      - crates/netbat/tests/stream_runtime_operation_status.rs::stream_runtime_operation_status_slow_consumer_emits_sub_err
+      - crates/netbat/tests/stream_runtime_operation_status.rs::stream_runtime_operation_status_client_disconnect_without_cancel_exits_server
+    proof_commands:
+      - just cargo test -p syncbat subscription_runtime_operation_status
+      - just cargo test -p netbat stream_runtime_operation_status
 
   - id: S12-SUBSCRIPTION-RUNTIME-RECEIPTS
     title: Subscription runtime receipt stream delivery
@@ -271,7 +291,7 @@ rows:
     terminal_required: true
     surface: netbat
     blocked_by:
-      - event runtime is PROVEN; receipt source runtime is not implemented yet
+      - operation-status runtime is PROVEN; receipt source runtime is not implemented yet
 
   - id: S12-SUBSCRIPTION-RUNTIME-ENTITY
     title: Subscription runtime entity stream delivery

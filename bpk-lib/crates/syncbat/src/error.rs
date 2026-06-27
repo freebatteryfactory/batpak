@@ -218,6 +218,15 @@ pub enum RuntimeError {
         /// Handler failure that preceded this sink failure, when present.
         caused_by_handler: Option<ReceiptSinkHandlerCause>,
     },
+    /// The configured operation-status sink rejected a runtime-emitted fact.
+    StatusSink {
+        /// Operation name whose status fact could not be recorded.
+        name: String,
+        /// Sink error message.
+        message: String,
+        /// Handler failure that preceded this sink failure, when present.
+        caused_by_handler: Option<ReceiptSinkHandlerCause>,
+    },
 }
 
 impl RuntimeError {
@@ -284,6 +293,30 @@ impl RuntimeError {
             caused_by_handler: Some(cause),
         }
     }
+
+    /// Build a status-sink error with an operation name and message.
+    #[must_use]
+    pub fn status_sink(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::StatusSink {
+            name: name.into(),
+            message: message.into(),
+            caused_by_handler: None,
+        }
+    }
+
+    /// Build a status-sink error after a handler failure.
+    #[must_use]
+    pub fn status_sink_after_handler_failure(
+        name: impl Into<String>,
+        message: impl Into<String>,
+        cause: ReceiptSinkHandlerCause,
+    ) -> Self {
+        Self::StatusSink {
+            name: name.into(),
+            message: message.into(),
+            caused_by_handler: Some(cause),
+        }
+    }
 }
 
 impl fmt::Display for RuntimeError {
@@ -324,6 +357,22 @@ impl fmt::Display for RuntimeError {
                     )
                 } else {
                     write!(f, "receipt sink for operation `{name}` failed: {message}")
+                }
+            }
+            Self::StatusSink {
+                name,
+                message,
+                caused_by_handler,
+            } => {
+                if let Some(cause) = caused_by_handler {
+                    write!(
+                        f,
+                        "status sink for operation `{name}` failed after handler error {}: {}: {message}",
+                        cause.code(),
+                        cause.message()
+                    )
+                } else {
+                    write!(f, "status sink for operation `{name}` failed: {message}")
                 }
             }
         }

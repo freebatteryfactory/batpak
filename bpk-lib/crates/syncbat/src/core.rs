@@ -1,6 +1,7 @@
 //! Synchronous runtime composition root.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::admission::{AdmissionDecision, AdmissionGuard};
 use crate::effect::{
@@ -9,11 +10,16 @@ use crate::effect::{
 };
 use crate::effect_backend::EffectBackend;
 use crate::error::{ReceiptSinkHandlerCause, RuntimeError};
+use crate::operation_status::{OperationStatusFactV1, OperationStatusLifecycle};
+use crate::operation_status_sink::OperationStatusSink;
 use crate::receipt::{ReceiptHashPolicy, ReceiptMetadata, ReceiptOutcome, RecordedReceipt};
 use crate::{handler, operation, receipt};
 
+type HandlerResult = handler::HandlerResult;
+
 type BoxedHandler = Box<dyn handler::Handler + 'static>;
 type BoxedReceiptSink = Box<dyn receipt::ReceiptSink + 'static>;
+type BoxedStatusSink = Arc<dyn OperationStatusSink + Send + Sync>;
 type BoxedAdmissionGuard = Box<dyn AdmissionGuard + 'static>;
 type BoxedEffectBackend = Box<dyn EffectBackend + 'static>;
 
@@ -28,6 +34,7 @@ pub struct Core {
     pub(crate) handlers: BTreeMap<String, BoxedHandler>,
     pub(crate) admission_guard: Option<BoxedAdmissionGuard>,
     pub(crate) receipt_sink: Option<BoxedReceiptSink>,
+    pub(crate) status_sink: Option<BoxedStatusSink>,
     pub(crate) receipt_hash_policy: ReceiptHashPolicy,
     /// Runtime-owned capability backend that performs declared effects (event
     /// appends) so observation through `Ctx` is authoritative.
@@ -114,6 +121,8 @@ impl Core {
         };
         let name = descriptor.name();
         let input = checkout.input;
+        let status_sink = self.status_sink.clone();
+        let receipt_hash_policy = self.receipt_hash_policy.clone();
 
         // One borrowed context spans the optional guard and the handler, so a
         // guard may stamp receipt metadata (e.g. correlation identity) that
@@ -135,20 +144,80 @@ impl Core {
                     "checkout denied by admission guard",
                 );
                 let outcome = ReceiptOutcome::denied(code.clone(), message.clone());
+                record_runtime_status(RuntimeStatusRecord {
+                    status_sink: status_sink.as_deref(),
+                    receipt_hash_policy: &receipt_hash_policy,
+                    descriptor: &descriptor,
+                    lifecycle: OperationStatusLifecycle::Denied,
+                    input: &input,
+                    output: None,
+                    code: Some(code.clone()),
+                    message: Some(message.clone()),
+                    handler_cause: None,
+                })?;
                 self.record_runtime_receipt(&descriptor, &input, None, outcome, None, metadata)?;
                 tracing::Span::current().record("outcome", "denied");
                 return Err(RuntimeError::denied(name, code, message));
             }
         }
 
-        let handler = self.handlers.get_mut(name).ok_or_else(|| {
-            tracing::error!(operation = %name, outcome = "missing_handler", "checkout rejected");
-            RuntimeError::missing_handler(name)
+        record_runtime_status(RuntimeStatusRecord {
+            status_sink: status_sink.as_deref(),
+            receipt_hash_policy: &receipt_hash_policy,
+            descriptor: &descriptor,
+            lifecycle: OperationStatusLifecycle::Started,
+            input: &input,
+            output: None,
+            code: None,
+            message: None,
+            handler_cause: None,
         })?;
+
+        let Some(handler) = self.handlers.get_mut(name) else {
+            tracing::error!(operation = %name, outcome = "missing_handler", "checkout rejected");
+            record_runtime_status(RuntimeStatusRecord {
+                status_sink: status_sink.as_deref(),
+                receipt_hash_policy: &receipt_hash_policy,
+                descriptor: &descriptor,
+                lifecycle: OperationStatusLifecycle::Failed,
+                input: &input,
+                output: None,
+                code: Some("missing_handler".to_owned()),
+                message: Some("operation descriptor has no registered handler".to_owned()),
+                handler_cause: None,
+            })?;
+            return Err(RuntimeError::missing_handler(name));
+        };
         let handler_result = handler.handle(&input, &mut ctx);
         let observed_effects = ctx.observed_effects().clone();
         let metadata = ctx.into_metadata();
 
+        self.finish_handler_phase(HandlerPhase {
+            name,
+            descriptor: &descriptor,
+            input: &input,
+            handler_result,
+            observed_effects: &observed_effects,
+            metadata,
+            status_sink: &status_sink,
+            receipt_hash_policy: &receipt_hash_policy,
+        })
+    }
+
+    fn finish_handler_phase(
+        &self,
+        phase: HandlerPhase<'_>,
+    ) -> Result<CheckoutResult, RuntimeError> {
+        let HandlerPhase {
+            name,
+            descriptor,
+            input,
+            handler_result,
+            observed_effects,
+            metadata,
+            status_sink,
+            receipt_hash_policy,
+        } = phase;
         if let Some(violation) = observed_effects.first_violation_against(descriptor.effect_row()) {
             tracing::warn!(
                 operation = %name,
@@ -158,7 +227,18 @@ impl Core {
                 "checkout denied by observed effect row",
             );
             let outcome = ReceiptOutcome::denied(violation.code(), violation.message());
-            self.record_runtime_receipt(&descriptor, &input, None, outcome, None, metadata)?;
+            record_runtime_status(RuntimeStatusRecord {
+                status_sink: status_sink.as_deref(),
+                receipt_hash_policy,
+                descriptor,
+                lifecycle: OperationStatusLifecycle::Denied,
+                input,
+                output: None,
+                code: Some(violation.code().to_owned()),
+                message: Some(violation.message().to_owned()),
+                handler_cause: None,
+            })?;
+            self.record_runtime_receipt(descriptor, input, None, outcome, None, metadata)?;
             tracing::Span::current().record("outcome", "effect_denied");
             return Err(RuntimeError::denied(
                 name,
@@ -179,9 +259,20 @@ impl Core {
                     outcome = "handler_failed",
                     "checkout failed in handler",
                 );
+                record_runtime_status(RuntimeStatusRecord {
+                    status_sink: status_sink.as_deref(),
+                    receipt_hash_policy,
+                    descriptor,
+                    lifecycle: OperationStatusLifecycle::Failed,
+                    input,
+                    output: None,
+                    code: Some(cause.code().to_owned()),
+                    message: Some(cause.message().to_owned()),
+                    handler_cause: Some(cause.clone()),
+                })?;
                 self.record_runtime_receipt(
-                    &descriptor,
-                    &input,
+                    descriptor,
+                    input,
                     None,
                     outcome,
                     Some(cause.clone()),
@@ -191,19 +282,30 @@ impl Core {
             }
         };
         let recorded_receipt = self.record_runtime_receipt(
-            &descriptor,
-            &input,
+            descriptor,
+            input,
             Some(output.as_slice()),
             ReceiptOutcome::Completed,
             None,
             metadata,
         )?;
+        record_runtime_status(RuntimeStatusRecord {
+            status_sink: status_sink.as_deref(),
+            receipt_hash_policy,
+            descriptor,
+            lifecycle: OperationStatusLifecycle::Completed,
+            input,
+            output: Some(output.as_slice()),
+            code: None,
+            message: None,
+            handler_cause: None,
+        })?;
         let span = tracing::Span::current();
         span.record("output_bytes", output.len());
         span.record("outcome", "completed");
 
         Ok(CheckoutResult {
-            descriptor,
+            descriptor: descriptor.clone(),
             output,
             recorded_receipt,
         })
@@ -246,6 +348,71 @@ impl Core {
             }
         })
     }
+}
+
+struct HandlerPhase<'a> {
+    name: &'a str,
+    descriptor: &'a operation::OperationDescriptor,
+    input: &'a [u8],
+    handler_result: HandlerResult,
+    observed_effects: &'a OperationEffectRow,
+    metadata: ReceiptMetadata,
+    status_sink: &'a Option<BoxedStatusSink>,
+    receipt_hash_policy: &'a ReceiptHashPolicy,
+}
+
+struct RuntimeStatusRecord<'a> {
+    status_sink: Option<&'a (dyn OperationStatusSink + Send + Sync)>,
+    receipt_hash_policy: &'a ReceiptHashPolicy,
+    descriptor: &'a operation::OperationDescriptor,
+    lifecycle: OperationStatusLifecycle,
+    input: &'a [u8],
+    output: Option<&'a [u8]>,
+    code: Option<String>,
+    message: Option<String>,
+    handler_cause: Option<ReceiptSinkHandlerCause>,
+}
+
+fn record_runtime_status(record: RuntimeStatusRecord<'_>) -> Result<(), RuntimeError> {
+    let RuntimeStatusRecord {
+        status_sink,
+        receipt_hash_policy,
+        descriptor,
+        lifecycle,
+        input,
+        output,
+        code,
+        message,
+        handler_cause,
+    } = record;
+    let Some(sink) = status_sink else {
+        return Ok(());
+    };
+
+    let fact = if lifecycle == OperationStatusLifecycle::Started {
+        OperationStatusFactV1::started(descriptor.name(), descriptor.receipt_kind())
+    } else {
+        let input_hash = receipt_hash_policy.hash(input);
+        let output_hash = output.and_then(|bytes| receipt_hash_policy.hash(bytes));
+        OperationStatusFactV1::terminal(
+            descriptor.name(),
+            lifecycle,
+            descriptor.receipt_kind(),
+            code,
+            message,
+            input_hash,
+            output_hash,
+        )
+    };
+
+    sink.record_fact(&fact).map_err(|error| {
+        let message = error.to_string();
+        if let Some(cause) = handler_cause {
+            RuntimeError::status_sink_after_handler_failure(descriptor.name(), message, cause)
+        } else {
+            RuntimeError::status_sink(descriptor.name(), message)
+        }
+    })
 }
 
 /// Unresolved checkout request passed to a runtime.

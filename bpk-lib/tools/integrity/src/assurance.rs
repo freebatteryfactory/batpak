@@ -187,6 +187,14 @@ pub(crate) const CRITICAL_SEAM_MUTANT_GLOBS: &[(&str, &str)] = &[
         "syncbat-subscription-runtime",
         "crates/syncbat/src/subscription_runtime/**/*.rs",
     ),
+    (
+        "syncbat-subscription-runtime",
+        "crates/syncbat/src/operation_status.rs",
+    ),
+    (
+        "syncbat-subscription-runtime",
+        "crates/syncbat/src/operation_status_sink.rs",
+    ),
     // netbat-boundary-protocol (NETBAT_BOUNDARY_MUTANT_FILES)
     ("netbat-boundary-protocol", "crates/netbat/src/lib.rs"),
     ("netbat-boundary-protocol", "crates/netbat/src/route.rs"),

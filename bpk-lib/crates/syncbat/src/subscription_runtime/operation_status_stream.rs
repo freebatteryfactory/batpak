@@ -1,26 +1,23 @@
 use std::collections::BTreeMap;
-use std::marker::PhantomData;
 use std::thread;
 use std::time::Duration;
 
-use batpak::event::sourcing::EventSourced;
 use batpak::store::Cursor;
 use batpak::store::ProjectionWatcher;
-use batpak::store::ReplayInput;
 use flume::{Receiver, RecvTimeoutError, TryRecvError};
 
+use crate::operation_status::OperationStatusView;
+
 use super::config::SubscriptionRuntimeConfig;
-use super::cursor::ProjectionStreamCursorV1;
-use super::envelope::ProjectionStreamEnvelopeV1;
+use super::cursor::OperationStatusStreamCursorV1;
+use super::envelope::OperationStatusStreamEnvelopeV1;
 use super::error::SubscriptionRuntimeError;
-use super::operation_status_stream::OperationStatusStreamSession;
-use super::projector::{ProjectionProjector, ProjectionRouteBinding};
-use super::registry::{SubscriptionRegistry, SubscriptionRoute};
+use super::registry::OperationStatusRouteBinding;
 use super::session::{
     ack_invalid_error, client_cancel_end, cursor_mismatch_terminal, malformed_control_error,
     queue_capacity, slow_consumer_error, validate_open_limits, RuntimeCursor, SessionControl,
     SessionDelivery, SessionError, SessionEventDelivery, SessionPoll, SessionWatermarkDelivery,
-    SubscriptionSession, SubscriptionSessionFactory, SubscriptionStore,
+    SubscriptionSession, SubscriptionStore,
 };
 
 enum SessionPhase {
@@ -29,24 +26,25 @@ enum SessionPhase {
 }
 
 struct RouteBinding {
-    projection_id: String,
+    operation: String,
     entity: String,
     wire_payload_schema_ref: String,
-    inner_projection_schema_ref: Option<String>,
+    inner_status_schema_ref: Option<String>,
     freshness: batpak::store::Freshness,
     queue_cap: u64,
 }
 
-type ProjectionUpdate<T> = Result<(u64, Option<T>), batpak::store::CursorWatcherError>;
-type ProjectionUpdateRx<T> = Receiver<ProjectionUpdate<T>>;
+type StatusUpdateRx = Receiver<StatusUpdate>;
 
-/// Store-backed projection subscription session.
-pub struct ProjectionStreamSession<T> {
+type StatusUpdate = Result<(u64, Option<OperationStatusView>), batpak::store::CursorWatcherError>;
+
+/// Store-backed operation-status subscription session.
+pub struct OperationStatusStreamSession {
     subscription_id: String,
     route: RouteBinding,
     _config: SubscriptionRuntimeConfig,
     resume_after_generation: u64,
-    cursor_before_next: ProjectionStreamCursorV1,
+    cursor_before_next: OperationStatusStreamCursorV1,
     delivery_index: u64,
     last_sent_delivery_index: u64,
     last_acked_delivery_index: u64,
@@ -56,82 +54,11 @@ pub struct ProjectionStreamSession<T> {
     control_rx: Receiver<SessionControl>,
     terminal: Option<SessionDelivery>,
     phase: SessionPhase,
-    update_rx: ProjectionUpdateRx<T>,
+    update_rx: StatusUpdateRx,
 }
 
-impl<T> SubscriptionSession for ProjectionStreamSession<T>
-where
-    T: EventSourced + serde::Serialize + serde::de::DeserializeOwned + Send + Sync + 'static,
-    T::Input: ReplayInput,
-{
+impl SubscriptionSession for OperationStatusStreamSession {
     fn poll(&mut self, timeout: Duration) -> Result<SessionPoll, SubscriptionRuntimeError> {
-        Self::poll(self, timeout)
-    }
-}
-
-impl<T> ProjectionStreamSession<T>
-where
-    T: EventSourced + serde::Serialize + serde::de::DeserializeOwned + Send + Sync + 'static,
-    T::Input: ReplayInput,
-{
-    /// Open a projection subscription session backed by a cursor watcher.
-    ///
-    /// # Errors
-    /// Cursor validation or runtime configuration failures.
-    pub fn open(
-        _store: SubscriptionStore,
-        route: ProjectionRouteBinding,
-        resume_cursor: Option<&[u8]>,
-        client_window: u32,
-        control_rx: Receiver<SessionControl>,
-        config: SubscriptionRuntimeConfig,
-        watcher: ProjectionWatcher<T, Cursor>,
-    ) -> Result<Self, SubscriptionRuntimeError> {
-        let parsed_resume = parse_resume_cursor(
-            &route.subscription_id,
-            &route.projection_id,
-            &route.entity,
-            resume_cursor,
-        )?;
-        let resume_after_generation = parsed_resume.resume_after_entity_generation().unwrap_or(0);
-        let queue_cap = queue_capacity(
-            client_window,
-            config.server_max_window,
-            route.backpressure_capacity,
-        );
-        validate_open_limits(config, client_window, queue_cap)?;
-        let update_rx = spawn_watcher_bridge(watcher)?;
-        Ok(Self {
-            subscription_id: route.subscription_id.clone(),
-            route: RouteBinding {
-                projection_id: route.projection_id,
-                entity: route.entity,
-                wire_payload_schema_ref: route.wire_payload_schema_ref,
-                inner_projection_schema_ref: route.inner_projection_schema_ref,
-                freshness: route.freshness,
-                queue_cap,
-            },
-            _config: config,
-            resume_after_generation,
-            cursor_before_next: parsed_resume,
-            delivery_index: 1,
-            last_sent_delivery_index: 0,
-            last_acked_delivery_index: 0,
-            last_delivered_cursor: None,
-            last_acked_cursor: None,
-            sent_cursors: BTreeMap::new(),
-            control_rx,
-            terminal: None,
-            phase: SessionPhase::Live,
-            update_rx,
-        })
-    }
-
-    /// Poll the session for the next delivery frame.
-    ///
-    /// # Errors
-    /// Store projection or envelope encoding failures while delivering updates.
-    pub fn poll(&mut self, timeout: Duration) -> Result<SessionPoll, SubscriptionRuntimeError> {
         if let Some(delivery) = self.terminal.take() {
             return Ok(SessionPoll::Delivery(delivery));
         }
@@ -183,12 +110,71 @@ where
                     code: super::error::stream_code::CURSOR_INVALID,
                     last_delivered_cursor: self.last_delivered_cursor.clone(),
                     last_acked_cursor: self.last_acked_cursor.clone(),
-                    message: b"projection watcher bridge disconnected".to_vec(),
+                    message: b"operation-status watcher bridge disconnected".to_vec(),
                 });
                 self.terminal = Some(terminal.clone());
                 Ok(SessionPoll::Delivery(terminal))
             }
         }
+    }
+}
+
+impl OperationStatusStreamSession {
+    /// Open an operation-status subscription session backed by a cursor watcher.
+    ///
+    /// # Errors
+    /// Cursor validation, store watch, or runtime configuration failures.
+    pub fn open(
+        store: &SubscriptionStore,
+        route: OperationStatusRouteBinding,
+        resume_cursor: Option<&[u8]>,
+        client_window: u32,
+        control_rx: Receiver<SessionControl>,
+        config: SubscriptionRuntimeConfig,
+    ) -> Result<Self, SubscriptionRuntimeError> {
+        let operation = route.operation.as_str();
+        let parsed_resume = parse_resume_cursor(
+            &route.subscription_id,
+            operation,
+            &route.entity,
+            resume_cursor,
+        )?;
+        let resume_after_generation = parsed_resume.resume_after_entity_generation().unwrap_or(0);
+        let queue_cap = queue_capacity(
+            client_window,
+            config.server_max_window,
+            route.backpressure_capacity,
+        );
+        validate_open_limits(config, client_window, queue_cap)?;
+        let freshness = route.freshness.clone();
+        let watcher = store
+            .inner
+            .watch_projection_with_cursor::<OperationStatusView>(&route.entity, freshness, None)?;
+        let update_rx = spawn_watcher_bridge(watcher)?;
+        Ok(Self {
+            subscription_id: route.subscription_id.clone(),
+            route: RouteBinding {
+                operation: operation.to_owned(),
+                entity: route.entity,
+                wire_payload_schema_ref: route.wire_payload_schema_ref,
+                inner_status_schema_ref: route.inner_status_schema_ref,
+                freshness: route.freshness,
+                queue_cap,
+            },
+            _config: config,
+            resume_after_generation,
+            cursor_before_next: parsed_resume,
+            delivery_index: 1,
+            last_sent_delivery_index: 0,
+            last_acked_delivery_index: 0,
+            last_delivered_cursor: None,
+            last_acked_cursor: None,
+            sent_cursors: BTreeMap::new(),
+            control_rx,
+            terminal: None,
+            phase: SessionPhase::Live,
+            update_rx,
+        })
     }
 
     fn drain_control(&mut self) -> Result<(), SubscriptionRuntimeError> {
@@ -245,7 +231,7 @@ where
             ));
             return Ok(());
         }
-        let decoded = match ProjectionStreamCursorV1::decode(cursor.as_bytes()) {
+        let decoded = match OperationStatusStreamCursorV1::decode(cursor.as_bytes()) {
             Ok(cursor) => cursor,
             Err(SubscriptionRuntimeError::CursorInvalid { reason }) => {
                 self.phase = SessionPhase::Ended;
@@ -261,7 +247,7 @@ where
         };
         if let Err(SubscriptionRuntimeError::CursorMismatch { reason }) = decoded.validate_route(
             &self.subscription_id,
-            &self.route.projection_id,
+            &self.route.operation,
             &self.route.entity,
         ) {
             self.phase = SessionPhase::Ended;
@@ -311,7 +297,7 @@ where
     fn deliver_update(
         &mut self,
         generation: u64,
-        state: Option<T>,
+        state: Option<OperationStatusView>,
     ) -> Result<Option<SessionDelivery>, SubscriptionRuntimeError> {
         if self.in_flight() >= self.route.queue_cap {
             self.phase = SessionPhase::Ended;
@@ -324,9 +310,9 @@ where
             return Ok(Some(error));
         }
         let cursor_before = self.cursor_before_next.clone();
-        let cursor_after = ProjectionStreamCursorV1::after_entity_generation(
+        let cursor_after = OperationStatusStreamCursorV1::after_entity_generation(
             &self.subscription_id,
-            &self.route.projection_id,
+            &self.route.operation,
             &self.route.entity,
             generation,
         );
@@ -341,15 +327,15 @@ where
         self.resume_after_generation = generation;
 
         match state {
-            Some(projected) => {
-                let envelope_bytes = ProjectionStreamEnvelopeV1::encode(
+            Some(status) => {
+                let envelope_bytes = OperationStatusStreamEnvelopeV1::encode(
                     &self.subscription_id,
-                    &self.route.projection_id,
+                    &self.route.operation,
                     &self.route.entity,
                     generation,
                     &self.route.freshness,
-                    self.route.inner_projection_schema_ref.as_deref(),
-                    &projected,
+                    self.route.inner_status_schema_ref.as_deref(),
+                    &status,
                 )?;
                 Ok(Some(SessionDelivery::Event(SessionEventDelivery {
                     subscription_id: self.subscription_id.clone(),
@@ -374,179 +360,36 @@ where
     }
 }
 
-/// Typed projector backed by [`Store::watch_projection_with_cursor`].
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TypedProjectionProjector<T>(PhantomData<T>);
-
-impl<T> TypedProjectionProjector<T> {
-    /// Construct a typed projector for projection state `T`.
-    #[must_use]
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> ProjectionProjector for TypedProjectionProjector<T>
-where
-    T: EventSourced + serde::Serialize + serde::de::DeserializeOwned + Send + Sync + 'static,
-    T::Input: ReplayInput,
-{
-    fn open(
-        &self,
-        store: SubscriptionStore,
-        route: ProjectionRouteBinding,
-        resume_cursor: Option<&[u8]>,
-        client_window: u32,
-        control_rx: Receiver<SessionControl>,
-        config: SubscriptionRuntimeConfig,
-    ) -> Result<Box<dyn SubscriptionSession>, SubscriptionRuntimeError> {
-        let freshness = route.freshness.clone();
-        let watcher =
-            store
-                .inner
-                .watch_projection_with_cursor::<T>(&route.entity, freshness, None)?;
-        let session = ProjectionStreamSession::open(
-            store,
-            route,
-            resume_cursor,
-            client_window,
-            control_rx,
-            config,
-            watcher,
-        )?;
-        Ok(Box::new(session))
-    }
-}
-
-/// Store-backed composite subscription runtime dispatching event and projection routes.
-#[derive(Clone)]
-pub struct CompositeSubscriptionRuntime {
-    store: SubscriptionStore,
-    registry: SubscriptionRegistry,
-    config: SubscriptionRuntimeConfig,
-}
-
-impl CompositeSubscriptionRuntime {
-    /// Build a store-backed composite subscription runtime.
-    #[must_use]
-    pub fn new(
-        store: SubscriptionStore,
-        registry: SubscriptionRegistry,
-        config: SubscriptionRuntimeConfig,
-    ) -> Self {
-        Self {
-            store,
-            registry,
-            config,
-        }
-    }
-}
-
-impl SubscriptionSessionFactory for CompositeSubscriptionRuntime {
-    fn open_session(
-        &self,
-        subscription_id: &str,
-        resume_cursor: Option<&[u8]>,
-        client_window: u32,
-        control_rx: Receiver<SessionControl>,
-    ) -> Result<Box<dyn SubscriptionSession>, SubscriptionRuntimeError> {
-        let route = self.registry.get(subscription_id).ok_or_else(|| {
-            SubscriptionRuntimeError::UnknownSubscription {
-                id: subscription_id.to_owned(),
-            }
-        })?;
-        match route {
-            SubscriptionRoute::EventCategory {
-                category,
-                wire_payload_schema_ref,
-                inner_event_payload_schema_ref,
-                backpressure_capacity,
-            } => {
-                let session = super::event_stream::EventStreamSession::open(
-                    self.store.clone(),
-                    super::event_stream::EventSessionOpenParams {
-                        subscription_id: subscription_id.to_owned(),
-                        category: *category,
-                        wire_payload_schema_ref: wire_payload_schema_ref.clone(),
-                        inner_event_payload_schema_ref: inner_event_payload_schema_ref.clone(),
-                        backpressure_capacity: *backpressure_capacity,
-                    },
-                    self.config,
-                    resume_cursor,
-                    client_window,
-                    control_rx,
-                )?;
-                Ok(Box::new(session))
-            }
-            SubscriptionRoute::Projection { projector, .. } => {
-                let binding = route.projection_binding(subscription_id).ok_or_else(|| {
-                    SubscriptionRuntimeError::InvalidRoute {
-                        reason: "projection route missing binding",
-                    }
-                })?;
-                projector.open(
-                    self.store.clone(),
-                    binding,
-                    resume_cursor,
-                    client_window,
-                    control_rx,
-                    self.config,
-                )
-            }
-            SubscriptionRoute::OperationStatus { .. } => {
-                let binding = route
-                    .operation_status_binding(subscription_id)
-                    .ok_or_else(|| SubscriptionRuntimeError::InvalidRoute {
-                        reason: "operation-status route missing binding",
-                    })?;
-                let session = OperationStatusStreamSession::open(
-                    &self.store,
-                    binding,
-                    resume_cursor,
-                    client_window,
-                    control_rx,
-                    self.config,
-                )?;
-                Ok(Box::new(session))
-            }
-        }
-    }
-}
-
 fn parse_resume_cursor(
     subscription_id: &str,
-    projection_id: &str,
+    operation: &str,
     entity: &str,
     resume_cursor: Option<&[u8]>,
-) -> Result<ProjectionStreamCursorV1, SubscriptionRuntimeError> {
+) -> Result<OperationStatusStreamCursorV1, SubscriptionRuntimeError> {
     match resume_cursor {
-        None => Ok(ProjectionStreamCursorV1::beginning(
+        None => Ok(OperationStatusStreamCursorV1::beginning(
             subscription_id,
-            projection_id,
+            operation,
             entity,
         )),
         Some(bytes) => {
-            let cursor = ProjectionStreamCursorV1::decode(bytes)?;
-            cursor.validate_route(subscription_id, projection_id, entity)?;
+            let cursor = OperationStatusStreamCursorV1::decode(bytes)?;
+            cursor.validate_route(subscription_id, operation, entity)?;
             Ok(cursor)
         }
     }
 }
 
-fn runtime_cursor(cursor: &ProjectionStreamCursorV1) -> RuntimeCursor {
+fn runtime_cursor(cursor: &OperationStatusStreamCursorV1) -> RuntimeCursor {
     RuntimeCursor::from_bytes(cursor.encode().to_vec())
 }
 
-fn spawn_watcher_bridge<T>(
-    mut watcher: ProjectionWatcher<T, Cursor>,
-) -> Result<ProjectionUpdateRx<T>, SubscriptionRuntimeError>
-where
-    T: EventSourced + serde::Serialize + serde::de::DeserializeOwned + Send + Sync + 'static,
-    T::Input: ReplayInput,
-{
+fn spawn_watcher_bridge(
+    mut watcher: ProjectionWatcher<OperationStatusView, Cursor>,
+) -> Result<StatusUpdateRx, SubscriptionRuntimeError> {
     let (tx, rx) = flume::bounded(64);
     thread::Builder::new()
-        .name("syncbat.projection-watch".to_owned())
+        .name("syncbat.operation-status-watch".to_owned())
         .spawn(move || loop {
             match watcher.recv() {
                 Ok(update) => {

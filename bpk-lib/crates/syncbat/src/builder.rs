@@ -1,16 +1,19 @@
 //! Builder for the synchronous runtime composition root.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::admission::AdmissionGuard;
 use crate::core::Core;
 use crate::effect_backend::EffectBackend;
 use crate::error::BuildError;
+use crate::operation_status_sink::OperationStatusSink;
 use crate::receipt::ReceiptHashPolicy;
 use crate::{handler, module, operation, receipt, register};
 
 type BoxedHandler = Box<dyn handler::Handler + 'static>;
 type BoxedReceiptSink = Box<dyn receipt::ReceiptSink + 'static>;
+type BoxedStatusSink = Arc<dyn OperationStatusSink + Send + Sync>;
 type BoxedAdmissionGuard = Box<dyn AdmissionGuard + 'static>;
 type BoxedEffectBackend = Box<dyn EffectBackend + 'static>;
 
@@ -26,6 +29,7 @@ pub struct CoreBuilder {
     handlers: BTreeMap<String, BoxedHandler>,
     admission_guard: Option<BoxedAdmissionGuard>,
     receipt_sink: Option<BoxedReceiptSink>,
+    status_sink: Option<BoxedStatusSink>,
     receipt_hash_policy: ReceiptHashPolicy,
     effect_backend: Option<BoxedEffectBackend>,
 }
@@ -214,6 +218,27 @@ impl CoreBuilder {
         self
     }
 
+    /// Configure the optional operation-status sink used during checkout.
+    pub fn status_sink<S>(&mut self, sink: S) -> &mut Self
+    where
+        S: OperationStatusSink + Send + Sync + 'static,
+    {
+        self.status_sink = Some(Arc::new(sink));
+        self
+    }
+
+    /// Configure the operation-status sink from an already-boxed trait object.
+    pub fn status_sink_boxed(&mut self, sink: BoxedStatusSink) -> &mut Self {
+        self.status_sink = Some(sink);
+        self
+    }
+
+    /// Clear any configured operation-status sink.
+    pub fn clear_status_sink(&mut self) -> &mut Self {
+        self.status_sink = None;
+        self
+    }
+
     /// Configure runtime receipt hash population.
     pub fn receipt_hash_policy(&mut self, policy: ReceiptHashPolicy) -> &mut Self {
         self.receipt_hash_policy = policy;
@@ -265,6 +290,7 @@ impl CoreBuilder {
             handlers: self.handlers,
             admission_guard: self.admission_guard,
             receipt_sink: self.receipt_sink,
+            status_sink: self.status_sink,
             receipt_hash_policy: self.receipt_hash_policy,
             effect_backend: self.effect_backend,
         })
