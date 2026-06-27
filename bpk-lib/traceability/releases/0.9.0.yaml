@@ -94,13 +94,15 @@ rows:
 
   - id: STORE-68-EXAMPLE-DEDUP
     title: Full #68 example dedup (one canonical runnable per concept)
-    status: INCOMPLETE
+    status: PROVEN
     terminal_required: true
     surface: batpak
-    blocked_by:
-      - cross_crate_payloads still canonical in concept_catalog.yaml
-      - durability cluster not consolidated to two canonical examples
-    notes: Gap-fill examples exist; full dedup not done.
+    witness_tests:
+      - tools/integrity/src/traceability.rs::live_concept_catalog_is_clean
+      - tools/integrity/src/traceability.rs::rejects_durability_family_over_cap
+      - crates/core/tests/event_payload_registry_policy.rs::startup_validate_event_payload_registry_before_fail_fast_open
+    proof_commands:
+      - just inspect
 
   - id: STORE-LOOSE-EQUIV-MUTANT-AUDIT
     title: Re-audit fork/import equivalent mutants after offensive fixtures

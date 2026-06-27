@@ -10,7 +10,7 @@ tasks:
       - "serde_json for durable typed payload identity"
     examples:
       - "crates/examples/examples/quickstart.rs"
-      - "crates/examples/examples/cross_crate_payloads.rs"
+      - "crates/examples/examples/eight_jobs.rs"
     tests:
       - "crates/core/tests/event_payload_surface.rs"
       - "crates/core/tests/store_append_behavior.rs"
@@ -96,7 +96,8 @@ tasks:
       - "sleep-based freshness claims"
       - "max frontier when global applied requires the min across projections"
     examples:
-      - "crates/examples/examples/lifecycle_observer.rs"
+      - "crates/examples/examples/eight_jobs.rs"
+      - "crates/examples/examples/raw_projection_counter.rs"
     tests:
       - "crates/core/tests/projection_run_evidence_report.rs"
       - "crates/core/tests/unified_watch_red.rs"

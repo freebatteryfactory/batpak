@@ -8,30 +8,23 @@
 #   3. no two rows name the same canonical_example (an example is canonical for
 #      at most one concept),
 #   4. every runnable example in ART-EXAMPLES appears as exactly one row's
-#      canonical_example (completeness — a new example cannot escape the catalog).
-#
-# This makes duplication mechanically visible and BLOCKS new duplication: a
-# second example added for an existing concept fails rule 1/2 until it is either
-# given a distinct concept or folded into the canonical one. Consolidation of the
-# historically-overlapping families (typed-append, durability) is tracked here;
-# each surviving example carries a concept that names its DISTINCT teaching angle.
+#      canonical_example (completeness — a new example cannot escape the catalog),
+#   5. `example_family: durability` caps at two distinct canonical examples.
 #
 # Per row:
 #   concept_id:        stable concept slug
 #   canonical_example: repo-relative path to the one runnable example
 #   summary:           the concept's distinct teaching point (the example's "Teaches:")
+#   example_family:    optional family label; `durability` rows share a max-2 cap
 
 concepts:
   # --- Typed append + the store path. ---
   - concept_id: typed-append-basic
     canonical_example: crates/examples/examples/quickstart.rs
-    summary: basic typed append + retrieval (the marketing/release-smoke entry point)
+    summary: basic typed append + retrieval (thin release-smoke entry; see store-path-full)
   - concept_id: store-path-full
     canonical_example: crates/examples/examples/eight_jobs.rs
-    summary: the canonical full 0.8 BatPAK store path end-to-end
-  - concept_id: typed-payload-kind-allocation
-    canonical_example: crates/examples/examples/cross_crate_payloads.rs
-    summary: validating typed payload kind allocation across an application crate boundary
+    summary: canonical full 0.8 store path including lifecycle open observation
   - concept_id: batch-append-atomic
     canonical_example: crates/examples/examples/batch_append.rs
     summary: atomic batch commit with causation refs
@@ -39,25 +32,18 @@ concepts:
     canonical_example: crates/examples/examples/event_sourced_counter.rs
     summary: "#[derive(EventSourced)] with JsonValueInput replay lane"
 
-  # --- Durability / gates / receipts / visibility (the historically-overlapping family). ---
+  # --- Durability / gates / receipts (max two `example_family: durability` runnables). ---
   - concept_id: durability-gate-append
     canonical_example: crates/examples/examples/append_with_gate.rs
-    summary: append-time durability gates
+    example_family: durability
+    summary: append-time gates, explicit durable waits, and visibility-fence publish
   - concept_id: caller-defined-gate-pipeline
     canonical_example: crates/examples/examples/caller_defined_gates.rs
     summary: gate-based propose -> evaluate -> commit pipeline with caller-defined gates
-  - concept_id: frontier-wait-durable
-    canonical_example: crates/examples/examples/wait_for_durable.rs
-    summary: waiting for a specific event to cross the durable frontier
-  - concept_id: visibility-fence
-    canonical_example: crates/examples/examples/visibility_fence.rs
-    summary: durable visibility fence with delayed publish
   - concept_id: signed-receipts
     canonical_example: crates/examples/examples/signed_receipts.rs
-    summary: opt-in receipt signing + append receipt verification
-  - concept_id: lifecycle-observability
-    canonical_example: crates/examples/examples/lifecycle_observer.rs
-    summary: observing the durable SYSTEM_OPEN_COMPLETED lifecycle event
+    example_family: durability
+    summary: opt-in receipt signing + append/denial receipt verification
   - concept_id: idempotent-append
     canonical_example: crates/examples/examples/idempotent_pass.rs
     summary: a re-runnable, durable idempotent append pass
