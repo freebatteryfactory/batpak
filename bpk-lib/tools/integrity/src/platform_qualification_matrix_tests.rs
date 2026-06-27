@@ -1,4 +1,4 @@
-use super::{check, derive_for_test, run, MATRIX_REL};
+use super::{check, derive_for_test, MATRIX_REL};
 use crate::repo_surface::repo_root;
 
 #[test]
