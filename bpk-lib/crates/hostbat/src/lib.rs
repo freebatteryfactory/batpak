@@ -43,7 +43,6 @@ mod event_payload_binding_tests;
 mod append_validation_tests;
 
 pub mod builder;
-pub mod client_manifest;
 pub mod composition;
 pub mod descriptor;
 pub mod error;
@@ -54,17 +53,11 @@ pub mod interface;
 pub mod manifest;
 pub mod module;
 pub mod schema;
-pub mod schema_shape;
 pub mod subscription;
 pub mod supervisor;
 pub mod validating_effect_backend;
 
 pub use builder::HostBuilder;
-pub use client_manifest::{
-    ClientManifest, ClientManifestEncoding, ClientManifestEventPayloadBinding,
-    ClientManifestGoldenVector, ClientManifestOperation, ClientManifestSchema,
-    ClientManifestSubscription,
-};
 pub use composition::{CompositionSchema, HostCompositionManifest};
 pub use descriptor::{GuardDescriptor, HookDescriptor, HookPhase, JobDescriptor};
 pub use error::{HookFailure, HostError, HostRuntimeError, SchemaCollision};
@@ -76,10 +69,6 @@ pub use module::{HostModule, HostModuleBuilder, JobBody, LifecycleHook};
 pub use schema::{
     CanonicalEncoding, DiagnosticRustType, GoldenVector, SchemaDescriptor, SchemaId,
     SchemaRegistry, SchemaRole, SchemaVersion,
-};
-pub use schema_shape::{
-    ListShape, MapShape, RecordField, RecordShape, RefShape, ScalarKind, ScalarShape, SchemaShape,
-    StringEnumShape, TupleShape,
 };
 pub use subscription::{
     BackpressurePolicy, EventCategory, OperationStatusSelector, ProjectionId, ReceiptFilter,

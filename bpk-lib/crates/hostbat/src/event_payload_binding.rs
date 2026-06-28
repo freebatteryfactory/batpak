@@ -1,8 +1,7 @@
 //! Event-kind to event-payload schema bindings for host-mediated appends.
 //!
 //! Bindings are declared per module, aggregated globally by event kind at host
-//! composition, and folded into `H_module`, `H_interface`, and
-//! [`crate::client_manifest::ClientManifest`].
+//! composition, and folded into `H_module` and `H_interface`.
 
 use batpak::event::EventKind;
 use serde::Serialize;

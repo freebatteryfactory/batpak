@@ -13,7 +13,7 @@ use syncbat::{
 
 use crate::module::HostModule;
 use crate::schema::{GoldenVector, SchemaDescriptor, SchemaId, SchemaRole, SchemaVersion};
-use crate::{HostBuilder, SchemaShape};
+use crate::HostBuilder;
 
 const KIND_BOUND: EventKind = EventKind::custom(0xF, 1);
 const KIND_UNBOUND: EventKind = EventKind::custom(0xF, 2);
@@ -89,8 +89,6 @@ fn schema_with_role(id: &str, role: SchemaRole, bytes: &[u8]) -> SchemaDescripto
         vec![GoldenVector::new("c", bytes.to_vec())],
     )
     .expect("descriptor")
-    .with_shape(SchemaShape::string())
-    .expect("shape")
 }
 
 fn append_host_module() -> HostModule {
@@ -216,7 +214,7 @@ fn unbound_event_kind_fails_before_backend() -> Result<(), Box<dyn std::error::E
 }
 
 #[test]
-fn invalid_payload_fails_before_backend() -> Result<(), Box<dyn std::error::Error>> {
+fn non_canonical_payload_fails_before_backend() -> Result<(), Box<dyn std::error::Error>> {
     let appended = Arc::new(Mutex::new(Vec::new()));
     let mut host = HostBuilder::new()
         .mount(append_host_module())
@@ -229,10 +227,13 @@ fn invalid_payload_fails_before_backend() -> Result<(), Box<dyn std::error::Erro
         })
         .build()
         .expect("build");
-    let err = match host.invoke("audit.append", b"not-canonical-string-bytes".to_vec()) {
+    // 0xc1 is the byte MessagePack reserves as never-valid, so it cannot decode
+    // under the canonical encoding — the fail-closed canonical-decode check must
+    // reject it before the backend ever appends.
+    let err = match host.invoke("audit.append", vec![0xc1]) {
         Ok(_) => {
             return Err(std::io::Error::other(
-                "PROPERTY: structurally invalid payload must fail before store append",
+                "PROPERTY: non-canonical msgpack payload must fail before store append",
             )
             .into())
         }

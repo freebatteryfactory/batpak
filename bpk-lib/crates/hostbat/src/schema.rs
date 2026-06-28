@@ -24,12 +24,13 @@ use serde::Serialize;
 
 use crate::error::HostError;
 use crate::identity::{canonical_digest, Digest};
-use crate::schema_shape::decode_structural_value;
-
-pub use crate::schema_shape::SchemaShape;
 
 /// Domain separator for a schema's canonical-encoding content hash.
-const SCHEMA_ENCODING_DOMAIN: &str = "hostbat.schema.v2";
+///
+/// `v3` drops the structural-shape field from the canonical view (the
+/// structural-shape apparatus was removed with the deferred cross-language
+/// client); identity is now `(id, version, role)` plus the golden vectors.
+const SCHEMA_ENCODING_DOMAIN: &str = "hostbat.schema.v3";
 
 /// Maximum bytes accepted for a [`SchemaId`].
 const MAX_SCHEMA_ID_BYTES: usize = 256;
@@ -242,16 +243,15 @@ impl std::fmt::Display for SchemaRole {
 /// The identity-bearing, language-neutral declaration of one wire schema.
 ///
 /// Identity is `(id, version, role)` plus the [`CanonicalEncoding`] over the
-/// declared shape and golden vectors. The [`DiagnosticRustType`] rides along but
-/// is excluded from the encoding, so it can be renamed or dropped without
-/// changing any byte of identity.
+/// golden vectors. The [`DiagnosticRustType`] rides along but is excluded from
+/// the encoding, so it can be renamed or dropped without changing any byte of
+/// identity.
 #[derive(Clone, Debug)]
 pub struct SchemaDescriptor {
     id: SchemaId,
     version: SchemaVersion,
     role: SchemaRole,
     golden: Vec<GoldenVector>,
-    shape: Option<SchemaShape>,
     diagnostic_rust_type: Option<DiagnosticRustType>,
     encoding: CanonicalEncoding,
 }
@@ -270,7 +270,6 @@ struct SchemaEncodingView<'a> {
     id: &'a SchemaId,
     version: SchemaVersion,
     role: &'a str,
-    shape: Option<&'a SchemaShape>,
     golden: &'a [GoldenVector],
 }
 
@@ -278,7 +277,6 @@ fn compute_encoding(
     id: &SchemaId,
     version: SchemaVersion,
     role: SchemaRole,
-    shape: Option<&SchemaShape>,
     golden: &[GoldenVector],
 ) -> Result<CanonicalEncoding, HostError> {
     let view = SchemaEncodingView {
@@ -286,7 +284,6 @@ fn compute_encoding(
         id,
         version,
         role: role.as_str(),
-        shape,
         golden,
     };
     canonical_digest(&view).map(CanonicalEncoding)
@@ -318,74 +315,15 @@ impl SchemaDescriptor {
                 }
             }
         }
-        let encoding = compute_encoding(&id, version, role, None, &golden)?;
+        let encoding = compute_encoding(&id, version, role, &golden)?;
         Ok(Self {
             id,
             version,
             role,
             golden,
-            shape: None,
             diagnostic_rust_type: None,
             encoding,
         })
-    }
-
-    /// Attach the language-neutral structural shape. Recomputes the v2 encoding.
-    ///
-    /// Golden vectors are structurally validated against the shape at attach time.
-    ///
-    /// # Errors
-    /// [`HostError::SchemaInvalid`] if golden vectors fail structural validation;
-    /// [`HostError::CanonicalEncoding`] if encoding fails.
-    pub fn with_shape(self, shape: SchemaShape) -> Result<Self, HostError> {
-        self.with_shape_peers(shape, &[])
-    }
-
-    /// Attach structural shape, resolving [`SchemaShape::Ref`] against peer descriptors.
-    ///
-    /// Peer descriptors must include every schema identity referenced by the shape
-    /// (and this descriptor itself) so golden vectors can be validated at attach time.
-    ///
-    /// # Errors
-    /// Same as [`Self::with_shape`].
-    pub fn with_shape_peers(
-        mut self,
-        shape: SchemaShape,
-        peers: &[SchemaDescriptor],
-    ) -> Result<Self, HostError> {
-        let mut descriptors = Vec::with_capacity(peers.len() + 1);
-        descriptors.push(self.clone());
-        descriptors.extend(peers.iter().cloned());
-        let registry = SchemaRegistry::from_descriptors(descriptors);
-        for golden in &self.golden {
-            let value = decode_structural_value(&golden.bytes).map_err(|detail| {
-                HostError::SchemaInvalid {
-                    schema: self.id.as_str().to_owned(),
-                    detail: format!(
-                        "golden vector {:?} is not structural bytes: {detail}",
-                        golden.case
-                    ),
-                }
-            })?;
-            shape
-                .validate(&registry, self.role, &value)
-                .map_err(|detail| HostError::SchemaInvalid {
-                    schema: self.id.as_str().to_owned(),
-                    detail: format!(
-                        "golden vector {:?} does not match declared shape: {detail}",
-                        golden.case
-                    ),
-                })?;
-        }
-        self.shape = Some(shape);
-        self.encoding = compute_encoding(
-            &self.id,
-            self.version,
-            self.role,
-            self.shape.as_ref(),
-            &self.golden,
-        )?;
-        Ok(self)
     }
 
     /// Attach an informational-only Rust type path. Does **not** change identity.
@@ -424,18 +362,6 @@ impl SchemaDescriptor {
         self.golden.iter()
     }
 
-    /// The structural wire shape when this schema participates in client contracts.
-    #[must_use]
-    pub fn shape(&self) -> Option<&SchemaShape> {
-        self.shape.as_ref()
-    }
-
-    /// Whether this schema carries a structural shape.
-    #[must_use]
-    pub fn has_shape(&self) -> bool {
-        self.shape.is_some()
-    }
-
     /// The informational-only Rust type path, if recorded.
     #[must_use]
     pub fn diagnostic_rust_type(&self) -> Option<&DiagnosticRustType> {
@@ -448,20 +374,14 @@ impl SchemaDescriptor {
         (self.id.as_str(), self.version.0, self.role)
     }
 
-    /// Recompute the canonical encoding from the stored shape and compare it to
-    /// the sealed encoding. `false` means the declared shape no longer hashes to
-    /// the committed encoding (a silent wire-shape change at a fixed version).
+    /// Recompute the canonical encoding from the stored golden vectors and compare
+    /// it to the sealed encoding. `false` means the golden vectors no longer hash
+    /// to the committed encoding (a silent wire-shape change at a fixed version).
     ///
     /// # Errors
     /// [`HostError::CanonicalEncoding`] if re-encoding fails.
     pub fn verify_encoding(&self) -> Result<bool, HostError> {
-        let recomputed = compute_encoding(
-            &self.id,
-            self.version,
-            self.role,
-            self.shape.as_ref(),
-            &self.golden,
-        )?;
+        let recomputed = compute_encoding(&self.id, self.version, self.role, &self.golden)?;
         Ok(recomputed == self.encoding)
     }
 
@@ -506,12 +426,13 @@ impl SchemaRegistry {
         Self { by_ref }
     }
 
-    /// Validate bytes against the v2 runtime schema contract.
+    /// Validate bytes against the v3 runtime schema contract.
     ///
     /// This checks descriptor presence, unique schema ref resolution for the
     /// requested role, descriptor encoding integrity, committed golden-vector
-    /// canonical decode, payload canonical decode, and structural validation when
-    /// the descriptor carries a [`SchemaShape`].
+    /// canonical decode, and payload canonical decode. Typed decoding into the
+    /// owning Rust type is the handler's own responsibility and is the load-bearing
+    /// structural check; this layer fails closed on malformed canonical bytes.
     ///
     /// # Errors
     /// [`HostError::SchemaValidation`] if the schema cannot be resolved or the
@@ -528,7 +449,7 @@ impl SchemaRegistry {
             return Err(schema_validation(
                 schema_id,
                 role,
-                "descriptor encoding no longer matches its declared shape",
+                "descriptor encoding no longer matches its golden vectors",
             ));
         }
         for golden in descriptor.golden() {
@@ -542,28 +463,6 @@ impl SchemaRegistry {
                     ),
                 )
             })?;
-            if let Some(shape) = descriptor.shape() {
-                let value = decode_structural_value(&golden.bytes).map_err(|detail| {
-                    schema_validation(
-                        schema_id,
-                        role,
-                        format!(
-                            "golden vector {:?} is not structural bytes: {detail}",
-                            golden.case
-                        ),
-                    )
-                })?;
-                shape.validate(self, role, &value).map_err(|detail| {
-                    schema_validation(
-                        schema_id,
-                        role,
-                        format!(
-                            "golden vector {:?} does not match declared shape: {detail}",
-                            golden.case
-                        ),
-                    )
-                })?;
-            }
         }
         decode_canonical(bytes).map_err(|detail| {
             schema_validation(
@@ -572,31 +471,7 @@ impl SchemaRegistry {
                 format!("payload is not canonical bytes: {detail}"),
             )
         })?;
-        if let Some(shape) = descriptor.shape() {
-            let value = decode_structural_value(bytes).map_err(|detail| {
-                schema_validation(
-                    schema_id,
-                    role,
-                    format!("payload is not structural bytes: {detail}"),
-                )
-            })?;
-            shape.validate(self, role, &value).map_err(|detail| {
-                schema_validation(
-                    schema_id,
-                    role,
-                    format!("payload does not match declared shape: {detail}"),
-                )
-            })?;
-        }
         Ok(())
-    }
-
-    pub(crate) fn resolve_descriptor(
-        &self,
-        schema_id: &str,
-        role: SchemaRole,
-    ) -> Result<&SchemaDescriptor, HostError> {
-        self.resolve(schema_id, role)
     }
 
     fn resolve(&self, schema_id: &str, role: SchemaRole) -> Result<&SchemaDescriptor, HostError> {

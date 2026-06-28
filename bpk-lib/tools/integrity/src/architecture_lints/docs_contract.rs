@@ -229,14 +229,12 @@ fn check_factory_docs_use_just_commands(repo_root: &Path) -> Result<()> {
     ] {
         let content =
             fs::read_to_string(doc_root.join(doc)).with_context(|| format!("read {doc}"))?;
-        for banned in ["cargo xtask", "pnpm test", "npm run"] {
-            ensure(
-                !content.contains(banned),
-                format!(
-                    "{doc} must route repeatable command examples through `just`, not `{banned}`"
-                ),
-            )?;
-        }
+        ensure(
+            !content.contains("cargo xtask"),
+            format!(
+                "{doc} must route repeatable command examples through `just`, not `cargo xtask`"
+            ),
+        )?;
     }
     Ok(())
 }

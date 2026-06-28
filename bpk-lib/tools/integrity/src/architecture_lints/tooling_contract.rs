@@ -200,34 +200,8 @@ fn check_no_unprefixed_factory_docs(project_root: &Path) -> Result<()> {
 
 fn check_supply_chain_boundary(repo_root: &Path) -> Result<()> {
     let project_root = project_root(repo_root);
-    check_no_node_package_manager_surface(project_root)?;
     check_workflow_authority_surface(project_root)?;
     Ok(())
-}
-
-fn check_no_node_package_manager_surface(project_root: &Path) -> Result<()> {
-    let mut findings = Vec::new();
-    for entry in walkdir::WalkDir::new(project_root)
-        .into_iter()
-        .filter_entry(|entry| !is_generated_or_local_state_dir(entry.path()))
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().is_file())
-    {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if is_node_package_manager_surface(name) {
-            findings.push(relative(project_root, path));
-        }
-    }
-    ensure(
-        findings.is_empty(),
-        format!(
-            "supply-chain boundary: Node package-manager surface is retired from this repo; remove or explicitly redesign before adding: {}",
-            findings.join(", ")
-        ),
-    )
 }
 
 fn check_workflow_authority_surface(project_root: &Path) -> Result<()> {
@@ -307,42 +281,6 @@ fn external_action_pin_violation(action: &str) -> Option<String> {
     Some(format!(
         "external action `{name}` is pinned to `{reference}`, not a full 40-character commit SHA"
     ))
-}
-
-fn is_node_package_manager_surface(name: &str) -> bool {
-    matches!(
-        name,
-        "package.json"
-            | "package-lock.json"
-            | "npm-shrinkwrap.json"
-            | "pnpm-lock.yaml"
-            | "yarn.lock"
-            | "bun.lock"
-            | "bun.lockb"
-            | ".npmrc"
-            | ".yarnrc"
-            | ".yarnrc.yml"
-    )
-}
-
-fn is_generated_or_local_state_dir(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            matches!(
-                name,
-                ".git"
-                    | ".agents"
-                    | ".claude"
-                    | ".codex"
-                    | ".cursor"
-                    | "target"
-                    | "node_modules"
-                    | ".next"
-                    | "dist"
-                    | "build"
-            )
-        })
 }
 
 fn check_testing_doc_renames_stay_current(repo_root: &Path) -> Result<()> {
@@ -1107,8 +1045,7 @@ fn files_with_extension(root: &Path, extension: &str) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        excluded_crate_target_dirs, external_action_pin_violation, is_node_package_manager_surface,
-        workflow_authority_findings,
+        excluded_crate_target_dirs, external_action_pin_violation, workflow_authority_findings,
     };
 
     #[test]
@@ -1186,23 +1123,5 @@ jobs:
             external_action_pin_violation("./.github/actions/setup-devcontainer").is_none(),
             "local composite actions are repo-owned and do not need external SHA pins"
         );
-    }
-
-    #[test]
-    fn supply_chain_boundary_recognizes_node_package_manager_surfaces() {
-        for name in [
-            "package.json",
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "yarn.lock",
-            "bun.lock",
-            ".npmrc",
-        ] {
-            assert!(
-                is_node_package_manager_surface(name),
-                "{name} must be treated as a Node package-manager surface"
-            );
-        }
-        assert!(!is_node_package_manager_surface("Cargo.toml"));
     }
 }

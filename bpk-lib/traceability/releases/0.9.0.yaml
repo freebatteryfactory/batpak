@@ -173,7 +173,7 @@ rows:
       - just cargo test -p hostbat subscription
 
   - id: S12-P1-H-INTERFACE-SUBSCRIPTIONS
-    title: Subscriptions folded into H_interface / client manifest
+    title: Subscriptions folded into H_interface
     status: PROVEN
     terminal_required: true
     surface: hostbat
@@ -181,30 +181,8 @@ rows:
       - crates/hostbat/src/subscription_tests.rs::adding_subscription_flips_h_interface
       - crates/hostbat/src/subscription_tests.rs::changing_subscription_source_flips_h_interface
       - crates/hostbat/src/subscription_tests.rs::hook_change_does_not_flip_h_interface
-      - crates/hostbat/src/subscription_tests.rs::client_manifest_includes_subscriptions_and_matches_h_interface
-      - crates/hostbat/src/subscription_tests.rs::runtime_does_not_claim_netbat2_serving
     proof_commands:
       - just cargo test -p hostbat subscription
-
-  - id: S12-P3C-STRUCTURAL-SCHEMA
-    title: Language-neutral structural schema validation descriptors
-    status: PROVEN
-    terminal_required: true
-    surface: hostbat
-    witness_tests:
-      - crates/hostbat/src/schema_tests.rs::structural_validation_accepts_matching_canonical_payload
-      - crates/hostbat/src/schema_tests.rs::structural_validation_rejects_wrong_scalar_type
-      - crates/hostbat/src/schema_tests.rs::structural_validation_rejects_missing_required_record_field
-      - crates/hostbat/src/schema_tests.rs::structural_validation_rejects_unknown_record_field
-      - crates/hostbat/src/schema_tests.rs::structural_validation_rejects_string_length_bounds
-      - crates/hostbat/src/schema_tests.rs::nested_schema_ref_resolves_through_registry
-      - crates/hostbat/src/composition_interface_tests.rs::interface_fingerprint_changes_when_structural_shape_changes
-      - crates/hostbat/src/composition_interface_tests.rs::interface_fingerprint_is_stable_for_diagnostic_rust_type_on_shaped_schema
-      - crates/hostbat/src/composition_interface_tests.rs::red_client_visible_schema_without_shape_fails_host_build
-    proof_commands:
-      - just cargo test -p hostbat schema
-      - just cargo test -p hostbat composition
-      - just cargo clippy -p hostbat --all-targets -- -D warnings
 
   - id: S12-P3D-EVENT-PAYLOAD-BINDINGS
     title: Hostbat event payload schema bindings for mediated appends
@@ -219,7 +197,6 @@ rows:
       - crates/hostbat/src/event_payload_binding_tests.rs::composition_rejects_conflicting_bindings_for_same_kind
       - crates/hostbat/src/event_payload_binding_tests.rs::host_build_rejects_binding_to_missing_schema
       - crates/hostbat/src/event_payload_binding_tests.rs::interface_fingerprint_changes_when_event_payload_binding_is_added
-      - crates/hostbat/src/event_payload_binding_tests.rs::client_manifest_exports_event_payload_bindings
     proof_commands:
       - just cargo test -p hostbat event_payload_binding
       - just cargo clippy -p hostbat --all-targets -- -D warnings
@@ -232,7 +209,7 @@ rows:
     witness_tests:
       - crates/hostbat/src/append_validation_tests.rs::bound_payload_append_reaches_backend
       - crates/hostbat/src/append_validation_tests.rs::unbound_event_kind_fails_before_backend
-      - crates/hostbat/src/append_validation_tests.rs::invalid_payload_fails_before_backend
+      - crates/hostbat/src/append_validation_tests.rs::non_canonical_payload_fails_before_backend
       - crates/hostbat/src/append_validation_tests.rs::raw_store_append_remains_unvalidated_by_hostbat
     proof_commands:
       - just cargo test -p hostbat append_validation

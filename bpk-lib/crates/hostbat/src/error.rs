@@ -143,18 +143,6 @@ pub enum HostError {
         /// Stable validation detail.
         detail: String,
     },
-    /// A client-visible schema reference resolves but the descriptor carries no
-    /// [`crate::schema_shape::SchemaShape`].
-    SchemaShapeMissing {
-        /// Module containing the reference or owning the exported payload schema.
-        module: String,
-        /// Operation containing the reference, when operation-owned.
-        operation: Option<String>,
-        /// Referenced schema id.
-        reference: String,
-        /// Required role for the reference.
-        role: String,
-    },
     /// `build` was called with no mounted modules — an empty host has no
     /// operations to serve and no identity to fingerprint.
     EmptyHost,
@@ -292,7 +280,6 @@ impl std::fmt::Display for HostError {
             | Self::SchemaReferenceMissing { .. }
             | Self::SchemaReferenceAmbiguous { .. }
             | Self::SchemaValidation { .. }
-            | Self::SchemaShapeMissing { .. }
             | Self::SubscriptionInvalidId { .. }
             | Self::SubscriptionInvalidProjectionId { .. }
             | Self::SubscriptionDuplicateWithinModule { .. }
@@ -353,8 +340,7 @@ fn fmt_host_wiring_error(error: &HostError, f: &mut std::fmt::Formatter<'_>) -> 
         | HostError::SchemaCollision(_)
         | HostError::SchemaReferenceMissing { .. }
         | HostError::SchemaReferenceAmbiguous { .. }
-        | HostError::SchemaValidation { .. }
-        | HostError::SchemaShapeMissing { .. } => fmt_schema_error(error, f),
+        | HostError::SchemaValidation { .. } => fmt_schema_error(error, f),
         HostError::CanonicalEncoding { detail } => write!(f, "canonical encoding failed: {detail}"),
     }
 }
@@ -393,24 +379,6 @@ fn fmt_schema_error(error: &HostError, f: &mut std::fmt::Formatter<'_>) -> std::
             f,
             "schema validation failed for {schema:?} ({role}): {detail}"
         ),
-        HostError::SchemaShapeMissing {
-            module,
-            operation,
-            reference,
-            role,
-        } => {
-            if let Some(operation) = operation {
-                write!(
-                    f,
-                    "module {module:?} operation {operation:?} references client-visible schema {reference:?} ({role}) without a structural shape"
-                )
-            } else {
-                write!(
-                    f,
-                    "module {module:?} references client-visible schema {reference:?} ({role}) without a structural shape"
-                )
-            }
-        }
         HostError::SubscriptionInvalidId { .. }
         | HostError::SubscriptionInvalidProjectionId { .. }
         | HostError::SubscriptionDuplicateWithinModule { .. }
@@ -471,7 +439,6 @@ fn fmt_subscription_error(error: &HostError, f: &mut std::fmt::Formatter<'_>) ->
         | HostError::SchemaReferenceMissing { .. }
         | HostError::SchemaReferenceAmbiguous { .. }
         | HostError::SchemaValidation { .. }
-        | HostError::SchemaShapeMissing { .. }
         | HostError::EventPayloadBindingInvalid { .. }
         | HostError::EventPayloadBindingDuplicateWithinModule { .. }
         | HostError::DuplicateEventPayloadBinding { .. }
@@ -531,7 +498,6 @@ fn fmt_event_payload_binding_error(
         | HostError::SchemaReferenceMissing { .. }
         | HostError::SchemaReferenceAmbiguous { .. }
         | HostError::SchemaValidation { .. }
-        | HostError::SchemaShapeMissing { .. }
         | HostError::SubscriptionInvalidId { .. }
         | HostError::SubscriptionInvalidProjectionId { .. }
         | HostError::SubscriptionDuplicateWithinModule { .. }
@@ -625,7 +591,6 @@ impl std::error::Error for HostError {
             | Self::SchemaReferenceMissing { .. }
             | Self::SchemaReferenceAmbiguous { .. }
             | Self::SchemaValidation { .. }
-            | Self::SchemaShapeMissing { .. }
             | Self::SubscriptionInvalidId { .. }
             | Self::SubscriptionInvalidProjectionId { .. }
             | Self::SubscriptionDuplicateWithinModule { .. }

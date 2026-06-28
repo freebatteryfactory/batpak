@@ -6,10 +6,9 @@ use syncbat::{Ctx, HandlerResult, OperationDescriptor};
 use crate::error::HostError;
 use crate::module::{HostModule, HostModuleBuilder};
 use crate::schema::{GoldenVector, SchemaDescriptor, SchemaId, SchemaRole, SchemaVersion};
-use crate::{EventPayloadBinding, HostBuilder, SchemaShape};
+use crate::{EventPayloadBinding, HostBuilder};
 
 const KIND_A: EventKind = EventKind::custom(0xF, 1);
-const KIND_B: EventKind = EventKind::custom(0xF, 2);
 
 fn canonical_bytes(value: &str) -> Vec<u8> {
     batpak::canonical::to_bytes(&value).expect("canonical fixture encodes")
@@ -37,8 +36,6 @@ fn schema_with_role(id: &str, role: SchemaRole, bytes: &[u8]) -> SchemaDescripto
         vec![GoldenVector::new("c", bytes.to_vec())],
     )
     .expect("descriptor")
-    .with_shape(SchemaShape::string())
-    .expect("shape")
 }
 
 fn with_default_operation_schemas(builder: HostModuleBuilder) -> HostModuleBuilder {
@@ -254,36 +251,4 @@ fn interface_fingerprint_changes_when_event_payload_binding_is_added() {
         base, bound,
         "event payload bindings fold into H_interface v4",
     );
-}
-
-#[test]
-fn client_manifest_exports_event_payload_bindings() {
-    let host = HostBuilder::new()
-        .mount(
-            module_builder_with_op("mod.a", "mod.a.echo")
-                .schema(event_payload_schema(
-                    "event.payload.v1",
-                    &canonical_bytes("event-a"),
-                ))
-                .expect("event schema")
-                .bind_event_payload(KIND_A, "event.payload.v1")
-                .expect("binding")
-                .bind_event_payload(KIND_B, "event.payload.v1")
-                .expect("second binding")
-                .build()
-                .expect("module"),
-        )
-        .expect("mount")
-        .build()
-        .expect("build");
-    let manifest = crate::ClientManifest::from_host(&host);
-    assert_eq!(manifest.manifest_version, 4);
-    assert_eq!(manifest.event_payload_bindings.len(), 2);
-    assert_eq!(manifest.event_payload_bindings[0].module_id, "mod.a");
-    assert_eq!(manifest.event_payload_bindings[0].kind, KIND_A.as_raw_u16());
-    assert_eq!(
-        manifest.event_payload_bindings[0].payload_schema_ref,
-        "event.payload.v1"
-    );
-    assert_eq!(manifest.event_payload_bindings[1].kind, KIND_B.as_raw_u16());
 }
