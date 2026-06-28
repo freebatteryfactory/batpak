@@ -44,6 +44,7 @@ mod literal_regex_contract;
 mod meta_gate;
 mod model_bindings;
 mod mutation_debt;
+mod mutation_exclusion_registry;
 mod no_runtime_gate;
 mod overclaim;
 mod perf_gates_contract;

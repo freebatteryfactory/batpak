@@ -159,35 +159,56 @@ pub(super) const LANE_FRONTIER_MUTANT_FILES: &[&str] = &[
     "crates/core/src/store/write/writer/publish.rs",
     "crates/core/src/store/write/writer/watermark.rs",
 ];
-pub(super) const INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT: &str = r"crates/core/src/store/config\.rs:.*replace IndexTopology::aos -> Self with Default::default\(\)";
-// Equivalent-mutant registry for the import re-application seam. Each entry is a
-// mutant proven to have no observable effect on import behavior; excluding them
-// keeps the mutation-score denominator honest instead of letting provably
-// equivalent mutants drag the gate. Every entry carries its equivalence proof.
+// Repo-wide exclusion (category: TIMEOUT/ABORT, not equivalence — the historical
+// `EQUIVALENT_MUTANT` name is retained only so meta_gate keeps watching additions
+// to this allowlist). `IndexTopology::aos -> Default::default()` is a recursion
+// artifact, NOT an observational equivalent: `Default for IndexTopology` returns
+// `Self::aos()` (config/types.rs:132-134), so rewriting `aos()`'s body to
+// `Default::default()` makes `aos -> default -> aos` recurse until stack abort.
+// The abort is caught by cargo-mutants; excluding it just skips the degenerate
+// recursion run. PATH FIX: `aos()` is defined in `config/types.rs:57`, NOT
+// `config.rs`, so the previous `config\.rs:` anchor matched zero mutants (a
+// vacuous exclusion). Anchored to the real definition file below.
+pub(super) const INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT: &str = r"crates/core/src/store/config/types\.rs:.*replace IndexTopology::aos -> Self with Default::default\(\)";
+// Exclusion registry for the import re-application seam. Entries fall into two
+// categories, each with its own proof. (Category names below are documentation;
+// the typed, ast-anchored category lives in the structured registry consumed by
+// the `mutation-exclusion-registry` integrity gate.) The `EQUIVALENT_MUTANTS`
+// const name is retained so meta_gate keeps watching additions to this array.
 //
-// (a) `import.rs:282` post-append dedup classification
-//     (`if receipt.global_sequence < pre_import_frontier`): a fresh (non-deduplicated)
-//     append always lands at a sequence STRICTLY GREATER than the pre-import
-//     frontier captured before the loop, and a deduplicated source event never
-//     reaches `append_batch` (it is pre-filtered at :246). So the comparison is
-//     only ever evaluated for sequences strictly above the frontier — there is
-//     no sequence equal to the frontier in this branch. `<`, `==`, and `<=` all
-//     classify these sequences identically (none take the dedup arm), so the
-//     `< -> ==` and `< -> <=` mutants are observationally equivalent.
-// (b) `import.rs:309` dedup probe
-//     (`idemp.get(...).is_some() || get_by_id(...).is_some()`): dedup is
-//     double-defended. The pre-filter here is an efficiency short-circuit only;
-//     correctness is backstopped by `append_batch`'s durable idempotency (a
-//     re-applied key collapses to the existing event) AND the post-append
-//     sequence<frontier reclassification at :282. Whether the probe is `||` or
-//     `&&`, an already-present event is still deduplicated by the durable path
-//     and the observable imported/deduplicated counts are unchanged, so the
-//     `|| -> &&` mutant is equivalent.
+// CATEGORY: EQUIVALENT (first-order). No single mutation can change an
+// observable (committed state or imported/deduplicated counts).
+//
+// (a) `< -> ==` / `< -> <=` in `import_events` post-append accounting
+//     (`if receipt.global_sequence < pre_import_frontier`): every item that
+//     reaches `append_batch` is a genuinely new append, because already-present
+//     keys are pre-filtered by `import_key_already_present` BEFORE the batch is
+//     built. A fresh append always lands at `pre_import_frontier + 1` or higher,
+//     so for every receipt in this loop `global_sequence > pre_import_frontier`
+//     — never `==` and never `<`. `<`, `==`, `<=` are therefore all false for
+//     every receipt and classify identically (all `imported`). The `deduplicated`
+//     arm is unreachable under first-order mutation, so these two are equivalent.
+//     EMPIRICAL WITNESS: applying `< -> ==` and running the full import suite
+//     (`tests/import_events.rs` + `tests/import_same_store_ceiling.rs`, 12 tests)
+//     leaves every test green — no test distinguishes the operators.
+// (b) `|| -> &&` in `import_key_already_present`: the post-append `< frontier`
+//     reclassification in (a) is a correctness BACKSTOP, not dead code. Under
+//     `|| -> &&` the pre-filter stops catching already-present keys, those dups
+//     reach `append_batch`, collapse via durable idempotency to their existing
+//     (`< frontier`) sequence, and the reclassification arm then counts them as
+//     `deduplicated` — so the observable counts are unchanged. The mutant is
+//     equivalent BECAUSE the backstop fires; note this is the second-order path
+//     that (a)'s arm guards, which is why (a) is unreachable under first-order
+//     mutation but the branch is not dead.
+//
+// CATEGORY: TIMEOUT/ABORT. Mutant changes control flow into non-termination;
+// caught by cargo-mutants' timeout, not by an assertion.
+//
 // (c) `ImportSelector::all -> Self with Default::default()`: `Default for
-//     ImportSelector` IS `Self::all()` (see import.rs Default impl), so the
-//     mutant rewrites `all()` to call its own Default, which calls `all()` —
-//     unbounded recursion. This is a timeout/abort, not a behavior change, so
-//     it cannot be killed by an assertion and is registered as equivalent.
+//     ImportSelector` IS `Self::all()` (import.rs Default impl), so the mutant
+//     rewrites `all()` to call its own `Default`, which calls `all()` — unbounded
+//     recursion to stack abort. Not an observational equivalent; a degenerate
+//     recursion artifact registered to skip the abort run.
 pub(super) const IMPORT_EQUIVALENT_MUTANTS: &[&str] = &[
     r"crates/core/src/store/import\.rs:.*replace < with == in import_events",
     r"crates/core/src/store/import\.rs:.*replace < with <= in import_events",
@@ -226,17 +247,19 @@ const FORK_ISOLATION_MUTANT_EXCLUDE_RES: &[&str] = &[
     r"file_classification\.rs:.*replace match guard segment_id.as_u64\(\) == active_segment_id with true in StoreFileKind::fork_strategy",
 ];
 const SEGMENT_SCAN_MUTANT_EXCLUDE_RES: &[&str] = &[];
-const WRITER_COMMIT_MUTANT_EXCLUDE_RES: &[&str] = &[
-    // CI receipt: PreparedBatch::len -> 0 exceeded the auto test timeout while
-    // the staging invariants are already covered by unit tests in staging.rs.
-    r"crates/core/src/store/write/staging\.rs:.*replace PreparedBatch::len -> usize with 0",
-    // CI receipt: push_shared_parts `total_bytes += len` -> `-=` drives the
-    // byte accumulator into a pathological state that hangs an integration test
-    // (401s auto timeout) instead of failing fast. The batch byte accounting is
-    // exercised by staging.rs unit tests; exclude the timeout artifact rather
-    // than block the lane on a wall-clock hang.
-    r"crates/core/src/store/write/staging\.rs:.*replace \+= with -= in PreparedBatchBuilder::push_shared_parts",
-];
+// No equivalent or unkillable mutants registered for the writer-commit seam.
+// The two staging.rs mutants previously excluded here (`PreparedBatch::len -> 0`
+// and `+= -> -=` in `push_shared_parts`) were NOT equivalent: both are CAUGHT in
+// under a second by the existing unit test
+// `store::write::staging::tests::prepared_batch_dedupes_entity_and_scope_strings`
+// (it asserts `len() == 3` and `total_bytes() == sum(payload_len)`; `len -> 0`
+// fails the count assertion and `+= -> -=` panics on usize subtract overflow at
+// the mutation site). They were excluded only because an integration path hung
+// to the 401s lane timeout — a wall-clock concern, not equivalence. cargo-mutants
+// treats a timeout as caught, and the fast unit test catches them first, so the
+// honest classification is "killable"; if the lane wall-clock regresses, tune the
+// per-mutant timeout / fail-fast rather than re-excluding a real, killable mutant.
+const WRITER_COMMIT_MUTANT_EXCLUDE_RES: &[&str] = &[];
 // Equivalent-mutant registry for the projection-flow seam. Each entry is a
 // mutant proven to have no observable effect on projection output; excluding
 // them keeps the mutation-score denominator honest instead of letting provably
