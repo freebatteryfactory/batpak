@@ -1,7 +1,7 @@
 //! Subscription descriptor types for the client-visible host interface.
 //!
 //! Subscriptions are declared on modules, aggregated globally by subscription id,
-//! and folded into `H_interface` and [`crate::client_manifest::ClientManifest`].
+//! and folded into `H_interface`.
 //! Packet A is declaration-only: descriptors require `NETBAT/2-streaming` transport
 //! but the host runtime continues to serve calls on `NETBAT/1`.
 

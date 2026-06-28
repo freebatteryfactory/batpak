@@ -20,7 +20,7 @@ use crate::module::{HostModule, HostModuleBuilder};
 use crate::schema::{
     DiagnosticRustType, GoldenVector, SchemaDescriptor, SchemaId, SchemaRole, SchemaVersion,
 };
-use crate::{HostBuilder, SchemaShape};
+use crate::HostBuilder;
 
 fn op(name: &'static str) -> OperationDescriptor {
     OperationDescriptor::new(
@@ -195,8 +195,6 @@ fn schema_with_role(id: &str, role: SchemaRole, bytes: &[u8]) -> SchemaDescripto
         vec![GoldenVector::new("c", bytes.to_vec())],
     )
     .expect("descriptor")
-    .with_shape(SchemaShape::string())
-    .expect("shape")
 }
 
 fn schema(id: &str, bytes: &[u8]) -> SchemaDescriptor {
@@ -261,22 +259,12 @@ fn diagnostic_rust_type_does_not_change_module_identity() {
     );
 }
 
-fn schema_without_shape(id: &str, bytes: &[u8]) -> SchemaDescriptor {
-    SchemaDescriptor::new(
-        SchemaId::new(id).expect("id"),
-        SchemaVersion(1),
-        SchemaRole::OperationInput,
-        vec![GoldenVector::new("c", bytes.to_vec())],
-    )
-    .expect("descriptor")
-}
-
 #[test]
 fn red_duplicate_schema_identity_within_module_is_rejected() {
     let outcome = HostModule::builder("mod.a", 1)
-        .schema(schema_without_shape("hostbat.op.a.in", b"x"))
+        .schema(schema("hostbat.op.a.in", b"x"))
         .expect("first schema")
-        .schema(schema_without_shape("hostbat.op.a.in", b"y"));
+        .schema(schema("hostbat.op.a.in", b"y"));
     assert!(matches!(outcome, Err(HostError::SchemaInvalid { .. })));
 }
 

@@ -29,7 +29,7 @@ use batpak::coordinate::Coordinate;
 use batpak::store::{Open, Store};
 use hostbat::{
     GoldenVector, GuardDescriptor, HostError, HostModule, SchemaDescriptor, SchemaId, SchemaRole,
-    SchemaShape, SchemaVersion,
+    SchemaVersion,
 };
 use syncbat::{
     AdmissionDecision, AdmissionGuard, Ctx, EffectClass, Handler, HandlerError, HandlerResult,
@@ -97,8 +97,7 @@ fn boundary_schema(
         SchemaVersion(1),
         role,
         vec![GoldenVector::new("boundary", golden_bytes)],
-    )?
-    .with_shape(SchemaShape::string())
+    )
 }
 
 /// Stable kebab-case denial class for each [`PlanError`]. Exhaustive: `PlanError`

@@ -10,12 +10,15 @@ use crate::identity::{canonical_digest, Digest, InterfaceFingerprint};
 use crate::module::HostModuleParts;
 use crate::schema::{SchemaDescriptor, SchemaRole};
 use crate::subscription::{BackpressurePolicy, SubscriptionDescriptor, SUBSCRIPTION_WIRE_REQUIRES};
-use crate::SchemaShape;
 
 /// Domain separator for the client-visible interface fingerprint.
-const INTERFACE_DIGEST_DOMAIN: &str = "hostbat.interface.v4";
+///
+/// `v5` drops the structural-shape field from the per-schema identity view (the
+/// structural-shape apparatus was removed with the deferred cross-language
+/// client); schema identity is now `(id, version, role)` + canonical encoding.
+const INTERFACE_DIGEST_DOMAIN: &str = "hostbat.interface.v5";
 /// Version of the canonical view folded into [`InterfaceFingerprint`].
-const INTERFACE_VIEW_SCHEMA_VERSION: u16 = 4;
+const INTERFACE_VIEW_SCHEMA_VERSION: u16 = 5;
 /// Wire protocol version exposed to generated clients for callable operations.
 const WIRE_PROTOCOL_VERSION: &str = "NETBAT/1";
 /// Batpak named-field MessagePack encoding contract exposed to generated
@@ -76,7 +79,6 @@ struct SchemaIdentityView<'a> {
     version: u32,
     role: &'a str,
     encoding: Digest,
-    shape: Option<&'a SchemaShape>,
 }
 
 /// Compute the client-visible interface fingerprint for a mounted host.
@@ -278,6 +280,5 @@ fn schema_identity_view(descriptor: &SchemaDescriptor) -> SchemaIdentityView<'_>
         version: descriptor.version().get(),
         role: descriptor.role().as_str(),
         encoding: *descriptor.encoding().bytes(),
-        shape: descriptor.shape(),
     }
 }

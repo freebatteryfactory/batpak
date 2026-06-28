@@ -1,23 +1,20 @@
 //! Subscription descriptor validation + host/interface projection tests.
 //!
 //! Red fixtures prove each refusal path returns its specific typed error variant.
-//! Green fixtures prove subscriptions fold into `H_module`, `H_interface`, and
-//! [`crate::client_manifest::ClientManifest`] without claiming NETBAT/2 runtime.
+//! Green fixtures prove subscriptions fold into `H_module` and `H_interface`
+//! while requiring the `NETBAT/2-streaming` wire (declaration-only).
 
 use batpak::coordinate::Coordinate;
 use syncbat::{Ctx, HandlerResult, OperationDescriptor};
 
 use crate::builder::HostBuilder;
-use crate::client_manifest::ClientManifest;
 use crate::error::HostError;
 use crate::module::{HostModule, HostModuleBuilder};
 use crate::schema::{GoldenVector, SchemaDescriptor, SchemaId, SchemaRole, SchemaVersion};
 use crate::subscription::{
     BackpressurePolicy, EventCategory, OperationStatusSelector, ProjectionId, ReceiptFilter,
     SubscriptionDelivery, SubscriptionDescriptor, SubscriptionId, SubscriptionSource,
-    SUBSCRIPTION_WIRE_REQUIRES,
 };
-use crate::SchemaShape;
 
 use super::{validate_subscription_id, EventCategory as SubEventCategory, SubscriptionId as SubId};
 
@@ -47,8 +44,6 @@ fn schema_with_role(id: &str, role: SchemaRole, bytes: &[u8]) -> SchemaDescripto
         vec![GoldenVector::new("c", bytes.to_vec())],
     )
     .expect("descriptor")
-    .with_shape(SchemaShape::string())
-    .expect("shape")
 }
 
 fn with_default_operation_schemas(builder: HostModuleBuilder) -> HostModuleBuilder {
@@ -238,7 +233,7 @@ fn red_missing_payload_schema_fails_exact_variant() -> Result<(), HostError> {
     Ok(())
 }
 
-// ---- green: H_interface + ClientManifest -----------------------------------
+// ---- green: H_interface ----------------------------------------------------
 
 #[test]
 fn adding_subscription_flips_h_interface() -> Result<(), HostError> {
@@ -386,59 +381,6 @@ fn hook_change_does_not_flip_h_interface() {
         plain, with_hook,
         "internal lifecycle hooks do not change the client-visible interface"
     );
-}
-
-#[test]
-fn client_manifest_includes_subscriptions_and_matches_h_interface() -> Result<(), HostError> {
-    let host = HostBuilder::new()
-        .mount(module_with_category_subscription(
-            "mod.a",
-            "mod.a.echo",
-            "orders.open.v1",
-            0xA,
-        )?)
-        .expect("mount")
-        .build()?;
-    let manifest = ClientManifest::from_host(&host);
-    assert_eq!(manifest.manifest_version, 3);
-    assert_eq!(manifest.netbat_version, "NETBAT/1");
-    assert_eq!(
-        manifest.subscription_wire_requires,
-        SUBSCRIPTION_WIRE_REQUIRES
-    );
-    assert_eq!(
-        manifest.interface_fingerprint_hex,
-        host.interface_fingerprint().to_hex()
-    );
-    assert_eq!(manifest.subscriptions.len(), 1);
-    assert_eq!(manifest.subscriptions[0].id, "orders.open.v1");
-    assert_eq!(manifest.subscriptions[0].module_id, "mod.a");
-    assert_eq!(
-        manifest.subscriptions[0].payload_schema_role,
-        "event-payload"
-    );
-    Ok(())
-}
-
-#[test]
-fn runtime_does_not_claim_netbat2_serving() -> Result<(), HostError> {
-    let host = HostBuilder::new()
-        .mount(module_with_category_subscription(
-            "mod.a",
-            "mod.a.echo",
-            "orders.open.v1",
-            0xA,
-        )?)
-        .expect("mount")
-        .build()?;
-    let manifest = ClientManifest::from_host(&host);
-    assert_eq!(manifest.netbat_version, "NETBAT/1");
-    assert_eq!(manifest.subscription_wire_requires, "NETBAT/2-streaming");
-    assert!(
-        !manifest.subscriptions.is_empty(),
-        "subscriptions are declared in the client manifest"
-    );
-    Ok(())
 }
 
 #[test]

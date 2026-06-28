@@ -37,4 +37,4 @@ just seal
 
 `perf-gates` and `loom` are manual proof tiers; they are not part of `just verify`.
 
-If a repeated workflow needs raw `cargo`, `npm`, or `pnpm`, promote it to a named `just` recipe.
+If a repeated workflow needs raw `cargo`, promote it to a named `just` recipe.
