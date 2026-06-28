@@ -29,6 +29,12 @@ registries = []
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Intra-workspace path dev-dependencies on publish=false helper crates
+# (e.g. batpak-testkit) carry no version: a version makes `cargo package` look
+# for them on crates.io, where they do not exist. allow-wildcard-paths permits
+# the implicit `*` requirement for PATH deps only, so the wildcard ban still
+# bites every real registry dependency.
+allow-wildcard-paths = true
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
