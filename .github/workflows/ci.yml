@@ -62,7 +62,16 @@ jobs:
             exit 0
           fi
           base="${{ github.event.pull_request.base.sha }}"
-          if git diff --name-only "$base" HEAD | grep -qE '^(bpk-lib/|\.devcontainer/|\.github/workflows/ci\.yml|bpk-lib/\.cargo/)'; then
+          # FAIL CLOSED: this detector gates every rigor lane (mutation smoke,
+          # gauntlet bite, fuzz replay). If `git diff` errors or comes back EMPTY
+          # — e.g. the base object is missing or the merge-ref diff hiccups — we
+          # must NOT silently skip those gates. Run them. Only an explicit,
+          # non-empty diff with zero matching paths marks a PR as non-Rust.
+          changed="$(git diff --name-only "$base" HEAD 2>/dev/null || true)"
+          if [ -z "$changed" ]; then
+            echo "detect: empty/unavailable diff against base $base — failing closed to rust=true"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -qE '^(bpk-lib/|\.devcontainer/|\.github/workflows/ci\.yml|bpk-lib/\.cargo/)'; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
           else
             echo "rust=false" >> "$GITHUB_OUTPUT"
