@@ -7,8 +7,8 @@ use crate::source_cache::SourceCache;
 use crate::{
     agent_surface, architecture_lints, chaos_contract, ci_container_contract, ci_parity,
     complexity, dangerous_hooks_contract, docs_catalog, glob_coverage, harness_lints,
-    invariant_bridge, literal_regex_contract, public_surface, scope_exclusion_contract,
-    store_pub_fn_coverage, wallclock,
+    invariant_bridge, literal_regex_contract, mutation_exclusion_registry, public_surface,
+    scope_exclusion_contract, store_pub_fn_coverage, wallclock,
 };
 use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeSet;
@@ -61,6 +61,7 @@ pub(crate) fn run() -> Result<()> {
     complexity::check(&repo_root, &mut source_cache)?;
     wallclock::check(&repo_root, &mut source_cache)?;
     glob_coverage::check(&repo_root)?;
+    mutation_exclusion_registry::check(&repo_root)?;
     crate::mutation_debt::check(&repo_root)?;
     crate::dst_corpus::check(&repo_root)?;
     public_surface::check(&repo_root, &mut source_cache)?;

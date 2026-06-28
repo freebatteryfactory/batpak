@@ -597,7 +597,7 @@ fn detect_source_array_entry(file: &FileDiff, findings: &mut Vec<Weakening>) {
         }
         if in_allowlist_array {
             if let DiffLine::Added(added) = line {
-                if is_raw_regex_list_element(added) {
+                if is_raw_regex_list_element(added) && !is_registered_exclusion(added) {
                     findings.push(Weakening {
                         kind: WeakeningKind::WaiverEntryAdded,
                         detail: format!("new mutant-exclusion / allowlist entry: {}", added.trim()),
@@ -624,6 +624,19 @@ fn is_raw_regex_list_element(line: &str) -> bool {
     }
     (t.starts_with("r\"") && (t.ends_with("\",") || t.ends_with('"')))
         || (t.starts_with("r#\"") && (t.ends_with("\"#,") || t.ends_with("\"#")))
+}
+
+/// True when an added raw-regex list element is a registered mutation exclusion.
+/// meta-gate delegates mutation-exclusion authority to the structural
+/// `mutation-exclusion-registry` gate: a registered exclusion is categorized and
+/// (for equivalents) witnessed — a governed denominator change that needs no
+/// human `GAUNTLET-WEAKEN-OK`. An UNREGISTERED exclusion, or any non-mutation
+/// allowlist entry (`HEADER_DEBT_ALLOWLIST`, `OVERSIZE_HARNESS_ALLOWLIST`), is
+/// never registered and so is still flagged as an unapproved weakening.
+fn is_registered_exclusion(added: &str) -> bool {
+    crate::mutation_exclusion_registry::extract_raw_strings(added)
+        .iter()
+        .any(|regex| crate::mutation_exclusion_registry::is_registered(regex))
 }
 
 /// An `assurance_levels.yaml` DOWNGRADE: fires when the max `level:` on the added

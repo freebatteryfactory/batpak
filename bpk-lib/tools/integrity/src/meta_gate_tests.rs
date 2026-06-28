@@ -261,7 +261,32 @@ diff --git a/tools/xtask/src/commands/mutants/lanes.rs b/tools/xtask/src/command
 }
 
 #[test]
-fn adding_mutation_exclusion_regex_without_approval_errs() {
+fn adding_unregistered_mutation_exclusion_regex_errs() {
+    // An exclusion regex NOT in the witnessed registry is still a weakening:
+    // meta-gate only defers to registered (categorized + witnessed) exclusions,
+    // so a lazy bare exclusion is flagged and requires approval.
+    let diff = "\
+diff --git a/tools/xtask/src/commands/mutants/lanes.rs b/tools/xtask/src/commands/mutants/lanes.rs
+--- a/tools/xtask/src/commands/mutants/lanes.rs
++++ b/tools/xtask/src/commands/mutants/lanes.rs
+@@ -240,2 +240,3 @@
+ const PROJECTION_MUTANT_EXCLUDE_RES: &[&str] = &[
++    r\"crates/core/src/store/import\\.rs:.*replace + with - in unregistered_fn\",
+ ];
+";
+    assert_denied_for(
+        diff,
+        WeakeningKind::WaiverEntryAdded,
+        "adding an UNREGISTERED mutation exclusion regex must Err without approval",
+    );
+}
+
+#[test]
+fn adding_registered_mutation_exclusion_is_not_a_weakening() {
+    // A registered exclusion (categorized + witnessed, proven by the structural
+    // mutation-exclusion-registry gate) is a governed denominator change, not an
+    // unapproved weakening — meta-gate delegates to the registry and does not
+    // demand a human GAUNTLET-WEAKEN-OK for it.
     let diff = "\
 diff --git a/tools/xtask/src/commands/mutants/lanes.rs b/tools/xtask/src/commands/mutants/lanes.rs
 --- a/tools/xtask/src/commands/mutants/lanes.rs
@@ -271,11 +296,12 @@ diff --git a/tools/xtask/src/commands/mutants/lanes.rs b/tools/xtask/src/command
 +    r\"crates/core/src/store/projection/flow/mod\\.rs:.*delete ! in execute_full_replay\",
  ];
 ";
-    assert_denied_for(
-        diff,
-        WeakeningKind::WaiverEntryAdded,
-        "adding a mutation exclusion regex must Err without approval",
+    assert!(
+        classify_weakening(diff, &l4_manifest()).is_empty(),
+        "a registered, witnessed mutation exclusion must not be a weakening"
     );
+    evaluate(diff, &l4_manifest(), &no_approval())
+        .expect("a registered exclusion must pass without approval");
 }
 
 // ---------------------------------------------------------------------------

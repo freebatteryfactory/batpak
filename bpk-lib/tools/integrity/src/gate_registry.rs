@@ -398,6 +398,18 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
+    // Vacuous-exclusion killer: a cargo-mutants `--exclude-re` anchored to a file
+    // that does not contain the symbol it claims to mutate excludes zero mutants
+    // while masquerading as an equivalence proof (the real `config.rs`-vs-
+    // `config/types.rs` bug). Reds on a planted stale-path anchor for `aos`.
+    Gate {
+        slug: "mutation-exclusion-registry",
+        red_fixture_test: Some(
+            "tools/integrity/src/mutation_exclusion_registry_tests.rs::red_stale_path_anchor_is_rejected",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
     // Function-complexity gate (GAUNT-CPLX-6): syn-based per-fn line/nesting/
     // cyclomatic budgets, ratcheted by traceability/complexity_ratchet.yaml.
     Gate {

@@ -120,6 +120,13 @@ mod tests {
             .expect("writer commit seam");
         apply_graduated_dst_corpus_augmentation(std::slice::from_mut(&mut lane))
             .expect("writer-commit is dst_coverage-backed");
+        // The writer-commit seam carries no equivalent/unkillable mutant
+        // exclusions: the previously-registered staging.rs mutants are caught by
+        // the staging unit tests, so the command emits zero `--exclude-re` flags.
+        assert!(
+            lane.exclude_res.is_empty(),
+            "writer-commit should have no mutant exclusions; the staging mutants are killable"
+        );
         assert_eq!(
             mutants_command(
                 &lane,
@@ -137,10 +144,6 @@ mod tests {
                 "crates/core/src/store/write/**/*.rs",
                 "--file",
                 "crates/core/src/store/write/control/**/*.rs",
-                "--exclude-re",
-                lane.exclude_res[0],
-                "--exclude-re",
-                lane.exclude_res[1],
                 "--test-package",
                 DST_CORPUS_TEST_PACKAGE,
                 "--all-features",
