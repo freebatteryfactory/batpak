@@ -46,7 +46,7 @@ jobs:
   # asking for the `heavy` proof profile.
   rust-changed:
     name: Detect Rust-relevant changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     outputs:
       rust: ${{ steps.detect.outputs.rust }}
     steps:
@@ -79,7 +79,7 @@ jobs:
 
   ci-fast-linux:
     name: CI fast (ubuntu-devcontainer)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -105,7 +105,7 @@ jobs:
     # resolve the merge-base and read commit trailers. The classifier is pure and
     # unit/mutation-tested in tools/integrity/src/meta_gate.rs.
     name: Agent-safety meta-gate
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     needs: [rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
     steps:
@@ -140,7 +140,7 @@ jobs:
     # baseline stage cannot block a PR. Ratcheting the default-PR floor upward
     # is a deferred follow-up; data must precede the ratchet.
     name: Coverage baseline (advisory)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     needs: [ci-fast-linux, rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
     continue-on-error: true
@@ -169,7 +169,7 @@ jobs:
 
   verify-linux:
     name: Verify (ubuntu-devcontainer)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'verify' ||
@@ -196,7 +196,7 @@ jobs:
 
   ci-windows:
     name: CI Windows surface (native)
-    runs-on: windows-latest
+    runs-on: blacksmith-8vcpu-windows-2025
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'windows' ||
@@ -224,7 +224,7 @@ jobs:
         run: cargo xtask ci-windows-surface
 
   feature-isolation:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: [ci-fast-linux, verify-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -262,7 +262,7 @@ jobs:
     # is unit-tested on every PR; THIS job runs the #[ignore]d solver harness on the
     # heavy lane. Runs outside the devcontainer so it can install the solvers directly.
     name: QF_BV admission equivalence (pinned z3 + cvc5)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: [ci-fast-linux, verify-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -311,7 +311,7 @@ jobs:
 
   smoke-consumers:
     name: Smoke (quickstart, packaged consumer, template)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: [verify-linux]
     if: >-
       (github.event_name == 'workflow_dispatch' &&
@@ -371,7 +371,7 @@ jobs:
 
   mutants-smoke:
     name: Mutation smoke (${{ matrix.seam }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     # Default-on for every Rust-touching PR: the smoke lanes are `--in-diff`,
     # so they only mutate lines the PR changed (cheap). This closes the gap
     # where a PR could merge with new critical seams never mutation-tested.
@@ -451,7 +451,7 @@ jobs:
 
   mutants-smoke-repo-wide:
     name: Mutation smoke (repo-wide ratchet)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     # Default-on, EVERY Rust-touching PR (gated only by the rust-changed
     # detector — no label required), mirroring the always-on fuzz-smoke lane.
     # This is bounded because it runs only the single repo-wide shard 0/48
@@ -481,7 +481,7 @@ jobs:
 
   loom-schedule-proof:
     name: Loom schedule proof
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'loom' ||
@@ -505,7 +505,7 @@ jobs:
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask loom'
 
   mutants-full:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.proof == 'heavy'
     strategy:
       fail-fast: false
@@ -544,7 +544,7 @@ jobs:
 
   chaos-proof:
     name: Chaos (dm-flakey)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'chaos' ||
@@ -581,7 +581,7 @@ jobs:
     # meta-test inside the same binary reds if any declared fuzz `[[bin]]` loses its
     # regression fixture or dispatcher wiring, so the gate can't be hollowed out.
     name: Fuzz replay (committed corpus)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     needs: [ci-fast-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -619,7 +619,7 @@ jobs:
     # registry can never drift. Runs every PR (gated only by rust-changed), like the
     # fuzz-replay gate above.
     name: Gauntlet — prove the gates bite
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     needs: [ci-fast-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -657,7 +657,7 @@ jobs:
     # rust-src for -Z build-std of the sanitizer runtime), so this job uses a
     # native nightly toolchain instead of the 1.92.0 devcontainer lane.
     name: Fuzz smoke (frame_decode)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     needs: [ci-fast-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -742,7 +742,7 @@ jobs:
           retention-days: 14
 
   docs:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: [verify-linux]
     if: github.ref == 'refs/heads/main'
     permissions:

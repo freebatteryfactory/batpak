@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, blacksmith-16vcpu-windows-2025]
         surface: [neutral, native]
     runs-on: ${{ matrix.os }}
     steps:
