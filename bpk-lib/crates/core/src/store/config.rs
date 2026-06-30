@@ -18,7 +18,8 @@ mod validation;
 pub use crate::store::index::idemp::{IdempotencyRetention, OverflowPolicy};
 pub(crate) use types::WriterMode;
 pub use types::{
-    BatchConfig, IndexConfig, IndexTopology, OpenReportObserver, SyncConfig, SyncMode, WriterConfig,
+    BatchConfig, IndexConfig, IndexTopology, OpenReportObserver, SigningPolicy, SyncConfig,
+    SyncMode, WriterConfig,
 };
 pub(crate) use validation::ValidatedStoreConfig;
 
@@ -66,6 +67,13 @@ pub struct StoreConfig {
     /// Signing keys known to this store. The last configured key signs new
     /// receipts; earlier keys remain available for verification.
     pub(crate) signing_keys: Vec<SigningKey>,
+    /// Whether a keyless store is permitted (`Optional`, default) or open is
+    /// refused without a signing key (`Required`). See [`SigningPolicy`].
+    pub(crate) signing_policy: SigningPolicy,
+    /// When a signer is configured but its signature cover cannot be built,
+    /// permit a best-effort downgrade to an unsigned receipt instead of failing
+    /// the append. Default `false` (fail closed).
+    pub(crate) allow_signing_downgrade: bool,
     /// Payload-registry collision policy applied during `Store::open`.
     pub(crate) event_payload_validation: EventPayloadValidation,
     /// Fault injector for testing failure scenarios.
@@ -100,6 +108,12 @@ impl StoreConfig {
             open_report_observer: None,
             platform_profile_path: None,
             signing_keys: Vec::new(),
+            // Optional: a keyless store is a valid "regular store"; its receipts
+            // verify structurally but are never `is_signed()`. Regulated callers
+            // opt into `SigningPolicy::Required`, which refuses to open without a
+            // signing key. Signing is a deliberate per-deployment choice.
+            signing_policy: SigningPolicy::Optional,
+            allow_signing_downgrade: false,
             event_payload_validation: EventPayloadValidation::default(),
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: None,
@@ -233,6 +247,23 @@ impl StoreConfig {
     /// Add a signing key to the receipt-signature registry.
     pub fn with_signing_key(mut self, signing_key: SigningKey) -> Self {
         self.signing_keys.push(signing_key);
+        self
+    }
+
+    /// Set the receipt signing policy.
+    ///
+    /// `Optional` (default) permits a keyless store; `Required` refuses to open
+    /// without a signing key, so unsigned receipts can never be accepted.
+    pub fn with_signing_policy(mut self, signing_policy: SigningPolicy) -> Self {
+        self.signing_policy = signing_policy;
+        self
+    }
+
+    /// Permit best-effort downgrade to an unsigned receipt when a configured
+    /// signer cannot build its signature cover. Default `false` (the append
+    /// fails closed rather than silently emitting an unsigned receipt).
+    pub fn with_signing_downgrade_allowed(mut self, allow: bool) -> Self {
+        self.allow_signing_downgrade = allow;
         self
     }
 
@@ -448,6 +479,8 @@ impl Clone for StoreConfig {
             open_report_observer: self.open_report_observer.clone(),
             platform_profile_path: self.platform_profile_path.clone(),
             signing_keys: self.signing_keys.clone(),
+            signing_policy: self.signing_policy,
+            allow_signing_downgrade: self.allow_signing_downgrade,
             event_payload_validation: self.event_payload_validation,
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: self.fault_injector.clone(),
@@ -477,6 +510,8 @@ impl std::fmt::Debug for StoreConfig {
             )
             .field("platform_profile_path", &self.platform_profile_path)
             .field("signing_keys", &self.signing_keys.len())
+            .field("signing_policy", &self.signing_policy)
+            .field("allow_signing_downgrade", &self.allow_signing_downgrade)
             .field("event_payload_validation", &self.event_payload_validation)
             .finish()
     }

@@ -83,7 +83,7 @@ pub use compaction_report::{
 };
 pub use config::{
     BatchConfig, IdempotencyRetention, IndexConfig, IndexTopology, OpenReportObserver,
-    OverflowPolicy, StoreConfig, SyncConfig, SyncMode, WriterConfig,
+    OverflowPolicy, SigningPolicy, StoreConfig, SyncConfig, SyncMode, WriterConfig,
 };
 pub use delivery::canal::{Canal, CanalBatch, CanalClosed, CanalHandle, CanalItem, ReactorCanal};
 pub use delivery::cursor::{
@@ -142,6 +142,7 @@ pub use projection_run::{
 };
 pub use reaction::ReactionBatch;
 pub use reactor_typed::{ReactorConfig, ReactorError, TypedReactorHandle};
+pub use read_api::ChainVerificationReport;
 pub use read_walk::{
     ReadWalkDroppedCount, ReadWalkEvidenceReport, ReadWalkFinding, ReadWalkFreshnessIntent,
     ReadWalkFrontierKind, ReadWalkHash, ReadWalkInputFrontier, ReadWalkProofRef, ReadWalkProofRefs,

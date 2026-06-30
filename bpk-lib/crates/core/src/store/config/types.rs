@@ -38,6 +38,28 @@ pub enum SyncMode {
     SyncData,
 }
 
+/// Whether a store requires cryptographically signed receipts.
+///
+/// A keyless store cannot sign, so its receipts carry no cryptographic proof:
+/// they verify as valid for the store's own committed index but never report
+/// `is_signed`. This policy controls whether that keyless mode is permitted.
+///
+/// - `Optional` (the regular-store path): a keyless store is allowed; unsigned
+///   receipts are accepted as valid for this store.
+/// - `Required` (the regulated / rigor opt-in): the store refuses to open
+///   without a signing key, so an unsigned receipt can never be produced or
+///   accepted — verification returns `Invalid` for any unsigned receipt.
+///
+/// Set via `StoreConfig::with_signing_policy`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum SigningPolicy {
+    /// Permit a keyless store; unsigned receipts are accepted as valid.
+    Optional,
+    /// Refuse to open without a signing key; unsigned receipts are never valid.
+    Required,
+}
+
 /// Explicit in-memory scan topology.
 ///
 /// Base AoS maps are always present. This type controls which additional
