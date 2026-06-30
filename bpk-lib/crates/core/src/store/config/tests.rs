@@ -366,6 +366,24 @@ fn with_fs_installs_custom_filesystem_backend() {
         fn metadata(&self, path: &Path) -> std::io::Result<std::fs::Metadata> {
             self.inner.metadata(path)
         }
+        fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+            self.inner.rename(from, to)
+        }
+        fn remove_file(&self, path: &Path) -> std::io::Result<()> {
+            self.inner.remove_file(path)
+        }
+        fn named_temp_in(&self, dir: &Path) -> std::io::Result<tempfile::NamedTempFile> {
+            self.inner.named_temp_in(dir)
+        }
+        fn persist_temp_with_parent_sync(
+            &self,
+            named_temp: tempfile::NamedTempFile,
+            final_path: &Path,
+            admission: crate::store::platform::sync::ParentDirSyncAdmission,
+        ) -> std::io::Result<()> {
+            self.inner
+                .persist_temp_with_parent_sync(named_temp, final_path, admission)
+        }
     }
 
     let created = Arc::new(AtomicBool::new(false));

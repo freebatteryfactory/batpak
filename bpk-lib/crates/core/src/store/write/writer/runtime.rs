@@ -103,6 +103,7 @@ pub(super) fn writer_thread_main(
                             if let Err(error) = crate::store::hidden_ranges::write_cancelled_ranges(
                                 &runtime.config.data_dir,
                                 &ranges,
+                                runtime.config.fs().as_ref(),
                             ) {
                                 tracing::error!(
                                     error = %error,
@@ -128,6 +129,7 @@ pub(super) fn writer_thread_main(
                         if let Err(error) = crate::store::hidden_ranges::write_cancelled_ranges(
                             &runtime.config.data_dir,
                             &ranges,
+                            runtime.config.fs().as_ref(),
                         ) {
                             tracing::error!(
                                 error = %error,

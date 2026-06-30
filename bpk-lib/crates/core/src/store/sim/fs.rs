@@ -63,6 +63,10 @@ pub(crate) struct SimFs {
     /// (`io::ErrorKind::StorageFull`) — modelling a disk that fills mid-fork.
     /// Deterministic: the same threshold fails the same op every run.
     enospc_on_copy: Mutex<EnospcSchedule>,
+    /// Deterministic atomic-op fault schedule for the W3-routed crash-sensitive
+    /// ops ([`StoreFs::rename`] / [`StoreFs::remove_file`] /
+    /// [`StoreFs::persist_temp_with_parent_sync`]). `None`/unarmed disables it.
+    op_fault: Mutex<OpFaultSchedule>,
 }
 
 /// ENOSPC-mid-copy injection bookkeeping. `fail_at` is the 1-based
@@ -70,6 +74,32 @@ pub(crate) struct SimFs {
 #[derive(Default)]
 struct EnospcSchedule {
     fail_at: Option<u32>,
+    seen: u32,
+}
+
+/// A crash-sensitive [`StoreFs`] op a SimFs schedule can fault. These are the
+/// W3-routed atomic-rename / persist primitives the compaction swap/rollback,
+/// the visibility-range persist, and the cursor-checkpoint persist now reach
+/// through the seam — so a seeded schedule can tear them where, as free fns,
+/// they were unfaultable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CrashOp {
+    /// [`StoreFs::rename`] — the compaction relocate/rollback swap point.
+    Rename,
+    /// [`StoreFs::remove_file`] (and the provided `remove_file_if_present`) —
+    /// the post-swap segment reclaim.
+    RemoveFile,
+    /// [`StoreFs::persist_temp_with_parent_sync`] — the visibility-range and
+    /// cursor-checkpoint atomic publish point.
+    PersistTemp,
+}
+
+/// Deterministic atomic-op fault bookkeeping. `target` names the op kind and the
+/// 1-based occurrence of THAT kind to fail; `seen` counts occurrences of the
+/// targeted kind reached so far. The same target fails the same op every run.
+#[derive(Default)]
+struct OpFaultSchedule {
+    target: Option<(CrashOp, u32)>,
     seen: u32,
 }
 
@@ -83,7 +113,59 @@ impl SimFs {
             durable: Mutex::new(BTreeMap::new()),
             fsync_drop_one_in,
             enospc_on_copy: Mutex::new(EnospcSchedule::default()),
+            op_fault: Mutex::new(OpFaultSchedule::default()),
         }
+    }
+
+    /// Arm a deterministic fault on the `fail_at`-th occurrence (1-based) of
+    /// crash-sensitive op `op`, consuming `self` (builder form for a `SimFs` not
+    /// yet shared). See [`SimFs::arm_fault_on`].
+    #[cfg(test)]
+    pub(crate) fn with_fault_on(self, op: CrashOp, fail_at: u32) -> Self {
+        self.arm_fault_on(op, fail_at);
+        self
+    }
+
+    /// Arm (or re-arm) a deterministic fault on the `fail_at`-th occurrence
+    /// (1-based) of crash-sensitive op `op`. The faulted op returns an injected
+    /// I/O error instead of performing, modelling a torn atomic-rename / persist
+    /// on the compaction swap, visibility-range persist, or cursor-checkpoint
+    /// persist path. Same `(op, fail_at)` ⇒ the same op fails every run.
+    ///
+    /// Interior-mutable (takes `&self`) so a test can build a `Store` over a
+    /// shared `Arc<SimFs>` FIRST and arm the fault only once the store is open —
+    /// the occurrence counter resets here, so the crash-sensitive ops the build
+    /// itself performed are not counted toward `fail_at`.
+    #[cfg(test)]
+    pub(crate) fn arm_fault_on(&self, op: CrashOp, fail_at: u32) {
+        let mut sched = self
+            .op_fault
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        sched.target = Some((op, fail_at));
+        sched.seen = 0;
+    }
+
+    /// Advance the counter for `op` and return `true` when THIS occurrence must
+    /// fault. A no-op (returns `false`) when no schedule targets `op`.
+    fn op_fault_strikes(&self, op: CrashOp) -> bool {
+        let mut sched = self
+            .op_fault
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some((target, fail_at)) = sched.target else {
+            return false;
+        };
+        if target != op {
+            return false;
+        }
+        sched.seen = sched.seen.saturating_add(1);
+        sched.seen == fail_at
+    }
+
+    /// The injected-fault I/O error a faulted atomic op returns.
+    fn injected_op_fault(op: CrashOp) -> io::Error {
+        io::Error::other(format!("SimFs: injected fault on {op:?}"))
     }
 
     /// Arm deterministic ENOSPC injection: the `fail_at`-th file-materialization
@@ -283,6 +365,46 @@ impl StoreFs for SimFs {
 
     fn metadata(&self, path: &Path) -> io::Result<std::fs::Metadata> {
         crate::store::platform::fs::metadata(path)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        if self.op_fault_strikes(CrashOp::Rename) {
+            return Err(Self::injected_op_fault(CrashOp::Rename));
+        }
+        crate::store::platform::fs::rename(from, to)
+    }
+
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        // `remove_file_if_present` is the provided default in terms of this
+        // method, so both the direct reclaim and the if-present probes funnel
+        // through one faultable primitive.
+        if self.op_fault_strikes(CrashOp::RemoveFile) {
+            return Err(Self::injected_op_fault(CrashOp::RemoveFile));
+        }
+        crate::store::platform::fs::remove_file(path)
+    }
+
+    fn named_temp_in(&self, dir: &Path) -> io::Result<tempfile::NamedTempFile> {
+        // The temp file is the staging half; the publish (and its fault) is on
+        // `persist_temp_with_parent_sync`, so staging is a faithful delegate.
+        crate::store::platform::fs::named_temp_in(dir)
+    }
+
+    fn persist_temp_with_parent_sync(
+        &self,
+        named_temp: tempfile::NamedTempFile,
+        final_path: &Path,
+        admission: crate::store::platform::sync::ParentDirSyncAdmission,
+    ) -> io::Result<()> {
+        // A faulted persist drops the rename entirely: the staged temp is left
+        // un-published, so the store's belief that the metadata is durable is
+        // falsified — exactly the torn atomic publish the crash harness needs.
+        if self.op_fault_strikes(CrashOp::PersistTemp) {
+            return Err(Self::injected_op_fault(CrashOp::PersistTemp));
+        }
+        crate::store::platform::sync::persist_temp_with_parent_sync(
+            named_temp, final_path, admission,
+        )
     }
 }
 

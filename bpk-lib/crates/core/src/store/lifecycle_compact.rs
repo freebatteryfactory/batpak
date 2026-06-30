@@ -5,12 +5,10 @@ use crate::coordinate::Coordinate;
 use crate::event::{EventKind, StoredEvent};
 use crate::store::file_classification::StoreFileKind;
 use crate::store::lifecycle_close::write_cold_start_artifacts_on_close;
-use crate::store::platform::fs as platform_fs;
+use crate::store::platform::fs::StoreFs;
 use crate::store::segment::scan as reader;
 use crate::store::segment::{self, Active, FramePayload};
 use crate::store::{CompactionConfig, CompactionStrategy, Open, Store, StoreError};
-
-use super::lifecycle_fs::remove_file_if_present;
 
 pub(crate) fn compact(
     store: &Store<Open>,
@@ -110,6 +108,7 @@ pub(crate) fn compact(
                 compact_source_path: compact_source_path.as_deref(),
                 error: &error,
                 context: "compaction pre-swap phase failed",
+                fs: fs.as_ref(),
             });
         }
     };
@@ -122,12 +121,13 @@ pub(crate) fn compact(
         if let Ok(meta) = fs.metadata(path) {
             bytes_reclaimed += meta.len();
         }
-        platform_fs::remove_file(path).map_err(StoreError::Io)?;
+        fs.remove_file(path).map_err(StoreError::Io)?;
         segments_removed += 1;
     }
 
     if let Some(temp_source_path) = compact_source_path {
-        remove_file_if_present(&temp_source_path)?;
+        fs.remove_file_if_present(&temp_source_path)
+            .map_err(StoreError::Io)?;
     }
     crate::store::cold_start::rebuild::clear_pending_compaction(&store.config.data_dir)?;
 
@@ -171,10 +171,13 @@ fn rollback_compaction_disk_state(
     data_dir: &std::path::Path,
     merged_path: &std::path::Path,
     compact_source_path: Option<&std::path::Path>,
+    fs: &dyn StoreFs,
 ) -> Result<(), StoreError> {
-    platform_fs::remove_file_if_present(merged_path).map_err(StoreError::Io)?;
+    fs.remove_file_if_present(merged_path)
+        .map_err(StoreError::Io)?;
     if let Some(temp_source_path) = compact_source_path {
-        platform_fs::rename(temp_source_path, merged_path).map_err(StoreError::Io)?;
+        fs.rename(temp_source_path, merged_path)
+            .map_err(StoreError::Io)?;
     }
     crate::store::cold_start::rebuild::clear_pending_compaction(data_dir)?;
     Ok(())
@@ -190,6 +193,7 @@ struct FailedCompactionCtx<'a> {
     compact_source_path: Option<&'a std::path::Path>,
     error: &'a StoreError,
     context: &'a str,
+    fs: &'a dyn StoreFs,
 }
 
 fn failed_compaction_with_rollback(
@@ -201,7 +205,12 @@ fn failed_compaction_with_rollback(
     ),
     StoreError,
 > {
-    rollback_compaction_disk_state(ctx.data_dir, ctx.merged_path, ctx.compact_source_path)?;
+    rollback_compaction_disk_state(
+        ctx.data_dir,
+        ctx.merged_path,
+        ctx.compact_source_path,
+        ctx.fs,
+    )?;
     let reason = format!("{}; disk layout rolled back: {}", ctx.context, ctx.error);
     tracing::error!(target: "batpak::flow", flow = "compact", error = %ctx.error, "{reason}");
     let result = segment::CompactionResult {
@@ -264,12 +273,15 @@ fn relocate_merged_source_if_present(
     compact_source_path: &mut Option<std::path::PathBuf>,
 ) -> Result<(), StoreError> {
     if let Some((_, source_path)) = sealed.iter_mut().find(|(seg_id, _)| *seg_id == merged_id) {
+        let fs = store.config.fs();
         let temp_source_path = store.config.data_dir.join(format!(
             "{merged_id:06}.{}.compact-src",
             segment::SEGMENT_EXTENSION
         ));
-        remove_file_if_present(&temp_source_path)?;
-        platform_fs::rename(&*source_path, &temp_source_path).map_err(StoreError::Io)?;
+        fs.remove_file_if_present(&temp_source_path)
+            .map_err(StoreError::Io)?;
+        fs.rename(&*source_path, &temp_source_path)
+            .map_err(StoreError::Io)?;
         *source_path = temp_source_path.clone();
         *compact_source_path = Some(temp_source_path);
     }
@@ -290,7 +302,11 @@ fn materialize_compacted_segment(
 
     relocate_merged_source_if_present(store, sealed, merged_id, compact_source_path)?;
 
-    remove_file_if_present(merged_path)?;
+    store
+        .config
+        .fs()
+        .remove_file_if_present(merged_path)
+        .map_err(StoreError::Io)?;
     let mut merged_segment = segment::Segment::<Active>::create_with_created_ns_on(
         &store.config.data_dir,
         merged_id,

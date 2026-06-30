@@ -31,6 +31,8 @@
 //! `SimScheduler` for full cooperative scheduling — not required for current
 //! corpus proofs.
 
+#[cfg(test)]
+mod atomic_fault;
 pub mod clock;
 pub(crate) mod corpus;
 pub(crate) mod fault_model;
