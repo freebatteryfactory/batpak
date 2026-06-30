@@ -64,6 +64,30 @@
 //! 5. [`artifact`], [`registry`], [`transition`], [`reservation`], and
 //!    [`schema`]: Advanced substrate batteries for envelopes, ledgers,
 //!    transition evidence, reservation mechanics, and drift reports.
+//!
+//! **Fail-closed defaults (verifiability).** A store refuses to open on an
+//! ambiguous or undecodable payload registry:
+//! [`EventPayloadValidation`](crate::event::EventPayloadValidation) defaults to
+//! `FailFast`, so a duplicate-kind collision or an incomplete upcast chain is
+//! rejected at [`Store::open`](crate::store::Store::open) (opt out explicitly
+//! with `Warn`/`Silent`). Receipt signing is governed by
+//! [`SigningPolicy`](crate::store::SigningPolicy): the default `Optional`
+//! permits a keyless store, while `Required` refuses to open without a signing
+//! key so an unsigned receipt is never accepted. A configured signer fails the
+//! append closed rather than silently emitting an unsigned receipt unless
+//! [`StoreConfig::with_signing_downgrade_allowed`](crate::store::StoreConfig::with_signing_downgrade_allowed)
+//! opts in.
+//!
+//! **On-demand integrity.** [`Store::verify_chain`](crate::store::Store::verify_chain)
+//! recomputes the full blake3 hash chain over every committed event and returns
+//! a [`ChainVerificationReport`](crate::store::ChainVerificationReport); opt into
+//! [`ChainVerification::Recompute`](crate::store::ChainVerification::Recompute)
+//! to run that pass automatically at open and fail closed on tamper. For
+//! ancestry, [`Store::walk_ancestors_outcome`](crate::store::Store::walk_ancestors_outcome)
+//! returns an [`AncestorWalk`](crate::store::AncestorWalk) whose
+//! [`AncestryBoundary`](crate::store::AncestryBoundary) makes a truncated lineage
+//! (for example, a retention-dropped mid-chain parent) observable instead of
+//! indistinguishable from a complete walk to genesis.
 
 // Width invariant: batpak stores ids/offsets/lengths compactly as `u32`/`u64` and
 // converts to `usize` only transiently for slicing. `u32 -> usize` is lossless only

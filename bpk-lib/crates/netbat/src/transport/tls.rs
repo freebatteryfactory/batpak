@@ -47,6 +47,21 @@ impl std::fmt::Debug for TlsServerConfig {
 impl TlsServerConfig {
     /// Build a server-only TLS config from a PEM cert chain and PEM private key.
     ///
+    /// Wrap the result in [`TransportSecurity::Tls`](crate::TransportSecurity)
+    /// and pass it to [`serve_tcp_listener_secured`](crate::serve_tcp_listener_secured)
+    /// (or the subscription variant) to serve TLS connections.
+    ///
+    /// ```no_run
+    /// use netbat::{TlsServerConfig, TransportSecurity};
+    ///
+    /// # fn configure(cert_chain_pem: &[u8], private_key_pem: &[u8])
+    /// #     -> Result<TransportSecurity, netbat::NetbatError> {
+    /// let tls = TlsServerConfig::from_pem(cert_chain_pem, private_key_pem)?;
+    /// let security = TransportSecurity::Tls(tls);
+    /// # Ok(security)
+    /// # }
+    /// ```
+    ///
     /// # Errors
     /// Returns [`NetbatError::Io`] (`InvalidData`) when the cert chain is empty
     /// or unparseable, no private key is present, or rustls rejects the
