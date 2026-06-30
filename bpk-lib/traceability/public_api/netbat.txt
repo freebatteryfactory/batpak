@@ -76,6 +76,8 @@ pub netbat::StreamFrame::Subscribe(netbat::SubscribeFrame)
 pub enum netbat::SubscriptionDispatch
 pub netbat::SubscriptionDispatch::Concurrent
 pub netbat::SubscriptionDispatch::Sequential
+#[non_exhaustive] pub enum netbat::TransportSecurity
+pub netbat::TransportSecurity::Plaintext
 pub struct netbat::ClientWindow(_)
 impl netbat::ClientWindow
 pub fn netbat::ClientWindow::get(self) -> u32
@@ -295,4 +297,5 @@ pub fn netbat::introspect_modules(modules: &[netbat::ServerModule]) -> netbat::I
 pub fn netbat::serve_stream<S>(stream: &mut S, core: &mut syncbat::core::Core, limits: &netbat::Limits) -> core::result::Result<netbat::ResponseFrame, netbat::NetbatError> where S: std::io::Read + std::io::Write
 pub fn netbat::serve_subscription_stream(reader: impl std::io::Read + core::marker::Send + 'static, writer: impl std::io::Write + core::marker::Send + 'static, runtime: &impl syncbat::subscription_runtime::session::SubscriptionSessionFactory + ?core::marker::Sized, limits: &netbat::Limits) -> core::result::Result<netbat::TcpSubscriptionServeStats, netbat::NetbatError>
 pub fn netbat::serve_tcp_listener<F>(listener: std::net::TcpListener, core_factory: F, config: &netbat::TcpServerConfig, shutdown: &netbat::ShutdownHandle) -> core::result::Result<netbat::TcpServeStats, netbat::NetbatError> where F: syncbat::core::CoreFactory + core::marker::Send + 'static
+pub fn netbat::serve_tcp_listener_secured<F>(listener: std::net::TcpListener, core_factory: F, config: &netbat::TcpServerConfig, security: &netbat::TransportSecurity, shutdown: &netbat::ShutdownHandle) -> core::result::Result<netbat::TcpServeStats, netbat::NetbatError> where F: syncbat::core::CoreFactory + core::marker::Send + 'static
 pub fn netbat::serve_tcp_subscription_listener<R>(listener: std::net::TcpListener, runtime: R, config: &netbat::TcpSubscriptionServerConfig, shutdown: &netbat::ShutdownHandle) -> core::result::Result<netbat::TcpSubscriptionServeStats, netbat::NetbatError> where R: syncbat::subscription_runtime::session::SubscriptionSessionFactory + core::marker::Send + core::marker::Sync + 'static
