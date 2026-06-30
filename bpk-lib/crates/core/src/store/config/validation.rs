@@ -1,4 +1,4 @@
-use super::{Clock, MonotonicClock, StoreConfig, SystemClock};
+use super::{Clock, MonotonicClock, SigningPolicy, StoreConfig, SystemClock};
 use crate::store::cold_start::ColdStartPolicy;
 use crate::store::signing::ReceiptSigningRegistry;
 use crate::store::StoreError;
@@ -62,6 +62,14 @@ impl StoreConfig {
                 "batch.max_bytes must be 1..=16MB".into(),
             ));
         }
+        if matches!(self.signing_policy, SigningPolicy::Required) && self.signing_keys.is_empty() {
+            return Err(StoreError::Configuration(
+                "SigningPolicy::Required but no signing key configured: add one with \
+                 StoreConfig::with_signing_key, or permit unsigned receipts with \
+                 StoreConfig::with_signing_policy(SigningPolicy::Optional)"
+                    .into(),
+            ));
+        }
         // group_commit_max_batch: 0 = unbounded drain (writer drains all pending
         // appends before syncing); 1 = per-event sync (default single-event behavior);
         // N > 1 = drain up to N-1 additional appends before syncing.
@@ -90,7 +98,10 @@ impl StoreConfig {
             ),
             shutdown_drain_limit: self.writer.shutdown_drain_limit,
             group_commit_drain_budget,
-            signing_registry: ReceiptSigningRegistry::from_keys(&self.signing_keys),
+            signing_registry: ReceiptSigningRegistry::from_keys(
+                &self.signing_keys,
+                self.allow_signing_downgrade,
+            ),
             clock: Arc::new(MonotonicClock::wrap(
                 self.clock
                     .clone()

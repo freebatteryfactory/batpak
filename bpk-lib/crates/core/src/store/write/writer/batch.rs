@@ -107,7 +107,7 @@ impl WriterCore {
                         &coord,
                         durable.kind,
                         durable.prev_hash,
-                    );
+                    )?;
                     cached_receipts[idx] = Some(receipt);
                     cached_count += 1;
                 } else if let Some(entry) = self.index.get_by_id(key.as_u128()) {
@@ -125,7 +125,7 @@ impl WriterCore {
                         &entry.coord,
                         entry.kind,
                         entry.hash_chain.prev_hash,
-                    );
+                    )?;
                     cached_receipts[idx] = Some(receipt);
                     cached_count += 1;
                 }
@@ -563,7 +563,7 @@ impl WriterCore {
                 &staged.coord,
                 staged.meta.kind,
                 staged.hash_chain.prev_hash,
-            );
+            )?;
 
             let frame_payload = FramePayloadRef {
                 event: &event,

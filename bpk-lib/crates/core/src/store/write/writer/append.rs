@@ -41,16 +41,7 @@ impl WriterCore {
 
         let latest = self.index.get_latest_committed(entity, guards.dag_lane);
 
-        if let Some(expected) = guards.expected_sequence {
-            let actual = latest.as_ref().map(|entry| entry.clock).unwrap_or(0);
-            if actual != expected {
-                return Err(StoreError::SequenceMismatch {
-                    entity: entity.to_string(),
-                    expected,
-                    actual,
-                });
-            }
-        }
+        Self::enforce_expected_sequence(latest.as_ref(), guards.expected_sequence, entity)?;
 
         if let Some(key) = guards.idempotency_key {
             if let Some(receipt) = self.try_idempotency_replay(key)? {
@@ -121,7 +112,7 @@ impl WriterCore {
         };
         self.runtime
             .signing_registry
-            .sign_append_receipt(&mut receipt, coord, kind, prev_hash);
+            .sign_append_receipt(&mut receipt, coord, kind, prev_hash)?;
 
         let frame_payload = FramePayloadRef {
             event: &event,
@@ -233,6 +224,27 @@ impl WriterCore {
         Ok(receipt)
     }
 
+    /// CAS guard: a caller-supplied `expected_sequence` must equal the entity's
+    /// current committed clock. Extracted from `handle_append` to keep that
+    /// function under its complexity ratchet (behavior-preserving).
+    fn enforce_expected_sequence(
+        latest: Option<&crate::store::index::IndexEntry>,
+        expected: Option<u32>,
+        entity: &str,
+    ) -> Result<(), StoreError> {
+        if let Some(expected) = expected {
+            let actual = latest.map(|entry| entry.clock).unwrap_or(0);
+            if actual != expected {
+                return Err(StoreError::SequenceMismatch {
+                    entity: entity.to_string(),
+                    expected,
+                    actual,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Record the SIDX index entry and, for a keyed append, the durable
     /// idempotency entry. Behavior-preserving extraction of `handle_append`'s
     /// former inline block; isolating the fallible SIDX intern here keeps
@@ -293,7 +305,7 @@ impl WriterCore {
                 &coord,
                 durable.kind,
                 durable.prev_hash,
-            );
+            )?;
             return Ok(Some(receipt));
         }
         // Fall through to the live `by_id` path (covers entries recorded
@@ -313,7 +325,7 @@ impl WriterCore {
                 &entry.coord,
                 entry.kind,
                 entry.hash_chain.prev_hash,
-            );
+            )?;
             return Ok(Some(receipt));
         }
         // Genuinely new key: enforce the soft-cap overflow policy BEFORE we
