@@ -35,6 +35,9 @@
 //!
 //! let mut builder = Core::builder();
 //! builder.register(ECHO.clone(), EchoHandler).expect("register");
+//! // `build()` fails closed without a receipt sink so receipts are never
+//! // silently dropped; this example records none, so opt out explicitly.
+//! builder.without_receipts();
 //! let mut core = builder.build().expect("build");
 //!
 //! let result = core.invoke("echo", b"hi".to_vec()).expect("invoke");

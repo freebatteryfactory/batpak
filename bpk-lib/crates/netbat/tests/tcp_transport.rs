@@ -28,6 +28,7 @@ impl Handler for PingHandler {
 fn core_with_ping() -> Core {
     let mut builder = Core::builder();
     builder.register(PING, PingHandler).expect("register");
+    builder.without_receipts();
     builder.build().expect("core builds")
 }
 

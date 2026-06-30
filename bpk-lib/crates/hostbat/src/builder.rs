@@ -249,6 +249,11 @@ impl HostBuilder {
         }
         if let Some(sink) = self.receipt_sink {
             core_builder.receipt_sink_boxed(sink);
+        } else {
+            // The core builder fails closed without a receipt sink. A host that
+            // was assembled without one explicitly records no receipts; opt out
+            // here so the absence is a stated choice rather than a silent drop.
+            core_builder.without_receipts();
         }
         if let Some(backend) = self.effect_backend {
             let validating = ValidatingEffectBackend::new(
