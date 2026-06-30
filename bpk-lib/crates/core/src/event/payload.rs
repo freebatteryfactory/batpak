@@ -56,15 +56,31 @@ pub trait EventPayload: Serialize + DeserializeOwned {
 }
 
 /// How `Store::open` handles linked `EventPayload` kind collisions.
+///
+/// The default is [`EventPayloadValidation::FailFast`]: two registered payload
+/// types that claim the same `(category, type_id)` give the binary ambiguous
+/// wire identity, so `Store::open` REFUSES to open when the linked registry
+/// contains a collision. The weaker log-and-proceed and skip-the-check modes
+/// stay reachable only as explicit opt-outs ([`EventPayloadValidation::Warn`]
+/// and [`EventPayloadValidation::Silent`]). This mirrors the store's
+/// signing-policy and receipt-hashing idiom: the safe behavior is the default
+/// and the looser behavior is an explicit escape hatch.
+///
+/// Set via
+/// [`StoreConfig::with_event_payload_validation`](crate::store::StoreConfig::with_event_payload_validation).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum EventPayloadValidation {
-    /// Log a single process-wide warning if duplicate payload kinds are linked.
-    #[default]
+    /// Log a single process-wide warning if duplicate payload kinds are linked,
+    /// then open anyway. Explicit opt-out for callers that knowingly tolerate a
+    /// duplicate registration (it is no longer the default).
     Warn,
-    /// Return an error from `Store::open` when duplicate payload kinds are linked.
+    /// Return an error from `Store::open` when duplicate payload kinds are
+    /// linked. This is the safe default: a collision is refused at open.
+    #[default]
     FailFast,
-    /// Do not check the payload registry during `Store::open`.
+    /// Do not check the payload registry during `Store::open`. Explicit opt-out
+    /// that skips the registry scan entirely.
     Silent,
 }
 
