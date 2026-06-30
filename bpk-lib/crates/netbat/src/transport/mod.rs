@@ -29,8 +29,9 @@ pub use stream_frame::{
     SubErrFrame, SubEventFrame, SubWatermarkFrame, SubscribeFrame, SubscriptionToken,
 };
 pub use stream_tcp::{
-    serve_subscription_stream, serve_tcp_subscription_listener, SubscriptionDispatch,
-    TcpSubscriptionServeStats, TcpSubscriptionServerConfig,
+    serve_subscription_stream, serve_tcp_subscription_listener,
+    serve_tcp_subscription_listener_secured, SubscriptionDispatch, TcpSubscriptionServeStats,
+    TcpSubscriptionServerConfig,
 };
 pub use tcp::{
     serve_stream, serve_tcp_listener, serve_tcp_listener_secured, ShutdownHandle, TcpServeStats,

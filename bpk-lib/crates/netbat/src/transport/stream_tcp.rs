@@ -24,10 +24,16 @@ use super::stream_frame::{
     PayloadSchemaRef, StreamFrame, StreamReasonCode, SubEndFrame, SubErrFrame, SubEventFrame,
     SubWatermarkFrame, SubscribeFrame, SubscriptionToken,
 };
-use super::tcp::{apply_timeouts, read_line, ShutdownHandle};
+use super::tcp::{apply_timeouts, read_line, ShutdownHandle, TransportSecurity};
 
 const CURSOR_INVALID_CODE: &str = "cursor_invalid";
 const CURSOR_MISMATCH_CODE: &str = "cursor_mismatch";
+
+/// Poll window the subscription delivery loop waits on the runtime's
+/// event/watermark wakeup before re-checking control input. Shared by the
+/// plaintext writer thread and the single-threaded TLS session loop so both
+/// paths drive deliveries off the same wakeup cadence (never a sleep-spin).
+pub(super) const SUBSCRIPTION_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Summary returned after a NETBAT/2 subscription listener exits.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -52,6 +58,14 @@ pub struct TcpSubscriptionServeStats {
     /// in [`SubscriptionDispatch::Sequential`] mode, where a panic propagates
     /// inline as it did pre-0.9.
     pub worker_panics: usize,
+    /// Subscription sessions whose TLS handshake failed on the worker (a
+    /// cleartext peer against a TLS subscription listener, a truncated/garbage
+    /// ClientHello, a handshake read timeout, etc.). Mirrors the request
+    /// listener's `TcpServeStats::tls_handshake_failures`: the failure is
+    /// counted and the session dropped, never listener-fatal. Present only
+    /// under the `tls` feature.
+    #[cfg(feature = "tls")]
+    pub tls_handshake_failures: usize,
     /// True when shutdown was requested.
     pub shutdown_requested: bool,
 }
@@ -132,25 +146,18 @@ pub fn serve_subscription_stream(
             return Ok(stats);
         }
     };
-    let resume_bytes = maybe_cursor_bytes(subscribe.resume_cursor);
     let (control_tx, control_rx) = flume::bounded(16);
     let stop_control_reader = Arc::new(AtomicBool::new(false));
-    let mut session = match runtime.open_session(
-        subscribe.subscription_id.as_str(),
-        resume_bytes.as_deref(),
-        subscribe.client_window.get(),
+    let mut session = match open_session_for_subscribe(
+        runtime,
+        &subscribe,
+        &mut writer,
+        limits,
         control_rx,
-    ) {
-        Ok(session) => session,
-        Err(error @ SubscriptionRuntimeError::InvalidConfig { .. }) => {
-            return Err(map_runtime_error(&error));
-        }
-        Err(error) => {
-            stats.failed_subscriptions += 1;
-            let delivery = map_open_error(subscribe.subscription_id.as_str(), &error);
-            write_delivery(&mut writer, &delivery, limits)?;
-            return Ok(stats);
-        }
+        &mut stats,
+    )? {
+        Some(session) => session,
+        None => return Ok(stats),
     };
     spawn_control_reader(
         reader,
@@ -193,6 +200,55 @@ pub fn serve_tcp_subscription_listener<R>(
 where
     R: SubscriptionSessionFactory + Send + Sync + 'static,
 {
+    serve_tcp_subscription_listener_secured(
+        listener,
+        runtime,
+        config,
+        &TransportSecurity::Plaintext,
+        shutdown,
+    )
+}
+
+/// Serve a NETBAT/2 subscription listener with a chosen [`TransportSecurity`].
+///
+/// Identical to [`serve_tcp_subscription_listener`] but takes a
+/// [`TransportSecurity`]: pass [`TransportSecurity::Plaintext`] for the
+/// unencrypted two-thread session (what `serve_tcp_subscription_listener`
+/// does), or — under the `tls` feature — `TransportSecurity::Tls(..)` to wrap
+/// each accepted session in server-only rustls TLS.
+///
+/// A rustls stream is stateful record-layer machinery that is NOT safe to touch
+/// from two threads, so the TLS path cannot `try_clone` the socket and split a
+/// control-reader thread from the delivery writer the way the plaintext path
+/// does. Instead each TLS session is served on ONE worker thread that
+/// multiplexes client control-frame reads with delivery writes over the single
+/// stream: deliveries are driven by the runtime's event/watermark wakeup (the
+/// same `session.poll` wait the plaintext writer uses — never a sleep-spin), and
+/// pending control frames are drained opportunistically between polls with a
+/// non-blocking read so a control read never starves deliveries. The plaintext
+/// path is byte-for-byte unchanged.
+///
+/// The accept loop accepts the RAW `TcpStream`, acquires the concurrency permit,
+/// and dispatches the session; the TLS handshake (when configured) runs INSIDE
+/// the worker, post-permit. A handshake failure is counted in
+/// [`TcpSubscriptionServeStats::tls_handshake_failures`] and the session is
+/// dropped — never listener-fatal, so a slow or hostile handshake occupies at
+/// most one worker+permit slot.
+///
+/// # Errors
+/// Listener configuration, accept, timeout, worker spawn, or — in `Sequential`
+/// mode only — a per-session response-write/runtime-poll failure (concurrent
+/// workers contain and count their own session failures).
+pub fn serve_tcp_subscription_listener_secured<R>(
+    listener: TcpListener,
+    runtime: R,
+    config: &TcpSubscriptionServerConfig,
+    security: &TransportSecurity,
+    shutdown: &ShutdownHandle,
+) -> Result<TcpSubscriptionServeStats, NetbatError>
+where
+    R: SubscriptionSessionFactory + Send + Sync + 'static,
+{
     listener.set_nonblocking(true)?;
     let runtime = Arc::new(runtime);
     let mut stats = TcpSubscriptionServeStats::default();
@@ -211,9 +267,9 @@ where
                 stats.accepted_connections += 1;
                 stream.set_nonblocking(false)?;
                 apply_timeouts(&stream, config.timeouts)?;
-                if let Some(worker) =
-                    dispatch_subscription(stream, &runtime, config, &stats_tx, &mut stats, permit)?
-                {
+                if let Some(worker) = dispatch_subscription(
+                    stream, &runtime, config, security, &stats_tx, &mut stats, permit,
+                )? {
                     workers.push(worker);
                 }
             }
@@ -243,6 +299,7 @@ fn dispatch_subscription<R>(
     stream: TcpStream,
     runtime: &Arc<R>,
     config: &TcpSubscriptionServerConfig,
+    security: &TransportSecurity,
     stats_tx: &flume::Sender<TcpSubscriptionServeStats>,
     stats: &mut TcpSubscriptionServeStats,
     permit: ConnectionPermit,
@@ -252,13 +309,14 @@ where
 {
     match config.dispatch {
         SubscriptionDispatch::Sequential => {
-            serve_subscription_inline(stream, runtime.as_ref(), config, stats, permit)?;
+            serve_subscription_inline(stream, runtime.as_ref(), config, security, stats, permit)?;
             Ok(None)
         }
         SubscriptionDispatch::Concurrent => Ok(Some(spawn_subscription_worker(
             stream,
             Arc::clone(runtime),
             *config,
+            security.clone(),
             stats_tx.clone(),
             permit,
         )?)),
@@ -272,6 +330,7 @@ fn serve_subscription_inline<R>(
     stream: TcpStream,
     runtime: &R,
     config: &TcpSubscriptionServerConfig,
+    security: &TransportSecurity,
     stats: &mut TcpSubscriptionServeStats,
     permit: ConnectionPermit,
 ) -> Result<(), NetbatError>
@@ -279,7 +338,7 @@ where
     R: SubscriptionSessionFactory,
 {
     let _permit = permit;
-    match serve_tcp_subscription_connection(stream, runtime, config) {
+    match serve_tcp_subscription_connection(stream, runtime, config, security) {
         Ok(connection_stats) => merge_stats(stats, connection_stats),
         Err(NetbatError::Io { .. }) => stats.connection_io_failures += 1,
         Err(error) => return Err(error),
@@ -296,6 +355,7 @@ fn spawn_subscription_worker<R>(
     stream: TcpStream,
     runtime: Arc<R>,
     config: TcpSubscriptionServerConfig,
+    security: TransportSecurity,
     stats_tx: flume::Sender<TcpSubscriptionServeStats>,
     permit: ConnectionPermit,
 ) -> Result<JoinHandle<()>, NetbatError>
@@ -309,7 +369,7 @@ where
             let _permit = permit;
             let mut conn_stats = TcpSubscriptionServeStats::default();
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                serve_tcp_subscription_connection(stream, runtime.as_ref(), &config)
+                serve_tcp_subscription_connection(stream, runtime.as_ref(), &config, &security)
             }));
             match outcome {
                 Ok(Ok(connection_stats)) => conn_stats = connection_stats,
@@ -336,13 +396,69 @@ fn drain_subscription_stats(
     }
 }
 
+/// Serve one accepted subscription session under the listener's
+/// [`TransportSecurity`]. The single dispatch seam between plaintext and TLS.
+///
+/// Plaintext keeps the proven two-thread model: a `try_clone` reader thread
+/// forwards control frames over the flume lane while the delivery writer runs on
+/// this thread. TLS cannot do that — a rustls `Connection` is stateful
+/// record-layer machinery that is unsound to touch from two threads, and
+/// `StreamOwned` is not cloneable — so the TLS path serves the whole session on
+/// ONE thread (see [`stream_tcp_tls::serve_tls_subscription_connection`]).
 fn serve_tcp_subscription_connection(
     stream: TcpStream,
     runtime: &(impl SubscriptionSessionFactory + ?Sized),
     config: &TcpSubscriptionServerConfig,
+    security: &TransportSecurity,
 ) -> Result<TcpSubscriptionServeStats, NetbatError> {
-    let reader = stream.try_clone().map_err(NetbatError::from)?;
-    serve_subscription_stream(reader, stream, runtime, &config.limits)
+    match security {
+        TransportSecurity::Plaintext => {
+            let reader = stream.try_clone().map_err(NetbatError::from)?;
+            serve_subscription_stream(reader, stream, runtime, &config.limits)
+        }
+        #[cfg(feature = "tls")]
+        TransportSecurity::Tls(tls) => {
+            stream_tcp_tls::serve_tls_subscription_connection(stream, tls, runtime, config)
+        }
+    }
+}
+
+/// Open the runtime session for a decoded `SUBSCRIBE`, mapping open failures the
+/// one way both transports use.
+///
+/// Returns `Ok(Some(session))` for a successful open; `Ok(None)` when the open
+/// was rejected (the terminal error frame has already been written and
+/// `failed_subscriptions` bumped, so the caller returns its stats); `Err` only
+/// for an [`SubscriptionRuntimeError::InvalidConfig`], which is a server
+/// misconfiguration the caller propagates. Shared by the plaintext two-thread
+/// path and the single-threaded TLS path so the open-error mapping lives in one
+/// place.
+fn open_session_for_subscribe<W: Write>(
+    runtime: &(impl SubscriptionSessionFactory + ?Sized),
+    subscribe: &SubscribeFrame,
+    writer: &mut W,
+    limits: &Limits,
+    control_rx: flume::Receiver<SessionControl>,
+    stats: &mut TcpSubscriptionServeStats,
+) -> Result<Option<Box<dyn SubscriptionSession>>, NetbatError> {
+    let resume_bytes = maybe_cursor_bytes(subscribe.resume_cursor.clone());
+    match runtime.open_session(
+        subscribe.subscription_id.as_str(),
+        resume_bytes.as_deref(),
+        subscribe.client_window.get(),
+        control_rx,
+    ) {
+        Ok(session) => Ok(Some(session)),
+        Err(error @ SubscriptionRuntimeError::InvalidConfig { .. }) => {
+            Err(map_runtime_error(&error))
+        }
+        Err(error) => {
+            stats.failed_subscriptions += 1;
+            let delivery = map_open_error(subscribe.subscription_id.as_str(), &error);
+            write_delivery(writer, &delivery, limits)?;
+            Ok(None)
+        }
+    }
 }
 
 fn run_subscription_loop(
@@ -351,7 +467,7 @@ fn run_subscription_loop(
     limits: &Limits,
 ) -> Result<(), NetbatError> {
     loop {
-        match session.poll(Duration::from_millis(50)) {
+        match session.poll(SUBSCRIPTION_POLL_INTERVAL) {
             Ok(SessionPoll::Delivery(delivery)) => {
                 write_delivery(writer, &delivery, limits)?;
                 if terminal_delivery(&delivery) {
@@ -488,44 +604,75 @@ fn read_control_loop(
                 break;
             }
         };
-        let frame = match decode_stream_line(&line, limits) {
-            Ok(frame) => frame,
-            Err(_) => {
-                let _ = control_tx.send(SessionControl::Malformed);
-                break;
-            }
-        };
-        match frame {
-            StreamFrame::SubAck(frame) => {
-                if frame.subscription_id.as_str() != subscription_id.as_str() {
-                    let _ = control_tx.send(SessionControl::Malformed);
-                    break;
-                }
-                let cursor = RuntimeCursor::from_bytes(frame.cursor_after.into_bytes());
-                let _ = control_tx.send(SessionControl::Ack {
-                    delivery_index: frame.delivery_index.get(),
-                    cursor,
-                });
-            }
-            StreamFrame::SubCancel(frame) => {
-                if frame.subscription_id.as_str() != subscription_id.as_str() {
-                    let _ = control_tx.send(SessionControl::Malformed);
-                    break;
-                }
-                let _ = control_tx.send(SessionControl::Cancel);
-                break;
-            }
-            StreamFrame::Subscribe(_)
-            | StreamFrame::SubEvent(_)
-            | StreamFrame::SubWatermark(_)
-            | StreamFrame::SubErr(_)
-            | StreamFrame::SubEnd(_) => {
-                let _ = control_tx.send(SessionControl::Malformed);
-                break;
-            }
+        let classified = classify_control_line(&line, limits, subscription_id);
+        let terminal = classified.terminal;
+        let _ = control_tx.send(classified.control);
+        if terminal {
+            break;
         }
     }
     Ok(())
+}
+
+/// One client control frame mapped to its [`SessionControl`] plus whether it
+/// ends the control stream.
+///
+/// `terminal` is true for everything that stops the reader: a `SUB_CANCEL`, any
+/// id mismatch, an unexpected frame kind, or an undecodable line (all of which
+/// map to `Malformed` except the matching cancel). Only a well-formed,
+/// id-matching `SUB_ACK` is non-terminal. Pure over the line bytes so it is the
+/// single decode seam shared by the plaintext control-reader thread and the
+/// single-threaded TLS control drain.
+pub(super) struct ClassifiedControl {
+    pub(super) control: SessionControl,
+    pub(super) terminal: bool,
+}
+
+pub(super) fn classify_control_line(
+    line: &[u8],
+    limits: &Limits,
+    subscription_id: &SubscriptionToken,
+) -> ClassifiedControl {
+    let frame = match decode_stream_line(line, limits) {
+        Ok(frame) => frame,
+        Err(_) => return malformed_control(),
+    };
+    match frame {
+        StreamFrame::SubAck(frame) => {
+            if frame.subscription_id.as_str() != subscription_id.as_str() {
+                return malformed_control();
+            }
+            let cursor = RuntimeCursor::from_bytes(frame.cursor_after.into_bytes());
+            ClassifiedControl {
+                control: SessionControl::Ack {
+                    delivery_index: frame.delivery_index.get(),
+                    cursor,
+                },
+                terminal: false,
+            }
+        }
+        StreamFrame::SubCancel(frame) => {
+            if frame.subscription_id.as_str() != subscription_id.as_str() {
+                return malformed_control();
+            }
+            ClassifiedControl {
+                control: SessionControl::Cancel,
+                terminal: true,
+            }
+        }
+        StreamFrame::Subscribe(_)
+        | StreamFrame::SubEvent(_)
+        | StreamFrame::SubWatermark(_)
+        | StreamFrame::SubErr(_)
+        | StreamFrame::SubEnd(_) => malformed_control(),
+    }
+}
+
+fn malformed_control() -> ClassifiedControl {
+    ClassifiedControl {
+        control: SessionControl::Malformed,
+        terminal: true,
+    }
 }
 
 /// How the accept loop reacts to a failed `TcpListener::accept()`.
@@ -682,6 +829,10 @@ fn merge_stats(total: &mut TcpSubscriptionServeStats, connection: TcpSubscriptio
     total.runtime_failures += connection.runtime_failures;
     total.connection_io_failures += connection.connection_io_failures;
     total.worker_panics += connection.worker_panics;
+    #[cfg(feature = "tls")]
+    {
+        total.tls_handshake_failures += connection.tls_handshake_failures;
+    }
 }
 
 fn map_runtime_error(error: &SubscriptionRuntimeError) -> NetbatError {
@@ -703,6 +854,14 @@ fn map_runtime_error(error: &SubscriptionRuntimeError) -> NetbatError {
         },
     }
 }
+
+/// Single-threaded TLS subscription session: the rustls stream cannot be
+/// thread-split, so control reads and delivery writes are multiplexed on one
+/// worker. Gated on `feature = "tls"`; `#[path]`-split to keep this module
+/// within the file-size cap.
+#[cfg(feature = "tls")]
+#[path = "stream_tcp_tls.rs"]
+mod stream_tcp_tls;
 
 #[cfg(test)]
 #[path = "stream_tcp_tests.rs"]

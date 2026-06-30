@@ -250,3 +250,51 @@ fn sequential_dispatch_serves_only_one_subscriber_at_a_time() {
         "subscriber A was served; stats={stats:?}"
     );
 }
+
+#[test]
+fn secured_plaintext_subscription_serves_identically() {
+    // serve_tcp_subscription_listener_secured with TransportSecurity::Plaintext
+    // is the byte-for-byte two-thread subscription path: a subscriber still
+    // receives its SUB_EVENT. Also witnesses the new
+    // serve_tcp_subscription_listener_secured + TransportSecurity::Plaintext
+    // public items in the default (no-tls) build.
+    let listener = localhost_listener();
+    let addr = listener.local_addr().expect("addr");
+    let shutdown = nb::ShutdownHandle::new();
+    let server_shutdown = shutdown.clone();
+    let mut config = nb::TcpSubscriptionServerConfig::default();
+    config.connection_limit =
+        nb::ConnectionLimit::Lifetime(std::num::NonZeroUsize::new(1).expect("nonzero"));
+
+    let server = thread::Builder::new()
+        .name("netbat-sub-secured-plain".to_owned())
+        .spawn(move || {
+            nb::serve_tcp_subscription_listener_secured(
+                listener,
+                LiveRuntime,
+                &config,
+                &nb::TransportSecurity::Plaintext,
+                &server_shutdown,
+            )
+        })
+        .expect("spawn secured plaintext subscription server");
+
+    let mut client = connect(addr);
+    client.write_all(SUBSCRIBE_LINE).expect("subscribe");
+    let lines = read_lines(&mut client, 1, Duration::from_secs(2));
+    assert!(
+        lines.iter().any(|line| line.contains("SUB_EVENT")),
+        "secured plaintext path must stream the event; got {lines:?}"
+    );
+
+    shutdown.shutdown();
+    drop(client);
+    let stats = server
+        .join()
+        .expect("listener thread joins")
+        .expect("listener returns Ok");
+    assert!(
+        stats.served_subscriptions >= 1,
+        "the subscriber was served; stats={stats:?}"
+    );
+}
