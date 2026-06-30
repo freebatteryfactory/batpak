@@ -22,7 +22,7 @@ fn validate_payload_registry_for_open(config: &StoreConfig) -> Result<(), StoreE
                 tracing::warn!(
                     target: "batpak::event_registry",
                     collisions = ?error.collisions(),
-                    "duplicate EventPayload kind registrations detected; call validate_event_payload_registry() or set EventPayloadValidation::FailFast to make this an open error"
+                    "duplicate EventPayload kind registrations detected; EventPayloadValidation::Warn is set, so the store opened despite ambiguous wire identity. The default EventPayloadValidation::FailFast refuses to open on collision"
                 );
             }
             Ok(())

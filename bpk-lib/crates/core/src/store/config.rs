@@ -121,6 +121,10 @@ impl StoreConfig {
             // already guarded every frame at read time. Regulated callers opt
             // into ChainVerification::Recompute for tamper-evidence at open.
             chain_verification: ChainVerification::Crc,
+            // FailFast (the default): refuse to open when two linked payload
+            // types claim the same (category, type_id) and would otherwise get
+            // ambiguous wire identity. Callers who knowingly tolerate a
+            // collision opt out via EventPayloadValidation::Warn / Silent.
             event_payload_validation: EventPayloadValidation::default(),
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: None,
