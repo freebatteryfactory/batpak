@@ -50,6 +50,68 @@
 //! assert!(err_frame.starts_with(b"ERR malformed_request "));
 //! assert!(err_frame.ends_with(b"\n"));
 //! ```
+//!
+//! # Connection limits and dispatch
+//!
+//! A blocking listener caps the connections it serves through
+//! [`ConnectionLimit`] (the `connection_limit` field on [`TcpServerConfig`] and
+//! [`TcpSubscriptionServerConfig`]). The default,
+//! [`ConnectionLimit::Concurrent`], is an *in-flight* permit pool sized at
+//! [`DEFAULT_MAX_CONNECTIONS`]: at most `n` connections are served at once and a
+//! freed slot is immediately reusable. It REPLACES the pre-0.9 `max_connections`
+//! *lifetime* accept budget, which is now the explicit opt-in
+//! [`ConnectionLimit::Lifetime`]; [`ConnectionLimit::Unlimited`] removes the gate
+//! entirely.
+//!
+//! The subscription listener additionally chooses how each accepted session is
+//! served via [`SubscriptionDispatch`]. The default,
+//! [`SubscriptionDispatch::Concurrent`], spawns a contained worker per session
+//! so subscribers stream concurrently (gated by the same permit pool);
+//! [`SubscriptionDispatch::Sequential`] keeps the pre-0.9 inline behavior where
+//! one long-lived subscriber blocks the accept loop until its session ends.
+//!
+//! ```
+//! use netbat as nb;
+//!
+//! // Both listeners default to a concurrent in-flight permit pool, and
+//! // subscriptions are served concurrently.
+//! assert!(matches!(
+//!     nb::ConnectionLimit::default(),
+//!     nb::ConnectionLimit::Concurrent(_),
+//! ));
+//! assert_eq!(nb::SubscriptionDispatch::default(), nb::SubscriptionDispatch::Concurrent);
+//!
+//! // Opt into the pre-0.9 lifetime accept budget — or remove the gate entirely.
+//! let config = nb::TcpServerConfig::default()
+//!     .with_connection_limit(nb::ConnectionLimit::Unlimited);
+//! assert_eq!(config.connection_limit, nb::ConnectionLimit::Unlimited);
+//! ```
+//!
+//! # Security / transport trust model
+//!
+//! netbat has **no authentication and no authorization, by design**. Identity
+//! and access control are downstream-domain concerns: authenticate and
+//! authorize at a fronting proxy or in the application layer that owns the
+//! [`syncbat`] runtime, never inside netbat. netbat only frames bytes, maps
+//! stable error codes, and moves bounded request/response and subscription
+//! frames over a blocking transport.
+//!
+//! Without the `tls` feature (the default) netbat speaks **plaintext** and so
+//! assumes a **trusted transport**: bind it to loopback, a private network
+//! segment, or behind a TLS-terminating reverse proxy. There is no in-process
+//! confidentiality on the plaintext path.
+//!
+//! Enabling the opt-in `tls` feature adds **server-only** TLS (rustls): it
+//! provides confidentiality and *server* identity only — it does **not**
+//! authenticate the client (auth still lives above netbat). Build a
+//! [`TlsServerConfig`] from PEM and pass [`TransportSecurity::Tls`] to
+//! [`serve_tcp_listener_secured`] (or
+//! [`serve_tcp_subscription_listener_secured`]). The rustls handshake runs on
+//! the per-connection worker *after* the concurrency permit is acquired, so a
+//! slow or hostile handshake occupies at most one worker+permit slot and never
+//! blocks the accept loop; a failed handshake (for example, a cleartext peer) is
+//! counted in [`TcpServeStats::tls_handshake_failures`] and the connection is
+//! dropped — never listener-fatal. See [`TlsServerConfig`] for a PEM example.
 
 mod route;
 mod transport;

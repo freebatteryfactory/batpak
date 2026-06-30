@@ -60,6 +60,25 @@ automatic Raft replication inside the core crate. Scale with multiple
 journals and explicit host circuits instead — one writer per `data_dir`, by
 design.
 
+## Verifiability defaults
+
+The safe behavior is the default; the weaker behavior is an explicit opt-out.
+
+- **Open fails closed on an undecodable registry.** `EventPayloadValidation`
+  defaults to `FailFast`: a duplicate-kind collision or an incomplete upcast
+  chain refuses `Store::open` (relax to `Warn`/`Silent` deliberately).
+- **Signing policy.** `SigningPolicy::Optional` (default) permits a keyless
+  store; `SigningPolicy::Required` refuses to open without a signing key so an
+  unsigned receipt can never be accepted. A configured signer that cannot build
+  its cover fails the append closed unless
+  `StoreConfig::with_signing_downgrade_allowed(true)`.
+- **Tamper checks on demand.** `Store::verify_chain()` recomputes the full
+  blake3 chain and returns a `ChainVerificationReport`; opt into
+  `ChainVerification::Recompute` to run it at open and fail closed on tamper.
+- **Observable truncation.** `Store::walk_ancestors_outcome()` returns an
+  `AncestorWalk` whose `AncestryBoundary` distinguishes a complete walk to
+  genesis from a lineage truncated at a missing parent (e.g. a retention drop).
+
 ## Trust
 
 Judge the evidence, not the 0.x version number: a deep test surface

@@ -44,6 +44,24 @@
 //! assert_eq!(result.output(), b"hi");
 //! ```
 //!
+//! # Runtime safety defaults
+//!
+//! The runtime fails closed where silence would lose evidence:
+//!
+//! - [`CoreBuilder::build`] refuses to build without a receipt sink, because a
+//!   sinkless core silently drops every runtime receipt. State the sinkless
+//!   intent explicitly with [`CoreBuilder::without_receipts`] (used above), or
+//!   configure one with [`CoreBuilder::receipt_sink`].
+//! - Receipt input/output hashing defaults to [`ReceiptHashPolicy::Blake3`], so
+//!   every recorded receipt binds to the exact bytes that produced it;
+//!   [`ReceiptHashPolicy::Deferred`] is the explicit opt-out for a layer that
+//!   hashes the bytes itself.
+//! - Capability tokens are enforced at checkout: a dispatched operation that
+//!   declares a required token the [`Core`] was not granted fails closed. Grant
+//!   tokens with [`CoreBuilder::grant_capability`] /
+//!   [`CoreBuilder::grant_capabilities`]. (Effect-axis tokens auto-declared by
+//!   the effect builders are ambient and need no explicit grant.)
+//!
 //! # Operation names
 //!
 //! Operation names follow a stable grammar checked once by
