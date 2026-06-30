@@ -680,3 +680,46 @@ fn handler_panic_is_contained_counted_and_not_listener_fatal(
     );
     Ok(())
 }
+
+#[test]
+fn secured_plaintext_path_serves_identically_to_plain_listener() {
+    // serve_tcp_listener_secured with TransportSecurity::Plaintext is the
+    // byte-for-byte plaintext serve path: the same OK round-trip as
+    // serve_tcp_listener. Also witnesses the un-gated TransportSecurity +
+    // serve_tcp_listener_secured public items in the default (no-tls) build.
+    let listener = localhost_listener();
+    let addr = listener.local_addr().expect("listener addr");
+    let shutdown = nb::ShutdownHandle::new();
+    let server_shutdown = shutdown.clone();
+    let config = nb::TcpServerConfig::default().with_connection_limit(lifetime(1));
+
+    let handle = thread::Builder::new()
+        .name("netbat-tcp-secured-plain".to_owned())
+        .spawn(move || {
+            let factory = || core_with_ping();
+            nb::serve_tcp_listener_secured(
+                listener,
+                factory,
+                &config,
+                &nb::TransportSecurity::Plaintext,
+                &server_shutdown,
+            )
+            .expect("serve secured plaintext listener")
+        })
+        .expect("spawn secured plaintext server");
+
+    let mut stream = connect_client(addr);
+    stream
+        .write_all(b"NETBAT/1 CALL ping 6869\n")
+        .expect("write request");
+    let mut response = String::new();
+    BufReader::new(stream)
+        .read_line(&mut response)
+        .expect("read response");
+
+    let stats = handle.join().expect("server thread joins");
+    assert_eq!(response, "OK 6869\n");
+    assert_eq!(stats.accepted_connections, 1);
+    assert_eq!(stats.served_requests, 1);
+    assert_eq!(stats.failed_requests, 0);
+}

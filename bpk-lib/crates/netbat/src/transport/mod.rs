@@ -6,6 +6,8 @@ mod limits;
 mod stream_frame;
 mod stream_tcp;
 mod tcp;
+#[cfg(feature = "tls")]
+mod tls;
 
 pub use error::NetbatError;
 pub use frame::{
@@ -31,6 +33,8 @@ pub use stream_tcp::{
     TcpSubscriptionServeStats, TcpSubscriptionServerConfig,
 };
 pub use tcp::{
-    serve_stream, serve_tcp_listener, ShutdownHandle, TcpServeStats, TcpServerConfig,
-    DEFAULT_MAX_REQUESTS_PER_CONNECTION,
+    serve_stream, serve_tcp_listener, serve_tcp_listener_secured, ShutdownHandle, TcpServeStats,
+    TcpServerConfig, TransportSecurity, DEFAULT_MAX_REQUESTS_PER_CONNECTION,
 };
+#[cfg(feature = "tls")]
+pub use tls::TlsServerConfig;

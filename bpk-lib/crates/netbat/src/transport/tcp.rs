@@ -11,9 +11,31 @@ use super::error::NetbatError;
 use super::frame::{decode_line, dispatch_frame, encode_response, ResponseFrame};
 use super::limiter::{stats_lane, Admission, ConnectionLimit, ConnectionPermit, Limiter};
 use super::limits::{IoTimeouts, Limits};
+#[cfg(feature = "tls")]
+use super::tls::TlsServerConfig;
 
 /// Default maximum requests served from one accepted TCP connection.
 pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 1;
+
+/// Transport security applied to a request listener's accepted connections.
+///
+/// [`TransportSecurity::Plaintext`] is the default and the ONLY option without
+/// the `tls` feature: it is byte-for-byte the pre-TLS serve path. With the
+/// `tls` feature, [`TransportSecurity::Tls`] wraps a `TlsServerConfig` and the
+/// listener performs the rustls handshake on the per-connection worker (after
+/// the concurrency permit is acquired), so a slow handshake never blocks
+/// accepts. Pass it to [`serve_tcp_listener_secured`].
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub enum TransportSecurity {
+    /// Unencrypted TCP. Identical to [`serve_tcp_listener`]'s serve path.
+    #[default]
+    Plaintext,
+    /// Server-only rustls TLS using the wrapped `TlsServerConfig`. The
+    /// handshake runs on the connection worker, post-permit.
+    #[cfg(feature = "tls")]
+    Tls(TlsServerConfig),
+}
 
 /// Blocking TCP server limits.
 ///
@@ -147,6 +169,13 @@ pub struct TcpServeStats {
     /// other connections; counting it keeps a server-side fault
     /// observable instead of silently swallowed.
     pub worker_panics: usize,
+    /// Connections whose TLS handshake failed on the worker (a cleartext peer
+    /// against a TLS listener, a truncated/garbage ClientHello, a handshake
+    /// read timeout, etc.). Mirrors `connection_io_failures`/`worker_panics`:
+    /// the failure is counted and the connection dropped, never listener-fatal.
+    /// Present only under the `tls` feature.
+    #[cfg(feature = "tls")]
+    pub tls_handshake_failures: usize,
     /// True when the listener exited because its shutdown handle was set.
     pub shutdown_requested: bool,
 }
@@ -259,14 +288,53 @@ where
 /// timeout configuration, or response writes fail. Per-request decode/runtime
 /// errors are counted in [`TcpServeStats::failed_requests`] after their error
 /// response is written.
-#[tracing::instrument(name = "netbat.serve_tcp_listener", skip_all, fields(
-    addr = %listener.local_addr().map(|a| a.to_string()).unwrap_or_default(),
-    connection_limit = ?config.connection_limit,
-))]
 pub fn serve_tcp_listener<F>(
     listener: TcpListener,
     core_factory: F,
     config: &TcpServerConfig,
+    shutdown: &ShutdownHandle,
+) -> Result<TcpServeStats, NetbatError>
+where
+    F: CoreFactory + Send + 'static,
+{
+    serve_tcp_listener_secured(
+        listener,
+        core_factory,
+        config,
+        &TransportSecurity::Plaintext,
+        shutdown,
+    )
+}
+
+/// Serve a blocking TCP listener with a chosen [`TransportSecurity`].
+///
+/// Identical to [`serve_tcp_listener`] but takes a [`TransportSecurity`]: pass
+/// [`TransportSecurity::Plaintext`] for the unencrypted path (what
+/// `serve_tcp_listener` does), or — under the `tls` feature —
+/// `TransportSecurity::Tls(..)` to wrap each accepted connection in server-only
+/// rustls TLS.
+///
+/// The accept loop accepts the RAW `TcpStream`, acquires the concurrency permit,
+/// and spawns the worker; the TLS handshake (when configured) runs INSIDE that
+/// worker, post-permit. A handshake failure is counted in
+/// [`TcpServeStats::tls_handshake_failures`] and the connection is dropped — it
+/// is never listener-fatal, so a slow or hostile handshake can occupy at most
+/// one worker+permit slot (capped by [`TcpServerConfig::connection_limit`]).
+///
+/// # Errors
+/// Returns [`NetbatError`] when listener configuration, accept, worker spawn,
+/// timeout configuration, or response writes fail — the same fatal conditions
+/// as [`serve_tcp_listener`]. Per-connection decode/runtime/TLS-handshake
+/// failures are counted in [`TcpServeStats`], not returned.
+#[tracing::instrument(name = "netbat.serve_tcp_listener", skip_all, fields(
+    addr = %listener.local_addr().map(|a| a.to_string()).unwrap_or_default(),
+    connection_limit = ?config.connection_limit,
+))]
+pub fn serve_tcp_listener_secured<F>(
+    listener: TcpListener,
+    core_factory: F,
+    config: &TcpServerConfig,
+    security: &TransportSecurity,
     shutdown: &ShutdownHandle,
 ) -> Result<TcpServeStats, NetbatError>
 where
@@ -298,10 +366,11 @@ where
                 stream.set_nonblocking(false)?;
                 apply_timeouts(&stream, config.timeouts)?;
                 let config = *config;
+                let security = security.clone();
                 let stats_tx = stats_tx.clone();
                 let factory = Arc::clone(&factory);
                 workers.push(spawn_connection_worker(
-                    stream, config, stats_tx, factory, permit,
+                    stream, security, config, stats_tx, factory, permit,
                 )?);
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -333,6 +402,7 @@ where
 
 fn spawn_connection_worker<F>(
     stream: TcpStream,
+    security: TransportSecurity,
     config: TcpServerConfig,
     stats_tx: flume::Sender<TcpServeStats>,
     factory: Arc<Mutex<F>>,
@@ -362,8 +432,11 @@ where
             // every later worker went un-joined). Catching at the worker
             // boundary keeps `join()` infallible, the listener `Ok`, and the
             // accept loop serving; the panic is counted so it stays observable.
+            // The TLS handshake (when configured) runs INSIDE this closure, so a
+            // handshake that panics or stalls is contained exactly like any
+            // other per-connection fault.
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                serve_tcp_connection(stream, &mut core, &config, &mut conn_stats)
+                serve_secured_connection(stream, &security, &mut core, &config, &mut conn_stats)
             }));
             match outcome {
                 Ok(Ok(())) => {
@@ -396,6 +469,31 @@ fn merge_tcp_serve_stats(total: &mut TcpServeStats, partial: TcpServeStats) {
     total.runtime_failures += partial.runtime_failures;
     total.connection_io_failures += partial.connection_io_failures;
     total.worker_panics += partial.worker_panics;
+    #[cfg(feature = "tls")]
+    {
+        total.tls_handshake_failures += partial.tls_handshake_failures;
+    }
+}
+
+/// Serve one accepted connection under the listener's [`TransportSecurity`].
+///
+/// The single dispatch seam between plaintext and TLS. Plaintext serves the raw
+/// `TcpStream` exactly as before; TLS performs the handshake on this worker and
+/// then serves the resulting `rustls::StreamOwned` through the SAME generic
+/// [`serve_connection_loop`]. Both stream types are `Read + Write`, so the
+/// per-connection request/response logic is shared with no plaintext-path change.
+fn serve_secured_connection(
+    stream: TcpStream,
+    security: &TransportSecurity,
+    core: &mut syncbat::Core,
+    config: &TcpServerConfig,
+    stats: &mut TcpServeStats,
+) -> Result<(), NetbatError> {
+    match security {
+        TransportSecurity::Plaintext => serve_tcp_connection(stream, core, config, stats),
+        #[cfg(feature = "tls")]
+        TransportSecurity::Tls(tls) => serve_tls_connection(stream, tls, core, config, stats),
+    }
 }
 
 fn serve_tcp_connection(
@@ -405,6 +503,30 @@ fn serve_tcp_connection(
     stats: &mut TcpServeStats,
 ) -> Result<(), NetbatError> {
     serve_connection_loop(&mut stream, core, config, stats)
+}
+
+/// Complete the rustls handshake on this worker, then serve the encrypted
+/// stream. A handshake failure (cleartext peer, garbage ClientHello, handshake
+/// read timeout, etc.) is counted in [`TcpServeStats::tls_handshake_failures`]
+/// and the connection is dropped with `Ok(())` so the stats are still reported
+/// and the listener keeps serving — exactly mirroring the peer-IO-failure path.
+#[cfg(feature = "tls")]
+fn serve_tls_connection(
+    stream: TcpStream,
+    tls: &TlsServerConfig,
+    core: &mut syncbat::Core,
+    config: &TcpServerConfig,
+    stats: &mut TcpServeStats,
+) -> Result<(), NetbatError> {
+    let mut tls_stream = match tls.handshake(stream) {
+        Ok(tls_stream) => tls_stream,
+        Err(_error) => {
+            stats.tls_handshake_failures += 1;
+            tracing::debug!("tls handshake failed; dropping connection");
+            return Ok(());
+        }
+    };
+    serve_connection_loop(&mut tls_stream, core, config, stats)
 }
 
 /// Drive one accepted connection through up to
@@ -604,6 +726,21 @@ mod tests {
         };
         merge_tcp_serve_stats(&mut total, partial);
         assert_eq!(total.worker_panics, 3);
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn merge_tcp_serve_stats_sums_tls_handshake_failures() {
+        // KILLS mutants on the `tls_handshake_failures += partial.…` merge line
+        // (`+=` -> `*=`/`-=`, or a dropped merge). With `*=` the merged total
+        // stays 0; with `-=` it underflows. Only real addition yields 4.
+        let mut total = TcpServeStats::default();
+        let partial = TcpServeStats {
+            tls_handshake_failures: 4,
+            ..Default::default()
+        };
+        merge_tcp_serve_stats(&mut total, partial);
+        assert_eq!(total.tls_handshake_failures, 4);
     }
 
     #[test]
