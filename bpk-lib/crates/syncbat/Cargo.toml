@@ -30,6 +30,9 @@ tracing = "0.1"
 
 [dev-dependencies]
 batpak-testkit = { path = "../testkit" }
+# Used by integration tests to recompute the expected default-policy digest and
+# pin that the safe default is specifically Blake3 over the raw receipt bytes.
+blake3 = "1"
 criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = ">=3.24, <3.25"
 trybuild = "1"
