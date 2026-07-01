@@ -1,4 +1,4 @@
-use super::{AncestryBoundary, NextLink};
+use super::AncestryBoundary;
 use crate::event::StoredEvent;
 use crate::id::EventId;
 use crate::store::Store;
@@ -28,6 +28,10 @@ pub(crate) fn walk_ancestors_outcome_by_hash<State: crate::store::StoreState>(
     store: &Store<State>,
     event_id: u128,
     limit: usize,
+    // Out-collector for the ids of crypto-shredded ancestors the key-aware walk
+    // includes; exists only under `payload-encryption` (the plaintext build never
+    // decrypts and so never shreds a payload).
+    #[cfg(feature = "payload-encryption")] shredded: &mut Vec<EventId>,
 ) -> (Vec<StoredEvent<serde_json::Value>>, AncestryBoundary) {
     // All events in a hash chain belong to the same entity, so we load the
     // entity stream once and reuse it across every hop instead of re-querying
@@ -39,19 +43,20 @@ pub(crate) fn walk_ancestors_outcome_by_hash<State: crate::store::StoreState>(
     let entity_stream = store.index.stream(start.coord.entity());
 
     super::collect_ancestors(store, Some(event_id), limit, |store, current_id| {
+        // Encryption-enabled store: route the ancestor's payload decode through
+        // the key-aware path so an encrypted payload is decrypted (or marked
+        // shredded) rather than fail-closed as ciphertext. When no keyset is
+        // configured this branch is skipped and the read is byte-identical to the
+        // pre-E3 plaintext path below. The parent-link resolution is shared: it is
+        // over the hash chain and unaffected by encryption.
+        #[cfg(feature = "payload-encryption")]
+        if store.key_store.is_some() {
+            return super::step_ancestor_key_aware(store, current_id, &entity_stream, shredded);
+        }
         let Some((entry, stored)) = super::read_entry_and_event(store, current_id) else {
             return Err(EventId::from(current_id));
         };
-        let prev = entry.hash_chain.prev_hash;
-        let next = if prev == [0_u8; 32] {
-            NextLink::Genesis
-        } else {
-            match super::parent_event_id_by_hash(&entity_stream, prev) {
-                Some(parent_id) => NextLink::Continue(parent_id),
-                None => NextLink::MissingParent,
-            }
-        };
-        Ok((stored, next))
+        Ok((stored, super::resolve_next_link(&entry, &entity_stream)))
     })
 }
 
@@ -91,14 +96,33 @@ mod tests {
             .collect()
     }
 
+    /// Feature-agnostic wrapper: the key-aware `shredded` out-collector exists
+    /// only under `payload-encryption`. These tests use plaintext stores (no
+    /// keyset), so the collector is always empty and is discarded here, keeping
+    /// the assertions identical across both builds.
+    fn walk(
+        store: &Store,
+        event_id: u128,
+        limit: usize,
+    ) -> (Vec<StoredEvent<serde_json::Value>>, AncestryBoundary) {
+        #[cfg(feature = "payload-encryption")]
+        {
+            let mut shredded = Vec::new();
+            walk_ancestors_outcome_by_hash(store, event_id, limit, &mut shredded)
+        }
+        #[cfg(not(feature = "payload-encryption"))]
+        {
+            walk_ancestors_outcome_by_hash(store, event_id, limit)
+        }
+    }
+
     #[test]
     fn hash_helper_returns_exact_chain_in_reverse_order() {
         use crate::id::EntityIdType;
         let (store, _dir) = test_store();
         let ids = seeded_chain(&store, "entity:hash-helper");
 
-        let (events, boundary) =
-            walk_ancestors_outcome_by_hash(&store, ids.last().expect("last").as_u128(), 8);
+        let (events, boundary) = walk(&store, ids.last().expect("last").as_u128(), 8);
         let actual: Vec<_> = events
             .into_iter()
             .map(|stored| stored.event.event_id())
@@ -123,8 +147,7 @@ mod tests {
         let (store, _dir) = test_store();
         let ids = seeded_chain(&store, "entity:hash-zero");
 
-        let (zero_limit, zero_boundary) =
-            walk_ancestors_outcome_by_hash(&store, ids.last().expect("last").as_u128(), 0);
+        let (zero_limit, zero_boundary) = walk(&store, ids.last().expect("last").as_u128(), 0);
         assert!(
             zero_limit.is_empty(),
             "PROPERTY: hash-based ancestor traversal with limit=0 must return an empty vector."
@@ -135,7 +158,7 @@ mod tests {
             "PROPERTY: a limit=0 walk is bounded by the limit, not a completed chain."
         );
 
-        let (unknown, unknown_boundary) = walk_ancestors_outcome_by_hash(&store, 0xDEAD_BEEF, 4);
+        let (unknown, unknown_boundary) = walk(&store, 0xDEAD_BEEF, 4);
         assert!(
             unknown.is_empty(),
             "PROPERTY: hash-based ancestor traversal must return empty for an unknown anchor event."
