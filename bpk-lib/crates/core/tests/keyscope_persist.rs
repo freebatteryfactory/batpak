@@ -62,9 +62,8 @@ fn keystore_flush_then_load_round_trips_through_the_public_api() {
 fn open_with_encryption_cold_start_loads_a_flushed_keyset() {
     let dir = tempfile::tempdir().expect("tmpdir");
 
-    // Flush a keyset with two keys directly (Stage B does not yet mint through
-    // the store — that is Stage C), then open the store with encryption and prove
-    // the cold-start hook rehydrated exactly those keys.
+    // Flush a keyset with two keys directly, then open the store with encryption
+    // and prove the cold-start hook rehydrated those keys.
     let mut key_store = KeyStore::new(GRAN);
     let _ = key_store.get_or_create(&scope("entity:a")).expect("mint a");
     let _ = key_store.get_or_create(&scope("entity:b")).expect("mint b");
@@ -73,10 +72,14 @@ fn open_with_encryption_cold_start_loads_a_flushed_keyset() {
     let config = StoreConfig::new(dir.path()).with_payload_encryption(GRAN);
     let store = Store::open(config).expect("open encrypted store over a flushed keyset");
     let loaded = store.payload_key_count();
+    // The two flushed keys are rehydrated (the Stage B cold-start property). Stage
+    // C then encrypts the SYSTEM_OPEN_COMPLETED lifecycle event that a mutable open
+    // appends, minting ONE more key (for the `batpak:store` entity): 2 + 1 = 3.
     assert_eq!(
         loaded,
-        Some(2),
-        "PROPERTY: Store::open cold-start rehydrated the two flushed keys"
+        Some(3),
+        "PROPERTY: Store::open cold-start rehydrated the two flushed keys \
+         (+1 minted for the encrypted open-completed lifecycle event)"
     );
     store.close().expect("close");
 }
@@ -85,11 +88,17 @@ fn open_with_encryption_cold_start_loads_a_flushed_keyset() {
 fn open_with_encryption_on_a_fresh_dir_loads_an_empty_keyset() {
     let dir = tempfile::tempdir().expect("tmpdir");
     let config = StoreConfig::new(dir.path()).with_payload_encryption(GRAN);
-    // First open of an encrypted store: no keyset file yet, so cold-start loads
-    // an empty key store and the open SUCCEEDS with zero keys.
+    // First open of an encrypted store: no keyset file yet, so cold-start loads an
+    // EMPTY key store and the open SUCCEEDS. Stage C then encrypts the
+    // SYSTEM_OPEN_COMPLETED lifecycle event a mutable open appends, minting its one
+    // key — so the live keyset holds exactly that single minted key (0 loaded + 1).
     let store = Store::open(config).expect("fresh encrypted store opens with an empty keyset");
     let loaded = store.payload_key_count();
-    assert_eq!(loaded, Some(0), "empty keyset loaded");
+    assert_eq!(
+        loaded,
+        Some(1),
+        "empty keyset loaded, then one key minted for the encrypted open-completed event"
+    );
     store.close().expect("close");
 }
 

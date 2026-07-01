@@ -13,6 +13,17 @@ pub(crate) struct ValidatedStoreConfig {
     pub(crate) shutdown_drain_limit: usize,
     pub(crate) group_commit_drain_budget: u32,
     pub(crate) signing_registry: ReceiptSigningRegistry,
+    /// Shared crypto-shred keyset (opt-in `payload-encryption`).
+    ///
+    /// The SAME `Arc<Mutex<KeyStore>>` the [`Store`](crate::store::Store) holds:
+    /// stashed here purely so the background writer — which already carries the
+    /// runtime but not the store handle — can mint + seal + flush under the
+    /// append path while the store's read path opens under the identical live
+    /// keyset. Injected during `open` (see `open::open_components`); `None`
+    /// whenever encryption is not configured.
+    #[cfg(feature = "payload-encryption")]
+    pub(crate) key_store:
+        Option<std::sync::Arc<parking_lot::Mutex<crate::store::keyscope::KeyStore>>>,
     clock: Arc<dyn Clock>,
 }
 
@@ -102,6 +113,10 @@ impl StoreConfig {
                 &self.signing_keys,
                 self.signing_downgrade_allowed,
             ),
+            // Populated during `open` once the durable keyset is rehydrated from
+            // disk; `validated()` runs before any disk access.
+            #[cfg(feature = "payload-encryption")]
+            key_store: None,
             clock: Arc::new(MonotonicClock::wrap(
                 self.clock
                     .clone()

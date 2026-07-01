@@ -331,6 +331,8 @@ fn entry_from_scan_normalizes_zero_causation() {
             flags: 0,
             content_hash: [0u8; 32],
             payload_version: 0,
+            #[cfg(feature = "payload-encryption")]
+            payload_encryption: None,
         },
         entity: "entity:test".to_string(),
         scope: "scope:test".to_string(),
@@ -367,6 +369,8 @@ fn entry_from_scan_preserves_nonzero_causation() {
             flags: 0,
             content_hash: [0u8; 32],
             payload_version: 0,
+            #[cfg(feature = "payload-encryption")]
+            payload_encryption: None,
         },
         entity: "entity:test".to_string(),
         scope: "scope:test".to_string(),

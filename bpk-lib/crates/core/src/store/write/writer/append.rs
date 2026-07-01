@@ -1,5 +1,7 @@
+use super::super::fanout::CommittedEventEnvelope;
 use super::fence_runtime::FenceLedger;
 use super::publish::{CommitFrameView, CommitInternedIds};
+use super::Notification;
 use super::{
     segment, Coordinate, DagPosition, DiskPos, Event, EventKind, FramePayloadRef, HashChain,
     StoreError, WriterCore,
@@ -88,6 +90,12 @@ impl WriterCore {
         event.header.causation_id = causation_id
             .filter(|&id| id != 0)
             .map(crate::id::CausationId::from);
+
+        // Encrypt-on-append (opt-in): seal the payload under its scope key and
+        // stamp the header BEFORE hashing, so `event_hash` covers the ciphertext.
+        // A no-op when encryption is not configured (plaintext path unchanged).
+        #[cfg(feature = "payload-encryption")]
+        self.encrypt_single_payload(coord, kind, &mut event)?;
 
         let event_hash = crate::event::hash::compute_hash(&event.payload);
 
@@ -196,6 +204,32 @@ impl WriterCore {
 
         debug!(event_id = %event.header.event_id, clock = clock, "append committed");
 
+        self.publish_single_commit(
+            fence,
+            global_seq,
+            frontier_point,
+            committed.notification,
+            committed.envelope,
+            #[cfg(feature = "dangerous-test-hooks")]
+            entity,
+        )?;
+
+        Ok(receipt)
+    }
+
+    /// Publish tail of [`Self::handle_append`]: fold the commit into the active
+    /// visibility fence, or publish-then-broadcast it unfenced. Extracted so
+    /// `handle_append` stays within its cyclomatic-complexity ratchet
+    /// (behavior-preserving).
+    fn publish_single_commit(
+        &mut self,
+        fence: Option<&mut FenceLedger>,
+        global_seq: u64,
+        frontier_point: HlcPoint,
+        notification: Notification,
+        envelope: Option<CommittedEventEnvelope>,
+        #[cfg(feature = "dangerous-test-hooks")] entity: &str,
+    ) -> Result<(), StoreError> {
         if let Some(fence) = fence {
             fence.record_publish_up_to(global_seq.saturating_add(1), frontier_point);
             self.index.note_visibility_fence_progress(
@@ -203,13 +237,13 @@ impl WriterCore {
                 global_seq,
                 global_seq.saturating_add(1),
             )?;
-            fence.extend_artifacts([committed.notification], committed.envelope);
+            fence.extend_artifacts([notification], envelope);
         } else {
             self.publish_then_broadcast_unfenced(
                 global_seq + 1,
                 frontier_point,
-                [committed.notification],
-                committed.envelope,
+                [notification],
+                envelope,
             )?;
 
             #[cfg(feature = "dangerous-test-hooks")]
@@ -220,8 +254,7 @@ impl WriterCore {
                 &self.config.fault_injector,
             )?;
         }
-
-        Ok(receipt)
+        Ok(())
     }
 
     /// CAS guard: a caller-supplied `expected_sequence` must equal the entity's
