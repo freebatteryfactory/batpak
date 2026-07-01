@@ -50,6 +50,23 @@ pub enum ReadDisposition {
     Shredded,
 }
 
+/// Outcome of decrypting an encrypted payload's ciphertext under the live keyset.
+///
+/// Distinguishes recovered plaintext from a crypto-shredded payload (key
+/// destroyed) WITHOUT raising an error, so each key-aware reader — single-event
+/// read, projection replay, content compaction — can pick its OWN shredded
+/// semantics rather than all of them funnelling through one error. The
+/// crate-internal counterpart to the public [`ReadDisposition`], returning the
+/// raw plaintext BYTES so the caller decodes them into whatever payload shape it
+/// needs (a `serde_json::Value`, or the raw MessagePack of a raw-lane replay).
+#[cfg(feature = "payload-encryption")]
+pub(crate) enum PayloadPlaintext {
+    /// Recovered plaintext bytes, ready to decode into the caller's payload type.
+    Plaintext(Vec<u8>),
+    /// The scope key was destroyed — the plaintext is permanently unrecoverable.
+    Shredded,
+}
+
 impl<State: crate::store::StoreState> Store<State> {
     /// READ: get a single event by ID.
     ///
@@ -76,7 +93,7 @@ impl<State: crate::store::StoreState> Store<State> {
         // the read is byte-for-byte the pre-Stage-C path.
         #[cfg(feature = "payload-encryption")]
         if self.key_store.is_some() {
-            return match self.read_maybe_encrypted(event_id, &entry.disk_pos)? {
+            return match self.read_maybe_encrypted(&entry.disk_pos)? {
                 ReadDisposition::Present(stored) => Ok(*stored),
                 ReadDisposition::Shredded => Err(StoreError::PayloadShredded { event_id }),
             };
@@ -113,7 +130,7 @@ impl<State: crate::store::StoreState> Store<State> {
                 self.reader.read_entry(&entry.disk_pos)?,
             )));
         }
-        self.read_maybe_encrypted(event_id, &entry.disk_pos)
+        self.read_maybe_encrypted(&entry.disk_pos)
     }
 
     /// Key-aware single-event read: decode a plaintext event, decrypt an
@@ -122,12 +139,12 @@ impl<State: crate::store::StoreState> Store<State> {
     /// [`get_shreddable`](Self::get_shreddable).
     ///
     /// Reads the RAW frame (ciphertext + header), so it never routes ciphertext
-    /// through the Value decode seam. `verify_chain`/`read_raw` are untouched:
-    /// they still see the stored bytes.
+    /// through the Value decode seam, and takes the event's identity from that
+    /// header. `verify_chain`/`read_raw` are untouched: they still see the stored
+    /// bytes.
     #[cfg(feature = "payload-encryption")]
     fn read_maybe_encrypted(
         &self,
-        event_id: EventId,
         pos: &crate::store::index::DiskPos,
     ) -> Result<ReadDisposition, StoreError> {
         let raw = self.reader.read_entry_raw(pos)?;
@@ -136,7 +153,9 @@ impl<State: crate::store::StoreState> Store<State> {
         let hash_chain = raw.event.hash_chain;
         let payload_bytes = raw.event.payload;
 
-        let Some(meta) = header.payload_encryption.as_ref() else {
+        // Cloned so the header can be moved into the returned `Event` below
+        // without the `meta` borrow outliving it.
+        let Some(meta) = header.payload_encryption.clone() else {
             // Plaintext event in an encryption-enabled store (e.g. written before
             // encryption was configured): decode exactly as the plaintext read
             // would, so the returned Value is identical.
@@ -152,38 +171,76 @@ impl<State: crate::store::StoreState> Store<State> {
             })));
         };
 
-        // Rebuild the scope the ciphertext's key is filed under and the AAD that
-        // binds it to THIS event, then look the key up in the live keyset.
+        // Decrypt via the shared Stage C primitive: a destroyed key reports
+        // `Shredded` (present in the chain, plaintext gone — NOT corruption, NOT
+        // the ciphertext); a present key that fails to authenticate is a tamper
+        // error, never a shred.
+        match self.open_encrypted_payload_bytes(
+            &coordinate,
+            header.event_kind,
+            header.event_id,
+            &meta,
+            &payload_bytes,
+        )? {
+            PayloadPlaintext::Shredded => Ok(ReadDisposition::Shredded),
+            PayloadPlaintext::Plaintext(plaintext) => {
+                let value = crate::encoding::from_bytes::<serde_json::Value>(&plaintext)
+                    .map_err(|error| StoreError::Serialization(Box::new(error)))?;
+                Ok(ReadDisposition::Present(Box::new(StoredEvent {
+                    coordinate,
+                    event: crate::event::Event {
+                        header,
+                        payload: value,
+                        hash_chain,
+                    },
+                })))
+            }
+        }
+    }
+
+    /// Decrypt an encrypted payload's ciphertext to plaintext BYTES under the
+    /// live keyset, or report [`PayloadPlaintext::Shredded`] when the scope key
+    /// has been destroyed. The single, shared Stage C decrypt primitive.
+    ///
+    /// Rebuilds the [`KeyScope`](crate::store::keyscope::KeyScope) the ciphertext's
+    /// key is filed under and the AAD that binds it to THIS event's stable
+    /// identity, looks the key up in the live keyset, and AEAD-opens the
+    /// ciphertext. Reused by the key-aware single-event read
+    /// ([`read_maybe_encrypted`](Self::read_maybe_encrypted)), key-aware
+    /// projection replay, and key-aware content compaction so all three decrypt
+    /// through ONE path — never reinventing decryption or misdecoding ciphertext.
+    ///
+    /// # Errors
+    /// [`StoreError::PayloadDecryptFailed`] if the key is present but the
+    /// ciphertext/nonce/bound identity fails to authenticate (tamper), or an
+    /// internal [`StoreError::Serialization`] if reached with no keyset (an
+    /// invariant break — callers gate on `key_store.is_some()`).
+    #[cfg(feature = "payload-encryption")]
+    pub(crate) fn open_encrypted_payload_bytes(
+        &self,
+        coordinate: &crate::coordinate::Coordinate,
+        event_kind: EventKind,
+        event_id: EventId,
+        meta: &crate::event::PayloadEncryption,
+        ciphertext: &[u8],
+    ) -> Result<PayloadPlaintext, StoreError> {
         let scope = crate::store::keyscope::KeyScope::from_bytes(meta.keyscope_id.clone());
-        let aad =
-            crate::store::keyscope::payload_aad(&coordinate, header.event_kind, header.event_id);
-        // `key_store` is `Some` on every path that reaches here (both callers gate
+        let aad = crate::store::keyscope::payload_aad(coordinate, event_kind, event_id);
+        // `key_store` is `Some` on every path that reaches here (every caller gates
         // on it), so its absence is an internal invariant break, surfaced — never
         // silently treated as shredded.
         let key_store = self.key_store.as_ref().ok_or_else(|| {
-            StoreError::ser_msg("read_maybe_encrypted reached with no keyset configured")
+            StoreError::ser_msg("open_encrypted_payload_bytes reached with no keyset configured")
         })?;
         let guard = key_store.lock();
         let Some(key) = guard.get(&scope) else {
-            // Key destroyed → crypto-shredded. Present in the chain, plaintext
-            // gone. NOT corruption, NOT the ciphertext.
-            return Ok(ReadDisposition::Shredded);
+            return Ok(PayloadPlaintext::Shredded);
         };
         let plaintext = key
-            .open(&meta.nonce, &aad, &payload_bytes)
+            .open(&meta.nonce, &aad, ciphertext)
             .map_err(|_| StoreError::PayloadDecryptFailed { event_id })?;
         drop(guard);
-
-        let value = crate::encoding::from_bytes::<serde_json::Value>(&plaintext)
-            .map_err(|error| StoreError::Serialization(Box::new(error)))?;
-        Ok(ReadDisposition::Present(Box::new(StoredEvent {
-            coordinate,
-            event: crate::event::Event {
-                header,
-                payload: value,
-                hash_chain,
-            },
-        })))
+        Ok(PayloadPlaintext::Plaintext(plaintext))
     }
 
     /// READ: fetch a single event by ID with the payload left as raw

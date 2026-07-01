@@ -259,6 +259,71 @@ fn scanned_entry_as_stored_event(
     })
 }
 
+/// Evaluate a Retention/Tombstone predicate against an event's payload, giving
+/// the predicate the DECRYPTED plaintext view of an encrypted event (Stage E1).
+///
+/// Returns whether the predicate KEEPS the event (Retention: survives the drop;
+/// Tombstone: `true` ⇒ NOT rewritten to a tombstone). A crypto-shredded event
+/// cannot be predicate-evaluated — its plaintext is permanently destroyed — so
+/// the conservative default is to KEEP it: you cannot decide to DROP what you
+/// cannot read, and keeping never silently loses data the operator did not ask
+/// to erase. Either way the write side re-emits the original CIPHERTEXT bytes
+/// verbatim, so a survivor's `event_hash` stays byte-stable.
+fn compaction_predicate_keeps(
+    store: &Store<Open>,
+    entry: &reader::ScannedEntry,
+    predicate: &crate::store::RetentionPredicate,
+) -> Result<bool, StoreError> {
+    #[cfg(feature = "payload-encryption")]
+    if entry.event.header.payload_encryption.is_some() {
+        return Ok(match decrypt_compaction_payload(store, entry)? {
+            Some(stored) => predicate(&stored),
+            None => true, // Shredded → conservative KEEP.
+        });
+    }
+    #[cfg(not(feature = "payload-encryption"))]
+    let _ = store;
+    Ok(predicate(&scanned_entry_as_stored_event(entry)?))
+}
+
+/// Decrypt an encrypted scanned entry's ciphertext into the predicate's
+/// `StoredEvent<Value>` view via the shared Stage C primitive, or `None` when the
+/// scope key has been destroyed (a crypto-shred — the plaintext is gone).
+#[cfg(feature = "payload-encryption")]
+fn decrypt_compaction_payload(
+    store: &Store<Open>,
+    entry: &reader::ScannedEntry,
+) -> Result<Option<StoredEvent<serde_json::Value>>, StoreError> {
+    let coordinate = Coordinate::new(&entry.entity, &entry.scope)?;
+    let header = &entry.event.header;
+    let Some(meta) = header.payload_encryption.as_ref() else {
+        // Caller routes only encrypted entries here; a plaintext entry decodes
+        // straight from its already-decoded scanned value.
+        return Ok(Some(scanned_entry_as_stored_event(entry)?));
+    };
+    match store.open_encrypted_payload_bytes(
+        &coordinate,
+        header.event_kind,
+        header.event_id,
+        meta,
+        &entry.payload_bytes,
+    )? {
+        crate::store::read_api::PayloadPlaintext::Shredded => Ok(None),
+        crate::store::read_api::PayloadPlaintext::Plaintext(plaintext) => {
+            let value = crate::encoding::from_bytes::<serde_json::Value>(&plaintext)
+                .map_err(|e| StoreError::Serialization(Box::new(e)))?;
+            Ok(Some(StoredEvent {
+                coordinate,
+                event: Event {
+                    header: entry.event.header.clone(),
+                    payload: value,
+                    hash_chain: entry.event.hash_chain.clone(),
+                },
+            }))
+        }
+    }
+}
+
 fn write_scanned_entry(
     merged_segment: &mut segment::Segment<Active>,
     entry: reader::ScannedEntry,
@@ -356,7 +421,7 @@ fn materialize_compacted_segment(
         }
         CompactionStrategy::Retention(predicate) => {
             for entry in scan_sealed_entries(store, sealed)? {
-                if predicate(&scanned_entry_as_stored_event(&entry)?) {
+                if compaction_predicate_keeps(store, &entry, predicate)? {
                     write_scanned_entry(&mut merged_segment, entry)?;
                 }
             }
@@ -364,7 +429,7 @@ fn materialize_compacted_segment(
         CompactionStrategy::Tombstone(predicate) => {
             let tombstone_kind = EventKind::TOMBSTONE;
             for mut entry in scan_sealed_entries(store, sealed)? {
-                if !predicate(&scanned_entry_as_stored_event(&entry)?) {
+                if !compaction_predicate_keeps(store, &entry, predicate)? {
                     entry.event.header.event_kind = tombstone_kind;
                 }
                 write_scanned_entry(&mut merged_segment, entry)?;
