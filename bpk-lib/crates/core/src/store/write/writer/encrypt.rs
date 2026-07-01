@@ -63,6 +63,18 @@ impl WriterCore {
             return Ok(None);
         };
 
+        // System-events plaintext carve-out: reserved kinds (the system category
+        // 0x0 — SYSTEM_OPEN_COMPLETED, SYSTEM_BATCH_BEGIN/COMMIT, TOMBSTONE, ... —
+        // and the effect category 0xD) are store MECHANISM, not user data, so they
+        // are never encrypted. Encrypting them would mint a spurious scope key on
+        // an internal lifecycle append (e.g. minting `batpak:store`'s key just by
+        // opening the store) and, worse, would make lifecycle markers themselves
+        // shreddable. Skipping here keeps their frames byte-identical to the
+        // plaintext path and leaves the on-disk hash `blake3(plaintext)`.
+        if kind.is_reserved() {
+            return Ok(None);
+        }
+
         // Draw the nonce from the OS CSPRNG BEFORE taking the keyset lock, so the
         // lock is held only for the mint + seal. XChaCha20-Poly1305's 192-bit
         // nonce makes random nonces collision-safe.

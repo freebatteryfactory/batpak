@@ -73,13 +73,14 @@ fn open_with_encryption_cold_start_loads_a_flushed_keyset() {
     let store = Store::open(config).expect("open encrypted store over a flushed keyset");
     let loaded = store.payload_key_count();
     // The two flushed keys are rehydrated (the Stage B cold-start property). Stage
-    // C then encrypts the SYSTEM_OPEN_COMPLETED lifecycle event that a mutable open
-    // appends, minting ONE more key (for the `batpak:store` entity): 2 + 1 = 3.
+    // D's system-events plaintext carve-out means the SYSTEM_OPEN_COMPLETED
+    // lifecycle event a mutable open appends is NOT encrypted, so it mints NO key:
+    // the live keyset holds exactly the two rehydrated keys.
     assert_eq!(
         loaded,
-        Some(3),
-        "PROPERTY: Store::open cold-start rehydrated the two flushed keys \
-         (+1 minted for the encrypted open-completed lifecycle event)"
+        Some(2),
+        "PROPERTY: Store::open cold-start rehydrated the two flushed keys, and the \
+         plaintext SYSTEM_OPEN_COMPLETED lifecycle append mints no key"
     );
     store.close().expect("close");
 }
@@ -89,15 +90,16 @@ fn open_with_encryption_on_a_fresh_dir_loads_an_empty_keyset() {
     let dir = tempfile::tempdir().expect("tmpdir");
     let config = StoreConfig::new(dir.path()).with_payload_encryption(GRAN);
     // First open of an encrypted store: no keyset file yet, so cold-start loads an
-    // EMPTY key store and the open SUCCEEDS. Stage C then encrypts the
-    // SYSTEM_OPEN_COMPLETED lifecycle event a mutable open appends, minting its one
-    // key — so the live keyset holds exactly that single minted key (0 loaded + 1).
+    // EMPTY key store and the open SUCCEEDS. Under Stage D's system-events plaintext
+    // carve-out the SYSTEM_OPEN_COMPLETED lifecycle event a mutable open appends is
+    // NOT encrypted, so it mints NO key — the live keyset stays empty until the
+    // first USER append.
     let store = Store::open(config).expect("fresh encrypted store opens with an empty keyset");
     let loaded = store.payload_key_count();
     assert_eq!(
         loaded,
-        Some(1),
-        "empty keyset loaded, then one key minted for the encrypted open-completed event"
+        Some(0),
+        "empty keyset loaded; the plaintext SYSTEM_OPEN_COMPLETED lifecycle append mints no key"
     );
     store.close().expect("close");
 }

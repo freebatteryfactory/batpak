@@ -336,6 +336,18 @@ fn materialize_compacted_segment(
         store.runtime.now_wall_ns(),
         store.config.fs(),
     )?;
+    // Crypto-shred coupling — DELIBERATELY NONE (the safe semantics). Retention
+    // (drop) and Tombstone (mark) compaction operate per EVENT, but a crypto-shred
+    // key is per SCOPE, and under a coarse granularity (the default PerEntity) one
+    // key covers every event of an entity. A predicate that drops/tombstones SOME
+    // of a scope's events must NOT shred the WHOLE scope's key — that would
+    // silently destroy the still-live siblings' plaintext (over-shred). Rather than
+    // track "was this the scope's LAST event" here (fragile, and still an implicit
+    // shred the operator never asked for), compaction destroys NO payload keys:
+    // erasure stays the single explicit `Store::shred_scope` op, which is
+    // granularity-agnostic and never over-shreds. Compaction therefore leaves the
+    // keyset untouched; a surviving event of a partially-compacted scope still
+    // decrypts under its (undestroyed) key.
     match strategy {
         CompactionStrategy::Merge => {
             for (_, path) in sealed.iter() {

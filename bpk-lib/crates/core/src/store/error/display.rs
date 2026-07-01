@@ -117,7 +117,8 @@ impl StoreError {
             Self::KeysetCorrupt { .. }
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
-            | Self::PayloadDecryptFailed { .. } => Ok(()),
+            | Self::PayloadDecryptFailed { .. }
+            | Self::ShredSelectorMismatch { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -225,7 +226,8 @@ impl StoreError {
             Self::KeysetCorrupt { .. }
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
-            | Self::PayloadDecryptFailed { .. } => Ok(()),
+            | Self::PayloadDecryptFailed { .. }
+            | Self::ShredSelectorMismatch { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -335,6 +337,17 @@ impl StoreError {
                 f,
                 "event {event_id} ciphertext failed authenticated decryption (tamper or relocated \
                  frame); the payload key is present but authentication did not verify"
+            );
+        }
+        if let Self::ShredSelectorMismatch {
+            granularity,
+            selector,
+        } = self
+        {
+            return write!(
+                f,
+                "crypto-shred selector `{selector}` does not address the store's configured \
+                 key-scope granularity {granularity:?}; erasure refused (nothing shredded)"
             );
         }
         Ok(())
@@ -569,7 +582,8 @@ impl std::fmt::Display for StoreError {
             Self::KeysetCorrupt { .. }
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
-            | Self::PayloadDecryptFailed { .. } => self.fmt_payload_encryption(f),
+            | Self::PayloadDecryptFailed { .. }
+            | Self::ShredSelectorMismatch { .. } => self.fmt_payload_encryption(f),
         }
     }
 }

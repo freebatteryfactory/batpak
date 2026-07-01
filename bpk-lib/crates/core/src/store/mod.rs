@@ -6,6 +6,10 @@ mod chain_walk;
 pub mod cold_start;
 mod compaction_report;
 mod config;
+/// The explicit crypto-shred erasure op (`Store::shred_scope`); opt-in
+/// `payload-encryption` only.
+#[cfg(feature = "payload-encryption")]
+mod crypto_shred_api;
 /// Push subscriptions (lossy) and pull cursors (ordered, with optional durable
 /// checkpoints) for event delivery.
 pub mod delivery;
@@ -132,7 +136,9 @@ pub use index::IndexEntry;
     all(docsrs, not(batpak_stable_docs)),
     doc(cfg(feature = "payload-encryption"))
 )]
-pub use keyscope::{scope_for, KeyScope, KeyScopeGranularity, KeyStore, KeyStoreError, PayloadKey};
+pub use keyscope::{
+    scope_for, KeyScope, KeyScopeGranularity, KeyStore, KeyStoreError, PayloadKey, ShredScope,
+};
 /// Test-only global-allocator shims. Re-exported so dedicated single-test
 /// binaries can install one as `#[global_allocator]`. Compiled out unless the
 /// `alloc-count` or `fault-alloc` feature is enabled.

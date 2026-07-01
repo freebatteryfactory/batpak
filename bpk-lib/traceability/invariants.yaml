@@ -828,3 +828,18 @@
   artifacts:
     - ART-COMPLEXITY-EXPONENT-TESTS
   witness_test: crates/core/tests/complexity_exponent.rs::query_complexity_exponent_and_wcet_are_bounded
+- id: INV-CRYPTO-SHRED-SCOPE-DESTROYS-PLAINTEXT
+  statement: >-
+    Crypto-shredding a scope through the explicit Store::shred_scope erasure op destroys that scope's
+    payload key and durably flushes the shrunken keyset, so every user payload sealed under the scope
+    becomes permanently unrecoverable (reads return ReadDisposition::Shredded / StoreError::PayloadShredded)
+    while the on-disk ciphertext and its blake3 hash-chain identity survive untouched — verify_chain stays
+    intact and the hash chain is unbroken. System and reserved event kinds are never encrypted (they stay
+    plaintext, are not shreddable, and opening a store mints no scope key until the first USER append), a
+    non-shredded sibling scope still decrypts, and tombstone/retention compaction never auto-destroys a key
+    so a coarse scope is never over-shredded. A selector that cannot address the store's configured
+    key-scope granularity is a typed StoreError::ShredSelectorMismatch that shreds nothing.
+  artifacts:
+    - ART-CRYPTO-SHRED-SOURCE
+    - ART-CRYPTO-SHRED-TESTS
+  witness_test: crates/core/tests/crypto_shred_payload.rs::shred_scope_destroys_scope_plaintext_and_keeps_chain_intact
