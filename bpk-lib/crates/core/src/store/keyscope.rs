@@ -12,8 +12,19 @@
 //! nonce and 128-bit authentication tag). Key and nonce bytes are drawn from
 //! the OS CSPRNG; no non-cryptographic PRNG is ever used for key material.
 //!
-//! Stage A is in-memory only: there is no persistence and no wiring into the
-//! append/read paths. Those seams are deliberately deferred.
+//! Stage B adds durable persistence + cold-start rehydration (see the
+//! [`persist`] child module) but still does NOT wire into the append/read
+//! payload paths — encrypt/decrypt is Stage C.
+//!
+//! # Durability ordering (a Stage C obligation, documented here at the source)
+//!
+//! [`persist`] gives Stage B a [`KeyStore::flush`]. Stage C, when it wires the
+//! append path, MUST flush a freshly-minted key DURABLY **before** the data it
+//! encrypts is acknowledged durable. If that order were inverted, a crash landing
+//! between "append is durable" and "key is durable" would leave a durable
+//! ciphertext whose key never reached disk — permanently unrecoverable *live*
+//! data (a spontaneous, unintended crypto-shred). Stage B only provides the
+//! `flush` primitive; the ordering fence is Stage C's to wire.
 
 use crate::coordinate::Coordinate;
 use crate::event::EventKind;
@@ -248,6 +259,13 @@ impl KeyStore {
         self.granularity
     }
 
+    /// Number of live payload keys currently held (observability; never exposes
+    /// key material). A destroyed scope no longer counts.
+    #[must_use]
+    pub fn key_count(&self) -> usize {
+        self.keys.len()
+    }
+
     /// Return the key for `scope`, minting a fresh random key on first use.
     ///
     /// A second call for the same scope returns the same key until it is
@@ -281,6 +299,9 @@ impl KeyStore {
         self.keys.remove(scope).is_some()
     }
 }
+
+/// Durable keyset persistence + cold-start rehydration (Stage B).
+pub mod persist;
 
 #[cfg(test)]
 mod tests;

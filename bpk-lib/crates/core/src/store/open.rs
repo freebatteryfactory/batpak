@@ -132,6 +132,48 @@ fn next_active_segment_id(data_dir: &std::path::Path) -> Result<u64, StoreError>
     Ok(write::writer::find_latest_segment_id(data_dir)?.unwrap_or(0) + 1)
 }
 
+/// Cold-start hook for the opt-in crypto-shred keyset (Stage B).
+///
+/// When `payload_encryption` is `Some(granularity)`, rehydrate the durable
+/// keyset from the store directory into an in-memory [`keyscope::KeyStore`]; when
+/// `None`, do nothing (no encryption configured). A corrupt/unreadable keyset
+/// fails the open closed via [`keyscope::KeyStore::load`] — it must NOT degrade
+/// to an empty store, which would silently crypto-shred live payloads. Shared by
+/// the read-write and read-only open paths so neither can drift into loading the
+/// keyset differently. Stage C reads/mints into the held store from the
+/// append/read paths; Stage B only loads and holds it.
+#[cfg(feature = "payload-encryption")]
+fn load_key_store(config: &StoreConfig) -> Result<Option<Mutex<keyscope::KeyStore>>, StoreError> {
+    let Some(granularity) = config.payload_encryption else {
+        return Ok(None);
+    };
+    let key_store =
+        keyscope::KeyStore::load_with_fs(&config.data_dir, config.fs().as_ref(), granularity)?;
+    Ok(Some(Mutex::new(key_store)))
+}
+
+#[cfg(feature = "payload-encryption")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "payload-encryption"))
+)]
+impl<State: StoreState> Store<State> {
+    /// Number of crypto-shred payload keys the store loaded from disk at open,
+    /// or `None` when `payload_encryption` is not configured.
+    ///
+    /// Observability only — never exposes key material. This is the public window
+    /// onto the Stage B cold-start rehydration: after opening an encrypted store
+    /// whose keyset was flushed, this reports the recovered key count. Stage C
+    /// mints and destroys through the same held store as it wires the payload
+    /// paths, so this count tracks the live keyset thereafter.
+    #[must_use]
+    pub fn payload_key_count(&self) -> Option<usize> {
+        self.key_store
+            .as_ref()
+            .map(|key_store| key_store.lock().key_count())
+    }
+}
+
 fn emit_open_report_observability(config: &StoreConfig, report: &OpenIndexReport) {
     tracing::info!(
         target: "batpak::open",
@@ -488,6 +530,11 @@ impl Store<Open> {
         let watermark_handle = writer.watermark_handle();
         let projection_registry = ProjectionRegistry::new(watermark_handle.clone());
 
+        // Cold-start: rehydrate the crypto-shred keyset (fail closed on corrupt)
+        // BEFORE building the store, so a lost/unreadable keyset refuses the open.
+        #[cfg(feature = "payload-encryption")]
+        let key_store = load_key_store(&config)?;
+
         let store = Self {
             index,
             reader,
@@ -500,6 +547,8 @@ impl Store<Open> {
             should_shutdown_on_drop: true,
             open_report: Some(open_report.clone()),
             cumulative_reserved_kind_fallbacks,
+            #[cfg(feature = "payload-encryption")]
+            key_store,
             state: Open(writer),
             _store_lock: store_lock,
         };
@@ -574,6 +623,12 @@ impl Store<ReadOnly> {
             highest_visible_index_hlc_by_lane(&index),
         );
         let projection_registry = ProjectionRegistry::new(watermark_handle.clone());
+
+        // Cold-start: rehydrate the crypto-shred keyset (fail closed on corrupt).
+        // Read-only opens load it too so Stage C can decrypt on the read path.
+        #[cfg(feature = "payload-encryption")]
+        let key_store = load_key_store(&config)?;
+
         let store = Self {
             index,
             reader,
@@ -586,6 +641,8 @@ impl Store<ReadOnly> {
             should_shutdown_on_drop: false,
             open_report: Some(open_report.clone()),
             cumulative_reserved_kind_fallbacks,
+            #[cfg(feature = "payload-encryption")]
+            key_store,
             state: ReadOnly,
             _store_lock: store_lock,
         };

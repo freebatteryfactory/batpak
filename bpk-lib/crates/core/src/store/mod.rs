@@ -352,6 +352,12 @@ pub struct Store<State: StoreState = Open> {
     pub(crate) should_shutdown_on_drop: bool,
     pub(crate) open_report: Option<cold_start::rebuild::OpenIndexReport>,
     pub(crate) cumulative_reserved_kind_fallbacks: segment::sidx::ReservedKindFallbackStats,
+    /// Loaded crypto-shred keyset, present only when `payload_encryption` is
+    /// configured (`None` disables encryption). Rehydrated from disk at open
+    /// (Stage B); Stage C wires the append/read encrypt-decrypt paths that read
+    /// and mint into it. A [`Mutex`] so Stage C can mint under `&self`.
+    #[cfg(feature = "payload-encryption")]
+    pub(crate) key_store: Option<Mutex<keyscope::KeyStore>>,
     /// Typestate payload: carries the writer handle when (and only when) the
     /// store is [`Open`]; a ZST for the other states.
     pub(crate) state: State,

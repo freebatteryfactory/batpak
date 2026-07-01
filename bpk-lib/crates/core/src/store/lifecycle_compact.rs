@@ -49,6 +49,7 @@ pub(crate) fn compact(
             | StoreFileKind::PendingCompactionMarker
             | StoreFileKind::CompactSource
             | StoreFileKind::CursorDirectory
+            | StoreFileKind::Keyset
             | StoreFileKind::Other => continue,
         };
         all_segments.push((seg_id, path));

@@ -113,6 +113,8 @@ impl StoreError {
             | Self::CursorCheckpointRegionMismatch { .. }
             | Self::InvariantViolation { .. }
             | Self::ChainVerificationFailed { .. } => Ok(()),
+            #[cfg(feature = "payload-encryption")]
+            Self::KeysetCorrupt { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -216,6 +218,8 @@ impl StoreError {
             | Self::CursorCheckpointRegionMismatch { .. }
             | Self::InvariantViolation { .. }
             | Self::ChainVerificationFailed { .. } => Ok(()),
+            #[cfg(feature = "payload-encryption")]
+            Self::KeysetCorrupt { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -267,6 +271,43 @@ impl StoreError {
                 "at-open hash-chain verification failed: {content_hash_mismatches} content-hash \
                  mismatch(es) and {dangling_links} dangling chain link(s); refusing to open the \
                  store (ChainVerification::Recompute fail-closed)"
+            );
+        }
+        Ok(())
+    }
+
+    /// `Display` body for the ancestry-cycle and malformed-range refusals.
+    /// Grouped off the main `Display::fmt` match (mirroring the other
+    /// `fmt_*_violation` helpers) so the render surface can grow without pushing
+    /// `fmt` past its complexity ratchet.
+    fn fmt_walk_violation(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Self::AncestryCorrupt { cycle_at } = self {
+            return write!(
+                f,
+                "ancestry walk detected a cycle at event {:032x}",
+                cycle_at.as_u128()
+            );
+        }
+        if let Self::RangeMalformed { start, end } = self {
+            return write!(
+                f,
+                "malformed range: start={start} end={end} (start must be < end)"
+            );
+        }
+        Ok(())
+    }
+
+    /// `Display` body for the crypto-shred keyset fail-closed refusal. Kept off
+    /// the main `Display::fmt` match so the opt-in encryption surface does not
+    /// push `fmt` past its complexity ratchet.
+    #[cfg(feature = "payload-encryption")]
+    fn fmt_keyset_corrupt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Self::KeysetCorrupt { reason } = self {
+            return write!(
+                f,
+                "crypto-shred keyset is corrupt or unreadable: {reason}; refusing to open (a lost \
+                 or misread keyset silently shreds every payload sealed under it); restore the \
+                 keyset from backup"
             );
         }
         Ok(())
@@ -439,14 +480,10 @@ impl std::fmt::Display for StoreError {
                     path.display()
                 )
             }
-            Self::AncestryCorrupt { cycle_at } => {
-                write!(f, "ancestry walk detected a cycle at event {:032x}", cycle_at.as_u128())
-            }
-            Self::RangeMalformed { start, end } => {
-                write!(
-                    f,
-                    "malformed range: start={start} end={end} (start must be < end)"
-                )
+            // Ancestry-cycle and malformed-range refusals share one render group,
+            // delegated so this match stays within its complexity ratchet.
+            Self::AncestryCorrupt { .. } | Self::RangeMalformed { .. } => {
+                self.fmt_walk_violation(f)
             }
             // Coordinate / causation / commit-metadata validation refusals share
             // one cohesive render group; delegate so this match stays within its
@@ -501,6 +538,8 @@ impl std::fmt::Display for StoreError {
             // Delegated so this match stays within its complexity ratchet rather
             // than growing the integrity-refusal render inline.
             Self::ChainVerificationFailed { .. } => self.fmt_chain_verification_failed(f),
+            #[cfg(feature = "payload-encryption")]
+            Self::KeysetCorrupt { .. } => self.fmt_keyset_corrupt(f),
         }
     }
 }

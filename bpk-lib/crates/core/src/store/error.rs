@@ -456,6 +456,28 @@ pub enum StoreError {
         /// dangling chain link).
         dangling_links: usize,
     },
+    /// The on-disk crypto-shred keyset (`keyset.fbatk`) is present but could not
+    /// be interpreted: wrong magic, truncated header, a bad CRC, an unsupported
+    /// (or future) format version, a decode failure, or a persisted key-scope
+    /// granularity that disagrees with the store's configured granularity.
+    ///
+    /// This is a HARD, fail-closed refusal — deliberately UNLIKE the durable
+    /// idempotency store, which degrades a corrupt sidecar to "absent". A keyset
+    /// is the sole means of recovering every payload sealed under it, so silently
+    /// starting from an empty key store would crypto-shred live data (every
+    /// scope's key would be re-minted fresh, and no prior ciphertext could ever
+    /// be opened again). Refusing to open preserves the operator's chance to
+    /// restore the real keyset from backup. justifies: INV-KEYSET-FAIL-CLOSED
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    KeysetCorrupt {
+        /// Human-readable reason the keyset could not be loaded (never contains
+        /// key material).
+        reason: String,
+    },
 }
 
 impl std::error::Error for StoreError {
@@ -521,6 +543,8 @@ impl std::error::Error for StoreError {
                 Some(source.as_ref())
             }
             Self::CheckpointWriteFailed { source, .. } => Some(source),
+            #[cfg(feature = "payload-encryption")]
+            Self::KeysetCorrupt { .. } => None,
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => None,
         }
