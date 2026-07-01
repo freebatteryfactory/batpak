@@ -860,3 +860,16 @@
   kind: tests
   paths:
     - crates/core/tests/recovery_oracle.rs
+- id: ART-CRYPTO-SHRED-SOURCE
+  kind: source
+  paths:
+    - crates/core/src/store/keyscope.rs
+    - crates/core/src/store/write/writer/encrypt.rs
+    - crates/core/src/store/write_api.rs
+    - crates/core/src/store/read_api.rs
+    - crates/core/src/store/lifecycle_compact.rs
+- id: ART-CRYPTO-SHRED-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/crypto_shred_payload.rs
+    - crates/core/tests/keyscope_persist.rs

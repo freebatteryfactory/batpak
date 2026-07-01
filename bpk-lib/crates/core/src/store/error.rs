@@ -526,6 +526,23 @@ pub enum StoreError {
         /// Id of the event whose ciphertext failed to authenticate.
         event_id: crate::id::EventId,
     },
+    /// A [`Store::shred_scope`](crate::store::Store::shred_scope) selector did not
+    /// match the store's configured key-scope granularity — e.g. a
+    /// [`ShredScope::Kind`](crate::store::keyscope::ShredScope::Kind) selector on a
+    /// `PerEntity` store. The selector cannot address the configured granularity's
+    /// scope, so the erasure is REFUSED and nothing is shredded (the request is a
+    /// typed programming error, never a silent no-op or a mis-targeted shred).
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    ShredSelectorMismatch {
+        /// The store's configured key-scope granularity.
+        granularity: crate::store::keyscope::KeyScopeGranularity,
+        /// Non-secret label of the selector variant supplied (never key material).
+        selector: &'static str,
+    },
 }
 
 impl std::error::Error for StoreError {
@@ -595,7 +612,8 @@ impl std::error::Error for StoreError {
             Self::KeysetCorrupt { .. }
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
-            | Self::PayloadDecryptFailed { .. } => None,
+            | Self::PayloadDecryptFailed { .. }
+            | Self::ShredSelectorMismatch { .. } => None,
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => None,
         }

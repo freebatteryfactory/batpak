@@ -81,6 +81,41 @@ impl fmt::Debug for KeyScope {
     }
 }
 
+// Stable scope-derivation discriminants: the first byte of every [`KeyScope`],
+// so two granularities never collide and the wire byte never silently tracks a
+// source-order change. Shared by [`scope_for`] (the write/read seams) and
+// [`KeyScopeGranularity::resolve_shred_scope`] (the erasure selector) so the
+// two can never drift out of byte-agreement.
+const SCOPE_DISC_PER_ENTITY: u8 = 0x01;
+const SCOPE_DISC_PER_CATEGORY: u8 = 0x02;
+const SCOPE_DISC_PER_TYPE_ID: u8 = 0x03;
+const SCOPE_DISC_PER_EVENT: u8 = 0x04;
+
+fn scope_per_entity(entity: &str) -> KeyScope {
+    let mut bytes = Vec::with_capacity(1 + entity.len());
+    bytes.push(SCOPE_DISC_PER_ENTITY);
+    bytes.extend_from_slice(entity.as_bytes());
+    KeyScope(bytes.into_boxed_slice())
+}
+
+fn scope_per_category(category: u8) -> KeyScope {
+    KeyScope(vec![SCOPE_DISC_PER_CATEGORY, category].into_boxed_slice())
+}
+
+fn scope_per_type_id(kind_raw: u16) -> KeyScope {
+    let mut bytes = Vec::with_capacity(3);
+    bytes.push(SCOPE_DISC_PER_TYPE_ID);
+    bytes.extend_from_slice(&kind_raw.to_be_bytes());
+    KeyScope(bytes.into_boxed_slice())
+}
+
+fn scope_per_event(event_id: u128) -> KeyScope {
+    let mut bytes = Vec::with_capacity(17);
+    bytes.push(SCOPE_DISC_PER_EVENT);
+    bytes.extend_from_slice(&event_id.to_be_bytes());
+    KeyScope(bytes.into_boxed_slice())
+}
+
 /// Derive the [`KeyScope`] an event's payload key is filed under.
 ///
 /// Deterministic and canonical: the same inputs always yield byte-identical
@@ -94,26 +129,76 @@ pub fn scope_for(
     event_kind: EventKind,
     event_id: EventId,
 ) -> KeyScope {
-    let mut bytes = Vec::new();
     match granularity {
-        KeyScopeGranularity::PerEntity => {
-            bytes.push(0x01);
-            bytes.extend_from_slice(coordinate.entity().as_bytes());
-        }
-        KeyScopeGranularity::PerCategory => {
-            bytes.push(0x02);
-            bytes.push(event_kind.category());
-        }
-        KeyScopeGranularity::PerTypeId => {
-            bytes.push(0x03);
-            bytes.extend_from_slice(&event_kind.as_raw_u16().to_be_bytes());
-        }
-        KeyScopeGranularity::PerEvent => {
-            bytes.push(0x04);
-            bytes.extend_from_slice(&event_id.as_u128().to_be_bytes());
+        KeyScopeGranularity::PerEntity => scope_per_entity(coordinate.entity()),
+        KeyScopeGranularity::PerCategory => scope_per_category(event_kind.category()),
+        KeyScopeGranularity::PerTypeId => scope_per_type_id(event_kind.as_raw_u16()),
+        KeyScopeGranularity::PerEvent => scope_per_event(event_id.as_u128()),
+    }
+}
+
+/// The selector that names WHICH scope's key an erasure destroys, matched to a
+/// store's configured [`KeyScopeGranularity`].
+///
+/// Crypto-shred is per-SCOPE-KEY, and the scope partition depends on the
+/// configured granularity, so the ergonomic selector differs per granularity: an
+/// entity coordinate addresses a `PerEntity` scope, an [`EventKind`] addresses a
+/// `PerCategory`/`PerTypeId` scope, and an [`EventId`] addresses a `PerEvent`
+/// scope. A selector that cannot address the configured granularity is a typed
+/// mismatch (it never silently reinterprets one granularity's selector as
+/// another's) — see [`KeyScopeGranularity::resolve_shred_scope`].
+#[derive(Clone, Copy, Debug)]
+pub enum ShredScope<'a> {
+    /// Erase the `PerEntity` scope keyed by a coordinate's entity id.
+    Entity(&'a Coordinate),
+    /// Erase the `PerCategory` (category nibble) or `PerTypeId` (full kind)
+    /// scope keyed by an event kind.
+    Kind(EventKind),
+    /// Erase the `PerEvent` scope keyed by a single event id.
+    Event(EventId),
+}
+
+impl ShredScope<'_> {
+    /// A stable, non-secret label for the selector variant, used only to render
+    /// the typed [`crate::store::StoreError::ShredSelectorMismatch`]. Never
+    /// carries key material.
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            ShredScope::Entity(_) => "Entity",
+            ShredScope::Kind(_) => "Kind",
+            ShredScope::Event(_) => "Event",
         }
     }
-    KeyScope(bytes.into_boxed_slice())
+}
+
+impl KeyScopeGranularity {
+    /// Resolve a [`ShredScope`] selector into the [`KeyScope`] whose key an
+    /// erasure would destroy — but ONLY when the selector addresses THIS
+    /// granularity. A selector that cannot address this granularity returns
+    /// `None` (the caller raises a typed mismatch error), so an entity selector
+    /// can never be silently reinterpreted as a per-event scope, or vice versa.
+    ///
+    /// Reuses the same scope builders as [`scope_for`], so the resolved erasure
+    /// scope is byte-identical to the scope a matching append sealed its payload
+    /// under — the key the erasure removes is exactly the key those payloads
+    /// were encrypted with.
+    pub(crate) fn resolve_shred_scope(self, selector: &ShredScope<'_>) -> Option<KeyScope> {
+        match (self, selector) {
+            (KeyScopeGranularity::PerEntity, ShredScope::Entity(coordinate)) => {
+                Some(scope_per_entity(coordinate.entity()))
+            }
+            (KeyScopeGranularity::PerCategory, ShredScope::Kind(kind)) => {
+                Some(scope_per_category(kind.category()))
+            }
+            (KeyScopeGranularity::PerTypeId, ShredScope::Kind(kind)) => {
+                Some(scope_per_type_id(kind.as_raw_u16()))
+            }
+            (KeyScopeGranularity::PerEvent, ShredScope::Event(event_id)) => {
+                Some(scope_per_event(event_id.as_u128()))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl KeyScope {

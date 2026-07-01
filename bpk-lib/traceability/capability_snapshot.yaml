@@ -94,6 +94,7 @@ witnesses:
   - { id: INV-CONTEXT-VIEWS-DERIVED-FROM-HISTORY, witnessed: true }
   - { id: INV-COORDINATE-IS-LOGICAL-STREAM, witnessed: true }
   - { id: INV-CROSS-DIRECTORY-CONSISTENCY-PRODUCT-OWNED, witnessed: true }
+  - { id: INV-CRYPTO-SHRED-SCOPE-DESTROYS-PLAINTEXT, witnessed: true }
   - { id: INV-DANGEROUS-TEST-HOOKS-NONDEFAULT, witnessed: true }
   - { id: INV-DELIVERY-AT-LEAST-ONCE-WITNESS, witnessed: true }
   - { id: INV-DEPENDENCY-DIRECTION, witnessed: true }

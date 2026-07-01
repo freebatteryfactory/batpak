@@ -1,8 +1,16 @@
-//! Stage C public-surface coverage for crypto-shred encrypt-on-append +
+//! Stage C/D public-surface coverage for crypto-shred encrypt-on-append +
 //! decrypt-on-read: round-trip, `verify_chain` over ciphertext, the shred →
 //! `Shredded` payoff, the durability fence, and the byte-identical plaintext
-//! path. Gated behind `payload-encryption` (the whole file compiles out of a
-//! default build).
+//! path. Stage D adds the explicit `Store::shred_scope` erasure op, the
+//! system-events plaintext carve-out, and the sibling-scope isolation proof.
+//! Gated behind `payload-encryption` (the whole file compiles out of a default
+//! build).
+//!
+//! INVARIANTS: INV-CRYPTO-SHRED-SCOPE-DESTROYS-PLAINTEXT — crypto-shredding a
+//! scope destroys its plaintext (payloads read `Shredded`, unrecoverable) while
+//! `verify_chain` stays intact and the hash chain is unbroken; system events
+//! stay plaintext (never encrypted, never shreddable) and a non-shredded sibling
+//! scope still decrypts.
 #![cfg(feature = "payload-encryption")]
 
 use batpak::coordinate::{Coordinate, DagPosition};
@@ -10,7 +18,7 @@ use batpak::event::{EventHeader, EventKind, PayloadEncryption};
 use batpak::id::EventId;
 use batpak::store::{
     scope_for, AppendOptions, BatchAppendItem, CausationRef, KeyScopeGranularity, KeyStore,
-    ReadDisposition, ReceiptVerification, SigningKey, Store, StoreConfig, StoreError,
+    ReadDisposition, ReceiptVerification, ShredScope, SigningKey, Store, StoreConfig, StoreError,
 };
 
 const GRAN: KeyScopeGranularity = KeyScopeGranularity::PerEntity;
@@ -299,4 +307,204 @@ fn plaintext_none_config_leaves_frames_unencrypted_and_byte_identical() {
 
 fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+// ── Stage D: the explicit erasure op + system carve-out + sibling isolation ──
+
+/// Witness for INV-CRYPTO-SHRED-SCOPE-DESTROYS-PLAINTEXT. Crypto-shredding a
+/// scope via the explicit `Store::shred_scope` op makes every user payload in
+/// that scope unrecoverable (reads `Shredded`) while `verify_chain` stays intact
+/// and the hash chain is unbroken; the SYSTEM_OPEN_COMPLETED lifecycle event is
+/// never encrypted (stays plaintext, not shreddable); and a non-shredded sibling
+/// scope still decrypts.
+#[test]
+fn shred_scope_destroys_scope_plaintext_and_keeps_chain_intact() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let store = open_encrypted(dir.path());
+
+    // System-events carve-out proof: opening the store appended a
+    // SYSTEM_OPEN_COMPLETED lifecycle event, but that reserved kind is NOT
+    // encrypted — it mints NO scope key. The keyset is empty until the first
+    // USER append.
+    assert_eq!(
+        store.payload_key_count(),
+        Some(0),
+        "opening mints no key: the system open-completed event stays plaintext"
+    );
+
+    let secret = Coordinate::new("entity:secret", "scope:c").expect("coord");
+    let sibling = Coordinate::new("entity:keep", "scope:c").expect("coord");
+
+    // Two encrypted USER events in the scope we will shred, one in a sibling scope.
+    let secret_a = store
+        .append(&secret, KIND, &serde_json::json!({ "pii": "alice" }))
+        .expect("append secret a");
+    let secret_b = store
+        .append(&secret, KIND, &serde_json::json!({ "pii": "bob" }))
+        .expect("append secret b");
+    let kept = store
+        .append(&sibling, KIND, &serde_json::json!({ "keep": "me" }))
+        .expect("append sibling");
+
+    // PerEntity: the user appends minted exactly the two entity keys, and still no
+    // key for the plaintext system event(s).
+    assert_eq!(
+        store.payload_key_count(),
+        Some(2),
+        "one key per user entity, none for system events"
+    );
+
+    // The SYSTEM_OPEN_COMPLETED lifecycle event is present and stored as PLAINTEXT
+    // (no encryption metadata on its frame) — store mechanism, not user data.
+    let system_entries = store.by_fact(EventKind::SYSTEM_OPEN_COMPLETED);
+    let system_id = system_entries
+        .first()
+        .expect("mutable open appended a SYSTEM_OPEN_COMPLETED event")
+        .event_id();
+    assert!(
+        store
+            .read_raw(system_id)
+            .expect("read system frame")
+            .event
+            .header
+            .payload_encryption
+            .is_none(),
+        "a system event is never encrypted — no PayloadEncryption stamped on its frame"
+    );
+
+    // Pre-shred: every user payload decrypts.
+    assert_eq!(
+        store.get(secret_a.event_id).expect("pre a").event.payload,
+        serde_json::json!({ "pii": "alice" })
+    );
+    assert_eq!(
+        store.get(kept.event_id).expect("pre kept").event.payload,
+        serde_json::json!({ "keep": "me" })
+    );
+
+    // THE ERASURE OP: crypto-shred the secret scope. PerEntity → an Entity selector.
+    let destroyed = store
+        .shred_scope(ShredScope::Entity(&secret))
+        .expect("shred_scope succeeds");
+    assert!(
+        destroyed,
+        "a live key existed for the scope and was destroyed"
+    );
+    assert_eq!(
+        store.payload_key_count(),
+        Some(1),
+        "the secret scope key is gone; the sibling key remains"
+    );
+
+    // Payoff: both secret payloads are now unrecoverable, by BOTH the disposition
+    // surface and the typed error surface.
+    for id in [secret_a.event_id, secret_b.event_id] {
+        assert!(
+            matches!(
+                store.get_shreddable(id).expect("get_shreddable"),
+                ReadDisposition::Shredded
+            ),
+            "a shredded scope reads Shredded"
+        );
+        assert!(
+            matches!(store.get(id), Err(StoreError::PayloadShredded { .. })),
+            "a shredded scope surfaces PayloadShredded"
+        );
+    }
+
+    // The system event STILL reads plaintext — never encrypted, so a user-scope
+    // shred cannot touch it.
+    assert!(
+        matches!(
+            store.get_shreddable(system_id).expect("system readable"),
+            ReadDisposition::Present(_)
+        ),
+        "the plaintext system event is unaffected by a user-scope shred"
+    );
+    assert!(store
+        .read_raw(system_id)
+        .expect("read system frame after shred")
+        .event
+        .header
+        .payload_encryption
+        .is_none());
+
+    // Sibling isolation: the non-shredded scope still decrypts.
+    assert_eq!(
+        store
+            .get(kept.event_id)
+            .expect("sibling still decrypts")
+            .event
+            .payload,
+        serde_json::json!({ "keep": "me" })
+    );
+
+    // THE INVARIANT: verify_chain is STILL intact after the shred — the ciphertext
+    // and its hash-chain identity survive on disk; only the plaintext is gone.
+    assert!(
+        store.verify_chain().expect("verify_chain").is_intact(),
+        "the hash chain is unbroken after a crypto-shred"
+    );
+}
+
+/// A `shred_scope` selector that cannot address the configured granularity is a
+/// typed refusal that destroys NOTHING (never a silent no-op or a mis-targeted
+/// shred).
+#[test]
+fn shred_scope_rejects_a_mismatched_selector() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let store = open_encrypted(dir.path()); // PerEntity granularity
+    let coord = Coordinate::new("entity:x", "scope:c").expect("coord");
+    let receipt = store
+        .append(&coord, KIND, &serde_json::json!({ "n": 1 }))
+        .expect("append");
+    assert_eq!(store.payload_key_count(), Some(1));
+
+    // A Kind selector cannot address a PerEntity scope → typed mismatch.
+    assert!(
+        matches!(
+            store.shred_scope(ShredScope::Kind(KIND)),
+            Err(StoreError::ShredSelectorMismatch { .. })
+        ),
+        "a Kind selector on a PerEntity store is a typed mismatch"
+    );
+    // Nor can an Event selector.
+    assert!(
+        matches!(
+            store.shred_scope(ShredScope::Event(EventId::from(7u128))),
+            Err(StoreError::ShredSelectorMismatch { .. })
+        ),
+        "an Event selector on a PerEntity store is a typed mismatch"
+    );
+
+    // The refusal touched nothing: the key is intact and the payload still decrypts.
+    assert_eq!(
+        store.payload_key_count(),
+        Some(1),
+        "a mismatched selector shreds nothing"
+    );
+    assert_eq!(
+        store
+            .get(receipt.event_id)
+            .expect("still decrypts")
+            .event
+            .payload,
+        serde_json::json!({ "n": 1 })
+    );
+}
+
+/// `shred_scope` on a store opened WITHOUT `payload_encryption` (no keyset) is a
+/// typed configuration error, not a silent success.
+#[test]
+fn shred_scope_without_encryption_is_a_config_error() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let store = Store::open(StoreConfig::new(dir.path())).expect("open plaintext store");
+    let coord = Coordinate::new("entity:plain", "scope:c").expect("coord");
+    assert!(
+        matches!(
+            store.shred_scope(ShredScope::Entity(&coord)),
+            Err(StoreError::Configuration(_))
+        ),
+        "shred_scope with no keyset configured is a typed Configuration error"
+    );
 }
