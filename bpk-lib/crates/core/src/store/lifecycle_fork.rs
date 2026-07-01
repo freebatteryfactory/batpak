@@ -150,12 +150,15 @@ fn record_deep_copied_presence(acc: &mut ForkAccumulator, source_kind: &StoreFil
             acc.copied_pending_compaction_marker_present = true;
         }
         StoreFileKind::IdempotencyStore => acc.copied_idempotency_store_present = true,
+        // Keyset is `ForkStrategy::Exclude` in Stage B, so it is never deep-copied
+        // and never reaches this presence recorder; it stays in the no-op group.
         StoreFileKind::Segment(_)
         | StoreFileKind::MalformedSegment(_)
         | StoreFileKind::Checkpoint
         | StoreFileKind::MmapIndex
         | StoreFileKind::CompactSource
         | StoreFileKind::CursorDirectory
+        | StoreFileKind::Keyset
         | StoreFileKind::Other => {}
     }
 }

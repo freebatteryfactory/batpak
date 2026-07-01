@@ -101,11 +101,14 @@ fn snapshot_source_file_kind(file_kind: &StoreFileKind) -> Option<SnapshotFileKi
         StoreFileKind::VisibilityRanges => Some(SnapshotFileKind::VisibilityRanges),
         StoreFileKind::IdempotencyStore => Some(SnapshotFileKind::IdempotencyStore),
         StoreFileKind::PendingCompactionMarker => Some(SnapshotFileKind::PendingCompactionMarker),
+        // Keyset is excluded from `should_copy_into_snapshot` in Stage B, so the
+        // guard above already returned `None` for it; it stays in the None group.
         StoreFileKind::MalformedSegment(_)
         | StoreFileKind::Checkpoint
         | StoreFileKind::MmapIndex
         | StoreFileKind::CompactSource
         | StoreFileKind::CursorDirectory
+        | StoreFileKind::Keyset
         | StoreFileKind::Other => None,
     }
 }

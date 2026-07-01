@@ -79,26 +79,21 @@ pub(super) fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, PathBuf)>, Stor
     for entry in platform::fs::read_dir(data_dir).map_err(StoreError::Io)? {
         let entry = entry.map_err(StoreError::Io)?;
         let path = entry.path();
-        let segment_id = match StoreFileKind::from_path(&path) {
-            StoreFileKind::Segment(segment_id) => segment_id.as_u64(),
-            StoreFileKind::MalformedSegment(error) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    %error,
-                    "skipping malformed segment filename"
-                );
-                continue;
-            }
-            StoreFileKind::VisibilityRanges
-            | StoreFileKind::Checkpoint
-            | StoreFileKind::MmapIndex
-            | StoreFileKind::IdempotencyStore
-            | StoreFileKind::PendingCompactionMarker
-            | StoreFileKind::CompactSource
-            | StoreFileKind::CursorDirectory
-            | StoreFileKind::Other => continue,
+        let kind = StoreFileKind::from_path(&path);
+        if let StoreFileKind::MalformedSegment(error) = &kind {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "skipping malformed segment filename"
+            );
+            continue;
+        }
+        // Every non-segment artifact (keyset, idempotency store, checkpoint, …)
+        // reports no segment id and is skipped.
+        let Some(segment_id) = kind.segment_id() else {
+            continue;
         };
-        entries.push((segment_id, path));
+        entries.push((segment_id.as_u64(), path));
     }
     if let Some(marker) = load_pending_compaction(data_dir)? {
         let merged_present = entries
