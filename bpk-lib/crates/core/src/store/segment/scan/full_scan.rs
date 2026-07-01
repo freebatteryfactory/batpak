@@ -198,16 +198,22 @@ impl Reader {
     /// Carries the survivor's ORIGINAL `event.payload` bytes onto the entry so
     /// Retention/Tombstone compaction can re-emit them verbatim (byte-stable
     /// frame + `event_hash`) instead of re-serializing the decoded `Value`.
+    ///
+    /// Uses the compaction-tolerant decode: an ENCRYPTED payload is not
+    /// Value-decoded here (the reader has no key), so it arrives with a `Null`
+    /// placeholder in `event.payload` and its raw CIPHERTEXT in `payload_bytes`.
+    /// The compaction seam decrypts `payload_bytes` under the keyset for the
+    /// predicate's view and re-emits the ciphertext verbatim.
     fn scanned_entry_from_frame(
         msgpack: &[u8],
         segment_id: u64,
         frame_offset: u64,
     ) -> Result<Option<ScannedEntry>, StoreError> {
-        let (payload, payload_bytes) = Self::decode_frame_payload_value_with_raw_payload(msgpack)
+        let (payload, payload_bytes) = Self::decode_frame_payload_value_for_compaction(msgpack)
             .map_err(|error| StoreError::CorruptSegment {
-            segment_id,
-            detail: format!("frame at offset {frame_offset} has unreadable payload: {error}"),
-        })?;
+                segment_id,
+                detail: format!("frame at offset {frame_offset} has unreadable payload: {error}"),
+            })?;
         if matches!(
             payload.event.header.event_kind,
             EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT

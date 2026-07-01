@@ -170,54 +170,112 @@ impl Reader {
         Self::decode_frame_payload_value_with_raw_payload(msgpack).map(|(payload, _raw)| payload)
     }
 
+    /// Decode a PLAINTEXT payload's raw bytes into a `serde_json::Value`, applying
+    /// the in-band batch-marker carve-out (`SYSTEM_BATCH_BEGIN`/`COMMIT` carry no
+    /// user payload → `Null`). Shared by every Value-decode seam so a plaintext
+    /// event decodes byte-identically wherever it is read.
+    fn plaintext_value_from_bytes(
+        event_kind: EventKind,
+        raw_payload_bytes: &[u8],
+    ) -> Result<serde_json::Value, StoreError> {
+        match event_kind {
+            EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT => {
+                Ok(serde_json::Value::Null)
+            }
+            _ => crate::encoding::from_bytes(raw_payload_bytes)
+                .map_err(|e| StoreError::Serialization(Box::new(e))),
+        }
+    }
+
+    /// Reassemble a raw `FramePayload<Vec<u8>>` into a `FramePayload<Value>`
+    /// carrying `decoded_payload` as the event payload, returning the ORIGINAL raw
+    /// `event.payload` bytes alongside — the byte-stable re-emit source compaction
+    /// writes verbatim so a survivor's `event_hash` (blake3 over `event.payload`)
+    /// does not drift.
+    fn value_framepayload_from_raw(
+        payload: FramePayload<Vec<u8>>,
+        decoded_payload: serde_json::Value,
+    ) -> (FramePayload<serde_json::Value>, Vec<u8>) {
+        let FramePayload {
+            event,
+            entity,
+            scope,
+            receipt_extensions,
+        } = payload;
+        let Event {
+            header,
+            payload: raw_payload_bytes,
+            hash_chain,
+        } = event;
+        (
+            FramePayload {
+                event: Event {
+                    header,
+                    payload: decoded_payload,
+                    hash_chain,
+                },
+                entity,
+                scope,
+                receipt_extensions,
+            },
+            raw_payload_bytes,
+        )
+    }
+
     /// Like [`Self::decode_frame_payload_value`] but ALSO returns the ORIGINAL
     /// raw `event.payload` bytes alongside the decoded `serde_json::Value` view.
     ///
-    /// The decoded `Value` is the user-facing payload (and what the
-    /// retention/tombstone predicate inspects); the raw bytes are what
-    /// compaction must re-emit verbatim so a survivor's frame — and therefore
-    /// its `event_hash` (blake3 over `event.payload`) — is byte-stable. Both are
-    /// derived from a single `decode_frame_payload_raw`, so the raw bytes are
-    /// the exact on-disk payload with no re-encode.
+    /// FAILS CLOSED on an ENCRYPTED payload: this Value-decode seam (plain point
+    /// reads / projection's byte-identical no-keyset path) carries no key, so
+    /// rather than misdecoding ciphertext into garbage it errors — the key-aware
+    /// read surface (`Store::get` / `get_shreddable`) reads the raw ciphertext and
+    /// decrypts under the keyset instead.
     fn decode_frame_payload_value_with_raw_payload(
         msgpack: &[u8],
     ) -> Result<(FramePayload<serde_json::Value>, Vec<u8>), StoreError> {
         let payload = Self::decode_frame_payload_raw(msgpack)?;
-        let event = payload.event;
-        let raw_payload_bytes = event.payload;
-        // An encrypted payload is CIPHERTEXT — it must not be MessagePack-decoded
-        // here. The key-aware read surface (`Store::get` / `get_shreddable`) reads
-        // the raw ciphertext (via `decode_frame_payload_raw`) and decrypts under
-        // the keyset; this Value-decode seam is used by projection replay and
-        // compaction, which do not carry a key, so it fails closed with a clear
-        // signal rather than misdecoding ciphertext into garbage.
         #[cfg(feature = "payload-encryption")]
-        if event.header.payload_encryption.is_some() {
+        if payload.event.header.payload_encryption.is_some() {
             return Err(StoreError::ser_msg(
                 "encrypted payload cannot be decoded on this read path without its key; use the \
                  key-aware read surface (Store::get / Store::get_shreddable)",
             ));
         }
-        let decoded_payload = match event.header.event_kind {
-            EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT => {
-                serde_json::Value::Null
-            }
-            _ => crate::encoding::from_bytes(&raw_payload_bytes)
-                .map_err(|e| StoreError::Serialization(Box::new(e)))?,
-        };
-        Ok((
-            FramePayload {
-                event: Event {
-                    header: event.header,
-                    payload: decoded_payload,
-                    hash_chain: event.hash_chain,
-                },
-                entity: payload.entity,
-                scope: payload.scope,
-                receipt_extensions: payload.receipt_extensions,
-            },
-            raw_payload_bytes,
-        ))
+        let decoded_payload = Self::plaintext_value_from_bytes(
+            payload.event.header.event_kind,
+            &payload.event.payload,
+        )?;
+        Ok(Self::value_framepayload_from_raw(payload, decoded_payload))
+    }
+
+    /// Compaction-tolerant Value decode: like
+    /// [`Self::decode_frame_payload_value_with_raw_payload`] but does NOT fail
+    /// closed on an ENCRYPTED payload.
+    ///
+    /// Compaction (which holds the keyset) needs the raw CIPHERTEXT so it can
+    /// decrypt for the retention/tombstone predicate and re-emit those exact bytes
+    /// verbatim. It cannot Value-decode ciphertext at the reader (no key here), so
+    /// an encrypted event gets a `Null` PLACEHOLDER in `event.payload` while the
+    /// raw ciphertext rides out in the returned bytes; the compaction seam
+    /// replaces the placeholder with the decrypted predicate view (or handles a
+    /// shred) and never inspects the placeholder. Plaintext events decode exactly
+    /// as the strict seam.
+    fn decode_frame_payload_value_for_compaction(
+        msgpack: &[u8],
+    ) -> Result<(FramePayload<serde_json::Value>, Vec<u8>), StoreError> {
+        let payload = Self::decode_frame_payload_raw(msgpack)?;
+        #[cfg(feature = "payload-encryption")]
+        if payload.event.header.payload_encryption.is_some() {
+            return Ok(Self::value_framepayload_from_raw(
+                payload,
+                serde_json::Value::Null,
+            ));
+        }
+        let decoded_payload = Self::plaintext_value_from_bytes(
+            payload.event.header.event_kind,
+            &payload.event.payload,
+        )?;
+        Ok(Self::value_framepayload_from_raw(payload, decoded_payload))
     }
 
     fn frame_decode_error(
