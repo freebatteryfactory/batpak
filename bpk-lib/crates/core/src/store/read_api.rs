@@ -26,8 +26,39 @@ impl ChainVerificationReport {
     }
 }
 
+/// Read disposition for a single event under opt-in `payload-encryption`.
+///
+/// Returned by [`Store::get_shreddable`] so a caller can distinguish a payload
+/// it can still read from one whose key has been crypto-shredded WITHOUT
+/// catching an error — the event is present in the chain either way.
+#[cfg(feature = "payload-encryption")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "payload-encryption"))
+)]
+#[derive(Clone, Debug)]
+pub enum ReadDisposition {
+    /// The payload is readable: a plaintext event, or an encrypted event whose
+    /// key is present and whose ciphertext authenticated.
+    ///
+    /// Boxed so this readable variant does not inflate the size of the rare
+    /// [`Shredded`](Self::Shredded) variant.
+    Present(Box<StoredEvent<serde_json::Value>>),
+    /// The event is present in the chain (its `event_hash` still verifies) but
+    /// its payload key has been destroyed — the plaintext is permanently
+    /// unrecoverable. NOT corruption, and never the raw ciphertext.
+    Shredded,
+}
+
 impl<State: crate::store::StoreState> Store<State> {
     /// READ: get a single event by ID.
+    ///
+    /// With opt-in `payload-encryption` configured, an encrypted event is
+    /// transparently decrypted under the store's keyset. If the event's key has
+    /// been crypto-shredded, `get` returns [`StoreError::PayloadShredded`] — a
+    /// typed, explicitly-non-corruption signal; use
+    /// [`get_shreddable`](Self::get_shreddable) to receive that case as a
+    /// [`ReadDisposition::Shredded`] value instead of an error.
     ///
     /// # Errors
     /// Returns `StoreError::NotFound` if no event with that ID exists.
@@ -38,7 +69,121 @@ impl<State: crate::store::StoreState> Store<State> {
             .index
             .get_by_id(raw)
             .ok_or(StoreError::NotFound(event_id))?;
+        // Encryption-enabled store: route through the key-aware read so an
+        // encrypted payload is decrypted (or reported shredded) rather than
+        // MessagePack-decoded as ciphertext. When `payload_encryption` is not
+        // configured (`key_store` is `None`) this branch is skipped entirely and
+        // the read is byte-for-byte the pre-Stage-C path.
+        #[cfg(feature = "payload-encryption")]
+        if self.key_store.is_some() {
+            return match self.read_maybe_encrypted(event_id, &entry.disk_pos)? {
+                ReadDisposition::Present(stored) => Ok(*stored),
+                ReadDisposition::Shredded => Err(StoreError::PayloadShredded { event_id }),
+            };
+        }
         self.reader.read_entry(&entry.disk_pos)
+    }
+
+    /// READ: get a single event by ID, reporting a crypto-shredded payload as a
+    /// [`ReadDisposition`] instead of an error (opt-in `payload-encryption`).
+    ///
+    /// Behaves like [`get`](Self::get) for readable events (plaintext or
+    /// decryptable), but a destroyed key yields [`ReadDisposition::Shredded`]
+    /// rather than [`StoreError::PayloadShredded`]. A ciphertext whose key is
+    /// present but which fails authentication still surfaces as
+    /// [`StoreError::PayloadDecryptFailed`] (tamper is an error, not a shred).
+    ///
+    /// # Errors
+    /// Returns `StoreError::NotFound` if no event with that ID exists, or an
+    /// I/O / decode / authentication error while reading the event.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    pub fn get_shreddable(&self, event_id: EventId) -> Result<ReadDisposition, StoreError> {
+        let raw = event_id.as_u128();
+        let entry = self
+            .index
+            .get_by_id(raw)
+            .ok_or(StoreError::NotFound(event_id))?;
+        if self.key_store.is_none() {
+            // Encryption not configured: every payload is plaintext-present.
+            return Ok(ReadDisposition::Present(Box::new(
+                self.reader.read_entry(&entry.disk_pos)?,
+            )));
+        }
+        self.read_maybe_encrypted(event_id, &entry.disk_pos)
+    }
+
+    /// Key-aware single-event read: decode a plaintext event, decrypt an
+    /// encrypted one under the live keyset, or report [`ReadDisposition::Shredded`]
+    /// when the key is absent. Shared by [`get`](Self::get) and
+    /// [`get_shreddable`](Self::get_shreddable).
+    ///
+    /// Reads the RAW frame (ciphertext + header), so it never routes ciphertext
+    /// through the Value decode seam. `verify_chain`/`read_raw` are untouched:
+    /// they still see the stored bytes.
+    #[cfg(feature = "payload-encryption")]
+    fn read_maybe_encrypted(
+        &self,
+        event_id: EventId,
+        pos: &crate::store::index::DiskPos,
+    ) -> Result<ReadDisposition, StoreError> {
+        let raw = self.reader.read_entry_raw(pos)?;
+        let coordinate = raw.coordinate;
+        let header = raw.event.header;
+        let hash_chain = raw.event.hash_chain;
+        let payload_bytes = raw.event.payload;
+
+        let Some(meta) = header.payload_encryption.as_ref() else {
+            // Plaintext event in an encryption-enabled store (e.g. written before
+            // encryption was configured): decode exactly as the plaintext read
+            // would, so the returned Value is identical.
+            let value = crate::encoding::from_bytes::<serde_json::Value>(&payload_bytes)
+                .map_err(|error| StoreError::Serialization(Box::new(error)))?;
+            return Ok(ReadDisposition::Present(Box::new(StoredEvent {
+                coordinate,
+                event: crate::event::Event {
+                    header,
+                    payload: value,
+                    hash_chain,
+                },
+            })));
+        };
+
+        // Rebuild the scope the ciphertext's key is filed under and the AAD that
+        // binds it to THIS event, then look the key up in the live keyset.
+        let scope = crate::store::keyscope::KeyScope::from_bytes(meta.keyscope_id.clone());
+        let aad =
+            crate::store::keyscope::payload_aad(&coordinate, header.event_kind, header.event_id);
+        // `key_store` is `Some` on every path that reaches here (both callers gate
+        // on it), so its absence is an internal invariant break, surfaced — never
+        // silently treated as shredded.
+        let key_store = self.key_store.as_ref().ok_or_else(|| {
+            StoreError::ser_msg("read_maybe_encrypted reached with no keyset configured")
+        })?;
+        let guard = key_store.lock();
+        let Some(key) = guard.get(&scope) else {
+            // Key destroyed → crypto-shredded. Present in the chain, plaintext
+            // gone. NOT corruption, NOT the ciphertext.
+            return Ok(ReadDisposition::Shredded);
+        };
+        let plaintext = key
+            .open(&meta.nonce, &aad, &payload_bytes)
+            .map_err(|_| StoreError::PayloadDecryptFailed { event_id })?;
+        drop(guard);
+
+        let value = crate::encoding::from_bytes::<serde_json::Value>(&plaintext)
+            .map_err(|error| StoreError::Serialization(Box::new(error)))?;
+        Ok(ReadDisposition::Present(Box::new(StoredEvent {
+            coordinate,
+            event: crate::event::Event {
+                header,
+                payload: value,
+                hash_chain,
+            },
+        })))
     }
 
     /// READ: fetch a single event by ID with the payload left as raw

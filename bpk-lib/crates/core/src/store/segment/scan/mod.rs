@@ -185,6 +185,19 @@ impl Reader {
         let payload = Self::decode_frame_payload_raw(msgpack)?;
         let event = payload.event;
         let raw_payload_bytes = event.payload;
+        // An encrypted payload is CIPHERTEXT — it must not be MessagePack-decoded
+        // here. The key-aware read surface (`Store::get` / `get_shreddable`) reads
+        // the raw ciphertext (via `decode_frame_payload_raw`) and decrypts under
+        // the keyset; this Value-decode seam is used by projection replay and
+        // compaction, which do not carry a key, so it fails closed with a clear
+        // signal rather than misdecoding ciphertext into garbage.
+        #[cfg(feature = "payload-encryption")]
+        if event.header.payload_encryption.is_some() {
+            return Err(StoreError::ser_msg(
+                "encrypted payload cannot be decoded on this read path without its key; use the \
+                 key-aware read surface (Store::get / Store::get_shreddable)",
+            ));
+        }
         let decoded_payload = match event.header.event_kind {
             EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT => {
                 serde_json::Value::Null

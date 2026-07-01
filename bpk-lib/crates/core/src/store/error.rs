@@ -478,6 +478,54 @@ pub enum StoreError {
         /// key material).
         reason: String,
     },
+    /// Sealing a payload on the encrypt-on-append path failed (the OS CSPRNG
+    /// could not produce a nonce, or the AEAD rejected the input). The append is
+    /// FAILED CLOSED — no frame is written and no receipt is acknowledged — so a
+    /// payload is never persisted unencrypted when encryption was requested. The
+    /// `detail` never contains key material.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    PayloadSealFailed {
+        /// Human-readable reason the seal failed (never contains key material).
+        detail: String,
+    },
+    /// The event is present in the chain but its payload key has been destroyed
+    /// (crypto-shred): the ciphertext survives on disk, its hash-chain identity
+    /// is intact, but the plaintext is permanently unrecoverable.
+    ///
+    /// This is deliberately NOT a corruption error — the frame is valid and its
+    /// `event_hash` still verifies. A caller that wants to handle this without
+    /// catching an error should use the disposition-returning read surface
+    /// ([`Store::get_shreddable`](crate::store::Store::get_shreddable)).
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    PayloadShredded {
+        /// Id of the event whose payload key has been shredded.
+        event_id: crate::id::EventId,
+    },
+    /// An encrypted payload failed authenticated decryption with its key
+    /// PRESENT: the ciphertext, nonce, or bound identity does not authenticate.
+    ///
+    /// This signals tampering (a mutated ciphertext, a swapped nonce, or a frame
+    /// relocated onto a different event so its bound AAD no longer matches) — it
+    /// is distinct from [`PayloadShredded`](Self::PayloadShredded) (key absent).
+    /// No detail beyond the event id is exposed, so it cannot serve as a
+    /// decryption oracle.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    PayloadDecryptFailed {
+        /// Id of the event whose ciphertext failed to authenticate.
+        event_id: crate::id::EventId,
+    },
 }
 
 impl std::error::Error for StoreError {
@@ -544,7 +592,10 @@ impl std::error::Error for StoreError {
             }
             Self::CheckpointWriteFailed { source, .. } => Some(source),
             #[cfg(feature = "payload-encryption")]
-            Self::KeysetCorrupt { .. } => None,
+            Self::KeysetCorrupt { .. }
+            | Self::PayloadSealFailed { .. }
+            | Self::PayloadShredded { .. }
+            | Self::PayloadDecryptFailed { .. } => None,
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => None,
         }

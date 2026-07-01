@@ -16,6 +16,8 @@ pub mod upcast;
 pub use decode::{DecodeSource, DecodeTyped, TypedDecodeError};
 pub use hash::HashChain;
 pub use header::EventHeader;
+#[cfg(feature = "payload-encryption")]
+pub use header::PayloadEncryption;
 pub use kind::{EventKind, EventKindError};
 pub use payload::{
     revalidate_event_payload_registry, validate_event_payload_registry, verify_registry,

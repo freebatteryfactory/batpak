@@ -158,6 +158,8 @@ pub use projection_run::{
 pub use reaction::ReactionBatch;
 pub use reactor_typed::{ReactorConfig, ReactorError, TypedReactorHandle};
 pub use read_api::ChainVerificationReport;
+#[cfg(feature = "payload-encryption")]
+pub use read_api::ReadDisposition;
 pub use read_walk::{
     ReadWalkDroppedCount, ReadWalkEvidenceReport, ReadWalkFinding, ReadWalkFreshnessIntent,
     ReadWalkFrontierKind, ReadWalkHash, ReadWalkInputFrontier, ReadWalkProofRef, ReadWalkProofRefs,
@@ -354,10 +356,12 @@ pub struct Store<State: StoreState = Open> {
     pub(crate) cumulative_reserved_kind_fallbacks: segment::sidx::ReservedKindFallbackStats,
     /// Loaded crypto-shred keyset, present only when `payload_encryption` is
     /// configured (`None` disables encryption). Rehydrated from disk at open
-    /// (Stage B); Stage C wires the append/read encrypt-decrypt paths that read
-    /// and mint into it. A [`Mutex`] so Stage C can mint under `&self`.
+    /// (Stage B); Stage C reads/mints/destroys through it on the append/read
+    /// paths. An [`Arc`]`<`[`Mutex`]`>` — the SAME handle the background writer
+    /// holds through the runtime — so an append that mints a key on the writer
+    /// thread is immediately visible to a decrypt-on-read under `&self`.
     #[cfg(feature = "payload-encryption")]
-    pub(crate) key_store: Option<Mutex<keyscope::KeyStore>>,
+    pub(crate) key_store: Option<Arc<Mutex<keyscope::KeyStore>>>,
     /// Typestate payload: carries the writer handle when (and only when) the
     /// store is [`Open`]; a ZST for the other states.
     pub(crate) state: State,

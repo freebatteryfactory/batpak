@@ -116,6 +116,72 @@ pub fn scope_for(
     KeyScope(bytes.into_boxed_slice())
 }
 
+impl KeyScope {
+    /// Borrow the opaque scope bytes.
+    ///
+    /// Stage C stamps these into the event header ([`keyscope_id`]) so the read
+    /// path can rebuild the exact scope a ciphertext's key is filed under. The
+    /// bytes are non-secret (derived from coordinates/kinds/ids).
+    ///
+    /// [`keyscope_id`]: crate::event::PayloadEncryption::keyscope_id
+    #[must_use]
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Reconstruct a scope from its raw bytes (the read-path inverse of
+    /// [`as_bytes`](Self::as_bytes)). The bytes are treated as opaque — no
+    /// structural validation is performed, mirroring the fact that a scope is
+    /// only ever compared for equality against the keyset's live entries.
+    #[must_use]
+    pub(crate) fn from_bytes(bytes: Vec<u8>) -> Self {
+        KeyScope(bytes.into_boxed_slice())
+    }
+}
+
+/// Canonical associated-data (AAD) binding a sealed payload to the stable
+/// identity of the event it belongs to.
+///
+/// The AAD is authenticated (not encrypted) by the AEAD, so `open` only
+/// succeeds when the ciphertext is presented under the SAME identity it was
+/// sealed with. Binding `coordinate + kind + event_id` makes a ciphertext
+/// non-relocatable: moving a `{nonce, ciphertext}` pair onto any other event
+/// (different entity, scope, kind, or event id) changes the AAD and fails
+/// authentication (tamper detected), so a ciphertext can never be replayed
+/// against a different event.
+///
+/// The encoding is explicit and length-prefixed — NOT MessagePack — so the
+/// write path (writer) and the read path (`read_api`) reconstruct byte-identical
+/// AAD from fields that are all present in the frame header on read
+/// (`event_id`, `event_kind`) plus the frame's entity/scope strings
+/// (`coordinate`). `global_sequence` is deliberately NOT bound: it is assigned
+/// by the writer and is absent from the frame header, so the read path could
+/// not reconstruct it.
+#[must_use]
+pub(crate) fn payload_aad(
+    coordinate: &Coordinate,
+    event_kind: EventKind,
+    event_id: EventId,
+) -> Vec<u8> {
+    // Version byte, then length-prefixed entity + scope, then kind, then id.
+    let entity = coordinate.entity().as_bytes();
+    let scope = coordinate.scope().as_bytes();
+    let mut aad = Vec::with_capacity(1 + 4 + entity.len() + 4 + scope.len() + 2 + 16);
+    aad.push(0x01);
+    // Coordinate entity/scope are length-bounded well under u32::MAX at
+    // construction, so the saturation never triggers; it keeps the length prefix
+    // a fixed 4 bytes and identical on the write and read sides.
+    let entity_len = u32::try_from(entity.len()).unwrap_or(u32::MAX);
+    let scope_len = u32::try_from(scope.len()).unwrap_or(u32::MAX);
+    aad.extend_from_slice(&entity_len.to_le_bytes());
+    aad.extend_from_slice(entity);
+    aad.extend_from_slice(&scope_len.to_le_bytes());
+    aad.extend_from_slice(scope);
+    aad.extend_from_slice(&event_kind.as_raw_u16().to_le_bytes());
+    aad.extend_from_slice(&event_id.as_u128().to_be_bytes());
+    aad
+}
+
 /// A failure from the key store or its AEAD primitives.
 ///
 /// Deliberately opaque: an [`open`](PayloadKey::open) failure reveals only that

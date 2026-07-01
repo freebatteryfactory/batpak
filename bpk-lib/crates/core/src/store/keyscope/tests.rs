@@ -250,3 +250,47 @@ fn payload_key_debug_does_not_leak_bytes() {
         "debug still names the type: {rendered}"
     );
 }
+
+#[test]
+fn payload_aad_binds_ciphertext_to_event_identity() {
+    // The AAD binds coordinate + kind + event id, so a ciphertext sealed under
+    // one event's identity cannot be opened under another's (relocation/tamper),
+    // even with the SAME key and SAME nonce.
+    let mut store = KeyStore::new(KeyScopeGranularity::PerEntity);
+    let coordinate = coord("entity:aad");
+    let kind = EventKind::custom(0xF, 1);
+    let scope = scope_for(
+        KeyScopeGranularity::PerEntity,
+        &coordinate,
+        kind,
+        EventId::from(1u128),
+    );
+    let key = store.get_or_create(&scope).expect("mint");
+    let nonce = [0x5u8; NONCE_LEN];
+
+    let aad_event_1 = payload_aad(&coordinate, kind, EventId::from(1u128));
+    let ciphertext = key
+        .seal(&nonce, &aad_event_1, b"bound secret")
+        .expect("seal");
+
+    // A DIFFERENT event id → different AAD → authentication fails (tamper).
+    let aad_event_2 = payload_aad(&coordinate, kind, EventId::from(2u128));
+    assert_eq!(
+        key.open(&nonce, &aad_event_2, &ciphertext),
+        Err(KeyStoreError::Open),
+        "relocating the ciphertext onto a different event id must fail to open"
+    );
+    // A DIFFERENT coordinate → different AAD → also fails.
+    let other_coord = coord("entity:other");
+    let aad_other = payload_aad(&other_coord, kind, EventId::from(1u128));
+    assert_eq!(
+        key.open(&nonce, &aad_other, &ciphertext),
+        Err(KeyStoreError::Open),
+        "relocating the ciphertext onto a different coordinate must fail to open"
+    );
+    // The correct identity still opens.
+    assert_eq!(
+        key.open(&nonce, &aad_event_1, &ciphertext).expect("open"),
+        b"bound secret",
+    );
+}

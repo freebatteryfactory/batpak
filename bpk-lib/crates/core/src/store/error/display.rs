@@ -114,7 +114,10 @@ impl StoreError {
             | Self::InvariantViolation { .. }
             | Self::ChainVerificationFailed { .. } => Ok(()),
             #[cfg(feature = "payload-encryption")]
-            Self::KeysetCorrupt { .. } => Ok(()),
+            Self::KeysetCorrupt { .. }
+            | Self::PayloadSealFailed { .. }
+            | Self::PayloadShredded { .. }
+            | Self::PayloadDecryptFailed { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -219,7 +222,10 @@ impl StoreError {
             | Self::InvariantViolation { .. }
             | Self::ChainVerificationFailed { .. } => Ok(()),
             #[cfg(feature = "payload-encryption")]
-            Self::KeysetCorrupt { .. } => Ok(()),
+            Self::KeysetCorrupt { .. }
+            | Self::PayloadSealFailed { .. }
+            | Self::PayloadShredded { .. }
+            | Self::PayloadDecryptFailed { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -301,13 +307,34 @@ impl StoreError {
     /// the main `Display::fmt` match so the opt-in encryption surface does not
     /// push `fmt` past its complexity ratchet.
     #[cfg(feature = "payload-encryption")]
-    fn fmt_keyset_corrupt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt_payload_encryption(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Self::KeysetCorrupt { reason } = self {
             return write!(
                 f,
                 "crypto-shred keyset is corrupt or unreadable: {reason}; refusing to open (a lost \
                  or misread keyset silently shreds every payload sealed under it); restore the \
                  keyset from backup"
+            );
+        }
+        if let Self::PayloadSealFailed { detail } = self {
+            return write!(
+                f,
+                "failed to seal payload for encrypted append: {detail}; append failed closed \
+                 (nothing written)"
+            );
+        }
+        if let Self::PayloadShredded { event_id } = self {
+            return write!(
+                f,
+                "event {event_id} is present in the chain but its payload key has been destroyed \
+                 (crypto-shred): plaintext is permanently unrecoverable"
+            );
+        }
+        if let Self::PayloadDecryptFailed { event_id } = self {
+            return write!(
+                f,
+                "event {event_id} ciphertext failed authenticated decryption (tamper or relocated \
+                 frame); the payload key is present but authentication did not verify"
             );
         }
         Ok(())
@@ -539,7 +566,10 @@ impl std::fmt::Display for StoreError {
             // than growing the integrity-refusal render inline.
             Self::ChainVerificationFailed { .. } => self.fmt_chain_verification_failed(f),
             #[cfg(feature = "payload-encryption")]
-            Self::KeysetCorrupt { .. } => self.fmt_keyset_corrupt(f),
+            Self::KeysetCorrupt { .. }
+            | Self::PayloadSealFailed { .. }
+            | Self::PayloadShredded { .. }
+            | Self::PayloadDecryptFailed { .. } => self.fmt_payload_encryption(f),
         }
     }
 }

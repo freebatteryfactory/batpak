@@ -76,8 +76,24 @@ fn open_components(
         configured_signing_keys,
         "opening store with configured signing registry"
     );
-    let runtime = Arc::new(config.validated()?);
     let store_lock = dir_lock::StoreDirLock::acquire(&config.data_dir, lock_mode)?;
+    // Rehydrate the durable crypto-shred keyset UNDER the store lock (fail closed
+    // on corrupt) and share it through the runtime, so the writer's mint/seal/
+    // flush path and the store's decrypt-on-read path operate on ONE live keyset.
+    // Both the read-write and read-only open paths flow through here, so neither
+    // can drift into loading the keyset differently.
+    let runtime = {
+        #[cfg(feature = "payload-encryption")]
+        {
+            let mut validated = config.validated()?;
+            validated.key_store = load_key_store(&config)?;
+            Arc::new(validated)
+        }
+        #[cfg(not(feature = "payload-encryption"))]
+        {
+            Arc::new(config.validated()?)
+        }
+    };
     if let Some(profile_path) = config.platform_profile_path.as_ref() {
         let _verified_platform_evidence =
             platform::profile::PlatformProfile::verify_current_store_path(
@@ -143,13 +159,15 @@ fn next_active_segment_id(data_dir: &std::path::Path) -> Result<u64, StoreError>
 /// keyset differently. Stage C reads/mints into the held store from the
 /// append/read paths; Stage B only loads and holds it.
 #[cfg(feature = "payload-encryption")]
-fn load_key_store(config: &StoreConfig) -> Result<Option<Mutex<keyscope::KeyStore>>, StoreError> {
+fn load_key_store(
+    config: &StoreConfig,
+) -> Result<Option<Arc<Mutex<keyscope::KeyStore>>>, StoreError> {
     let Some(granularity) = config.payload_encryption else {
         return Ok(None);
     };
     let key_store =
         keyscope::KeyStore::load_with_fs(&config.data_dir, config.fs().as_ref(), granularity)?;
-    Ok(Some(Mutex::new(key_store)))
+    Ok(Some(Arc::new(Mutex::new(key_store))))
 }
 
 #[cfg(feature = "payload-encryption")]
@@ -530,10 +548,11 @@ impl Store<Open> {
         let watermark_handle = writer.watermark_handle();
         let projection_registry = ProjectionRegistry::new(watermark_handle.clone());
 
-        // Cold-start: rehydrate the crypto-shred keyset (fail closed on corrupt)
-        // BEFORE building the store, so a lost/unreadable keyset refuses the open.
+        // Share the ONE keyset the runtime rehydrated at open (see
+        // `open_components`) with the store's read path — the writer already
+        // holds the identical `Arc` through the runtime.
         #[cfg(feature = "payload-encryption")]
-        let key_store = load_key_store(&config)?;
+        let key_store = runtime.key_store.clone();
 
         let store = Self {
             index,
@@ -624,10 +643,10 @@ impl Store<ReadOnly> {
         );
         let projection_registry = ProjectionRegistry::new(watermark_handle.clone());
 
-        // Cold-start: rehydrate the crypto-shred keyset (fail closed on corrupt).
-        // Read-only opens load it too so Stage C can decrypt on the read path.
+        // Read-only opens decrypt on the read path too: reuse the ONE keyset the
+        // runtime rehydrated at open (see `open_components`).
         #[cfg(feature = "payload-encryption")]
-        let key_store = load_key_store(&config)?;
+        let key_store = runtime.key_store.clone();
 
         let store = Self {
             index,
