@@ -1,91 +1,108 @@
 //! PROVES: `Store::open` defaults to `EventPayloadValidation::FailFast`, so a
-//! binary whose linked payload registry carries a `(category, type_id)`
-//! collision REFUSES to open unless the caller explicitly opts back into the
-//! looser `Warn` (log-and-proceed) policy.
+//! binary whose linked payload registry carries a `(category, type_id)` collision
+//! REFUSES to open unless the caller explicitly opts back into the looser `Warn`
+//! (log-and-proceed) policy.
 //! CATCHES: a regression that re-defaults the payload-registry policy to `Warn`,
 //! which would let two payload types silently share wire identity.
 //! SEEDED: deterministic / no randomness.
+//!
+//! The colliding registrations live in a SEPARATE nested-workspace fixture crate
+//! (`fixtures/store-open-collision`), built via `cargo build --release
+//! --manifest-path ...` with a redirected `CARGO_TARGET_DIR` and run as a
+//! subprocess, mirroring `event_payload_registry_startup.rs`. This deliberately
+//! keeps the link-time collision OUT of this test binary: under `--all-features`
+//! the opt-in `startup-registry-check` constructor aborts (before `main`) any
+//! binary whose own linked registry collides, so an inline-collision test binary
+//! could not even be enumerated by nextest. The fixture bin builds with the
+//! crate's default features (no constructor), reaches `main`, opens a `Store`,
+//! and encodes the store-open outcome in its exit code, so the store-open-time
+//! DEFAULT-policy property stays proven in every feature lane.
 
-use batpak_testkit::prelude::*;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
-// Two payload registrations that claim the SAME `(category, type_id)`. This is
-// the minimal colliding registration: emitting the `inventory::submit!` items
-// directly (rather than via `#[derive(EventPayload)]`) gives this binary a real
-// link-time collision WITHOUT also pulling in the derive's generated
-// `#[cfg(test)]` collision panic-test. Category `0xE` is a caller-defined
-// category not used elsewhere in this binary, so this pair is the only
-// collision the registry scanner can see here.
-const COLLIDING_CATEGORY: u8 = 0xE;
-const COLLIDING_TYPE_ID: u16 = 0x654;
-const COLLIDING_KIND_BITS: u16 = ((COLLIDING_CATEGORY as u16) << 12) | COLLIDING_TYPE_ID;
-
-batpak::__private::inventory::submit! {
-    batpak::__private::EventPayloadRegistration {
-        kind_bits: COLLIDING_KIND_BITS,
-        payload_version: 1,
-        type_name: "event_payload_collision_default_fail_fast::FirstColliding",
-    }
-}
-
-batpak::__private::inventory::submit! {
-    batpak::__private::EventPayloadRegistration {
-        kind_bits: COLLIDING_KIND_BITS,
-        payload_version: 1,
-        type_name: "event_payload_collision_default_fail_fast::SecondColliding",
-    }
-}
-
-fn registry_sees_the_seeded_collision() -> bool {
-    let Err(error) = validate_event_payload_registry() else {
-        return false;
-    };
-    error.collisions().iter().any(|collision| {
-        collision.category == COLLIDING_CATEGORY && collision.type_id == COLLIDING_TYPE_ID
-    })
-}
-
+/// The DEFAULT policy is `FailFast`: the fixture bin opens a `Store` with a
+/// default `StoreConfig` over a colliding registry and exits 0 iff the open
+/// failed closed with the registry error naming the seeded collision.
 #[test]
 fn default_policy_fail_fast_refuses_open_on_kind_collision() {
-    // Precondition: the seeded collision is actually linked and visible to the
-    // binary-wide registry scanner (otherwise the assertion below could pass
-    // vacuously even if the default were still Warn).
-    assert!(
-        registry_sees_the_seeded_collision(),
-        "PROPERTY: the two seeded colliding registrations must be visible to the binary-wide payload registry"
-    );
+    let bin = build_fixture_bin("store-open-collision", "open_default_failfast");
+    let output = run_bin(&bin);
 
-    let dir = tempfile::tempdir().expect("temp dir");
-    // Default config: no `.with_event_payload_validation(...)`. The default is
-    // now `FailFast`, so the colliding registry must make the open FAIL with the
-    // registry error that names the seeded collision. `Store` is not `Debug`, so
-    // inspect only the error half of the result.
-    let open_error = Store::open(StoreConfig::new(dir.path())).err();
     assert!(
-        matches!(
-            open_error.as_ref(),
-            Some(StoreError::EventPayloadRegistry(registry_error))
-                if registry_error.collisions().iter().any(|collision| {
-                    collision.category == COLLIDING_CATEGORY
-                        && collision.type_id == COLLIDING_TYPE_ID
-                })
-        ),
-        "PROPERTY: default-policy open must fail with StoreError::EventPayloadRegistry naming the seeded ({COLLIDING_CATEGORY:#X}, {COLLIDING_TYPE_ID:#X}) collision, got {open_error:?}"
+        output.status.success(),
+        "PROPERTY: default-policy `Store::open` must fail closed (FailFast) on a colliding registry; the fixture bin exited {:?}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
+/// RED control: the SAME colliding registry opened with an EXPLICIT
+/// `EventPayloadValidation::Warn` opt-out must still open — proving the exit-0
+/// above is the default policy, not the collision being unconditionally fatal.
 #[test]
 fn explicit_warn_opt_in_still_opens_on_kind_collision() {
-    assert!(
-        registry_sees_the_seeded_collision(),
-        "PROPERTY: the two seeded colliding registrations must be visible to the binary-wide payload registry"
-    );
+    let bin = build_fixture_bin("store-open-collision", "open_warn_opens");
+    let output = run_bin(&bin);
 
-    let dir = tempfile::tempdir().expect("temp dir");
-    // The loose log-and-proceed behavior stays reachable as an explicit opt-out:
-    // requesting `Warn` must still open despite the same colliding registry.
-    let store = Store::open(
-        StoreConfig::new(dir.path()).with_event_payload_validation(EventPayloadValidation::Warn),
-    )
-    .expect("explicit Warn opt-in opens despite the colliding registry");
-    store.close().expect("close store");
+    assert!(
+        output.status.success(),
+        "PROPERTY: an explicit `EventPayloadValidation::Warn` open must still succeed on a colliding registry; the fixture bin exited {:?}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+// ─── subprocess helpers (mirror event_payload_registry_startup.rs) ───────────
+
+fn build_fixture_bin(fixture: &str, bin: &str) -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = manifest_dir
+        .join("fixtures")
+        .join(fixture)
+        .join("Cargo.toml");
+    assert!(
+        manifest.exists(),
+        "store-open fixture manifest is missing from repo checkout: {}",
+        manifest.display()
+    );
+    let target_dir = fixture_target_dir(&manifest_dir);
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let status = Command::new(cargo)
+        .args(["build", "--release", "--quiet", "--bin", bin])
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .status()
+        .expect("failed to spawn cargo build for store-open fixture");
+    assert!(
+        status.success(),
+        "store-open fixture `{fixture}` bin `{bin}` failed to build: {status}"
+    );
+    let bin_path = target_dir.join("release").join(bin);
+    assert!(
+        bin_path.exists(),
+        "built store-open fixture bin is missing: {}",
+        bin_path.display()
+    );
+    bin_path
+}
+
+fn run_bin(bin: &Path) -> Output {
+    Command::new(bin)
+        .output()
+        .expect("failed to run built store-open fixture bin")
+}
+
+fn fixture_target_dir(manifest_dir: &Path) -> PathBuf {
+    let workspace_root = manifest_dir
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or(manifest_dir);
+    let root_target = match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => workspace_root.join(path),
+        None => workspace_root.join("target"),
+    };
+    root_target.join("store-open-collision-fixtures")
 }
