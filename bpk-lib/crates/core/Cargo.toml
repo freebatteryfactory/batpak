@@ -47,6 +47,13 @@ fault-alloc = []
 # no constructor and no extra dependency. `dep:ctor` keeps `ctor` out of a
 # default build entirely.
 startup-registry-check = ["dep:ctor"]
+# Opt-in crypto-shred payload encryption (KeyScope / KeyStore foundation).
+# Pulls a pure-Rust XChaCha20-Poly1305 AEAD (`chacha20poly1305`, no AES-NI/C
+# assembly) and an OS CSPRNG (`getrandom`) for key/nonce material. NOT a default
+# feature: a default build pulls neither dependency and behaves identically. Key
+# material zeroizes on drop (via `zeroize`, already a mandatory dep) and never
+# appears in any Debug/Display output.
+payload-encryption = ["dep:chacha20poly1305", "dep:getrandom"]
 # Gauntlet Phase 0B sentinel RED fixtures are gated behind the
 # `--cfg gauntlet_red_fixture` compile flag, NOT a Cargo feature. A red fixture
 # is designed to FAIL (it asserts the illegal/old behavior), so it must never be
@@ -89,6 +96,19 @@ zeroize = "1"
 # which installs a before-`main` constructor that runs the payload-registry
 # collision check (item #133). MIT OR Apache-2.0, clears deny.toml.
 ctor = { version = "0.2", optional = true }
+# Optional: only pulled in by the non-default `payload-encryption` feature.
+# Pure-Rust XChaCha20-Poly1305 AEAD (24-byte nonce, 256-bit key); no AES-NI or C
+# assembly. default-features = false drops `std`/`getrandom`; `alloc` re-enables
+# the Vec-returning `Aead::{encrypt,decrypt}` surface. MIT OR Apache-2.0. Its
+# `subtle` transitive dep is already present in the workspace graph, so this adds
+# no new license family.
+chacha20poly1305 = { version = "0.10", optional = true, default-features = false, features = [
+    "alloc",
+] }
+# Optional: only pulled in by `payload-encryption`. OS CSPRNG for symmetric key
+# material; version 0.3 reuses the exact `getrandom` already in the production
+# graph (via tempfile), so the feature adds no new crate version. MIT OR Apache-2.0.
+getrandom = { version = "0.3", optional = true }
 # NO TOKIO. Invariant 1.
 
 [dev-dependencies]

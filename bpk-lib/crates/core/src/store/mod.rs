@@ -31,6 +31,13 @@ mod import;
 mod import_api;
 /// In-memory 2D event index, rebuilt from segments on startup.
 pub mod index;
+/// Per-scope payload key material for opt-in crypto-shred encryption.
+#[cfg(feature = "payload-encryption")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "payload-encryption"))
+)]
+pub mod keyscope;
 mod lifecycle;
 mod lifecycle_api;
 mod lifecycle_close;
@@ -120,6 +127,12 @@ pub use import::{
     ImportSelector, SourceNamespace, IMPORT_PROVENANCE_SCHEMA_VERSION,
 };
 pub use index::IndexEntry;
+#[cfg(feature = "payload-encryption")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "payload-encryption"))
+)]
+pub use keyscope::{scope_for, KeyScope, KeyScopeGranularity, KeyStore, KeyStoreError, PayloadKey};
 /// Test-only global-allocator shims. Re-exported so dedicated single-test
 /// binaries can install one as `#[global_allocator]`. Compiled out unless the
 /// `alloc-count` or `fault-alloc` feature is enabled.

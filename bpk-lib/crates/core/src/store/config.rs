@@ -1,4 +1,6 @@
 use crate::event::EventPayloadValidation;
+#[cfg(feature = "payload-encryption")]
+use crate::store::keyscope::KeyScopeGranularity;
 pub(crate) use crate::store::platform::clock::{
     clock_from_fn, wall_ms_from_timestamp_us, Clock, MonotonicClock, SystemClock,
 };
@@ -79,6 +81,17 @@ pub struct StoreConfig {
     pub(crate) chain_verification: ChainVerification,
     /// Payload-registry collision policy applied during `Store::open`.
     pub(crate) event_payload_validation: EventPayloadValidation,
+    /// Opt-in crypto-shred payload encryption. `None` (default) disables it and
+    /// preserves today's plaintext-payload behavior; `Some(granularity)` selects
+    /// the [`KeyScopeGranularity`] keys are partitioned by. Holds only the
+    /// granularity — never any key material. Stage A stores this setting but does
+    /// not yet wire it into the append/read paths.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    pub(crate) payload_encryption: Option<KeyScopeGranularity>,
     /// Fault injector for testing failure scenarios.
     /// Only available with the `dangerous-test-hooks` feature.
     #[cfg(feature = "dangerous-test-hooks")]
@@ -126,6 +139,10 @@ impl StoreConfig {
             // ambiguous wire identity. Callers who knowingly tolerate a
             // collision opt out via EventPayloadValidation::Warn / Silent.
             event_payload_validation: EventPayloadValidation::default(),
+            // Opt-in: a default store keeps writing plaintext payloads. Callers
+            // enable crypto-shred explicitly via `with_payload_encryption`.
+            #[cfg(feature = "payload-encryption")]
+            payload_encryption: None,
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: None,
         }
@@ -293,6 +310,32 @@ impl StoreConfig {
     pub fn with_event_payload_validation(mut self, validation: EventPayloadValidation) -> Self {
         self.event_payload_validation = validation;
         self
+    }
+
+    /// Enable opt-in crypto-shred payload encryption at the given
+    /// [`KeyScopeGranularity`].
+    ///
+    /// Stores only the granularity; no key material is held on the config. This
+    /// is opt-in — a store left at the default `None` keeps writing plaintext
+    /// payloads. Stage A records the setting but does not yet encrypt writes.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    pub fn with_payload_encryption(mut self, granularity: KeyScopeGranularity) -> Self {
+        self.payload_encryption = Some(granularity);
+        self
+    }
+
+    /// The configured payload-encryption granularity, or `None` when disabled.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    pub fn payload_encryption(&self) -> Option<KeyScopeGranularity> {
+        self.payload_encryption
     }
 
     /// Set the fsync strategy used after writes.
@@ -510,6 +553,8 @@ impl Clone for StoreConfig {
             signing_downgrade_allowed: self.signing_downgrade_allowed,
             chain_verification: self.chain_verification,
             event_payload_validation: self.event_payload_validation,
+            #[cfg(feature = "payload-encryption")]
+            payload_encryption: self.payload_encryption,
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: self.fault_injector.clone(),
         }
@@ -518,7 +563,8 @@ impl Clone for StoreConfig {
 
 impl std::fmt::Debug for StoreConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StoreConfig")
+        let mut debug = f.debug_struct("StoreConfig");
+        debug
             .field("data_dir", &self.data_dir)
             .field("segment_max_bytes", &self.segment_max_bytes)
             .field("fd_budget", &self.fd_budget)
@@ -541,8 +587,11 @@ impl std::fmt::Debug for StoreConfig {
             .field("signing_policy", &self.signing_policy)
             .field("signing_downgrade_allowed", &self.signing_downgrade_allowed)
             .field("chain_verification", &self.chain_verification)
-            .field("event_payload_validation", &self.event_payload_validation)
-            .finish()
+            .field("event_payload_validation", &self.event_payload_validation);
+        // Only the granularity is ever shown — the config holds no key material.
+        #[cfg(feature = "payload-encryption")]
+        debug.field("payload_encryption", &self.payload_encryption);
+        debug.finish()
     }
 }
 
