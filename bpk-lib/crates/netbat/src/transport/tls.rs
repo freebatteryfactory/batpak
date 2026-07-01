@@ -17,6 +17,7 @@ use std::net::TcpStream;
 use std::path::Path;
 use std::sync::Arc;
 
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 
@@ -113,10 +114,12 @@ impl TlsServerConfig {
 }
 
 fn parse_cert_chain(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, NetbatError> {
-    let mut reader = io::BufReader::new(pem);
-    let certs = rustls_pemfile::certs(&mut reader)
+    // pki-types' PEM decoder replaces the unmaintained rustls-pemfile. Any
+    // decode failure (`pem::Error`) collapses to the same typed InvalidData as
+    // an empty chain — a garbage cert is InvalidData just like no cert at all.
+    let certs = CertificateDer::pem_slice_iter(pem)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(NetbatError::from)?;
+        .map_err(|_| invalid_tls_data())?;
     if certs.is_empty() {
         return Err(invalid_tls_data());
     }
@@ -124,11 +127,9 @@ fn parse_cert_chain(pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, NetbatEr
 }
 
 fn parse_private_key(pem: &[u8]) -> Result<PrivateKeyDer<'static>, NetbatError> {
-    let mut reader = io::BufReader::new(pem);
-    match rustls_pemfile::private_key(&mut reader).map_err(NetbatError::from)? {
-        Some(key) => Ok(key),
-        None => Err(invalid_tls_data()),
-    }
+    // `from_pem_slice` returns `Error::NoItemsFound` when the PEM carries no
+    // key; both that and any parse error map to the typed InvalidData surface.
+    PrivateKeyDer::from_pem_slice(pem).map_err(|_| invalid_tls_data())
 }
 
 /// Map any rustls cert/key/config rejection to a stable typed IO error.

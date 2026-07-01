@@ -15,7 +15,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use rustls::pki_types::ServerName;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use syncbat::{Core, EffectClass, Handler, HandlerResult, OperationDescriptor};
 
@@ -89,8 +90,7 @@ fn spawn_tls_server(
 /// Connect a real rustls client that trusts the committed test cert.
 fn tls_client(addr: std::net::SocketAddr) -> StreamOwned<ClientConnection, TcpStream> {
     let mut roots = RootCertStore::empty();
-    let mut reader = BufReader::new(CA_PEM);
-    for cert in rustls_pemfile::certs(&mut reader) {
+    for cert in CertificateDer::pem_slice_iter(CA_PEM) {
         roots
             .add(cert.expect("parse fixture CA cert"))
             .expect("add fixture CA cert to client roots");
@@ -191,7 +191,7 @@ fn tls_listener_rejects_cleartext_client() {
 fn tls_server_config_loads_from_pem_files() {
     // Witness the from_pem_files (path-based) constructor and TransportSecurity
     // wrapping; a successful build proves the committed fixture round-trips
-    // through rustls-pemfile path parsing.
+    // through the pki-types PEM path parsing.
     let dir = env!("CARGO_MANIFEST_DIR");
     let config = nb::TlsServerConfig::from_pem_files(
         format!("{dir}/tests/fixtures/tls_test_cert.pem"),

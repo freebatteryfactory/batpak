@@ -20,7 +20,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use rustls::pki_types::ServerName;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use syncbat::{
     RuntimeCursor, SessionControl, SessionDelivery, SessionEnd, SessionEventDelivery, SessionPoll,
@@ -149,8 +150,7 @@ fn spawn_tls_subscription_server(
 /// Connect a real rustls client that trusts the committed test cert.
 fn tls_client(addr: std::net::SocketAddr) -> StreamOwned<ClientConnection, TcpStream> {
     let mut roots = RootCertStore::empty();
-    let mut reader = BufReader::new(CA_PEM);
-    for cert in rustls_pemfile::certs(&mut reader) {
+    for cert in CertificateDer::pem_slice_iter(CA_PEM) {
         roots
             .add(cert.expect("parse fixture CA cert"))
             .expect("add fixture CA cert to client roots");

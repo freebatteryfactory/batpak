@@ -14,10 +14,11 @@ categories = ["network-programming"]
 
 [features]
 default = []
-# Opt-in server-only TLS transport. The default build pulls NEITHER rustls nor
-# rustls-pemfile, preserving netbat's thin-crate identity; every TLS type, dep,
-# and code path is gated behind this feature.
-tls = ["dep:rustls", "dep:rustls-pemfile"]
+# Opt-in server-only TLS transport. The default build pulls rustls in only under
+# this feature, preserving netbat's thin-crate identity; every TLS type, dep, and
+# code path is gated behind it. PEM parsing uses rustls' own `pki_types` (the
+# maintained rustls-pki-types), so no separate PEM crate is needed.
+tls = ["dep:rustls"]
 
 [dependencies]
 syncbat = { path = "../syncbat", version = "0.8.3" }
@@ -35,7 +36,6 @@ rustls = { version = "0.23", optional = true, default-features = false, features
     "tls12",
     "logging",
 ] }
-rustls-pemfile = { version = "2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
