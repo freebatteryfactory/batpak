@@ -74,17 +74,16 @@ const REGISTRY: &[RegisteredExclusion] = &[
         witness: None,
         reason: "Default for IndexTopology IS aos(); rewriting aos() to Default::default() recurses to a stack abort, caught by timeout — not a behavior change.",
     },
-    RegisteredExclusion {
-        regex: r"crates/core/src/store/import\.rs:.*replace < with == in import_events",
-        category: ExclusionCategory::Equivalent,
-        witness: Some("crates/core/tests/import_events.rs::import_events_reimport_is_noop_and_preserves_raw_payload_bytes"),
-        reason: "Fresh appends always land > pre_import_frontier and dups are pre-filtered, so the post-append `< frontier` arm is unreachable under first-order mutation; `<`/`==`/`<=` classify identically.",
-    },
+    // The former `< -> ==` twin entry was REMOVED (2026-07-01): the append-level
+    // replay race is deterministically reconstructible, so
+    // `import.rs::tests::append_level_replay_receipt_below_the_frontier_counts_as_deduplicated`
+    // reaches the post-append arm and KILLS the mutant — it was unreached, not
+    // equivalent. Its lanes.rs regex was removed in the same change.
     RegisteredExclusion {
         regex: r"crates/core/src/store/import\.rs:.*replace < with <= in import_events",
         category: ExclusionCategory::Equivalent,
-        witness: Some("crates/core/tests/import_events.rs::import_events_reimport_is_noop_and_preserves_raw_payload_bytes"),
-        reason: "Same unreachable post-append dedup arm as the `< -> ==` mutant; no receipt in the loop is ever <= pre_import_frontier.",
+        witness: Some("crates/core/src/store/import.rs::append_level_replay_receipt_below_the_frontier_counts_as_deduplicated"),
+        reason: "Receipts BELOW the frontier are reachable via the append-level replay race and classify identically under `<` and `<=`; the two diverge only for a receipt landing EXACTLY at pre_import_frontier, whose imported-vs-deduplicated classification is an open owner decision (counter-only today).",
     },
     RegisteredExclusion {
         regex: r"crates/core/src/store/import\.rs:.*replace \|\| with && in import_key_already_present",
@@ -115,6 +114,83 @@ const REGISTRY: &[RegisteredExclusion] = &[
         category: ExclusionCategory::DiagnosticOnly,
         witness: None,
         reason: "The `!` only guards a `tracing::debug!` emission in execute_full_replay; deleting it changes no functional behavior, so no behavioral witness can exist.",
+    },
+    // --- netbat-boundary-protocol: TLS control-drain guards (2026-07-01) ---
+    // Line-pinned (like the reflink band) because the mutant descriptions collide
+    // with KILLED neighbours: the WouldBlock guards at stream_tcp_tls.rs:248/:266
+    // are caught by the stream_tcp_tls_tests sidecar.
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:249:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with true in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::quiet_connection_drain_is_idle"),
+        reason: "rustls 0.23's buffered Reader::read returns only Ok/WouldBlock/UnexpectedEof (check_no_bytes_state); Interrupted is unreachable on the plaintext side, and rerouting the guard changes no reachable outcome.",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:249:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with false in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::quiet_connection_drain_is_idle"),
+        reason: "Same unreachable plaintext-side Interrupted guard: with the guard false the (never-produced) Interrupted error would fall to the catch-all PeerGone — no reachable input distinguishes it.",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:249:.*replace == with != in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::eof_without_close_notify_drains_to_peer_gone"),
+        reason: "Flipping the plaintext-side Interrupted comparison shadows kinds that already route to the same PeerGone catch-all; the WouldBlock arm above it is matched first, so no reachable error kind changes outcome.",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:256:.*replace > with >= in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::drain_budget_bounds_one_flood_pass"),
+        reason: "The drain budget stops one read_tls call early (63 vs 64 recv(2) calls); the delta is absorbed by the next drain pass and is unobservable without syscall instrumentation (Linux task-IO syscr counts read(2) only; default tcp_rmem cannot pre-stage 64 deterministic maximal reads).",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:256:.*replace > with == in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::drain_budget_bounds_one_flood_pass"),
+        reason: "With a counter that increments by exactly 1 per iteration, `==` fires at the same boundary as `>=` — identical to the `> -> >=` entry above (one-read-early stop, unobservable).",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:267:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with true in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::reset_peer_drains_to_peer_gone"),
+        reason: "EINTR on recv(2) is not deterministically producible in a test; with the guard forced true an ECONNRESET is retried once and converges to the same PeerGone via the post-reset EOF.",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:267:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with false in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::reset_peer_drains_to_peer_gone"),
+        reason: "With the guard false a real EINTR would fall to the catch-all PeerGone instead of retrying — but EINTR on recv(2) is not deterministically producible, so no test can reach the divergence.",
+    },
+    RegisteredExclusion {
+        regex: r"stream_tcp_tls\.rs:267:.*replace == with != in drain_control_frames",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/netbat/src/transport/stream_tcp_tls_tests.rs::reset_peer_drains_to_peer_gone"),
+        reason: "Flipping the socket-side Interrupted comparison only reroutes between retry and the PeerGone catch-all for error kinds that are either unreachable (EINTR) or already killed at the WouldBlock arm matched first.",
+    },
+    // --- cfg-phantom excludes (2026-07-01) ---
+    RegisteredExclusion {
+        regex: r"fs\.rs:3[45][0-9]:.*read_exact_at",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "The #[cfg(not(unix))] fallback branch of read_exact_at (fs.rs ~344-360) is not compiled on the Linux CI runner (same phantom class as the reflink band); the unix twin at ~:331 stays tested by platform/fs_tests.rs::read_exact_at_completes_exactly_at_the_boundary_iteration, which also kills this variant on any non-unix lane.",
+    },
+    RegisteredExclusion {
+        regex: r"ancestry/mod\.rs:.*step_ancestor_key_aware",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "step_ancestor_key_aware is #[cfg(feature = \"payload-encryption\")] (ancestry/mod.rs:286): compiled out on the no-default surface (phantom missed there); mutated and killed on all-features by crypto_shred_ancestry + mutation_kill_wpc_round3_encrypted.",
+    },
+    RegisteredExclusion {
+        regex: r"write/writer\.rs:.*CooperativePump",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "CooperativePump is #[cfg(feature = \"dangerous-test-hooks\")] (write/writer.rs:132): compiled out on the no-default surface (phantom missed there); mutated and killed on all-features by mutation_kill_wpc_round3_cooperative.",
+    },
+    RegisteredExclusion {
+        regex: r"config\.rs:.*with_fault_injector",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "StoreConfig::with_fault_injector is #[cfg(feature = \"dangerous-test-hooks\")] (config.rs:522): compiled out on the no-default surface (phantom missed there); mutated and killed on all-features by the config accessor pins.",
     },
 ];
 

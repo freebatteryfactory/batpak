@@ -193,8 +193,26 @@ mod tests {
                 // golden above carries no such --exclude — proving it is no-default-only).
                 "--exclude",
                 "crates/core/src/store/sim/**/*.rs",
+                // The keyscope tree is `payload-encryption`-gated at the module
+                // declaration — same phantom class as sim, same surface-scoped cure.
+                "--exclude",
+                "crates/core/src/store/keyscope.rs",
+                "--exclude",
+                "crates/core/src/store/keyscope/**/*.rs",
                 "--exclude-re",
                 INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT,
+                // cfg-phantom regex excludes (registry-witnessed): the
+                // `#[cfg(not(unix))]` read_exact_at fallback is never compiled on
+                // the Linux runner, and the three feature-gated items below are
+                // compiled out on this surface — each is killed on all-features.
+                "--exclude-re",
+                r"fs\.rs:3[45][0-9]:.*read_exact_at",
+                "--exclude-re",
+                r"ancestry/mod\.rs:.*step_ancestor_key_aware",
+                "--exclude-re",
+                r"write/writer\.rs:.*CooperativePump",
+                "--exclude-re",
+                r"config\.rs:.*with_fault_injector",
                 "--no-default-features",
                 "--cargo-arg",
                 "--locked",
