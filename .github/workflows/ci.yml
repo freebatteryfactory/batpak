@@ -290,12 +290,18 @@ jobs:
       - name: Install cvc5 (independent solver, HARD-required)
         run: |
           set -euo pipefail
+          # Pinned 1.2.0. Release assets are arch-suffixed zips
+          # (cvc5-Linux-x86_64-static.zip with bin/cvc5 inside); the old bare
+          # `cvc5-Linux-static` binary asset no longer exists (404 on every
+          # release since 1.1) — first surfaced when this heavy-only lane ran.
           CVC5_VERSION=1.2.0
-          curl -fsSL -o "$RUNNER_TEMP/cvc5" \
-            "https://github.com/cvc5/cvc5/releases/download/cvc5-${CVC5_VERSION}/cvc5-Linux-static"
-          chmod +x "$RUNNER_TEMP/cvc5"
-          "$RUNNER_TEMP/cvc5" --version
-          echo "BVISOR_CVC5=$RUNNER_TEMP/cvc5" >> "$GITHUB_ENV"
+          curl -fsSL -o "$RUNNER_TEMP/cvc5.zip" \
+            "https://github.com/cvc5/cvc5/releases/download/cvc5-${CVC5_VERSION}/cvc5-Linux-x86_64-static.zip"
+          unzip -q "$RUNNER_TEMP/cvc5.zip" -d "$RUNNER_TEMP/cvc5-dist"
+          CVC5_BIN="$RUNNER_TEMP/cvc5-dist/cvc5-Linux-x86_64-static/bin/cvc5"
+          chmod +x "$CVC5_BIN"
+          "$CVC5_BIN" --version
+          echo "BVISOR_CVC5=$CVC5_BIN" >> "$GITHUB_ENV"
       - name: QF_BV qualification gate (two-solver UNSAT + planted SAT + non-vacuity)
         working-directory: bpk-lib
         env:
