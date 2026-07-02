@@ -187,3 +187,48 @@ pub(super) fn elapsed_us(clock: &dyn Clock, started_at_ns: i64) -> u64 {
     u64::try_from(clock.now_mono_ns().saturating_sub(started_at_ns).max(0) / 1_000)
         .unwrap_or(u64::MAX)
 }
+
+#[cfg(test)]
+mod returned_generation_pins {
+    //! Mutation pin: `ProjectionOutcome::returned_generation` must report the
+    //! stamped generation VERBATIM. A `-> 0` constant mutant is unobservable
+    //! through `into_parts` (which reads the field directly) — its only other
+    //! consumer is flow telemetry — so the accessor is pinned here at its own
+    //! seam, alongside the constructors that stamp it.
+    use super::{ProjectionCacheObservation, ProjectionObservedFreshness, ProjectionOutcome};
+
+    #[test]
+    fn returned_generation_reports_the_exact_stamped_generation() {
+        let outcome = ProjectionOutcome::new(
+            Some(11_u32),
+            42,
+            Some(41),
+            ProjectionCacheObservation::Hit,
+            ProjectionObservedFreshness::Fresh,
+            None,
+        );
+        assert_eq!(
+            outcome.returned_generation(),
+            42,
+            "PROPERTY: the accessor returns the generation stamped at construction, verbatim"
+        );
+        let (generation, state) = outcome.into_parts();
+        assert_eq!(
+            (generation, state),
+            (42, Some(11)),
+            "PROPERTY: into_parts carries the same honest generation with the state"
+        );
+
+        let empty = ProjectionOutcome::<u32>::empty(
+            7,
+            ProjectionCacheObservation::Miss,
+            ProjectionObservedFreshness::NotApplicable,
+            None,
+        );
+        assert_eq!(
+            empty.returned_generation(),
+            7,
+            "PROPERTY: the empty-outcome path stamps and reports its generation verbatim too"
+        );
+    }
+}

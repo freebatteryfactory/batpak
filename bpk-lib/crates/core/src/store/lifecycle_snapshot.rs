@@ -139,3 +139,49 @@ pub(super) fn clear_snapshot_store_artifacts(
     }
     Ok(removed)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::clear_snapshot_store_artifacts;
+    use crate::store::file_classification::CURSOR_DIRECTORY;
+    use crate::store::platform::fs::{write_file_atomically, RealFs};
+    use crate::store::StoreError;
+
+    #[test]
+    fn clear_removes_cursor_state_only_when_both_directory_and_name_match() {
+        // The cursor-state clear is guarded by a CONJUNCTION: the entry must
+        // be a directory AND classify as the cursor directory. Each test entry
+        // below satisfies exactly ONE conjunct, so neither may be touched; the
+        // `&&` -> `||` mutant removes the foreign directory (inflating the
+        // removed count) or errors trying to remove-dir-all a regular file —
+        // either iteration order convicts it.
+        let dest = tempfile::TempDir::new().expect("create snapshot destination");
+        let write_fixture = |name: &str, bytes: &'static [u8]| {
+            write_file_atomically(dest.path(), &dest.path().join(name), name, |file| {
+                use std::io::Write;
+                file.write_all(bytes).map_err(StoreError::Io)
+            })
+            .expect("write fixture through the platform seam");
+        };
+        write_fixture("000001.fbat", b"seg");
+        std::fs::create_dir(dest.path().join("caller-owned")).expect("create foreign directory");
+        write_fixture(CURSOR_DIRECTORY, b"not a dir");
+
+        let removed = clear_snapshot_store_artifacts(&RealFs, dest.path())
+            .expect("clearing touches only store artifacts and cannot error here");
+
+        assert_eq!(removed, 1, "exactly the segment artifact is cleared");
+        assert!(
+            !dest.path().join("000001.fbat").exists(),
+            "the segment artifact is gone"
+        );
+        assert!(
+            dest.path().join("caller-owned").is_dir(),
+            "a foreign directory survives: being a directory alone must not qualify"
+        );
+        assert!(
+            dest.path().join(CURSOR_DIRECTORY).is_file(),
+            "a cursor-NAMED regular file survives: the name alone must not qualify"
+        );
+    }
+}

@@ -633,3 +633,38 @@ fn required_index_hash_chain_rejects_missing_chain_for_data_event() {
         "PROPERTY: missing hash_chain must surface as CorruptSegment with the expected detail, got {err:?}"
     );
 }
+
+#[test]
+fn plaintext_value_from_bytes_maps_batch_markers_to_null_without_decoding() {
+    // Batch BEGIN/COMMIT marker frames are written with an EMPTY payload
+    // (`Event::new(header, Vec::new())` in the batch writer) — zero bytes is
+    // NOT valid msgpack. The marker arm must return Null WITHOUT consulting
+    // the msgpack decoder; deleting that match arm routes the empty slice to
+    // `encoding::from_bytes`, which errors. This convicts at the unit seam in
+    // microseconds — no store, no scan loop, nothing that can hang.
+    let begin = Reader::plaintext_value_from_bytes(EventKind::SYSTEM_BATCH_BEGIN, &[]);
+    assert!(
+        matches!(begin, Ok(serde_json::Value::Null)),
+        "SYSTEM_BATCH_BEGIN with the writer's empty payload must decode to Null, got {begin:?}"
+    );
+    let commit = Reader::plaintext_value_from_bytes(EventKind::SYSTEM_BATCH_COMMIT, &[]);
+    assert!(
+        matches!(commit, Ok(serde_json::Value::Null)),
+        "SYSTEM_BATCH_COMMIT with the writer's empty payload must decode to Null, got {commit:?}"
+    );
+
+    // The carve-out is KIND-keyed, not bytes-keyed: even garbage bytes under a
+    // marker kind yield Null rather than a decode attempt (0xC1 is the one
+    // permanently-invalid msgpack byte, so a decode attempt cannot succeed).
+    let garbage = Reader::plaintext_value_from_bytes(EventKind::SYSTEM_BATCH_COMMIT, &[0xC1]);
+    assert!(
+        matches!(garbage, Ok(serde_json::Value::Null)),
+        "marker payload bytes are never decoded, got {garbage:?}"
+    );
+
+    // A non-marker kind takes the default arm: real msgpack decodes to its value.
+    let bytes = crate::encoding::to_bytes(&serde_json::json!(42)).expect("encode msgpack");
+    let user = Reader::plaintext_value_from_bytes(EventKind::DATA, &bytes)
+        .expect("plaintext user payload decodes through the default arm");
+    assert_eq!(user, serde_json::json!(42));
+}

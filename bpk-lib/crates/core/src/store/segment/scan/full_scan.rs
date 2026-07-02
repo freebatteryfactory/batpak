@@ -274,4 +274,90 @@ mod tests {
             "PROPERTY: a valid segment with no frames scans as empty, not corrupt"
         );
     }
+
+    #[test]
+    fn scan_segment_returns_every_batch_event_past_the_in_band_markers() {
+        use crate::coordinate::Coordinate;
+        use crate::id::EntityIdType;
+        use crate::store::{AppendOptions, BatchAppendItem, CausationRef, Store, StoreConfig};
+
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let store = Store::open(
+            StoreConfig::new(dir.path())
+                .with_sync_every_n_events(1)
+                .with_enable_checkpoint(false)
+                .with_enable_mmap_index(false),
+        )
+        .expect("open store");
+        let coord = Coordinate::new("entity:full-scan", "scope:markers").expect("coord");
+        let kind = EventKind::custom(0xE, 0x21);
+        let items: Vec<BatchAppendItem> = (0..3)
+            .map(|i| {
+                BatchAppendItem::new(
+                    coord.clone(),
+                    kind,
+                    &serde_json::json!({ "i": i }),
+                    AppendOptions::default(),
+                    CausationRef::None,
+                )
+                .expect("construct batch item")
+            })
+            .collect();
+        let receipts = store.append_batch(items).expect("append batch");
+        assert_eq!(receipts.len(), 3, "scenario shape: three committed events");
+        let batch_ids: Vec<u128> = receipts.iter().map(|r| r.event_id.as_u128()).collect();
+        store.close().expect("close store");
+
+        let mut segment_paths: Vec<std::path::PathBuf> =
+            crate::store::platform::fs::read_dir(dir.path())
+                .expect("read data dir")
+                .filter_map(|entry| {
+                    let path = entry.expect("data dir entry").path();
+                    path.extension()
+                        .is_some_and(|ext| ext == "fbat")
+                        .then_some(path)
+                })
+                .collect();
+        segment_paths.sort();
+        assert_eq!(
+            segment_paths.len(),
+            1,
+            "scenario shape: everything landed in one segment"
+        );
+
+        let clock: std::sync::Arc<dyn crate::store::Clock> =
+            std::sync::Arc::new(crate::store::SystemClock::new());
+        let reader = Reader::new(
+            dir.path().to_path_buf(),
+            4,
+            &clock,
+            std::sync::Arc::new(crate::store::platform::fs::RealFs),
+        );
+        let entries = reader
+            .scan_segment(&segment_paths[0])
+            .expect("scan sealed segment");
+
+        // The BEGIN marker frame precedes the three batch events in the frame
+        // stream, so the cursor advance on the MARKER-SKIP path decides whether
+        // the events after it are reachable at all: a `+=` -> `*=` mutant there
+        // catapults the cursor past frames_end at the BEGIN marker and loses
+        // every committed batch event.
+        let scanned_batch_ids: Vec<u128> = entries
+            .iter()
+            .filter(|entry| entry.event.header.event_kind == kind)
+            .map(|entry| entry.event.header.event_id.as_u128())
+            .collect();
+        assert_eq!(
+            scanned_batch_ids, batch_ids,
+            "a full scan must return all three batch events, in append order, \
+             after skipping the in-band BEGIN marker"
+        );
+        assert!(
+            entries.iter().all(|entry| !matches!(
+                entry.event.header.event_kind,
+                EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT
+            )),
+            "in-band batch markers never surface as scanned entries"
+        );
+    }
 }

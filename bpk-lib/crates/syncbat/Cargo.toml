@@ -40,6 +40,10 @@ batpak-testkit = { path = "../testkit" }
 blake3 = "1"
 criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = ">=3.24, <3.25"
+# Used by the round-2 subscription-runtime mutation kills to observe the loud
+# crypto-shred delivery warn through a minimal thread-local subscriber (already
+# a main dependency, so the lockfile does not move).
+tracing = "0.1"
 trybuild = "1"
 proptest = "1"
 serde_json = "1"
