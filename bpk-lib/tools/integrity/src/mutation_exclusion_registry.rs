@@ -200,6 +200,12 @@ const REGISTRY: &[RegisteredExclusion] = &[
         reason: "finish_value is #[cfg(feature = \"payload-encryption\")] (ancestry/mod.rs:369), the private helper of the already-excluded step_ancestor_key_aware: compiled out on the no-default surface (phantom missed there); exercised on all-features by the exact-chain pins in crypto_shred_ancestry + mutation_kill_wpc_round3_encrypted.",
     },
     RegisteredExclusion {
+        regex: r"envelope\.rs:53[0-9]:.*read_delivery_stored",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "The #[cfg(not(feature = \"payload-encryption\"))] read_delivery_stored variant (envelope.rs:528) is compiled out on the all-features lanes, so its :532 body-fabrication mutants are phantoms there — the inverse of the no-default phantom class. The variant is killed under default/no-default features by the feature-agnostic encode_for_entry exact-envelope pins in mutation_kill_syncbat-subscription-runtime.rs (bite-proven with Ok(None) hand-applied under default features); its payload-encryption twin at :512 is compiled and killed on the all-features lane.",
+    },
+    RegisteredExclusion {
         regex: r"index/query\.rs:26[89]:.*replace << with >>",
         category: ExclusionCategory::Equivalent,
         witness: Some("crates/core/src/store/index/tests.rs::query_any_hits_after_returns_exactly_the_limit_smallest_sequences_past_the_cursor"),
