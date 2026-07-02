@@ -258,6 +258,49 @@ pub(super) enum DriveStep {
 }
 
 impl WriterCore {
+    /// Fsync the active segment and — only on success — advance the durable
+    /// frontier to the accepted frontier. This is the single durability choke
+    /// point: the periodic cadence sync, the explicit `Sync` barrier, segment
+    /// rotation's data flush, the batch-commit fsync, and the shutdown drain's
+    /// final sync all route through here.
+    ///
+    /// Fails CLOSED (fsyncgate): after an fsync error the kernel clears the
+    /// dirty page bits, so a LATER fsync on the same file can return Ok
+    /// without the previously-dirty pages ever reaching disk. Logging and
+    /// continuing would therefore let the next "successful" sync advance the
+    /// durable frontier over silently-lost data. Instead, a failed sync
+    /// permanently poisons the writer (`mark_writer_crashed`): every
+    /// subsequent command is rejected with [`StoreError::WriterCrashed`] by
+    /// the poison gate in [`WriterCore::drive_command`], and
+    /// `WatermarkState::advance_durable` itself is latched off, so the durable
+    /// frontier can never advance past the last successful sync.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::WriterCrashed`] when already poisoned (without
+    /// touching the file), or the underlying sync error — which also poisons
+    /// the writer.
+    pub(super) fn sync_active_segment(&mut self) -> Result<(), StoreError> {
+        if self.watermark_handle.is_poisoned() {
+            return Err(StoreError::WriterCrashed);
+        }
+        #[cfg(feature = "dangerous-test-hooks")]
+        if let Err(error) = crate::store::fault::maybe_inject(
+            crate::store::fault::InjectionPoint::ActiveSegmentSync {
+                segment_id: self.segment_id,
+            },
+            &self.config.fault_injector,
+        ) {
+            self.watermark_handle.mark_writer_crashed();
+            return Err(error);
+        }
+        if let Err(error) = self.active_segment.sync_with_mode(&self.config.sync.mode) {
+            self.watermark_handle.mark_writer_crashed();
+            return Err(error);
+        }
+        self.watermark_handle.lock().advance_durable_to_accepted();
+        Ok(())
+    }
+
     /// Drive a single command pulled from `rx` through the full per-command
     /// pipeline: execute, settle, optional shutdown drain, optional group-commit
     /// drain, and periodic sync. Returns [`DriveStep::Exit`] wherever the writer
@@ -276,6 +319,19 @@ impl WriterCore {
         events_since_sync: &mut u32,
         cmd: WriterCommand,
     ) -> DriveStep {
+        // Fail-closed poison gate: once a durability sync has failed (or the
+        // writer was marked crashed), execute NOTHING — reject every command
+        // with the exact `WriterCrashed` poison error instead of a receipt
+        // whose durability can never arrive. A rejected `Shutdown` still exits
+        // the loop so `close()`/`Drop` can join the thread. Rationale:
+        // see [`Self::sync_active_segment`] (fsyncgate).
+        if self.watermark_handle.is_poisoned() {
+            if reject_command_writer_crashed(cmd) {
+                return DriveStep::Exit;
+            }
+            return DriveStep::Continue;
+        }
+
         let result = self.execute_command(WriterLoopPhase::Main, cmd);
         if let Some(respond) = result.shutdown_drain_respond {
             let shutdown_result =
@@ -293,6 +349,13 @@ impl WriterCore {
             let extra_budget = validated_cfg.group_commit_drain_budget;
             let mut drained = 0u32;
             while group_commit_drain_budget_remaining(drained, extra_budget) {
+                // A sync failure inside the drain (e.g. a drained batch's
+                // commit fsync) poisons the writer: stop pulling commands and
+                // leave the queue to the poison gate above, so no drained
+                // append can hand out a committed receipt post-poison.
+                if self.watermark_handle.is_poisoned() {
+                    break;
+                }
                 let Ok(next_cmd) = rx.try_recv() else {
                     break;
                 };
@@ -310,6 +373,13 @@ impl WriterCore {
         }
 
         if *events_since_sync >= config.sync.every_n_events {
+            // Fail closed on cadence-sync failure: `sync_active_segment`
+            // poisons the writer (fsyncgate — see its doc), so this error is
+            // terminal, not advisory. The receipt for the triggering append
+            // was already sent (committed-not-durable, by design), and every
+            // subsequent command is rejected by the poison gate above. The
+            // log line is observability IN ADDITION to the poison, never a
+            // substitute for it.
             if let Err(error) = self.sync_active_segment() {
                 tracing::error!("periodic sync failed: {error}");
             }
@@ -317,6 +387,44 @@ impl WriterCore {
         }
 
         DriveStep::Continue
+    }
+}
+
+/// Reply to `cmd` with the exact poison error [`StoreError::WriterCrashed`]
+/// without executing it. Returns `true` when the rejected command was a
+/// `Shutdown`, whose caller-visible contract still requires the writer loop to
+/// exit so `close()`/`Drop` can join the thread to quiescence.
+///
+/// Part of the fail-closed durability contract (see
+/// [`WriterCore::sync_active_segment`]): once the writer is poisoned it must
+/// stop accepting work — every command gets the truthful terminal error.
+fn reject_command_writer_crashed(cmd: WriterCommand) -> bool {
+    match cmd {
+        WriterCommand::BeginVisibilityFence { respond, .. }
+        | WriterCommand::CommitVisibilityFence { respond, .. }
+        | WriterCommand::CancelVisibilityFence { respond, .. }
+        | WriterCommand::Sync { respond } => {
+            ignore_closed_response_channel(respond.send(Err(StoreError::WriterCrashed)));
+            false
+        }
+        WriterCommand::Append { respond, .. } | WriterCommand::FenceAppend { respond, .. } => {
+            ignore_closed_response_channel(respond.send(Err(StoreError::WriterCrashed)));
+            false
+        }
+        WriterCommand::AppendBatch { respond, .. }
+        | WriterCommand::FenceAppendBatch { respond, .. } => {
+            ignore_closed_response_channel(respond.send(Err(StoreError::WriterCrashed)));
+            false
+        }
+        WriterCommand::Shutdown { respond } => {
+            ignore_closed_response_channel(respond.send(Err(StoreError::WriterCrashed)));
+            true
+        }
+        #[cfg(feature = "dangerous-test-hooks")]
+        WriterCommand::PanicForTest { respond } => {
+            ignore_closed_response_channel(respond.send(Err(StoreError::WriterCrashed)));
+            false
+        }
     }
 }
 
@@ -383,6 +491,12 @@ fn drain_shutdown_queue(
     let mut drained = 0usize;
     let mut shutdown_sync_count = 0u32;
     while drained < shutdown_drain_limit {
+        // Poisoned mid-drain: stop executing queued commands. The writer exits
+        // right after this drain, so their reply senders drop and every waiter
+        // surfaces the exact `WriterCrashed` disconnection error.
+        if state.watermark_handle.is_poisoned() {
+            break;
+        }
         let Ok(cmd) = rx.try_recv() else {
             break;
         };

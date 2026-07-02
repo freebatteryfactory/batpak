@@ -584,10 +584,12 @@ impl WriterCore {
             &self.config.fault_injector,
         )?;
 
-        self.active_segment
-            .sync_with_mode(&self.config.sync.mode)
+        // Durability choke point: advances the durable frontier on success and
+        // poisons the writer fail-closed on fsync failure (fsyncgate — see
+        // `sync_active_segment`); the batch error below is the caller-visible
+        // half of that failure.
+        self.sync_active_segment()
             .map_err(|e| StoreError::batch_sync_failed(prepared.len(), e))?;
-        self.watermark_handle.lock().advance_durable_to_accepted();
 
         let artifacts = self.materialize_batch_commit_artifacts(prepared, &computed, &receipts)?;
         for (sidx_entry, index_entry) in artifacts.sidx_entries.iter().zip(artifacts.entries.iter())

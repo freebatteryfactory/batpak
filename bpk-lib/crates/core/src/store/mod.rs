@@ -319,6 +319,12 @@ impl StoreState for Open {
             .send(WriterCommand::Shutdown { respond: tx })
             .is_ok()
         {
+            // Cooperative mode has no draining thread: pump inline so the
+            // Shutdown is actually executed (and acked) before blocking on the
+            // ack — otherwise a drop after a failed close() (e.g. a poisoned
+            // writer rejecting Shutdown with WriterCrashed) would hang here
+            // forever. No-op on the threaded path.
+            writer.pump();
             wait_for_drop_shutdown_ack(&rx);
         }
         join_drop_shutdown_writer(writer);

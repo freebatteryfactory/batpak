@@ -132,6 +132,21 @@ pub enum InjectionPoint {
         new_segment: u64,
     },
 
+    /// During the writer's active-segment durability fsync — the single choke
+    /// point every durable-frontier advance routes through (periodic cadence
+    /// sync, explicit `Sync` barrier, segment rotation's data flush,
+    /// batch-commit fsync, and the shutdown drain's final sync). Fired BEFORE
+    /// the real fsync; an injected error is handled exactly like a real fsync
+    /// failure: it permanently poisons the writer fail-closed (fsyncgate — a
+    /// later Ok fsync cannot vouch for pages the kernel dropped after an
+    /// fsync error), so every subsequent command surfaces
+    /// `StoreError::WriterCrashed` and the durable frontier never advances
+    /// past the last successful sync.
+    ActiveSegmentSync {
+        /// Active segment being fsynced.
+        segment_id: u64,
+    },
+
     // ---------------------------------------------------------------------
     // READ / SCAN / COLD-START injection points (GAUNT-FAULT-3).
     //

@@ -59,7 +59,12 @@ pub enum StoreError {
         /// Actual current sequence of the entity.
         actual: u32,
     },
-    /// The writer thread has crashed and is no longer processing commands.
+    /// The writer is permanently unavailable: its thread crashed, or it was
+    /// poisoned fail-closed by a failed durability sync. After an fsync error
+    /// the kernel clears the dirty page bits (fsyncgate), so a later Ok fsync
+    /// cannot vouch for the lost pages — the writer therefore rejects every
+    /// subsequent command with this error and the durable frontier is frozen
+    /// at the last successful sync.
     WriterCrashed,
     /// A synchronous frontier wait timed out before the requested watermark
     /// crossed the target point.

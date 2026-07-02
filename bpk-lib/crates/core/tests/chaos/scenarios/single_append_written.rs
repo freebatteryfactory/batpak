@@ -4,8 +4,15 @@
 //! in-process `FaultInjector` panic seam. They prove that batpak's recovered
 //! durable frontier covers every event recovered from the segment log, that the
 //! durable frontier remains monotonic across a device failure, that fsynced
-//! events remain recoverable, and that cadence=1 surfaces device failure to the
-//! caller.
+//! events remain recoverable, and that under cadence=1 a device failure
+//! poisons the writer FAIL-CLOSED: an ungated append may still return a
+//! committed-not-durable receipt (its receipt precedes the cadence sync), but
+//! the failed sync freezes the durable frontier and every subsequent command
+//! surfaces the poison (fsyncgate: after an fsync error the kernel clears the
+//! dirty page bits, so a later Ok fsync cannot vouch for the lost pages —
+//! log-and-continue would let the durable frontier lie one failed sync later).
+//! The in-process twin of the cadence=1 poison proof is
+//! `tests/durable_frontier_sync_failure_poison.rs`.
 //!
 //! Writer-side sync audit for this workload: single appends write frames without
 //! calling fsync directly; durability is advanced by explicit `Store::sync()`,
@@ -180,18 +187,90 @@ fn single_append_written_surfaces_io_error_cadence_1() {
     let store = open_store_on_device(&device, 1);
 
     let _durable = append_named(&store, "entity:torn-tail:cadence1-durable", 1);
+    // Explicit sync BARRIER before the flip: its reply arrives only after the
+    // writer finished the pre-flip append's cadence sync, so no batpak-side
+    // fsync from before the flip can race the error window, and the frontier
+    // read below is deterministic.
+    store.sync().expect("pre-flip explicit sync barrier");
+    let pre_flip_durable_hlc = store.frontier().durable_hlc;
     device.flip_to_error().expect("flip device to error target");
 
-    let err = store
-        .append(
-            &coord("entity:torn-tail:cadence1-after-flip"),
-            kind(),
-            &serde_json::json!({ "value": 2 }),
-        )
-        .expect_err("PROPERTY: append after dm-flakey error target must not succeed");
+    // HONEST CONTRACT (fail-closed, fsyncgate): an ungated append after the
+    // flip MAY legally return a receipt — the frame write lands in the page
+    // cache without touching the device, the receipt is sent, and only THEN
+    // does the cadence-1 sync hit the all-error device and fail. That receipt
+    // is committed-not-durable: the failed sync permanently poisons the writer
+    // (a later fsync Ok cannot vouch for pages the kernel dropped after the
+    // EIO), so the durable frontier must never cover the post-flip event and
+    // every subsequent command must fail. The append may instead surface the
+    // device failure directly if its write path touches the device.
+    let first = store.append(
+        &coord("entity:torn-tail:cadence1-after-flip"),
+        kind(),
+        &serde_json::json!({ "value": 2 }),
+    );
+    match &first {
+        Ok(receipt) => {
+            // Committed-not-durable receipt; the cadence sync after it failed
+            // and poisoned the writer, so the NEXT operation must fail closed.
+            let err = store
+                .append(
+                    &coord("entity:torn-tail:cadence1-post-receipt"),
+                    kind(),
+                    &serde_json::json!({ "value": 3 }),
+                )
+                .expect_err(
+                    "PROPERTY: after a committed-not-durable receipt the failed cadence \
+                     sync must have poisoned the writer — the next append cannot succeed",
+                );
+            assert!(
+                matches!(err, StoreError::Io(_) | StoreError::WriterCrashed),
+                "PROPERTY: the poisoned surface must be IO or writer crash, got {err:?}"
+            );
+            assert!(
+                pre_flip_durable_hlc.global_sequence < receipt.global_sequence,
+                "sanity: the post-flip receipt lies past the pre-flip durable point"
+            );
+        }
+        Err(err) => {
+            assert!(
+                matches!(err, StoreError::Io(_) | StoreError::WriterCrashed),
+                "PROPERTY: device failure must surface as IO or writer crash, got {err:?}"
+            );
+        }
+    }
+
+    // Deterministic poison anchor: an explicit sync over the all-error device
+    // must fail — either rejected outright by the already-poisoned writer
+    // (WriterCrashed) or as the real fsync error (Io), which itself poisons.
+    let sync_err = store
+        .sync()
+        .expect_err("PROPERTY: explicit sync over an all-error device must fail");
     assert!(
-        matches!(err, StoreError::Io(_) | StoreError::WriterCrashed),
-        "PROPERTY: device failure must surface as IO or writer crash, got {err:?}"
+        matches!(sync_err, StoreError::Io(_) | StoreError::WriterCrashed),
+        "PROPERTY: the failed sync must surface as IO or writer crash, got {sync_err:?}"
+    );
+
+    // After that failed sync the writer is poisoned no matter which branch ran
+    // above: the next operation surfaces the poison variant EXACTLY.
+    let post_poison = store
+        .append(
+            &coord("entity:torn-tail:cadence1-post-poison"),
+            kind(),
+            &serde_json::json!({ "value": 4 }),
+        )
+        .expect_err("PROPERTY: a poisoned writer must stop accepting appends");
+    assert!(
+        matches!(post_poison, StoreError::WriterCrashed),
+        "PROPERTY: post-poison appends must surface exactly WriterCrashed, got {post_poison:?}"
+    );
+
+    // The durable frontier never covered any post-flip event: it froze at the
+    // pre-flip point (fsyncgate — no later Ok-sync may advance it).
+    assert_eq!(
+        store.frontier().durable_hlc,
+        pre_flip_durable_hlc,
+        "PROPERTY: the durable frontier must not cover post-flip events"
     );
 }
 
