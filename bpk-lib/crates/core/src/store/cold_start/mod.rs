@@ -207,4 +207,56 @@ mod tests {
             "on a duplicate-id tie the FIRST directory entry's length is the watermark offset"
         );
     }
+
+    #[test]
+    fn r4_validate_watermark_rejects_an_offset_past_the_segment_tail() {
+        // Kills cold_start/mod.rs:141 match guard `meta.len() >= watermark_offset`
+        // -> `true`: a checkpoint/mmap watermark pointing PAST the segment file's
+        // real tail would be accepted as coherent, trusting artifact state the
+        // log cannot back. Pin BOTH sides of the boundary (the guard is `>=`,
+        // inclusive at the exact tail) plus the missing-segment arm, so neither
+        // rejection can be silently widened nor narrowed.
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let name = crate::store::segment::segment_filename(3);
+        platform::fs::write_file_atomically(dir.path(), &dir.path().join(&name), &name, |file| {
+            use std::io::Write;
+            file.write_all(b"12345").map_err(StoreError::Io)
+        })
+        .expect("write the 5-byte segment fixture through the platform seam");
+
+        // Inclusive side: a watermark at EXACTLY the tail (and at 0) is valid.
+        validate_watermark_segment(dir.path(), 3, 5)
+            .expect("offset == file length is a valid watermark (`>=` is inclusive)");
+        validate_watermark_segment(dir.path(), 3, 0).expect("offset 0 is always within the tail");
+
+        // Past-tail side: ONE byte past the tail must degrade to OffsetPastTail
+        // carrying the exact observed evidence — under the `true` guard this
+        // arm is unreachable and the bogus watermark validates.
+        let past_tail = validate_watermark_segment(dir.path(), 3, 6)
+            .expect_err("an offset one byte past the file length must be rejected");
+        assert!(
+            matches!(
+                &past_tail,
+                WatermarkValidationError::OffsetPastTail {
+                    path,
+                    file_len: 5,
+                    watermark_offset: 6,
+                } if *path == dir.path().join(&name)
+            ),
+            "exact OffsetPastTail evidence (path, file_len 5, offset 6) expected, got {past_tail:?}"
+        );
+
+        // Absent-file side: a watermark naming a segment that does not exist is
+        // MissingSegment, never OffsetPastTail and never Ok.
+        let missing = validate_watermark_segment(dir.path(), 9, 0)
+            .expect_err("a watermark naming an absent segment must be rejected");
+        assert!(
+            matches!(
+                &missing,
+                WatermarkValidationError::MissingSegment { path }
+                    if *path == dir.path().join(crate::store::segment::segment_filename(9))
+            ),
+            "exact MissingSegment evidence expected, got {missing:?}"
+        );
+    }
 }

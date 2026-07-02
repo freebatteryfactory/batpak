@@ -488,6 +488,51 @@ fn query_any_hits_after_returns_exactly_the_limit_smallest_sequences_past_the_cu
 }
 
 #[test]
+fn r4_any_fast_path_clock_range_keeps_the_in_range_band_and_drops_below_min() {
+    // Kills query.rs:290 `entry.clock < min` -> `>` in `query_any_hits_after`
+    // (the fact-Any fast path's INCLUSIVE clock-range lower bound; distinct
+    // from the identical filter in `filter_region_hits`, which this path never
+    // calls). `make_entry` sets clock == seq, so clocks 0..=5 filtered by the
+    // range [2, 4] must return EXACTLY seqs {2, 3, 4}: both inclusive
+    // endpoints kept, everything below min dropped. The flipped comparison
+    // (`clock > min || clock > max` -> skip) instead drops the whole in-range
+    // band above min and admits the below-min band, returning {0, 1, 2}.
+    let index = StoreIndex::new();
+    let entity_id = index
+        .interner
+        .intern("entity:any-clock")
+        .expect("intern entity");
+    let scope_id = index
+        .interner
+        .intern("scope:any-clock")
+        .expect("intern scope");
+    for seq in 0..6 {
+        let mut entry = make_entry(seq, "entity:any-clock", "scope:any-clock");
+        entry.entity_id = entity_id;
+        entry.scope_id = scope_id;
+        index.insert(entry);
+    }
+    index
+        .publish(6, "test-any-clock")
+        .expect("publish the six seeded entries");
+
+    let region = Region::all()
+        .with_fact(crate::coordinate::KindFilter::Any)
+        .with_clock_range(
+            crate::coordinate::ClockRange::new(2, 4).expect("2..=4 is a valid clock range"),
+        );
+    let hits = index.query_hits_after(&region, 0, false, 10);
+    let seqs: Vec<u64> = hits.iter().map(|h| h.global_sequence).collect();
+    assert_eq!(
+        seqs,
+        vec![2, 3, 4],
+        "PROPERTY: the Any fast path's clock-range filter is inclusive on BOTH \
+         endpoints and excludes every clock below min; the flipped lower-bound \
+         comparison drops the in-range band and admits the below-min one instead"
+    );
+}
+
+#[test]
 fn read_idemp_file_distinguishes_missing_from_unreadable() {
     use crate::store::index::idemp::{read_idemp_file, IdempLoad, IDEMP_FILENAME};
 
