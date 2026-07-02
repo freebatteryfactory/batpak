@@ -773,11 +773,10 @@ impl WriterCore {
         }
     }
 
-    fn sync_active_segment(&mut self) -> Result<(), StoreError> {
-        self.active_segment.sync_with_mode(&self.config.sync.mode)?;
-        self.watermark_handle.lock().advance_durable_to_accepted();
-        Ok(())
-    }
+    // NOTE: `sync_active_segment` — the single durability choke point that
+    // fsyncs the active segment, advances the durable frontier on success, and
+    // poisons the writer fail-closed on failure (fsyncgate) — lives in
+    // `runtime.rs` next to `drive_command`'s poison gate.
 
     /// Check whether the active segment needs rotation, and if so, seal it,
     /// write its SIDX footer, sync, and create a new active segment.
@@ -835,13 +834,15 @@ impl WriterCore {
         // New segment is durably present. Now flush the OLD segment's committed
         // frames while it is still pristine — before writing the footer or
         // resetting the collector. This is the second (and last) fallible step
-        // that touches the old segment, so doing it here keeps the same
-        // invariant: if it fails we return `?` with the old segment and
-        // collector still fully intact (no footer written, collector unchanged),
-        // so rotation cleanly did not happen and the next append retries against
-        // the unchanged old segment.
-        self.active_segment.sync_with_mode(&self.config.sync.mode)?;
-        self.watermark_handle.lock().advance_durable_to_accepted();
+        // that touches the old segment: if it fails we return `?` with the old
+        // segment and collector still fully intact (no footer written,
+        // collector unchanged), so rotation cleanly did not happen. Unlike the
+        // create failure above (a clean retry — no fsync was attempted), a
+        // FAILED flush here poisons the writer fail-closed inside
+        // `sync_active_segment` (fsyncgate): the next append surfaces
+        // `WriterCrashed` rather than retrying over pages the kernel may have
+        // silently dropped.
+        self.sync_active_segment()?;
         // From here on every step is infallible or non-fatal, so the rotation
         // completes atomically with respect to its fallible side effects.
         //

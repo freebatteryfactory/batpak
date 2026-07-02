@@ -100,6 +100,7 @@ impl InMemFaultFs {
         match point {
             InjectionPoint::BatchFsync { .. }
             | InjectionPoint::SingleAppendWritten { .. }
+            | InjectionPoint::ActiveSegmentSync { .. }
             | InjectionPoint::BatchCommitWritten { .. } => Fault::FsyncDrop,
             InjectionPoint::ReadAt { .. } | InjectionPoint::ColdStartScanFrame { .. } => {
                 Fault::ShortRead {

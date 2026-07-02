@@ -121,9 +121,19 @@ impl WatermarkAdvanceHandle {
         // Safe from deadlock: the writer thread unwinds (dropping any held
         // guard, which parking_lot releases without poisoning) before the panic
         // handler calls this, so the lock is free here.
-        let _guard = self.state.lock();
+        let mut guard = self.state.lock();
+        guard.poisoned = true;
         self.poison.store(true, Ordering::Release);
         self.cv.notify_all();
+    }
+
+    /// Whether the writer has been marked crashed/poisoned — a terminal writer
+    /// exit or a failed durability sync. Once set it never clears for the
+    /// lifetime of this handle: the writer rejects every subsequent command
+    /// with [`StoreError::WriterCrashed`] and the durable frontier is frozen
+    /// (see [`WatermarkState::advance_durable`]).
+    pub(crate) fn is_poisoned(&self) -> bool {
+        self.poison.load(Ordering::Acquire)
     }
 
     pub(crate) fn wait_for_durable(
@@ -389,6 +399,14 @@ pub(crate) struct WatermarkState {
     emitted_hlc: HlcPoint,
     lanes: BTreeMap<u32, LaneWatermarks>,
     pending_write_start_mono_ns: Option<i64>,
+    /// Fail-closed durability latch, set (under this state's lock) by
+    /// [`WatermarkAdvanceHandle::mark_writer_crashed`]. Once set,
+    /// [`Self::advance_durable`] is a no-op forever: after a failed fsync the
+    /// kernel clears the dirty page bits (fsyncgate), so a LATER fsync can
+    /// return Ok without the lost pages ever reaching disk — advancing the
+    /// durable frontier on such an Ok would claim durability for
+    /// silently-lost data.
+    poisoned: bool,
     clock: Arc<dyn Clock>,
 }
 
@@ -403,6 +421,7 @@ impl Default for WatermarkState {
             emitted_hlc: HlcPoint::ORIGIN,
             lanes: BTreeMap::new(),
             pending_write_start_mono_ns: None,
+            poisoned: false,
             clock: Arc::new(SystemClock::new()),
         }
     }
@@ -439,6 +458,7 @@ impl WatermarkState {
             emitted_hlc: point,
             lanes,
             pending_write_start_mono_ns: None,
+            poisoned: false,
             clock,
         }
     }
@@ -470,6 +490,9 @@ impl WatermarkState {
             emitted_hlc: global_visible_point,
             lanes: BTreeMap::new(),
             pending_write_start_mono_ns: None,
+            // The fail-closed latch survives a bootstrap reset: a poisoned
+            // handle must never regain the ability to advance durability.
+            poisoned: self.poisoned,
             clock: Arc::clone(&self.clock),
         };
         for (lane, durable_point) in lane_durable_points {
@@ -506,6 +529,12 @@ impl WatermarkState {
     }
 
     pub(crate) fn advance_durable(&mut self, point: HlcPoint) {
+        if self.poisoned {
+            // Fail closed (fsyncgate): once a sync has failed, no later Ok can
+            // vouch for the pages the kernel already dropped — the durable
+            // frontier is frozen at the last honestly-synced point.
+            return;
+        }
         self.durable_hlc = self.durable_hlc.max_by_sequence(point);
         self.advance_lane_durability_to_physical();
         if self.durable_hlc.covers_sequence(self.accepted_hlc) {

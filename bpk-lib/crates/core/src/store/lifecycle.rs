@@ -92,7 +92,22 @@ pub(crate) fn close(mut store: Store<Open>) -> Result<Closed, StoreError> {
     writer.pump();
     let result = crate::store::recv_writer_reply(&rx);
 
-    result?;
+    if let Err(error) = result {
+        // A poisoned writer (failed durability sync — see
+        // `StoreError::WriterCrashed`) rejects the Shutdown with an error reply
+        // and then exits its loop. Join it to quiescence and take over drop's
+        // shutdown duty here: a second drop-time Shutdown would RACE the
+        // exiting thread — the command can land in the channel queue just
+        // before the writer drops its receiver, and its reply sender then sits
+        // in the zombie queue (kept alive by our own `tx`) forever, hanging
+        // the drop-time ack wait. Non-poisoned shutdown errors keep the old
+        // contract: drop retries the shutdown drain.
+        if store.watermark_handle.is_poisoned() {
+            store.state.0.join()?;
+            store.should_shutdown_on_drop = false;
+        }
+        return Err(error);
+    }
     store.state.0.join()?;
 
     store

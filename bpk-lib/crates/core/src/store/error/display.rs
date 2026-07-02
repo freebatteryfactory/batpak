@@ -9,6 +9,12 @@
 use super::{StoreError, StoreLockMode};
 use crate::id::EntityIdType;
 
+/// [`StoreError::WriterCrashed`] `Display` text. Hoisted to a const so the
+/// poison-semantics wording does not grow `Display::fmt` past its complexity
+/// ratchet pin (the fn is pinned; message text lives outside it).
+const WRITER_CRASHED_MSG: &str =
+    "writer thread crashed or was poisoned by a failed durability sync";
+
 impl StoreError {
     /// Shared `Display` body for the on-disk future-version refusals. Each format
     /// renders the same "on disk is version N but this binary understands at most
@@ -423,7 +429,7 @@ impl std::fmt::Display for StoreError {
                 f,
                 "CAS failed for {entity}: expected seq {expected}, got {actual}"
             ),
-            Self::WriterCrashed => write!(f, "writer thread crashed"),
+            Self::WriterCrashed => f.write_str(WRITER_CRASHED_MSG),
             Self::WaitTimeout {
                 watermark,
                 target,
