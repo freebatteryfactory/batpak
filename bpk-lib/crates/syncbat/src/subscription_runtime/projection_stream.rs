@@ -374,7 +374,8 @@ where
     }
 }
 
-/// Typed projector backed by [`Store::watch_projection_with_cursor`].
+/// Typed projector backed by
+/// [`Store::watch_projection_with_cursor`](batpak::store::Store::watch_projection_with_cursor).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TypedProjectionProjector<T>(PhantomData<T>);
 

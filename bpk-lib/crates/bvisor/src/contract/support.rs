@@ -276,7 +276,8 @@ impl BackendProfile {
             .unwrap_or_else(SupportVerdict::unsupported)
     }
 
-    /// The requirement kinds this ceiling advertises at [`Enforcement::Enforced`],
+    /// The requirement kinds this ceiling advertises at
+    /// [`Enforcement::Enforced`](crate::contract::capability::Enforcement::Enforced),
     /// in canonical order — exactly the cells the qualification coupling gate must
     /// find a `Proven` ledger row for.
     #[must_use]

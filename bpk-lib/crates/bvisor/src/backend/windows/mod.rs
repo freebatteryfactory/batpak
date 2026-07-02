@@ -1,10 +1,11 @@
 //! Windows backend — AppContainer + Job Object confinement (scaffolding).
 //!
 //! STEP (a) scaffolding: the HONEST per-platform [`SupportMatrix`] (pure data,
-//! always-compiled, cross-platform unit-testable) plus a [`WindowsBackend`]
-//! struct whose `execute()` is a stub returning [`Outcome::Unsupported`]. Real
+//! always-compiled, cross-platform unit-testable) plus a `WindowsBackend`
+//! struct whose `execute()` is a stub returning
+//! [`Outcome::Unsupported`](crate::contract::report::Outcome::Unsupported). Real
 //! syscalls (AppContainer/LowBox token, Job Object teardown, WFP) land in step
-//! (d), in the [`super::windows::sys`] unsafe basement (`windows-sys` FFI). NO
+//! (d), in the `super::windows::sys` unsafe basement (`windows-sys` FFI). NO
 //! `unsafe` here.
 //!
 //! HONESTY (SCOPE §4 — Windows): mostly Enforced (AppContainer + Job Object).

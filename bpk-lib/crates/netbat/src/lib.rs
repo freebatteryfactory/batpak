@@ -106,14 +106,14 @@
 //! Enabling the opt-in `tls` feature adds **server-only** TLS (rustls): it
 //! provides confidentiality and *server* identity only — it does **not**
 //! authenticate the client (auth still lives above netbat). Build a
-//! [`TlsServerConfig`] from PEM and pass [`TransportSecurity::Tls`] to
+//! `TlsServerConfig` from PEM and pass `TransportSecurity::Tls` to
 //! [`serve_tcp_listener_secured`] (or
 //! [`serve_tcp_subscription_listener_secured`]). The rustls handshake runs on
 //! the per-connection worker *after* the concurrency permit is acquired, so a
 //! slow or hostile handshake occupies at most one worker+permit slot and never
 //! blocks the accept loop; a failed handshake (for example, a cleartext peer) is
-//! counted in [`TcpServeStats::tls_handshake_failures`] and the connection is
-//! dropped — never listener-fatal. See [`TlsServerConfig`] for a PEM example.
+//! counted in `TcpServeStats::tls_handshake_failures` and the connection is
+//! dropped — never listener-fatal. See `TlsServerConfig` for a PEM example.
 
 mod route;
 mod transport;

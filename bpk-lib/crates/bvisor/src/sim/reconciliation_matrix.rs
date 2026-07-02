@@ -325,7 +325,7 @@ pub fn run_cell(seed: u64, boundary: CrashBoundary) -> Result<ReconCell, ReconVi
 }
 
 /// Sweep the full crash-boundary matrix for `seed`, one [`ReconCell`] per
-/// boundary. The legality oracle inside [`run_cell`] fail-closes per cell.
+/// boundary. The legality oracle inside `run_cell` fail-closes per cell.
 ///
 /// # Errors
 /// Returns a seed/boundary-tagged violation string on the first illegal cell.

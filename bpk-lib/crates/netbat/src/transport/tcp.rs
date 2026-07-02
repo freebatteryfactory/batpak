@@ -21,7 +21,7 @@ pub const DEFAULT_MAX_REQUESTS_PER_CONNECTION: usize = 1;
 ///
 /// [`TransportSecurity::Plaintext`] is the default and the ONLY option without
 /// the `tls` feature: it is byte-for-byte the pre-TLS serve path. With the
-/// `tls` feature, [`TransportSecurity::Tls`] wraps a `TlsServerConfig` and the
+/// `tls` feature, `TransportSecurity::Tls` wraps a `TlsServerConfig` and the
 /// listener performs the rustls handshake on the per-connection worker (after
 /// the concurrency permit is acquired), so a slow handshake never blocks
 /// accepts. Pass it to [`serve_tcp_listener_secured`].
@@ -317,7 +317,7 @@ where
 /// The accept loop accepts the RAW `TcpStream`, acquires the concurrency permit,
 /// and spawns the worker; the TLS handshake (when configured) runs INSIDE that
 /// worker, post-permit. A handshake failure is counted in
-/// [`TcpServeStats::tls_handshake_failures`] and the connection is dropped — it
+/// `TcpServeStats::tls_handshake_failures` and the connection is dropped — it
 /// is never listener-fatal, so a slow or hostile handshake can occupy at most
 /// one worker+permit slot (capped by [`TcpServerConfig::connection_limit`]).
 ///

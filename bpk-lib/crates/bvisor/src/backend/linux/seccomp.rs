@@ -235,7 +235,7 @@ enum Mode {
 }
 
 /// A launcher seccomp POLICY: either a default-deny ALLOWLIST (S7) or a default-allow
-/// DENYLIST (S10), distinguished by [`Mode`] (proof-spine §5 D6). The Rust model, not
+/// DENYLIST (S10), distinguished by `Mode` (proof-spine §5 D6). The Rust model, not
 /// JSON. Constructing one is cheap and pure; [`Self::compile`] assembles it to BPF and
 /// binds its evidence. A denylist is ONE composed layer, never a standalone sandbox.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -462,7 +462,7 @@ impl SeccompPolicy {
     /// is `None` (S10 install populates it).
     ///
     /// SAME-ARCH ONLY for a usable filter: the allowlist syscall NUMBERS are resolved
-    /// from `libc::SYS_*` of the BUILD target (see [`Syscall::new`]). Passing an `arch`
+    /// from `libc::SYS_*` of the BUILD target (see `Syscall::new`). Passing an `arch`
     /// other than the build target embeds the build-target's numbers into a foreign-arch
     /// BPF preamble — bytes that are deterministic (used by the digest-distinctness
     /// tests) but NOT a correct filter for that foreign arch. The real install (S10) is

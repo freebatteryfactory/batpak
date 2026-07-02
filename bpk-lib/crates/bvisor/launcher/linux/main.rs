@@ -5,7 +5,8 @@
 //! coordinator (this process)  →  workload child (via clone3)  →  exec target
 //! ```
 //! The COORDINATOR (this `main.rs`, fully SAFE) validates the host-supplied
-//! [`LinuxLaunchPlanV1`], decides whether the launch may proceed, and — only if it
+//! [`LinuxLaunchPlanV1`](bvisor::linux::protocol::LinuxLaunchPlanV1), decides
+//! whether the launch may proceed, and — only if it
 //! may — creates ONE child via raw `clone3` (in the [`sys`] basement), placing it INTO
 //! the prepared cgroup leaf at birth when a `CgroupDir` slot is present
 //! (`CLONE_INTO_CGROUP`). The CHILD, in its async-signal-safe window, scrubs ambient

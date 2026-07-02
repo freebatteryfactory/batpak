@@ -4,9 +4,9 @@
 //! # On-disk layout — a SINGLE atomically-rewritten keyset file
 //!
 //! The whole keyset (every `scope → 32-byte key`, plus the scope granularity)
-//! lives in ONE file, [`KEYSET_FILENAME`], rewritten in full on each
+//! lives in ONE file, `KEYSET_FILENAME`, rewritten in full on each
 //! [`KeyStore::flush`] through the crash-safe
-//! [`write_file_atomically_with_fs`] seam. Format:
+//! `write_file_atomically_with_fs` seam. Format:
 //! `magic(6) | version(2 le) | crc(4 le) | body(msgpack)` — the same header
 //! shape as the durable idempotency store, so the CRC covers the body only.
 //!
@@ -47,7 +47,7 @@
 //! # Fail-closed on a corrupt keyset
 //!
 //! Unlike the idempotency store (which degrades a corrupt sidecar to "absent"),
-//! an unreadable keyset is a HARD [`StoreError::KeysetCorrupt`]. A silently-empty
+//! an unreadable keyset is a HARD `StoreError::KeysetCorrupt`. A silently-empty
 //! key store would re-mint every scope's key from scratch, rendering all prior
 //! ciphertext unrecoverable — an accidental total shred. Only a genuinely ABSENT
 //! file (first open, or a store that has never flushed) rehydrates to an empty
@@ -121,7 +121,7 @@ fn corrupt(reason: String) -> StoreError {
 }
 
 impl KeyStore {
-    /// Persist the whole keyset to [`KEYSET_FILENAME`] in `dir`, crash-safely.
+    /// Persist the whole keyset to `KEYSET_FILENAME` in `dir`, crash-safely.
     ///
     /// The entire keyset is rewritten and published through the atomic
     /// temp-file-then-rename seam, so a torn flush leaves the on-disk keyset
@@ -130,11 +130,11 @@ impl KeyStore {
     /// [`Zeroizing`] buffer wiped on drop; the per-entry plaintext key copies are
     /// wiped explicitly the instant they are encoded.
     ///
-    /// Persist the whole keyset crash-safely to [`KEYSET_FILENAME`] in `dir`,
+    /// Persist the whole keyset crash-safely to `KEYSET_FILENAME` in `dir`,
     /// through the production filesystem backend.
     ///
-    /// A thin wrapper over [`KeyStore::flush_with_fs`] pinned to [`RealFs`]; the
-    /// `fs`-taking seam stays `pub(crate)` because [`StoreFs`] is crate-private.
+    /// A thin wrapper over `KeyStore::flush_with_fs` pinned to `RealFs`; the
+    /// `fs`-taking seam stays `pub(crate)` because `StoreFs` is crate-private.
     ///
     /// # Errors
     /// Returns [`StoreError::Io`] if the atomic write fails, or
@@ -223,7 +223,7 @@ impl KeyStore {
     /// Cold-start rehydration through the production filesystem backend: load the
     /// keyset from `dir` into a fresh [`KeyStore`] partitioned by `granularity`.
     ///
-    /// A thin wrapper over [`KeyStore::load_with_fs`] pinned to [`RealFs`].
+    /// A thin wrapper over `KeyStore::load_with_fs` pinned to `RealFs`.
     ///
     /// # Errors
     /// Returns [`StoreError::KeysetCorrupt`] on any unreadable/undecodable/

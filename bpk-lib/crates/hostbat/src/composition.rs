@@ -13,6 +13,7 @@
 //! mount-order-independent.
 //!
 //! [`SchemaDescriptor`]: crate::schema::SchemaDescriptor
+//! [`CanonicalEncoding`]: crate::schema::CanonicalEncoding
 
 use std::collections::BTreeMap;
 

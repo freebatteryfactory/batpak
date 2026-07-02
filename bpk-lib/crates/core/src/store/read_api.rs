@@ -106,10 +106,9 @@ impl<State: crate::store::StoreState> Store<State> {
     ///
     /// With opt-in `payload-encryption` configured, an encrypted event is
     /// transparently decrypted under the store's keyset. If the event's key has
-    /// been crypto-shredded, `get` returns [`StoreError::PayloadShredded`] — a
-    /// typed, explicitly-non-corruption signal; use
-    /// [`get_shreddable`](Self::get_shreddable) to receive that case as a
-    /// [`ReadDisposition::Shredded`] value instead of an error.
+    /// been crypto-shredded, `get` returns `StoreError::PayloadShredded` — a
+    /// typed, explicitly-non-corruption signal; use `get_shreddable` to receive
+    /// that case as a `ReadDisposition::Shredded` value instead of an error.
     ///
     /// # Errors
     /// Returns `StoreError::NotFound` if no event with that ID exists.
@@ -296,7 +295,7 @@ impl<State: crate::store::StoreState> Store<State> {
     ///   consumer emits a loud, observable skip rather than the ciphertext.
     ///
     /// Reuses the shared Stage C decrypt primitive
-    /// ([`open_encrypted_payload_bytes`](Self::open_encrypted_payload_bytes)); a
+    /// (`open_encrypted_payload_bytes`); a
     /// present key that fails to authenticate is still a tamper error
     /// ([`StoreError::PayloadDecryptFailed`]), never a shred.
     ///

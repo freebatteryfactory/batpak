@@ -387,7 +387,7 @@ struct PlanFingerprint<'a> {
 ///
 /// The steppable core (mirrors `WriterCore::drive_command -> DriveStep`): a run
 /// surfaces each observed fact, then exactly one terminal step (`Sealed` or
-/// `Faulted`). The crash-injection points the [`crate::__sim`] supervisor uses
+/// `Faulted`). The crash-injection points the `crate::__sim` supervisor uses
 /// are the gaps BETWEEN steps — a sim crash before `Sealed` leaves no report,
 /// which reconciliation then classifies (§13).
 #[derive(Clone, Debug, PartialEq, Eq)]

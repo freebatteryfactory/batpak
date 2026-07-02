@@ -10,7 +10,7 @@
 //!
 //! Each [`SchemaDescriptor`] carries committed [`GoldenVector`]s: canonical
 //! example byte vectors that witness wire stability. The
-//! [`crate::schema_gate`] module turns these into the immutability gate.
+//! `schema_tests` module turns these into the immutability gate.
 //!
 //! [`DiagnosticRustType`] is **informational only**: it records which Rust type
 //! currently materializes a schema for human navigation. It is deliberately

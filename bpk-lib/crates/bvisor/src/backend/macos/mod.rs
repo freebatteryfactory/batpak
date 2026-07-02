@@ -1,10 +1,11 @@
 //! macOS backend — Seatbelt (`sandbox_init`) confinement (scaffolding).
 //!
 //! STEP (a) scaffolding: the HONEST per-platform [`SupportMatrix`] (pure data,
-//! always-compiled, cross-platform unit-testable) plus a [`MacosBackend`] struct
-//! whose `execute()` is a stub returning [`Outcome::Unsupported`]. Real syscalls
+//! always-compiled, cross-platform unit-testable) plus a `MacosBackend` struct
+//! whose `execute()` is a stub returning
+//! [`Outcome::Unsupported`](crate::contract::report::Outcome::Unsupported). Real syscalls
 //! (`sandbox_init` profile application, pgid teardown) land in step (e), in the
-//! [`super::macos::sys`] unsafe basement (`libc` extern FFI). NO `unsafe` here.
+//! `super::macos::sys` unsafe basement (`libc` extern FFI). NO `unsafe` here.
 //!
 //! HONESTY (SCOPE §4 — macOS): honestly WEAK. FS/Net are
 //! [`Enforcement::Mediated`] (deprecated-but-shipped Seatbelt — a profile, not a

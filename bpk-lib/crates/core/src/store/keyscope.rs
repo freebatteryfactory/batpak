@@ -13,12 +13,12 @@
 //! the OS CSPRNG; no non-cryptographic PRNG is ever used for key material.
 //!
 //! Stage B adds durable persistence + cold-start rehydration (see the
-//! [`persist`] child module) but still does NOT wire into the append/read
+//! `persist` child module) but still does NOT wire into the append/read
 //! payload paths — encrypt/decrypt is Stage C.
 //!
 //! # Durability ordering (a Stage C obligation, documented here at the source)
 //!
-//! [`persist`] gives Stage B a [`KeyStore::flush`]. Stage C, when it wires the
+//! `persist` gives Stage B a [`KeyStore::flush`]. Stage C, when it wires the
 //! append path, MUST flush a freshly-minted key DURABLY **before** the data it
 //! encrypts is acknowledged durable. If that order were inverted, a crash landing
 //! between "append is durable" and "key is durable" would leave a durable
@@ -146,7 +146,7 @@ pub fn scope_for(
 /// `PerCategory`/`PerTypeId` scope, and an [`EventId`] addresses a `PerEvent`
 /// scope. A selector that cannot address the configured granularity is a typed
 /// mismatch (it never silently reinterprets one granularity's selector as
-/// another's) — see [`KeyScopeGranularity::resolve_shred_scope`].
+/// another's) — see `KeyScopeGranularity::resolve_shred_scope`.
 #[derive(Clone, Copy, Debug)]
 pub enum ShredScope<'a> {
     /// Erase the `PerEntity` scope keyed by a coordinate's entity id.
