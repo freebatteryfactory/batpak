@@ -548,4 +548,103 @@ mod tests {
         source.close().expect("close source");
         dest.close().expect("close dest");
     }
+
+    #[test]
+    fn append_level_replay_receipt_below_the_frontier_counts_as_deduplicated() {
+        use crate::store::index::idemp::IdempEntry;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let kind = EventKind::custom(0xE, 0x31);
+        let source_dir = tempfile::tempdir().expect("source tempdir");
+        let source = Store::open(StoreConfig::new(source_dir.path())).expect("open source");
+        let coord = Coordinate::new("entity:import-replay", "scope:import").expect("coord");
+        let receipt_one = source
+            .append(&coord, kind, &serde_json::json!({"n": 1}))
+            .expect("append source event 1");
+        let receipt_two = source
+            .append(&coord, kind, &serde_json::json!({"n": 2}))
+            .expect("append source event 2");
+
+        // Destination: one pre-existing event so the pre-import frontier sits
+        // strictly ABOVE the fabricated replay sequence (0) — `<` vs `==` on
+        // that comparison is exactly the mutant under test.
+        let dest_dir = tempfile::tempdir().expect("dest tempdir");
+        let dest = Store::open(StoreConfig::new(dest_dir.path())).expect("open dest");
+        drop(
+            dest.append(
+                &Coordinate::new("entity:pre-existing", "scope:import").expect("coord"),
+                kind,
+                &serde_json::json!({"seed": true}),
+            )
+            .expect("append destination seed event"),
+        );
+        assert!(
+            dest.frontier().visible_hlc.global_sequence >= 1,
+            "scenario shape: the pre-import frontier must be strictly above sequence 0"
+        );
+
+        let options = ImportOptions::new("replay-ns")
+            .expect("options")
+            .with_chunk_size(3);
+        let key_one = import_key(options.source_namespace(), receipt_one.event_id.as_u128());
+        let key_two = import_key(options.source_namespace(), receipt_two.event_id.as_u128());
+
+        // On the SECOND filter consultation (source event 2) — after event 1
+        // passed its own key check but BEFORE the page's append_batch — plant
+        // durable idempotency entries for BOTH keys, recorded at sequence 0.
+        // The writer's preflight then replays event 1 from the durable store
+        // with global_sequence 0 (strictly below the frontier) while event 2
+        // is skipped by its own key check. This is the append-level replay
+        // race the receipt-counting loop classifies.
+        let fabricate = |key: u128| IdempEntry {
+            key,
+            event_id: key,
+            global_sequence: 0,
+            disk_pos_segment: 0,
+            disk_pos_offset: 0,
+            disk_pos_length: 1,
+            content_hash: [0; 32],
+            prev_hash: [0; 32],
+            entity: "entity:import-replay".to_owned(),
+            scope: "scope:import".to_owned(),
+            kind,
+            recorded_global_sequence: 0,
+            event_evicted: false,
+            receipt_extensions: BTreeMap::new(),
+        };
+        let index = Arc::clone(&dest.index);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let filter_calls = Arc::clone(&calls);
+        let entry_one = fabricate(key_one.as_u128());
+        let entry_two = fabricate(key_two.as_u128());
+        let options = options.with_filter(Box::new(move |_entry| {
+            if filter_calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                index.idemp.record(entry_one.clone());
+                index.idemp.record(entry_two.clone());
+            }
+            true
+        }));
+
+        let report =
+            import_events(&dest, &source, &ImportSelector::all(), &options).expect("import");
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "scenario shape: the filter must see exactly the two source events"
+        );
+        assert_eq!(
+            report.deduplicated, 2,
+            "one dedup from event 2's key check plus one from event 1's append-level \
+             replay receipt at global_sequence 0 (strictly below the frontier)"
+        );
+        assert_eq!(
+            report.imported, 0,
+            "a replay receipt strictly below the pre-import frontier is never counted as imported"
+        );
+
+        source.close().expect("close source");
+        dest.close().expect("close dest");
+    }
 }

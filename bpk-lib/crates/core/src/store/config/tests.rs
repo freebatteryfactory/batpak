@@ -53,6 +53,48 @@ fn cache_now_us_preserves_zero_custom_clock_value() {
 }
 
 #[test]
+fn signing_policy_required_refuses_keyless_store() {
+    use crate::store::signing::SigningKey;
+
+    // RED: SigningPolicy::Required with no signing key must FAIL validation — a
+    // store that cannot sign must never silently accept unsigned receipts as valid.
+    assert!(
+        StoreConfig::new("target/test-signing-required-keyless")
+            .with_signing_policy(SigningPolicy::Required)
+            .validated()
+            .is_err(),
+        "Required + no key must fail closed at validation"
+    );
+
+    // GREEN: the default (Optional) policy permits a keyless store.
+    assert!(
+        StoreConfig::new("target/test-signing-optional-keyless")
+            .validated()
+            .is_ok(),
+        "default Optional must permit a keyless store"
+    );
+
+    // GREEN: explicitly choosing Optional also permits a keyless store.
+    assert!(
+        StoreConfig::new("target/test-signing-optional-explicit")
+            .with_signing_policy(SigningPolicy::Optional)
+            .validated()
+            .is_ok(),
+        "explicit Optional must permit a keyless store"
+    );
+
+    // GREEN: Required validates once a signing key is configured.
+    assert!(
+        StoreConfig::new("target/test-signing-required-keyed")
+            .with_signing_policy(SigningPolicy::Required)
+            .with_signing_key(SigningKey::from_bytes([7u8; 32]))
+            .validated()
+            .is_ok(),
+        "Required + a signing key must validate"
+    );
+}
+
+#[test]
 fn validated_accepts_documented_inclusive_upper_bounds() {
     let mut config = StoreConfig::new("target/test-config-upper-bounds");
     config.writer.pressure_retry_threshold_pct = 100;
@@ -158,6 +200,47 @@ fn process_boot_ns_is_nonzero_and_stable_in_process() {
     assert_eq!(
         first, second,
         "PROPERTY: process_boot_ns must stay stable for the process lifetime"
+    );
+}
+
+#[test]
+fn chain_verification_accessor_returns_the_configured_non_default_policy() {
+    // PROPERTY: the accessor must return the CONFIGURED policy — a
+    // `Default::default()` body would read every configured `Recompute` back
+    // as `Crc` and silently skip the at-open tamper check. Kills
+    // `StoreConfig::chain_verification -> Default::default()`.
+    let configured = StoreConfig::new("target/test-chain-verification-accessor")
+        .with_chain_verification(ChainVerification::Recompute);
+    assert_eq!(
+        configured.chain_verification(),
+        ChainVerification::Recompute,
+        "PROPERTY: a configured non-default ChainVerification must be returned as-is"
+    );
+    assert_eq!(
+        StoreConfig::new("target/test-chain-verification-default").chain_verification(),
+        ChainVerification::Crc,
+        "an unconfigured store trusts the per-frame CRC (the default)"
+    );
+}
+
+#[test]
+fn validated_process_boot_ns_delegates_to_the_runtime_clock() {
+    // PROPERTY: the accessor must report the wrapped runtime clock's process
+    // epoch marker, not a constant — projection/cache freshness compares this
+    // marker across restarts, so a constant would alias every process. Kills
+    // `ValidatedStoreConfig::process_boot_ns -> 1`.
+    let runtime = StoreConfig::new("target/test-boot-ns-delegation")
+        .validated()
+        .expect("config validates");
+    assert_eq!(
+        runtime.process_boot_ns(),
+        runtime.clock().process_boot_ns(),
+        "PROPERTY: process_boot_ns must delegate to the runtime clock's epoch marker"
+    );
+    assert_ne!(
+        runtime.process_boot_ns(),
+        1,
+        "PROPERTY: the process epoch marker is a captured wall-clock anchor, never a 1 sentinel"
     );
 }
 
@@ -323,6 +406,32 @@ fn with_fs_installs_custom_filesystem_backend() {
         }
         fn metadata(&self, path: &Path) -> std::io::Result<std::fs::Metadata> {
             self.inner.metadata(path)
+        }
+        fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+            self.inner.rename(from, to)
+        }
+        fn remove_file(&self, path: &Path) -> std::io::Result<()> {
+            self.inner.remove_file(path)
+        }
+        fn named_temp_in(&self, dir: &Path) -> std::io::Result<tempfile::NamedTempFile> {
+            self.inner.named_temp_in(dir)
+        }
+        fn persist_temp_with_parent_sync(
+            &self,
+            named_temp: tempfile::NamedTempFile,
+            final_path: &Path,
+            admission: crate::store::platform::sync::ParentDirSyncAdmission,
+        ) -> std::io::Result<()> {
+            self.inner
+                .persist_temp_with_parent_sync(named_temp, final_path, admission)
+        }
+        fn read_exact_at(
+            &self,
+            file: &mut std::fs::File,
+            offset: u64,
+            buf: &mut [u8],
+        ) -> Result<(), crate::store::platform::fs::PositionedReadError> {
+            self.inner.read_exact_at(file, offset, buf)
         }
     }
 

@@ -70,11 +70,12 @@ pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, S
         .map_err(|e| format!("seed=0x{seed:X}: options: {e}"))?
         .with_chunk_size(1);
 
-    let sim_fs = Arc::new(SimFs::new(seed ^ 0x1B00_0001, 0));
+    let fsync_drop = if seed.is_multiple_of(5) { 4 } else { 0 };
+    let sim_fs = Arc::new(SimFs::new(seed ^ 0x1B00_0001, fsync_drop));
     {
         let config = StoreConfig::new(&dest_path)
             .with_fs(Arc::clone(&sim_fs) as Arc<dyn crate::store::platform::fs::StoreFs>)
-            .with_sync_every_n_events(1_000_000)
+            .with_sync_every_n_events(1)
             .with_enable_checkpoint(false)
             .with_enable_mmap_index(false);
         let dest = Store::open(config).map_err(|e| format!("seed=0x{seed:X}: open dest: {e}"))?;
@@ -96,6 +97,31 @@ pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, S
         .import_events(&source, &ImportSelector::all(), &options)
         .map_err(|e| format!("seed=0x{seed:X}: reimport: {e}"))?;
 
+    let (source_user_events, dest_user_events) =
+        verify_reimport_isomorphism(seed, &source, &dest, entity)?;
+
+    Ok(ImportFaultOutcome {
+        digest: outcome_digest(
+            seed,
+            source_user_events,
+            dest_user_events,
+            replay.deduplicated,
+        ),
+        source_user_events,
+        dest_user_events,
+        reimport_deduplicated: replay.deduplicated,
+    })
+}
+
+/// Post-recovery oracle for [`run_seeded_import_fault`]: the destination must
+/// hold exactly the source's user events with intact per-entity hash chains and
+/// byte-isomorphic payloads/content hashes. Returns `(source_len, dest_len)`.
+fn verify_reimport_isomorphism(
+    seed: u64,
+    source: &Store<ReadOnly>,
+    dest: &Store,
+    entity: &str,
+) -> Result<(usize, usize), String> {
     let source_entries = source.by_entity(entity);
     let dest_entries = dest.by_entity(entity);
     if dest_entries.len() != source_entries.len() {
@@ -136,17 +162,7 @@ pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, S
         }
     }
 
-    Ok(ImportFaultOutcome {
-        digest: outcome_digest(
-            seed,
-            source_entries.len(),
-            dest_entries.len(),
-            replay.deduplicated,
-        ),
-        source_user_events: source_entries.len(),
-        dest_user_events: dest_entries.len(),
-        reimport_deduplicated: replay.deduplicated,
-    })
+    Ok((source_entries.len(), dest_entries.len()))
 }
 
 /// Doc-hidden public mirror for integration tests (hidden via the
@@ -282,4 +298,82 @@ pub(crate) fn run_seeded_import_same_store_ceiling(
         replay_deduplicated: replay.deduplicated,
         final_event_count: final_count,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_seeded_import_fault;
+
+    /// B15 mutation kill: the SimFs stream derivation `seed ^ 0x1B00_0001` is
+    /// load-bearing. Seed 1075 is a multiple of 5 (fsync drops armed at 1-in-4),
+    /// and its XOR-derived drop schedule loses the ENTIRE first-import durable
+    /// prefix at the crash. The `^` -> `|` mutant derives the OR stream
+    /// (`1075 | 0x1B00_0001`), whose schedule keeps every event durable
+    /// (dedup 4, digest 7471031782833777414), so these exact pins fail.
+    #[test]
+    fn import_fault_xor_stream_derivation_is_load_bearing() {
+        let outcome =
+            run_seeded_import_fault(1075).expect("seed 1075 import-fault scenario must run");
+        assert_eq!(
+            outcome.source_user_events, 4,
+            "PROPERTY: seed 1075 sources 4 + (1075 % 5) = 4 user events"
+        );
+        assert_eq!(
+            outcome.dest_user_events, 4,
+            "PROPERTY: the post-crash re-import must restore every source event"
+        );
+        assert_eq!(
+            outcome.reimport_deduplicated, 0,
+            "PROPERTY: seed 1075's XOR-derived drop schedule loses the whole first-import \
+             durable prefix, so the re-import re-imports everything and deduplicates nothing; \
+             the OR-derived stream keeps all four events durable (dedup 4) and must fail here"
+        );
+        assert_eq!(
+            outcome.digest, 16_988_514_228_672_971_394,
+            "PROPERTY: pinned outcome digest for seed 1075 under the XOR stream derivation \
+             (the `^` -> `|` mutant digest is 7471031782833777414)"
+        );
+    }
+
+    /// The seed-derived arming `if seed.is_multiple_of(5) { 4 } else { 0 }`
+    /// is observable in BOTH directions: seed 195 (multiple of 5) arms drops and
+    /// loses part of the durable prefix; seed 19 (not a multiple) keeps every
+    /// fsync honored and the full prefix survives. Flipping the branch or the
+    /// armed rate changes the pinned dedup counts and digests for these seeds
+    /// (forcing drops on seed 19 yields dedup 7 / digest 9929498441239452817;
+    /// disarming seed 195 yields dedup 4).
+    #[test]
+    fn fsync_drop_arming_follows_seed_multiple_of_five() {
+        let armed = run_seeded_import_fault(195).expect("seed 195 import-fault scenario must run");
+        assert_eq!(
+            armed.source_user_events, 4,
+            "PROPERTY: seed 195 sources 4 + (195 % 5) = 4 user events"
+        );
+        assert_eq!(
+            armed.reimport_deduplicated, 3,
+            "PROPERTY: with drops armed (1-in-4) seed 195's durable prefix is a PARTIAL 3 of 4 \
+             events — a drops-off mutant keeps all four durable (dedup 4) and must fail here"
+        );
+        assert_eq!(
+            armed.digest, 10_862_642_175_300_011_077,
+            "PROPERTY: pinned digest for seed 195 — the committed \
+             `traceability/dst_corpus.yaml` ImportReapply row identity"
+        );
+
+        let off = run_seeded_import_fault(19).expect("seed 19 import-fault scenario must run");
+        assert_eq!(
+            off.source_user_events, 8,
+            "PROPERTY: seed 19 sources 4 + (19 % 5) = 8 user events"
+        );
+        assert_eq!(
+            off.reimport_deduplicated, 8,
+            "PROPERTY: with drops off every event is durable at the crash, so the re-import \
+             deduplicates the whole source — a drops-forced mutant loses one event (dedup 7) \
+             and must fail here"
+        );
+        assert_eq!(
+            off.digest, 2_056_110_584_399_011_902,
+            "PROPERTY: pinned outcome digest for seed 19 with fsync drops disarmed"
+        );
+    }
 }

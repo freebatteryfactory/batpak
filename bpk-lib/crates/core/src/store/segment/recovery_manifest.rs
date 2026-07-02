@@ -206,8 +206,14 @@ fn read_frame_event_hash<R: Read + Seek>(
 /// 1. A corroborated entry ANCHORS the entire entry table to THIS segment. An
 ///    entry is corroborated iff there is a recovered frame at `entry.frame_offset`
 ///    whose `frame_length` AND content `event_hash` (blake3) match the entry. The
-///    `event_hash` is content-addressed and unforgeable: a forger cannot fabricate
-///    an entry that matches a real frame's blake3. So once >= 1 entry corroborates,
+///    `event_hash` is content-addressed and CRC-guarded by default: the value
+///    matched here is the one STORED in the frame (re-read under the per-frame
+///    CRC), not one re-derived from the payload on this path, so a forger cannot
+///    ACCIDENTALLY fabricate an entry matching a real frame's blake3. A deliberate
+///    rewrite of both the payload and its stored hash is caught only by the full
+///    recompute ([`ChainVerification::Recompute`](crate::store::ChainVerification)
+///    / [`Store::verify_chain`](crate::store::Store::verify_chain)), never by CRC
+///    alone. So once >= 1 entry corroborates,
 ///    the append-ordered entries and `entry_count` are trustworthy enough to assert
 ///    "a committed frame at offset X should exist."
 ///
@@ -244,8 +250,9 @@ pub(crate) fn corroborate_untrusted_entries(
     _fallback_fail_closed: bool,
 ) -> UntrustedRecovery {
     // An entry is CORROBORATED when a recovered frame sits at its offset with a
-    // matching length AND a matching content event_hash. event_hash match is the
-    // unforgeable anchor.
+    // matching length AND a matching content event_hash. The event_hash match is
+    // the anchor: content-addressed and CRC-guarded here (a full blake3 recompute
+    // happens only under ChainVerification::Recompute / Store::verify_chain).
     let is_corroborated = |entry: &sidx::SidxEntry| -> bool {
         match recovered.get(&entry.frame_offset) {
             Some(frame) => {
@@ -367,6 +374,29 @@ mod tests {
             source.position(),
             41,
             "the size guard must reject an undersized frame without consuming the source"
+        );
+    }
+
+    #[test]
+    fn exactly_header_sized_frame_is_read_not_pre_rejected() {
+        // The cheap pre-check rejects ONLY frames strictly smaller than the
+        // 8-byte [len][crc] header. A frame of EXACTLY 8 bytes passes the
+        // guard and reaches the I/O path: it decodes to an empty payload
+        // (len = 0, crc32("") = 0) whose deserialize fails, so the hash is
+        // still None — but the source HAS been consumed (seek to `at`, then
+        // an 8-byte read leaves the cursor at 8). The `< 8` -> `<= 8` mutant
+        // short-circuits at total == 8 and leaves the cursor parked at 41;
+        // pinning the post-read position convicts it.
+        let mut source = Cursor::new(vec![0u8; 64]);
+        source
+            .seek(SeekFrom::Start(41))
+            .expect("park the cursor before the call");
+        let hash = read_frame_event_hash(&mut source, 0, 8);
+        assert_eq!(hash, None, "a bare 8-byte header carries no event hash");
+        assert_eq!(
+            source.position(),
+            8,
+            "an exactly-header-sized frame must be seeked-to and read, not pre-rejected"
         );
     }
 }

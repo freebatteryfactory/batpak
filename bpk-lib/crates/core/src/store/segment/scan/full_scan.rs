@@ -170,29 +170,13 @@ impl Reader {
 
             match segment::frame_decode(&frame_buf) {
                 Ok((msgpack, frame_size)) => {
-                    match Self::decode_frame_payload_value(msgpack) {
-                        Ok(payload) => {
-                            if matches!(
-                                payload.event.header.event_kind,
-                                EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT
-                            ) {
-                                cursor += frame_size as u64;
-                                continue;
-                            }
-                            entries.push(ScannedEntry {
-                                event: payload.event,
-                                entity: payload.entity,
-                                scope: payload.scope,
-                                receipt_extensions: payload.receipt_extensions,
-                            });
-                        }
-                        Err(error) => {
-                            return Err(StoreError::CorruptSegment {
-                                segment_id,
-                                detail: format!(
-                                    "frame at offset {frame_offset} has unreadable payload: {error}"
-                                ),
-                            });
+                    match Self::scanned_entry_from_frame(msgpack, segment_id, frame_offset)? {
+                        Some(entry) => entries.push(entry),
+                        None => {
+                            // In-band batch marker (BEGIN/COMMIT): skip it, leaving
+                            // the buffer to drop rather than recycle (mirrors prior).
+                            cursor += frame_size as u64;
+                            continue;
                         }
                     }
                     cursor += frame_size as u64;
@@ -205,6 +189,44 @@ impl Reader {
             self.release_buffer(frame_buf);
         }
         Ok(entries)
+    }
+
+    /// Decode one already-CRC-validated frame payload into a [`ScannedEntry`],
+    /// or `Ok(None)` for an in-band batch marker (`SYSTEM_BATCH_BEGIN` /
+    /// `SYSTEM_BATCH_COMMIT`) that the full event scan skips.
+    ///
+    /// Carries the survivor's ORIGINAL `event.payload` bytes onto the entry so
+    /// Retention/Tombstone compaction can re-emit them verbatim (byte-stable
+    /// frame + `event_hash`) instead of re-serializing the decoded `Value`.
+    ///
+    /// Uses the compaction-tolerant decode: an ENCRYPTED payload is not
+    /// Value-decoded here (the reader has no key), so it arrives with a `Null`
+    /// placeholder in `event.payload` and its raw CIPHERTEXT in `payload_bytes`.
+    /// The compaction seam decrypts `payload_bytes` under the keyset for the
+    /// predicate's view and re-emits the ciphertext verbatim.
+    fn scanned_entry_from_frame(
+        msgpack: &[u8],
+        segment_id: u64,
+        frame_offset: u64,
+    ) -> Result<Option<ScannedEntry>, StoreError> {
+        let (payload, payload_bytes) = Self::decode_frame_payload_value_for_compaction(msgpack)
+            .map_err(|error| StoreError::CorruptSegment {
+                segment_id,
+                detail: format!("frame at offset {frame_offset} has unreadable payload: {error}"),
+            })?;
+        if matches!(
+            payload.event.header.event_kind,
+            EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT
+        ) {
+            return Ok(None);
+        }
+        Ok(Some(ScannedEntry {
+            event: payload.event,
+            entity: payload.entity,
+            scope: payload.scope,
+            receipt_extensions: payload.receipt_extensions,
+            payload_bytes,
+        }))
     }
 }
 
@@ -237,7 +259,12 @@ mod tests {
 
         let clock: std::sync::Arc<dyn crate::store::Clock> =
             std::sync::Arc::new(crate::store::SystemClock::new());
-        let reader = Reader::new(dir.path().to_path_buf(), 4, &clock);
+        let reader = Reader::new(
+            dir.path().to_path_buf(),
+            4,
+            &clock,
+            std::sync::Arc::new(crate::store::platform::fs::RealFs),
+        );
         let entries = reader
             .scan_segment(&path)
             .expect("EOF after the segment header is the clean frame terminator");
@@ -245,6 +272,92 @@ mod tests {
         assert!(
             entries.is_empty(),
             "PROPERTY: a valid segment with no frames scans as empty, not corrupt"
+        );
+    }
+
+    #[test]
+    fn scan_segment_returns_every_batch_event_past_the_in_band_markers() {
+        use crate::coordinate::Coordinate;
+        use crate::id::EntityIdType;
+        use crate::store::{AppendOptions, BatchAppendItem, CausationRef, Store, StoreConfig};
+
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let store = Store::open(
+            StoreConfig::new(dir.path())
+                .with_sync_every_n_events(1)
+                .with_enable_checkpoint(false)
+                .with_enable_mmap_index(false),
+        )
+        .expect("open store");
+        let coord = Coordinate::new("entity:full-scan", "scope:markers").expect("coord");
+        let kind = EventKind::custom(0xE, 0x21);
+        let items: Vec<BatchAppendItem> = (0..3)
+            .map(|i| {
+                BatchAppendItem::new(
+                    coord.clone(),
+                    kind,
+                    &serde_json::json!({ "i": i }),
+                    AppendOptions::default(),
+                    CausationRef::None,
+                )
+                .expect("construct batch item")
+            })
+            .collect();
+        let receipts = store.append_batch(items).expect("append batch");
+        assert_eq!(receipts.len(), 3, "scenario shape: three committed events");
+        let batch_ids: Vec<u128> = receipts.iter().map(|r| r.event_id.as_u128()).collect();
+        store.close().expect("close store");
+
+        let mut segment_paths: Vec<std::path::PathBuf> =
+            crate::store::platform::fs::read_dir(dir.path())
+                .expect("read data dir")
+                .filter_map(|entry| {
+                    let path = entry.expect("data dir entry").path();
+                    path.extension()
+                        .is_some_and(|ext| ext == "fbat")
+                        .then_some(path)
+                })
+                .collect();
+        segment_paths.sort();
+        assert_eq!(
+            segment_paths.len(),
+            1,
+            "scenario shape: everything landed in one segment"
+        );
+
+        let clock: std::sync::Arc<dyn crate::store::Clock> =
+            std::sync::Arc::new(crate::store::SystemClock::new());
+        let reader = Reader::new(
+            dir.path().to_path_buf(),
+            4,
+            &clock,
+            std::sync::Arc::new(crate::store::platform::fs::RealFs),
+        );
+        let entries = reader
+            .scan_segment(&segment_paths[0])
+            .expect("scan sealed segment");
+
+        // The BEGIN marker frame precedes the three batch events in the frame
+        // stream, so the cursor advance on the MARKER-SKIP path decides whether
+        // the events after it are reachable at all: a `+=` -> `*=` mutant there
+        // catapults the cursor past frames_end at the BEGIN marker and loses
+        // every committed batch event.
+        let scanned_batch_ids: Vec<u128> = entries
+            .iter()
+            .filter(|entry| entry.event.header.event_kind == kind)
+            .map(|entry| entry.event.header.event_id.as_u128())
+            .collect();
+        assert_eq!(
+            scanned_batch_ids, batch_ids,
+            "a full scan must return all three batch events, in append order, \
+             after skipping the in-band BEGIN marker"
+        );
+        assert!(
+            entries.iter().all(|entry| !matches!(
+                entry.event.header.event_kind,
+                EventKind::SYSTEM_BATCH_BEGIN | EventKind::SYSTEM_BATCH_COMMIT
+            )),
+            "in-band batch markers never surface as scanned entries"
         );
     }
 }
