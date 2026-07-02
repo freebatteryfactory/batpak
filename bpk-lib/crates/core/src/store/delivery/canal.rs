@@ -170,3 +170,30 @@ pub enum ReactorCanal {
     /// live views that may skip work under backpressure.
     LossySubscription,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CanalBatch;
+
+    #[test]
+    fn r4_canal_batch_is_empty_only_for_the_empty_variant() {
+        // Kills canal.rs:25 `CanalBatch::is_empty` -> `false`: the typed
+        // reactor pump gates its dispatch/idle decision on `!batch.is_empty()`
+        // (reactor_typed.rs), so an Empty batch that reports non-empty turns
+        // every idle/timeout poll into a phantom dispatch round. Pin all three
+        // variants: exactly Empty is empty, One and Many are not.
+        assert!(
+            CanalBatch::<u32>::Empty.is_empty(),
+            "PROPERTY: an Empty batch reports is_empty() == true; the `false` \
+             mutant makes every idle poll look like deliverable work"
+        );
+        assert!(
+            !CanalBatch::One(7_u32).is_empty(),
+            "a One batch is non-empty"
+        );
+        assert!(
+            !CanalBatch::Many(vec![1_u32, 2]).is_empty(),
+            "a Many batch is non-empty"
+        );
+    }
+}

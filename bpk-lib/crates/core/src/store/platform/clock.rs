@@ -307,6 +307,17 @@ mod tests {
 
     #[test]
     fn fn_clock_preserves_negative_wall_values_but_not_monotonic_time() {
+        // Anchor a monotonic floor FIRST: FnClock scripts only the wall clock,
+        // so its monotonic reading must come from the same process-wide
+        // MonotonicAnchor that SystemClock reads. The bounded spin (at most one
+        // clock-resolution tick) pushes the floor past the trivial constants
+        // (0, 1) a body-stubbing mutant substitutes for `now_mono_ns`.
+        let system = SystemClock::new();
+        let mut floor = system.now_mono_ns();
+        while floor <= 1 {
+            floor = system.now_mono_ns();
+        }
+
         let clock = FnClock::new(Arc::new(|| -7));
 
         assert_eq!(
@@ -319,9 +330,13 @@ mod tests {
             -7_000,
             "PROPERTY: wall nanoseconds come from the caller wall clock, not the monotonic anchor"
         );
+        let mono = clock.now_mono_ns();
+        let ceiling = system.now_mono_ns();
         assert!(
-            clock.now_mono_ns() >= 0,
-            "PROPERTY: process-local monotonic evidence must not echo a negative caller wall clock"
+            floor <= mono && mono <= ceiling,
+            "PROPERTY: process-local monotonic evidence reads the shared process anchor \
+             (floor {floor} <= mono {mono} <= ceiling {ceiling}), never an echo of the \
+             negative caller wall clock or a stubbed constant"
         );
     }
 

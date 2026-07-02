@@ -439,3 +439,47 @@ pub struct StoreDiagnostics {
     /// Platform evidence summary reported by the private store platform backend.
     pub platform_evidence: PlatformEvidenceSummary,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::WriterPressure;
+
+    #[test]
+    fn r4_writer_pressure_utilization_is_exactly_queue_len_over_capacity() {
+        // Kills stats.rs:202 `WriterPressure::utilization` -> `0.0`: pressure
+        // thresholds (e.g. the writer-pressure retry threshold) read this
+        // fraction, and a hardwired 0.0 reports a saturated mailbox as idle.
+        // 3-in-4 and 8-in-8 are exactly representable in binary floating
+        // point, so the pins compare exact bit patterns — no epsilon.
+        let partial = WriterPressure {
+            queue_len: 3,
+            capacity: 4,
+        };
+        assert_eq!(
+            partial.utilization().to_bits(),
+            0.75_f64.to_bits(),
+            "PROPERTY: 3 queued of 4 capacity is EXACTLY 0.75 utilization; \
+             the hardwired-0.0 mutant reports the pressured mailbox as idle"
+        );
+
+        let full = WriterPressure {
+            queue_len: 8,
+            capacity: 8,
+        };
+        assert_eq!(
+            full.utilization().to_bits(),
+            1.0_f64.to_bits(),
+            "a full mailbox is exactly 1.0 utilization"
+        );
+
+        let unbounded_guard = WriterPressure {
+            queue_len: 0,
+            capacity: 0,
+        };
+        assert_eq!(
+            unbounded_guard.utilization().to_bits(),
+            0.0_f64.to_bits(),
+            "zero capacity is defined as 0.0 utilization (guarded), never NaN"
+        );
+    }
+}
