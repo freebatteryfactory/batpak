@@ -20,6 +20,20 @@ on:
           - loom
           - chaos
           - heavy
+      run_full_mutation_matrix:
+        description: >-
+          COST GUARD. The 24-shard whole-repo mutation matrix (16-vCPU x ~5h/shard)
+          is the single most expensive job in this repo — a release-candidate /
+          scheduled #49-baseline tool, never routine. `proof=heavy` runs every
+          validation lane EXCEPT this matrix; to also run the matrix you must
+          explicitly set this to `yes`. Default `no` makes casual triggering
+          impossible.
+        required: false
+        default: "no"
+        type: choice
+        options:
+          - "no"
+          - "yes"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -512,7 +526,15 @@ jobs:
 
   mutants-full:
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.proof == 'heavy'
+    # COST GUARD (2026-07-02): the 24-shard whole-repo matrix is 16-vCPU x ~5h x
+    # 24 = ~1900 vCPU-hours per run — the whale on the Blacksmith bill. It no
+    # longer rides `proof=heavy` alone; it needs the explicit opt-in flag too, so
+    # `heavy` gives you every validation lane without the whale unless you mean it.
+    # Deliberate run: gh workflow run ci.yml -f proof=heavy -f run_full_mutation_matrix=yes
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.proof == 'heavy' &&
+      github.event.inputs.run_full_mutation_matrix == 'yes'
     strategy:
       fail-fast: false
       matrix:
