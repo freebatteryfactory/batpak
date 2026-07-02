@@ -184,6 +184,40 @@ mod tests {
         Ok(())
     }
 
+    /// Traversing THROUGH a regular file makes `metadata` fail with a
+    /// non-NotFound error (ENOTDIR / `NotADirectory`) — a real probe failure,
+    /// NOT absence. The `guard -> true` mutant classifies EVERY metadata error
+    /// as `UnknownMissing`, reporting an unreadable store path as merely
+    /// absent and discarding the error text the evidence exists to carry.
+    #[cfg(unix)]
+    #[test]
+    fn path_status_reports_non_not_found_probe_errors_as_probe_failed() -> Result<(), Box<dyn Error>>
+    {
+        let dir = tempfile::tempdir()?;
+        let squatter = dir.path().join("squatting-file");
+        std::fs::write(&squatter, b"a file squatting on a directory component")?;
+
+        let probed = path_status(&squatter.join("child"));
+        assert!(
+            matches!(
+                &probed,
+                StorePathStatusEvidence::ProbeFailed { reason } if !reason.is_empty()
+            ),
+            "PROPERTY: a non-NotFound metadata error must be ProbeFailed evidence \
+             carrying the error text, never UnknownMissing; got {probed:?}"
+        );
+
+        // Contrast anchor: genuinely-missing stays UnknownMissing — NotFound is
+        // the ONLY error kind the guard may classify as absence.
+        let missing = dir.path().join("missing-store-path");
+        assert_eq!(
+            path_status(&missing),
+            StorePathStatusEvidence::UnknownMissing,
+            "PROPERTY: NotFound remains the one error classified as absence"
+        );
+        Ok(())
+    }
+
     #[test]
     fn mmap_evidence_keeps_missing_paths_unknown() -> Result<(), Box<dyn Error>> {
         let dir = tempfile::tempdir()?;

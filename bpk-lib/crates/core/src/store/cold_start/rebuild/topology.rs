@@ -147,8 +147,12 @@ pub(super) fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, PathBuf)>, Stor
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_pending_compaction, pending_compaction_path};
+    use super::{
+        clear_pending_compaction, pending_compaction_path, segment_paths, write_pending_compaction,
+    };
+    use crate::store::platform;
     use crate::store::platform::fs::RealFs;
+    use crate::store::segment;
     use crate::store::StoreError;
 
     #[test]
@@ -175,5 +179,52 @@ mod tests {
         // anchors that the error-path test above is the discriminating case.
         let dir = tempfile::tempdir().expect("tempdir");
         clear_pending_compaction(dir.path(), &RealFs).expect("absent marker clears cleanly");
+    }
+
+    #[test]
+    fn segment_paths_rejects_a_marker_whose_non_merged_source_is_missing() {
+        // Recovery input: merged segment 7 absent, no `.compact-src` temp,
+        // marker sources {1 (present), 3 (missing)}. The presence check walks
+        // the sources KEEPING every id != merged_id, so missing source 3 must
+        // abort recovery. The `!=` -> `==` mutant instead keeps only ids equal
+        // to merged_id (none here), vacuously passes, and returns Ok —
+        // silently proceeding with a data dir that lost a compaction source.
+        let dir = tempfile::tempdir().expect("tempdir");
+        drop(
+            platform::fs::create_new_file(&dir.path().join(segment::segment_filename(1)))
+                .expect("create segment 1"),
+        );
+        write_pending_compaction(dir.path(), 7, &[1, 3], &RealFs).expect("write pending marker");
+
+        let result = segment_paths(dir.path());
+        assert!(
+            matches!(
+                &result,
+                Err(StoreError::DataDirMalformed { path }) if *path == pending_compaction_path(dir.path())
+            ),
+            "PROPERTY: a pending-compaction marker naming a missing non-merged source \
+             must fail recovery with DataDirMalformed at the marker path; got {result:?}"
+        );
+    }
+
+    #[test]
+    fn segment_paths_recovers_exactly_the_source_set_when_merged_is_absent() {
+        // The Ok anchor for the rejection above: same marker shape, but every
+        // non-merged source present — recovery returns EXACTLY the source
+        // segments in id order, with no merged or temp entries.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path_one = dir.path().join(segment::segment_filename(1));
+        let path_two = dir.path().join(segment::segment_filename(2));
+        drop(platform::fs::create_new_file(&path_one).expect("create segment 1"));
+        drop(platform::fs::create_new_file(&path_two).expect("create segment 2"));
+        write_pending_compaction(dir.path(), 7, &[1, 2], &RealFs).expect("write pending marker");
+
+        let entries = segment_paths(dir.path()).expect("recover with all sources present");
+        assert_eq!(
+            entries,
+            vec![(1, path_one), (2, path_two)],
+            "PROPERTY: with the merged segment absent and every source present, \
+             recovery yields exactly the source path set in id order"
+        );
     }
 }
