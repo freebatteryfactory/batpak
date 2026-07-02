@@ -79,7 +79,11 @@ fn build_fixture_bin(fixture: &str, bin: &str) -> PathBuf {
         status.success(),
         "store-open fixture `{fixture}` bin `{bin}` failed to build: {status}"
     );
-    let bin_path = target_dir.join("release").join(bin);
+    // Windows built binaries carry `.exe`; EXE_SUFFIX is "" on unix, so this is
+    // a no-op there.
+    let bin_path = target_dir
+        .join("release")
+        .join(format!("{bin}{}", std::env::consts::EXE_SUFFIX));
     assert!(
         bin_path.exists(),
         "built store-open fixture bin is missing: {}",
