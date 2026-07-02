@@ -351,6 +351,143 @@ fn projection_replay_plan_preserves_scan_watermark_when_tail_candidate_is_hidden
 }
 
 #[test]
+fn mark_idemp_evicted_against_live_flags_exactly_the_missing_frames() {
+    // Round-3 mutation kill: index/mod.rs `mark_idemp_evicted_against_live`
+    // body replaced with `()`. The compaction tail calls this sweep so a
+    // durable idempotency entry whose event frame did NOT survive into the
+    // live index is honestly flagged `event_evicted` (the flag is persisted
+    // in `index.idemp` and is how a later no-op deduplicated against an
+    // evicted event is distinguished from one whose frame is still live).
+    // Seed two durable entries: one whose event IS in `by_id` (control —
+    // must stay unflagged) and one whose frame was never inserted (must be
+    // flagged). The no-op mutant leaves BOTH unflagged.
+    let index = StoreIndex::new();
+    let entity_id = index
+        .interner
+        .intern("entity:idemp-evict")
+        .expect("intern entity");
+    let scope_id = index
+        .interner
+        .intern("scope:idemp-evict")
+        .expect("intern scope");
+
+    let mut live = make_entry(0, "entity:idemp-evict", "scope:idemp-evict");
+    live.entity_id = entity_id;
+    live.scope_id = scope_id;
+    let live_id = live.event_id;
+    let dropped = make_entry(1, "entity:idemp-evict", "scope:idemp-evict");
+    let dropped_id = dropped.event_id;
+
+    index
+        .idemp
+        .record(idemp::IdempEntry::from_index_entry(&live, 0));
+    index
+        .idemp
+        .record(idemp::IdempEntry::from_index_entry(&dropped, 1));
+    // Only the live entry's frame goes into the index; the other simulates a
+    // frame that retention compaction dropped from the rebuilt live index.
+    index.insert(live);
+
+    index.mark_idemp_evicted_against_live();
+
+    let live_entry = index.idemp.get(live_id).expect("live key was recorded");
+    assert!(
+        !live_entry.is_event_evicted(),
+        "a key whose frame is still in the live index must NOT be flagged"
+    );
+    let dropped_entry = index
+        .idemp
+        .get(dropped_id)
+        .expect("dropped-frame key was recorded");
+    assert!(
+        dropped_entry.is_event_evicted(),
+        "PROPERTY: the compaction-tail sweep must flag a durable idempotency \
+         entry whose event frame is no longer in the live index; the no-op \
+         mutant leaves it dishonestly unflagged"
+    );
+}
+
+#[test]
+fn default_idempotency_window_constants_hold_their_exact_values() {
+    // Round-3 mutation kill: idemp.rs:63 `*` -> `/` in `16 * 1024 * 1024`
+    // (`16 * 1024 / 1024` collapses the default keep-window to 16 sequences).
+    // Pin both default constants at their exact composed values so either
+    // `*` operand mutating to `/` is caught.
+    assert_eq!(idemp::DEFAULT_KEEP_SEQUENCES, 16_777_216);
+    assert_eq!(idemp::DEFAULT_MAX_KEYS, 67_108_864);
+}
+
+#[test]
+fn default_retention_window_covers_a_million_sequence_frontier() {
+    // Behavioral twin of the constant pin: under the DEFAULT hybrid policy a
+    // key recorded at sequence 0 is still INSIDE the window at frontier
+    // 1_000_000 (the window floor saturates to 0 because the window is 16Mi
+    // sequences deep). The `/` mutant shrinks the window to 16 sequences, so
+    // the floor becomes 999_984 and the key ages out — a "within-window"
+    // keyed retry would re-append a duplicate.
+    let store = idemp::IdempotencyStore::new(
+        idemp::IdempotencyRetention::default(),
+        idemp::OverflowPolicy::Warn,
+    );
+    let genesis = make_entry(0, "entity:idemp-window", "scope:idemp-window");
+    let genesis_id = genesis.event_id;
+    store.record(idemp::IdempEntry::from_index_entry(&genesis, 0));
+
+    let report = store.evict(1_000_000);
+
+    assert_eq!(
+        report.aged_out, 0,
+        "nothing ages out of a 16Mi-deep window at a 1M frontier"
+    );
+    assert_eq!(report.remaining, 1);
+    assert!(
+        store.get(genesis_id).is_some(),
+        "PROPERTY: the default keep-window (16 * 1024 * 1024 sequences) must \
+         retain a genesis-recorded key at a 1M frontier; the 16-sequence \
+         mutant window evicts it"
+    );
+}
+
+#[test]
+fn query_any_hits_after_returns_exactly_the_limit_smallest_sequences_past_the_cursor() {
+    // Exact hit-set pin for the fact-Any fast path (`query_any_hits_after`),
+    // crossing its mid-scan trim boundary: with limit 2 the trim threshold is
+    // max(2*2, 2+1).min(1 << 20) = 4, and the cursor (after_seq 1, started)
+    // admits four candidates (sequences 2..=5), so the amortized trim fires
+    // mid-scan. The result must be EXACTLY the `limit` smallest visible
+    // sequences strictly after the cursor, ascending — regardless of when
+    // (or how often) the amortized trim runs.
+    let index = StoreIndex::new();
+    let entity_id = index
+        .interner
+        .intern("entity:any-after")
+        .expect("intern entity");
+    let scope_id = index
+        .interner
+        .intern("scope:any-after")
+        .expect("intern scope");
+    for seq in 0..6 {
+        let mut entry = make_entry(seq, "entity:any-after", "scope:any-after");
+        entry.entity_id = entity_id;
+        entry.scope_id = scope_id;
+        index.insert(entry);
+    }
+    index
+        .publish(6, "test-any-after")
+        .expect("publish the six seeded entries");
+
+    let region = Region::all().with_fact(crate::coordinate::KindFilter::Any);
+    let hits = index.query_hits_after(&region, 1, true, 2);
+    let seqs: Vec<u64> = hits.iter().map(|h| h.global_sequence).collect();
+    assert_eq!(
+        seqs,
+        vec![2, 3],
+        "PROPERTY: the Any fast path returns exactly the `limit` smallest \
+         visible sequences strictly after the cursor, in ascending order"
+    );
+}
+
+#[test]
 fn read_idemp_file_distinguishes_missing_from_unreadable() {
     use crate::store::index::idemp::{read_idemp_file, IdempLoad, IDEMP_FILENAME};
 
