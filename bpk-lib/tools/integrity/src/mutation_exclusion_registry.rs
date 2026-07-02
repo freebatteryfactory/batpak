@@ -205,6 +205,31 @@ const REGISTRY: &[RegisteredExclusion] = &[
         witness: None,
         reason: "The #[cfg(not(feature = \"payload-encryption\"))] read_delivery_stored variant (envelope.rs:528) is compiled out on the all-features lanes, so its :532 body-fabrication mutants are phantoms there — the inverse of the no-default phantom class. The variant is killed under default/no-default features by the feature-agnostic encode_for_entry exact-envelope pins in mutation_kill_syncbat-subscription-runtime.rs (bite-proven with Ok(None) hand-applied under default features); its payload-encryption twin at :512 is compiled and killed on the all-features lane.",
     },
+    // --- round-4 additions (2026-07-02) ---
+    RegisteredExclusion {
+        regex: r"ancestry/mod\.rs:4[12][0-9]:.*walk_ancestors_outcome",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "The #[cfg(feature = \"payload-encryption\")] walk_ancestors_outcome twin (ancestry/mod.rs:411, band 410-429) is compiled out on the no-default surface. On all-features its `-> Default::default()` fabrication is BUILD-UNVIABLE (AncestorWalk deliberately derives no Default) — the type system kills it. The ungated twin at :430+ sits outside the band and stays graded.",
+    },
+    RegisteredExclusion {
+        regex: r"read_api\.rs:.*open_encrypted_payload_bytes",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "open_encrypted_payload_bytes is #[cfg(feature = \"payload-encryption\")] (read_api.rs:252): compiled out on the no-default surface. On all-features the `-> Ok(Default::default())` fabrication is BUILD-UNVIABLE (PayloadPlaintext has no Default) — the type system kills the wrong-plaintext fabrication.",
+    },
+    RegisteredExclusion {
+        regex: r"sim/recovery\.rs:18[0-9]:.*is_canonical_refusal",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/core/tests/dst_recovery.rs::dst_recovery_is_legal_and_deterministic"),
+        reason: "B2's honest-disk drive wires no fault injector (SimFs::new(seed, 0)) and fsyncs only at frame-aligned quiesce points, so crash truncation always leaves a well-formed prefix and the reopen-Err arms guarded here are dead. Proven by a 3072-run differential sweep (seeds 0..768 x 4 step counts, mutant vs real: byte-identical outcome streams, zero reopen errors either side). The LIVE refusal guard is recovery_matrix.rs:333 (B3 crash-before-fsync cells), pinned by the exact mode-label test.",
+    },
+    RegisteredExclusion {
+        regex: r"write/writer\.rs:.*ignore_closed_response_channel",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/core/tests/mutation_kill_wpc_round3_cooperative.rs::cooperative_pump_drains_the_queued_append_to_a_committed_receipt"),
+        reason: "The fn body is exactly `drop(result)` of a by-value parameter; replacing it with `()` still drops the owned parameter at fn exit — the same drop at the same point, no return value, no counter, no emission. Semantically identical code; no observable can exist. All ~20 call sites only swallow flume::SendError from a hung-up requester.",
+    },
     RegisteredExclusion {
         regex: r"index/query\.rs:26[89]:.*replace << with >>",
         category: ExclusionCategory::Equivalent,
