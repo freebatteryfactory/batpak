@@ -147,6 +147,10 @@ fn check_root_markdown_allowlist(project_root: &Path) -> Result<()> {
         "README.md",
         "07_RECEIPTS.md",
         "09_REPLAY.md",
+        // Living 0.9.0->1.0.0 stabilization roadmap — owner-curated, re-audited
+        // on every knocked line item. Canonical by owner decision (2026-07-02);
+        // planning DEBT still belongs under archive/legacy-docs, not here.
+        "ROADMAP.md",
         "SUPPORT.md",
         "05_TERMINALS.md",
     ]
