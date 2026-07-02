@@ -149,6 +149,11 @@
   outcome: CommittedPrefix
 
 # ── ImportReapply: import re-apply oracle (`import_recovery`) ────────────────
+# The import oracle derives its OWN fsync-drop arming from the seed (a multiple
+# of 5 arms 1-in-4 drops, mirroring `fork_recovery`), so `fault_mode` stays the
+# inert HonestDiskCrash placeholder. Seed 453041837 is NOT a multiple of 5
+# (drops off: the full first import survives, dedup = source); seed 195 IS
+# (drops armed: a partial 3-of-4 durable prefix survives, dedup 3).
 - seed: 453041837
   oracle: ImportReapply
   fault_mode: HonestDiskCrash
@@ -158,6 +163,17 @@
   assurance_level: L4
   steps: 1
   op_trace_digest: 6136008848919423745
+  outcome: CommittedPrefix
+
+- seed: 195
+  oracle: ImportReapply
+  fault_mode: HonestDiskCrash
+  boundary: null
+  fsync_drop_one_in: null
+  seam_touched: import-reapply
+  assurance_level: L4
+  steps: 1
+  op_trace_digest: 10862642175300011077
   outcome: CommittedPrefix
 
 - seed: 453037585
