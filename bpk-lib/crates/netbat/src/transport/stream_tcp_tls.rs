@@ -246,11 +246,8 @@ fn drain_control_frames(
                 continue;
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-            // EOF without close_notify, once buffered plaintext is drained.
-            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
-                return ControlDrain::PeerGone
-            }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            // UnexpectedEof (EOF without close_notify) lands here as PeerGone.
             Err(_) => return ControlDrain::PeerGone,
         }
 
@@ -346,111 +343,9 @@ impl ControlAccumulator {
     }
 }
 
+/// Drain/accumulator/budget unit tests. `#[path]`-split (the same sidecar
+/// pattern as `stream_tcp_tests.rs`) so this production module stays within
+/// the file-size cap and the inline-test-island line cap.
 #[cfg(test)]
-mod tests {
-    //! Drain/accumulator unit tests. The TLS socket glue (handshake, the
-    //! non-blocking toggle, `read_tls`/`process_new_packets`) is covered
-    //! end-to-end by `tests/tls_subscription.rs`; these pin the pure line
-    //! reassembly and lane back-pressure that the drain depends on, without TLS.
-
-    use super::*;
-
-    const ACK_LINE: &[u8] = b"NETBAT/2 SUB_ACK orders.open.v1 1 aabb\n";
-    const CANCEL_LINE: &[u8] = b"NETBAT/2 SUB_CANCEL orders.open.v1 client.cancel\n";
-
-    fn token() -> SubscriptionToken {
-        SubscriptionToken::new("orders.open.v1", &Limits::default()).expect("token")
-    }
-
-    #[test]
-    fn forwards_a_complete_ack_without_stopping() {
-        // A well-formed, id-matching SUB_ACK is non-terminal: it is forwarded and
-        // the drain keeps reading (NeedMore), with the line consumed from the
-        // buffer.
-        let (tx, rx) = flume::bounded(16);
-        let mut acc = ControlAccumulator::new();
-        acc.extend(ACK_LINE);
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &Limits::default(), &token()),
-            LineFlow::NeedMore
-        ));
-        assert!(matches!(rx.try_recv(), Ok(SessionControl::Ack { .. })));
-        assert!(acc.buffer.is_empty(), "the consumed line is drained");
-    }
-
-    #[test]
-    fn cancel_is_terminal_and_stops() {
-        let (tx, rx) = flume::bounded(16);
-        let mut acc = ControlAccumulator::new();
-        acc.extend(CANCEL_LINE);
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &Limits::default(), &token()),
-            LineFlow::Stopped
-        ));
-        assert!(matches!(rx.try_recv(), Ok(SessionControl::Cancel)));
-    }
-
-    #[test]
-    fn reassembles_a_frame_split_across_extends() {
-        // A SUB_CANCEL split mid-line must NOT be forwarded until the newline
-        // arrives, then forwarded exactly once as Cancel.
-        let (tx, rx) = flume::bounded(16);
-        let mut acc = ControlAccumulator::new();
-        let split = CANCEL_LINE.len() / 2;
-        acc.extend(&CANCEL_LINE[..split]);
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &Limits::default(), &token()),
-            LineFlow::NeedMore
-        ));
-        assert!(rx.try_recv().is_err(), "no frame before the line completes");
-        acc.extend(&CANCEL_LINE[split..]);
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &Limits::default(), &token()),
-            LineFlow::Stopped
-        ));
-        assert!(matches!(rx.try_recv(), Ok(SessionControl::Cancel)));
-    }
-
-    #[test]
-    fn oversize_unterminated_line_is_malformed_terminal() {
-        // A line that grows past the cap without a newline must surface a
-        // malformed terminal control, never grow the buffer without bound.
-        let limits = Limits::default().with_max_line_bytes(8);
-        let (tx, rx) = flume::bounded(16);
-        let mut acc = ControlAccumulator::new();
-        acc.extend(b"NETBAT/2 SUB_ACK no-newline-here-yet");
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &limits, &token()),
-            LineFlow::Stopped
-        ));
-        assert!(matches!(rx.try_recv(), Ok(SessionControl::Malformed)));
-        assert!(acc.buffer.is_empty());
-    }
-
-    #[test]
-    fn full_lane_reports_backpressure_and_keeps_the_line() {
-        // With the lane already full, a complete line cannot be forwarded: report
-        // Backpressure and retain the line so it is retried after the next poll
-        // drains the lane — no frame is dropped.
-        let (tx, rx) = flume::bounded(1);
-        tx.try_send(SessionControl::Cancel)
-            .expect("prefill the lane");
-        let mut acc = ControlAccumulator::new();
-        acc.extend(ACK_LINE);
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &Limits::default(), &token()),
-            LineFlow::Backpressure
-        ));
-        assert_eq!(
-            acc.buffer, ACK_LINE,
-            "the unsent line is retained for retry"
-        );
-        // Drain the prefill; the retry now lands the ACK.
-        assert!(matches!(rx.try_recv(), Ok(SessionControl::Cancel)));
-        assert!(matches!(
-            acc.forward_complete_lines(&tx, &Limits::default(), &token()),
-            LineFlow::NeedMore
-        ));
-        assert!(matches!(rx.try_recv(), Ok(SessionControl::Ack { .. })));
-    }
-}
+#[path = "stream_tcp_tls_tests.rs"]
+mod tests;
