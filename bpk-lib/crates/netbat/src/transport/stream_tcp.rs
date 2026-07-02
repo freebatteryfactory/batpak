@@ -166,10 +166,15 @@ pub fn serve_subscription_stream(
         subscribe.subscription_id.clone(),
         Arc::clone(&stop_control_reader),
     )?;
+    // Drop-guard, not a post-loop store: a session that PANICS mid-poll
+    // unwinds through this frame (the worker's `catch_unwind` contains it
+    // above), and a plain store after the loop would be skipped on that
+    // unwind — leaving the control-reader thread holding its `try_clone`d
+    // socket, so the client would never observe the close. The guard's Drop
+    // runs on EVERY exit path, return or unwind.
+    let _stop_reader_on_exit = StopReaderOnExit(stop_control_reader);
     stats.served_subscriptions += 1;
-    let result = run_subscription_loop(&mut writer, session.as_mut(), limits);
-    stop_control_reader.store(true, Ordering::Release);
-    result?;
+    run_subscription_loop(&mut writer, session.as_mut(), limits)?;
     Ok(stats)
 }
 
@@ -552,6 +557,19 @@ fn encode_maybe_cursor(cursor: &RuntimeCursor) -> MaybeCursor {
 
 fn encode_required_cursor(cursor: &RuntimeCursor) -> CursorBytes {
     CursorBytes::new(cursor.as_bytes().to_vec())
+}
+
+/// Sets the control-reader stop flag when dropped, so the reader thread exits
+/// (dropping the last `try_clone` of the socket, which lets the client observe
+/// EOF) on every exit of [`serve_subscription_stream`] — return or unwind. The
+/// reader polls the flag on its bounded read timeout, so teardown after the
+/// flag is set is prompt, never a hang.
+struct StopReaderOnExit(Arc<AtomicBool>);
+
+impl Drop for StopReaderOnExit {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
 }
 
 fn spawn_control_reader(
