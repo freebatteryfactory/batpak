@@ -192,6 +192,19 @@ const REGISTRY: &[RegisteredExclusion] = &[
         witness: None,
         reason: "StoreConfig::with_fault_injector is #[cfg(feature = \"dangerous-test-hooks\")] (config.rs:522): compiled out on the no-default surface (phantom missed there); mutated and killed on all-features by the config accessor pins.",
     },
+    // --- round-3 additions (2026-07-02) ---
+    RegisteredExclusion {
+        regex: r"ancestry/mod\.rs:.*finish_value",
+        category: ExclusionCategory::NotCompiled,
+        witness: None,
+        reason: "finish_value is #[cfg(feature = \"payload-encryption\")] (ancestry/mod.rs:369), the private helper of the already-excluded step_ancestor_key_aware: compiled out on the no-default surface (phantom missed there); exercised on all-features by the exact-chain pins in crypto_shred_ancestry + mutation_kill_wpc_round3_encrypted.",
+    },
+    RegisteredExclusion {
+        regex: r"index/query\.rs:26[89]:.*replace << with >>",
+        category: ExclusionCategory::Equivalent,
+        witness: Some("crates/core/src/store/index/tests.rs::query_any_hits_after_returns_exactly_the_limit_smallest_sequences_past_the_cursor"),
+        reason: "1 << 20 is query_any_hits_after's amortized trim threshold (line 269's with_capacity twin is advisory-only): >> collapses it to 0 so the keep-k-smallest trim fires per push instead of per ~2×limit pushes — output-identical under allocator-unique global_sequence ordering (empirically bite-backed: the full index sidecar, 12/12, passes with the mutant applied); only the amortization degrades, which no deterministic bounded test may observe.",
+    },
 ];
 
 /// True when `regex` is a registered, categorized exclusion. meta-gate calls this
