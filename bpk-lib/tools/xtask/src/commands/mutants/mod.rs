@@ -193,18 +193,21 @@ mod tests {
                 // golden above carries no such --exclude — proving it is no-default-only).
                 "--exclude",
                 "crates/core/src/store/sim/**/*.rs",
-                // The keyscope tree is `payload-encryption`-gated at the module
-                // declaration — same phantom class as sim, same surface-scoped cure.
+                // The keyscope tree and the encrypt-on-append module are
+                // `payload-encryption`-gated at their module declarations — same
+                // phantom class as sim, same surface-scoped cure.
                 "--exclude",
                 "crates/core/src/store/keyscope.rs",
                 "--exclude",
                 "crates/core/src/store/keyscope/**/*.rs",
+                "--exclude",
+                "crates/core/src/store/write/writer/encrypt.rs",
                 "--exclude-re",
                 INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT,
-                // cfg-phantom regex excludes (registry-witnessed): the
-                // `#[cfg(not(unix))]` read_exact_at fallback is never compiled on
-                // the Linux runner, and the three feature-gated items below are
-                // compiled out on this surface — each is killed on all-features.
+                // cfg-phantom + witnessed-equivalence regex excludes (each has a
+                // registry entry): the `#[cfg(not(unix))]` read_exact_at fallback
+                // is never compiled on the Linux runner; the feature-gated items
+                // are compiled out on this surface and killed on all-features.
                 "--exclude-re",
                 r"fs\.rs:3[45][0-9]:.*read_exact_at",
                 "--exclude-re",
@@ -214,7 +217,13 @@ mod tests {
                 "--exclude-re",
                 r"ancestry/mod\.rs:.*finish_value",
                 "--exclude-re",
+                r"ancestry/mod\.rs:4[12][0-9]:.*walk_ancestors_outcome",
+                "--exclude-re",
+                r"read_api\.rs:.*open_encrypted_payload_bytes",
+                "--exclude-re",
                 r"write/writer\.rs:.*CooperativePump",
+                "--exclude-re",
+                r"write/writer\.rs:.*ignore_closed_response_channel",
                 "--exclude-re",
                 r"config\.rs:.*with_fault_injector",
                 "--no-default-features",

@@ -630,6 +630,11 @@ const NO_DEFAULT_SURFACE_EXCLUDES: &[&str] = &[
     "crates/core/src/store/sim/**/*.rs",
     "crates/core/src/store/keyscope.rs",
     "crates/core/src/store/keyscope/**/*.rs",
+    // Encrypt-on-append seam: the whole module is `payload-encryption`-gated at
+    // its mod decl (write/writer.rs) — same class as keyscope. Its mutants are
+    // killed on all-features (crypto_shred_payload.rs pins ciphertext-at-rest;
+    // bite-proven against `encrypt_single_payload -> Ok(())`).
+    "crates/core/src/store/write/writer/encrypt.rs",
 ];
 
 // Surface-level regex exclusions. Shared entries apply to BOTH surfaces:
@@ -657,6 +662,17 @@ const SHARED_SURFACE_EXCLUDE_RES: &[&str] = &[
     // Deliberately NOT mirrored into NO_DEFAULT_SURFACE_EXCLUDE_RES: there the
     // variant IS compiled and the feature-agnostic envelope pins kill it.
     r"envelope\.rs:53[0-9]:.*read_delivery_stored",
+    // B2's honest-disk recovery drive: the canonical-refusal guard arm is
+    // defensive dead code there (no fault injector wired; crash truncation
+    // always lands on a frame-aligned fsync boundary). Proven by a 3072-run
+    // differential sweep (mutant vs real: byte-identical outcome streams) —
+    // the LIVE refusal guard is recovery_matrix.rs:333, pinned by the exact
+    // mode-label test. Witnessed in the exclusion registry.
+    r"sim/recovery\.rs:18[0-9]:.*is_canonical_refusal",
+    // `ignore_closed_response_channel`'s body is exactly `drop(result)` of a
+    // by-value parameter: replacing it with `()` still drops the owned param at
+    // fn exit — semantically identical code, no observable can exist.
+    r"write/writer\.rs:.*ignore_closed_response_channel",
 ];
 // The no-default surface applies the shared entries PLUS the cfg-phantom set.
 // cargo-mutants is cfg-blind, so mutants inside feature-gated items are listed
@@ -680,7 +696,14 @@ const NO_DEFAULT_SURFACE_EXCLUDE_RES: &[&str] = &[
     r"index/query\.rs:26[89]:.*replace << with >>",
     r"ancestry/mod\.rs:.*step_ancestor_key_aware",
     r"ancestry/mod\.rs:.*finish_value",
+    // The payload-encryption-gated walk_ancestors_outcome twin lives in the
+    // 410-429 band; the ungated twin at :430+ stays graded (its own
+    // `-> Default::default()` fabrication is build-unviable — AncestorWalk
+    // deliberately has no Default impl — and its other mutants stay killable).
+    r"ancestry/mod\.rs:4[12][0-9]:.*walk_ancestors_outcome",
+    r"read_api\.rs:.*open_encrypted_payload_bytes",
     r"write/writer\.rs:.*CooperativePump",
+    r"write/writer\.rs:.*ignore_closed_response_channel",
     r"config\.rs:.*with_fault_injector",
 ];
 
@@ -998,6 +1021,21 @@ mod tests {
             !all_features.iter().any(|glob| glob.contains("keyscope")),
             "all-features surface must STILL mutate keyscope — its crypto-shred tests \
              catch those mutants; excludes = {all_features:?}"
+        );
+
+        // The encrypt-on-append module is gated the same way at its writer.rs
+        // mod decl; all-features keeps grading it (crypto_shred_payload.rs pins
+        // ciphertext-at-rest).
+        let encrypt_file = "crates/core/src/store/write/writer/encrypt.rs";
+        assert!(
+            no_default.contains(&encrypt_file),
+            "no-default surface must exclude the payload-encryption-gated encrypt module; \
+             excludes = {no_default:?}"
+        );
+        assert!(
+            !all_features.iter().any(|glob| glob.contains("encrypt")),
+            "all-features surface must STILL mutate the encrypt module; \
+             excludes = {all_features:?}"
         );
     }
 
