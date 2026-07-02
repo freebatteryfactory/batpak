@@ -46,6 +46,14 @@ pub(crate) fn consumer_smoke() -> Result<()> {
     let macros_name = unpack_crate(&packaged_root, &macros_archive)?;
     let bench_support_name = unpack_crate(&packaged_root, &bench_support_archive)?;
     let unpacked_name = unpack_crate(&packaged_root, &batpak_archive)?;
+    patch_packaged_batpak_family(
+        &packaged_root.join(&unpacked_name).join("Cargo.toml"),
+        &[
+            ("batpak-macros-support", &support_name),
+            ("batpak-macros", &macros_name),
+            ("batpak-bench-support", &bench_support_name),
+        ],
+    )?;
     let batpak_dependency = batpak_path_dependency_line(&format!("../packaged/{unpacked_name}"));
 
     fs::write(
@@ -175,12 +183,69 @@ fn unpack_crate(packaged_root: &Path, archive: &Path) -> Result<String> {
     let mut unpack = Command::new("tar");
     unpack.current_dir(packaged_root).arg("xf").arg(archive);
     run(unpack)?;
-    archive
+    let unpacked_name = archive
         .file_name()
         .and_then(|name| name.to_str())
         .and_then(|name| name.strip_suffix(".crate"))
         .map(str::to_owned)
-        .with_context(|| format!("derive unpacked crate dir from {}", archive.display()))
+        .with_context(|| format!("derive unpacked crate dir from {}", archive.display()))?;
+    detach_from_enclosing_workspace(&packaged_root.join(&unpacked_name).join("Cargo.toml"))?;
+    Ok(unpacked_name)
+}
+
+/// `cargo package` emits a normalized manifest with NO `[workspace]` table:
+/// real consumers build the crate from a registry checkout where no ancestor
+/// directory holds a workspace manifest, so discovery stops at the crate
+/// itself. We extract into `target/consumer-smoke/packaged/` — INSIDE this
+/// repo — so any workspace discovery from the extracted dir (e.g. core's
+/// build.rs running `cargo metadata` for its resolved-dep-graph invariant
+/// scan) walks up to `bpk-lib/Cargo.toml` and fails with "current package
+/// believes it's in a workspace when it's not". Appending an empty
+/// `[workspace]` table makes the extracted crate its own workspace root —
+/// the same resolution topology a real consumer sees. Appended only when
+/// `cargo package` did not already emit one, so a future cargo that fixes
+/// this upstream turns the patch into a no-op instead of a conflict.
+fn detach_from_enclosing_workspace(manifest: &Path) -> Result<()> {
+    let content = fs::read_to_string(manifest)
+        .with_context(|| format!("read packaged manifest {}", manifest.display()))?;
+    let has_workspace_table = content.lines().any(|line| {
+        let line = line.trim();
+        line == "[workspace]" || line.starts_with("[workspace.")
+    });
+    if has_workspace_table {
+        return Ok(());
+    }
+    fs::write(manifest, format!("{content}\n[workspace]\n")).with_context(|| {
+        format!(
+            "append [workspace] to packaged manifest {}",
+            manifest.display()
+        )
+    })
+}
+
+/// The packaged `batpak` depends on the batpak-family crates by REGISTRY
+/// VERSION — the post-publish topology. In this pre-publish smoke those
+/// versions do not exist on crates.io yet, so any resolution rooted at the
+/// extracted crate (core's build.rs `cargo metadata` invariant scan) must be
+/// redirected to the packaged siblings — the exact bits that will be
+/// published. This is the same patch-by-path idiom `package_crate` and the
+/// consumer manifest already use for the same three crates. The consumer
+/// build ignores a non-root manifest's `[patch]` table; this section only
+/// takes effect for invocations that treat the extracted crate as a
+/// workspace root, which is precisely the build.rs scan.
+fn patch_packaged_batpak_family(manifest: &Path, siblings: &[(&str, &str)]) -> Result<()> {
+    let content = fs::read_to_string(manifest)
+        .with_context(|| format!("read packaged manifest {}", manifest.display()))?;
+    let mut patched = format!("{content}\n[patch.crates-io]\n");
+    for (name, sibling_dir) in siblings {
+        patched.push_str(&format!("{name} = {{ path = \"../{sibling_dir}\" }}\n"));
+    }
+    fs::write(manifest, patched).with_context(|| {
+        format!(
+            "append [patch.crates-io] to packaged manifest {}",
+            manifest.display()
+        )
+    })
 }
 
 fn latest_packaged_crate(package_dir: &Path, package: &str) -> Result<PathBuf> {
@@ -220,4 +285,68 @@ fn is_package_archive(file_name: &str, package: &str) -> bool {
         return false;
     };
     rest.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{detach_from_enclosing_workspace, patch_packaged_batpak_family};
+    use anyhow::Result;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn patch_redirects_unpublished_family_versions_to_packaged_siblings() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let manifest = tmp.path().join("Cargo.toml");
+        fs::write(&manifest, "[package]\nname = \"batpak\"\n\n[workspace]\n")?;
+
+        patch_packaged_batpak_family(&manifest, &[("batpak-macros", "batpak-macros-0.9.0")])?;
+
+        let updated = fs::read_to_string(&manifest)?;
+        assert_eq!(
+            updated,
+            "[package]\nname = \"batpak\"\n\n[workspace]\n\n\
+             [patch.crates-io]\nbatpak-macros = { path = \"../batpak-macros-0.9.0\" }\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn detach_appends_workspace_table_to_normalized_packaged_manifest() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let manifest = tmp.path().join("Cargo.toml");
+        fs::write(&manifest, "[package]\nname = \"batpak\"\n")?;
+
+        detach_from_enclosing_workspace(&manifest)?;
+
+        let updated = fs::read_to_string(&manifest)?;
+        assert_eq!(updated, "[package]\nname = \"batpak\"\n\n[workspace]\n");
+        Ok(())
+    }
+
+    #[test]
+    fn detach_leaves_manifest_with_existing_workspace_table_untouched() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let manifest = tmp.path().join("Cargo.toml");
+        let original = "[package]\nname = \"batpak\"\n\n[workspace]\nmembers = []\n";
+        fs::write(&manifest, original)?;
+
+        detach_from_enclosing_workspace(&manifest)?;
+
+        assert_eq!(fs::read_to_string(&manifest)?, original);
+        Ok(())
+    }
+
+    #[test]
+    fn detach_treats_workspace_subtable_as_already_a_workspace_root() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let manifest = tmp.path().join("Cargo.toml");
+        let original = "[package]\nname = \"batpak\"\n\n[workspace.lints.rust]\n";
+        fs::write(&manifest, original)?;
+
+        detach_from_enclosing_workspace(&manifest)?;
+
+        assert_eq!(fs::read_to_string(&manifest)?, original);
+        Ok(())
+    }
 }
