@@ -204,6 +204,47 @@ fn process_boot_ns_is_nonzero_and_stable_in_process() {
 }
 
 #[test]
+fn chain_verification_accessor_returns_the_configured_non_default_policy() {
+    // PROPERTY: the accessor must return the CONFIGURED policy — a
+    // `Default::default()` body would read every configured `Recompute` back
+    // as `Crc` and silently skip the at-open tamper check. Kills
+    // `StoreConfig::chain_verification -> Default::default()`.
+    let configured = StoreConfig::new("target/test-chain-verification-accessor")
+        .with_chain_verification(ChainVerification::Recompute);
+    assert_eq!(
+        configured.chain_verification(),
+        ChainVerification::Recompute,
+        "PROPERTY: a configured non-default ChainVerification must be returned as-is"
+    );
+    assert_eq!(
+        StoreConfig::new("target/test-chain-verification-default").chain_verification(),
+        ChainVerification::Crc,
+        "an unconfigured store trusts the per-frame CRC (the default)"
+    );
+}
+
+#[test]
+fn validated_process_boot_ns_delegates_to_the_runtime_clock() {
+    // PROPERTY: the accessor must report the wrapped runtime clock's process
+    // epoch marker, not a constant — projection/cache freshness compares this
+    // marker across restarts, so a constant would alias every process. Kills
+    // `ValidatedStoreConfig::process_boot_ns -> 1`.
+    let runtime = StoreConfig::new("target/test-boot-ns-delegation")
+        .validated()
+        .expect("config validates");
+    assert_eq!(
+        runtime.process_boot_ns(),
+        runtime.clock().process_boot_ns(),
+        "PROPERTY: process_boot_ns must delegate to the runtime clock's epoch marker"
+    );
+    assert_ne!(
+        runtime.process_boot_ns(),
+        1,
+        "PROPERTY: the process epoch marker is a captured wall-clock anchor, never a 1 sentinel"
+    );
+}
+
+#[test]
 fn now_mono_ns_advances_beyond_nonzero_sentinel() {
     let clock = SystemClock::new();
     std::thread::sleep(Duration::from_millis(1));

@@ -588,3 +588,34 @@ fn append_frames_from_segment_accepts_trusted_empty_frame_region() {
          the lower-bound guard `frames_end < frames_start` must NOT reject the inclusive boundary",
     );
 }
+
+#[test]
+fn try_decode_frame_at_admits_a_frame_ending_exactly_at_file_len() {
+    // The frame-tail bound is EXCLUSIVE of nothing: a CRC-valid frame whose
+    // tail lands EXACTLY on `file_len` is the common last frame of a segment
+    // and must decode; only a tail strictly PAST `file_len` is "no frame
+    // here". The `>` -> `==` mutant inverts both sides of this boundary and
+    // fails both assertions below.
+    let frame = frame_encode(&serde_json::json!({ "payload": "exact-tail" })).expect("encode");
+    let file_len = frame.len() as u64;
+    let mut source = Cursor::new(frame);
+
+    let admitted =
+        try_decode_frame_at(&mut source, 0, file_len).expect("in-memory probe cannot fail seek");
+    assert_eq!(
+        admitted,
+        Some(file_len),
+        "a CRC-valid frame whose tail lands exactly on file_len is a real frame"
+    );
+
+    // Same bytes, but the authoritative bound now excludes the final byte:
+    // the tail extends past `file_len`, so no frame may be admitted — even
+    // though the in-memory source still physically holds the whole frame and
+    // the read WOULD succeed if the bound were ignored.
+    let admitted_past_bound = try_decode_frame_at(&mut source, 0, file_len - 1)
+        .expect("in-memory probe cannot fail seek");
+    assert_eq!(
+        admitted_past_bound, None,
+        "a frame tail strictly past file_len must be rejected by the bound, not by a short read"
+    );
+}

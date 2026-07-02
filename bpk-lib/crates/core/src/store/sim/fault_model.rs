@@ -261,4 +261,60 @@ mod tests {
             "torn writes never exceed the requested length"
         );
     }
+
+    #[test]
+    fn fired_fault_is_bounded_by_the_exact_roll_modulo_op_len() {
+        // Find the first seed whose FIRST roll both fires (multiple of 8) and
+        // lands off the op_len grid (roll % 100 != 0), so the bounded prefix
+        // is provably NONZERO. The oracle draws the roll from an independent
+        // fastrand instance with the same seed — a bounded deterministic
+        // search, not a wait. The `op_len == 0` -> `!= 0` mutant inverts the
+        // bounded() guard and returns 0 for every nonzero op_len.
+        let mut chosen = None;
+        for seed in 0..10_000u64 {
+            let roll = fastrand::Rng::with_seed(seed).u32(..);
+            if roll.is_multiple_of(8) && !roll.is_multiple_of(100) {
+                chosen = Some((seed, roll));
+                break;
+            }
+        }
+        let (seed, roll) =
+            chosen.expect("a firing, off-grid first roll exists among the first 10_000 seeds");
+        let expected = (roll as usize) % 100;
+        assert_ne!(
+            expected, 0,
+            "scenario shape: the bounded prefix must be nonzero"
+        );
+
+        let fs = InMemFaultFs::new(seed);
+        let fault = fs.decide_fault(&point(), 100);
+        assert_eq!(
+            fault,
+            Fault::TornWrite {
+                prefix_len: expected
+            },
+            "a fired torn write is bounded to roll % op_len — the exact PRNG draw, never 0"
+        );
+    }
+
+    #[test]
+    fn fired_fault_on_a_zero_length_op_bounds_to_zero_without_dividing() {
+        // op_len == 0 must short-circuit the modulo to 0 — the inverted guard
+        // instead computes `roll % 0` and dies by zero-division.
+        let mut chosen = None;
+        for seed in 0..10_000u64 {
+            if fastrand::Rng::with_seed(seed).u32(..).is_multiple_of(8) {
+                chosen = Some(seed);
+                break;
+            }
+        }
+        let seed = chosen.expect("a firing first roll exists among the first 10_000 seeds");
+        let fs = InMemFaultFs::new(seed);
+        let fault = fs.decide_fault(&InjectionPoint::ReadAt { offset: 0, len: 0 }, 0);
+        assert_eq!(
+            fault,
+            Fault::ShortRead { returned: 0 },
+            "a zero-length op bounds its fault to 0 via the guard, not via a % 0 panic"
+        );
+    }
 }

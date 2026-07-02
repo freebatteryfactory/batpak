@@ -252,6 +252,54 @@ fn payload_key_debug_does_not_leak_bytes() {
 }
 
 #[test]
+fn payload_aad_layout_is_versioned_length_prefixed_and_coordinate_bound() {
+    // Pin the DOCUMENTED AAD encoding byte-for-byte: version 0x01, u32-le
+    // length-prefixed entity then scope, kind u16 le, event id u128 be. The
+    // write seam (writer/encrypt) and the read seam (read_api) rebuild this
+    // independently, so the byte layout itself is the contract — a degenerate
+    // AAD (`payload_aad -> vec![0]`) would still round-trip through both seams
+    // and silently un-bind every ciphertext from its event identity. Kills
+    // `payload_aad -> vec![0]` structurally (the relocation proof below kills
+    // it behaviorally).
+    let coordinate = coord("entity:aad-layout");
+    let kind = EventKind::custom(0xF, 2);
+    let aad = payload_aad(&coordinate, kind, EventId::from(0x0102_0304_u128));
+
+    let entity = coordinate.entity().as_bytes();
+    let scope = coordinate.scope().as_bytes();
+    let mut expected = vec![0x01];
+    expected.extend_from_slice(
+        &u32::try_from(entity.len())
+            .expect("entity length fits u32")
+            .to_le_bytes(),
+    );
+    expected.extend_from_slice(entity);
+    expected.extend_from_slice(
+        &u32::try_from(scope.len())
+            .expect("scope length fits u32")
+            .to_le_bytes(),
+    );
+    expected.extend_from_slice(scope);
+    expected.extend_from_slice(&kind.as_raw_u16().to_le_bytes());
+    expected.extend_from_slice(&0x0102_0304_u128.to_be_bytes());
+    assert_eq!(
+        aad, expected,
+        "AAD must follow the documented layout exactly (version, len-prefixed \
+         entity/scope, kind le, id be)"
+    );
+
+    let other_coordinate = payload_aad(
+        &coord("entity:aad-layout-other"),
+        kind,
+        EventId::from(0x0102_0304_u128),
+    );
+    assert_ne!(
+        aad, other_coordinate,
+        "AAD must vary with the coordinate — a constant AAD makes ciphertext relocatable"
+    );
+}
+
+#[test]
 fn payload_aad_binds_ciphertext_to_event_identity() {
     // The AAD binds coordinate + kind + event id, so a ciphertext sealed under
     // one event's identity cannot be opened under another's (relocation/tamper),

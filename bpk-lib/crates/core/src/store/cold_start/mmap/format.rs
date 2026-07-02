@@ -275,3 +275,45 @@ impl MmapIndexEntry {
         Ok(decoded)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn header_and_entry_sizes_are_pinned_to_the_on_disk_layout() {
+        // Exact literals, never re-derived arithmetic: the header-length
+        // constants ARE the wire format, and a reader that disagrees with the
+        // writer by even one byte misparses every entry after the header. The
+        // v1 header is a 12-byte prefix (magic 6 + version 2 + count 4) plus a
+        // 44-byte tail; the `+` -> `*` mutant on that sum yields 528 and shifts
+        // every v1 field read. Kills `+` -> `*` in HEADER_LEN_V1 (format.rs:17).
+        assert_eq!(PREFIX_LEN, 12, "prefix = magic(6) + version(2) + count(4)");
+        assert_eq!(
+            header_len(1),
+            56,
+            "v1 header = 12-byte prefix + 44-byte tail"
+        );
+        assert_eq!(
+            header_len(2),
+            64,
+            "v2 header = 12-byte prefix + 52-byte tail"
+        );
+        assert_eq!(header_len(4), 64, "v4 shares the v2..v4 header length");
+        assert_eq!(
+            header_len(5),
+            72,
+            "v5 header = 12-byte prefix + 60-byte tail"
+        );
+        assert_eq!(header_tail_len(1), 44, "v1 tail is six fixed fields");
+        assert_eq!(header_tail_len(3), 52, "v2..v4 tail adds one u64");
+        assert_eq!(header_tail_len(5), 60, "v5 tail adds another u64");
+        assert_eq!(entry_size(2), 162, "v2 entry byte width");
+        assert_eq!(entry_size(3), 170, "v3/v4 entry adds lane+depth");
+        assert_eq!(
+            entry_size(5),
+            218,
+            "v5 entry = 170 + extension offset(8) + len(8) + hash(32)"
+        );
+    }
+}

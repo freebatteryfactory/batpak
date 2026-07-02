@@ -376,4 +376,27 @@ mod tests {
             "the size guard must reject an undersized frame without consuming the source"
         );
     }
+
+    #[test]
+    fn exactly_header_sized_frame_is_read_not_pre_rejected() {
+        // The cheap pre-check rejects ONLY frames strictly smaller than the
+        // 8-byte [len][crc] header. A frame of EXACTLY 8 bytes passes the
+        // guard and reaches the I/O path: it decodes to an empty payload
+        // (len = 0, crc32("") = 0) whose deserialize fails, so the hash is
+        // still None — but the source HAS been consumed (seek to `at`, then
+        // an 8-byte read leaves the cursor at 8). The `< 8` -> `<= 8` mutant
+        // short-circuits at total == 8 and leaves the cursor parked at 41;
+        // pinning the post-read position convicts it.
+        let mut source = Cursor::new(vec![0u8; 64]);
+        source
+            .seek(SeekFrom::Start(41))
+            .expect("park the cursor before the call");
+        let hash = read_frame_event_hash(&mut source, 0, 8);
+        assert_eq!(hash, None, "a bare 8-byte header carries no event hash");
+        assert_eq!(
+            source.position(),
+            8,
+            "an exactly-header-sized frame must be seeked-to and read, not pre-rejected"
+        );
+    }
 }

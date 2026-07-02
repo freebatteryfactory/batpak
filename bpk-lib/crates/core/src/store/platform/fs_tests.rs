@@ -292,3 +292,183 @@ fn real_fs_routes_positioned_read_exact_at() -> Result<(), Box<dyn Error>> {
     );
     Ok(())
 }
+
+#[test]
+fn read_exact_at_completes_exactly_at_the_boundary_iteration() -> Result<(), Box<dyn Error>> {
+    use super::PositionedReadError;
+    use std::io::Write;
+
+    let dir = tempfile::TempDir::new()?;
+    let path = dir.path().join("boundary.bin");
+    let mut writer = std::fs::File::create(&path)?;
+    writer.write_all(&[7u8; 16])?;
+    writer.sync_all()?;
+    drop(writer);
+    let mut handle = super::open_file(&path)?;
+
+    // Exact-length read: the loop iteration that returns EXACTLY the requested
+    // count must terminate with Ok — a `<` -> `<=` loop bound issues one extra
+    // zero-length read after completion and misreports the finished read as
+    // ShortRead. The buffer content pins that all 16 bytes landed.
+    let mut full = [0u8; 16];
+    let complete = super::read_exact_at(&mut handle, 0, &mut full);
+    assert!(
+        matches!(complete, Ok(())),
+        "a read of exactly the file length must complete Ok, got {complete:?}"
+    );
+    assert_eq!(full, [7u8; 16], "the exact-boundary read fills every byte");
+
+    // A tail read ending exactly at EOF is equally complete.
+    let mut tail = [0u8; 4];
+    let tail_read = super::read_exact_at(&mut handle, 12, &mut tail);
+    assert!(
+        matches!(tail_read, Ok(())),
+        "a tail read ending exactly at EOF must complete Ok, got {tail_read:?}"
+    );
+
+    // Zero-length read: trivially complete, no I/O required.
+    let mut empty: [u8; 0] = [];
+    let nothing = super::read_exact_at(&mut handle, 16, &mut empty);
+    assert!(
+        matches!(nothing, Ok(())),
+        "a zero-length read is complete by definition, got {nothing:?}"
+    );
+
+    // Contrast: one byte past the tail must remain a ShortRead carrying the
+    // exact count that DID land before EOF.
+    let mut over = [0u8; 5];
+    let short = super::read_exact_at(&mut handle, 12, &mut over);
+    assert!(
+        matches!(short, Err(PositionedReadError::ShortRead { bytes_read: 4 })),
+        "a read one byte past EOF reports the 4 bytes that landed, got {short:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn remove_file_if_present_reports_removal_then_absence_exactly() -> Result<(), Box<dyn Error>> {
+    let dir = tempfile::TempDir::new()?;
+    let path = dir.path().join("victim.bin");
+    std::fs::write(&path, b"bytes")?;
+
+    // A present file: Ok(true) AND the file is actually gone — a stubbed
+    // `Ok(false)` body would skip the removal too, so both pins are needed.
+    let removed = RealFs.remove_file_if_present(&path)?;
+    assert!(removed, "removing an existing file must report Ok(true)");
+    assert!(
+        !path.exists(),
+        "the file must actually be gone after Ok(true)"
+    );
+
+    // Already absent: the tolerated NotFound, reported as Ok(false).
+    let absent = RealFs.remove_file_if_present(&path)?;
+    assert!(!absent, "an already-absent file must report Ok(false)");
+    Ok(())
+}
+
+/// [`StoreFs`] whose `remove_file` fails with a NON-NotFound error; every other
+/// op delegates to [`RealFs`]. Exercises the PROVIDED `remove_file_if_present`
+/// default method: ONLY NotFound may be swallowed as `Ok(false)` — any other
+/// error is real damage that must propagate.
+struct DenyRemoveFs;
+
+impl StoreFs for DenyRemoveFs {
+    fn read_dir(&self, path: &std::path::Path) -> std::io::Result<std::fs::ReadDir> {
+        RealFs.read_dir(path)
+    }
+    fn create_dir_all(&self, path: &std::path::Path) -> std::io::Result<()> {
+        RealFs.create_dir_all(path)
+    }
+    fn create_new_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<std::fs::File, crate::store::StoreError> {
+        RealFs.create_new_file(path)
+    }
+    fn sync_file_with_mode(
+        &self,
+        file: &std::fs::File,
+        path: &std::path::Path,
+        mode: &crate::store::SyncMode,
+    ) -> Result<(), crate::store::StoreError> {
+        RealFs.sync_file_with_mode(file, path, mode)
+    }
+    fn sync_file_all(&self, file: &std::fs::File, path: &std::path::Path) -> std::io::Result<()> {
+        RealFs.sync_file_all(file, path)
+    }
+    fn sync_parent_dir(&self, path: &std::path::Path) -> Result<(), crate::store::StoreError> {
+        RealFs.sync_parent_dir(path)
+    }
+    fn reject_symlink_leaf(
+        &self,
+        path: &std::path::Path,
+        purpose: &str,
+    ) -> Result<(), crate::store::StoreError> {
+        RealFs.reject_symlink_leaf(path, purpose)
+    }
+    fn canonicalize(&self, path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+        RealFs.canonicalize(path)
+    }
+    fn symlink_metadata(&self, path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+        RealFs.symlink_metadata(path)
+    }
+    fn cow_copy_file(
+        &self,
+        from: &std::path::Path,
+        to: &std::path::Path,
+        preference: crate::store::CopyPreference,
+    ) -> std::io::Result<super::CowStrategyUsed> {
+        RealFs.cow_copy_file(from, to, preference)
+    }
+    fn copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<u64> {
+        RealFs.copy(from, to)
+    }
+    fn metadata(&self, path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+        RealFs.metadata(path)
+    }
+    fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        RealFs.rename(from, to)
+    }
+    fn remove_file(&self, _path: &std::path::Path) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "injected: remove_file denied",
+        ))
+    }
+    fn named_temp_in(&self, dir: &std::path::Path) -> std::io::Result<tempfile::NamedTempFile> {
+        RealFs.named_temp_in(dir)
+    }
+    fn persist_temp_with_parent_sync(
+        &self,
+        named_temp: tempfile::NamedTempFile,
+        final_path: &std::path::Path,
+        admission: crate::store::platform::sync::ParentDirSyncAdmission,
+    ) -> std::io::Result<()> {
+        RealFs.persist_temp_with_parent_sync(named_temp, final_path, admission)
+    }
+    fn read_exact_at(
+        &self,
+        file: &mut std::fs::File,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<(), super::PositionedReadError> {
+        RealFs.read_exact_at(file, offset, buf)
+    }
+}
+
+#[test]
+fn remove_file_if_present_propagates_non_not_found_errors() {
+    let dir = tempfile::TempDir::new().expect("create temp dir");
+    let path = dir.path().join("guarded.bin");
+    std::fs::write(&path, b"bytes").expect("write the guarded file");
+
+    // A PermissionDenied remove is REAL damage: swallowing it as Ok(false)
+    // (the `guard -> true` mutant) would report "already absent" for a file
+    // that is still on disk — the caller would then act on a lie.
+    let result = DenyRemoveFs.remove_file_if_present(&path);
+    assert!(
+        matches!(&result, Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied),
+        "only NotFound may be swallowed as Ok(false); a PermissionDenied removal must propagate"
+    );
+    assert!(path.exists(), "the guarded file must remain on disk");
+}

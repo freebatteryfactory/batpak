@@ -149,3 +149,62 @@ pub(crate) fn validate_watermark_segment(
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_segment_watermark_keeps_the_first_directory_entry_on_a_duplicate_id_tie() {
+        // "7.fbat" and "000007.fbat" are DIFFERENT files that both parse to
+        // segment id 7 (the stem grammar accepts unpadded base-10 on purpose —
+        // see `SegmentId::from_stem`). The max scan keeps the FIRST directory
+        // entry among equals (`segment_id > *current` is STRICT), so the
+        // watermark offset is the byte length of whichever tied file the
+        // directory yields first. The oracle below replays that same
+        // first-wins rule over the same (stable) read_dir order; the
+        // `>` -> `>=` mutant keeps the LAST tied entry instead and reports the
+        // other file's length (the tied files differ: 3 vs 9 bytes).
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let write_segment = |name: &str, bytes: &'static [u8]| {
+            platform::fs::write_file_atomically(dir.path(), &dir.path().join(name), name, |file| {
+                use std::io::Write;
+                file.write_all(bytes).map_err(StoreError::Io)
+            })
+            .expect("write segment fixture through the platform seam");
+        };
+        write_segment("000001.fbat", b"aaaaa");
+        write_segment("7.fbat", b"xyz");
+        write_segment("000007.fbat", b"123456789");
+
+        let (segment_id, offset) =
+            latest_segment_watermark(dir.path()).expect("watermark scan succeeds");
+        assert_eq!(segment_id, 7, "the max id wins regardless of tie order");
+
+        let mut expected: Option<(u64, PathBuf)> = None;
+        for entry in platform::fs::read_dir(dir.path()).expect("read dir for the oracle") {
+            let entry = entry.expect("oracle dir entry");
+            let path = entry.path();
+            let StoreFileKind::Segment(id) = StoreFileKind::from_path(&path) else {
+                continue;
+            };
+            let id = id.as_u64();
+            if expected
+                .as_ref()
+                .map(|(current, _)| id > *current)
+                .unwrap_or(true)
+            {
+                expected = Some((id, path));
+            }
+        }
+        let (expected_id, expected_path) = expected.expect("oracle saw the segment files");
+        assert_eq!(expected_id, 7, "oracle sanity: the tie sits at the max id");
+        let expected_offset = platform::fs::metadata(&expected_path)
+            .expect("oracle metadata")
+            .len();
+        assert_eq!(
+            offset, expected_offset,
+            "on a duplicate-id tie the FIRST directory entry's length is the watermark offset"
+        );
+    }
+}

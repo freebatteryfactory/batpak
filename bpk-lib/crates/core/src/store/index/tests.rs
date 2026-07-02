@@ -349,3 +349,30 @@ fn projection_replay_plan_preserves_scan_watermark_when_tail_candidate_is_hidden
             "PROPERTY: only visible candidates are replayed, while the watermark still records the scan high-water mark"
         );
 }
+
+#[test]
+fn read_idemp_file_distinguishes_missing_from_unreadable() {
+    use crate::store::index::idemp::{read_idemp_file, IdempLoad, IDEMP_FILENAME};
+
+    // Absent file — the first-open case — MUST load as Missing, never as
+    // Invalid: Missing is silent, Invalid is logged loudly as data-shaped
+    // damage. The NotFound guard's `==` -> `!=` mutant swaps both outcomes.
+    let dir = tempfile::TempDir::new().expect("create temp data dir");
+    let missing = read_idemp_file(dir.path()).expect("an absent idemp file is not an error");
+    assert!(
+        matches!(missing, IdempLoad::Missing),
+        "an absent index.idemp is Missing (first open), never Invalid"
+    );
+
+    // Present-but-unreadable — a directory squatting on the filename makes the
+    // read fail with a NON-NotFound error — MUST degrade to Invalid carrying
+    // the read error, never be misreported as the silent Missing.
+    std::fs::create_dir(dir.path().join(IDEMP_FILENAME))
+        .expect("squat a directory on the idemp filename");
+    let unreadable =
+        read_idemp_file(dir.path()).expect("an unreadable idemp file degrades, not errors");
+    assert!(
+        matches!(&unreadable, IdempLoad::Invalid { reason } if reason.starts_with("read failed")),
+        "an unreadable index.idemp is Invalid with the read error as its reason"
+    );
+}

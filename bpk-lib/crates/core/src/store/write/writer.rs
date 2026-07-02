@@ -27,6 +27,8 @@ use flume::{Receiver, Sender};
 use std::sync::Arc;
 mod append;
 mod batch;
+#[cfg(all(test, feature = "dangerous-test-hooks", feature = "payload-encryption"))]
+mod batch_fence_crash_tests;
 #[cfg(feature = "payload-encryption")]
 mod encrypt;
 mod fence_runtime;

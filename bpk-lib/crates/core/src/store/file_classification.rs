@@ -173,8 +173,58 @@ impl StoreFileKind {
 
 #[cfg(test)]
 mod tests {
-    use super::StoreFileKind;
+    use super::{StoreFileKind, KEYSET_FILENAME};
     use crate::store::segment::SegmentId;
+    use std::path::Path;
+
+    #[test]
+    fn from_path_classifies_the_keyset_file_as_its_exact_kind() {
+        // PROPERTY: the classifier is the single source of truth for
+        // recognising the durable crypto-shred keyset — scans, snapshot, and
+        // fork semantics all key off this kind, and a DEFAULT build (no
+        // `payload-encryption`) must still recognise the file so it is never
+        // mistaken for a segment or foreign junk. Deleting the match arm
+        // demotes it to `Other`. Kills `delete match arm Some(KEYSET_FILENAME)`
+        // in `StoreFileKind::from_path`.
+        assert_eq!(
+            StoreFileKind::from_path(Path::new(KEYSET_FILENAME)),
+            StoreFileKind::Keyset,
+            "the bare keyset filename must classify as Keyset"
+        );
+        assert_eq!(
+            StoreFileKind::from_path(Path::new("/data/store-a/keyset.fbatk")),
+            StoreFileKind::Keyset,
+            "a full keyset path must classify by its file name"
+        );
+        assert_eq!(
+            StoreFileKind::from_path(Path::new("keyset.fbatk.bak")),
+            StoreFileKind::Other,
+            "only the exact keyset file name is the keyset — no filename folklore"
+        );
+    }
+
+    #[test]
+    fn should_clear_from_snapshot_destination_discriminates_store_artifacts_from_other() {
+        // PROPERTY: the snapshot pre-clear pass must wipe store-shaped
+        // artifacts left in a destination but leave foreign files (`Other`)
+        // AND the crypto-shred keyset untouched — clearing a resident keyset
+        // would crypto-shred every encrypted payload it protects. Mirrors the
+        // fork-destination twin below; assert BOTH polarities. Kills
+        // `should_clear_from_snapshot_destination -> bool with true`.
+        let segment_id = SegmentId::from_stem("0").expect("base-10 stem parses");
+        assert!(
+            StoreFileKind::Segment(segment_id).should_clear_from_snapshot_destination(),
+            "a store segment MUST be cleared from a snapshot destination before copy"
+        );
+        assert!(
+            !StoreFileKind::Other.should_clear_from_snapshot_destination(),
+            "a foreign (Other) file must NOT be cleared from a snapshot destination"
+        );
+        assert!(
+            !StoreFileKind::Keyset.should_clear_from_snapshot_destination(),
+            "the crypto-shred keyset must NOT be cleared from a snapshot destination"
+        );
+    }
 
     #[test]
     fn should_clear_from_fork_destination_discriminates_store_artifacts_from_other() {
