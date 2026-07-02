@@ -209,13 +209,20 @@ pub(super) const INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT: &str = r"crates/core/
 //     rewrites `all()` to call its own `Default`, which calls `all()` — unbounded
 //     recursion to stack abort. Not an observational equivalent; a degenerate
 //     recursion artifact registered to skip the abort run.
+// NOTE (2026-07-01): the former `< -> ==` twin of the `<=` entry was REMOVED.
+// The append-level replay race is deterministically reconstructible (the import
+// filter callback plants durable idemp entries between the key check and
+// `append_batch`), so
+// `import.rs::tests::append_level_replay_receipt_below_the_frontier_counts_as_deduplicated`
+// reaches the arm and KILLS the mutant — it was never equivalent, only unreached.
+// The `<=` entry stays: it diverges from `<` only for a receipt landing EXACTLY
+// at `pre_import_frontier`, and whether that boundary counts as imported or
+// deduplicated is an open owner decision (counter-only today).
 pub(super) const IMPORT_EQUIVALENT_MUTANTS: &[&str] = &[
-    r"crates/core/src/store/import\.rs:.*replace < with == in import_events",
     r"crates/core/src/store/import\.rs:.*replace < with <= in import_events",
     r"crates/core/src/store/import\.rs:.*replace \|\| with && in import_key_already_present",
     r"crates/core/src/store/import\.rs:.*replace ImportSelector::all -> Self with Default::default",
 ];
-pub(super) const MUTANT_EXCLUDE_RES: &[&str] = &[INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT];
 // Platform-backend seam: cfg-gated reflink_impl variants. The Linux FICLONE
 // reflink_impl (fs.rs:215) IS compiled and IS killed on the Linux CI runner, so
 // it is NOT excluded. These entries are the macOS (clonefile) and unsupported
@@ -247,6 +254,33 @@ const FORK_ISOLATION_MUTANT_EXCLUDE_RES: &[&str] = &[
     r"file_classification\.rs:.*replace match guard segment_id.as_u64\(\) == active_segment_id with true in StoreFileKind::fork_strategy",
 ];
 const SEGMENT_SCAN_MUTANT_EXCLUDE_RES: &[&str] = &[];
+// netbat-boundary-protocol seam: the TLS control-drain guards in
+// `drain_control_frames` (stream_tcp_tls.rs) carry three witnessed exclusion
+// families. Line-pinned like the reflink band because the cargo-mutants
+// descriptions collide with KILLED neighbours (the WouldBlock guards at
+// :248/:266 are caught by the stream_tcp_tls_tests sidecar):
+//   * :249 — plaintext-side `Interrupted` guard: rustls 0.23's buffered
+//     `Reader::read` returns only Ok/WouldBlock/UnexpectedEof (its
+//     check_no_bytes_state), so `Interrupted` is unreachable there and every
+//     guard mutation reroutes to an identical outcome.
+//   * :256 — the drain-budget `>` boundary: `>=`/`==` stop one `read_tls` call
+//     early; the 63-vs-64 recv(2) delta is absorbed by the next drain pass and
+//     is unobservable without syscall instrumentation (empirically probed —
+//     Linux task-IO `syscr` counts read(2) only, and default tcp_rmem cannot
+//     pre-stage 64 deterministic maximal reads).
+//   * :267 — socket-side `Interrupted` guard: EINTR on recv(2) is not
+//     deterministically producible; `-> true` on ECONNRESET converges to the
+//     same PeerGone via the post-reset EOF.
+const NETBAT_BOUNDARY_MUTANT_EXCLUDE_RES: &[&str] = &[
+    r"stream_tcp_tls\.rs:249:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with true in drain_control_frames",
+    r"stream_tcp_tls\.rs:249:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with false in drain_control_frames",
+    r"stream_tcp_tls\.rs:249:.*replace == with != in drain_control_frames",
+    r"stream_tcp_tls\.rs:256:.*replace > with >= in drain_control_frames",
+    r"stream_tcp_tls\.rs:256:.*replace > with == in drain_control_frames",
+    r"stream_tcp_tls\.rs:267:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with true in drain_control_frames",
+    r"stream_tcp_tls\.rs:267:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with false in drain_control_frames",
+    r"stream_tcp_tls\.rs:267:.*replace == with != in drain_control_frames",
+];
 // No equivalent or unkillable mutants registered for the writer-commit seam.
 // The two staging.rs mutants previously excluded here (`PreparedBatch::len -> 0`
 // and `+= -> -=` in `push_shared_parts`) were NOT equivalent: both are CAUGHT in
@@ -574,14 +608,59 @@ pub(super) fn surface_excludes(surface: MutantSurface) -> &'static [&'static str
     }
 }
 
-/// The `store/sim/**` tree is `dangerous-test-hooks`-only (see [`surface_excludes`]);
-/// excluding it from the no-default surface strips phantom survivors, not real
-/// mutants. `no_default_surface_excludes_the_cfg_gated_sim_tree` pins this so a
-/// later refactor of `surface_excludes` cannot silently re-pollute the denominator.
-const NO_DEFAULT_SURFACE_EXCLUDES: &[&str] = &["crates/core/src/store/sim/**/*.rs"];
+/// The `store/sim/**` tree is `dangerous-test-hooks`-only and the whole
+/// `store/keyscope` tree is `payload-encryption`-only (module-level cfg at
+/// `store/mod.rs:39`); excluding them from the no-default surface strips
+/// phantom survivors, not real mutants — both trees are mutated and killed on
+/// the all-features surface. `no_default_surface_excludes_the_cfg_gated_sim_tree`
+/// pins this so a later refactor of `surface_excludes` cannot silently
+/// re-pollute the denominator.
+const NO_DEFAULT_SURFACE_EXCLUDES: &[&str] = &[
+    "crates/core/src/store/sim/**/*.rs",
+    "crates/core/src/store/keyscope.rs",
+    "crates/core/src/store/keyscope/**/*.rs",
+];
 
-fn surface_exclude_res(_surface: MutantSurface) -> &'static [&'static str] {
-    MUTANT_EXCLUDE_RES
+// Surface-level regex exclusions. Shared entries apply to BOTH surfaces:
+//   * INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT (recursion-to-abort artifact).
+//   * `fs.rs:34x-35x read_exact_at` — the `#[cfg(not(unix))]` fallback branch of
+//     `read_exact_at` (fs.rs ~344-360, below the unix FileExt branch at ~327-343)
+//     is not compiled on the Linux CI runner, so cargo-mutants cannot exercise it
+//     there (same phantom class as the reflink band). The unix twin at ~:331 stays
+//     tested (`platform/fs_tests.rs::read_exact_at_completes_exactly_at_the_boundary_iteration`
+//     kills it, and kills this variant on any non-unix lane).
+const SHARED_SURFACE_EXCLUDE_RES: &[&str] = &[
+    INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT,
+    r"fs\.rs:3[45][0-9]:.*read_exact_at",
+];
+// The no-default surface applies the shared entries PLUS the cfg-phantom set.
+// cargo-mutants is cfg-blind, so mutants inside feature-gated items are listed
+// on BOTH surfaces but land in dead code under `--no-default-features` —
+// build+tests pass unchanged and the mutant scores a phantom "missed" that no
+// test on that surface can ever kill (the same class the `store/sim/**`
+// file-glob strips; these are single gated items inside otherwise-live files,
+// so they need per-symbol regexes instead of a glob). Each is mutated AND
+// killed on the all-features surface:
+//   * `step_ancestor_key_aware` — `#[cfg(feature = "payload-encryption")]`
+//     (ancestry/mod.rs:286); killed by crypto_shred_ancestry +
+//     mutation_kill_wpc_round3_encrypted.
+//   * `CooperativePump` — `#[cfg(feature = "dangerous-test-hooks")]`
+//     (write/writer.rs:132); killed by mutation_kill_wpc_round3_cooperative.
+//   * `with_fault_injector` — `#[cfg(feature = "dangerous-test-hooks")]`
+//     (config.rs:522); killed by the config accessor pins.
+const NO_DEFAULT_SURFACE_EXCLUDE_RES: &[&str] = &[
+    INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT,
+    r"fs\.rs:3[45][0-9]:.*read_exact_at",
+    r"ancestry/mod\.rs:.*step_ancestor_key_aware",
+    r"write/writer\.rs:.*CooperativePump",
+    r"config\.rs:.*with_fault_injector",
+];
+
+pub(super) fn surface_exclude_res(surface: MutantSurface) -> &'static [&'static str] {
+    match surface {
+        MutantSurface::AllFeatures => SHARED_SURFACE_EXCLUDE_RES,
+        MutantSurface::NoDefaultFeatures => NO_DEFAULT_SURFACE_EXCLUDE_RES,
+    }
 }
 
 fn critical_seam_exclude_res(slug: &str) -> &'static [&'static str] {
@@ -592,6 +671,7 @@ fn critical_seam_exclude_res(slug: &str) -> &'static [&'static str] {
         "import-reapply" => IMPORT_EQUIVALENT_MUTANTS,
         "platform-backend" => PLATFORM_BACKEND_MUTANT_EXCLUDE_RES,
         "fork-isolation" => FORK_ISOLATION_MUTANT_EXCLUDE_RES,
+        "netbat-boundary-protocol" => NETBAT_BOUNDARY_MUTANT_EXCLUDE_RES,
         _ => &[],
     }
 }
@@ -872,6 +952,23 @@ mod tests {
             REPO_WIDE_ALL_FEATURES_MUTANT_FILES.contains(&store_glob),
             "all-features include set must still cover store/** (and thus sim) so the \
              no-default exclude loses no real coverage"
+        );
+
+        // Same phantom class, different feature: the whole keyscope tree is
+        // `payload-encryption`-gated at the module declaration (store/mod.rs), so
+        // the no-default surface must drop it while all-features keeps grading it
+        // (the crypto-shred kill tests do the catching there).
+        let keyscope_file = "crates/core/src/store/keyscope.rs";
+        let keyscope_glob = "crates/core/src/store/keyscope/**/*.rs";
+        assert!(
+            no_default.contains(&keyscope_file) && no_default.contains(&keyscope_glob),
+            "no-default surface must exclude the payload-encryption-gated keyscope tree; \
+             excludes = {no_default:?}"
+        );
+        assert!(
+            !all_features.iter().any(|glob| glob.contains("keyscope")),
+            "all-features surface must STILL mutate keyscope — its crypto-shred tests \
+             catch those mutants; excludes = {all_features:?}"
         );
     }
 

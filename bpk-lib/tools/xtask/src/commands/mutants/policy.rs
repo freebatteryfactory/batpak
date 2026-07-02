@@ -3,9 +3,9 @@ use std::path::Path;
 
 use super::dst_corpus::{load_dst_coverage_seams, DST_CORPUS_TEST_PACKAGE};
 use super::lanes::{
-    critical_mutation_seams, critical_mutation_smoke_lanes, surface_name,
-    CRITICAL_SEAM_MIN_CATCH_PCT, MUTANTS_OUTPUT_ROOT_LABEL, MUTANT_EXCLUDE_RES,
-    REPO_WIDE_ALL_FEATURES_MUTANT_FILES, REPO_WIDE_NO_DEFAULT_MUTANT_FILES, REPO_WIDE_SMOKE_SHARD,
+    critical_mutation_seams, critical_mutation_smoke_lanes, surface_exclude_res, surface_name,
+    CRITICAL_SEAM_MIN_CATCH_PCT, MUTANTS_OUTPUT_ROOT_LABEL, REPO_WIDE_ALL_FEATURES_MUTANT_FILES,
+    REPO_WIDE_NO_DEFAULT_MUTANT_FILES, REPO_WIDE_SMOKE_SHARD,
 };
 use super::lanes::{MutationLane, MutationScope};
 use super::score::{cargo_mutants_receipt_path, MutationScore};
@@ -280,8 +280,12 @@ pub(super) fn print_mutation_policy() {
         outln!("  no-default-features: {pattern}");
     }
     outln!(
-        "- Mutation regex excludes: {}.",
-        MUTANT_EXCLUDE_RES.join(", ")
+        "- Mutation regex excludes (all-features): {}.",
+        surface_exclude_res(MutantSurface::AllFeatures).join(", ")
+    );
+    outln!(
+        "- Mutation regex excludes (no-default-features): {}.",
+        surface_exclude_res(MutantSurface::NoDefaultFeatures).join(", ")
     );
     outln!(
         "- Mutation artifacts live under `{MUTANTS_OUTPUT_ROOT_LABEL}` so xtask owns the scratch surface."
