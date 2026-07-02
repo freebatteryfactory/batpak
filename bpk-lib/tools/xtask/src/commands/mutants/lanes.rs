@@ -632,6 +632,14 @@ const NO_DEFAULT_SURFACE_EXCLUDES: &[&str] = &[
 const SHARED_SURFACE_EXCLUDE_RES: &[&str] = &[
     INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT,
     r"fs\.rs:3[45][0-9]:.*read_exact_at",
+    // `query_any_hits_after`'s `1 << 20` trim threshold (and the line-269
+    // `with_capacity` twin): flipping to `>>` collapses the threshold to 0 so
+    // the amortized keep-k-smallest trim fires per push instead of per ~2×limit
+    // pushes — output-identical under allocator-unique global_sequence ordering
+    // (empirically bite-backed: 12/12 index sidecar tests pass under the
+    // mutant), only the amortization degrades, which no deterministic bounded
+    // test may observe. Witnessed in the exclusion registry.
+    r"index/query\.rs:26[89]:.*replace << with >>",
 ];
 // The no-default surface applies the shared entries PLUS the cfg-phantom set.
 // cargo-mutants is cfg-blind, so mutants inside feature-gated items are listed
@@ -641,9 +649,10 @@ const SHARED_SURFACE_EXCLUDE_RES: &[&str] = &[
 // file-glob strips; these are single gated items inside otherwise-live files,
 // so they need per-symbol regexes instead of a glob). Each is mutated AND
 // killed on the all-features surface:
-//   * `step_ancestor_key_aware` — `#[cfg(feature = "payload-encryption")]`
-//     (ancestry/mod.rs:286); killed by crypto_shred_ancestry +
-//     mutation_kill_wpc_round3_encrypted.
+//   * `step_ancestor_key_aware` + its private helper `finish_value` — both
+//     `#[cfg(feature = "payload-encryption")]` (ancestry/mod.rs:286/:369);
+//     killed by crypto_shred_ancestry + mutation_kill_wpc_round3_encrypted's
+//     exact-chain pins on the all-features surface.
 //   * `CooperativePump` — `#[cfg(feature = "dangerous-test-hooks")]`
 //     (write/writer.rs:132); killed by mutation_kill_wpc_round3_cooperative.
 //   * `with_fault_injector` — `#[cfg(feature = "dangerous-test-hooks")]`
@@ -651,7 +660,9 @@ const SHARED_SURFACE_EXCLUDE_RES: &[&str] = &[
 const NO_DEFAULT_SURFACE_EXCLUDE_RES: &[&str] = &[
     INDEX_TOPOLOGY_DEFAULT_EQUIVALENT_MUTANT,
     r"fs\.rs:3[45][0-9]:.*read_exact_at",
+    r"index/query\.rs:26[89]:.*replace << with >>",
     r"ancestry/mod\.rs:.*step_ancestor_key_aware",
+    r"ancestry/mod\.rs:.*finish_value",
     r"write/writer\.rs:.*CooperativePump",
     r"config\.rs:.*with_fault_injector",
 ];
