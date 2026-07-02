@@ -281,6 +281,17 @@ const NETBAT_BOUNDARY_MUTANT_EXCLUDE_RES: &[&str] = &[
     r"stream_tcp_tls\.rs:267:.*replace match guard error\.kind\(\) == io::ErrorKind::Interrupted with false in drain_control_frames",
     r"stream_tcp_tls\.rs:267:.*replace == with != in drain_control_frames",
 ];
+// syncbat-subscription-runtime seam (all-features): envelope.rs carries TWIN
+// read_delivery_stored variants — `#[cfg(feature = "payload-encryption")]` at
+// :512 (compiled + KILLED on this lane) and `#[cfg(not(payload-encryption))]`
+// at :528 (compiled OUT on this all-features lane). cargo-mutants is cfg-blind,
+// so the not() variant's ~11 body-fabrication mutants (:532) score phantom
+// misses here — the inverse of the no-default phantom class. The variant is
+// killed under default/no-default features by the feature-agnostic
+// encode_for_entry exact-envelope pins (bite-proven with Ok(None) hand-applied
+// under default features). Line-pinned to the not() variant only.
+const SYNCBAT_SUBSCRIPTION_MUTANT_EXCLUDE_RES: &[&str] =
+    &[r"envelope\.rs:53[0-9]:.*read_delivery_stored"];
 // No equivalent or unkillable mutants registered for the writer-commit seam.
 // The two staging.rs mutants previously excluded here (`PreparedBatch::len -> 0`
 // and `+= -> -=` in `push_shared_parts`) were NOT equivalent: both are CAUGHT in
@@ -640,6 +651,12 @@ const SHARED_SURFACE_EXCLUDE_RES: &[&str] = &[
     // mutant), only the amortization degrades, which no deterministic bounded
     // test may observe. Witnessed in the exclusion registry.
     r"index/query\.rs:26[89]:.*replace << with >>",
+    // The `#[cfg(not(payload-encryption))]` read_delivery_stored variant
+    // (envelope.rs:528) is compiled OUT on the all-features surface — its :532
+    // fabrication mutants are phantoms here (inverse of the no-default class).
+    // Deliberately NOT mirrored into NO_DEFAULT_SURFACE_EXCLUDE_RES: there the
+    // variant IS compiled and the feature-agnostic envelope pins kill it.
+    r"envelope\.rs:53[0-9]:.*read_delivery_stored",
 ];
 // The no-default surface applies the shared entries PLUS the cfg-phantom set.
 // cargo-mutants is cfg-blind, so mutants inside feature-gated items are listed
@@ -683,6 +700,7 @@ fn critical_seam_exclude_res(slug: &str) -> &'static [&'static str] {
         "platform-backend" => PLATFORM_BACKEND_MUTANT_EXCLUDE_RES,
         "fork-isolation" => FORK_ISOLATION_MUTANT_EXCLUDE_RES,
         "netbat-boundary-protocol" => NETBAT_BOUNDARY_MUTANT_EXCLUDE_RES,
+        "syncbat-subscription-runtime" => SYNCBAT_SUBSCRIPTION_MUTANT_EXCLUDE_RES,
         _ => &[],
     }
 }
