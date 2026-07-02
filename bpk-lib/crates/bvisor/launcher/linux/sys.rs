@@ -404,7 +404,9 @@ pub(crate) fn adopt_fd(fd: RawFd) -> File {
 /// return, closing only the parent's copy of the ruleset fd — the child holds its own
 /// post-clone3 copy, so the parent drop does not affect the child's confinement).
 ///
-/// `cgroup_fd` is the OPTIONAL inherited [`DescriptorRole::CgroupDir`] directory fd
+/// `cgroup_fd` is the OPTIONAL inherited
+/// [`DescriptorRole::CgroupDir`](bvisor::linux::protocol::DescriptorRole::CgroupDir)
+/// directory fd
 /// (`None` ⇒ no cgroup placement). When `Some`, `clone3` is asked (via
 /// `CLONE_INTO_CGROUP`) to place the child DIRECTLY into that prepared leaf at birth,
 /// so the workload is resource-confined the instant it exists — no post-fork migration

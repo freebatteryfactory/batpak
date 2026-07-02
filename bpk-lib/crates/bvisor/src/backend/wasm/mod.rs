@@ -1,8 +1,9 @@
 //! Wasm backend — WASI-preopen confinement (scaffolding).
 //!
 //! STEP (a) scaffolding: the HONEST per-platform [`SupportMatrix`] (pure data,
-//! always-compiled, cross-platform unit-testable) plus a [`WasmBackend`] struct
-//! whose `execute()` is a stub returning [`Outcome::Unsupported`]. A `wasmi`
+//! always-compiled, cross-platform unit-testable) plus a `WasmBackend` struct
+//! whose `execute()` is a stub returning
+//! [`Outcome::Unsupported`](crate::contract::report::Outcome::Unsupported). A `wasmi`
 //! interpreter skeleton lands in step (c); `wasmtime` depth runs on CI. Wasm has
 //! NO unsafe basement (wasmtime/wasmi are safe Rust), so there is NO `sys.rs`.
 //!

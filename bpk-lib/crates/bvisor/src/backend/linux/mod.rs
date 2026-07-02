@@ -1,10 +1,10 @@
 //! Linux backend — landlock + cgroup-v2 + launcher-process confinement.
 //!
 //! The HONEST per-platform [`SupportMatrix`] (pure data, always-compiled,
-//! cross-platform unit-testable) plus a [`LinuxBackend`] whose `execute()` runs the
+//! cross-platform unit-testable) plus a `LinuxBackend` whose `execute()` runs the
 //! workload through the confinement launcher (a clone3 child: fd-scrub → landlock
 //! `restrict_self` → cgroup placement → `fexecve`). The unsafe OS code is quarantined
-//! to the [`super::linux::sys`] basement + the `launcher/linux/` binary; this module's
+//! to the `super::linux::sys` basement + the `launcher/linux/` binary; this module's
 //! orchestration is SAFE. The machine ceiling (`profile()`) advertises ONLY what
 //! `execute()` genuinely backs with a real syscall — Filesystem (landlock above the
 //! ABI floor), LaunchWorkload + CaptureStreams (always), Kill + process_count (with a

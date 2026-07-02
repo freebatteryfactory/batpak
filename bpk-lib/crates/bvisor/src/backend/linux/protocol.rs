@@ -18,8 +18,8 @@
 //! step (#75) — NOT claimed here. The launcher may deny more, never report less danger.
 //!
 //! ## Why a wire view of the schedule, not the schedule type itself
-//! The real [`LoweringSchedule`]/[`ScheduleEntry`] are *proof-carrying*: possessing
-//! one means it was produced by `compile_schedule` (validated, canonical, acyclic).
+//! The real [`LoweringSchedule`]/[`ScheduleEntry`](crate::contract::lowering::ScheduleEntry)
+//! are *proof-carrying*: possessing one means `compile_schedule` produced it (validated, canonical, acyclic).
 //! Their fields are private and they derive no `serde`, deliberately — a
 //! deserialized schedule would NOT carry that proof. So the body embeds
 //! [`LoweringWireV1`], the serializable PROJECTION of an already-compiled

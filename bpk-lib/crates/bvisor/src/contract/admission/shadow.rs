@@ -59,7 +59,7 @@ pub struct RequirementInputs {
 /// request `(limit, derived-minimum, guarantee, evidence)` vs the backend's
 /// availability `(available, guarantee, evidence)`. The membrane passes the
 /// dimension iff `D ≤ L ∧ L ≤ A ∧ G_req ≤ G_avail ∧ E_req ⊆ E_avail` (the two-phase
-/// admission of [`crate::contract::budget`], flattened to a single pass bit here —
+/// admission of `crate::contract::budget`, flattened to a single pass bit here —
 /// the per-dimension reason selector is a later step).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BudgetInputs {

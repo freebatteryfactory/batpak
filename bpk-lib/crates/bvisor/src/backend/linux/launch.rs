@@ -8,9 +8,9 @@
 //! ## Safety posture
 //! This module is SAFE Rust (the runtime-shape gate fails the build on any `unsafe`
 //! outside the `sys.rs` basement). EXACTLY two basement calls do the raw work:
-//!   - [`sys::seal_plan_memfd`] — seal the encoded plan into a read-only memfd
+//!   - `sys::seal_plan_memfd` — seal the encoded plan into a read-only memfd
 //!     (`LEDGER:linux-backend-memfd-seal`);
-//!   - [`sys::spawn_launcher_with_fds`] — `Command::spawn` the launcher with a
+//!   - `sys::spawn_launcher_with_fds` — `Command::spawn` the launcher with a
 //!     post-fork `pre_exec` that only `dup2`/`fcntl`s a PRE-BUILT fd map
 //!     (`LEDGER:linux-backend-launcher-pre-exec`).
 //!
@@ -276,11 +276,11 @@ pub fn transcript_confinement_unavailable(transcript: &str) -> bool {
 /// ledgered basement calls (memfd seal + spawn pre_exec).
 ///
 /// The harness:
-///   1. seals the encoded plan into a read-only memfd ([`sys::seal_plan_memfd`]);
+///   1. seals the encoded plan into a read-only memfd (`sys::seal_plan_memfd`);
 ///   2. creates a control socketpair (host keeps the read end) + an error pipe;
 ///   3. assigns the launcher-channel fds at numbers ABOVE every authority slot (so they
-///      never collide), builds the [`LaunchFd`] table matching what the launcher expects;
-///   4. spawns the launcher with the explicit `BVISOR_*_FD` env ([`sys::spawn_launcher_with_fds`]);
+///      never collide), builds the `LaunchFd` table matching what the launcher expects;
+///   4. spawns the launcher with the explicit `BVISOR_*_FD` env (`sys::spawn_launcher_with_fds`);
 ///   5. drains the control transcript, then waits the launcher.
 ///
 /// # Errors

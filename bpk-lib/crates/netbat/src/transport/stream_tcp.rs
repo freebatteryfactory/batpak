@@ -236,7 +236,7 @@ where
 /// The accept loop accepts the RAW `TcpStream`, acquires the concurrency permit,
 /// and dispatches the session; the TLS handshake (when configured) runs INSIDE
 /// the worker, post-permit. A handshake failure is counted in
-/// [`TcpSubscriptionServeStats::tls_handshake_failures`] and the session is
+/// `TcpSubscriptionServeStats::tls_handshake_failures` and the session is
 /// dropped — never listener-fatal, so a slow or hostile handshake occupies at
 /// most one worker+permit slot.
 ///

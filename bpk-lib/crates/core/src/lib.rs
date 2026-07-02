@@ -96,22 +96,22 @@
 //! **Payload encryption & crypto-shred (opt-in).** Off by default: a default
 //! build writes plaintext payloads and pulls no crypto dependency. Enabling the
 //! non-default `payload-encryption` cargo feature and calling
-//! [`StoreConfig::with_payload_encryption`](crate::store::StoreConfig::with_payload_encryption)
+//! `StoreConfig::with_payload_encryption`
 //! seals every payload at rest under a per-scope 256-bit XChaCha20-Poly1305 key
 //! (a pure-Rust AEAD; key and nonce bytes come from the OS CSPRNG, and key
 //! material zeroizes on drop and never appears in `Debug`/`Display` output).
-//! [`KeyScopeGranularity`](crate::store::KeyScopeGranularity) chooses which
+//! `KeyScopeGranularity` chooses which
 //! events share a key — and therefore what a single erasure destroys:
 //! `PerEntity` (default, one key per entity, across all kinds), `PerCategory`
 //! (one key per event-kind category), `PerTypeId` (one key per full kind), or
 //! `PerEvent` (one key per individual event, the finest).
-//! [`Store::shred_scope`](crate::store::Store::shred_scope) then crypto-shreds a
+//! `Store::shred_scope` then crypto-shreds a
 //! scope: it destroys that scope's KEY and flushes the keyset durable, making
 //! every payload sealed under it permanently unrecoverable. A later read of a
 //! shredded payload reports
-//! [`StoreError::PayloadShredded`](crate::store::StoreError::PayloadShredded) (or
-//! a [`ReadDisposition::Shredded`](crate::store::ReadDisposition) value via
-//! [`Store::get_shreddable`](crate::store::Store::get_shreddable)) — never
+//! `StoreError::PayloadShredded` (or
+//! a `ReadDisposition::Shredded` value via
+//! `Store::get_shreddable`) — never
 //! corruption and never the raw ciphertext.
 //!
 //! Shredding destroys only the key, never any event frame: the ciphertext and

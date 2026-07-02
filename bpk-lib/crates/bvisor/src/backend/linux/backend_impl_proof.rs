@@ -68,7 +68,8 @@ impl LinuxBackend {
         self.ceiling()
     }
 
-    /// The TYPED machine facts the §3 [`ProfileFloor`] predicate is checked against
+    /// The TYPED machine facts the §3
+    /// [`ProfileFloor`](crate::contract::qualification::ProfileFloor) predicate is checked against
     /// (the live ABI integer + whether the cgroup base backs atomic kill / a peak
     /// witness). Distinct from the ceiling: the floor is stated over these facts.
     #[must_use]

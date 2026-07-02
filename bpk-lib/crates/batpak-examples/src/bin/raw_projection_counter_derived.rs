@@ -2,7 +2,7 @@
 //!
 //! **Teaches:** derive with `input = RawMsgpackInput` (raw msgpack replay lane).
 //!
-//! Same counter as [`event_sourced_counter`], but the projection selects the
+//! Same counter as `event_sourced_counter`, but the projection selects the
 //! raw MessagePack replay lane via `#[batpak(input = RawMsgpackInput)]`.
 //!
 //! This example exists as the lane-parity proof for `#[derive(EventSourced)]`:

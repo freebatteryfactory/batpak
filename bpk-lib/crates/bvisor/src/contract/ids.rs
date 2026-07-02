@@ -109,7 +109,8 @@ impl BackendProfileHash {
 /// (`H_A`).
 ///
 /// The admission decision is a bounded validated circuit; its digest is bound
-/// into a [`BoundaryPlan`] so the *exact decision program* — not just its inputs —
+/// into a [`BoundaryPlan`](crate::contract::plan::BoundaryPlan) so the *exact
+/// decision program* — not just its inputs —
 /// is part of plan identity. Two plans that admit the same boundary by a different
 /// circuit are different plans. A branded type, never interchangeable with a plan,
 /// report, or profile hash.

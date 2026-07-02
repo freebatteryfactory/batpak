@@ -55,7 +55,7 @@ impl EventStreamEnvelopeV1 {
     /// Build and canonically encode an envelope for one committed event.
     ///
     /// Reads the payload through the key-aware delivery primitive
-    /// ([`read_delivery_stored`]): a readable event yields `Ok(Some(bytes))`
+    /// (`read_delivery_stored`): a readable event yields `Ok(Some(bytes))`
     /// carrying its PLAINTEXT payload; a crypto-shredded event yields `Ok(None)`
     /// so the caller skips it and never ships ciphertext into the public
     /// envelope. Without `payload-encryption` this is byte-identical to a raw read.
@@ -350,7 +350,7 @@ impl ReceiptStreamEnvelopeV1 {
     /// Build and canonically encode an envelope for one committed receipt event.
     ///
     /// Reads the payload through the key-aware delivery primitive
-    /// ([`read_delivery_stored`]): `Ok(None)` means the event was crypto-shredded
+    /// (`read_delivery_stored`): `Ok(None)` means the event was crypto-shredded
     /// and the caller must skip it, never shipping ciphertext. Without
     /// `payload-encryption` this is byte-identical to a raw read.
     ///
@@ -434,7 +434,7 @@ impl EntityStreamEnvelopeV1 {
     /// Build and canonically encode an envelope for one committed entity event.
     ///
     /// Reads the payload through the key-aware delivery primitive
-    /// ([`read_delivery_stored`]): a readable event yields `Ok(Some(bytes))`
+    /// (`read_delivery_stored`): a readable event yields `Ok(Some(bytes))`
     /// carrying its PLAINTEXT payload; a crypto-shredded event yields `Ok(None)`
     /// so the caller skips it and never ships ciphertext into the public
     /// envelope. Without `payload-encryption` this is byte-identical to a raw read.

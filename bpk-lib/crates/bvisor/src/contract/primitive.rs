@@ -80,10 +80,10 @@ impl LoweringPhase {
     }
 }
 
-/// Stable identity of a [`ConfinePrimitive`] within a backend's primitive set.
+/// Stable identity of a `ConfinePrimitive` within a backend's primitive set.
 ///
 /// Used to express prerequisite and conflict relations between primitives and to
-/// order the compiled [`LoweringPlan`]. Opaque, backend-assigned.
+/// order the compiled `LoweringPlan`. Opaque, backend-assigned.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PrimitiveId(String);
 

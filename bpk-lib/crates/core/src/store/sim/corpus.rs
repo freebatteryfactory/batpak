@@ -244,7 +244,7 @@ pub(crate) struct CorpusReplay {
     pub outcome: CorpusOutcome,
 }
 
-/// Doc-hidden public mirror of [`CorpusReplay`] for integration gates.
+/// Doc-hidden public mirror of `CorpusReplay` for integration gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CorpusReplayPublic {
     /// FNV-1a digest identity for this seed + oracle outcome.

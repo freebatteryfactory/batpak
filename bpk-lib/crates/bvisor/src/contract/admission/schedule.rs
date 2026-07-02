@@ -72,7 +72,7 @@ pub struct PrimitiveDeclInputs {
     pub conflicts: u64,
     /// The canonical declaration digest the planner admitted (truncated to the lane;
     /// the full 256-bit integrity is the promotion proof's domain, as for the profile
-    /// hash in [`super::shadow`]).
+    /// hash in `super::shadow`).
     pub decl_digest: u64,
     /// The canonical parameter digest the planner admitted.
     pub param_digest: u64,
