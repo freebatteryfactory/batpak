@@ -421,12 +421,22 @@ pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
     let (recovery_stop, recovered) =
         crc_valid_frames_end_with_map(source, frames_start, file_len, segment_id)?;
 
+    // An untrusted footer's claimed frame end is plausible truncation evidence only
+    // if it leaves room for the footer trailer after it. A forged/out-of-bounds
+    // claim (> file_len - TRAILER_LEN — e.g. == file_len) is garbage, not a torn
+    // frame region, so it degrades to the absence-only unprovable-tail decision
+    // instead of a FALSE evidence-of-truncation. TRAILER_LEN mirrors the 16-byte
+    // SIDX trailer read by `detect_sidx_boundary`.
+    const TRAILER_LEN: u64 = 16;
+    let bounded_footer_claim = footer_claimed_frames_end
+        .filter(|&claimed| claimed <= file_len.saturating_sub(TRAILER_LEN));
+
     // Step 3/4: corroborate + decide.
     match corroborate_untrusted_entries(
         &entries,
         &recovered,
         recovery_stop,
-        footer_claimed_frames_end,
+        bounded_footer_claim,
         fallback_fail_closed,
     ) {
         UntrustedRecovery::RecoverPrefix(end) => Ok(ResolvedFramesEnd {

@@ -847,11 +847,14 @@ fn corroborate_footer_claimed_at_or_absent_is_not_truncation_evidence() {
 }
 
 #[test]
-fn resolve_strict_footer_claimed_past_prefix_fails_with_positive_evidence() {
-    // resolve-level end-to-end: two intact CRC-valid frames + an UNTRUSTED empty footer
-    // (zero entries → no corroboration), and the caller passes a footer-claimed-end
-    // strictly PAST the recovered prefix end. The strict posture must Err with the
-    // POSITIVE-truncation-evidence detail (distinct from the unprovable-tail message).
+fn resolve_out_of_bounds_footer_claim_degrades_to_unprovable_tail_not_evidence() {
+    // resolve-level: two intact CRC-valid frames + an UNTRUSTED empty footer (zero
+    // entries → no corroboration). The caller passes a footer-claimed-end that is
+    // OUT OF BOUNDS — well past `file_len - 16`, leaving no room for even the 16-byte
+    // trailer after it. That is a forged offset, NOT a torn frame region, so `resolve`
+    // must BOUND it out and fall back to the absence-only unprovable-tail refusal,
+    // never a FALSE evidence-of-truncation. (Pins the `claimed <= file_len - TRAILER_LEN`
+    // guard — the exact fix for `append_frames_from_segment` on an out-of-bounds footer.)
     let (bytes, frames_end) = two_intact_frames_then_untrusted_empty_footer();
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
@@ -862,16 +865,17 @@ fn resolve_strict_footer_claimed_past_prefix_fails_with_positive_evidence() {
             &result,
             Err(StoreError::CorruptSegment { segment_id: 7, .. })
         ),
-        "PROPERTY: strict posture with a footer claiming frames past the recovered prefix must \
-         REFUSE with CorruptSegment{{segment_id:7}}; got {result:?}"
+        "PROPERTY: strict posture must REFUSE an out-of-bounds untrusted footer with \
+         CorruptSegment{{segment_id:7}}; got {result:?}"
     );
     let detail = match result {
         Err(StoreError::CorruptSegment { detail, .. }) => detail,
         _ => String::new(),
     };
     assert!(
-        detail.contains("POSITIVE truncation evidence"),
-        "the strict refusal must carry the POSITIVE-truncation-evidence detail (distinct from the \
-         unprovable-tail message); got detail: {detail}"
+        detail.contains("unprovable tail"),
+        "an OUT-OF-BOUNDS footer claim is forgery, not truncation evidence: the strict refusal must \
+         carry the absence-only unprovable-tail detail, NOT the POSITIVE-truncation-evidence one; \
+         got detail: {detail}"
     );
 }
