@@ -278,3 +278,7 @@ pub fn report_for_run(
         findings,
     })
 }
+
+#[cfg(test)]
+#[path = "compaction_report_mutation_kill.rs"]
+mod compaction_report_mutation_kill;

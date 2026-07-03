@@ -262,3 +262,7 @@ fn fork_copy_strategy(used: crate::store::platform::fs::CowStrategyUsed) -> Fork
         CowStrategyUsed::DeepCopy => ForkCopyStrategy::DeepCopy,
     }
 }
+
+#[cfg(test)]
+#[path = "lifecycle_fork_mutation_kill.rs"]
+mod lifecycle_fork_mutation_kill;

@@ -461,3 +461,7 @@ fn rebuild_fresh_compaction_index(
 
     Ok(fresh_index)
 }
+
+#[cfg(test)]
+#[path = "lifecycle_compact_mutation_kill.rs"]
+mod lifecycle_compact_mutation_kill;

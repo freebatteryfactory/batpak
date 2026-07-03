@@ -249,3 +249,146 @@ fn routing_summary_validate_detailed_reports_count_and_total_mismatches() {
         RoutingValidation::Invalid(RoutingValidationError::EntityRunTotalMismatch)
     );
 }
+
+// ── Mutation-kill: recommended_restore_chunk_count boundaries ──────────────────
+//
+// `recommended_restore_chunk_count(n) = n.div_ceil(65_536).clamp(1, 32)`.
+// The clamp floor of 1 and ceiling of 32, plus the 65_536-per-chunk step, are
+// the load-bearing constants. Pinning the exact boundary values kills the
+// whole-body return replacements (`-> 0`, `-> 1`) and any drift in the clamp
+// bounds.
+#[test]
+fn recommended_restore_chunk_count_clamps_to_the_1_to_32_window() {
+    assert_eq!(
+        recommended_restore_chunk_count(0),
+        1,
+        "an empty corpus still needs one chunk (kills `-> 0` and a dropped clamp floor)"
+    );
+    assert_eq!(
+        recommended_restore_chunk_count(1),
+        1,
+        "a single entry is one chunk"
+    );
+    assert_eq!(
+        recommended_restore_chunk_count(65_536),
+        1,
+        "exactly one chunk's worth of entries stays a single chunk (div_ceil boundary)"
+    );
+    assert_eq!(
+        recommended_restore_chunk_count(65_537),
+        2,
+        "one entry past the chunk step rolls to two chunks (kills `-> 1` and a `<`/`<=` drift)"
+    );
+    assert_eq!(
+        recommended_restore_chunk_count(65_536 * 32),
+        32,
+        "32 chunks' worth of entries hits the clamp ceiling exactly"
+    );
+    assert_eq!(
+        recommended_restore_chunk_count(65_536 * 32 + 1),
+        32,
+        "one entry past the ceiling is clamped back to 32 (kills a dropped clamp ceiling)"
+    );
+    assert_eq!(
+        recommended_restore_chunk_count(usize::MAX),
+        32,
+        "an absurd corpus size never exceeds the 32-chunk ceiling"
+    );
+}
+
+// ── Mutation-kill: from_entries chunk-split remainder arithmetic ───────────────
+//
+// The chunk splitter computes `base = len / chunk_count`, `remainder = len %
+// chunk_count`, `len_i = base + (chunk_index < remainder)`, `end = start +
+// len_i`, and reads `last_sequence` from `entries_by_sequence[end - 1]`. A
+// remainder-bearing split (5 entries into 2 chunks → [3, 2]) is the only shape
+// that forces each of `/`, `%`, `+`, and the `chunk_index < remainder`
+// comparison to be exactly right; an even split hides all of them.
+#[test]
+fn routing_summary_from_entries_splits_the_remainder_into_the_leading_chunk() {
+    let entries = vec![
+        entry(0, "solo"),
+        entry(1, "solo"),
+        entry(2, "solo"),
+        entry(3, "solo"),
+        entry(4, "solo"),
+    ];
+    let summary = RoutingSummary::from_sorted_entries(&entries, 2);
+
+    assert_eq!(
+        summary.chunk_count, 2,
+        "five entries requested as two chunks must produce two chunks"
+    );
+    assert_eq!(summary.chunks.len(), 2);
+
+    // base = 5 / 2 = 2, remainder = 5 % 2 = 1: chunk 0 gets base + 1 = 3, chunk
+    // 1 gets base + 0 = 2. Any of `/ -> *`, `% -> /`, `+ -> -`, or `< -> <=/>`
+    // shifts these lengths (or panics on an out-of-bounds slice).
+    assert_eq!(summary.chunks[0].start, 0);
+    assert_eq!(
+        summary.chunks[0].len, 3,
+        "the leading chunk absorbs the remainder (kills the base/remainder/`<` mutants)"
+    );
+    assert_eq!(
+        summary.chunks[0].first_sequence, 0,
+        "chunk 0 starts at the first sequence"
+    );
+    assert_eq!(
+        summary.chunks[0].last_sequence, 2,
+        "chunk 0 ends at entries[start + len - 1]; kills the `end - 1` -> `end + 1` mutant"
+    );
+    assert_eq!(
+        summary.chunks[1].start, 3,
+        "chunk 1 starts where chunk 0 ended; kills the `end = start + len` mutant"
+    );
+    assert_eq!(summary.chunks[1].len, 2);
+    assert_eq!(summary.chunks[1].first_sequence, 3);
+    assert_eq!(summary.chunks[1].last_sequence, 4);
+
+    // A requested chunk_count of 0 must be clamped to 1 (a raw `len / 0` would
+    // panic), so the whole corpus collapses into a single chunk.
+    let clamped = RoutingSummary::from_sorted_entries(&entries, 0);
+    assert_eq!(
+        clamped.chunk_count, 1,
+        "chunk_count is clamped to at least 1 before dividing"
+    );
+    assert_eq!(clamped.chunks[0].len, 5);
+}
+
+// ── Mutation-kill: EntityRun::usize_range overflow fail-closed ─────────────────
+//
+// `usize_range` converts a persisted `[start, start+len)` run into a usize
+// range, mapping any `usize::try_from` failure or `start + len` overflow to a
+// typed `CorruptSegment` rather than an unchecked cast/add.
+#[test]
+fn entity_run_usize_range_accepts_valid_and_rejects_overflowing_runs() {
+    let ok = EntityRun {
+        entity: "solo".to_owned(),
+        start: 2,
+        len: 3,
+        first_sequence: 0,
+        last_sequence: 0,
+    };
+    assert_eq!(
+        ok.usize_range().expect("a valid in-range run must convert"),
+        2..5,
+        "PROPERTY: a well-formed run maps to `start..start+len`"
+    );
+
+    // start = usize::MAX (fits usize on every target) + len = 1 overflows the
+    // `checked_add`, which must fail closed instead of wrapping to 0.
+    let overflow = EntityRun {
+        entity: "solo".to_owned(),
+        start: usize::MAX as u64,
+        len: 1,
+        first_sequence: 0,
+        last_sequence: 0,
+    };
+    let err = overflow
+        .usize_range()
+        .expect_err("PROPERTY: start + len overflow must be a typed corruption error, not a wrap");
+    assert!(
+        matches!(err, StoreError::CorruptSegment { .. }),
+        "PROPERTY: overflow maps to CorruptSegment, got {err:?}"
+    );
+}

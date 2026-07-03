@@ -191,6 +191,67 @@ mod tests {
     }
 
     #[test]
+    fn notify_applied_does_not_regress_progress_below_its_highest_point() {
+        // Kills registry.rs:49 `max_by_sequence -> min_by_sequence` in
+        // `notify_applied`: after a projection reports a HIGH point, a later
+        // notification at a LOWER point must not drag its progress (and the
+        // recomputed global applied frontier) backwards. The `min` mutant would
+        // regress applied down to LOW.
+        let low = HlcPoint {
+            wall_ms: 100,
+            global_sequence: 10,
+        };
+        let high = HlcPoint {
+            wall_ms: 300,
+            global_sequence: 30,
+        };
+        let handle = WatermarkState::bootstrap_handle(high, Arc::new(SystemClock::new()));
+        let registry = ProjectionRegistry::new(handle.clone());
+
+        registry.notify_applied("projection:solo", high);
+        assert_eq!(
+            handle.lock().snapshot().applied_hlc,
+            high,
+            "sanity: the sole projection at HIGH recomputes applied to HIGH"
+        );
+
+        registry.notify_applied("projection:solo", low);
+
+        assert_eq!(
+            handle.lock().snapshot().applied_hlc,
+            high,
+            "PROPERTY: a lower re-notification must not regress a projection below its highest applied point"
+        );
+    }
+
+    #[test]
+    fn recompute_tracks_the_slowest_registered_projection() {
+        // Kills registry.rs:96 `reduce(HlcPoint::min_by_sequence) -> max_by_sequence`
+        // in `recompute_locked`: the global applied frontier is the MIN (slowest)
+        // across registered projections, never the MAX. With one projection at LOW
+        // and one at HIGH, applied must settle at LOW.
+        let low = HlcPoint {
+            wall_ms: 100,
+            global_sequence: 10,
+        };
+        let high = HlcPoint {
+            wall_ms: 300,
+            global_sequence: 30,
+        };
+        let handle = WatermarkState::bootstrap_handle(high, Arc::new(SystemClock::new()));
+        let registry = ProjectionRegistry::new(handle.clone());
+
+        registry.notify_applied("projection:slow", low);
+        registry.notify_applied("projection:fast", high);
+
+        assert_eq!(
+            handle.lock().snapshot().applied_hlc,
+            low,
+            "PROPERTY: applied recomputes to the slowest (min) projection; the max mutant reports HIGH"
+        );
+    }
+
+    #[test]
     fn first_lane_projection_notification_does_not_regress_existing_lane_applied_frontier() {
         let high = HlcPoint {
             wall_ms: 100,

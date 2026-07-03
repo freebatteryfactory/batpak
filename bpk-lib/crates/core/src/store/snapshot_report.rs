@@ -209,3 +209,7 @@ pub(crate) fn snapshot_evidence_report(
         diagnostics: Vec::new(),
     })
 }
+
+#[cfg(test)]
+#[path = "snapshot_report_mutation_kill.rs"]
+mod snapshot_report_mutation_kill;

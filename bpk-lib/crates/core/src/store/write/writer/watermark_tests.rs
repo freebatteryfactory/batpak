@@ -382,3 +382,32 @@ fn bootstrap_lane_durable_merge_uses_sequence_axis() {
             "PROPERTY: bootstrap lane durable must cover lane visible by global_sequence, not HLC wall order"
         );
 }
+
+#[test]
+fn advance_durable_is_a_noop_once_the_writer_is_poisoned() {
+    // CATCHES: the `if self.poisoned { return }` fail-closed guard in
+    // advance_durable being deleted — after a failed fsync the kernel clears the
+    // dirty page bits (fsyncgate), so a poisoned handle must FREEZE the durable
+    // frontier, never advance it on a later Ok.
+    let handle = handle();
+    // Honestly advance durable to sequence 5 before poisoning.
+    advance_global(&mut handle.lock(), WatermarkKind::Durable, point(5));
+    assert_eq!(
+        handle.lock().snapshot().durable_hlc,
+        point(5),
+        "sanity: durable advanced to 5 before the crash latch"
+    );
+
+    handle.mark_writer_crashed();
+
+    // Push accepted higher, then attempt to advance durable to it: the poison
+    // latch must freeze durable at 5 rather than tracking accepted up to 9.
+    handle.lock().advance_accepted_on_lane(0, point(9));
+    handle.lock().advance_durable(point(9));
+    assert_eq!(
+        handle.lock().snapshot().durable_hlc,
+        point(5),
+        "PROPERTY: a poisoned handle freezes the durable frontier; the deleted \
+         guard would let it advance to 9"
+    );
+}

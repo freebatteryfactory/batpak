@@ -544,3 +544,7 @@ impl<State: crate::store::StoreState> Default for ProjectionEvidenceRegistry<Sta
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "projection_run_mutation_kill.rs"]
+mod projection_run_mutation_kill;

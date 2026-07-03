@@ -16,6 +16,7 @@ use super::{
 use crate::store::platform::fs::RealFs;
 use crate::store::{HiddenRangesCorruption, StoreError};
 use std::collections::BTreeMap;
+use std::io::Write;
 
 fn lane_map(
     entries: impl IntoIterator<Item = (u32, Vec<(u64, u64)>)>,
@@ -74,7 +75,9 @@ fn load_cancelled_ranges_rejects_a_short_file_and_reads_a_full_length_header() {
     // (here: bad magic). `<=` would reject the exactly-12 file as TooShort;
     // `==` would let a 5-byte file slip past the gate and index out of bounds.
     let short_dir = tempfile::TempDir::new().expect("temp dir");
-    std::fs::write(short_dir.path().join(VISIBILITY_RANGES_FILENAME), [0u8; 5])
+    crate::store::platform::fs::create_new_file(&short_dir.path().join(VISIBILITY_RANGES_FILENAME))
+        .expect("create the truncated ranges file")
+        .write_all(&[0u8; 5])
         .expect("write a 5-byte truncated file");
     let short_result = load_cancelled_ranges(short_dir.path());
     assert!(
@@ -93,7 +96,9 @@ fn load_cancelled_ranges_rejects_a_short_file_and_reads_a_full_length_header() {
     );
 
     let exact_dir = tempfile::TempDir::new().expect("temp dir");
-    std::fs::write(exact_dir.path().join(VISIBILITY_RANGES_FILENAME), [0u8; 12])
+    crate::store::platform::fs::create_new_file(&exact_dir.path().join(VISIBILITY_RANGES_FILENAME))
+        .expect("create the exact-length ranges file")
+        .write_all(&[0u8; 12])
         .expect("write an exactly-header-length file");
     let exact_result = load_cancelled_ranges(exact_dir.path());
     assert!(
@@ -117,7 +122,7 @@ fn load_cancelled_ranges_fails_closed_on_a_non_not_found_read_error() {
     // resurrected. A directory at the metadata path yields a non-NotFound read
     // error, which the `true` mutant would silently swallow into Ok(None).
     let dir = tempfile::TempDir::new().expect("temp dir");
-    std::fs::create_dir_all(dir.path().join(VISIBILITY_RANGES_FILENAME))
+    crate::store::platform::fs::create_dir_all(&dir.path().join(VISIBILITY_RANGES_FILENAME))
         .expect("materialize a directory at the metadata path");
 
     let result = load_cancelled_ranges(dir.path());

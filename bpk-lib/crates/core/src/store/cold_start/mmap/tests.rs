@@ -127,3 +127,93 @@ fn mmap_index_roundtrip_restores_receipt_extensions() {
         "PROPERTY: mmap v5 extension blob table must preserve opaque receipt-extension bytes."
     );
 }
+
+// ── Mutation-kill: decode_receipt_extensions_from_blob bounds + digest ────────
+//
+// The blob decoder validates an entry's `[extension_offset, +extension_len)`
+// slice against the shared blob before decoding: `extension_len == 0`
+// short-circuits to an empty map; `offset + len` uses `checked_add`; the slice
+// must satisfy `end <= blob.len()`; and the slice digest must equal the
+// recorded `extension_hash`. The happy-path roundtrip above only exercises the
+// success arm, so these pin the fail-closed edges.
+#[test]
+fn decode_receipt_extensions_from_blob_validates_bounds_and_digest() {
+    let mut map = BTreeMap::new();
+    map.insert(
+        ExtensionKey::new("app.audit").expect("valid extension key"),
+        vec![0x01u8, 0x02, 0x03],
+    );
+    let bytes = super::encode_receipt_extensions(&map).expect("encode extensions");
+    assert!(
+        !bytes.is_empty(),
+        "SANITY: a non-empty map encodes to bytes"
+    );
+    let blob_len = u64::try_from(bytes.len()).expect("blob length fits u64");
+    let good_hash = super::extension_blob_digest(&bytes);
+
+    // A backing IndexEntry only supplies default (all-zero) extension fields;
+    // each case overwrites offset/len/hash to isolate one validation edge.
+    let idx = make_index(1);
+    let backing = idx.all_entries();
+    let base = &backing[0];
+
+    // Exact fit: end == blob.len(). The real guard is `end > blob.len()`, so the
+    // `> -> >=` mutant would reject this legitimate exact-fill slice.
+    let mut exact = super::format::MmapIndexEntry::from_index_entry(base);
+    exact.extension_offset = 0;
+    exact.extension_len = blob_len;
+    exact.extension_hash = good_hash;
+    let decoded = super::decode_receipt_extensions_from_blob(&exact, &bytes)
+        .expect("exact-fit slice decodes");
+    assert_eq!(
+        decoded, map,
+        "PROPERTY: a slice that exactly fills the blob must decode (kills `end > blob.len()` -> \
+         `>=` and the `!=` digest-guard inversion, which would both reject this valid slice)"
+    );
+
+    // extension_len == 0 short-circuits to an empty map without touching the
+    // blob or checking the (zeroed) hash. Kills `== 0` -> `!= 0`.
+    let mut empty = super::format::MmapIndexEntry::from_index_entry(base);
+    empty.extension_offset = 0;
+    empty.extension_len = 0;
+    empty.extension_hash = [0u8; 32];
+    assert!(
+        super::decode_receipt_extensions_from_blob(&empty, &bytes)
+            .expect("zero-length extension decodes")
+            .is_empty(),
+        "PROPERTY: extension_len == 0 short-circuits to an empty map"
+    );
+
+    // Digest mismatch on a well-sized slice must fail closed. Kills a deleted
+    // digest check / `!=` -> `==`.
+    let mut wrong_hash = super::format::MmapIndexEntry::from_index_entry(base);
+    wrong_hash.extension_offset = 0;
+    wrong_hash.extension_len = blob_len;
+    wrong_hash.extension_hash = [0xFFu8; 32];
+    assert!(
+        super::decode_receipt_extensions_from_blob(&wrong_hash, &bytes).is_err(),
+        "PROPERTY: a slice whose digest disagrees with the recorded hash must fail closed"
+    );
+
+    // end past the blob (len one byte too long) must fail closed. Kills removal
+    // of the `end > blob.len()` bound entirely.
+    let mut over = super::format::MmapIndexEntry::from_index_entry(base);
+    over.extension_offset = 0;
+    over.extension_len = blob_len + 1;
+    over.extension_hash = good_hash;
+    assert!(
+        super::decode_receipt_extensions_from_blob(&over, &bytes).is_err(),
+        "PROPERTY: an extension range extending past the blob must fail closed"
+    );
+
+    // offset + len overflowing usize must fail closed via checked_add, not wrap.
+    let mut overflow = super::format::MmapIndexEntry::from_index_entry(base);
+    overflow.extension_offset = usize::MAX as u64;
+    overflow.extension_len = 1;
+    overflow.extension_hash = good_hash;
+    assert!(
+        super::decode_receipt_extensions_from_blob(&overflow, &bytes).is_err(),
+        "PROPERTY: offset + len that overflows usize must fail closed (kills checked_add -> \
+         wrapping_add)"
+    );
+}

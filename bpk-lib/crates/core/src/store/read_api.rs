@@ -785,3 +785,7 @@ fn denial_receipt_index_mismatch(
 #[cfg(test)]
 #[path = "read_api_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "read_api_mutation_kill.rs"]
+mod read_api_mutation_kill;

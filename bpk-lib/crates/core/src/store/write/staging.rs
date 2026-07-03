@@ -479,3 +479,107 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod staging_mutation_kill {
+    //! PROVES: the staged-commit value constructors bind each argument to its
+    //! named field, and `StagedCommittedEvent::position` maps the timing tuple to
+    //! the matching DagPosition slots.
+    //! CATCHES: any field-argument swap in `StagedCommitMeta::new` /
+    //! `StagedCommitTiming::new`; the `event_id()` / `global_sequence()` getters
+    //! returning the wrong meta field or `0`; and a slot swap (e.g. lane<->depth,
+    //! clock->sequence) in `position()`.
+
+    use super::*;
+
+    #[test]
+    fn staged_commit_meta_new_assigns_each_field_positionally() {
+        let kind = EventKind::custom(0xA, 2);
+        let meta = StagedCommitMeta::new(0x11, 0x22, Some(0x33), kind, 44);
+        assert_eq!(meta.event_id, 0x11, "1st arg is event_id");
+        assert_eq!(meta.correlation_id, 0x22, "2nd arg is correlation_id");
+        assert_eq!(meta.causation_id, Some(0x33), "3rd arg is causation_id");
+        assert_eq!(meta.kind, kind, "4th arg is kind");
+        assert_eq!(meta.global_sequence, 44, "5th arg is global_sequence");
+    }
+
+    #[test]
+    fn staged_commit_timing_new_assigns_each_field_positionally() {
+        let timing = StagedCommitTiming::new(100, 200, 3, 4, 5);
+        assert_eq!(timing.timestamp_us, 100, "1st arg is timestamp_us");
+        assert_eq!(timing.wall_ms, 200, "2nd arg is wall_ms");
+        assert_eq!(timing.clock, 3, "3rd arg is clock");
+        assert_eq!(timing.dag_lane, 4, "4th arg is dag_lane");
+        assert_eq!(timing.dag_depth, 5, "5th arg is dag_depth");
+    }
+
+    #[test]
+    fn staged_committed_event_position_maps_timing_to_dag_slots() {
+        // Distinct values so any DagPosition slot swap flips exactly one assert.
+        // position() = with_hlc(wall_ms, 0, dag_depth, dag_lane, clock).
+        let coord = Coordinate::new("entity:staged", "scope:staged").expect("coord");
+        let meta = StagedCommitMeta::new(1, 1, None, EventKind::DATA, 7);
+        let timing = StagedCommitTiming::new(9_000, 321, 654, 987, 12);
+        let staged = StagedCommittedEvent::new(
+            coord,
+            meta,
+            timing,
+            HashChain {
+                prev_hash: [0u8; 32],
+                event_hash: [1u8; 32],
+            },
+        );
+        let position = staged.position();
+        assert_eq!(
+            position.wall_ms(),
+            321,
+            "position wall_ms comes from timing.wall_ms"
+        );
+        assert_eq!(
+            position.depth(),
+            12,
+            "position depth comes from timing.dag_depth"
+        );
+        assert_eq!(
+            position.lane(),
+            987,
+            "position lane comes from timing.dag_lane"
+        );
+        assert_eq!(
+            position.sequence(),
+            654,
+            "position sequence comes from timing.clock"
+        );
+        assert_eq!(
+            position.counter(),
+            0,
+            "position counter is the fixed 0 slot"
+        );
+    }
+
+    #[test]
+    fn staged_committed_event_getters_return_meta_facts() {
+        let coord = Coordinate::new("entity:g", "scope:g").expect("coord");
+        let meta = StagedCommitMeta::new(0xABCD, 0x1, None, EventKind::DATA, 99);
+        let timing = StagedCommitTiming::new(1, 2, 3, 4, 5);
+        let staged = StagedCommittedEvent::new(
+            coord,
+            meta,
+            timing,
+            HashChain {
+                prev_hash: [0u8; 32],
+                event_hash: [0u8; 32],
+            },
+        );
+        assert_eq!(
+            staged.event_id(),
+            0xABCD,
+            "event_id() returns meta.event_id"
+        );
+        assert_eq!(
+            staged.global_sequence(),
+            99,
+            "global_sequence() returns meta.global_sequence"
+        );
+    }
+}

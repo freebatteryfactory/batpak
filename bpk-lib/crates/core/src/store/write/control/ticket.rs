@@ -128,3 +128,7 @@ impl BatchAppendTicket {
         self.inner.receiver()
     }
 }
+
+#[cfg(test)]
+#[path = "ticket_mutation_kill.rs"]
+mod ticket_mutation_kill;
