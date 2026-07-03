@@ -45,3 +45,93 @@ pub(super) fn warn_shredded_reactor_delivery(entity: &str, event_id: crate::id::
          invoked for it and the cursor advances past it (payload key destroyed — plaintext gone)"
     );
 }
+
+#[cfg(all(test, feature = "payload-encryption"))]
+mod tests {
+    use super::warn_shredded_reactor_delivery;
+    use std::sync::{Arc, Mutex};
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Level, Metadata, Subscriber};
+
+    #[derive(Default)]
+    struct Captured {
+        events: Vec<(String, Level, String)>,
+    }
+
+    struct MessageVisitor<'a> {
+        message: &'a mut String,
+    }
+
+    impl Visit for MessageVisitor<'_> {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                *self.message = format!("{value:?}");
+            }
+        }
+    }
+
+    struct CaptureSubscriber {
+        captured: Arc<Mutex<Captured>>,
+    }
+
+    impl Subscriber for CaptureSubscriber {
+        fn enabled(&self, _: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+        fn record(&self, _: &Id, _: &Record<'_>) {}
+        fn record_follows_from(&self, _: &Id, _: &Id) {}
+        fn event(&self, event: &Event<'_>) {
+            let metadata = event.metadata();
+            let mut message = String::new();
+            event.record(&mut MessageVisitor {
+                message: &mut message,
+            });
+            self.captured.lock().expect("capture lock").events.push((
+                metadata.target().to_string(),
+                *metadata.level(),
+                message,
+            ));
+        }
+        fn enter(&self, _: &Id) {}
+        fn exit(&self, _: &Id) {}
+    }
+
+    #[test]
+    fn warn_shredded_reactor_delivery_emits_the_loud_skip_warning() {
+        // Kills reactor_delivery.rs:38 `warn_shredded_reactor_delivery -> ()`.
+        // The crypto-shred skip is contractually LOUD (never silent): the reactor
+        // delivery loop calls this to emit one WARN on target "batpak::delivery".
+        // The `()` mutant emits nothing. Capture events via a scoped subscriber
+        // and require exactly one WARN naming the crypto-shred skip.
+        let captured = Arc::new(Mutex::new(Captured::default()));
+        let subscriber = CaptureSubscriber {
+            captured: Arc::clone(&captured),
+        };
+        let event_id = crate::id::EventId::from_u128(0x5152_5354);
+
+        tracing::subscriber::with_default(subscriber, || {
+            warn_shredded_reactor_delivery("entity:crypto-shred-warn", event_id);
+        });
+
+        let events = captured.lock().expect("capture lock").events.clone();
+        assert_eq!(
+            events.len(),
+            1,
+            "PROPERTY: exactly one warn fires; the `()` mutant emits none, got {events:?}"
+        );
+        let (target, level, message) = &events[0];
+        assert_eq!(
+            target, "batpak::delivery",
+            "the loud skip is emitted on the delivery target"
+        );
+        assert_eq!(*level, Level::WARN, "the loud skip is a WARN");
+        assert!(
+            message.contains("crypto-shredded"),
+            "the warn names the crypto-shred skip, got {message:?}"
+        );
+    }
+}

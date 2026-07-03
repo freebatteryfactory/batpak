@@ -439,3 +439,57 @@ pub(crate) fn walk_ancestors_outcome<State: crate::store::StoreState>(
         boundary,
     }
 }
+
+// The crypto-shred disposition accessors only exist under `payload-encryption`,
+// so their kills live behind the same gate. Each asserts the EXACT membership /
+// slice the accessor reports, so a constant-return mutant cannot pass.
+#[cfg(all(test, feature = "payload-encryption"))]
+mod shredded_disposition_tests {
+    use super::{AncestorWalk, AncestryBoundary};
+    use crate::id::EventId;
+
+    fn walk_with_shredded(shredded: Vec<EventId>) -> AncestorWalk {
+        AncestorWalk {
+            ancestors: Vec::new(),
+            boundary: AncestryBoundary::ReachedGenesis,
+            shredded,
+        }
+    }
+
+    #[test]
+    fn is_shredded_reports_exact_membership() {
+        let present = EventId::from(0x5151_u128);
+        let absent = EventId::from(0x9999_u128);
+        let walk = walk_with_shredded(vec![present]);
+        // Kills `is_shredded -> false`: a shredded ancestor id must report true.
+        assert!(
+            walk.is_shredded(present),
+            "a shredded ancestor id must report is_shredded == true"
+        );
+        // Kills `is_shredded -> true`: a non-shredded id must report false.
+        assert!(
+            !walk.is_shredded(absent),
+            "an id absent from the shredded set must report is_shredded == false"
+        );
+    }
+
+    #[test]
+    fn shredded_ancestors_returns_the_exact_recorded_slice() {
+        let a = EventId::from(0x1111_u128);
+        let b = EventId::from(0x2222_u128);
+        let walk = walk_with_shredded(vec![a, b]);
+        // Kills both `Vec::leak(Vec::new())` (empty) and
+        // `Vec::leak(vec![Default::default()])` (a single EventId::default()).
+        assert_eq!(
+            walk.shredded_ancestors(),
+            &[a, b][..],
+            "shredded_ancestors must return exactly the recorded ids, not an empty or default slice"
+        );
+        assert!(
+            walk_with_shredded(Vec::new())
+                .shredded_ancestors()
+                .is_empty(),
+            "an intact chain reports an empty shredded slice"
+        );
+    }
+}

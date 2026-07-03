@@ -442,7 +442,104 @@ pub struct StoreDiagnostics {
 
 #[cfg(test)]
 mod tests {
-    use super::WriterPressure;
+    use super::{HlcPoint, WriterPressure};
+
+    #[test]
+    fn r4_writer_pressure_headroom_is_exactly_capacity_minus_queue_len() {
+        // Kills stats.rs:210 `WriterPressure::headroom` -> `0` and -> `1`:
+        // headroom is `capacity - queue_len` (saturating). Admission gates read
+        // this to decide how many more commands fit; a hardwired 0 reports a
+        // roomy mailbox as full (false backpressure), a hardwired 1 under- or
+        // over-reports. Pin an exact non-{0,1} value plus the saturating floor.
+        let partial = WriterPressure {
+            queue_len: 3,
+            capacity: 10,
+        };
+        assert_eq!(
+            partial.headroom(),
+            7,
+            "PROPERTY: 3 queued of 10 leaves EXACTLY 7 free slots; the `-> 0`/`-> 1` \
+             mutants misreport available admission headroom"
+        );
+
+        let saturated = WriterPressure {
+            queue_len: 12,
+            capacity: 10,
+        };
+        assert_eq!(
+            saturated.headroom(),
+            0,
+            "an over-full mailbox saturates headroom to 0, never underflows"
+        );
+    }
+
+    #[test]
+    fn r4_writer_pressure_is_idle_only_for_an_empty_queue() {
+        // Kills stats.rs:215 `WriterPressure::is_idle` -> `true`: idle-detection
+        // gates (e.g. quiescence checks) must see a queued mailbox as busy.
+        let busy = WriterPressure {
+            queue_len: 5,
+            capacity: 10,
+        };
+        assert!(
+            !busy.is_idle(),
+            "PROPERTY: a mailbox with 5 queued commands is NOT idle; the `-> true` \
+             mutant reports a saturated writer as quiescent"
+        );
+
+        let empty = WriterPressure {
+            queue_len: 0,
+            capacity: 10,
+        };
+        assert!(empty.is_idle(), "an empty mailbox is idle");
+    }
+
+    #[test]
+    fn r4_hlc_min_by_sequence_returns_the_lower_sequence_point_not_default() {
+        // Kills stats.rs:38 `HlcPoint::min_by_sequence` -> `Default::default()`:
+        // the applied-frontier recompute folds min_by_sequence over registered
+        // projections. `Default::default()` is ORIGIN (0,0), which would drag the
+        // applied frontier back to the origin regardless of the real minimum.
+        let low = HlcPoint {
+            wall_ms: 200,
+            global_sequence: 3,
+        };
+        let high = HlcPoint {
+            wall_ms: 100,
+            global_sequence: 7,
+        };
+        assert_eq!(
+            low.min_by_sequence(high),
+            low,
+            "PROPERTY: min_by_sequence picks the lower global_sequence (3 < 7); \
+             the Default::default() mutant collapses it to ORIGIN(0,0)"
+        );
+        assert_eq!(
+            high.min_by_sequence(low),
+            low,
+            "min_by_sequence is order-independent for distinct sequences"
+        );
+        assert_ne!(
+            low.min_by_sequence(high),
+            HlcPoint::ORIGIN,
+            "the real minimum is not the origin — the Default mutant would be"
+        );
+
+        // Equal sequence -> tie-broken by full Ord (wall_ms then sequence).
+        let equal_seq_low_wall = HlcPoint {
+            wall_ms: 50,
+            global_sequence: 4,
+        };
+        let equal_seq_high_wall = HlcPoint {
+            wall_ms: 900,
+            global_sequence: 4,
+        };
+        assert_eq!(
+            equal_seq_low_wall.min_by_sequence(equal_seq_high_wall),
+            equal_seq_low_wall,
+            "on a sequence tie, min_by_sequence keeps the Ord-lesser point"
+        );
+    }
 
     #[test]
     fn r4_writer_pressure_utilization_is_exactly_queue_len_over_capacity() {

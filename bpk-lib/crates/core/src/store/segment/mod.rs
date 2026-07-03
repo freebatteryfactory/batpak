@@ -431,8 +431,12 @@ impl Segment<Active> {
         // prefix end that the source is missing (torn last committed frame under a
         // corrupt footer — round-7), the copy FailCloses instead of silently
         // merging a segment that dropped a committed event. Compaction copy of a
-        // sealed source is strict, so its fall-back posture is FailClosed; with no
-        // corroborated manifest it still recovers the CRC-valid prefix.
+        // sealed source is strict (`fallback_fail_closed = true`): with no
+        // corroborated manifest it recovers an EMPTY prefix but REFUSES a non-empty
+        // recovered prefix as an unprovable tail (an untrusted footer with no
+        // manifest signal cannot rule out a torn/truncated further committed frame).
+        // A benign corrupt footer over intact frames still recovers — its entries
+        // corroborate the recovered frames (case b).
         let copy_end = if untrusted_boundary {
             resolve_untrusted_frames_end(&mut source, frames_start, file_len, 0, true)?
         } else {

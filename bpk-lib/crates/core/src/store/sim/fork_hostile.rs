@@ -253,3 +253,44 @@ pub fn run_fork_enospc_mid_copy() -> Result<EnospcMidCopyOutcome, String> {
         no_partial_publish,
     })
 }
+
+#[cfg(all(test, feature = "dangerous-test-hooks"))]
+mod tests {
+    use super::*;
+
+    /// The `dest_is_published_store` oracle is only ever exercised on its
+    /// NEGATIVE side by the hostile-fork runners (nothing was published, so a
+    /// `false` mutant is invisible there). Pin the POSITIVE side directly: a
+    /// real, synced, non-empty store on disk must classify as published, and a
+    /// nonexistent path must not. This kills `-> false`, the `!dest.exists()`
+    /// inversion, and the `event_count > 0` → `< 0` swap in one shot.
+    #[test]
+    fn dest_is_published_store_is_true_only_for_a_real_nonempty_store() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let store_dir = dir.path().join("published");
+        {
+            let store = Store::<Open>::open(StoreConfig::new(&store_dir)).expect("open store");
+            let coord = Coordinate::new("entity:pub", "scope:published").expect("coord");
+            let _receipt = store
+                .append(
+                    &coord,
+                    EventKind::custom(0xF, 0x0B),
+                    &serde_json::json!({ "n": 1 }),
+                )
+                .expect("append one event");
+            crate::store::lifecycle::sync(&store).expect("sync");
+            store.close().expect("close");
+        }
+
+        assert!(
+            dest_is_published_store(&store_dir),
+            "a real, synced, non-empty store must classify as a published fork destination"
+        );
+
+        let missing = dir.path().join("nothing-here");
+        assert!(
+            !dest_is_published_store(&missing),
+            "a nonexistent destination must NOT classify as a published store"
+        );
+    }
+}

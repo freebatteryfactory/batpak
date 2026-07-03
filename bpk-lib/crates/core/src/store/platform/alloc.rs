@@ -283,6 +283,56 @@ impl Default for FailingAlloc {
     }
 }
 
+#[cfg(all(test, feature = "fault-alloc"))]
+mod failing_alloc_tests {
+    //! The arm/disarm/trip-point contract of [`FailingAlloc`], asserted WITHOUT
+    //! installing it as the global allocator (these calls touch only the
+    //! process-wide arm state, never real allocations). One sequential test so
+    //! the shared `fail_state` atomics are never raced by a sibling test.
+    use super::FailingAlloc;
+
+    #[test]
+    fn arm_disarm_and_trip_point_are_exact() {
+        let alloc = FailingAlloc::new();
+
+        // Start from a known-disarmed baseline. A disarmed allocator never fails
+        // (a `should_fail -> true` mutant dies right here).
+        FailingAlloc::disarm();
+        assert!(
+            !alloc.should_fail(),
+            "a disarmed allocator must never signal failure"
+        );
+
+        // Arm to fail at the 3rd allocation (1-based). The first two succeed,
+        // the third and every one after fail.
+        FailingAlloc::fail_after(3);
+        assert!(
+            !alloc.should_fail(),
+            "1st post-arm allocation must succeed (seen 1 >= 3 is false)"
+        );
+        assert!(
+            !alloc.should_fail(),
+            "2nd post-arm allocation must succeed (seen 2 >= 3 is false)"
+        );
+        assert!(
+            alloc.should_fail(),
+            "3rd post-arm allocation must fail (seen 3 >= 3)"
+        );
+        assert!(
+            alloc.should_fail(),
+            "4th and later allocations must keep failing (seen 4 >= 3)"
+        );
+
+        // Disarm turns failures back off — proving `disarm` really clears the arm
+        // (a no-op `disarm` mutant leaves it failing and dies here).
+        FailingAlloc::disarm();
+        assert!(
+            !alloc.should_fail(),
+            "after disarm every allocation must succeed again"
+        );
+    }
+}
+
 // SAFETY: each method either returns null (a permitted `GlobalAlloc` failure
 // signal) or forwards unchanged to `System`, which is already a sound
 // `GlobalAlloc`. We never hand out a pointer we did not get from `System`, and

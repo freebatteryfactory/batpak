@@ -137,3 +137,64 @@ pub fn run_seeded_fork_fault_public(seed: u64) -> Result<ForkFaultOutcomePublic,
 pub fn fork_fault_replay_seed(default: u64) -> u64 {
     super::seed_from_env(default)
 }
+
+#[cfg(all(test, feature = "dangerous-test-hooks"))]
+mod tests {
+    use super::*;
+
+    /// A dest whose read-only open fails with a CANONICAL corruption error must
+    /// classify as `CanonicalRefusal` — never propagate as a hard `Err`. A dir
+    /// holding only a malformed compaction marker fails cold start with
+    /// `DataDirMalformed` (one of the canonical-refusal variants). Replacing the
+    /// `is_canonical_refusal` match guard with `false` would turn this into an
+    /// `Err`, which this test forbids.
+    #[test]
+    fn classify_maps_a_canonical_corruption_error_to_canonical_refusal() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let dest = dir.path().join("corrupt-store");
+        crate::store::platform::fs::create_dir_all(&dest).expect("create dest dir");
+        let marker = dest.join(crate::store::cold_start::rebuild::COMPACTION_MARKER_FILENAME);
+        crate::store::platform::fs::write_derivative_file_atomically(
+            &dest,
+            &marker,
+            "malformed compaction marker",
+            b"this is not valid json",
+        )
+        .expect("plant malformed compaction marker");
+
+        let classified = classify_fork_destination(&dest);
+        assert!(
+            matches!(classified, Ok((Classification::CanonicalRefusal, 0))),
+            "a canonical corruption error must map to Ok(CanonicalRefusal), got {classified:?}"
+        );
+    }
+
+    /// A dest whose read-only open fails with a NON-canonical error (here a
+    /// regular file standing in for a data dir) must propagate as `Err` — it is
+    /// NOT a canonical refusal. Replacing the match guard with `true` would
+    /// swallow every open error as `CanonicalRefusal`, which this test forbids.
+    #[test]
+    fn classify_propagates_a_non_canonical_open_error_as_err() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let dest_file = dir.path().join("not-a-directory");
+        crate::store::platform::fs::create_new_file(&dest_file).expect("create plain file");
+
+        let classified = classify_fork_destination(&dest_file);
+        assert!(
+            classified.is_err(),
+            "a non-canonical open error must propagate as Err, not be swallowed as \
+             CanonicalRefusal, got {classified:?}"
+        );
+    }
+
+    // NOTE: the `seed ^ 0xF0_0F_00` → `seed | 0xF0_0F_00` mutant on line 64 is a
+    // GENUINE EQUIVALENT mutant and is intentionally left uncovered here. That
+    // expression only seeds SimFs's fsync-drop PRNG, while the returned
+    // `ForkFaultOutcome.digest` folds solely `(seed, classification,
+    // dest_event_count)`. A CoW fork of a fully-synced source recovers the whole
+    // committed prefix on every fault-active seed (verified: 800 multiple-of-5
+    // seeds all classify `CommittedPrefix` at `dest_event_count ==
+    // source_committed`), and `source_committed` is the live in-memory count
+    // (drop-schedule independent). So the sub-seed — and thus XOR vs OR — cannot
+    // change the digest. Reported for registry exclusion.
+}

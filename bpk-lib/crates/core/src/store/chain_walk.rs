@@ -464,8 +464,143 @@ fn observed_content_hash(stored: &crate::event::StoredEvent<Vec<u8>>) -> ChainWa
 
 #[cfg(test)]
 mod tests {
-    use super::{build_report, ChainWalkFinding, ChainWalkMode};
+    use super::{
+        build_report, resolve_parent_event_id_by_hash, ChainWalkFinding, ChainWalkMode,
+        ChainWalkRequest, ChainWalkStartRef,
+    };
+    use crate::coordinate::Coordinate;
+    use crate::event::{EventKind, HashChain};
+    use crate::id::EntityIdType;
+    use crate::store::index::interner::InternId;
+    use crate::store::index::{DiskPos, IndexEntry};
+    use crate::store::{Store, StoreConfig};
+    use std::collections::BTreeMap;
     use std::error::Error;
+
+    fn stream_entry(event_id: u128, event_hash: [u8; 32], global_sequence: u64) -> IndexEntry {
+        IndexEntry {
+            event_id,
+            correlation_id: event_id,
+            causation_id: None,
+            coord: Coordinate::new("entity:cw", "scope:cw").expect("coord"),
+            entity_id: InternId::sentinel(),
+            scope_id: InternId::sentinel(),
+            kind: EventKind::custom(0xF, 0x01),
+            wall_ms: 1,
+            clock: 1,
+            dag_lane: 0,
+            dag_depth: 0,
+            hash_chain: HashChain {
+                prev_hash: [0u8; 32],
+                event_hash,
+            },
+            disk_pos: DiskPos::new(1, 0, 1),
+            global_sequence,
+            receipt_extensions: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_parent_excludes_a_candidate_at_the_child_sequence() {
+        let parent_hash = [0x33u8; 32];
+        // The only matching candidate shares the child's global_sequence (5). The
+        // strict `<` filter must EXCLUDE it, so no parent resolves. The `<=` mutant
+        // would include it and resolve a bogus parent.
+        let same_seq = vec![stream_entry(0xA, parent_hash, 5)];
+        assert!(
+            resolve_parent_event_id_by_hash(&same_seq, parent_hash, 5).is_none(),
+            "a candidate whose sequence equals the child's must not resolve as a parent (kills `< -> <=`)"
+        );
+        // A genuinely prior candidate (seq 4 < 5) DOES resolve — proves the guard
+        // is not vacuously rejecting everything.
+        let prior = vec![stream_entry(0xB, parent_hash, 4)];
+        assert!(
+            resolve_parent_event_id_by_hash(&prior, parent_hash, 5).is_some(),
+            "a strictly-prior candidate must resolve as the parent"
+        );
+    }
+
+    #[test]
+    fn resolve_parent_tiebreak_keeps_the_first_equal_sequence_candidate() {
+        let parent_hash = [0x44u8; 32];
+        // Two prior candidates with the SAME parent hash and SAME global_sequence.
+        // The strict `>` tiebreak keeps the FIRST encountered (id 100); the `>=`
+        // mutant would switch selection to the LAST (id 200).
+        let stream = vec![
+            stream_entry(100, parent_hash, 3),
+            stream_entry(200, parent_hash, 3),
+        ];
+        let resolved = resolve_parent_event_id_by_hash(&stream, parent_hash, 9)
+            .expect("a matching parent must resolve");
+        assert_eq!(
+            resolved.event_id, 100,
+            "an equal-sequence tie must keep the first candidate (kills `> -> >=`)"
+        );
+        assert_eq!(
+            resolved.matching_parent_count, 2,
+            "both equal-sequence matches must be counted"
+        );
+    }
+
+    #[test]
+    fn chain_walk_evidence_end_findings_are_exact() -> Result<(), Box<dyn Error>> {
+        let dir = tempfile::tempdir()?;
+        let store = Store::open(StoreConfig::new(dir.path()))?;
+        let coord = Coordinate::new("entity:cw-evidence", "scope:cw")?;
+        let kind = EventKind::custom(0xF, 0x21);
+        let genesis = store.append(&coord, kind, &serde_json::json!({ "n": 0 }))?;
+        let child = store.append(&coord, kind, &serde_json::json!({ "n": 1 }))?;
+
+        // Full walk to genesis with an explicit end id that is never on the chain:
+        // findings stay empty and reached_end is false, so EndNotReached MUST be
+        // emitted exactly once. Kills `delete !` (would drop it) and `!= -> ==`
+        // (would drop it because last never equals an unreached end).
+        const ABSENT_END: u128 = 0xDEAD_BEEF;
+        let mut request =
+            ChainWalkRequest::linear(ChainWalkStartRef::EventId(child.event_id.as_u128()), 16);
+        request.end_event_id = Some(ABSENT_END);
+        let report = store.chain_walk_evidence(&request)?;
+        assert_eq!(
+            report.body.findings,
+            vec![ChainWalkFinding::EndNotReached {
+                expected_end_event_id: ABSENT_END,
+            }],
+            "an unreached explicit end must surface exactly one EndNotReached finding"
+        );
+
+        // Limit the walk to one entry (truncates by limit with a pending parent)
+        // and set the end to the genuine parent (never reached under the limit).
+        // The `&& -> ||` mutant would ALSO append a spurious EndNotReached; the
+        // correct behavior emits ONLY TruncatedByLimit.
+        let mut limited =
+            ChainWalkRequest::linear(ChainWalkStartRef::EventId(child.event_id.as_u128()), 1);
+        limited.end_event_id = Some(genesis.event_id.as_u128());
+        let report = store.chain_walk_evidence(&limited)?;
+        assert_eq!(
+            report.body.findings.len(),
+            1,
+            "exactly one finding under the limit, got {:?}",
+            report.body.findings
+        );
+        assert!(
+            matches!(
+                report.body.findings[0],
+                ChainWalkFinding::TruncatedByLimit { limit: 1, .. }
+            ),
+            "the sole finding must be TruncatedByLimit, got {:?}",
+            report.body.findings
+        );
+        assert!(
+            !report
+                .body
+                .findings
+                .iter()
+                .any(|f| matches!(f, ChainWalkFinding::EndNotReached { .. })),
+            "no EndNotReached may appear once findings are already non-empty (kills `&& -> ||`)"
+        );
+        store.close()?;
+        Ok(())
+    }
 
     #[test]
     fn chain_walk_report_sorts_findings_structurally() -> Result<(), Box<dyn Error>> {

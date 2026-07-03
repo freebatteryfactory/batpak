@@ -300,6 +300,122 @@ fn report_body_hash(
 }
 
 #[cfg(test)]
+mod lag_boundary_tests {
+    use super::{
+        LossPrecision, SubscriberDeliveryState, SubscriberFrontierFinding,
+        SubscriberFrontierRequest,
+    };
+    use crate::coordinate::Coordinate;
+    use crate::event::EventKind;
+    use crate::store::{Store, StoreConfig};
+
+    fn open_store() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let store = Store::open(StoreConfig::new(dir.path())).expect("open store");
+        (dir, store)
+    }
+
+    fn cursor_backed(consumed: Option<u64>) -> SubscriberFrontierRequest {
+        SubscriberFrontierRequest::cursor_backed(
+            consumed,
+            SubscriberDeliveryState::Active,
+            LossPrecision::Unknown,
+        )
+    }
+
+    #[test]
+    fn positive_lag_emits_lag_observed_with_the_exact_event_delta() {
+        // Kills subscriber_frontier.rs:228 `lag > 0` -> `<` and -> `==`. When the
+        // consumed frontier trails the available frontier, a LagObserved finding
+        // with the EXACT event delta must be emitted. `<` (never true for u64)
+        // suppresses it entirely; `==` only fires it on a zero delta, so a real
+        // positive lag would be dropped.
+        let (_dir, store) = open_store();
+        let coord = Coordinate::new("entity:lag-positive", "scope:test").expect("coord");
+        let _receipt = store
+            .append(
+                &coord,
+                EventKind::custom(0xF, 0x40),
+                &serde_json::json!({ "n": 0 }),
+            )
+            .expect("append advances the visible frontier");
+
+        let report = store
+            .subscriber_frontier_observation(&cursor_backed(Some(0)))
+            .expect("observation");
+        let available = report.body.available_frontier_sequence;
+        assert!(
+            available >= 1,
+            "sanity: an acked append advanced the available (visible) frontier, got {available}"
+        );
+        assert_eq!(
+            report.body.lag_events,
+            Some(available),
+            "consumed 0 against available {available} is a lag of {available} events"
+        );
+        assert!(
+            report.body.findings.iter().any(|finding| matches!(
+                finding,
+                SubscriberFrontierFinding::LagObserved { lag_events } if *lag_events == available
+            )),
+            "PROPERTY: a positive lag emits LagObserved{{{available}}}; the `<`/`==` \
+             mutants of `lag > 0` drop it, got {:?}",
+            report.body.findings
+        );
+        assert!(
+            !report.body.findings.iter().any(|f| matches!(
+                f,
+                SubscriberFrontierFinding::ConsumedFrontierAheadOfAvailable { .. }
+            )),
+            "a trailing consumed frontier is not ahead of available"
+        );
+    }
+
+    #[test]
+    fn zero_lag_emits_neither_lag_observed_nor_ahead_of_available() {
+        // Kills subscriber_frontier.rs:228 `lag > 0` -> `>=`/`==` AND
+        // subscriber_frontier.rs:233 `consumed_sequence > available` -> `>=`. When
+        // the consumed frontier EQUALS the available frontier, the lag is zero:
+        // neither a LagObserved nor a ConsumedFrontierAheadOfAvailable finding may
+        // appear. `>=` on either comparison fires a spurious finding at equality.
+        let (_dir, store) = open_store();
+        let available = store
+            .subscriber_frontier_observation(&cursor_backed(None))
+            .expect("probe observation")
+            .body
+            .available_frontier_sequence;
+
+        let report = store
+            .subscriber_frontier_observation(&cursor_backed(Some(available)))
+            .expect("observation");
+        assert_eq!(
+            report.body.lag_events,
+            Some(0),
+            "consuming exactly up to available is a zero lag"
+        );
+        assert!(
+            !report
+                .body
+                .findings
+                .iter()
+                .any(|f| matches!(f, SubscriberFrontierFinding::LagObserved { .. })),
+            "PROPERTY: a zero lag emits NO LagObserved; the `>=`/`==` mutants of \
+             `lag > 0` fabricate one, got {:?}",
+            report.body.findings
+        );
+        assert!(
+            !report.body.findings.iter().any(|f| matches!(
+                f,
+                SubscriberFrontierFinding::ConsumedFrontierAheadOfAvailable { .. }
+            )),
+            "PROPERTY: consumed == available is NOT ahead of available; the `>=` mutant \
+             of `consumed > available` fabricates an ahead-of-available finding, got {:?}",
+            report.body.findings
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{LossPrecision, SubscriberFrontierFinding};
 

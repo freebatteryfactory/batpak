@@ -95,4 +95,18 @@ mod tests {
         assert!(!invalid.is_signed());
         assert!(!invalid.is_valid());
     }
+
+    #[test]
+    fn error_returns_the_rejection_reason_for_invalid_only() {
+        // Kills `error -> None`: an Invalid receipt must surface its exact reason.
+        let invalid = ReceiptVerification::Invalid(ReceiptVerificationError::UnknownSigningKey);
+        assert_eq!(
+            invalid.error(),
+            Some(&ReceiptVerificationError::UnknownSigningKey),
+            "Invalid must return its rejection reason, never None"
+        );
+        // Accepting variants carry no error.
+        assert_eq!(ReceiptVerification::Signed.error(), None);
+        assert_eq!(ReceiptVerification::UnsignedAccepted.error(), None);
+    }
 }

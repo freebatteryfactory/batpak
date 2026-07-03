@@ -640,14 +640,34 @@ impl CursorWorkerLoop {
 }
 
 #[cfg(test)]
+#[path = "worker_mutation_kill.rs"]
+mod worker_mutation_kill;
+
+#[cfg(test)]
 mod tests {
-    use super::{build_worker_cursor, stringify_panic_payload};
+    use super::{build_worker_cursor, stringify_panic_payload, CursorWorkerConfig};
     use crate::coordinate::Region;
     use crate::store::delivery::cursor::{Cursor, CursorCheckpoint};
     use crate::store::delivery::observation::CheckpointId;
     use crate::store::index::StoreIndex;
     use std::any::Any;
     use std::sync::Arc;
+
+    #[test]
+    fn cursor_worker_config_debug_renders_struct_name_and_fields() {
+        // Kills worker.rs:158 `<Debug for CursorWorkerConfig>::fmt ->
+        // Ok(Default::default())`: the mutant writes nothing, erasing the
+        // diagnostic. Pin the struct name and a representative field label.
+        let rendered = format!("{:?}", CursorWorkerConfig::default());
+        assert!(
+            rendered.contains("CursorWorkerConfig"),
+            "PROPERTY: Debug must name the struct; the empty-string mutant erases it, got {rendered:?}"
+        );
+        assert!(
+            rendered.contains("batch_size"),
+            "PROPERTY: Debug must render the configured fields, got {rendered:?}"
+        );
+    }
 
     #[test]
     fn build_worker_cursor_honors_the_load_saved_checkpoint_flag() {

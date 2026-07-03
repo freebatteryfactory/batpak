@@ -381,8 +381,56 @@ fn report_body_hash(body: &ReadWalkReportBody) -> Result<ReadWalkHash, ReadWalkR
 
 #[cfg(test)]
 mod tests {
-    use super::{source_refs_from_region, ReadWalkSourceRef};
-    use crate::coordinate::{ClockRange, EventCategory, Region};
+    use super::{
+        source_refs_from_region, ReadWalkDroppedCount, ReadWalkFinding, ReadWalkRequest,
+        ReadWalkSourceRef,
+    };
+    use crate::coordinate::{ClockRange, Coordinate, EventCategory, Region};
+    use crate::event::EventKind;
+    use crate::store::{Store, StoreConfig};
+
+    #[test]
+    fn read_walk_at_exact_limit_reports_no_dropped_results() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(StoreConfig::new(dir.path())).expect("open");
+        let coord = Coordinate::new("entity:rw-limit", "scope:rw").expect("coord");
+        let kind = EventKind::custom(0xF, 0x51);
+        for n in 0..2 {
+            let _ = store
+                .append(&coord, kind, &serde_json::json!({ "n": n }))
+                .expect("append");
+        }
+        // Exactly two events match this entity region; a limit of exactly two must
+        // NOT report any drop. `> -> >=` would treat len==limit as an overflow and
+        // emit LimitedResults{ dropped_count: 0 } / Known(0).
+        let mut request = ReadWalkRequest::full(Region::entity("entity:rw-limit"));
+        request.limit = Some(2);
+        let (entries, report) = store
+            .query_with_read_walk_evidence(&request)
+            .expect("evidence");
+        assert_eq!(
+            entries.len(),
+            2,
+            "premise: exactly two entries match at the limit"
+        );
+        assert!(
+            matches!(
+                report.body.dropped_limited_count,
+                ReadWalkDroppedCount::NotApplicable
+            ),
+            "a result set exactly at the limit drops nothing (kills `> -> >=`), got {:?}",
+            report.body.dropped_limited_count
+        );
+        assert!(
+            !report
+                .body
+                .findings
+                .iter()
+                .any(|f| matches!(f, ReadWalkFinding::LimitedResults { .. })),
+            "no LimitedResults finding when nothing was dropped"
+        );
+        store.close().expect("close");
+    }
 
     #[test]
     fn source_refs_capture_every_active_region_selector() {

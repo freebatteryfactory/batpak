@@ -275,3 +275,7 @@ fn corrupt_ranges(path: &Path, kind: HiddenRangesCorruption) -> StoreError {
         kind,
     }
 }
+
+#[cfg(test)]
+#[path = "hidden_ranges_mutation_kill.rs"]
+mod hidden_ranges_mutation_kill;

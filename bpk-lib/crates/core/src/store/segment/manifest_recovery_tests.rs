@@ -327,12 +327,15 @@ fn resolve_untrusted_recovers_all_when_frames_intact_and_footer_corrupt() {
 
 #[test]
 fn resolve_untrusted_falls_back_to_prefix_when_no_entry_corroborates() {
-    // ROUND-7 CASE (c): an UNTRUSTED footer whose entry table parses but NONE of
-    // its entries corroborate a recovered frame (here: zero entries — the
-    // unparseable/no-signal posture). With no anchored manifest there is no
-    // trustworthy signal that a committed frame is missing, so recovery degrades
-    // to the existing recover-the-CRC-valid-prefix behavior for BOTH policies —
-    // no false fail-closed. We assert this for the strict FailClosed fall-back.
+    // ROUND-7 CASE (c), PERMISSIVE leg: an UNTRUSTED footer whose entry table
+    // parses but NONE of its entries corroborate a recovered frame (here: zero
+    // entries — the unparseable/no-signal posture). With no anchored manifest
+    // there is no PROOF a committed frame is missing, so recovery honors the tail
+    // posture. Under the default permissive (`RecoverTornTail` → false) posture it
+    // recovers the CRC-valid prefix — never a false fail-closed on a benign
+    // corrupt-footer store. (The STRICT leg of this exact scenario now fails closed
+    // as an unprovable tail — see
+    // `strict_untrusted_footer_nonempty_prefix_no_corroboration_fails_closed`.)
     let (f0, _e0) = corroboratable_frame(0, 1, &serde_json::json!({"v": "a"}));
     let mut bytes = f0;
     let f1_off = bytes.len() as u64;
@@ -344,22 +347,24 @@ fn resolve_untrusted_falls_back_to_prefix_when_no_entry_corroborates() {
     append_untrusted_footer(&mut bytes, &[]);
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true)
-        .expect("an empty/unparseable manifest must fall back to prefix recovery, not fail closed");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, false)
+        .expect("an empty/unparseable manifest must fall back to prefix recovery under permissive");
     assert_eq!(
         recovered, frames_end,
-        "PROPERTY: with no corroborating entry, recovery falls back to the CRC-valid prefix \
-         (no false fail-closed) even under the strict FailClosed policy"
+        "PROPERTY: with no corroborating entry, the default permissive posture falls back to the \
+         CRC-valid prefix (no false fail-closed)"
     );
 }
 
 #[test]
 fn resolve_untrusted_recovers_for_garbage_entry_table() {
-    // ROUND-7 CASE (c), garbage variant: an UNTRUSTED footer whose entry table is
-    // unparseable (absurd entry_count). read_entries_unauthenticated returns zero
-    // entries → no corroboration → fall back to prefix recovery. This is the
-    // "untrusted offset is inert" posture extended to a garbage manifest: never a
-    // false fail-closed.
+    // ROUND-7 CASE (c), garbage variant under the PERMISSIVE posture: an UNTRUSTED
+    // footer whose entry table is unparseable (absurd entry_count).
+    // read_entries_unauthenticated returns zero entries → no corroboration. Under
+    // the default permissive (`RecoverTornTail` → false) posture this falls back to
+    // prefix recovery — never a false fail-closed. (Under STRICT the same garbage
+    // manifest fails closed as an unprovable tail; that leg is covered by
+    // `strict_untrusted_footer_nonempty_prefix_no_corroboration_fails_closed`.)
     let (f0, _e0) = corroboratable_frame(0, 1, &serde_json::json!({"v": "x"}));
     let mut bytes = f0;
     let f1_off = bytes.len() as u64;
@@ -378,12 +383,12 @@ fn resolve_untrusted_recovers_for_garbage_entry_table() {
 
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true)
-        .expect("a garbage entry table must fall back to prefix recovery, not fail closed");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, false)
+        .expect("a garbage entry table must fall back to prefix recovery under permissive");
     assert_eq!(
         recovered, frames_end,
-        "PROPERTY: a garbage/unparseable entry table degrades to prefix recovery (no false \
-         fail-closed)"
+        "PROPERTY: a garbage/unparseable entry table degrades to prefix recovery under the default \
+         permissive posture (no false fail-closed)"
     );
 }
 
@@ -498,21 +503,221 @@ fn corroborate_property_missing_trailing_frame_fails_intact_recovers() {
     );
 
     // Missing trailing committed frame: one corroborated anchor + an entry naming a
-    // committed frame at offset == P that is NOT in R → fail closed.
+    // committed frame at offset == P that is NOT in R → fail closed as proven loss.
     let missing = vec![entry(0, 64, [7; 32]), entry(128, 64, [9; 32])];
     assert_eq!(
         corroborate_untrusted_entries(&missing, &recovered, p, true),
-        UntrustedRecovery::FailClosed,
+        UntrustedRecovery::FailClosedCorroboratedLoss,
         "PROPERTY: an anchored manifest attesting to a committed frame at/after P missing from R \
-         always fails closed"
+         always fails closed (proven loss)"
     );
 
-    // No corroboration (forged hashes): zero anchored entries → fall back to prefix.
+    // No corroboration (forged hashes): zero anchored entries → HONOR the tail
+    // posture. This is the completed-feature wiring: the same un-anchored manifest
+    // over a non-empty recovered prefix recovers under the default permissive
+    // posture but is REFUSED as an unprovable tail under the strict posture.
     let forged = vec![entry(0, 64, [0xAA; 32]), entry(128, 64, [0xBB; 32])];
     assert_eq!(
-        corroborate_untrusted_entries(&forged, &recovered, p, true),
+        corroborate_untrusted_entries(&forged, &recovered, p, false),
         UntrustedRecovery::RecoverPrefix(p),
-        "PROPERTY: an un-anchored (forged) manifest is inert — fall back to prefix, no false \
-         fail-closed"
+        "PROPERTY: an un-anchored (forged) manifest is inert under the permissive posture — fall \
+         back to prefix, no false fail-closed"
     );
+    assert_eq!(
+        corroborate_untrusted_entries(&forged, &recovered, p, true),
+        UntrustedRecovery::FailClosedUnprovableTail,
+        "PROPERTY: under the strict FailClosed posture the same un-anchored manifest over a \
+         non-empty recovered prefix refuses the unprovable tail (truncation cannot be ruled out)"
+    );
+}
+
+#[test]
+fn corroborate_runs_the_present_check_when_a_frame_sits_at_or_past_the_stop() {
+    // The fail-closed loop's second corroboration (`present`: frame_length AND
+    // content event_hash both match) is defense-in-depth: production R never holds
+    // an offset >= P, so the check is documented as "robust to future map changes"
+    // and its inner closure is normally never entered. We exercise it DIRECTLY by
+    // seeding R with a frame AT the recovery stop, forcing the closure to run so the
+    // three mutations inside it (frame_length `==`→`!=`, the `&&`→`||`, and the
+    // event_hash `==`→`!=`) become observable.
+    let entry = |frame_offset: u64, frame_length: u32, event_hash: [u8; 32]| {
+        crate::store::segment::sidx::SidxEntry {
+            event_id: 1,
+            entity_idx: 0,
+            scope_idx: 0,
+            kind: kind_to_raw(EventKind::custom(0x1, 1)),
+            wall_ms: 1,
+            clock: 1,
+            dag_lane: 0,
+            dag_depth: 0,
+            prev_hash: [0; 32],
+            event_hash,
+            frame_offset,
+            frame_length,
+            global_sequence: 1,
+            correlation_id: 1,
+            causation_id: 0,
+        }
+    };
+
+    let p = 200u64;
+    // R holds the anchor at 0 AND a frame AT the stop (offset == P == 200) so the
+    // present-closure runs for the entry that names offset 200.
+    let recovered: RecoveredFrameMap = [
+        (
+            0u64,
+            RecoveredFrame {
+                frame_length: 64,
+                event_hash: Some([7u8; 32]),
+            },
+        ),
+        (
+            200u64,
+            RecoveredFrame {
+                frame_length: 70,
+                event_hash: Some([9u8; 32]),
+            },
+        ),
+    ]
+    .into_iter()
+    .collect();
+
+    // Sub-case A — the entry at P matches the recovered frame EXACTLY (length AND
+    // hash), so it is "present" and recovery proceeds. Flipping the length `==`→`!=`
+    // or the hash `==`→`!=` inside the closure makes `present` false and FAILS
+    // CLOSED instead — so this RecoverPrefix assertion convicts both `==` mutants.
+    let exact = vec![entry(0, 64, [7; 32]), entry(200, 70, [9; 32])];
+    assert_eq!(
+        corroborate_untrusted_entries(&exact, &recovered, p, true),
+        UntrustedRecovery::RecoverPrefix(p),
+        "an anchored manifest whose entry at P matches the recovered frame's length AND content \
+         hash recovers the prefix; a flipped length/hash equality would falsely fail closed"
+    );
+
+    // Sub-case B — the entry at P matches on LENGTH but MISMATCHES on content hash,
+    // so it is NOT present → FAIL CLOSED. The `&&`→`||` mutant would treat the length
+    // match alone as "present" and recover; the hash `==`→`!=` mutant would read the
+    // mismatch as a match and recover. Asserting FailClosed convicts both.
+    let hash_mismatch = vec![entry(0, 64, [7; 32]), entry(200, 70, [0xAA; 32])];
+    assert_eq!(
+        corroborate_untrusted_entries(&hash_mismatch, &recovered, p, true),
+        UntrustedRecovery::FailClosedCorroboratedLoss,
+        "an anchored manifest whose entry at P matches length but NOT content hash must fail \
+         closed; a `&&`→`||` or a hash `==`→`!=` mutation would falsely recover"
+    );
+}
+
+/// Build two intact CRC-valid frames followed by an UNTRUSTED footer that records
+/// ZERO SIDX entries (an empty, un-anchored manifest). This is the round-7
+/// completed-feature scenario: a non-empty recovered prefix under an untrusted
+/// footer with NO corroboration. Returns `(bytes, frames_end)`.
+fn two_intact_frames_then_untrusted_empty_footer() -> (Vec<u8>, u64) {
+    let (f0, _e0) = corroboratable_frame(0, 1, &serde_json::json!({"v": "a"}));
+    let mut bytes = f0;
+    let f1_off = bytes.len() as u64;
+    let (f1, _e1) = corroboratable_frame(f1_off, 2, &serde_json::json!({"v": "b"}));
+    bytes.extend_from_slice(&f1);
+    let frames_end = bytes.len() as u64;
+    // Empty manifest (zero entries), then flip a footer byte → UNTRUSTED.
+    append_untrusted_footer(&mut bytes, &[]);
+    (bytes, frames_end)
+}
+
+#[test]
+fn strict_untrusted_footer_nonempty_prefix_no_corroboration_fails_closed() {
+    // LEG 1 (the completed feature): STRICT (`FailClosed` → true) posture + an
+    // UNTRUSTED footer + a NON-EMPTY recovered CRC-valid prefix (two intact frames)
+    // + NO corroborating manifest entry → REFUSE. The untrusted footer is exactly
+    // the thing that would bound the frame region, so a torn/truncated further
+    // committed frame past the prefix cannot be ruled out. This is the leg that was
+    // silently DROPPED before the feature was completed (the flag was ignored, so
+    // this recovered instead of refusing).
+    let (bytes, frames_end) = two_intact_frames_then_untrusted_empty_footer();
+    let file_len = bytes.len() as u64;
+    let mut cursor = Cursor::new(bytes);
+    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true);
+    assert!(
+        matches!(
+            &result,
+            Err(StoreError::CorruptSegment { segment_id: 7, .. })
+        ),
+        "PROPERTY: strict posture must REFUSE an unprovable non-empty tail with \
+         CorruptSegment{{segment_id:7}}, not recover ({frames_end}); got {result:?}"
+    );
+    let detail = match result {
+        Err(StoreError::CorruptSegment { detail, .. }) => detail,
+        _ => String::new(),
+    };
+    assert!(
+        detail.contains("unprovable tail") && detail.contains("NO corroborating"),
+        "the strict refusal must carry the distinct unprovable-tail detail (not the \
+         corroborated-loss message); got detail: {detail}"
+    );
+}
+
+#[test]
+fn permissive_untrusted_footer_nonempty_prefix_no_corroboration_recovers() {
+    // LEG 2: the DEFAULT permissive (`RecoverTornTail` → false) posture over the
+    // EXACT SAME bytes as leg 1 must RECOVER the full CRC-valid prefix — a benign
+    // corrupt-footer store whose frames are intact must still open. resolve returns
+    // the recovered frame-region end, which must equal the true frames_end (both
+    // committed frames recovered, nothing dropped).
+    let (bytes, frames_end) = two_intact_frames_then_untrusted_empty_footer();
+    let file_len = bytes.len() as u64;
+    let mut cursor = Cursor::new(bytes);
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, false)
+        .expect("LEG 2: the default permissive posture must recover a benign corrupt-footer store");
+    assert_eq!(
+        recovered, frames_end,
+        "PROPERTY: the default posture recovers the entire CRC-valid prefix (both intact frames) — \
+         the DEFAULT path is unchanged by the feature"
+    );
+}
+
+#[test]
+fn corroborated_proven_loss_fails_closed_under_both_policies() {
+    // LEG 3 (unchanged by the feature): a CORROBORATED manifest that attests to a
+    // committed frame missing from the recovered stream is PROVEN data loss and
+    // fails closed REGARDLESS of tail policy. We drive corroborate directly: an
+    // anchor at offset 0 corroborates (matching length + content hash), and an
+    // entry names a committed frame at offset == P (128) that is NOT in R.
+    let recovered: RecoveredFrameMap = [(
+        0u64,
+        RecoveredFrame {
+            frame_length: 64,
+            event_hash: Some([7u8; 32]),
+        },
+    )]
+    .into_iter()
+    .collect();
+    let p = 64u64; // one recovered 64-byte frame → prefix end at 64
+    let entry = |frame_offset: u64, frame_length: u32, event_hash: [u8; 32]| {
+        crate::store::segment::sidx::SidxEntry {
+            event_id: 1,
+            entity_idx: 0,
+            scope_idx: 0,
+            kind: kind_to_raw(EventKind::custom(0x1, 1)),
+            wall_ms: 1,
+            clock: 1,
+            dag_lane: 0,
+            dag_depth: 0,
+            prev_hash: [0; 32],
+            event_hash,
+            frame_offset,
+            frame_length,
+            global_sequence: 1,
+            correlation_id: 1,
+            causation_id: 0,
+        }
+    };
+    // Anchor at 0 corroborates; entry at P (64) is missing from R → proven loss.
+    let manifest = vec![entry(0, 64, [7; 32]), entry(64, 64, [9; 32])];
+    for fallback_fail_closed in [false, true] {
+        assert_eq!(
+            corroborate_untrusted_entries(&manifest, &recovered, p, fallback_fail_closed),
+            UntrustedRecovery::FailClosedCorroboratedLoss,
+            "PROPERTY: a corroborated missing committed frame is proven loss and fails closed \
+             regardless of tail policy (fallback_fail_closed = {fallback_fail_closed})"
+        );
+    }
 }

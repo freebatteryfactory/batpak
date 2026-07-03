@@ -668,3 +668,169 @@ fn plaintext_value_from_bytes_maps_batch_markers_to_null_without_decoding() {
         .expect("plaintext user payload decodes through the default arm");
     assert_eq!(user, serde_json::json!(42));
 }
+
+#[test]
+fn get_or_map_sealed_maps_an_admitted_segment_then_evict_drops_the_mapping() {
+    let (reader, dir) = test_reader();
+    assert!(
+        reader.sealed_mmap_admitted_for_test(),
+        "PRECONDITION: a writable data dir admits sealed-segment mmap at construction"
+    );
+    let payload = serde_json::json!({"v": "map-me"});
+    let pos = write_valid_sealed_segment(&dir, 0, "entity:map", "scope:map", &payload);
+    reader.set_active_segment(1);
+
+    // get_or_map_sealed maps the sealed segment and returns Some when mmap is
+    // admitted; the `-> Ok(None)` mutant would always signal "not mapped".
+    {
+        let mapped = reader
+            .get_or_map_sealed(pos.segment_id)
+            .expect("mapping a valid sealed segment must not error");
+        assert!(
+            mapped.is_some(),
+            "with mmap admitted, get_or_map_sealed must return a live mapping, not None"
+        );
+    } // drop the Ref before evict — evict takes a write lock on the same DashMap shard
+
+    assert!(
+        reader.sealed_maps.get(&pos.segment_id).is_some(),
+        "the successful mapping must be cached in sealed_maps"
+    );
+
+    // evict_segment drops the cached mapping; the `-> ()` (no-op) mutant leaves it.
+    reader.evict_segment(pos.segment_id);
+    assert!(
+        reader.sealed_maps.get(&pos.segment_id).is_none(),
+        "evict_segment must drop the sealed mmap from the cache"
+    );
+}
+
+#[test]
+fn evict_segment_removes_the_target_fd_and_preserves_the_others_in_order() {
+    let (reader, dir) = test_reader(); // budget 4 — room for three fds
+    for id in 0..3u64 {
+        write_segment_bytes(&dir, id, b"0123456789abcdef");
+        reader
+            .read_active_frame_into(&DiskPos::new(id, 0, 4), &mut [0u8; 4])
+            .expect("prime the fd cache for this segment");
+    }
+    assert_eq!(
+        reader.fd_cache.lock().order,
+        vec![0, 1, 2],
+        "FIXTURE: three fds cached in LRU order"
+    );
+
+    reader.evict_segment(1);
+
+    assert_eq!(
+        reader.fd_cache.lock().order,
+        vec![0, 2],
+        "evict_segment must drop ONLY the target's fd and keep the rest in order: the `-> ()` \
+         no-op mutant leaves [0,1,2] and the retain `!=`→`==` mutant leaves [1]"
+    );
+    let cache = reader.fd_cache.lock();
+    assert!(
+        !cache.fds.contains_key(&1),
+        "the evicted segment's fd must be gone"
+    );
+    assert!(
+        cache.fds.contains_key(&0) && cache.fds.contains_key(&2),
+        "the non-evicted segments' fds must survive"
+    );
+}
+
+#[test]
+fn read_active_frame_into_distinguishes_zero_and_partial_short_reads() {
+    let (reader, dir) = test_reader();
+    write_segment_bytes(&dir, 0, &[0u8; 16]);
+
+    // bytes_read == 0 (the read starts AT eof): real maps to corrupt_eof, whose
+    // detail is exactly "unexpected EOF during read".
+    let at_eof = reader
+        .read_active_frame_into(&DiskPos::new(0, 16, 4), &mut [0u8; 4])
+        .expect_err("a read starting at EOF must fail");
+    assert!(
+        matches!(
+            &at_eof,
+            StoreError::CorruptSegment { segment_id: 0, detail }
+            if detail == "unexpected EOF during read"
+        ),
+        "a zero-byte short read is EOF; the `bytes_read == 0`→`!= 0` mutant misroutes it to the \
+         partial-read detail, got {at_eof:?}"
+    );
+
+    // bytes_read > 0 (offset before eof, buffer overruns): real maps to the
+    // "ended before requested length" truncation detail.
+    let partial = reader
+        .read_active_frame_into(&DiskPos::new(0, 14, 8), &mut [0u8; 8])
+        .expect_err("a read overrunning EOF must fail");
+    assert!(
+        matches!(
+            &partial,
+            StoreError::CorruptSegment { segment_id: 0, detail }
+            if detail.contains("ended before requested length")
+        ),
+        "a partial short read is truncation, not EOF; the `bytes_read == 0`→`!= 0` mutant misroutes \
+         it to the EOF detail, got {partial:?}"
+    );
+}
+
+#[test]
+fn with_fd_evicts_the_oldest_when_the_cache_is_at_budget() {
+    let dir = TempDir::new().expect("create temp dir for fd-budget test");
+    // Budget of ONE fd: opening a second segment must evict the first.
+    let reader = Reader::new(dir.path().to_path_buf(), 1, &test_clock(), test_fs());
+    for id in 0..2u64 {
+        write_segment_bytes(&dir, id, b"0123456789abcdef");
+        reader
+            .read_active_frame_into(&DiskPos::new(id, 0, 4), &mut [0u8; 4])
+            .expect("prime the fd cache for this segment");
+    }
+
+    let cache = reader.fd_cache.lock();
+    assert_eq!(
+        cache.fds.len(),
+        1,
+        "a budget-1 fd cache must evict on the second insert; the `>=`→`<` mutant skips eviction \
+         and holds two fds"
+    );
+    assert_eq!(
+        cache.order,
+        vec![1],
+        "only the most-recently opened segment fd survives when the budget is 1"
+    );
+}
+
+#[test]
+fn required_index_hash_chain_rejects_a_batch_marker_reaching_validation() {
+    // A batch BEGIN/COMMIT marker carries no hash_chain, but it must NOT be treated
+    // as a generic missing-chain data event — it should never reach hash-chain
+    // validation, so it gets its OWN distinct error. The match-guard
+    // `matches!(...)`→`false` mutant drops that arm and misroutes the marker to the
+    // generic missing-chain arm.
+    let event = IndexScanEvent {
+        header: EventHeader::new(
+            1,
+            1,
+            None,
+            1,
+            crate::coordinate::DagPosition::root(),
+            0,
+            EventKind::SYSTEM_BATCH_BEGIN,
+        ),
+        _payload: serde::de::IgnoredAny,
+        hash_chain: None,
+    };
+
+    let err = Reader::required_index_hash_chain(&event, 7, 99)
+        .expect_err("a chainless batch marker must error");
+    assert!(
+        matches!(
+            err,
+            StoreError::CorruptSegment { segment_id: 7, ref detail }
+            if detail.contains("should not reach hash-chain validation")
+        ),
+        "a batch marker must surface the 'should not reach hash-chain validation' detail, not the \
+         generic missing-hash_chain detail; got {err:?}"
+    );
+}

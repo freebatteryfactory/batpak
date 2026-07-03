@@ -180,4 +180,25 @@ mod tests {
             "PROPERTY: distinct seeds should (almost surely) diverge over 64 steps"
         );
     }
+
+    #[test]
+    fn run_seeded_workload_is_the_real_seed_dependent_digest() {
+        // Drive the PUBLIC entry point directly (the integration determinism
+        // gate goes through it). A constant `Ok(0)`/`Ok(1)` body would make
+        // every seed collapse to the same value, so distinct seeds diverging is
+        // exactly the property that kills those constant mutants.
+        let d1 = run_seeded_workload(7, 64).expect("seed 7 must hold invariants");
+        let d1_again = run_seeded_workload(7, 64).expect("seed 7 replay must hold invariants");
+        let d2 = run_seeded_workload(9, 64).expect("seed 9 must hold invariants");
+
+        assert_eq!(
+            d1, d1_again,
+            "PROPERTY: run_seeded_workload must be deterministic for a fixed seed"
+        );
+        assert_ne!(
+            d1, d2,
+            "PROPERTY: run_seeded_workload must depend on the seed — a constant body \
+             (Ok(0)/Ok(1)) would collapse distinct seeds to the same digest"
+        );
+    }
 }

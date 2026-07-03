@@ -255,6 +255,38 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_id_accepts_exactly_max_length_and_the_space_byte() {
+        // Kills observation.rs:116 `len > MAX` -> `len >= MAX`: an id of EXACTLY
+        // MAX_CHECKPOINT_ID_LEN bytes is the inclusive boundary and must be
+        // ACCEPTED; the `>=` mutant rejects it as TooLong.
+        let exact = "x".repeat(MAX_CHECKPOINT_ID_LEN);
+        let id = CheckpointId::new(exact.clone())
+            .expect("an id of exactly the maximum length must be accepted");
+        assert_eq!(
+            id.as_str(),
+            exact.as_str(),
+            "PROPERTY: the length ceiling is exclusive (`> MAX`); a MAX-length id round-trips"
+        );
+
+        // Kills observation.rs:126 `byte < 0x20` -> `byte <= 0x20`: 0x20 (space)
+        // is the first PRINTABLE byte and must be accepted; the `<=` mutant
+        // rejects a space as a forbidden control character.
+        let with_space = "valid id with space";
+        assert_eq!(
+            with_space.as_bytes()[5],
+            0x20,
+            "sanity: the sample id really contains the 0x20 space byte"
+        );
+        let spaced = CheckpointId::new(with_space)
+            .expect("a space (0x20) is printable and must be accepted");
+        assert_eq!(
+            spaced.as_str(),
+            with_space,
+            "PROPERTY: the control-char floor is `< 0x20`; 0x20 (space) is valid"
+        );
+    }
+
+    #[test]
     fn checkpoint_id_error_is_displayable_std_error() {
         fn assert_error_trait(_: &dyn std::error::Error) {}
 

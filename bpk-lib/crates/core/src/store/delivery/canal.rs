@@ -173,7 +173,100 @@ pub enum ReactorCanal {
 
 #[cfg(test)]
 mod tests {
-    use super::CanalBatch;
+    use super::{CanalBatch, CanalClosed, CanalHandle, SubscriptionWorkerHandle};
+    use crate::store::platform::spawn::{Spawn, ThreadSpawn};
+    use crate::store::StoreError;
+    use parking_lot::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    /// Build a `SubscriptionWorkerHandle` whose backing job has already run to
+    /// completion, with the supplied error pre-seeded in the store error slot.
+    /// The join field points at a real (finished) `ThreadSpawn` job so the
+    /// finish_join path exercises a genuine, non-panicking `JobHandle::join`.
+    fn handle_with_seeded_error(
+        seeded: Option<StoreError>,
+    ) -> (SubscriptionWorkerHandle, Arc<AtomicBool>) {
+        let stop = Arc::new(AtomicBool::new(false));
+        let error_slot = Arc::new(Mutex::new(seeded));
+        let spawner = ThreadSpawn;
+        let job = spawner
+            .spawn("canal-finish-join-proof".to_string(), None, Box::new(|| {}))
+            .expect("spawn a trivial finished job");
+        let handle = SubscriptionWorkerHandle::new(Arc::clone(&stop), job, Arc::clone(&error_slot));
+        (handle, stop)
+    }
+
+    #[test]
+    fn join_surfaces_the_stashed_store_error_not_a_hardwired_ok() {
+        // Kills canal.rs:124 `finish_join -> Ok(())` and canal.rs:138
+        // `<CanalHandle>::join -> Ok(())`: a subscription worker that stashed a
+        // terminal StoreError must surface it through `join`, never a blanket
+        // Ok(()). Seed a distinctive error and require it back verbatim.
+        let (handle, _stop) = handle_with_seeded_error(Some(StoreError::WriterCrashed));
+        let result = Box::new(handle).join();
+        assert!(
+            matches!(result, Err(StoreError::WriterCrashed)),
+            "PROPERTY: join must return the worker's stashed terminal error; \
+             the Ok(()) mutants of finish_join/join swallow it, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn stop_and_join_surfaces_the_stashed_store_error() {
+        // Kills canal.rs:142 `<CanalHandle>::stop_and_join -> Ok(())`: the
+        // stop-then-wait path must also propagate the stashed terminal error.
+        let (handle, stop) = handle_with_seeded_error(Some(StoreError::WriterCrashed));
+        let result = Box::new(handle).stop_and_join();
+        assert!(
+            matches!(result, Err(StoreError::WriterCrashed)),
+            "PROPERTY: stop_and_join must return the stashed error; the Ok(()) \
+             mutant swallows it, got {result:?}"
+        );
+        assert!(
+            stop.load(Ordering::Acquire),
+            "stop_and_join must also raise the stop flag"
+        );
+    }
+
+    #[test]
+    fn a_clean_worker_joins_ok() {
+        // Guards the above from vacuity: with no stashed error a clean worker
+        // joins Ok(()), so the Err assertions above are pinned to the seeded
+        // error and not to join always failing.
+        let (handle, _stop) = handle_with_seeded_error(None);
+        Box::new(handle)
+            .join()
+            .expect("a worker with no stashed error joins cleanly");
+    }
+
+    #[test]
+    fn drop_signals_stop_to_the_background_worker() {
+        // Kills canal.rs:149 `<Drop>::drop -> ()`: dropping the handle must set
+        // the stop flag so the (still-running, in production) worker winds down.
+        // The no-op mutant leaves the flag false and leaks the worker.
+        let (handle, stop) = handle_with_seeded_error(None);
+        assert!(
+            !stop.load(Ordering::Acquire),
+            "sanity: the stop flag starts unset"
+        );
+        drop(handle);
+        assert!(
+            stop.load(Ordering::Acquire),
+            "PROPERTY: Drop must raise the stop flag; the `()` mutant leaks the worker"
+        );
+    }
+
+    #[test]
+    fn canal_closed_displays_its_terminal_text() {
+        // Kills canal.rs:53 `<Display for CanalClosed>::fmt -> Ok(Default::default())`:
+        // the mutant writes nothing, collapsing the message to an empty string.
+        assert_eq!(
+            CanalClosed.to_string(),
+            "canal closed",
+            "PROPERTY: CanalClosed renders exact terminal text; the mutant emits \"\""
+        );
+    }
 
     #[test]
     fn r4_canal_batch_is_empty_only_for_the_empty_variant() {
