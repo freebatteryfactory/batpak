@@ -408,8 +408,13 @@ pub struct KeyStore {
     /// lost/withheld keyset (a keys-excluded snapshot opened without its
     /// out-of-band keyset) from a deliberate per-scope crypto-shred: with this set, a
     /// missing scope key on read is reported as [`StoreError::KeysetMissing`]
-    /// rather than a Shredded lookalike (D24). Never cleared — the original keys
-    /// are permanently absent even after new keys are later minted/flushed.
+    /// rather than a Shredded lookalike (D24). Cleared on the first key mint
+    /// (`get_or_create`): once this store holds a key of its own it is not a
+    /// lost-keyset store, so a later missing scope key reads as a deliberate
+    /// shred — matching a keyset rehydrated from a present file, and stable across
+    /// restarts. Accepted edge: a restored keys-excluded copy appended to BEFORE
+    /// any read reports its pre-existing keyless events as `Shredded` rather than
+    /// `KeysetMissing` (an odd operator sequence, consistent across restarts).
     absent_on_load: bool,
 }
 
