@@ -20,21 +20,18 @@ guards; the items below are the measured remainder.
 
 ## 0. Now (first after the current heavy-validation pass)
 
-- [ ] **Evidence-of-truncation sharpening (untrusted-recovery)** — lands with
-  the fail-closed feature (recovery_manifest.rs). Today the ONLY positive
-  loss signal is the SIDX manifest: case (a) → `FailClosedCorroboratedLoss`.
-  When the manifest is forged / absent / unanchored (case (c)), recovery falls
-  to policy on ABSENCE of proof alone. Add a second, footer-INDEPENDENT
-  evidence channel: surface from the CRC-valid frame walk whether trailing
-  un-parseable bytes exist past the recovery stop `P` (`file_len > P` = a torn
-  in-progress write), and (i) refuse on that positive evidence in the
-  strict/sealed path even with NO manifest — distinct from the generic
-  `FailClosedUnprovableTail`; (ii) record it on the permissive tail path
-  (`RecoverPrefix`) in the recovery receipt — "N torn bytes discarded at P" —
-  instead of silently recovering a short prefix. Splits "unprovable tail"
-  (couldn't verify) from "evidence of truncation" (detected an interrupted
-  write): different operational facts, first-class receipt evidence. NOT
-  optional — an owner-flagged gap (2026-07-03), not a maybe.
+- [x] **Evidence-of-truncation sharpening (untrusted-recovery)** — LANDED with
+  the cure PR. NB: the original framing here (a "footer-INDEPENDENT trailing
+  bytes past `P`" channel, `file_len > P`) was geometrically wrong — in the
+  untrusted-footer path `[P, file_len)` IS the footer, so `P < file_len` is the
+  normal case. The real, implemented signal cross-checks the CRC-walk stop `P`
+  against the untrusted footer's OWN claimed frame end (`boundary.frames_end`):
+  `P < footer_claimed_end` ⇒ a torn/corrupt region between the recovered frames
+  and the footer (fail-closed-on-SUSPICION, not proof — the footer is untrusted).
+  Strict splits `FailClosedUnprovableTail` (P==boundary, absence-only) from
+  `FailClosedEvidenceOfTruncation` (P<boundary); permissive returns
+  `ResolvedFramesEnd { truncation_evidence }` and emits a structured warning
+  instead of silently recovering. See `recovery_manifest.rs`.
 - [ ] **`StoreError` contract mirror gap** — 9 variants (all 0.9.0-era) are in
   neither `testkit::store_error_contract::classify()` nor
   `one_of_every_variant()`: `ProjectionStateContractUnspecified`,

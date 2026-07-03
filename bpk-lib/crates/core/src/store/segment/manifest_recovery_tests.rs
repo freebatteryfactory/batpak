@@ -259,7 +259,7 @@ fn resolve_untrusted_fails_closed_on_torn_last_committed_frame() {
     let mut cursor = Cursor::new(bytes);
 
     // FailClosed policy (the non-tail sealed-segment posture cold_start passes).
-    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true);
+    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, true);
     assert!(
         matches!(
             result,
@@ -287,7 +287,7 @@ fn resolve_untrusted_fails_closed_on_torn_last_committed_frame() {
         Cursor::new(bytes)
     };
     let len2 = cursor2.get_ref().len() as u64;
-    let result_recover = resolve_untrusted_frames_end(&mut cursor2, 0, len2, 7, false);
+    let result_recover = resolve_untrusted_frames_end(&mut cursor2, 0, len2, 7, None, false);
     assert!(
         matches!(result_recover, Err(StoreError::CorruptSegment { .. })),
         "PROPERTY: a corroborated missing committed frame fails closed even under \
@@ -317,8 +317,9 @@ fn resolve_untrusted_recovers_all_when_frames_intact_and_footer_corrupt() {
     append_untrusted_footer(&mut bytes, &[e0, e1, e2]);
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true)
-        .expect("intact frames under a corrupt footer must recover, not fail closed");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, true)
+        .expect("intact frames under a corrupt footer must recover, not fail closed")
+        .frames_end;
     assert_eq!(
         recovered, frames_end,
         "PROPERTY: a corrupt footer over intact, corroborated frames recovers ALL committed frames"
@@ -347,8 +348,9 @@ fn resolve_untrusted_falls_back_to_prefix_when_no_entry_corroborates() {
     append_untrusted_footer(&mut bytes, &[]);
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, false)
-        .expect("an empty/unparseable manifest must fall back to prefix recovery under permissive");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, false)
+        .expect("an empty/unparseable manifest must fall back to prefix recovery under permissive")
+        .frames_end;
     assert_eq!(
         recovered, frames_end,
         "PROPERTY: with no corroborating entry, the default permissive posture falls back to the \
@@ -383,8 +385,9 @@ fn resolve_untrusted_recovers_for_garbage_entry_table() {
 
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, false)
-        .expect("a garbage entry table must fall back to prefix recovery under permissive");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, false)
+        .expect("a garbage entry table must fall back to prefix recovery under permissive")
+        .frames_end;
     assert_eq!(
         recovered, frames_end,
         "PROPERTY: a garbage/unparseable entry table degrades to prefix recovery under the default \
@@ -415,8 +418,9 @@ fn resolve_untrusted_legacy_sdx2_intact_frames_recovers() {
 
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true)
-        .expect("legacy SDX2 over intact frames must recover");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, true)
+        .expect("legacy SDX2 over intact frames must recover")
+        .frames_end;
     assert_eq!(
         recovered, frames_end,
         "PROPERTY: a legacy SDX2 manifest corroborates intact frames and recovers them all"
@@ -438,7 +442,7 @@ fn resolve_untrusted_still_fails_closed_on_mid_stream_corruption() {
     bytes[third_payload_byte] ^= 0x01; // break the third frame's CRC (interior)
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true);
+    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, true);
     assert!(
         matches!(
             result,
@@ -497,7 +501,7 @@ fn corroborate_property_missing_trailing_frame_fails_intact_recovers() {
     // Intact: both entries corroborate, none past P → recover prefix.
     let intact = vec![entry(0, 64, [7; 32]), entry(64, 64, [8; 32])];
     assert_eq!(
-        corroborate_untrusted_entries(&intact, &recovered, p, true),
+        corroborate_untrusted_entries(&intact, &recovered, p, None, true),
         UntrustedRecovery::RecoverPrefix(p),
         "PROPERTY: a fully-corroborated manifest with nothing past P recovers the prefix"
     );
@@ -506,7 +510,7 @@ fn corroborate_property_missing_trailing_frame_fails_intact_recovers() {
     // committed frame at offset == P that is NOT in R → fail closed as proven loss.
     let missing = vec![entry(0, 64, [7; 32]), entry(128, 64, [9; 32])];
     assert_eq!(
-        corroborate_untrusted_entries(&missing, &recovered, p, true),
+        corroborate_untrusted_entries(&missing, &recovered, p, None, true),
         UntrustedRecovery::FailClosedCorroboratedLoss,
         "PROPERTY: an anchored manifest attesting to a committed frame at/after P missing from R \
          always fails closed (proven loss)"
@@ -518,13 +522,13 @@ fn corroborate_property_missing_trailing_frame_fails_intact_recovers() {
     // posture but is REFUSED as an unprovable tail under the strict posture.
     let forged = vec![entry(0, 64, [0xAA; 32]), entry(128, 64, [0xBB; 32])];
     assert_eq!(
-        corroborate_untrusted_entries(&forged, &recovered, p, false),
+        corroborate_untrusted_entries(&forged, &recovered, p, None, false),
         UntrustedRecovery::RecoverPrefix(p),
         "PROPERTY: an un-anchored (forged) manifest is inert under the permissive posture — fall \
          back to prefix, no false fail-closed"
     );
     assert_eq!(
-        corroborate_untrusted_entries(&forged, &recovered, p, true),
+        corroborate_untrusted_entries(&forged, &recovered, p, None, true),
         UntrustedRecovery::FailClosedUnprovableTail,
         "PROPERTY: under the strict FailClosed posture the same un-anchored manifest over a \
          non-empty recovered prefix refuses the unprovable tail (truncation cannot be ruled out)"
@@ -588,7 +592,7 @@ fn corroborate_runs_the_present_check_when_a_frame_sits_at_or_past_the_stop() {
     // CLOSED instead — so this RecoverPrefix assertion convicts both `==` mutants.
     let exact = vec![entry(0, 64, [7; 32]), entry(200, 70, [9; 32])];
     assert_eq!(
-        corroborate_untrusted_entries(&exact, &recovered, p, true),
+        corroborate_untrusted_entries(&exact, &recovered, p, None, true),
         UntrustedRecovery::RecoverPrefix(p),
         "an anchored manifest whose entry at P matches the recovered frame's length AND content \
          hash recovers the prefix; a flipped length/hash equality would falsely fail closed"
@@ -600,7 +604,7 @@ fn corroborate_runs_the_present_check_when_a_frame_sits_at_or_past_the_stop() {
     // mismatch as a match and recover. Asserting FailClosed convicts both.
     let hash_mismatch = vec![entry(0, 64, [7; 32]), entry(200, 70, [0xAA; 32])];
     assert_eq!(
-        corroborate_untrusted_entries(&hash_mismatch, &recovered, p, true),
+        corroborate_untrusted_entries(&hash_mismatch, &recovered, p, None, true),
         UntrustedRecovery::FailClosedCorroboratedLoss,
         "an anchored manifest whose entry at P matches length but NOT content hash must fail \
          closed; a `&&`→`||` or a hash `==`→`!=` mutation would falsely recover"
@@ -635,7 +639,7 @@ fn strict_untrusted_footer_nonempty_prefix_no_corroboration_fails_closed() {
     let (bytes, frames_end) = two_intact_frames_then_untrusted_empty_footer();
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, true);
+    let result = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, true);
     assert!(
         matches!(
             &result,
@@ -665,8 +669,9 @@ fn permissive_untrusted_footer_nonempty_prefix_no_corroboration_recovers() {
     let (bytes, frames_end) = two_intact_frames_then_untrusted_empty_footer();
     let file_len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, false)
-        .expect("LEG 2: the default permissive posture must recover a benign corrupt-footer store");
+    let recovered = resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, None, false)
+        .expect("LEG 2: the default permissive posture must recover a benign corrupt-footer store")
+        .frames_end;
     assert_eq!(
         recovered, frames_end,
         "PROPERTY: the default posture recovers the entire CRC-valid prefix (both intact frames) — \
@@ -714,10 +719,159 @@ fn corroborated_proven_loss_fails_closed_under_both_policies() {
     let manifest = vec![entry(0, 64, [7; 32]), entry(64, 64, [9; 32])];
     for fallback_fail_closed in [false, true] {
         assert_eq!(
-            corroborate_untrusted_entries(&manifest, &recovered, p, fallback_fail_closed),
+            corroborate_untrusted_entries(&manifest, &recovered, p, None, fallback_fail_closed),
             UntrustedRecovery::FailClosedCorroboratedLoss,
             "PROPERTY: a corroborated missing committed frame is proven loss and fails closed \
              regardless of tail policy (fallback_fail_closed = {fallback_fail_closed})"
         );
     }
+}
+
+/// Non-corroborating fixture shared by the footer-claimed-end truncation-evidence
+/// tests: a NON-EMPTY recovered prefix of two 64-byte frames ending at P = 128, plus
+/// a `forged` entry set whose content hashes match NO recovered frame (matching
+/// offsets + lengths but wrong `event_hash`), so `any_corroborated` is false and the
+/// decision falls to case (c) where the footer-claimed-end cross-check lives.
+fn non_corroborating_prefix_fixture() -> (
+    RecoveredFrameMap,
+    Vec<crate::store::segment::sidx::SidxEntry>,
+    u64,
+) {
+    let recovered: RecoveredFrameMap = [
+        (
+            0u64,
+            RecoveredFrame {
+                frame_length: 64,
+                event_hash: Some([7u8; 32]),
+            },
+        ),
+        (
+            64u64,
+            RecoveredFrame {
+                frame_length: 64,
+                event_hash: Some([8u8; 32]),
+            },
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let entry = |frame_offset: u64, frame_length: u32, event_hash: [u8; 32]| {
+        crate::store::segment::sidx::SidxEntry {
+            event_id: 1,
+            entity_idx: 0,
+            scope_idx: 0,
+            kind: kind_to_raw(EventKind::custom(0x1, 1)),
+            wall_ms: 1,
+            clock: 1,
+            dag_lane: 0,
+            dag_depth: 0,
+            prev_hash: [0; 32],
+            event_hash,
+            frame_offset,
+            frame_length,
+            global_sequence: 1,
+            correlation_id: 1,
+            causation_id: 0,
+        }
+    };
+    // Forged: matching offsets + lengths but WRONG content hashes → zero corroboration.
+    let forged = vec![entry(0, 64, [0xAA; 32]), entry(64, 64, [0xBB; 32])];
+    (recovered, forged, 128)
+}
+
+#[test]
+fn corroborate_footer_claimed_past_prefix_yields_truncation_evidence() {
+    // NEW leg: NO corroborating manifest, but the untrusted footer's OWN claimed frame
+    // end lies strictly PAST the recovered prefix end P → a torn/corrupt region sits
+    // between the recovered frames and the footer = POSITIVE (if untrusted) truncation
+    // evidence. The strict and permissive postures diverge on what to do with it.
+    let (recovered, forged, p) = non_corroborating_prefix_fixture();
+
+    // STRICT: refuse with the DISTINCT evidence-of-truncation variant (NOT the
+    // absence-only FailClosedUnprovableTail). Convicts a swap of the `recovery_stop <
+    // claimed` gap guard and a wrong strict-branch variant selection.
+    assert_eq!(
+        corroborate_untrusted_entries(&forged, &recovered, p, Some(p + 64), true),
+        UntrustedRecovery::FailClosedEvidenceOfTruncation {
+            footer_claimed_end: p + 64,
+        },
+        "strict posture with a footer claiming frames past P must fail closed with POSITIVE \
+         truncation evidence, not the mere-absence unprovable-tail variant"
+    );
+
+    // PERMISSIVE (default): recover the CRC-valid prefix WHILE recording the evidence.
+    assert_eq!(
+        corroborate_untrusted_entries(&forged, &recovered, p, Some(p + 64), false),
+        UntrustedRecovery::RecoverPrefixWithTruncationEvidence {
+            end: p,
+            footer_claimed_end: p + 64,
+        },
+        "permissive posture recovers the prefix but records the footer-cross-checked truncation \
+         evidence (end = P, footer_claimed_end past P) for the caller"
+    );
+}
+
+#[test]
+fn corroborate_footer_claimed_at_or_absent_is_not_truncation_evidence() {
+    // The gap guard is STRICT (`recovery_stop < claimed`, NOT `<=`): a footer whose
+    // claimed end equals P (frames end exactly at the footer = a CLEAN segment) is NOT
+    // evidence, and an absent footer hint is not either. Both fall through to the
+    // pre-existing absence-only decisions — the behavior-preserving `None` path.
+    let (recovered, forged, p) = non_corroborating_prefix_fixture();
+
+    // footer_claimed_end == P (no gap): strict → the mere-absence unprovable tail, NOT
+    // evidence-of-truncation. Convicts a `<`→`<=` mutant on the gap guard.
+    assert_eq!(
+        corroborate_untrusted_entries(&forged, &recovered, p, Some(p), true),
+        UntrustedRecovery::FailClosedUnprovableTail,
+        "footer claiming frames end exactly AT P is a clean boundary, not truncation evidence \
+         (the gap guard is `<`, not `<=`)"
+    );
+
+    // No footer hint at all: strict → unchanged unprovable-tail (the migrated-`None`
+    // path that reproduces the pre-feature behavior exactly).
+    assert_eq!(
+        corroborate_untrusted_entries(&forged, &recovered, p, None, true),
+        UntrustedRecovery::FailClosedUnprovableTail,
+        "with no footer-claimed-end hint the strict posture keeps its pre-existing \
+         unprovable-tail refusal"
+    );
+
+    // footer_claimed_end == P under PERMISSIVE: plain prefix recovery, no evidence.
+    assert_eq!(
+        corroborate_untrusted_entries(&forged, &recovered, p, Some(p), false),
+        UntrustedRecovery::RecoverPrefix(p),
+        "a clean at-P boundary under the permissive posture recovers the plain prefix with no \
+         truncation evidence"
+    );
+}
+
+#[test]
+fn resolve_strict_footer_claimed_past_prefix_fails_with_positive_evidence() {
+    // resolve-level end-to-end: two intact CRC-valid frames + an UNTRUSTED empty footer
+    // (zero entries → no corroboration), and the caller passes a footer-claimed-end
+    // strictly PAST the recovered prefix end. The strict posture must Err with the
+    // POSITIVE-truncation-evidence detail (distinct from the unprovable-tail message).
+    let (bytes, frames_end) = two_intact_frames_then_untrusted_empty_footer();
+    let file_len = bytes.len() as u64;
+    let mut cursor = Cursor::new(bytes);
+    let result =
+        resolve_untrusted_frames_end(&mut cursor, 0, file_len, 7, Some(frames_end + 64), true);
+    assert!(
+        matches!(
+            &result,
+            Err(StoreError::CorruptSegment { segment_id: 7, .. })
+        ),
+        "PROPERTY: strict posture with a footer claiming frames past the recovered prefix must \
+         REFUSE with CorruptSegment{{segment_id:7}}; got {result:?}"
+    );
+    let detail = match result {
+        Err(StoreError::CorruptSegment { detail, .. }) => detail,
+        _ => String::new(),
+    };
+    assert!(
+        detail.contains("POSITIVE truncation evidence"),
+        "the strict refusal must carry the POSITIVE-truncation-evidence detail (distinct from the \
+         unprovable-tail message); got detail: {detail}"
+    );
 }

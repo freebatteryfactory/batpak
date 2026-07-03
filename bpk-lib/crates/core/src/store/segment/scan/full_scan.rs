@@ -117,7 +117,15 @@ impl Reader {
         // a committed event. (A benign corrupt footer over intact frames still
         // recovers via case b — its entries corroborate the recovered frames.)
         let frames_end = if untrusted_boundary {
-            segment::resolve_untrusted_frames_end(&mut file, cursor, file_len, segment_id, true)?
+            segment::resolve_untrusted_frames_end(
+                &mut file,
+                cursor,
+                file_len,
+                segment_id,
+                Some(frames_end),
+                true,
+            )?
+            .frames_end
         } else {
             frames_end
         };

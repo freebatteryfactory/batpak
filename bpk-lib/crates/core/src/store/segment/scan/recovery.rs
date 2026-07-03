@@ -14,6 +14,41 @@ use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+/// Resolve the untrusted-footer frame-region end, emitting a structured warning
+/// when the permissive `RecoverTornTail` posture recovers a torn tail — CRC-valid
+/// frames ending before the untrusted footer's own claimed frame region. Split out
+/// of [`Reader::scan_segment_index_into_with_tail_policy`] to keep that function
+/// within its complexity budget; the warning IS the permissive-path record of the
+/// truncation evidence (the strict posture fails closed on it instead).
+fn resolve_untrusted_frames_end_recording_evidence<R: Read + Seek>(
+    file: &mut R,
+    cursor: u64,
+    file_len: u64,
+    segment_id: u64,
+    footer_claimed_frames_end: u64,
+    tail_policy: FrameScanTailPolicy,
+) -> Result<u64, StoreError> {
+    let resolved = segment::resolve_untrusted_frames_end(
+        file,
+        cursor,
+        file_len,
+        segment_id,
+        Some(footer_claimed_frames_end),
+        !tail_policy.can_recover_torn_tail(),
+    )?;
+    if let Some(evidence) = resolved.truncation_evidence {
+        tracing::warn!(
+            segment_id,
+            recovered_prefix_end = evidence.recovered_prefix_end,
+            footer_claimed_frames_end = evidence.footer_claimed_frames_end,
+            torn_bytes = evidence.footer_claimed_frames_end - evidence.recovered_prefix_end,
+            "untrusted-footer recovery recovered a torn tail under the permissive RecoverTornTail \
+             posture: CRC-valid frames end before the footer's claimed frame region"
+        );
+    }
+    Ok(resolved.frames_end)
+}
+
 impl Reader {
     /// Scan only the metadata required to rebuild the in-memory index.
     /// Tries the SIDX footer first (O(1) seek + bulk read); falls back to
@@ -121,12 +156,10 @@ impl Reader {
         }
 
         // Resolve the frame-region end based on the offset's provenance.
-        //
         // TRUSTED (CRC-valid SDX3 footer): the offset is authoritative and
         // byte-for-byte authenticated by the footer CRC, so it cannot be
         // truncating. A frame-decode failure BEFORE this boundary is genuine
         // mid-stream corruption and the scan loop below FailCloses on it.
-        //
         // UNTRUSTED (CRC-failed SDX3, legacy SDX2, or forged trailer): the offset
         // is GARBAGE — it may point too LOW (truncating real frames), MID-FRAME
         // (inside a later CRC-valid frame), or too HIGH (into the corrupt footer).
@@ -144,12 +177,13 @@ impl Reader {
         // `tail_policy`: default `RecoverTornTail` recovers the CRC-valid prefix, while
         // `FailClosed` refuses a non-empty prefix as an unprovable tail.
         let frames_end = if untrusted_boundary {
-            segment::resolve_untrusted_frames_end(
+            resolve_untrusted_frames_end_recording_evidence(
                 &mut file,
                 cursor,
                 file_len,
                 segment_id,
-                !tail_policy.can_recover_torn_tail(),
+                frames_end,
+                tail_policy,
             )?
         } else {
             frames_end
