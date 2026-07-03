@@ -136,3 +136,100 @@ fn empty_seam_is_refused() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+#[test]
+fn corpus_outcome_parses_every_label_including_canonical_refusal() {
+    use super::CorpusOutcome;
+    assert_eq!(
+        CorpusOutcome::parse("CommittedPrefix"),
+        Some(CorpusOutcome::CommittedPrefix)
+    );
+    assert_eq!(
+        CorpusOutcome::parse("RolledBack"),
+        Some(CorpusOutcome::RolledBack)
+    );
+    assert_eq!(
+        CorpusOutcome::parse("CanonicalRefusal"),
+        Some(CorpusOutcome::CanonicalRefusal),
+        "PROPERTY: the CanonicalRefusal label must round-trip through parse — deleting its \
+         match arm would make a corrupt-refusal corpus row unparseable"
+    );
+    assert!(
+        CorpusOutcome::parse("NotAnOutcome").is_none(),
+        "unknown outcome labels must not parse"
+    );
+}
+
+#[test]
+fn graduation_records_the_replayed_outcome_not_the_placeholder() {
+    use super::{
+        check_graduation_for, CorpusOracle, CorpusOutcome, FaultModeLabel, GraduationCell,
+    };
+    // A CrashBeforeFsync abort at the SingleAppendFrame boundary recovers as
+    // RolledBack (committed corpus seed 1677852675). The graduated candidate
+    // must carry THAT replayed outcome, not the `CommittedPrefix` placeholder
+    // the working entry is seeded with — dropping the `outcome: first.outcome`
+    // field would silently ship the placeholder.
+    let candidate = check_graduation_for(GraduationCell {
+        seed: 1677852675,
+        steps: 96,
+        fault_mode: FaultModeLabel::CrashBeforeFsync,
+        boundary: Boundary::parse("SingleAppendFrame"),
+        seam_touched: "single-append-frame",
+        assurance_level: "L4",
+        oracle: CorpusOracle::StoreRecovery,
+        import_kind: None,
+    })
+    .expect("PROPERTY: the RolledBack fixture must graduate deterministically");
+    assert_eq!(
+        candidate.entry.outcome,
+        CorpusOutcome::RolledBack,
+        "PROPERTY: graduation must record the REPLAYED outcome (RolledBack), not the \
+         CommittedPrefix placeholder"
+    );
+}
+
+#[test]
+fn verify_corpus_row_accepts_the_committed_digest_and_rejects_a_drifted_one() {
+    use super::verify_corpus_row;
+    // The committed honest-disk row (seed 48104590831 / 96 steps) is current.
+    verify_corpus_row(
+        48_104_590_831,
+        96,
+        "HonestDiskCrash",
+        101_395_256_710_529_115,
+    )
+    .expect("PROPERTY: the committed digest must still replay identically");
+    // A drifted digest must be REPORTED — a `-> Ok(())` body on either
+    // verify_corpus_row or its delegate verify_corpus_row_cell would mask it.
+    let err = verify_corpus_row(48_104_590_831, 96, "HonestDiskCrash", 0xDEAD_BEEF)
+        .expect_err("PROPERTY: a drifted digest must be reported, not silently accepted");
+    assert!(
+        err.contains("expected digest"),
+        "the report must name the digest drift, got: {err}"
+    );
+}
+
+#[test]
+fn assert_corpus_rows_current_refuses_an_empty_row_set() {
+    use super::{assert_corpus_rows_current, CorpusRowDescriptor};
+    let rows: &[CorpusRowDescriptor<'_>] = &[];
+    let err = assert_corpus_rows_current(rows)
+        .expect_err("PROPERTY: an empty corpus row set must be refused");
+    assert!(
+        err.contains("non-empty"),
+        "the report must name the empty-corpus violation, got: {err}"
+    );
+}
+
+#[test]
+fn assert_corpus_currency_refuses_an_empty_corpus() {
+    use super::{assert_corpus_currency, CorpusEntry};
+    let entries: &[CorpusEntry] = &[];
+    let err =
+        assert_corpus_currency(entries).expect_err("PROPERTY: an empty corpus must be refused");
+    assert!(
+        err.contains("non-empty"),
+        "the report must name the empty-corpus violation, got: {err}"
+    );
+}

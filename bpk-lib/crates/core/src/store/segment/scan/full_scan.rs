@@ -109,8 +109,13 @@ impl Reader {
         // committed frame at/after the recovered prefix end FailCloses (round-7
         // torn-last-frame-under-corrupt-footer). `scan_segment` is the full-event
         // compaction read of SEALED segments, so its fall-back posture is strict
-        // (`fallback_fail_closed = true`); without a corroborated manifest that
-        // still degrades to recovering the CRC-valid prefix (no false fail-closed).
+        // (`fallback_fail_closed = true`): with no corroborated manifest it recovers
+        // an EMPTY prefix (nothing to lose) but REFUSES a non-empty recovered prefix
+        // as an unprovable tail — under an untrusted footer with no manifest signal,
+        // a torn/truncated further committed frame in a sealed source cannot be ruled
+        // out, and compaction must not silently merge a segment that may have dropped
+        // a committed event. (A benign corrupt footer over intact frames still
+        // recovers via case b — its entries corroborate the recovered frames.)
         let frames_end = if untrusted_boundary {
             segment::resolve_untrusted_frames_end(&mut file, cursor, file_len, segment_id, true)?
         } else {

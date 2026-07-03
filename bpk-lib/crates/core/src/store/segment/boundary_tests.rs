@@ -383,14 +383,23 @@ fn crc_valid_frames_end_recovers_all_frames_for_adversarial_untrusted_offsets() 
 }
 
 #[test]
-fn append_frames_from_segment_recovers_all_frames_for_untrusted_too_low_offset() {
+fn append_frames_from_segment_fails_closed_for_untrusted_too_low_offset_no_corroboration() {
     // Merge-compaction copy path: a sealed source segment whose SIDX trailer has a
     // forged (unauthenticated) string_table_offset pointing BELOW the frame region
-    // (offset 0). The forged offset breaks footer CRC authentication, so the
-    // boundary is UNTRUSTED — the offset is garbage and must be discarded. The
-    // copy then walks the CRC-valid frames bounded by file_len and copies the real
-    // frame so it is preserved in the merged segment (recover-what-was-found),
-    // rather than erroring or silently copying zero bytes.
+    // (offset 0) AND which carries ZERO entries, so the manifest cannot corroborate
+    // the recovered frame. The forged offset breaks footer CRC authentication, so
+    // the boundary is UNTRUSTED and the offset is (correctly) discarded — but with
+    // the round-7 durability feature completed, the compaction copy is STRICT
+    // (`fallback_fail_closed = true`) and a NON-EMPTY recovered prefix under an
+    // untrusted footer with no corroboration is an unprovable tail: a torn/truncated
+    // further committed frame cannot be ruled out, so the copy REFUSES rather than
+    // merging a source it cannot prove complete.
+    //
+    // (Before the FailClosed flag had teeth this recovered-what-was-found; that old
+    // expectation predates the completed feature. In production a real sealed source
+    // carries a full SIDX entry table that corroborates its frames and still
+    // recovers via case b — only a bare/garbage footer with no entry table, as
+    // synthesized here, reaches this strict refusal.)
     use std::io::Write as _;
 
     let dir = TempDir::new().expect("tmpdir");
@@ -425,36 +434,35 @@ fn append_frames_from_segment_recovers_all_frames_for_untrusted_too_low_offset()
     let mut dest: Segment<Active> =
         Segment::create_with_created_ns_on(dir.path(), 2, 0, &realfs()).expect("create dest");
     let dest_header_bytes = dest.written_bytes;
-    dest.append_frames_from_segment(&source_path)
-        .expect("PROPERTY: an untrusted too-low offset must recover the real frame, not error");
-
-    // The copy must preserve the one CRC-valid frame in full (>= frame.len()): the
-    // bytes appended to the destination must at least cover the encoded frame. With
-    // the untrusted offset discarded, a too-low (offset 0) hint can no longer drive
-    // a zero-byte copy that silently drops the committed frame. (The walk may also
-    // consume a few trailing bytes of the synthetic trailer that coincidentally
-    // decode as a CRC-valid zero-payload frame — harmless padding, never the real
-    // frame being dropped; full-store recovery is proven by the integration tests.)
-    let copied = dest.written_bytes - dest_header_bytes;
+    let result = dest.append_frames_from_segment(&source_path);
     assert!(
-        copied >= frame.len() as u64,
-        "PROPERTY: compaction must copy the full CRC-valid frame for an untrusted too-low \
-         offset (recover-what-was-found), not zero/prefix bytes; copied {copied}, frame {}",
-        frame.len()
+        matches!(
+            &result,
+            Err(StoreError::CorruptSegment { detail, .. })
+            if detail.contains("unprovable tail")
+        ),
+        "PROPERTY: the strict compaction copy must FAIL CLOSED on an unprovable non-empty tail \
+         under an untrusted footer with no corroborating manifest; got {result:?}"
+    );
+    assert_eq!(
+        dest.written_bytes, dest_header_bytes,
+        "a refused compaction copy must not append any source bytes to the destination"
     );
 }
 
 #[test]
-fn append_frames_from_segment_recovers_all_frames_for_untrusted_out_of_bounds_offset() {
-    // ROUND-6 P1 (compaction copy): a sealed source segment whose SIDX trailer has
-    // a forged (unauthenticated) string_table_offset that is OUT OF BOUNDS (set to
-    // file_len, strictly past file_len - 16). The forged offset breaks footer CRC
-    // authentication -> UNTRUSTED. Pre-round-6, detect_sidx_boundary ran its
-    // upper-bound check BEFORE trust and returned CorruptSegment, so the merge
-    // compaction copy ERRORED — bricking compaction even though the CRC-valid frame
-    // is recoverable. The definitive behavior: the out-of-bounds untrusted offset
-    // is FULLY INERT, so the copy walks the CRC-valid frames bounded by file_len and
-    // preserves the real frame in the merged segment.
+fn append_frames_from_segment_fails_closed_for_untrusted_out_of_bounds_offset_no_corroboration() {
+    // ROUND-6 P1 → ROUND-7 completed (compaction copy): a sealed source segment
+    // whose SIDX trailer has a forged (unauthenticated) string_table_offset that is
+    // OUT OF BOUNDS (set to file_len, strictly past file_len - 16) AND which carries
+    // ZERO entries. The forged offset breaks footer CRC authentication -> UNTRUSTED,
+    // and it stays FULLY INERT (never used to bound the copy — that round-6 property
+    // is preserved). But the compaction copy is STRICT (`fallback_fail_closed =
+    // true`), so with a NON-EMPTY recovered prefix and no corroborating manifest the
+    // copy REFUSES the unprovable tail rather than merging a source it cannot prove
+    // complete. (This supersedes the round-6 "always recover-what-was-found"
+    // expectation now that the FailClosed flag has teeth; a real sealed source with
+    // a full entry table still recovers via corroboration, case b.)
     use std::io::Write as _;
 
     let dir = TempDir::new().expect("tmpdir");
@@ -504,17 +512,19 @@ fn append_frames_from_segment_recovers_all_frames_for_untrusted_out_of_bounds_of
     let mut dest: Segment<Active> =
         Segment::create_with_created_ns_on(dir.path(), 2, 0, &realfs()).expect("create dest");
     let dest_header_bytes = dest.written_bytes;
-    dest.append_frames_from_segment(&source_path).expect(
-        "PROPERTY: an out-of-bounds untrusted offset must recover the real frame during \
-         compaction, not error (round-6 P1)",
-    );
-
-    let copied = dest.written_bytes - dest_header_bytes;
+    let result = dest.append_frames_from_segment(&source_path);
     assert!(
-        copied >= frame.len() as u64,
-        "PROPERTY: compaction must copy the full CRC-valid frame for an out-of-bounds untrusted \
-         offset (recover-what-was-found), not error or copy zero bytes; copied {copied}, frame {}",
-        frame.len()
+        matches!(
+            &result,
+            Err(StoreError::CorruptSegment { detail, .. })
+            if detail.contains("unprovable tail")
+        ),
+        "PROPERTY: the strict compaction copy must FAIL CLOSED on an unprovable non-empty tail \
+         under an out-of-bounds untrusted footer with no corroborating manifest; got {result:?}"
+    );
+    assert_eq!(
+        dest.written_bytes, dest_header_bytes,
+        "a refused compaction copy must not append any source bytes to the destination"
     );
 }
 
@@ -617,5 +627,215 @@ fn try_decode_frame_at_admits_a_frame_ending_exactly_at_file_len() {
     assert_eq!(
         admitted_past_bound, None,
         "a frame tail strictly past file_len must be rejected by the bound, not by a short read"
+    );
+}
+
+#[test]
+fn frame_decode_admits_an_eight_byte_empty_payload_frame() {
+    // The minimum valid frame is EXACTLY 8 bytes: [len=0 BE][crc32("")=0 BE] with
+    // a zero-length payload. frame_decode must accept it (msgpack = empty slice,
+    // consumed = 8). The `buf.len() < 8 -> <= 8` mutant rejects a buffer of exactly
+    // 8 bytes as TooShort, so it can never decode the minimal empty-payload frame.
+    let mut frame = Vec::with_capacity(8);
+    frame.extend_from_slice(&0u32.to_be_bytes()); // len = 0
+    frame.extend_from_slice(&0u32.to_be_bytes()); // crc32 of an empty payload = 0
+    assert_eq!(
+        frame.len(),
+        8,
+        "fixture must be exactly the 8-byte frame header"
+    );
+
+    let (msgpack, consumed) = frame_decode(&frame)
+        .expect("an 8-byte [len=0][crc=0] buffer is the minimal valid empty-payload frame");
+    assert!(
+        msgpack.is_empty(),
+        "a zero-length frame decodes to an empty payload slice"
+    );
+    assert_eq!(consumed, 8, "the whole 8-byte frame is consumed");
+}
+
+#[test]
+fn detect_sidx_boundary_recognizes_a_file_that_is_exactly_the_trailer() {
+    // A file of EXACTLY 16 bytes (TRAILER_LEN) is a bare SIDX trailer and must be
+    // recognized as a boundary — an UNTRUSTED one, since 16 bytes leave no room for
+    // a CRC-covered footer body to authenticate. The `file_len < 16 -> <= 16` mutant
+    // treats file_len == 16 as "no footer" and returns Ok(None), losing the boundary.
+    let bytes = sidx_trailer_buf(16, 0);
+    let file_len = bytes.len() as u64;
+    let mut cursor = Cursor::new(bytes);
+    let boundary = detect_sidx_boundary(&mut cursor, file_len, 7)
+        .expect("a 16-byte trailer file must not error");
+    assert_eq!(
+        boundary,
+        Some(SidxBoundary {
+            frames_end: 0,
+            trusted: false,
+        }),
+        "a file that is exactly the 16-byte trailer is an untrusted boundary, not 'no footer'"
+    );
+}
+
+#[test]
+fn try_decode_frame_at_reads_the_header_when_exactly_eight_bytes_remain() {
+    // With EXACTLY 8 bytes between `at` and file_len there is room for a frame
+    // header but no payload, so try_decode_frame_at seeks + reads the 8-byte header
+    // (then returns None, because no non-empty frame fits). The `remaining < 8 ->
+    // <= 8` mutant short-circuits at remaining == 8 and returns None WITHOUT
+    // consuming the source; pinning the post-call cursor at at+8 convicts it.
+    let mut source = Cursor::new(vec![0u8; 8]);
+    source
+        .seek(SeekFrom::Start(3))
+        .expect("park the cursor before the call");
+    let decoded =
+        try_decode_frame_at(&mut source, 0, 8).expect("in-memory probe cannot fail its seek");
+    assert_eq!(
+        decoded, None,
+        "8 bytes hold only a header, no non-empty frame"
+    );
+    assert_eq!(
+        source.position(),
+        8,
+        "the header at `at` must be seeked-to and read (cursor at at+8), not short-circuited"
+    );
+}
+
+#[test]
+fn try_decode_frame_at_short_circuits_below_a_header_without_consuming() {
+    // With FEWER than 8 bytes remaining there cannot even be a frame header, so the
+    // guard returns None as a cheap pre-check WITHOUT seeking or reading. The
+    // `remaining < 8 -> == 8` mutant only short-circuits at remaining == 8, so for a
+    // 4-byte remainder it falls through, seeks to `at`, and consumes the source.
+    // Pinning the parked cursor convicts it.
+    let mut source = Cursor::new(vec![0u8; 4]);
+    source
+        .seek(SeekFrom::Start(2))
+        .expect("park the cursor before the call");
+    let decoded =
+        try_decode_frame_at(&mut source, 0, 4).expect("in-memory probe cannot fail its seek");
+    assert_eq!(
+        decoded, None,
+        "fewer than 8 bytes cannot hold a frame header"
+    );
+    assert_eq!(
+        source.position(),
+        2,
+        "the sub-header guard must not seek or read — the cursor stays parked"
+    );
+}
+
+/// A [`StoreFs`] that fails `sync_file_with_mode` with a sentinel error; every
+/// other op delegates to [`RealFs`] so segment creation still succeeds. Used to
+/// prove `Segment::sync_with_mode` PROPAGATES a backend sync failure rather than
+/// swallowing it — the `-> Ok(())` mutant would silently report durability that
+/// never happened.
+struct SyncFailFs;
+
+impl crate::store::platform::fs::StoreFs for SyncFailFs {
+    fn read_dir(&self, path: &std::path::Path) -> std::io::Result<std::fs::ReadDir> {
+        crate::store::platform::fs::RealFs.read_dir(path)
+    }
+    fn create_dir_all(&self, path: &std::path::Path) -> std::io::Result<()> {
+        crate::store::platform::fs::RealFs.create_dir_all(path)
+    }
+    fn create_new_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<std::fs::File, crate::store::StoreError> {
+        crate::store::platform::fs::RealFs.create_new_file(path)
+    }
+    fn sync_file_with_mode(
+        &self,
+        _file: &std::fs::File,
+        _path: &std::path::Path,
+        _mode: &crate::store::SyncMode,
+    ) -> Result<(), crate::store::StoreError> {
+        Err(crate::store::StoreError::corrupt_segment_with_detail(
+            4242,
+            "injected: sync_file_with_mode failed",
+        ))
+    }
+    fn sync_file_all(&self, file: &std::fs::File, path: &std::path::Path) -> std::io::Result<()> {
+        crate::store::platform::fs::RealFs.sync_file_all(file, path)
+    }
+    fn sync_parent_dir(&self, path: &std::path::Path) -> Result<(), crate::store::StoreError> {
+        crate::store::platform::fs::RealFs.sync_parent_dir(path)
+    }
+    fn reject_symlink_leaf(
+        &self,
+        path: &std::path::Path,
+        purpose: &str,
+    ) -> Result<(), crate::store::StoreError> {
+        crate::store::platform::fs::RealFs.reject_symlink_leaf(path, purpose)
+    }
+    fn canonicalize(&self, path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+        crate::store::platform::fs::RealFs.canonicalize(path)
+    }
+    fn symlink_metadata(&self, path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+        crate::store::platform::fs::RealFs.symlink_metadata(path)
+    }
+    fn cow_copy_file(
+        &self,
+        from: &std::path::Path,
+        to: &std::path::Path,
+        preference: crate::store::CopyPreference,
+    ) -> std::io::Result<crate::store::platform::fs::CowStrategyUsed> {
+        crate::store::platform::fs::RealFs.cow_copy_file(from, to, preference)
+    }
+    fn copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<u64> {
+        crate::store::platform::fs::RealFs.copy(from, to)
+    }
+    fn metadata(&self, path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+        crate::store::platform::fs::RealFs.metadata(path)
+    }
+    fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        crate::store::platform::fs::RealFs.rename(from, to)
+    }
+    fn remove_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+        crate::store::platform::fs::RealFs.remove_file(path)
+    }
+    fn named_temp_in(&self, dir: &std::path::Path) -> std::io::Result<tempfile::NamedTempFile> {
+        crate::store::platform::fs::RealFs.named_temp_in(dir)
+    }
+    fn persist_temp_with_parent_sync(
+        &self,
+        named_temp: tempfile::NamedTempFile,
+        final_path: &std::path::Path,
+        admission: crate::store::platform::sync::ParentDirSyncAdmission,
+    ) -> std::io::Result<()> {
+        crate::store::platform::fs::RealFs
+            .persist_temp_with_parent_sync(named_temp, final_path, admission)
+    }
+    fn read_exact_at(
+        &self,
+        file: &mut std::fs::File,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<(), crate::store::platform::fs::PositionedReadError> {
+        crate::store::platform::fs::RealFs.read_exact_at(file, offset, buf)
+    }
+}
+
+#[test]
+fn sync_with_mode_propagates_the_backend_sync_failure() {
+    // Segment::sync_with_mode routes durability through the StoreFs seam. When the
+    // backend's sync_file_with_mode fails, the failure MUST propagate — a segment
+    // that swallows a failed fsync would report durability that never happened. The
+    // `-> Ok(())` mutant drops the fs call entirely and returns success.
+    let dir = TempDir::new().expect("tmpdir");
+    let fs: std::sync::Arc<dyn crate::store::platform::fs::StoreFs> =
+        std::sync::Arc::new(SyncFailFs);
+    let mut segment =
+        Segment::create_with_created_ns_on(dir.path(), 9, 0, &fs).expect("create over SyncFailFs");
+
+    let err = segment
+        .sync_with_mode(&crate::store::SyncMode::default())
+        .expect_err("a failing backend sync must surface as an error, not be swallowed");
+    assert!(
+        matches!(
+            err,
+            StoreError::CorruptSegment { segment_id: 4242, ref detail }
+            if detail.contains("injected: sync_file_with_mode failed")
+        ),
+        "sync_with_mode must propagate the exact backend sync failure; got {err:?}"
     );
 }

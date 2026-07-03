@@ -311,12 +311,79 @@ mod mutation_kill_tests {
     //! exact observable behavior of `visibility_epoch`, `park_for_data`, and the
     //! `pull_batch` empty arm so the constant/no-op/deleted-arm mutants of those
     //! items are caught.
-    use super::{Canal, CanalBatch, Cursor, Region, StoreIndex};
+    use super::{Canal, CanalBatch, Cursor, CursorGapConfig, Region, StoreIndex};
+    use crate::store::hidden_ranges::CancelledVisibilityRanges;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     fn fresh_index() -> Arc<StoreIndex> {
         Arc::new(StoreIndex::new())
+    }
+
+    #[test]
+    fn record_gap_intersects_with_a_half_open_range_excluding_zero_width_overlaps() {
+        // Kills cursor.rs:254 `overlap_start < overlap_end` -> `<=`. The gap
+        // observer intersects the delivered [expected, delivered) interval with
+        // each cancelled visibility range and keeps only NON-empty overlaps
+        // (`start < end`). A cancelled range that merely touches the delivered
+        // boundary is a zero-width intersection and must be dropped; the `<=`
+        // mutant keeps it as a spurious `(k, k)` cancelled range.
+        let index = fresh_index();
+        // Global cancelled ranges: (2,4) genuinely overlaps [1,5); (5,7) only
+        // TOUCHES the delivered boundary at 5 (overlap [5,5) is zero-width).
+        index.restore_cancelled_visibility_ranges(CancelledVisibilityRanges {
+            global: vec![(2, 4), (5, 7)],
+            lanes: BTreeMap::new(),
+        });
+        let mut cursor =
+            Cursor::new(Region::all(), index).with_gap_config(CursorGapConfig::Enabled {
+                capacity: NonZeroUsize::new(8).expect("nonzero capacity"),
+            });
+
+        // expected=1, delivered=5 => skipped interval [1,5).
+        cursor.record_gap(1, 5);
+        let gaps = cursor.take_gaps();
+
+        assert_eq!(gaps.len(), 1, "exactly one gap observation is recorded");
+        assert_eq!(gaps[0].expected_sequence, 1);
+        assert_eq!(gaps[0].delivered_sequence, 5);
+        assert_eq!(
+            gaps[0].cancelled_ranges,
+            vec![(2, 4)],
+            "PROPERTY: only the genuine (2,4) overlap is retained; the `<=` mutant \
+             also admits the zero-width (5,5) boundary touch, got {:?}",
+            gaps[0].cancelled_ranges
+        );
+    }
+
+    #[test]
+    fn pull_batch_blocks_until_the_deadline_before_reporting_empty() {
+        // Kills cursor.rs:289 `start.elapsed() >= deadline` -> `<`. On an empty
+        // cursor the timeout arm must keep parking until the deadline is reached
+        // and only THEN return Empty. Flipping `>=` to `<` returns Empty on the
+        // very first idle poll (elapsed ~0 < deadline), collapsing the blocking
+        // wait to an instant spin — so a 50 ms pull would return in ~0 ms.
+        let index = fresh_index();
+        let mut cursor = Cursor::new(Region::all(), index);
+
+        let deadline = Duration::from_millis(50);
+        let start = Instant::now();
+        let result = cursor
+            .pull_batch(8, deadline)
+            .expect("pull_batch on an empty cursor");
+        let elapsed = start.elapsed();
+
+        assert!(
+            matches!(result, CanalBatch::Empty),
+            "an idle cursor eventually returns Empty"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(20),
+            "PROPERTY: pull_batch must block toward its deadline before reporting \
+             Empty; the `<` mutant returns instantly, elapsed only {elapsed:?}"
+        );
     }
 
     #[test]

@@ -148,3 +148,34 @@ impl Cursor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{cursor_checkpoint_path, Cursor};
+    use crate::store::delivery::observation::CheckpointId;
+
+    #[test]
+    fn load_checkpoint_propagates_non_not_found_read_errors_instead_of_forgetting() {
+        // Kills checkpoint.rs:79 match guard `error.kind() == NotFound` -> `true`.
+        // Only a genuinely ABSENT checkpoint may collapse to Ok(None); any OTHER
+        // read failure must surface as an Err so a durable-resume caller fails
+        // closed rather than silently rewinding to position 0. The `true` mutant
+        // maps EVERY read error (including a corrupt/unreadable path) to Ok(None).
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let id = CheckpointId::new("batpak-load-checkpoint-non-notfound").expect("valid id");
+
+        // Materialise a DIRECTORY where the checkpoint file is expected. Reading
+        // it yields an io error whose kind is NOT NotFound (the file "is there",
+        // just unreadable as a file), exercising the non-NotFound arm.
+        let path = cursor_checkpoint_path(dir.path(), &id);
+        std::fs::create_dir_all(&path).expect("create a directory at the checkpoint path");
+
+        let result = Cursor::load_checkpoint(dir.path(), &id);
+        assert!(
+            matches!(&result, Err(error) if error.kind() != std::io::ErrorKind::NotFound),
+            "PROPERTY: an unreadable (non-absent) checkpoint must propagate a \
+             non-NotFound Err, not collapse to Ok(None) as the `true` guard mutant \
+             does; got {result:?}"
+        );
+    }
+}

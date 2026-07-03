@@ -285,8 +285,176 @@ fn read_trailer_u32(bytes: &[u8], segment_id: u64) -> Result<u32, StoreError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_layout, SIDX_MAGIC};
-    use std::io::Cursor;
+    use super::{
+        read_entries_unauthenticated, read_layout, sidx_crc_len_usize, trailer_size_usize,
+        ENTRY_SIZE, SIDX_MAGIC, SIDX_MAGIC_LEGACY_SDX2,
+    };
+    use crate::store::StoreError;
+    use std::io::{Cursor, Read, Seek, SeekFrom};
+
+    /// A `Read + Seek` over an in-memory footer whose reads at any position BELOW
+    /// `fault_below` fail with a NON-EOF IO error (`PermissionDenied`), while reads
+    /// AT or ABOVE it (the trailer) succeed. Lets a test drive
+    /// `read_entries_unauthenticated` through a valid trailer parse and THEN inject a
+    /// real IO failure on the entries read — the exact case the EOF-vs-non-EOF
+    /// discriminator must distinguish (torn block → fall back; real IO error →
+    /// propagate). A plain `Cursor` cannot reach that branch because the geometry
+    /// guards guarantee the entries block is present.
+    struct FaultOnEntriesRead {
+        data: Vec<u8>,
+        pos: u64,
+        fault_below: u64,
+    }
+
+    impl Read for FaultOnEntriesRead {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos < self.fault_below {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "injected: entries read fault",
+                ));
+            }
+            let start = usize::try_from(self.pos)
+                .expect("pos fits usize")
+                .min(self.data.len());
+            let available = &self.data[start..];
+            let n = available.len().min(buf.len());
+            buf[..n].copy_from_slice(&available[..n]);
+            self.pos += n as u64;
+            Ok(n)
+        }
+    }
+
+    impl Seek for FaultOnEntriesRead {
+        fn seek(&mut self, from: SeekFrom) -> std::io::Result<u64> {
+            let len = self.data.len() as i64;
+            let target = match from {
+                SeekFrom::Start(n) => n as i64,
+                SeekFrom::End(n) => len + n,
+                SeekFrom::Current(n) => self.pos as i64 + n,
+            };
+            if target < 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "seek before start",
+                ));
+            }
+            self.pos =
+                u64::try_from(target).expect("seek target is non-negative after the guard above");
+            Ok(self.pos)
+        }
+    }
+
+    /// A minimal footer carrying ONE all-zero entry whose geometry places
+    /// `string_table_offset` exactly at `entries_start` (empty string table):
+    /// `[entry: ENTRY_SIZE zeros][crc:4][string_table_offset:8 = 0][entry_count:4 = 1][magic:4]`.
+    /// `file_len = ENTRY_SIZE + 16` so `entries_start = file_len - 16 - 4 - ENTRY_SIZE == 0`.
+    /// The CRC is left zero because `read_entries_unauthenticated` never verifies it.
+    fn footer_one_zero_entry(magic: &[u8; 4]) -> Vec<u8> {
+        let mut bytes = vec![0u8; ENTRY_SIZE];
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // CRC (ignored on the unauthenticated path)
+        bytes.extend_from_slice(&0u64.to_le_bytes()); // string_table_offset = 0 == entries_start
+        bytes.extend_from_slice(&1u32.to_le_bytes()); // entry_count = 1
+        bytes.extend_from_slice(magic);
+        bytes
+    }
+
+    #[test]
+    fn footer_constant_helpers_report_the_exact_on_disk_byte_widths() {
+        // These helpers feed the footer geometry (CRC precedes the fixed 16-byte
+        // trailer). The `-> 0` / `-> 1` mutants replace the constant body; pinning
+        // the exact byte widths convicts every one of them.
+        assert_eq!(
+            sidx_crc_len_usize(),
+            4,
+            "the SIDX footer CRC is exactly 4 bytes (a u32 LE)"
+        );
+        assert_eq!(
+            trailer_size_usize(),
+            16,
+            "the SIDX trailer is exactly 16 bytes (offset8 + count4 + magic4)"
+        );
+    }
+
+    #[test]
+    fn read_entries_unauthenticated_returns_empty_for_a_subtrailer_file() {
+        // A file shorter than the 16-byte trailer carries no parseable manifest:
+        // the size guard returns ZERO entries as a clean fall-back, WITHOUT ever
+        // seeking. The `< -> ==` mutant only short-circuits at file_len == 16, so
+        // for a 10-byte file it falls through to `seek(End(-16))`, which underflows
+        // past the start of the file and surfaces an IO error instead of Ok(empty).
+        let bytes = vec![0xEEu8; 10]; // strictly under TRAILER_SIZE (16)
+        let mut cursor = Cursor::new(bytes);
+        let parsed = read_entries_unauthenticated(&mut cursor, 7)
+            .expect("a sub-trailer file must yield an empty manifest, never an error");
+        assert!(
+            parsed.is_empty(),
+            "a file too small to hold the 16-byte trailer decodes to zero entries"
+        );
+    }
+
+    #[test]
+    fn read_entries_unauthenticated_accepts_the_legacy_sdx2_magic() {
+        // The untrusted read accepts BOTH SDX3 and legacy SDX2 (the boundary
+        // detector recognizes both, and the entry geometry is byte-identical). The
+        // `!= SDX2 -> == SDX2` mutant on the magic gate INVERTS the contract:
+        // it would drop a real SDX2 manifest (return zero) while admitting garbage
+        // magics. A genuine SDX2 footer's entry table must still parse.
+        let bytes = footer_one_zero_entry(SIDX_MAGIC_LEGACY_SDX2);
+        let mut cursor = Cursor::new(bytes);
+        let parsed = read_entries_unauthenticated(&mut cursor, 7).expect("must not error");
+        assert_eq!(
+            parsed.len(),
+            1,
+            "a legacy SDX2 footer's entry table must parse (decode_from is CRC-independent)"
+        );
+        assert_eq!(
+            parsed[0].frame_offset, 0,
+            "the decoded (zeroed) entry preserves its frame_offset field"
+        );
+    }
+
+    #[test]
+    fn read_entries_unauthenticated_admits_offset_equal_to_entries_start() {
+        // The geometry guard rejects only a `string_table_offset` STRICTLY PAST
+        // `entries_start`; `offset == entries_start` (an empty string table) is a
+        // legal footer and its entries must still decode. Both the `> -> ==` and
+        // `> -> >=` mutants treat `offset == entries_start` as garbage and drop the
+        // whole manifest, so a footer built at that exact boundary convicts them.
+        let bytes = footer_one_zero_entry(SIDX_MAGIC);
+        let mut cursor = Cursor::new(bytes);
+        let parsed = read_entries_unauthenticated(&mut cursor, 7).expect("must not error");
+        assert_eq!(
+            parsed.len(),
+            1,
+            "offset == entries_start (empty string table) is legal geometry and must parse its entry"
+        );
+    }
+
+    #[test]
+    fn read_entries_unauthenticated_propagates_a_non_eof_io_fault_on_the_entries_read() {
+        // A genuine (non-EOF) IO failure while reading the entries block must
+        // PROPAGATE as StoreError::Io — only a torn/short (UnexpectedEof) block may
+        // degrade to the zero-entries fall-back. The `== UnexpectedEof`→`!=` mutant
+        // inverts that discriminator: it would swallow a real IO fault as "no
+        // manifest" (and, conversely, surface a benign torn block as a hard error).
+        // We parse a valid SDX3 trailer, then fault the entries read.
+        let data = footer_one_zero_entry(SIDX_MAGIC); // valid trailer, entries at offset 0
+        let fault_below = (data.len() as u64) - 16; // the 16-byte trailer reads cleanly; entries fault
+        let mut reader = FaultOnEntriesRead {
+            data,
+            pos: 0,
+            fault_below,
+        };
+
+        let err = read_entries_unauthenticated(&mut reader, 7)
+            .expect_err("a non-EOF IO fault on the entries read must propagate, not fall back");
+        assert!(
+            matches!(err, StoreError::Io(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied),
+            "a real IO error must surface as StoreError::Io(PermissionDenied), not be swallowed as \
+             an empty manifest; got {err:?}"
+        );
+    }
 
     #[test]
     fn read_layout_parses_a_trailer_only_file_then_rejects_it() {

@@ -648,3 +648,210 @@ mod tests {
         dest.close().expect("close dest");
     }
 }
+
+/// Cure island for the wire-framing decode guards, the durable-idempotency
+/// dedup predicate, and the append-level replay frontier boundary. Kept as a
+/// second `#[cfg(test)]` island so the existing one stays within the inline
+/// test-island budget.
+#[cfg(test)]
+mod wire_and_dedup_cure_tests {
+    use super::*;
+    use crate::coordinate::Coordinate;
+    use crate::event::EventKind;
+    use crate::store::index::idemp::IdempEntry;
+    use crate::store::{Store, StoreConfig};
+
+    #[test]
+    fn decode_wire_at_exactly_twelve_bytes_reaches_the_body_decoder() {
+        // A 12-byte frame (magic|version|crc-of-empty|EMPTY body) is exactly the
+        // `< 12` boundary: the strict `<` must let it PAST the framing guard so
+        // the empty body then fails MessagePack decode (Serialization). The
+        // `<= 12` mutant rejects it earlier as invalid framing (Configuration).
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(IMPORT_PROVENANCE_WIRE_MAGIC);
+        bytes.extend_from_slice(&IMPORT_PROVENANCE_SCHEMA_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&crc32fast::hash(&[]).to_le_bytes());
+        assert_eq!(
+            bytes.len(),
+            12,
+            "premise: the crafted frame is exactly 12 bytes"
+        );
+        let err = decode_import_provenance_wire(&bytes).expect_err("empty body must not decode");
+        assert!(
+            matches!(err, StoreError::Serialization(_)),
+            "a 12-byte frame must pass framing and fail at body decode (kills `< -> <=`), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_wire_below_twelve_bytes_with_valid_magic_is_invalid_framing() {
+        // A frame with valid magic but only 8 bytes (< 12) must be rejected as
+        // invalid framing. Kills `< -> ==` and `|| -> &&`: both would let a
+        // valid-magic short frame slip past the length guard.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(IMPORT_PROVENANCE_WIRE_MAGIC);
+        bytes.extend_from_slice(&IMPORT_PROVENANCE_SCHEMA_VERSION.to_le_bytes());
+        assert_eq!(bytes.len(), 8, "premise: valid magic, 8 bytes total (< 12)");
+        let err = decode_import_provenance_wire(&bytes).expect_err("short frame must be rejected");
+        assert!(
+            matches!(&err, StoreError::Configuration(msg) if msg.contains("framing is invalid")),
+            "a short but valid-magic frame must be invalid framing, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn decode_wire_accepts_an_older_body_schema_version() {
+        // schema_version 0 is an OLDER (<= supported) body version and must decode
+        // successfully. The `> -> <` mutant on the body-version guard rejects it
+        // as a future version.
+        let provenance = ImportProvenance {
+            schema_version: 0,
+            source_namespace: SourceNamespace::new("older-ns").expect("ns"),
+            source_event_id: 0xABCD,
+            source_global_sequence: 7,
+            source_kind: 0x1234,
+            source_content_hash: [0x9; 32],
+        };
+        let wire = encode_import_provenance_wire(&provenance).expect("encode");
+        let decoded =
+            decode_import_provenance_wire(&wire).expect("an older body schema version must decode");
+        assert_eq!(
+            decoded.schema_version, 0,
+            "an older body schema version round-trips unchanged (kills `> -> <`)"
+        );
+        assert_eq!(decoded.source_event_id, 0xABCD);
+    }
+
+    #[test]
+    fn import_key_present_via_idempotency_store_alone() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let dest = Store::open(StoreConfig::new(dir.path())).expect("open");
+        let ns = SourceNamespace::new("dedup-ns").expect("ns");
+        // The import key lives ONLY in the durable idempotency store, never as a
+        // committed event id in the index. `import_key_already_present` must still
+        // report present: the `||` short-circuits on the idemp hit. The `&&`
+        // mutant, requiring BOTH stores to hold the key, returns false here.
+        assert!(
+            !import_key_already_present(&dest, import_key(&ns, 0xFEED)),
+            "premise: the key is absent before recording"
+        );
+        let key_raw = import_key(&ns, 0xFEED).as_u128();
+        dest.index.idemp.record(IdempEntry {
+            key: key_raw,
+            event_id: key_raw,
+            global_sequence: 3,
+            disk_pos_segment: 0,
+            disk_pos_offset: 0,
+            disk_pos_length: 1,
+            content_hash: [0; 32],
+            prev_hash: [0; 32],
+            entity: "entity:dedup".to_owned(),
+            scope: "scope:dedup".to_owned(),
+            kind: EventKind::custom(0xE, 0x01),
+            recorded_global_sequence: 3,
+            event_evicted: false,
+            receipt_extensions: BTreeMap::new(),
+        });
+        assert!(
+            import_key_already_present(&dest, import_key(&ns, 0xFEED)),
+            "an idempotency-store-only key must count as present (kills `|| -> &&`)"
+        );
+        dest.close().expect("close");
+    }
+
+    #[test]
+    fn append_level_replay_receipt_at_the_frontier_counts_as_imported() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let kind = EventKind::custom(0xE, 0x32);
+        let source_dir = tempfile::tempdir().expect("source tempdir");
+        let source = Store::open(StoreConfig::new(source_dir.path())).expect("open source");
+        let coord = Coordinate::new("entity:import-frontier", "scope:import").expect("coord");
+        let receipt_one = source
+            .append(&coord, kind, &serde_json::json!({ "n": 1 }))
+            .expect("append source event 1");
+        let receipt_two = source
+            .append(&coord, kind, &serde_json::json!({ "n": 2 }))
+            .expect("append source event 2");
+
+        let dest_dir = tempfile::tempdir().expect("dest tempdir");
+        let dest = Store::open(StoreConfig::new(dest_dir.path())).expect("open dest");
+        drop(
+            dest.append(
+                &Coordinate::new("entity:pre-existing", "scope:import").expect("coord"),
+                kind,
+                &serde_json::json!({ "seed": true }),
+            )
+            .expect("append destination seed event"),
+        );
+        // The append-level replay for event 1 is planted at EXACTLY the
+        // pre-import frontier, so its receipt's global_sequence equals the
+        // frontier. The strict `<` classifies it as imported (frontier < frontier
+        // is false); the `<=` mutant would misclassify it as deduplicated.
+        let frontier = dest.frontier().visible_hlc.global_sequence;
+        assert!(
+            frontier >= 1,
+            "premise: the pre-import frontier is above origin"
+        );
+
+        let options = ImportOptions::new("frontier-ns")
+            .expect("options")
+            .with_chunk_size(3);
+        let key_one = import_key(options.source_namespace(), receipt_one.event_id.as_u128());
+        let key_two = import_key(options.source_namespace(), receipt_two.event_id.as_u128());
+
+        let fabricate = |key: u128, seq: u64| IdempEntry {
+            key,
+            event_id: key,
+            global_sequence: seq,
+            disk_pos_segment: 0,
+            disk_pos_offset: 0,
+            disk_pos_length: 1,
+            content_hash: [0; 32],
+            prev_hash: [0; 32],
+            entity: "entity:import-frontier".to_owned(),
+            scope: "scope:import".to_owned(),
+            kind,
+            recorded_global_sequence: seq,
+            event_evicted: false,
+            receipt_extensions: BTreeMap::new(),
+        };
+        let index = Arc::clone(&dest.index);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let filter_calls = Arc::clone(&calls);
+        // Plant event 1's durable key AT the frontier and event 2's below it, on
+        // the SECOND filter consultation — after event 1 has passed its own key
+        // check and been queued, but before the page's append_batch.
+        let entry_one = fabricate(key_one.as_u128(), frontier);
+        let entry_two = fabricate(key_two.as_u128(), 0);
+        let options = options.with_filter(Box::new(move |_entry| {
+            if filter_calls.fetch_add(1, Ordering::SeqCst) == 1 {
+                index.idemp.record(entry_one.clone());
+                index.idemp.record(entry_two.clone());
+            }
+            true
+        }));
+
+        let report =
+            import_events(&dest, &source, &ImportSelector::all(), &options).expect("import");
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "scenario shape: the filter must see exactly the two source events"
+        );
+        assert_eq!(
+            report.imported, 1,
+            "event 1's replay receipt at global_sequence == the pre-import frontier is imported \
+             (frontier < frontier is false), not deduplicated (kills `< -> <=`)"
+        );
+        assert_eq!(
+            report.deduplicated, 1,
+            "only event 2's key check dedups; event 1's replay is classified imported"
+        );
+
+        source.close().expect("close source");
+        dest.close().expect("close dest");
+    }
+}

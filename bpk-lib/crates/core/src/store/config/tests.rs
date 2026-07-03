@@ -459,3 +459,126 @@ fn with_fs_installs_custom_filesystem_backend() {
         "PROPERTY: the installed StoreFs must still perform the real create_dir_all"
     );
 }
+
+#[test]
+fn batch_accessor_returns_the_configured_batch_config() {
+    // Kills `batch -> Box::leak(Box::new(Default::default()))`: the accessor must
+    // reflect a configured non-default max_size (999), not the default 256.
+    let configured = StoreConfig::new("target/test-batch-accessor").with_batch_max_size(999);
+    assert_eq!(
+        configured.batch().max_size,
+        999,
+        "PROPERTY: batch() must return the configured BatchConfig, not a leaked default (256)"
+    );
+}
+
+#[test]
+fn index_accessor_returns_the_configured_index_config() {
+    // Kills `index -> Box::leak(Box::new(Default::default()))`: the default
+    // incremental_projection is false; configuring true must read back true.
+    let configured =
+        StoreConfig::new("target/test-index-accessor").with_incremental_projection(true);
+    assert!(
+        configured.index().incremental_projection,
+        "PROPERTY: index() must return the configured IndexConfig, not a leaked default (false)"
+    );
+}
+
+#[test]
+fn event_payload_validation_accessor_returns_the_configured_policy() {
+    use crate::event::EventPayloadValidation;
+    // Kills `event_payload_validation -> Default::default()` (FailFast): a
+    // configured non-default Silent policy must be returned as-is.
+    let configured = StoreConfig::new("target/test-epv-accessor")
+        .with_event_payload_validation(EventPayloadValidation::Silent);
+    assert_eq!(
+        configured.event_payload_validation(),
+        EventPayloadValidation::Silent,
+        "PROPERTY: the accessor must return the configured policy, not the default (FailFast)"
+    );
+    assert_eq!(
+        StoreConfig::new("target/test-epv-default").event_payload_validation(),
+        EventPayloadValidation::FailFast,
+        "the default collision policy is FailFast"
+    );
+}
+
+#[test]
+fn now_wall_ns_reports_the_wrapped_clock_wall_nanoseconds_not_a_sentinel() {
+    // Inject a fixed microsecond clock; FnClock derives wall-ns as us * 1000, and
+    // the monotonic wrapper passes the first reading through unchanged. Kills
+    // `now_wall_ns -> -1 / 0 / 1`.
+    let raw = Arc::new(|| 1_234_567_i64) as Arc<dyn Fn() -> i64 + Send + Sync>;
+    let mut config = StoreConfig::new("target/test-now-wall-ns");
+    config.clock = Some(clock_from_fn(raw));
+    let runtime = config.validated().expect("config validates");
+    assert_eq!(
+        runtime.now_wall_ns(),
+        1_234_567_000,
+        "PROPERTY: now_wall_ns must report the wrapped clock's wall nanoseconds, never a -1/0/1 sentinel"
+    );
+}
+
+#[test]
+fn validated_accepts_exact_inclusive_byte_ceilings() {
+    // single_append_max_bytes at EXACTLY 64MiB is valid (the `>` boundary); the
+    // `>= 64MiB` mutant would reject the inclusive ceiling.
+    let mut single = StoreConfig::new("target/test-single-append-ceiling");
+    single.single_append_max_bytes = 64 * 1024 * 1024;
+    single
+        .validated()
+        .expect("64MiB single_append_max_bytes is the inclusive ceiling");
+
+    // batch.max_bytes at EXACTLY 16MiB is valid (the `>` boundary); the
+    // `>= 16MiB` mutant would reject the inclusive ceiling.
+    let mut batch = StoreConfig::new("target/test-batch-bytes-ceiling");
+    batch.batch.max_bytes = 16 * 1024 * 1024;
+    batch
+        .validated()
+        .expect("16MiB batch.max_bytes is the inclusive ceiling");
+}
+
+#[cfg(feature = "payload-encryption")]
+#[test]
+fn payload_encryption_getter_returns_the_configured_non_default_granularity() {
+    use crate::store::keyscope::KeyScopeGranularity;
+    // A fresh config reports None — encryption is opt-in.
+    assert_eq!(
+        StoreConfig::new("target/test-payload-enc-none").payload_encryption(),
+        None,
+        "a default config must report no payload encryption"
+    );
+    // A configured NON-DEFAULT granularity round-trips exactly. Kills
+    // `payload_encryption -> None` and `-> Some(Default::default())` (PerEntity).
+    assert_ne!(
+        KeyScopeGranularity::PerEvent,
+        KeyScopeGranularity::default(),
+        "premise: PerEvent must differ from the default so Some(Default) is distinguishable"
+    );
+    let configured = StoreConfig::new("target/test-payload-enc-some")
+        .with_payload_encryption(KeyScopeGranularity::PerEvent);
+    assert_eq!(
+        configured.payload_encryption(),
+        Some(KeyScopeGranularity::PerEvent),
+        "PROPERTY: the configured PerEvent granularity must be returned as-is, never None or the default"
+    );
+}
+
+#[cfg(feature = "dangerous-test-hooks")]
+#[test]
+fn writer_mode_accessor_returns_the_configured_non_default_mode() {
+    // Kills `writer_mode -> Default::default()` (Threaded): a configured
+    // Cooperative mode must be returned as-is.
+    let configured =
+        StoreConfig::new("target/test-writer-mode").with_writer_mode(WriterMode::Cooperative);
+    assert_eq!(
+        configured.writer_mode(),
+        WriterMode::Cooperative,
+        "PROPERTY: writer_mode() must return the configured mode, not the default (Threaded)"
+    );
+    assert_eq!(
+        StoreConfig::new("target/test-writer-mode-default").writer_mode(),
+        WriterMode::Threaded,
+        "an unconfigured store drives the writer on a thread (the default)"
+    );
+}

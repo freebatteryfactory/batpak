@@ -465,3 +465,330 @@ fn scan_segment_index_into_ignores_sidx_footer_for_active_segments() {
             "PROPERTY: falling back to frame scan must not synthesize rows from the active segment's footer bytes"
         );
 }
+
+fn recovery_reader(dir: &TempDir) -> Reader {
+    Reader::new(
+        dir.path().to_path_buf(),
+        4,
+        &(std::sync::Arc::new(crate::store::SystemClock::new())
+            as std::sync::Arc<dyn crate::store::Clock>),
+        std::sync::Arc::new(crate::store::platform::fs::RealFs),
+    )
+}
+
+/// Build a real sealed segment file (magic + header + one CRC-valid frame per
+/// payload) through the production `Segment` writer. Returns `(path, frames_start)`
+/// where `frames_start == 8 + header_len` is the true start of the frame region.
+fn segment_with_frames(
+    dir: &TempDir,
+    segment_id: u64,
+    payloads: &[serde_json::Value],
+) -> (std::path::PathBuf, u64) {
+    let fs: std::sync::Arc<dyn crate::store::platform::fs::StoreFs> =
+        std::sync::Arc::new(crate::store::platform::fs::RealFs);
+    let mut active = segment::Segment::<segment::Active>::create_with_created_ns_on(
+        dir.path(),
+        segment_id,
+        0,
+        &fs,
+    )
+    .expect("create segment");
+    let frames_start = active.written_bytes;
+    for payload in payloads {
+        let payload_bytes = crate::encoding::to_bytes(payload).expect("encode payload bytes");
+        let event = crate::event::Event {
+            header: EventHeader::new(
+                1,
+                1,
+                None,
+                1,
+                DagPosition::root(),
+                u32::try_from(payload_bytes.len()).expect("payload size fits u32"),
+                EventKind::DATA,
+            ),
+            payload: payload_bytes,
+            hash_chain: Some(HashChain::default()),
+        };
+        let frame = segment::FramePayloadRef {
+            event: &event,
+            entity: "entity:t",
+            scope: "scope:t",
+            receipt_extensions: &std::collections::BTreeMap::new(),
+        };
+        let frame_bytes = segment::frame_encode(&frame).expect("encode frame");
+        active.write_frame(&frame_bytes).expect("write frame");
+    }
+    let path = active.path.clone();
+    active
+        .sync_with_mode(&crate::store::SyncMode::SyncAll)
+        .expect("sync segment");
+    let _sealed = active.seal();
+    (path, frames_start)
+}
+
+/// Append a CRC-VALID SDX3 footer (zero entries) whose `string_table_offset` is the
+/// caller-chosen `offset`, so `detect_sidx_boundary` reports the boundary TRUSTED
+/// with that offset. The footer covers `[offset .. current_len]` (an empty entry
+/// block), so the stored CRC is `crc32` of that span — exactly what `read_layout`
+/// recomputes. Used to forge an authenticated offset BELOW frames_start (offset 0)
+/// or exactly AT frames_start (empty region), both of which the strict path must
+/// handle without recovering zero events silently.
+fn append_trusted_sdx3_footer(path: &std::path::Path, offset: u64) {
+    let mut bytes = std::fs::read(path).expect("read segment");
+    let covered_start = usize::try_from(offset).expect("offset fits usize");
+    let crc = crc32fast::hash(&bytes[covered_start..]);
+    bytes.extend_from_slice(&crc.to_le_bytes());
+    bytes.extend_from_slice(&offset.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // entry_count = 0
+    bytes.extend_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
+    std::fs::write(path, &bytes).expect("write segment with trusted footer");
+}
+
+/// Append a raw 16-byte SIDX trailer (no CRC-covered body), so the boundary is
+/// recognized but UNAUTHENTICATED → UNTRUSTED (a legacy SDX2 magic can never
+/// authenticate). Drives the untrusted-recovery scan path.
+fn append_raw_trailer(path: &std::path::Path, offset: u64, count: u32, magic: &[u8; 4]) {
+    let mut bytes = std::fs::read(path).expect("read segment");
+    bytes.extend_from_slice(&offset.to_le_bytes());
+    bytes.extend_from_slice(&count.to_le_bytes());
+    bytes.extend_from_slice(magic);
+    std::fs::write(path, &bytes).expect("write segment with raw trailer");
+}
+
+#[test]
+fn scan_segment_fails_closed_for_an_untrusted_low_offset_footer_with_no_corroboration() {
+    let dir = TempDir::new().expect("tmpdir");
+    let (path, _frames_start) = segment_with_frames(&dir, 3, &[serde_json::json!({"v": "one"})]);
+    // A legacy SDX2 footer (never CRC-authenticated → UNTRUSTED) whose offset (0)
+    // is below the frame region AND which carries ZERO entries (count = 0), so the
+    // manifest cannot corroborate the recovered frame. `scan_segment` is the
+    // compaction full read of SEALED segments and passes `fallback_fail_closed =
+    // true` (strict). With the completed feature, a NON-EMPTY recovered prefix under
+    // an untrusted footer with no corroboration is an unprovable tail and must be
+    // REFUSED — the untrusted offset that would bound the frame region is exactly
+    // what we do not trust, so a torn/truncated further committed frame cannot be
+    // ruled out. (Before the feature was completed the strict flag was ignored here
+    // and this silently recovered the prefix — the round-7 gap.)
+    append_raw_trailer(
+        &path,
+        0,
+        0,
+        crate::store::segment::sidx::SIDX_MAGIC_LEGACY_SDX2,
+    );
+
+    let reader = recovery_reader(&dir);
+    let result = reader.scan_segment(&path).map(|entries| entries.len());
+    assert!(
+        matches!(
+            result,
+            Err(StoreError::CorruptSegment { segment_id: 3, ref detail })
+            if detail.contains("unprovable tail")
+        ),
+        "PROPERTY: the strict compaction full-read must fail closed on an unprovable non-empty tail \
+         under an untrusted footer with no corroborating manifest; got {result:?}"
+    );
+}
+
+#[test]
+fn scan_segment_rejects_a_trusted_offset_below_the_frame_region() {
+    let dir = TempDir::new().expect("tmpdir");
+    let (path, _frames_start) = segment_with_frames(&dir, 4, &[]); // header only, no frames
+                                                                   // A CRC-AUTHENTICATED SDX3 offset of 0 falls BELOW frames_start (8 + header_len).
+                                                                   // The lower-bound guard must reject it as CorruptSegment — recovering zero events
+                                                                   // would silently lose data. The delete-`!` mutant flips the guard to fire only on
+                                                                   // UNtrusted boundaries, so a trusted-but-too-low offset silently returns empty.
+    append_trusted_sdx3_footer(&path, 0);
+
+    let reader = recovery_reader(&dir);
+    // Map Ok to the recovered count (ScannedEntry is not Debug) so both arms print.
+    let result = reader.scan_segment(&path).map(|entries| entries.len());
+    assert!(
+        matches!(
+            result,
+            Err(StoreError::CorruptSegment { segment_id: 4, ref detail })
+            if detail.contains("below the frame region start")
+        ),
+        "a trusted offset below the frame region must be rejected as CorruptSegment, not silently \
+         emptied; the lower-bound guard must fire; got {result:?}"
+    );
+}
+
+#[test]
+fn scan_index_rejects_a_trusted_offset_below_the_frame_region() {
+    let dir = TempDir::new().expect("tmpdir");
+    let (path, _frames_start) = segment_with_frames(&dir, 4, &[]);
+    append_trusted_sdx3_footer(&path, 0);
+    let reader = recovery_reader(&dir);
+    reader.set_active_segment(5); // sealed → fast path consulted, then falls through
+
+    let mut rows = 0usize;
+    let err = {
+        let mut sink = |_row: ScannedIndexEntry| -> Result<(), StoreError> {
+            rows += 1;
+            Ok(())
+        };
+        reader
+            .scan_segment_index_into_with_tail_policy(
+                &path,
+                None,
+                FrameScanTailPolicy::FailClosed,
+                &mut sink,
+            )
+            .expect_err("a trusted offset below the frame region must be rejected")
+    };
+    assert!(
+        matches!(
+            err,
+            StoreError::CorruptSegment { segment_id: 4, ref detail }
+            if detail.contains("below the frame region start")
+        ),
+        "the index-scan lower-bound guard must fire for a trusted too-low offset; the `<`→`==` \
+         mutant only fires at frames_end == cursor and silently empties this segment; got {err:?}"
+    );
+    assert_eq!(rows, 0, "a rejected segment must not emit any index rows");
+}
+
+#[test]
+fn scan_index_accepts_a_trusted_empty_frame_region() {
+    let dir = TempDir::new().expect("tmpdir");
+    let (path, frames_start) = segment_with_frames(&dir, 6, &[]);
+    // A CRC-valid SDX3 footer whose authenticated offset lands EXACTLY at
+    // frames_start — a legitimately empty (but valid) frame region. frames_end ==
+    // cursor must stay VALID (zero rows, no error). The `<`→`<=` mutant treats the
+    // inclusive boundary as corrupt and rejects a legitimately empty sealed segment.
+    append_trusted_sdx3_footer(&path, frames_start);
+    let reader = recovery_reader(&dir);
+    reader.set_active_segment(7);
+
+    let mut rows = 0usize;
+    {
+        let mut sink = |_row: ScannedIndexEntry| -> Result<(), StoreError> {
+            rows += 1;
+            Ok(())
+        };
+        reader
+            .scan_segment_index_into_with_tail_policy(
+                &path,
+                None,
+                FrameScanTailPolicy::FailClosed,
+                &mut sink,
+            )
+            .expect("a trusted empty frame region (frames_end == cursor) must scan cleanly");
+    }
+    assert_eq!(rows, 0, "an empty frame region yields zero index rows");
+}
+
+#[test]
+fn scan_index_fails_closed_on_a_torn_tail_frame_under_failclosed_policy() {
+    let dir = TempDir::new().expect("tmpdir");
+    let (path, _frames_start) = segment_with_frames(&dir, 8, &[serde_json::json!({"v": "kept"})]);
+    // Append an 8-byte frame HEADER claiming a 100-byte payload that is NOT present
+    // (a torn last frame), with NO footer → frames_end == file_len. Under FailClosed,
+    // a frame whose tail runs past the frame region is committed-frame corruption and
+    // must error. The `&&`→`||` mutant lets `frames_end == file_len` alone trigger a
+    // torn-tail BREAK, silently truncating instead of failing closed.
+    {
+        let mut bytes = std::fs::read(&path).expect("read segment");
+        bytes.extend_from_slice(&100u32.to_be_bytes()); // claimed payload length = 100
+        bytes.extend_from_slice(&0u32.to_be_bytes()); // crc (payload never reached)
+        std::fs::write(&path, &bytes).expect("write torn tail");
+    }
+    let reader = recovery_reader(&dir);
+    reader.set_active_segment(9);
+
+    let mut rows = 0usize;
+    let err = {
+        let mut sink = |_row: ScannedIndexEntry| -> Result<(), StoreError> {
+            rows += 1;
+            Ok(())
+        };
+        reader
+            .scan_segment_index_into_with_tail_policy(
+                &path,
+                None,
+                FrameScanTailPolicy::FailClosed,
+                &mut sink,
+            )
+            .expect_err("a torn tail under FailClosed must surface corruption, not truncate")
+    };
+    assert!(
+        matches!(
+            err,
+            StoreError::CorruptFrame { segment_id: 8, ref reason, .. }
+            if reason.contains("extends past the frame region")
+        ),
+        "FailClosed must reject a frame whose payload runs past the region; the `&&`→`||` mutant \
+         would break as a torn tail and return Ok; got {err:?}"
+    );
+}
+
+#[test]
+fn sidx_covers_segment_tail_admits_a_bare_sixteen_byte_footer() {
+    // A file of EXACTLY 16 bytes is a bare SDX3 trailer over a zero-length frame
+    // region: with zero entries, max_tail (0) == sidx_start (0) → Complete coverage.
+    // The `file_len < 16`→`<= 16` mutant treats file_len == 16 as "too small" and
+    // returns Incomplete, needlessly forcing the frame-scan fallback.
+    let dir = TempDir::new().expect("tmpdir");
+    let path = dir.path().join("bare16.fbat");
+    let mut trailer = Vec::with_capacity(16);
+    trailer.extend_from_slice(&0u64.to_le_bytes()); // string_table_offset = 0
+    trailer.extend_from_slice(&0u32.to_le_bytes()); // entry_count = 0
+    trailer.extend_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
+    std::fs::write(&path, &trailer).expect("write 16-byte footer");
+
+    assert_eq!(
+        Reader::sidx_covers_segment_tail(&path, &[]),
+        SidxTailCoverage::Complete,
+        "a 16-byte bare footer (zero entries, offset 0) is fully covered: max_tail == sidx_start"
+    );
+}
+
+#[test]
+fn sidx_covers_segment_tail_treats_a_subtrailer_file_as_incomplete() {
+    // A file too small to hold the 16-byte trailer cannot prove coverage from its
+    // footer, so it degrades to Incomplete (frame-scan with CRC verification). The
+    // `file_len < 16`→`== 16` mutant only short-circuits at file_len == 16, so a
+    // 10-byte file falls through to `seek(End(-16))`, underflows, and returns
+    // Unreadable instead of the Incomplete fall-back.
+    let dir = TempDir::new().expect("tmpdir");
+    let path = dir.path().join("tiny.fbat");
+    std::fs::write(&path, [0u8; 10]).expect("write 10-byte file");
+
+    assert_eq!(
+        Reader::sidx_covers_segment_tail(&path, &[]),
+        SidxTailCoverage::Incomplete,
+        "a sub-trailer file degrades to Incomplete (frame-scan), never Unreadable"
+    );
+}
+
+#[test]
+fn try_sidx_fast_path_declines_when_coverage_is_incomplete() {
+    // A sealed segment whose SIDX footer does NOT cover the tail (trailing unindexed
+    // bytes) must NOT use the fast path — it must frame-scan so no committed frame is
+    // missed. try_sidx_fast_path returns Ok(false) and emits nothing. The match-guard
+    // `... == Complete`→`true` mutant would take the fast path for ANY readable footer,
+    // emitting the (incomplete) SIDX rows and returning Ok(true).
+    let dir = TempDir::new().expect("tmpdir");
+    let segment_id = 7;
+    // prefix 80 with one entry covering [0, 64): max_tail 64 != sidx_start 80 → Incomplete.
+    let path = footer_segment_path(&dir, segment_id, 80, &[sample_entry(0, 64)]);
+    let reader = recovery_reader(&dir);
+    reader.set_active_segment(segment_id + 1);
+
+    let mut rows = 0usize;
+    let used_fast_path = {
+        let mut sink = |_row: ScannedIndexEntry| -> Result<(), StoreError> {
+            rows += 1;
+            Ok(())
+        };
+        reader
+            .try_sidx_fast_path(&path, segment_id, false, &mut sink)
+            .expect("try_sidx_fast_path must not error on a readable incomplete footer")
+    };
+    assert!(
+        !used_fast_path,
+        "an incomplete-coverage footer must decline the SIDX fast path; the guard→true mutant \
+         forces it on"
+    );
+    assert_eq!(rows, 0, "declining the fast path must emit no rows");
+}

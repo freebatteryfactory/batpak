@@ -16,10 +16,14 @@
 //! 2. recover the CRC-valid prefix and build the recovered-frame map `R`;
 //! 3. corroborate each entry against `R` by (offset, length, content event_hash);
 //! 4. decide: a corroborated manifest attesting to a committed frame missing from
-//!    the recovered stream FAILS CLOSED (real data loss); a corroborated manifest
-//!    over intact frames RECOVERS; an uncorroborated/unparseable manifest falls
-//!    back to the existing tail-policy prefix recovery (inert, no false
-//!    fail-closed).
+//!    the recovered stream FAILS CLOSED (real data loss, any policy); a
+//!    corroborated manifest over intact frames RECOVERS; an
+//!    uncorroborated/unparseable manifest HONORS the caller's tail posture — the
+//!    default permissive posture recovers the CRC-valid prefix (never a false
+//!    fail-closed that would brick a benign corrupt-footer store), while the
+//!    strict `FailClosed` posture refuses a NON-EMPTY prefix as an unprovable
+//!    tail (truncation of a further committed frame cannot be ruled out under an
+//!    untrusted footer with no manifest signal).
 //!
 //! Load-bearing assumptions (validated against the writer):
 //! - A corroborated entry anchors the WHOLE table to this segment: a forger
@@ -75,16 +79,28 @@ pub(crate) type RecoveredFrameMap = BTreeMap<u64, RecoveredFrame>;
 
 /// The outcome of the untrusted-footer recovery decision.
 ///
-/// `RecoverPrefix(end)` means: recover the CRC-valid frame region `[frames_start
-/// .. end)`. `FailClosed` means a CORROBORATED manifest attests to a committed
-/// frame the recovered stream is missing — real data loss — so the caller must
-/// surface [`StoreError::CorruptSegment`].
+/// `RecoverPrefix(end)` recovers the CRC-valid frame region `[frames_start ..
+/// end)`. The two fail-closed reasons surface the SAME
+/// [`StoreError::CorruptSegment`] refusal but carry DISTINCT, honest detail
+/// strings (see [`resolve_untrusted_frames_end`]):
+/// - `FailClosedCorroboratedLoss` — a CORROBORATED manifest attests to a
+///   committed frame the recovered stream is missing (proven data loss);
+/// - `FailClosedUnprovableTail` — the strict tail posture refusing a non-empty
+///   recovered prefix under an untrusted footer with no corroborating manifest.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum UntrustedRecovery {
     /// Recover the CRC-valid prefix that ends at this offset.
     RecoverPrefix(u64),
-    /// A corroborated manifest proves a committed frame is missing → fail closed.
-    FailClosed,
+    /// A CORROBORATED manifest attests to a committed frame the recovered stream
+    /// is missing — proven data loss — so fail closed REGARDLESS of tail policy.
+    FailClosedCorroboratedLoss,
+    /// STRICT (`FailClosed`) posture refusing an UNPROVABLE tail: a non-empty
+    /// CRC-valid prefix was recovered beneath an untrusted footer with NO
+    /// corroborating manifest entry, so a torn/truncated further committed frame
+    /// cannot be ruled out. Only returned when the caller passed
+    /// `fallback_fail_closed` (opted into the strict tail posture); the default
+    /// permissive posture recovers the prefix instead.
+    FailClosedUnprovableTail,
 }
 
 /// Walk the CRC-valid frames from `frames_start`, building the recovered-frame
@@ -236,18 +252,27 @@ fn read_frame_event_hash<R: Read + Seek>(
 /// - (b) RECOVER the prefix iff at least one entry corroborates and every entry
 ///   the anchored manifest references either maps to a recovered frame or lies
 ///   strictly before P (manifest agrees the recovered region is complete).
-/// - (c) FALL BACK to existing tail-policy behavior (recover the CRC-valid
-///   prefix) iff ZERO entries corroborate (unparseable table or no trustworthy
-///   signal) — same posture as "an untrusted offset is inert." The
-///   `fallback_fail_closed` flag is threaded for this case; with no corroborated
-///   manifest there is no trustworthy signal that a committed frame is missing,
-///   so the prefix is recovered for BOTH policies (no false fail-closed). The
-///   round-7 trigger is honored by case (a), which is independent of policy.
+/// - (c) HONOR THE TAIL POSTURE iff ZERO entries corroborate (unparseable table
+///   or no trustworthy signal). There is no manifest PROOF a committed frame is
+///   missing, so the outcome is the caller's `fallback_fail_closed` posture:
+///   - permissive (default `RecoverTornTail` → `false`): recover the CRC-valid
+///     prefix. Never a false fail-closed — a benign corrupt-footer store whose
+///     frames are intact must still open (this is what keeps the DEFAULT path
+///     unchanged).
+///   - strict (`FailClosed` → `true`) with a NON-EMPTY recovered prefix: refuse
+///     as `FailClosedUnprovableTail`. Under an untrusted (unauthenticated) footer
+///     with no corroborating manifest, a torn/truncated further committed frame
+///     cannot be ruled out, so a store that opted into the strict posture must not
+///     silently accept an unprovable tail. An EMPTY prefix has no data to lose and
+///     always recovers (nothing), so it never fails closed.
+///
+/// The round-7 corroborated-loss trigger (case a) is independent of policy and
+/// fires regardless.
 pub(crate) fn corroborate_untrusted_entries(
     entries: &[sidx::SidxEntry],
     recovered: &RecoveredFrameMap,
     recovery_stop: u64,
-    _fallback_fail_closed: bool,
+    fallback_fail_closed: bool,
 ) -> UntrustedRecovery {
     // An entry is CORROBORATED when a recovered frame sits at its offset with a
     // matching length AND a matching content event_hash. The event_hash match is
@@ -266,11 +291,22 @@ pub(crate) fn corroborate_untrusted_entries(
     let any_corroborated = entries.iter().any(is_corroborated);
     if !any_corroborated {
         // (c) No trustworthy signal — the manifest is not anchored to this segment
-        // (or is unparseable / empty). Degrade to the existing tail-policy behavior:
-        // recover the CRC-valid prefix. `fallback_fail_closed` is intentionally not
-        // used to override this — without a corroborated manifest there is no proof a
-        // committed frame is missing, and a false fail-closed here would brick cold
-        // start / compaction on a benign corrupt-footer + intact-frames segment.
+        // (or is unparseable / empty). There is no PROOF a committed frame is
+        // missing, so honor the caller's tail posture rather than the manifest.
+        //
+        // Strict (`fallback_fail_closed`) posture over a NON-EMPTY recovered prefix:
+        // refuse. Under an untrusted (unauthenticated) footer with no corroboration,
+        // a torn/truncated further committed frame past the recovered prefix cannot
+        // be ruled out — the footer that would have bounded the frame region is
+        // exactly the thing we do not trust. A store that opted into FailClosed must
+        // not silently accept that unprovable tail.
+        if fallback_fail_closed && !recovered.is_empty() {
+            return UntrustedRecovery::FailClosedUnprovableTail;
+        }
+        // Permissive posture (the DEFAULT `RecoverTornTail`), OR an EMPTY prefix
+        // (no data to lose): recover the CRC-valid prefix. This keeps the default
+        // path unchanged and never bricks a benign corrupt-footer + intact-frames
+        // segment — a false fail-closed here would be its own availability bug.
         return UntrustedRecovery::RecoverPrefix(recovery_stop);
     }
 
@@ -290,7 +326,7 @@ pub(crate) fn corroborate_untrusted_entries(
                     && frame.event_hash == Some(entry.event_hash)
             });
             if !present {
-                return UntrustedRecovery::FailClosed;
+                return UntrustedRecovery::FailClosedCorroboratedLoss;
             }
         }
     }
@@ -312,13 +348,15 @@ pub(crate) fn corroborate_untrusted_entries(
 ///   3. corroborates entries against `R` and decides (case a/b/c above).
 ///
 /// `fallback_fail_closed` is the caller's [`scan::FrameScanTailPolicy`] reduced to
-/// a bool (FailClosed → true), threaded through for case (c). It is passed as a
-/// bool to keep this module decoupled from the scan layer.
+/// a bool (FailClosed → true), which case (c) now HONORS: a strict caller refuses
+/// a non-empty recovered prefix under an untrusted footer with no corroboration
+/// (an unprovable tail), while the default permissive caller recovers the prefix.
+/// It is passed as a bool to keep this module decoupled from the scan layer.
 ///
 /// # Errors
 /// Returns [`StoreError::Io`] on read failure, or [`StoreError::CorruptSegment`]
-/// for mid-stream corruption (from the walk) or a corroborated missing committed
-/// frame (case a).
+/// for mid-stream corruption (from the walk), a corroborated missing committed
+/// frame (case a), or a strict refusal of an unprovable non-empty tail (case c).
 pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
     source: &mut R,
     frames_start: u64,
@@ -338,16 +376,30 @@ pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
     // Step 3/4: corroborate + decide.
     match corroborate_untrusted_entries(&entries, &recovered, recovery_stop, fallback_fail_closed) {
         UntrustedRecovery::RecoverPrefix(end) => Ok(end),
-        UntrustedRecovery::FailClosed => Err(StoreError::corrupt_segment_with_detail(
-            segment_id,
-            format!(
-                "untrusted-footer recovery: a corroborated SIDX manifest entry attests to a \
-                 committed frame at/after the recovered prefix end {recovery_stop} that is missing \
-                 from the CRC-valid frame stream (file_len {file_len}); a torn/corrupt last \
-                 committed frame under a corrupt footer would silently drop a committed event — \
-                 refusing to recover"
-            ),
-        )),
+        UntrustedRecovery::FailClosedCorroboratedLoss => {
+            Err(StoreError::corrupt_segment_with_detail(
+                segment_id,
+                format!(
+                    "untrusted-footer recovery: a corroborated SIDX manifest entry attests to a \
+                     committed frame at/after the recovered prefix end {recovery_stop} that is \
+                     missing from the CRC-valid frame stream (file_len {file_len}); a torn/corrupt \
+                     last committed frame under a corrupt footer would silently drop a committed \
+                     event — refusing to recover"
+                ),
+            ))
+        }
+        UntrustedRecovery::FailClosedUnprovableTail => {
+            Err(StoreError::corrupt_segment_with_detail(
+                segment_id,
+                format!(
+                    "untrusted-footer recovery: strict FailClosed posture refuses an unprovable \
+                     tail — a non-empty CRC-valid prefix ending at {recovery_stop} was recovered \
+                     beneath an untrusted footer (file_len {file_len}) with NO corroborating SIDX \
+                     manifest entry, so a torn/truncated further committed frame cannot be ruled \
+                     out; the default RecoverTornTail posture would instead recover this prefix"
+                ),
+            ))
+        }
     }
 }
 

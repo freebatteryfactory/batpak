@@ -46,6 +46,10 @@ impl<State: crate::store::StoreState> Store<State> {
 }
 
 #[cfg(test)]
+#[path = "frontier_api_mutation_kill.rs"]
+mod frontier_api_mutation_kill;
+
+#[cfg(test)]
 mod tests {
     use crate::coordinate::Coordinate;
     use crate::store::stats::HlcPoint;

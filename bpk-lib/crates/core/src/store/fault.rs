@@ -416,6 +416,10 @@ pub fn maybe_inject(
 }
 
 #[cfg(test)]
+#[path = "fault_tests.rs"]
+mod contract_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

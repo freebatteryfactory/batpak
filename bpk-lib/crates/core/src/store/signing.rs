@@ -424,3 +424,115 @@ mod tests {
         ));
     }
 }
+
+/// Cure island for the receipt-verification sentinel/unsigned dispositions and
+/// the Debug/Display renderers. Split from the island above to stay within the
+/// inline test-island budget.
+#[cfg(test)]
+mod verify_cure_tests {
+    use super::*;
+    use crate::store::index::DiskPos;
+
+    fn receipt(key_id: [u8; 32], signature: Option<[u8; 64]>) -> AppendReceipt {
+        AppendReceipt {
+            event_id: crate::id::EventId::from(3u128),
+            global_sequence: 1,
+            disk_pos: DiskPos::new(1, 0, 1),
+            content_hash: [0x11; 32],
+            key_id,
+            signature,
+            extensions: BTreeMap::new(),
+        }
+    }
+
+    fn denial(key_id: [u8; 32], signature: Option<[u8; 64]>) -> DenialReceipt {
+        DenialReceipt {
+            event_id: crate::id::EventId::from(4u128),
+            global_sequence: 2,
+            disk_pos: DiskPos::new(1, 0, 1),
+            content_hash: [0x22; 32],
+            key_id,
+            signature,
+            extensions: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn verify_append_receipt_unsigned_with_nonsentinel_key_is_missing_signature() {
+        let registry = ReceiptSigningRegistry::from_keys(&[], false);
+        let coord = Coordinate::new("entity:sig", "scope:sig").expect("coord");
+        // signature.is_none() is true but key_id is NOT the sentinel, so the
+        // unsigned bypass must NOT trigger; the receipt falls through to
+        // signature checking and is MissingSignature. `&& -> ||` and `== -> !=`
+        // both wrongly take the bypass and return UnsignedAccepted.
+        assert_eq!(
+            registry.verify_append_receipt(
+                &receipt([0xAA; 32], None),
+                &coord,
+                EventKind::custom(0xF, 1),
+                [0; 32],
+            ),
+            ReceiptVerification::Invalid(ReceiptVerificationError::MissingSignature),
+        );
+    }
+
+    #[test]
+    fn verify_denial_receipt_unsigned_with_nonsentinel_key_is_missing_signature() {
+        let registry = ReceiptSigningRegistry::from_keys(&[], false);
+        let coord = Coordinate::new("entity:sig-d", "scope:sig").expect("coord");
+        assert_eq!(
+            registry.verify_denial_receipt(
+                &denial([0xBB; 32], None),
+                &coord,
+                EventKind::custom(0xF, 2),
+                [0; 32],
+            ),
+            ReceiptVerification::Invalid(ReceiptVerificationError::MissingSignature),
+        );
+    }
+
+    #[test]
+    fn verify_signature_unsigned_dispositions_match_key_and_registry_state() {
+        let empty = ReceiptSigningRegistry::from_keys(&[], false);
+        let keyed = ReceiptSigningRegistry::from_keys(&[SigningKey::from_bytes([7u8; 32])], false);
+        let cover = [0u8; 32];
+        // Sentinel key + empty registry -> UnsignedAccepted. Kills `== -> !=` (227).
+        assert_eq!(
+            empty.verify_signature([0; 32], None, cover),
+            ReceiptVerification::UnsignedAccepted,
+        );
+        // Non-sentinel key + empty registry -> MissingSignature. Kills `&& -> ||` (227).
+        assert_eq!(
+            empty.verify_signature([0xAA; 32], None, cover),
+            ReceiptVerification::Invalid(ReceiptVerificationError::MissingSignature),
+        );
+        // Sentinel key + NON-empty registry -> UnsignedReceiptRejected. Kills `== -> !=` (229).
+        assert_eq!(
+            keyed.verify_signature([0; 32], None, cover),
+            ReceiptVerification::Invalid(ReceiptVerificationError::UnsignedReceiptRejected),
+        );
+    }
+
+    #[test]
+    fn cover_build_error_display_renders_the_stage_and_is_never_empty() {
+        use serde::ser::Error as _;
+        // A synthetic rmp encode error carried by the CoordinateEncoding variant.
+        let encode_err = rmp_serde::encode::Error::custom("boom");
+        let display = format!("{}", CoverBuildError::CoordinateEncoding(encode_err));
+        // Kills the body-stub `Ok(())` mutant, which renders an empty string.
+        assert!(
+            display.contains("coordinate encoding failed while building receipt cover"),
+            "Display must render the coordinate-encoding cover-build failure, got {display:?}"
+        );
+    }
+
+    #[test]
+    fn signing_key_debug_names_the_struct_and_key_id() {
+        let debug = format!("{:?}", SigningKey::from_bytes([7u8; 32]));
+        // Kills the body-stub `Ok(())` mutant, which renders an empty string.
+        assert!(
+            debug.contains("SigningKey") && debug.contains("key_id"),
+            "Debug must render the SigningKey struct with its key_id field, got {debug:?}"
+        );
+    }
+}
