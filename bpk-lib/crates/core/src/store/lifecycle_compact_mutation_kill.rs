@@ -52,32 +52,58 @@ fn store_with_two_sealed_segments() -> (tempfile::TempDir, Store) {
     (dir, store)
 }
 
+/// The deterministic sealed-segment count the fixture produces, learned by
+/// performing a compaction with `min_segments == 1` on a throwaway store (which
+/// always performs when >= 1 segment is sealed). Deriving `n` — instead of
+/// hard-coding the exact rotation count — keeps the two boundary tests robust to
+/// the segment-rotation heuristic while still pinning the `sealed.len() < min`
+/// guard at its EXACT threshold (`min == n` performs, `min == n+1` skips).
+fn deterministic_sealed_count() -> usize {
+    let (_dir, store) = store_with_two_sealed_segments();
+    let (_result, report) = store
+        .compact(&CompactionConfig {
+            strategy: CompactionStrategy::Merge,
+            min_segments: 1,
+        })
+        .expect("probe compact runs");
+    assert!(
+        matches!(report.outcome, CompactionOutcome::Performed),
+        "min_segments 1 must PERFORM whenever the fixture seals >= 1 segment"
+    );
+    report.sealed_segment_count
+}
+
 #[test]
 fn compact_performs_at_the_threshold_and_tallies_the_reclaimed_sealed_segments() {
-    // Two sealed segments with min_segments == 2: `2 < 2` is false, so compaction
-    // must PERFORM. The `<`->`<=` and `<`->`==` skip-guard mutants make `2 (<=|==)
-    // 2` true and wrongly skip. The removal loop must count both sealed files and
-    // reclaim a positive byte total.
+    // At the EXACT threshold `min_segments == sealed count n`: `n < n` is false, so
+    // compaction must PERFORM. The `<`->`<=`/`==` skip-guard mutants make `n (<=|==)
+    // n` true and wrongly skip. The removal loop removes EVERY sealed source, so
+    // `segments_removed == sealed_segment_count == n` and the reclaim is positive.
+    let n = deterministic_sealed_count();
+    assert!(
+        n >= 2,
+        "the fixture seals multiple segments (each oversized filler rotates)"
+    );
+
     let (_dir, store) = store_with_two_sealed_segments();
     let (result, report) = store
         .compact(&CompactionConfig {
             strategy: CompactionStrategy::Merge,
-            min_segments: 2,
+            min_segments: n,
         })
         .expect("compact runs");
 
     assert!(
         matches!(result.outcome, CompactionOutcome::Performed),
-        "2 sealed >= min_segments 2 must PERFORM; the `<`->`<=`/`==` guard mutants skip it"
+        "n sealed >= min_segments n must PERFORM; the `<`->`<=`/`==` guard mutants skip it"
     );
     assert_eq!(
-        report.sealed_segment_count, 2,
-        "exactly the two sub-active segments are sources; the sealed filter \
-         `*id < active` -> `<=`/`==`/`>` mutant miscounts them"
+        report.sealed_segment_count, n,
+        "the sealed filter `*id < active` counts every sub-active segment"
     );
     assert_eq!(
-        report.segments_removed, 2,
-        "both sealed files are removed; `segments_removed += 1` -> `-=`/`*=` miscounts"
+        report.segments_removed, n,
+        "the removal loop removes every sealed source; `segments_removed += 1` -> `-=`/`*=` miscounts"
     );
     assert!(
         report.bytes_reclaimed > 0,
@@ -97,24 +123,27 @@ fn compact_performs_at_the_threshold_and_tallies_the_reclaimed_sealed_segments()
 
 #[test]
 fn compact_skips_below_the_threshold_without_touching_the_reclaim_columns() {
-    // Two sealed segments with min_segments == 3: `2 < 3` is true, so compaction
-    // must SKIP. The `<`->`>` skip-guard mutant makes `2 > 3` false and wrongly
-    // performs. A skip still reports both sealed sources but zero reclaim.
+    // One ABOVE the sealed count `min_segments == n + 1`: `n < n+1` is true, so
+    // compaction must SKIP. The `<`->`>` skip-guard mutant makes `n > n+1` false and
+    // wrongly performs. A skip still reports the sealed sources but zero reclaim.
+    let n = deterministic_sealed_count();
+    assert!(n >= 2, "the fixture seals multiple segments");
+
     let (_dir, store) = store_with_two_sealed_segments();
     let (result, report) = store
         .compact(&CompactionConfig {
             strategy: CompactionStrategy::Merge,
-            min_segments: 3,
+            min_segments: n + 1,
         })
         .expect("compact runs");
 
     assert!(
         matches!(result.outcome, CompactionOutcome::Skipped),
-        "2 sealed < min_segments 3 must SKIP; the `<`->`>` guard mutant performs it"
+        "n sealed < min_segments n+1 must SKIP; the `<`->`>` guard mutant performs it"
     );
     assert_eq!(
-        report.sealed_segment_count, 2,
-        "the skip report still counts the two sealed sources it declined to merge"
+        report.sealed_segment_count, n,
+        "the skip report still counts the sealed sources it declined to merge"
     );
     assert_eq!(report.segments_removed, 0, "a skip removes no segments");
     assert_eq!(report.bytes_reclaimed, 0, "a skip reclaims no bytes");
