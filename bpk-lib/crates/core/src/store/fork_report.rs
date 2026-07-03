@@ -38,6 +38,28 @@ pub enum CopyPreference {
     DeepCopyOnly,
 }
 
+/// Whether a snapshot/fork of a store with payload encryption active may proceed,
+/// and how the keyset is treated.
+///
+/// Keys must never travel with the ciphertext they open — a copy that carried the
+/// keyset could, after a `shred_scope`, be restored to resurrect crypto-shredded
+/// data. So keyset portability is fail-closed by default; the opt-out produces a
+/// keys-excluded copy whose keyset must be managed out-of-band. Inert on a store
+/// without payload encryption.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeysetPolicy {
+    /// Default. REFUSE to snapshot/fork a store with payload encryption active
+    /// (returns `StoreError::KeysetNotPortable`). A copy without its keys is
+    /// silently unrestorable; a copy WITH its keys would defeat crypto-shred.
+    #[default]
+    Refuse,
+    /// Proceed WITHOUT the keyset: the encrypted segments are copied, the keyset
+    /// is not, and the report is stamped `KeysExcluded`. The keyset must be
+    /// carried out-of-band; restoring the copy without it reports
+    /// `StoreError::KeysetMissing`.
+    ExcludeKeys,
+}
+
 /// Caller options for [`crate::store::Store::fork_with_evidence`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[must_use]
@@ -46,6 +68,10 @@ pub struct ForkOptions {
     pub copy_preference: CopyPreference,
     /// Exclude regenerable cold-start caches (`index.ckpt`, `index.fbati`).
     pub exclude_caches: bool,
+    /// Keyset portability policy for an encryption-active store. Default
+    /// [`KeysetPolicy::Refuse`] fails closed; [`KeysetPolicy::ExcludeKeys`]
+    /// proceeds with a keys-excluded fork. Inert without payload encryption.
+    pub keyset_policy: KeysetPolicy,
 }
 
 impl Default for ForkOptions {
@@ -53,6 +79,7 @@ impl Default for ForkOptions {
         Self {
             copy_preference: CopyPreference::default(),
             exclude_caches: true,
+            keyset_policy: KeysetPolicy::default(),
         }
     }
 }
@@ -119,6 +146,10 @@ pub enum ForkFinding {
         /// Strategy actually used.
         strategy: ForkCopyStrategy,
     },
+    /// Payload encryption was active and the keyset was deliberately EXCLUDED
+    /// from this fork under `KeysetPolicy::ExcludeKeys`. The fork carries the
+    /// encrypted segments but no keys; the keyset must be managed out-of-band.
+    KeysExcluded,
 }
 
 #[derive(Serialize)]

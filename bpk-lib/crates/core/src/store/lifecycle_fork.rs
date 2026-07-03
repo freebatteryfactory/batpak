@@ -35,6 +35,9 @@ pub(crate) fn fork(
         flow = "fork",
         destination = %dest.display()
     );
+    // Keyset portability gate (D24): see `resolve_keyset_exclusion`. Errs before
+    // any destination mutation. Always false without the payload-encryption feature.
+    let keys_excluded = super::resolve_keyset_exclusion(store, options.keyset_policy, "fork")?;
     let fs = store.config.fs();
     let _lifecycle = store.lifecycle_gate.lock();
     let fork_fence = store.begin_visibility_fence()?;
@@ -100,6 +103,10 @@ pub(crate) fn fork(
 
     fork_fence.cancel()?;
     acc.findings.push(ForkFinding::FenceTokenCancelled);
+    // D24: record that an encryption-active store's keyset was deliberately
+    // excluded (branch-free push so this stays within the complexity ratchet).
+    acc.findings
+        .extend(keys_excluded.then_some(ForkFinding::KeysExcluded));
     fork_evidence_report(ForkReportInput {
         fence_token,
         source_watermark_segment_id,

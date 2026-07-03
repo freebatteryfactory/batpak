@@ -135,6 +135,15 @@
 //! "the key for scope X was destroyed"; the layer above maps that erasure to its
 //! own policy.
 //!
+//! *Snapshot/fork portability.* Because the keyset never travels with the
+//! ciphertext it opens, a `Store::snapshot` / `Store::fork` of an
+//! encryption-active store FAILS CLOSED by default
+//! (`StoreError::KeysetNotPortable`): a keyless copy is silently unrestorable,
+//! and a copy carrying the keyset could resurrect crypto-shredded data. Opt into
+//! a keys-excluded copy with `KeysetPolicy::ExcludeKeys` (managing the keyset
+//! out-of-band); restoring one without its keyset reports
+//! `StoreError::KeysetMissing`, never a `Shredded` lookalike.
+//!
 //! ```
 //! # #[cfg(feature = "payload-encryption")] {
 //! use batpak::prelude::*;

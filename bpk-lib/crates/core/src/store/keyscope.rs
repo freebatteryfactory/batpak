@@ -403,6 +403,14 @@ pub struct KeyStore {
     /// whose key is on disk nowhere (a silent, unintended crypto-shred of live
     /// data).
     dirty: bool,
+    /// `true` when this keyset was rehydrated from an ABSENT keyset file — the
+    /// file did not exist at open, so no keys were ever loaded. Distinguishes a
+    /// lost/withheld keyset (a keys-excluded snapshot opened without its
+    /// out-of-band keyset) from a deliberate per-scope crypto-shred: with this set, a
+    /// missing scope key on read is reported as [`StoreError::KeysetMissing`]
+    /// rather than a Shredded lookalike (D24). Never cleared — the original keys
+    /// are permanently absent even after new keys are later minted/flushed.
+    absent_on_load: bool,
 }
 
 impl KeyStore {
@@ -413,7 +421,30 @@ impl KeyStore {
             keys: BTreeMap::new(),
             granularity,
             dirty: false,
+            absent_on_load: false,
         }
+    }
+
+    /// Create an empty key store rehydrated from an ABSENT keyset file (the file
+    /// did not exist at open). Reads of a pre-existing encrypted event then report
+    /// [`StoreError::KeysetMissing`](crate::store::StoreError::KeysetMissing)
+    /// instead of a Shredded lookalike — see the
+    /// [`absent_on_load`](Self#structfield.absent_on_load) field (D24).
+    #[must_use]
+    pub(crate) fn new_absent(granularity: KeyScopeGranularity) -> Self {
+        Self {
+            keys: BTreeMap::new(),
+            granularity,
+            dirty: false,
+            absent_on_load: true,
+        }
+    }
+
+    /// Whether this keyset was rehydrated from an absent file (no keys ever
+    /// loaded). See [`absent_on_load`](Self#structfield.absent_on_load).
+    #[must_use]
+    pub(crate) fn was_absent_on_load(&self) -> bool {
+        self.absent_on_load
     }
 
     /// Whether the in-memory keyset is ahead of the last durable flush (see the
@@ -451,6 +482,12 @@ impl KeyStore {
     /// # Errors
     /// Returns [`KeyStoreError::Rng`] if the CSPRNG fails while minting a new key.
     pub fn get_or_create(&mut self, scope: &KeyScope) -> Result<&PayloadKey, KeyStoreError> {
+        // Minting/using the keyset to seal a payload means this store holds keys
+        // of its own — it is no longer an absent-on-load keyset. A later missing
+        // scope key is then a deliberate crypto-shred (`Shredded`), not a lost keyset
+        // (`KeysetMissing`). Only a store that loaded an absent keyset file AND
+        // never minted a key (a restored keys-excluded copy) stays absent (D24).
+        self.absent_on_load = false;
         match self.keys.entry(scope.clone()) {
             Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => {

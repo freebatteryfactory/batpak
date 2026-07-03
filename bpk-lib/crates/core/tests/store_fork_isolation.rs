@@ -235,6 +235,7 @@ fn fork_report_records_concrete_strategy_counts_and_nonzero_digests() -> TestRes
         ForkOptions {
             copy_preference: CopyPreference::HardlinkOnly,
             exclude_caches: true,
+            ..Default::default()
         },
     )?;
     let counts = report.body.strategy_counts;

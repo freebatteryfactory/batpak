@@ -20,6 +20,45 @@ pub(crate) use lifecycle_compact::compact;
 pub(crate) use lifecycle_fork::fork;
 pub(crate) use lifecycle_snapshot::snapshot;
 
+/// Keyset portability gate (D24), shared by `snapshot` and `fork`. Returns
+/// whether the keyset was deliberately EXCLUDED from a copy of an
+/// encryption-active store:
+///
+/// - `Ok(false)` — no payload encryption active (nothing to exclude); the copy
+///   proceeds exactly as it always has.
+/// - `Ok(true)` — encryption active and the caller passed
+///   [`KeysetPolicy::ExcludeKeys`](crate::store::KeysetPolicy::ExcludeKeys); the
+///   copy proceeds and its report is stamped keys-excluded.
+/// - `Err(KeysetNotPortable)` — encryption active and the default
+///   [`KeysetPolicy::Refuse`](crate::store::KeysetPolicy::Refuse) fails closed: a
+///   copy without its keys is silently unrestorable, and a copy WITH its keys
+///   would let a restored copy resurrect crypto-shredded data.
+///
+/// Always `Ok(false)` without the `payload-encryption` feature — no store can be
+/// encrypted, so snapshot/fork behave exactly as they do today.
+fn resolve_keyset_exclusion(
+    store: &Store<Open>,
+    policy: crate::store::KeysetPolicy,
+    operation: &'static str,
+) -> Result<bool, StoreError> {
+    #[cfg(feature = "payload-encryption")]
+    {
+        if store.key_store.is_some() {
+            return match policy {
+                crate::store::KeysetPolicy::Refuse => {
+                    Err(StoreError::KeysetNotPortable { operation })
+                }
+                crate::store::KeysetPolicy::ExcludeKeys => Ok(true),
+            };
+        }
+    }
+    #[cfg(not(feature = "payload-encryption"))]
+    {
+        let _ = (store, policy, operation);
+    }
+    Ok(false)
+}
+
 #[derive(Serialize)]
 struct CloseLifecyclePayload {
     wall_ms: u64,

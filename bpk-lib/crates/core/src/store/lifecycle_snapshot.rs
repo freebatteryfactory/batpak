@@ -5,19 +5,52 @@ use crate::store::cold_start::latest_segment_watermark;
 use crate::store::file_classification::StoreFileKind;
 use crate::store::snapshot_report::{
     destination_path_digest, snapshot_evidence_report, SnapshotEvidenceReport, SnapshotFileKind,
-    SnapshotFinding, SnapshotReportInput,
+    SnapshotFinding, SnapshotOptions, SnapshotReportInput,
 };
 use crate::store::{Open, Store, StoreError};
+
+/// Accumulates which share-safe substrate files a snapshot copied, folded across
+/// the directory walk so the walk body stays flat (mirrors fork's accumulator and
+/// keeps `snapshot` within the function-complexity budget).
+#[derive(Default)]
+struct SnapshotCopyAcc {
+    copied_segment_ids_sorted: Vec<u64>,
+    copied_visibility_ranges_present: bool,
+    copied_pending_compaction_marker_present: bool,
+    copied_idempotency_store_present: bool,
+}
+
+impl SnapshotCopyAcc {
+    fn record(&mut self, file_kind: SnapshotFileKind, source_kind: &StoreFileKind) {
+        match file_kind {
+            SnapshotFileKind::Segment => {
+                if let Some(segment_id) = source_kind.segment_id() {
+                    self.copied_segment_ids_sorted.push(segment_id.as_u64());
+                }
+            }
+            SnapshotFileKind::VisibilityRanges => self.copied_visibility_ranges_present = true,
+            SnapshotFileKind::PendingCompactionMarker => {
+                self.copied_pending_compaction_marker_present = true;
+            }
+            SnapshotFileKind::IdempotencyStore => self.copied_idempotency_store_present = true,
+        }
+    }
+}
 
 pub(crate) fn snapshot(
     store: &Store<Open>,
     dest: &std::path::Path,
+    options: SnapshotOptions,
 ) -> Result<SnapshotEvidenceReport, StoreError> {
     tracing::debug!(
         target: "batpak::flow",
         flow = "snapshot",
         destination = %dest.display()
     );
+    // Keyset portability gate (D24): fail closed on an encryption-active store
+    // unless the caller opted into a keys-excluded copy. Errs before any
+    // destination mutation. Always false without the payload-encryption feature.
+    let keys_excluded = super::resolve_keyset_exclusion(store, options.keyset_policy, "snapshot")?;
     let fs = store.config.fs();
     let _lifecycle = store.lifecycle_gate.lock();
     let snapshot_fence = store.begin_visibility_fence()?;
@@ -35,10 +68,7 @@ pub(crate) fn snapshot(
     let entries = fs
         .read_dir(&store.config.data_dir)
         .map_err(StoreError::Io)?;
-    let mut copied_segment_ids_sorted = Vec::new();
-    let mut copied_visibility_ranges_present = false;
-    let mut copied_pending_compaction_marker_present = false;
-    let mut copied_idempotency_store_present = false;
+    let mut acc = SnapshotCopyAcc::default();
     let mut findings = Vec::new();
     if cleared_artifact_count > 0 {
         findings.push(SnapshotFinding::DestinationCleared {
@@ -53,22 +83,7 @@ pub(crate) fn snapshot(
             let dest_path = dest.join(entry.file_name());
             fs.reject_symlink_leaf(&dest_path, "snapshot entry")?;
             fs.copy(&path, &dest_path).map_err(StoreError::Io)?;
-            match file_kind {
-                SnapshotFileKind::Segment => {
-                    if let Some(segment_id) = source_kind.segment_id() {
-                        copied_segment_ids_sorted.push(segment_id.as_u64());
-                    }
-                }
-                SnapshotFileKind::VisibilityRanges => {
-                    copied_visibility_ranges_present = true;
-                }
-                SnapshotFileKind::PendingCompactionMarker => {
-                    copied_pending_compaction_marker_present = true;
-                }
-                SnapshotFileKind::IdempotencyStore => {
-                    copied_idempotency_store_present = true;
-                }
-            }
+            acc.record(file_kind, &source_kind);
         }
     }
     snapshot_fence.cancel()?;
@@ -79,14 +94,17 @@ pub(crate) fn snapshot(
                 .to_string(),
         file_kind: SnapshotFileKind::Segment,
     });
+    // D24: record that an encryption-active store's keyset was deliberately
+    // excluded (branch-free push so this stays within the complexity ratchet).
+    findings.extend(keys_excluded.then_some(SnapshotFinding::KeysExcluded));
     Ok(snapshot_evidence_report(SnapshotReportInput {
         fence_token,
         source_watermark_segment_id,
         source_watermark_offset,
-        copied_segment_ids_sorted,
-        copied_visibility_ranges_present,
-        copied_pending_compaction_marker_present,
-        copied_idempotency_store_present,
+        copied_segment_ids_sorted: acc.copied_segment_ids_sorted,
+        copied_visibility_ranges_present: acc.copied_visibility_ranges_present,
+        copied_pending_compaction_marker_present: acc.copied_pending_compaction_marker_present,
+        copied_idempotency_store_present: acc.copied_idempotency_store_present,
         destination_path_digest: destination_path_digest(dest),
         findings,
     })?)

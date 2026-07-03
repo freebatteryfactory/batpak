@@ -260,7 +260,13 @@ impl KeyStore {
             // The file carries raw keys — read into a Zeroizing buffer.
             Ok(bytes) => Zeroizing::new(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self::new(granularity));
+                // File absent — no keys were ever written. Mark the keyset
+                // absent-on-load so a later read of a pre-existing encrypted event
+                // reports KeysetMissing (lost keyset) rather than a Shredded
+                // lookalike (D24). A fresh store also lands here but has no
+                // pre-existing encrypted events, so it never trips KeysetMissing;
+                // its first append mints an in-memory key that reads find.
+                return Ok(Self::new_absent(granularity));
             }
             Err(error) => return Err(StoreError::Io(error)),
         };
@@ -339,6 +345,10 @@ fn rehydrate(wire: &KeysetWire, configured: KeyScopeGranularity) -> Result<KeySt
         // Freshly rehydrated from disk — the in-memory keyset matches the durable
         // one, so it starts clean; the first mint/destroy flags it dirty.
         dirty: false,
+        // The keyset FILE was present and decoded here, so this is NOT an
+        // absent-on-load keyset: a later missing scope key is a deliberate shred
+        // (Shredded), not a lost keyset (KeysetMissing). See `new_absent` (D24).
+        absent_on_load: false,
     })
 }
 

@@ -123,7 +123,7 @@ pub use fault::{
 pub use fork_report::{
     decode_fork_evidence_wire, encode_fork_evidence_wire, fork_report_body_hash, CopyPreference,
     ForkCopyStrategy, ForkEvidenceHash, ForkFinding, ForkOptions, ForkReport, ForkReportBody,
-    ForkStrategyCounts, FORK_EVIDENCE_REPORT_SCHEMA_VERSION,
+    ForkStrategyCounts, KeysetPolicy, FORK_EVIDENCE_REPORT_SCHEMA_VERSION,
 };
 pub use gate::DurabilityGate;
 pub use import::{
@@ -184,7 +184,7 @@ pub use signing::SigningKey;
 pub use sim::SimClock;
 pub use snapshot_report::{
     snapshot_report_body_hash, SnapshotEvidenceHash, SnapshotEvidenceReport, SnapshotFenceTokenRef,
-    SnapshotFileKind, SnapshotFinding, SnapshotReportBody, SnapshotWatermarkRef,
+    SnapshotFileKind, SnapshotFinding, SnapshotOptions, SnapshotReportBody, SnapshotWatermarkRef,
     SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION,
 };
 pub use stats::{

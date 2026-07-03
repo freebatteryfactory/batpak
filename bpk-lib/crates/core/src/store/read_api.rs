@@ -245,9 +245,12 @@ impl<State: crate::store::StoreState> Store<State> {
     ///
     /// # Errors
     /// [`StoreError::PayloadDecryptFailed`] if the key is present but the
-    /// ciphertext/nonce/bound identity fails to authenticate (tamper), or an
-    /// internal [`StoreError::Serialization`] if reached with no keyset (an
-    /// invariant break — callers gate on `key_store.is_some()`).
+    /// ciphertext/nonce/bound identity fails to authenticate (tamper);
+    /// [`StoreError::KeysetMissing`] if the scope key is absent because the keyset
+    /// FILE was never loaded (a keys-excluded restore), as opposed to a
+    /// deliberately-destroyed scope (which reads `Shredded`); or an internal
+    /// [`StoreError::Serialization`] if reached with no keyset (an invariant
+    /// break — callers gate on `key_store.is_some()`).
     #[cfg(feature = "payload-encryption")]
     pub(crate) fn open_encrypted_payload_bytes(
         &self,
@@ -267,6 +270,14 @@ impl<State: crate::store::StoreState> Store<State> {
         })?;
         let guard = key_store.lock();
         let Some(key) = guard.get(&scope) else {
+            // A missing key with the keyset FILE absent is not a deliberate shred — it
+            // is a lost/withheld keyset (e.g. a keys-excluded snapshot opened
+            // without its out-of-band keyset). Surface it LOUDLY as KeysetMissing,
+            // never as a Shredded lookalike (D24). A present-but-empty keyset (a
+            // scope deliberately destroyed) keeps Shredded semantics below.
+            if guard.was_absent_on_load() {
+                return Err(StoreError::KeysetMissing { event_id });
+            }
             return Ok(PayloadPlaintext::Shredded);
         };
         let plaintext = key

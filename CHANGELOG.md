@@ -61,6 +61,18 @@ All notable changes to this project will be documented in this file.
   *deletion* cryptographically effective but does not protect a disk image captured
   before the shred; keyset-location hardening (separate volume / KMS) is a deployment
   concern. The default build pulls no AEAD dependency. See `crates/core/README.md`.
+- **Snapshot/fork keyset portability (D24)** — `Store::snapshot` / `Store::fork`
+  of a store with payload encryption active now FAIL CLOSED
+  (`StoreError::KeysetNotPortable`): a copy without its keys is silently
+  unrestorable, and a copy carrying its keys would let a restore resurrect
+  crypto-shredded data. Opt into a keys-excluded copy with the new
+  `KeysetPolicy::ExcludeKeys` (`SnapshotOptions` +
+  `Store::snapshot_with_evidence_with_options`; `ForkOptions::keyset_policy`) —
+  the report is stamped `KeysExcluded` and the keyset must then be managed
+  out-of-band. Restoring a keys-excluded copy without its keyset reports the new
+  `StoreError::KeysetMissing` — loud and distinct from a deliberate shred, never a
+  `PayloadShredded` lookalike. No migration: payload encryption has not shipped
+  in a release, so the fail-closed default lands with the feature's first cut.
 - **Opt-in server-only TLS for netbat** (`tls` cargo feature): the request and
   subscription listeners speak TLS via `rustls` (`TransportSecurity::Tls`,
   `TlsServerConfig::from_pem`/`from_pem_files`); the handshake runs per-connection
