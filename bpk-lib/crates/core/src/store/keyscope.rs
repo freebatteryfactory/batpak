@@ -12,19 +12,19 @@
 //! nonce and 128-bit authentication tag). Key and nonce bytes are drawn from
 //! the OS CSPRNG; no non-cryptographic PRNG is ever used for key material.
 //!
-//! Stage B adds durable persistence + cold-start rehydration (see the
-//! `persist` child module) but still does NOT wire into the append/read
-//! payload paths — encrypt/decrypt is Stage C.
+//! The keyset is durably persisted with cold-start rehydration (see the
+//! `persist` child module) and wired into the append/read payload paths: writes
+//! seal under the scope key (`write/writer/encrypt.rs`), reads decrypt.
 //!
-//! # Durability ordering (a Stage C obligation, documented here at the source)
+//! # Durability ordering (the fence)
 //!
-//! `persist` gives Stage B a [`KeyStore::flush`]. Stage C, when it wires the
-//! append path, MUST flush a freshly-minted key DURABLY **before** the data it
-//! encrypts is acknowledged durable. If that order were inverted, a crash landing
-//! between "append is durable" and "key is durable" would leave a durable
-//! ciphertext whose key never reached disk — permanently unrecoverable *live*
-//! data (a spontaneous, unintended crypto-shred). Stage B only provides the
-//! `flush` primitive; the ordering fence is Stage C's to wire.
+//! `persist` gives the keyset a [`KeyStore::flush`]. The append path flushes a
+//! freshly-minted key DURABLY **before** the data it encrypts is acknowledged
+//! durable. If that order were inverted, a crash landing between "append is
+//! durable" and "key is durable" would leave a durable ciphertext whose key
+//! never reached disk — permanently unrecoverable *live* data (a spontaneous,
+//! unintended crypto-shred). The fence enforces flush-before-frame, so no crash
+//! window can order data-durable ahead of key-durable under any sync mode.
 
 use crate::coordinate::Coordinate;
 use crate::event::EventKind;
