@@ -100,14 +100,15 @@ impl StoreFileKind {
         // snapshot would silently lose cross-compaction dedup memory.
         // justifies: INV-IDEMPOTENCY-DURABLE-WINDOW
         //
-        // NOTE (Stage B): the crypto-shred keyset is deliberately NOT listed
-        // here. Carrying it into a snapshot means mapping it to a public,
-        // schema-versioned `SnapshotFileKind` variant — a snapshot-report wire +
-        // default public-API change that belongs with Stage C's encryption
-        // wiring, not this durability-only stage. In Stage B no payload is
-        // encrypted and nothing mints keys through the store, so a snapshot has
-        // no keyset to lose. Stage C makes the keyset a first-class snapshot/fork
-        // authority (with the accompanying schema bump).
+        // The crypto-shred keyset is deliberately EXCLUDED from snapshots. Keys
+        // must never travel with the ciphertext they open: a snapshot that
+        // carried the keyset could, after a `shred_scope`, be restored to
+        // resurrect crypto-shredded data (D24). So keyset portability is
+        // fail-closed — `snapshot`/`fork` REFUSE an encryption-active store by
+        // default and require `KeysetPolicy::ExcludeKeys` to proceed with a
+        // keys-excluded copy whose keyset is managed out-of-band. Restoring such
+        // a copy without its keyset reports `StoreError::KeysetMissing`, never a
+        // Shredded lookalike.
         matches!(
             self,
             Self::Segment(_)
@@ -143,9 +144,10 @@ impl StoreFileKind {
                 ForkStrategy::DeepCopyAlways
             }
             Self::Checkpoint | Self::MmapIndex => ForkStrategy::CacheRegenerable,
-            // Stage B: excluded from fork for the same reason it is excluded from
-            // snapshot — first-class fork copy of the keyset (with its fork-report
-            // wire fields) is Stage C work. See `should_copy_into_snapshot`.
+            // Keyset EXCLUDED from fork for the same D24 reason it is excluded
+            // from snapshot: keys must never travel with their ciphertext (a
+            // restored copy could otherwise resurrect crypto-shredded data). See
+            // `should_copy_into_snapshot`.
             Self::Segment(_)
             | Self::MalformedSegment(_)
             | Self::CompactSource

@@ -259,7 +259,27 @@ impl Store<Open> {
         &self,
         dest: &std::path::Path,
     ) -> Result<SnapshotEvidenceReport, StoreError> {
-        lifecycle::snapshot(self, dest)
+        lifecycle::snapshot(self, dest, SnapshotOptions::default())
+    }
+
+    /// Snapshot with explicit [`SnapshotOptions`] — notably the keyset
+    /// portability policy for a store with payload encryption active (D24).
+    ///
+    /// With the default [`KeysetPolicy::Refuse`] an encryption-active store fails
+    /// closed with `StoreError::KeysetNotPortable`; pass
+    /// [`KeysetPolicy::ExcludeKeys`] to produce a keys-excluded snapshot (the
+    /// keyset must then be carried out-of-band). A store without encryption is
+    /// unaffected.
+    ///
+    /// # Errors
+    /// Returns `StoreError::KeysetNotPortable` when encryption is active under the
+    /// default policy, or `StoreError::Io` on a copy/setup failure.
+    pub fn snapshot_with_evidence_with_options(
+        &self,
+        dest: &std::path::Path,
+        options: SnapshotOptions,
+    ) -> Result<SnapshotEvidenceReport, StoreError> {
+        lifecycle::snapshot(self, dest, options)
     }
 
     /// Deprecated snapshot wrapper that drops [`SnapshotEvidenceReport`].

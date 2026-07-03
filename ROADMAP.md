@@ -32,15 +32,17 @@ guards; the items below are the measured remainder.
   `FailClosedEvidenceOfTruncation` (P<boundary); permissive returns
   `ResolvedFramesEnd { truncation_evidence }` and emits a structured warning
   instead of silently recovering. See `recovery_manifest.rs`.
-- [ ] **`StoreError` contract mirror gap** — 9 variants (all 0.9.0-era) are in
+- [ ] **`StoreError` contract mirror gap** — 11 variants (all 0.9.0-era) are in
   neither `testkit::store_error_contract::classify()` nor
   `one_of_every_variant()`: `ProjectionStateContractUnspecified`,
   `ProjectionStateExtentUnavailable`, `ProjectionStateBoundExceeded`,
   `ChainVerificationFailed`, `KeysetCorrupt`, `PayloadSealFailed`,
-  `PayloadShredded`, `PayloadDecryptFailed`, `ShredSelectorMismatch`.
-  The panicking wildcard only fires on constructed variants, so CI is green
-  with 9 uncontracted errors. Fix = classify all 9 + constructor coverage +
-  a completeness guard so the next variant cannot ship unclassified.
+  `PayloadShredded`, `PayloadDecryptFailed`, `ShredSelectorMismatch`,
+  `KeysetNotPortable`, `KeysetMissing` (the last two added by D24, following the
+  existing gated-variant precedent). The panicking wildcard only fires on
+  constructed variants, so CI is green with 11 uncontracted errors. Fix =
+  classify all 11 + constructor coverage + a completeness guard so the next
+  variant cannot ship unclassified.
 
 ## 1. Coupling debt — derive, don't enumerate
 

@@ -548,6 +548,41 @@ pub enum StoreError {
         /// Non-secret label of the selector variant supplied (never key material).
         selector: &'static str,
     },
+    /// A [`Store::snapshot`](crate::store::Store::snapshot) or
+    /// [`Store::fork`](crate::store::Store::fork) of a store with payload
+    /// encryption active was REFUSED because the keyset is not portable. Copying
+    /// the encrypted segments WITHOUT the keys yields a silently-unrestorable
+    /// copy; copying the keyset WITH the ciphertext would let a restored copy
+    /// resurrect crypto-shredded data. Pass
+    /// [`KeysetPolicy::ExcludeKeys`](crate::store::KeysetPolicy::ExcludeKeys) to
+    /// acknowledge a keys-excluded copy and proceed (the keyset must then be
+    /// carried out-of-band, never alongside the ciphertext).
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    KeysetNotPortable {
+        /// The lifecycle operation that was refused (`"snapshot"` or `"fork"`).
+        operation: &'static str,
+    },
+    /// An encrypted event was read but the store's keyset FILE is absent entirely
+    /// — no keys were ever loaded (e.g. a keys-excluded snapshot restored without
+    /// its separately-managed keyset). Distinct from
+    /// [`PayloadShredded`](Self::PayloadShredded): the keys were not deliberately
+    /// destroyed, they are MISSING. Reported LOUDLY, never as a shred-lookalike,
+    /// so "the operator lost the keys" and "this scope was deliberately erased" stay
+    /// different facts.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    KeysetMissing {
+        /// Id of the event whose payload could not be opened because the keyset
+        /// is entirely absent.
+        event_id: crate::id::EventId,
+    },
 }
 
 impl std::error::Error for StoreError {
@@ -618,7 +653,9 @@ impl std::error::Error for StoreError {
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
             | Self::PayloadDecryptFailed { .. }
-            | Self::ShredSelectorMismatch { .. } => None,
+            | Self::ShredSelectorMismatch { .. }
+            | Self::KeysetNotPortable { .. }
+            | Self::KeysetMissing { .. } => None,
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => None,
         }

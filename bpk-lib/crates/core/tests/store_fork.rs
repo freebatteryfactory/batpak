@@ -87,6 +87,7 @@ fn fork_with_evidence_reopens_to_same_count_and_isolates_parent_writes() -> Test
         ForkOptions {
             copy_preference: CopyPreference::DeepCopyOnly,
             exclude_caches: true,
+            ..Default::default()
         },
     )?;
     let envelope: ForkReport = report.clone();
@@ -152,6 +153,7 @@ fn fork_hardlinks_sealed_segments_and_deep_copies_active_segment() -> TestResult
         ForkOptions {
             copy_preference: CopyPreference::HardlinkOnly,
             exclude_caches: true,
+            ..Default::default()
         },
     )?;
 
@@ -226,6 +228,7 @@ fn fork_hardlink_only_shares_sealed_segments_but_copies_active_segment() -> Test
         ForkOptions {
             copy_preference: CopyPreference::HardlinkOnly,
             exclude_caches: true,
+            ..Default::default()
         },
     )?;
 
@@ -370,6 +373,7 @@ fn fork_deep_copies_idempotency_and_visibility_authorities() -> TestResult {
         ForkOptions {
             copy_preference: CopyPreference::HardlinkOnly,
             exclude_caches: true,
+            ..Default::default()
         },
     )?;
 

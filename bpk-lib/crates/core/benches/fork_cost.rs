@@ -52,6 +52,7 @@ fn bench_fork_cost(c: &mut Criterion) {
                 ForkOptions {
                     copy_preference: CopyPreference::DeepCopyOnly,
                     exclude_caches: true,
+                    ..Default::default()
                 },
             ),
         ] {

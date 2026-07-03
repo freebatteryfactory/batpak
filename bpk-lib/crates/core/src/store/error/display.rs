@@ -124,7 +124,9 @@ impl StoreError {
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
             | Self::PayloadDecryptFailed { .. }
-            | Self::ShredSelectorMismatch { .. } => Ok(()),
+            | Self::ShredSelectorMismatch { .. }
+            | Self::KeysetNotPortable { .. }
+            | Self::KeysetMissing { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -233,7 +235,9 @@ impl StoreError {
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
             | Self::PayloadDecryptFailed { .. }
-            | Self::ShredSelectorMismatch { .. } => Ok(()),
+            | Self::ShredSelectorMismatch { .. }
+            | Self::KeysetNotPortable { .. }
+            | Self::KeysetMissing { .. } => Ok(()),
             #[cfg(feature = "dangerous-test-hooks")]
             Self::FaultInjected(_) => Ok(()),
         }
@@ -354,6 +358,53 @@ impl StoreError {
                 f,
                 "crypto-shred selector `{selector}` does not address the store's configured \
                  key-scope granularity {granularity:?}; erasure refused (nothing shredded)"
+            );
+        }
+        if let Self::KeysetNotPortable { operation } = self {
+            return write!(
+                f,
+                "{operation} refused: this store has payload encryption active and the keyset is \
+                 not portable; copying encrypted data without its keys yields a silently \
+                 unrestorable copy. Pass KeysetPolicy::ExcludeKeys to proceed with a keys-excluded \
+                 copy (carry the keyset out-of-band, never with the ciphertext)"
+            );
+        }
+        if let Self::KeysetMissing { event_id } = self {
+            return write!(
+                f,
+                "event {event_id} is encrypted but the store's keyset is entirely absent (no keys \
+                 loaded); the keyset is missing, not shredded — restore the keyset that was kept \
+                 separately from this copy"
+            );
+        }
+        Ok(())
+    }
+
+    /// `Display` body for the durable cursor-checkpoint refusals, delegated off
+    /// the main `Display::fmt` match so it stays within its complexity ratchet.
+    fn fmt_cursor_checkpoint_violation(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Self::CheckpointWriteFailed { id, source } = self {
+            return write!(f, "cursor checkpoint {id} write failed: {source}");
+        }
+        if let Self::CursorCheckpointCorrupt { path, reason } = self {
+            return write!(
+                f,
+                "durable cursor checkpoint at {} is corrupt: {reason}",
+                path.display()
+            );
+        }
+        if let Self::CursorCheckpointRegionMismatch {
+            path,
+            stored,
+            expected,
+        } = self
+        {
+            return write!(
+                f,
+                "durable cursor checkpoint at {} belongs to region {:?}, expected {}",
+                path.display(),
+                stored,
+                expected
             );
         }
         Ok(())
@@ -561,25 +612,11 @@ impl std::fmt::Display for StoreError {
                 f,
                 "custom clock returned invalid timestamp_us {timestamp_us}: {reason}"
             ),
-            Self::CheckpointWriteFailed { id, source } => {
-                write!(f, "cursor checkpoint {id} write failed: {source}")
+            Self::CheckpointWriteFailed { .. }
+            | Self::CursorCheckpointCorrupt { .. }
+            | Self::CursorCheckpointRegionMismatch { .. } => {
+                self.fmt_cursor_checkpoint_violation(f)
             }
-            Self::CursorCheckpointCorrupt { path, reason } => write!(
-                f,
-                "durable cursor checkpoint at {} is corrupt: {reason}",
-                path.display()
-            ),
-            Self::CursorCheckpointRegionMismatch {
-                path,
-                stored,
-                expected,
-            } => write!(
-                f,
-                "durable cursor checkpoint at {} belongs to region {:?}, expected {}",
-                path.display(),
-                stored,
-                expected
-            ),
             Self::InvariantViolation { kind } => write!(f, "invariant violation: {kind}"),
             // Delegated so this match stays within its complexity ratchet rather
             // than growing the integrity-refusal render inline.
@@ -589,7 +626,9 @@ impl std::fmt::Display for StoreError {
             | Self::PayloadSealFailed { .. }
             | Self::PayloadShredded { .. }
             | Self::PayloadDecryptFailed { .. }
-            | Self::ShredSelectorMismatch { .. } => self.fmt_payload_encryption(f),
+            | Self::ShredSelectorMismatch { .. }
+            | Self::KeysetNotPortable { .. }
+            | Self::KeysetMissing { .. } => self.fmt_payload_encryption(f),
         }
     }
 }

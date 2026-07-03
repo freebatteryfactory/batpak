@@ -43,6 +43,18 @@ pub enum SnapshotFileKind {
     PendingCompactionMarker,
 }
 
+/// Caller options for
+/// [`Store::snapshot_with_evidence_with_options`](crate::store::Store::snapshot_with_evidence_with_options).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[must_use]
+pub struct SnapshotOptions {
+    /// Keyset portability policy for an encryption-active store. Default
+    /// [`KeysetPolicy::Refuse`](crate::store::KeysetPolicy::Refuse) fails closed;
+    /// [`KeysetPolicy::ExcludeKeys`](crate::store::KeysetPolicy::ExcludeKeys)
+    /// proceeds with a keys-excluded snapshot. Inert without payload encryption.
+    pub keyset_policy: crate::store::fork_report::KeysetPolicy,
+}
+
 /// Deterministic structural findings for a snapshot attempt.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SnapshotFinding {
@@ -60,6 +72,10 @@ pub enum SnapshotFinding {
     },
     /// The private visibility fence was explicitly cancelled after copying.
     FenceTokenCancelled,
+    /// Payload encryption was active and the keyset was deliberately EXCLUDED
+    /// from this snapshot under `KeysetPolicy::ExcludeKeys`. The snapshot carries
+    /// the encrypted segments but no keys; the keyset must be managed out-of-band.
+    KeysExcluded,
 }
 
 #[derive(Serialize)]
