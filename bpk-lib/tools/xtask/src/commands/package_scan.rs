@@ -278,6 +278,25 @@ fn needles() -> &'static [Needle] {
             text: "toll",
             severity: Severity::Language,
         },
+        // Caller privacy/compliance register — core is mechanism-only and must
+        // never ship a caller's data-protection vocabulary in the published
+        // archive (same rationale as `tenant`).
+        Needle {
+            text: "customer",
+            severity: Severity::Language,
+        },
+        Needle {
+            text: "consent",
+            severity: Severity::Language,
+        },
+        Needle {
+            text: "gdpr",
+            severity: Severity::Language,
+        },
+        Needle {
+            text: "pii",
+            severity: Severity::Language,
+        },
     ]
 }
 

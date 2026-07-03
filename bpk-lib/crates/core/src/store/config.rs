@@ -84,8 +84,9 @@ pub struct StoreConfig {
     /// Opt-in crypto-shred payload encryption. `None` (default) disables it and
     /// preserves today's plaintext-payload behavior; `Some(granularity)` selects
     /// the [`KeyScopeGranularity`] keys are partitioned by. Holds only the
-    /// granularity — never any key material. Stage A stores this setting but does
-    /// not yet wire it into the append/read paths.
+    /// granularity — never any key material. When set, every appended payload is
+    /// sealed under its scope key on the write path before it is hashed and framed
+    /// (`event_hash` covers the ciphertext); reads decrypt it transparently.
     #[cfg(feature = "payload-encryption")]
     #[cfg_attr(
         all(docsrs, not(batpak_stable_docs)),
@@ -317,7 +318,9 @@ impl StoreConfig {
     ///
     /// Stores only the granularity; no key material is held on the config. This
     /// is opt-in — a store left at the default `None` keeps writing plaintext
-    /// payloads. Stage A records the setting but does not yet encrypt writes.
+    /// payloads. When set, every appended payload is encrypted under its scope
+    /// key before it is hashed and framed, so the on-disk payload is ciphertext
+    /// and the plaintext is never written.
     #[cfg(feature = "payload-encryption")]
     #[cfg_attr(
         all(docsrs, not(batpak_stable_docs)),

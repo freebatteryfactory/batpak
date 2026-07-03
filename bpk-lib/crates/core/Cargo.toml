@@ -11,7 +11,7 @@ documentation = "https://docs.rs/batpak"
 readme = "README.md"
 keywords = ["event-sourcing", "audit-trail", "causal-graph", "hash-chain", "append-only"]
 categories = ["database-implementations", "data-structures"]
-exclude = []
+exclude = ["tests/"]
 
 [package.metadata.docs.rs]
 all-features = true
