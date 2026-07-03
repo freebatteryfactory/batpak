@@ -469,3 +469,7 @@ pub fn restore_proof_evidence_report(
     let body = restore_proof_report_body(expected_manifest, observed_segments)?;
     RestoreProofEvidenceReport::from_body(body)
 }
+
+#[cfg(test)]
+#[path = "backup_envelope_mutation_kill.rs"]
+mod backup_envelope_mutation_kill;

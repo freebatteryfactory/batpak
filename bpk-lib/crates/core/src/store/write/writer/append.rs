@@ -371,3 +371,7 @@ impl WriterCore {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+#[path = "append_mutation_kill.rs"]
+mod append_mutation_kill;

@@ -164,7 +164,8 @@ mod tests {
             .expect("write fixture through the platform seam");
         };
         write_fixture("000001.fbat", b"seg");
-        std::fs::create_dir(dest.path().join("caller-owned")).expect("create foreign directory");
+        crate::store::platform::fs::create_dir_all(&dest.path().join("caller-owned"))
+            .expect("create foreign directory");
         write_fixture(CURSOR_DIRECTORY, b"not a dir");
 
         let removed = clear_snapshot_store_artifacts(&RealFs, dest.path())
@@ -183,5 +184,40 @@ mod tests {
             dest.path().join(CURSOR_DIRECTORY).is_file(),
             "a cursor-NAMED regular file survives: the name alone must not qualify"
         );
+    }
+
+    #[test]
+    fn snapshot_source_file_kind_maps_copyable_kinds_and_rejects_the_rest() {
+        use super::snapshot_source_file_kind;
+        use crate::store::file_classification::StoreFileKind;
+        use crate::store::segment::SegmentId;
+        use crate::store::snapshot_report::SnapshotFileKind;
+
+        // Each share-safe source kind maps to its exact SnapshotFileKind; kills
+        // every match-arm swap (a segment recorded as visibility-ranges, etc.).
+        let segment = StoreFileKind::Segment(SegmentId::from_stem("4").expect("segment id"));
+        assert_eq!(
+            snapshot_source_file_kind(&segment),
+            Some(SnapshotFileKind::Segment)
+        );
+        assert_eq!(
+            snapshot_source_file_kind(&StoreFileKind::VisibilityRanges),
+            Some(SnapshotFileKind::VisibilityRanges)
+        );
+        assert_eq!(
+            snapshot_source_file_kind(&StoreFileKind::IdempotencyStore),
+            Some(SnapshotFileKind::IdempotencyStore)
+        );
+        assert_eq!(
+            snapshot_source_file_kind(&StoreFileKind::PendingCompactionMarker),
+            Some(SnapshotFileKind::PendingCompactionMarker)
+        );
+
+        // The `!should_copy_into_snapshot()` guard NEGATED would return `None` for
+        // the copyable kinds above (convicted there); here a non-copyable kind
+        // must map to `None` through the classifier.
+        assert_eq!(snapshot_source_file_kind(&StoreFileKind::Checkpoint), None);
+        assert_eq!(snapshot_source_file_kind(&StoreFileKind::Keyset), None);
+        assert_eq!(snapshot_source_file_kind(&StoreFileKind::Other), None);
     }
 }

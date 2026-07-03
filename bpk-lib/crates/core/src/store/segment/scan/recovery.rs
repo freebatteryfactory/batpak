@@ -141,10 +141,8 @@ impl Reader {
         // frame at/after the recovered prefix end that the stream is missing — the
         // torn-last-frame-under-corrupt-footer case (round-7) — it FailCloses
         // regardless of tail policy. With no corroborated manifest it HONORS
-        // `tail_policy`: the default `RecoverTornTail` recovers the CRC-valid
-        // prefix, while a `FailClosed` posture refuses a non-empty recovered prefix
-        // as an unprovable tail (truncation cannot be ruled out under an untrusted
-        // footer with no manifest signal).
+        // `tail_policy`: default `RecoverTornTail` recovers the CRC-valid prefix, while
+        // `FailClosed` refuses a non-empty prefix as an unprovable tail.
         let frames_end = if untrusted_boundary {
             segment::resolve_untrusted_frames_end(
                 &mut file,

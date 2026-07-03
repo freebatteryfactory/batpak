@@ -63,7 +63,13 @@ fn footer_segment_path(
     let path = dir
         .path()
         .join(crate::store::segment::segment_filename(segment_id));
-    std::fs::write(&path, footer_bytes(prefix_len, entries)).expect("write segment footer file");
+    crate::store::platform::fs::write_derivative_file_atomically(
+        dir.path(),
+        &path,
+        "segment footer fixture",
+        &footer_bytes(prefix_len, entries),
+    )
+    .expect("write segment footer file");
     path
 }
 
@@ -534,25 +540,37 @@ fn segment_with_frames(
 /// or exactly AT frames_start (empty region), both of which the strict path must
 /// handle without recovering zero events silently.
 fn append_trusted_sdx3_footer(path: &std::path::Path, offset: u64) {
-    let mut bytes = std::fs::read(path).expect("read segment");
+    let mut bytes = crate::store::platform::fs::read(path).expect("read segment");
     let covered_start = usize::try_from(offset).expect("offset fits usize");
     let crc = crc32fast::hash(&bytes[covered_start..]);
     bytes.extend_from_slice(&crc.to_le_bytes());
     bytes.extend_from_slice(&offset.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes()); // entry_count = 0
     bytes.extend_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
-    std::fs::write(path, &bytes).expect("write segment with trusted footer");
+    crate::store::platform::fs::write_derivative_file_atomically(
+        path.parent().expect("segment file has a parent directory"),
+        path,
+        "trusted footer fixture",
+        &bytes,
+    )
+    .expect("write segment with trusted footer");
 }
 
 /// Append a raw 16-byte SIDX trailer (no CRC-covered body), so the boundary is
 /// recognized but UNAUTHENTICATED → UNTRUSTED (a legacy SDX2 magic can never
 /// authenticate). Drives the untrusted-recovery scan path.
 fn append_raw_trailer(path: &std::path::Path, offset: u64, count: u32, magic: &[u8; 4]) {
-    let mut bytes = std::fs::read(path).expect("read segment");
+    let mut bytes = crate::store::platform::fs::read(path).expect("read segment");
     bytes.extend_from_slice(&offset.to_le_bytes());
     bytes.extend_from_slice(&count.to_le_bytes());
     bytes.extend_from_slice(magic);
-    std::fs::write(path, &bytes).expect("write segment with raw trailer");
+    crate::store::platform::fs::write_derivative_file_atomically(
+        path.parent().expect("segment file has a parent directory"),
+        path,
+        "raw trailer fixture",
+        &bytes,
+    )
+    .expect("write segment with raw trailer");
 }
 
 #[test]
@@ -688,10 +706,16 @@ fn scan_index_fails_closed_on_a_torn_tail_frame_under_failclosed_policy() {
     // must error. The `&&`→`||` mutant lets `frames_end == file_len` alone trigger a
     // torn-tail BREAK, silently truncating instead of failing closed.
     {
-        let mut bytes = std::fs::read(&path).expect("read segment");
+        let mut bytes = crate::store::platform::fs::read(&path).expect("read segment");
         bytes.extend_from_slice(&100u32.to_be_bytes()); // claimed payload length = 100
         bytes.extend_from_slice(&0u32.to_be_bytes()); // crc (payload never reached)
-        std::fs::write(&path, &bytes).expect("write torn tail");
+        crate::store::platform::fs::write_derivative_file_atomically(
+            dir.path(),
+            &path,
+            "torn tail fixture",
+            &bytes,
+        )
+        .expect("write torn tail");
     }
     let reader = recovery_reader(&dir);
     reader.set_active_segment(9);
@@ -734,7 +758,13 @@ fn sidx_covers_segment_tail_admits_a_bare_sixteen_byte_footer() {
     trailer.extend_from_slice(&0u64.to_le_bytes()); // string_table_offset = 0
     trailer.extend_from_slice(&0u32.to_le_bytes()); // entry_count = 0
     trailer.extend_from_slice(crate::store::segment::sidx::SIDX_MAGIC);
-    std::fs::write(&path, &trailer).expect("write 16-byte footer");
+    crate::store::platform::fs::write_derivative_file_atomically(
+        dir.path(),
+        &path,
+        "bare footer fixture",
+        &trailer,
+    )
+    .expect("write 16-byte footer");
 
     assert_eq!(
         Reader::sidx_covers_segment_tail(&path, &[]),
@@ -752,7 +782,13 @@ fn sidx_covers_segment_tail_treats_a_subtrailer_file_as_incomplete() {
     // Unreadable instead of the Incomplete fall-back.
     let dir = TempDir::new().expect("tmpdir");
     let path = dir.path().join("tiny.fbat");
-    std::fs::write(&path, [0u8; 10]).expect("write 10-byte file");
+    crate::store::platform::fs::write_derivative_file_atomically(
+        dir.path(),
+        &path,
+        "tiny file fixture",
+        &[0u8; 10],
+    )
+    .expect("write 10-byte file");
 
     assert_eq!(
         Reader::sidx_covers_segment_tail(&path, &[]),

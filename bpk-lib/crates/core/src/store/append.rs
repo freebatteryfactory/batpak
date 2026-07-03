@@ -746,3 +746,7 @@ impl SigningDowngradeBody {
 #[cfg(test)]
 #[path = "append_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "append_mutation_kill.rs"]
+mod append_mutation_kill;

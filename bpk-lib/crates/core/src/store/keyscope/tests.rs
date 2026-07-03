@@ -342,3 +342,260 @@ fn payload_aad_binds_ciphertext_to_event_identity() {
         b"bound secret",
     );
 }
+
+#[test]
+fn resolve_shred_scope_matches_the_configured_granularity_and_is_byte_identical_to_scope_for() {
+    // PROPERTY: a `ShredScope` selector resolves to the SAME `KeyScope` a matching
+    // append sealed under (so the erasure removes exactly the right key), but ONLY
+    // when the selector addresses the store's configured granularity. Kills
+    // `resolve_shred_scope -> None` (the matching selectors must return `Some`) and
+    // pins each of the four match arms to `scope_for`'s builder.
+    let coordinate = coord("entity:resolve");
+    let kind = EventKind::custom(0xF, 0x2A);
+    let id = EventId::from(0x99u128);
+
+    let entity_sel = ShredScope::Entity(&coordinate);
+    assert_eq!(
+        KeyScopeGranularity::PerEntity.resolve_shred_scope(&entity_sel),
+        Some(scope_for(
+            KeyScopeGranularity::PerEntity,
+            &coordinate,
+            kind,
+            id
+        )),
+        "PerEntity+Entity must resolve to the byte-identical per-entity scope"
+    );
+    let kind_sel = ShredScope::Kind(kind);
+    assert_eq!(
+        KeyScopeGranularity::PerCategory.resolve_shred_scope(&kind_sel),
+        Some(scope_for(
+            KeyScopeGranularity::PerCategory,
+            &coordinate,
+            kind,
+            id
+        )),
+        "PerCategory+Kind must resolve to the per-category scope"
+    );
+    assert_eq!(
+        KeyScopeGranularity::PerTypeId.resolve_shred_scope(&kind_sel),
+        Some(scope_for(
+            KeyScopeGranularity::PerTypeId,
+            &coordinate,
+            kind,
+            id
+        )),
+        "PerTypeId+Kind must resolve to the per-type-id scope"
+    );
+    let event_sel = ShredScope::Event(id);
+    assert_eq!(
+        KeyScopeGranularity::PerEvent.resolve_shred_scope(&event_sel),
+        Some(scope_for(
+            KeyScopeGranularity::PerEvent,
+            &coordinate,
+            kind,
+            id
+        )),
+        "PerEvent+Event must resolve to the per-event scope"
+    );
+}
+
+#[test]
+fn resolve_shred_scope_returns_none_on_a_selector_that_cannot_address_the_granularity() {
+    // PROPERTY: a selector that does not address the configured granularity is a
+    // typed mismatch (`None`), never silently reinterpreted as another
+    // granularity's scope. Pins the `_ => None` catch-all: if a matching arm were
+    // widened or the fallback changed, these mismatched pairs would resolve to
+    // `Some`.
+    let coordinate = coord("entity:mismatch");
+    let kind = EventKind::custom(0xE, 3);
+    let id = EventId::from(4u128);
+
+    assert_eq!(
+        KeyScopeGranularity::PerEntity.resolve_shred_scope(&ShredScope::Kind(kind)),
+        None,
+        "a Kind selector cannot address a PerEntity store"
+    );
+    assert_eq!(
+        KeyScopeGranularity::PerEntity.resolve_shred_scope(&ShredScope::Event(id)),
+        None,
+        "an Event selector cannot address a PerEntity store"
+    );
+    assert_eq!(
+        KeyScopeGranularity::PerCategory.resolve_shred_scope(&ShredScope::Entity(&coordinate)),
+        None,
+        "an Entity selector cannot address a PerCategory store"
+    );
+    assert_eq!(
+        KeyScopeGranularity::PerEvent.resolve_shred_scope(&ShredScope::Kind(kind)),
+        None,
+        "a Kind selector cannot address a PerEvent store"
+    );
+}
+
+#[test]
+fn shred_scope_label_names_each_selector_variant() {
+    // PROPERTY: `label()` renders the non-secret selector name used in the
+    // `ShredSelectorMismatch` error. Kills `label -> ""` and any arm that returns
+    // the wrong constant.
+    let coordinate = coord("entity:label");
+    assert_eq!(ShredScope::Entity(&coordinate).label(), "Entity");
+    assert_eq!(ShredScope::Kind(EventKind::custom(0xF, 1)).label(), "Kind");
+    assert_eq!(ShredScope::Event(EventId::from(1u128)).label(), "Event");
+}
+
+#[test]
+fn scope_discriminant_bytes_are_stable_and_distinct_per_granularity() {
+    // PROPERTY: every scope's first byte is its stable granularity discriminant
+    // (0x01..0x04), so the on-disk/on-wire scope byte never silently tracks a
+    // source-order change and two granularities never collide. Pins the four
+    // `SCOPE_DISC_*` discriminants at the `as_bytes()` boundary.
+    let coordinate = coord("entity:disc");
+    let kind = EventKind::custom(0xF, 1);
+    let id = EventId::from(1u128);
+    assert_eq!(
+        scope_for(KeyScopeGranularity::PerEntity, &coordinate, kind, id).as_bytes()[0],
+        0x01,
+        "PerEntity discriminant"
+    );
+    assert_eq!(
+        scope_for(KeyScopeGranularity::PerCategory, &coordinate, kind, id).as_bytes()[0],
+        0x02,
+        "PerCategory discriminant"
+    );
+    assert_eq!(
+        scope_for(KeyScopeGranularity::PerTypeId, &coordinate, kind, id).as_bytes()[0],
+        0x03,
+        "PerTypeId discriminant"
+    );
+    assert_eq!(
+        scope_for(KeyScopeGranularity::PerEvent, &coordinate, kind, id).as_bytes()[0],
+        0x04,
+        "PerEvent discriminant"
+    );
+}
+
+#[test]
+fn granularity_accessor_echoes_the_configured_value_not_the_default() {
+    // Kills `granularity -> Default::default()`: `KeyScopeGranularity::default()`
+    // is `PerEntity`, so a store built with a NON-default granularity must not read
+    // back as the default.
+    let store = KeyStore::new(KeyScopeGranularity::PerEvent);
+    assert_eq!(
+        store.granularity(),
+        KeyScopeGranularity::PerEvent,
+        "granularity() must echo the configured granularity, not the PerEntity default"
+    );
+    assert_ne!(store.granularity(), KeyScopeGranularity::default());
+}
+
+#[test]
+fn key_count_tracks_live_keys_and_is_not_a_constant_zero() {
+    // Kills `key_count -> 0`: after minting two scope keys the count is 2, and it
+    // drops to 1 after a destroy — a constant-zero body cannot track either.
+    let mut store = KeyStore::new(KeyScopeGranularity::PerEvent);
+    assert_eq!(store.key_count(), 0, "a fresh key store holds no keys");
+
+    let scope_a = scope_for(
+        KeyScopeGranularity::PerEvent,
+        &coord("entity:count"),
+        EventKind::custom(0xF, 1),
+        EventId::from(1u128),
+    );
+    let scope_b = scope_for(
+        KeyScopeGranularity::PerEvent,
+        &coord("entity:count"),
+        EventKind::custom(0xF, 1),
+        EventId::from(2u128),
+    );
+    store.get_or_create(&scope_a).expect("mint a");
+    store.get_or_create(&scope_b).expect("mint b");
+    assert_eq!(
+        store.key_count(),
+        2,
+        "two distinct scopes mint two live keys"
+    );
+
+    assert!(store.destroy(&scope_a), "destroy an existing key");
+    assert_eq!(
+        store.key_count(),
+        1,
+        "destroy drops the live-key count by one"
+    );
+}
+
+#[test]
+fn dirty_flag_starts_clean_and_only_mark_dirty_or_destroy_sets_it() {
+    // Kills `is_dirty -> true`/`-> false`, `mark_dirty -> ()`, `destroy -> true`,
+    // and the `if removed { self.dirty = true }` guard inside `destroy`.
+    let mut store = KeyStore::new(KeyScopeGranularity::PerEntity);
+    assert!(!store.is_dirty(), "a fresh key store is not dirty");
+
+    let scope = scope_for(
+        KeyScopeGranularity::PerEntity,
+        &coord("entity:dirty"),
+        EventKind::custom(0xF, 1),
+        EventId::from(1u128),
+    );
+    // Minting alone does NOT flip the durability fence signal (the writer marks it
+    // explicitly); so the store is still clean and destroy's effect is isolable.
+    store.get_or_create(&scope).expect("mint");
+    assert!(
+        !store.is_dirty(),
+        "get_or_create must not by itself mark the keyset dirty"
+    );
+
+    // Destroying a PRESENT key removes it AND flags the erasure not-yet-durable.
+    assert!(
+        store.destroy(&scope),
+        "destroying a present key returns true"
+    );
+    assert!(
+        store.is_dirty(),
+        "destroy of a present key must flag the keyset dirty (erasure pending flush)"
+    );
+
+    // Destroying an ABSENT scope in a clean store returns false and does NOT dirty.
+    let mut clean = KeyStore::new(KeyScopeGranularity::PerEntity);
+    let absent = scope_for(
+        KeyScopeGranularity::PerEntity,
+        &coord("entity:absent"),
+        EventKind::custom(0xF, 1),
+        EventId::from(9u128),
+    );
+    assert!(
+        !clean.destroy(&absent),
+        "destroying an absent scope returns false"
+    );
+    assert!(
+        !clean.is_dirty(),
+        "a no-op destroy must not flag the keyset dirty"
+    );
+
+    // mark_dirty flips the clean store's signal (kills mark_dirty -> ()).
+    clean.mark_dirty();
+    assert!(store.is_dirty(), "the destroyed store is still dirty");
+    assert!(clean.is_dirty(), "mark_dirty must set the dirty signal");
+}
+
+#[test]
+fn key_store_error_display_is_the_exact_opaque_message_per_variant() {
+    // Kills `KeyStoreError::Display -> Ok(())` (empty render) and any arm that
+    // returns the wrong message. The messages are deliberately opaque (no oracle),
+    // so they are the contract.
+    assert_eq!(
+        KeyStoreError::Rng.to_string(),
+        "CSPRNG failed to produce key material"
+    );
+    assert_eq!(
+        KeyStoreError::KeyInit.to_string(),
+        "AEAD key initialization rejected the key length"
+    );
+    assert_eq!(
+        KeyStoreError::Seal.to_string(),
+        "authenticated encryption failed"
+    );
+    assert_eq!(
+        KeyStoreError::Open.to_string(),
+        "authenticated decryption failed"
+    );
+}

@@ -393,10 +393,10 @@ fn segment_paths_ignore_superseded_sources_when_merge_is_present() {
     let untouched_path = dir.path().join(segment::segment_filename(3));
     let temp_source_path = compaction_source_temp_path(dir.path(), 1);
 
-    std::fs::write(&merged_path, []).expect("write merged");
-    std::fs::write(&superseded_path, []).expect("write superseded");
-    std::fs::write(&untouched_path, []).expect("write untouched");
-    std::fs::write(&temp_source_path, []).expect("write temp source");
+    crate::store::platform::fs::create_new_file(&merged_path).expect("write merged");
+    crate::store::platform::fs::create_new_file(&superseded_path).expect("write superseded");
+    crate::store::platform::fs::create_new_file(&untouched_path).expect("write untouched");
+    crate::store::platform::fs::create_new_file(&temp_source_path).expect("write temp source");
     write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
         .expect("write marker");
 
@@ -421,9 +421,9 @@ fn segment_paths_restore_temp_source_when_merge_not_published() {
     let source_path = dir.path().join(segment::segment_filename(2));
     let untouched_path = dir.path().join(segment::segment_filename(3));
 
-    std::fs::write(&temp_source_path, []).expect("write temp source");
-    std::fs::write(&source_path, []).expect("write source");
-    std::fs::write(&untouched_path, []).expect("write untouched");
+    crate::store::platform::fs::create_new_file(&temp_source_path).expect("write temp source");
+    crate::store::platform::fs::create_new_file(&source_path).expect("write source");
+    crate::store::platform::fs::create_new_file(&untouched_path).expect("write untouched");
     write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
         .expect("write marker");
 
@@ -447,7 +447,7 @@ fn segment_paths_reject_missing_sources_even_if_unrelated_segments_exist() {
     let dir = TempDir::new().expect("temp dir");
     let unrelated_path = dir.path().join(segment::segment_filename(99));
 
-    std::fs::write(&unrelated_path, []).expect("write unrelated segment");
+    crate::store::platform::fs::create_new_file(&unrelated_path).expect("write unrelated segment");
     write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
         .expect("write marker");
 
@@ -579,4 +579,45 @@ fn collect_tail_entries_keeps_events_from_the_watermark_segment() {
                 .any(|entry| entry.disk_pos.segment_id == watermark_segment_id),
             "PROPERTY: replay tail must include events from the watermark segment itself when the watermark offset is at the segment start"
         );
+}
+
+// ── Mutation-kill: SequenceTracker synthesis + max tracking ───────────────────
+//
+// `SequenceTracker` synthesizes the `global_sequence` for scan frames that lack
+// one. `synthesize_next` returns `0` before anything is inserted and
+// `max_seen + 1` afterward; `note_seen` folds each observed sequence into
+// `max_seen` via `.max(..)` and latches `inserted_any`. These are the numbers
+// that decide how the allocator floor advances during rebuild/tail replay.
+#[test]
+fn sequence_tracker_synthesizes_zero_before_insert_and_max_plus_one_after() {
+    let mut tracker = SequenceTracker::default();
+    assert_eq!(
+        tracker.synthesize_next(),
+        0,
+        "PROPERTY: a fresh tracker synthesizes 0 (kills the `inserted_any` guard -> true and a \
+         whole-body -> max_seen + 1)"
+    );
+
+    tracker.note_seen(5);
+    assert_eq!(
+        tracker.synthesize_next(),
+        6,
+        "PROPERTY: after seeing 5 the next synthesized sequence is max_seen + 1 = 6 (kills a \
+         whole-body -> 0, the guard -> false, and `saturating_add(1)` dropping the + 1)"
+    );
+
+    tracker.note_seen(3);
+    assert_eq!(
+        tracker.synthesize_next(),
+        6,
+        "PROPERTY: observing a LOWER sequence must not lower max_seen; still 6 (kills `.max(..)` \
+         degenerating to min or a plain assignment)"
+    );
+
+    tracker.note_seen(9);
+    assert_eq!(
+        tracker.synthesize_next(),
+        10,
+        "PROPERTY: a higher sequence advances max_seen, so the next synthesized value is 10"
+    );
 }

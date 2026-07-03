@@ -1,4 +1,5 @@
 use super::{StoreError, StoreLockMode};
+use crate::coordinate::CoordinateError;
 use std::error::Error as _;
 use std::io;
 
@@ -192,4 +193,174 @@ fn store_locked_display_names_modes() {
 
     assert_display_contains(&read_only, "read-only");
     assert_display_contains(&mutable, "mutable");
+}
+
+#[test]
+fn from_coordinate_error_routes_each_variant_to_its_dedicated_store_error() {
+    // PROPERTY: `From<CoordinateError>` splits the hardening-specific rejections
+    // (NUL / control / traversal) into their OWN top-level `StoreError` variants so
+    // callers can match precise failure modes, while the remaining coordinate
+    // rejections stay wrapped in `StoreError::Coordinate(_)`. Deleting or
+    // reordering any arm in that `match` would mis-route a rejection. Kills the
+    // per-variant match-arm deletions in `impl From<CoordinateError> for StoreError`.
+    assert!(
+        matches!(
+            StoreError::from(CoordinateError::NulByte),
+            StoreError::CoordinateNulByte
+        ),
+        "NulByte must route to the dedicated CoordinateNulByte variant"
+    );
+    assert!(
+        matches!(
+            StoreError::from(CoordinateError::ControlChar),
+            StoreError::CoordinateControlChar
+        ),
+        "ControlChar must route to the dedicated CoordinateControlChar variant"
+    );
+    assert!(
+        matches!(
+            StoreError::from(CoordinateError::PathTraversal),
+            StoreError::CoordinatePathTraversal
+        ),
+        "PathTraversal must route to the dedicated CoordinatePathTraversal variant"
+    );
+
+    // The remaining rejections stay wrapped, preserving the inner error.
+    assert!(matches!(
+        StoreError::from(CoordinateError::EmptyEntity),
+        StoreError::Coordinate(CoordinateError::EmptyEntity)
+    ));
+    assert!(matches!(
+        StoreError::from(CoordinateError::EmptyScope),
+        StoreError::Coordinate(CoordinateError::EmptyScope)
+    ));
+    assert!(matches!(
+        StoreError::from(CoordinateError::ForbiddenSeparator),
+        StoreError::Coordinate(CoordinateError::ForbiddenSeparator)
+    ));
+    assert!(matches!(
+        StoreError::from(CoordinateError::EntityTooLong { len: 5, max: 4 }),
+        StoreError::Coordinate(CoordinateError::EntityTooLong { len: 5, max: 4 })
+    ));
+    assert!(matches!(
+        StoreError::from(CoordinateError::ScopeTooLong { len: 9, max: 8 }),
+        StoreError::Coordinate(CoordinateError::ScopeTooLong { len: 9, max: 8 })
+    ));
+}
+
+#[test]
+fn from_io_error_wraps_as_the_io_variant() {
+    // Kills a mis-mapped `From<std::io::Error>` (the wrap must land in `Io`, not
+    // some other variant).
+    let error = StoreError::from(io::Error::new(io::ErrorKind::NotFound, "missing segment"));
+    assert!(matches!(error, StoreError::Io(_)));
+    assert!(
+        error
+            .source()
+            .is_some_and(|source| source.to_string().contains("missing segment")),
+        "the wrapped io::Error must be exposed as the error source"
+    );
+}
+
+#[test]
+fn source_exposes_wrapped_errors_and_is_none_for_leaf_variants() {
+    // PROPERTY: `source()` returns the underlying error for wrapping variants and
+    // `None` for self-contained (leaf) ones. Kills arm swaps in `source()` that
+    // would either hide a wrapped source or fabricate one for a leaf variant.
+    assert!(
+        StoreError::Io(io::Error::other("disk gone"))
+            .source()
+            .is_some(),
+        "Io must expose its inner io::Error as source"
+    );
+    assert!(
+        StoreError::Coordinate(CoordinateError::EmptyEntity)
+            .source()
+            .is_some(),
+        "Coordinate must expose its inner CoordinateError as source"
+    );
+    assert!(
+        StoreError::WriterCrashed.source().is_none(),
+        "WriterCrashed is a leaf variant with no source"
+    );
+    assert!(
+        StoreError::IdempotencyRequired.source().is_none(),
+        "IdempotencyRequired is a leaf variant with no source"
+    );
+}
+
+#[test]
+fn delegated_display_helpers_render_their_group_nonempty() {
+    // PROPERTY: `Display::fmt` delegates whole variant groups to `fmt_*` helper
+    // methods (kept off the main match to hold its complexity ratchet). Each helper
+    // returns `std::fmt::Result`, so a `-> Ok(())` mutation would render an EMPTY
+    // string for every variant it owns while `Display` still "succeeds". Pinning a
+    // representative variant per helper to a distinctive substring kills the
+    // `fmt_coordinate_violation`, `fmt_future_version`, `fmt_walk_violation`,
+    // `fmt_chain_verification_failed`, `fmt_projection_state_violation`, and
+    // `fmt_platform_violation` `-> Ok(())` mutants.
+
+    // fmt_coordinate_violation
+    assert_display_contains(&StoreError::CoordinateNulByte, "NUL");
+    assert_display_contains(
+        &StoreError::ReservedKind {
+            index: Some(2),
+            kind: 0x0001,
+        },
+        "reserved kind",
+    );
+    assert_display_contains(
+        &StoreError::InvalidCoordinate {
+            index: None,
+            reason: "empty entity".to_owned(),
+        },
+        "invalid coordinate",
+    );
+
+    // fmt_future_version (mmap subject) — carries both version numbers.
+    let mmap = StoreError::MmapFutureVersion {
+        found: 9,
+        supported: 3,
+    };
+    assert_display_contains(&mmap, "mmap index");
+    assert_display_contains(&mmap, "version 9");
+    assert_display_contains(&mmap, "version 3");
+
+    // fmt_walk_violation
+    assert_display_contains(
+        &StoreError::RangeMalformed { start: 8, end: 4 },
+        "malformed range",
+    );
+    assert_display_contains(
+        &StoreError::AncestryCorrupt {
+            cycle_at: crate::id::EventId::from(1u128),
+        },
+        "cycle",
+    );
+
+    // fmt_chain_verification_failed — echoes both defect counts.
+    let chain = StoreError::ChainVerificationFailed {
+        content_hash_mismatches: 2,
+        dangling_links: 5,
+    };
+    assert_display_contains(&chain, "hash-chain verification failed");
+    assert_display_contains(&chain, "2 content-hash");
+    assert_display_contains(&chain, "5 dangling");
+
+    // fmt_projection_state_violation
+    assert_display_contains(
+        &StoreError::ProjectionStateContractUnspecified {
+            projection: "proj:orders".to_owned(),
+        },
+        "growth contract",
+    );
+
+    // fmt_platform_violation
+    assert_display_contains(
+        &StoreError::PlatformAdmissionFailed {
+            capability: "mmap",
+            reason: "no huge pages".to_owned(),
+        },
+        "platform admission failed",
+    );
 }

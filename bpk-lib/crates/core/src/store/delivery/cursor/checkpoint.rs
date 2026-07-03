@@ -168,7 +168,8 @@ mod tests {
         // it yields an io error whose kind is NOT NotFound (the file "is there",
         // just unreadable as a file), exercising the non-NotFound arm.
         let path = cursor_checkpoint_path(dir.path(), &id);
-        std::fs::create_dir_all(&path).expect("create a directory at the checkpoint path");
+        crate::store::platform::fs::create_dir_all(&path)
+            .expect("create a directory at the checkpoint path");
 
         let result = Cursor::load_checkpoint(dir.path(), &id);
         assert!(

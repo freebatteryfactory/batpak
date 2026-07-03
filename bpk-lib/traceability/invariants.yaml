@@ -454,7 +454,7 @@
   witness_test: crates/core/tests/dag_position_hint.rs::lane_depth_survives_store_reopen_via_checkpoint
 - id: INV-SIDX-TIMESTAMP-US-APPROXIMATION
   statement: SIDX-accelerated cold start reconstructs timestamp_us from persisted wall_ms to the nearest millisecond; this best-effort value is suitable for age/display APIs but is not a sub-millisecond ordering contract.
-  witness_test: crates/core/src/store/cold_start/row.rs::cold_start_row_to_event_header_preserves_lane_depth_and_ids
+  witness_test: crates/core/src/store/cold_start/row_tests.rs::cold_start_row_to_event_header_preserves_lane_depth_and_ids
   artifacts:
     - ART-EVENT-SOURCING
     - ART-STORE-SIDX

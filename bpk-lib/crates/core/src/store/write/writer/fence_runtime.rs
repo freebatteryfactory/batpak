@@ -338,3 +338,7 @@ impl WriterCore {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "fence_runtime_mutation_kill.rs"]
+mod fence_runtime_mutation_kill;

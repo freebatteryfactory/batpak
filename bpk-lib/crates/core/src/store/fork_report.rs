@@ -353,6 +353,10 @@ pub fn decode_fork_evidence_wire(bytes: &[u8]) -> Result<ForkReportBody, StoreEr
 }
 
 #[cfg(test)]
+#[path = "fork_report_mutation_kill.rs"]
+mod fork_report_mutation_kill;
+
+#[cfg(test)]
 mod tests {
     use super::{decode_fork_evidence_wire, FORK_EVIDENCE_WIRE_MAGIC};
     use crate::store::StoreError;

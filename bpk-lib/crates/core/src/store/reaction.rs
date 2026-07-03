@@ -169,6 +169,42 @@ mod tests {
     }
 
     #[test]
+    fn is_empty_tracks_the_staged_item_count() {
+        // Kills reaction.rs `ReactionBatch::is_empty` body → `true` / `false`: a
+        // fresh batch is empty, but a batch with one staged item is NOT. (`len`
+        // body → 0/1 is separately pinned by the multi-item flush test.)
+        let mut batch = ReactionBatch::new();
+        assert!(
+            batch.is_empty(),
+            "PROPERTY: a fresh batch is empty; the body→false mutant reports non-empty"
+        );
+
+        let coord =
+            Coordinate::new("entity:reaction-is-empty", "scope:test").expect("valid coordinate");
+        batch
+            .push_typed(coord, &InternalA { n: 1 }, CausationRef::None)
+            .expect("push reaction item into batch");
+        assert!(
+            !batch.is_empty(),
+            "PROPERTY: a batch with a staged item is not empty; the body→true mutant \
+             reports empty"
+        );
+        assert_eq!(batch.len(), 1);
+    }
+
+    #[test]
+    fn default_yields_an_empty_batch() {
+        // Kills reaction.rs `Default for ReactionBatch` diverging from `new`: the
+        // default batch must be the same empty accumulator.
+        let batch = ReactionBatch::default();
+        assert!(
+            batch.is_empty(),
+            "PROPERTY: Default::default() is the empty batch, same as new()"
+        );
+        assert_eq!(batch.len(), 0);
+    }
+
+    #[test]
     fn flush_commits_multi_item_batch_atomically() {
         let (store, _dir) = open_store();
         let source = store

@@ -170,6 +170,41 @@ fn aosoa64_with_tile_callback() {
     assert_eq!(len, 64);
 }
 
+// ── Mutation-kill: Tile::is_full boundary (`len >= N`, N = 64) ─────────────────
+//
+// `Tile::is_full` is `self.len >= N`. Inserting exactly N + 1 same-kind entries
+// is the only shape that pins the boundary: the first 64 fill tile 0 (evicting
+// it from the open set), so the 65th must open a SECOND tile. The existing
+// `aosoa64_with_tile_callback` inserts only N, so it cannot distinguish these:
+//   * `>= -> >`: tile 0 never reports full at len == 64, so the 65th appends to
+//     it -> tile_count() == 1 and tile 0 holds 65.
+//   * is_full -> true: every entry opens a fresh single-entry tile -> 65 tiles.
+//   * is_full -> false: tile 0 grows unbounded -> 1 tile.
+#[test]
+fn aosoa64_full_tile_boundary_opens_a_second_tile() {
+    let idx = ColumnarIndex::new_aosoa64();
+    for i in 0u64..65 {
+        idx.insert(&make_entry(KIND_A, i, "e1", "s1"));
+    }
+    assert_eq!(
+        idx.tile_count(),
+        2,
+        "PROPERTY: the 65th same-kind entry must open a second 64-wide tile"
+    );
+    assert_eq!(
+        idx.with_tile64(0, |t| t.len).expect("AoSoA64 tile 0"),
+        64,
+        "PROPERTY: tile 0 is exactly full at N = 64, never N + 1"
+    );
+    assert_eq!(
+        idx.with_tile64(1, |t| t.len).expect("AoSoA64 tile 1"),
+        1,
+        "PROPERTY: the overflow entry lands alone in the second tile"
+    );
+    // All 65 entries remain queryable regardless of how they tiled.
+    assert_eq!(idx.query_hits_by_kind(KIND_A).len(), 65);
+}
+
 // --- SoAoS ---
 
 #[test]
