@@ -438,7 +438,15 @@ impl Segment<Active> {
         // A benign corrupt footer over intact frames still recovers — its entries
         // corroborate the recovered frames (case b).
         let copy_end = if untrusted_boundary {
-            resolve_untrusted_frames_end(&mut source, frames_start, file_len, 0, true)?
+            resolve_untrusted_frames_end(
+                &mut source,
+                frames_start,
+                file_len,
+                0,
+                Some(frames_end),
+                true,
+            )?
+            .frames_end
         } else {
             frames_end
         };
