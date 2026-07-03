@@ -136,6 +136,57 @@ Opinions stay in the semantics; ergonomics carry them.
   Windows) green on the release candidate; docs current (per-change +
   repo-wide audit); CHANGELOG migration notes for every break since 0.9.0.
 
+## 3b. CI cost policy (durable — the $422 lesson, 2026-07-02)
+
+The **24-shard whole-repo mutation matrix** (`mutants-full`) is the single most
+expensive CI job: 16-vCPU × ~5h × 24 ≈ 1,900 vCPU-hours per run. It drove a
+two-day Blacksmith bill on its own. Standing rules, enforced by the workflow:
+
+- **It never runs routinely.** `proof=heavy` runs every validation lane
+  (verify, windows, chaos, loom, smoke) *except* the matrix. The matrix needs
+  a second explicit opt-in: `gh workflow run ci.yml -f proof=heavy -f
+  run_full_mutation_matrix=yes`. Default `no` makes casual triggering
+  impossible (ci.yml `mutants-full` gate).
+- **It is a release-candidate / scheduled-baseline tool**, run at most once per
+  cut or on a deliberate `#49` baseline pass — *never* during PR iteration.
+- **Per-PR mutation coverage is the diff-scoped smoke lanes** (they grade only
+  changed lines — cheap, and what keeps new code at 100%). That is the everyday
+  gate; the whale is not.
+- **Kill superseded runs immediately.** A new push auto-cancels PR runs;
+  dispatch runs must be cancelled by hand — do it reflexively.
+- **Required merge gate = CI-fast + smoke lanes** (the cheap tier). Everything
+  above it is opt-in signal you budget for.
+
+## 3c. `#49` — first repo-wide mutation baseline (measured 2026-07-02)
+
+The `mutants-full` matrix ran to (near) completion for the first time ever
+(21/24 shards before a cost-cancel). This is the baseline measurement, NOT a
+merge gate and NOT a regression — diff-scoped coverage on all recent changes is
+100%; every survivor is on pre-existing, un-diffed whole-repo code.
+
+**Measured:** all-features shards **84–95%**; no-default shards **72–94%**.
+**323 distinct survivor sites, all in `core`.** The provisional 75% floor was
+set before any measurement ("PROVISIONAL pending first cloud") — now there is
+data. The honest program, cheapest-first (each step shrinks the number before
+any curing):
+
+- [ ] **1. Exclude cfg-phantoms** — payload-encryption / dangerous-test-hooks
+  items uncatchable on the surface that compiles them out (`encrypted_replay`,
+  the `read_api` encrypted read methods, etc.). Registry work we've done a
+  dozen times; lifts the below-floor no-default shards with zero curing.
+- [ ] **2. Decide test-infra grading** — `fault.rs` injectors + `alloc.rs`
+  counting allocator (~34 survivors) are the *tooling*, not the product;
+  exempt or separately-track them.
+- [ ] **3. Recalibrate the floor** to the measured reality (per-shard or a
+  single honest value), replacing the 75% guess. Steps 1–3 turn "2 red shards"
+  green *by making the gate honest*, not by papering over.
+- [ ] **4. Burn down genuine gaps** (~100–150 after 1–2: `open`, `segment`,
+  `sidx/footer`, `signing`, `hidden_ranges`, `index/visibility`; ~70 trivial
+  Display/getter fabrications) on a budgeted schedule — never per-PR. Full
+  survivor list archived in the session scratchpad.
+- [ ] **1 timeout mutant** (`cancel_visibility_fence` `<`→`<=` livelock) needs a
+  bounded assertion catch, not tolerance.
+
 ## 4. Posture statement (and its exit conditions)
 
 batpak is a lockstep-versioned monorepo family with aggressive fast feedback
