@@ -146,7 +146,7 @@ fn collect_domain_vocab_findings(repo_root: &Path, out: &mut Vec<Finding>) -> Re
     // Generic domain-register terms only. This is not a brand/IP scanner; it
     // catches public substrate APIs that accidentally start naming caller
     // business models.
-    let forbidden = ["tenant", "customer"];
+    let forbidden = ["tenant", "customer", "consent", "gdpr", "pii"];
     for path in files_with_extension(&repo_root.join("crates/core/src"), "rs") {
         let content = fs::read_to_string(&path)?;
         for (line_index, line) in content.lines().enumerate() {
