@@ -1,0 +1,775 @@
+pub mod hostbat
+pub mod hostbat::builder
+pub struct hostbat::builder::HostBuilder
+impl hostbat::builder::HostBuilder
+pub fn hostbat::builder::HostBuilder::build(self) -> core::result::Result<hostbat::host::Host, hostbat::error::HostError>
+pub fn hostbat::builder::HostBuilder::effect_backend<B>(self, backend: B) -> Self where B: syncbat::effect_backend::EffectBackend + 'static
+pub fn hostbat::builder::HostBuilder::host_control<C>(self, controller: C) -> Self where C: hostbat::host_control_backend::HostController + 'static
+pub fn hostbat::builder::HostBuilder::mount(self, module: hostbat::module::HostModule) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::builder::HostBuilder::new() -> Self
+pub fn hostbat::builder::HostBuilder::receipt_sink<S>(self, sink: S) -> Self where S: syncbat::receipt::ReceiptSink + 'static
+pub fn hostbat::builder::HostBuilder::spawn_with(self, spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
+impl core::default::Default for hostbat::builder::HostBuilder
+pub fn hostbat::builder::HostBuilder::default() -> Self
+pub mod hostbat::composition
+pub struct hostbat::composition::CompositionSchema
+impl hostbat::composition::CompositionSchema
+pub fn hostbat::composition::CompositionSchema::descriptor(&self) -> &hostbat::schema::SchemaDescriptor
+pub fn hostbat::composition::CompositionSchema::owner_module(&self) -> &str
+pub struct hostbat::composition::HostCompositionManifest
+impl hostbat::composition::HostCompositionManifest
+pub fn hostbat::composition::HostCompositionManifest::digest(&self) -> hostbat::identity::HostFingerprint
+pub fn hostbat::composition::HostCompositionManifest::find(&self, id: &str, version: u32, role: hostbat::schema::SchemaRole) -> core::option::Option<&hostbat::composition::CompositionSchema>
+pub fn hostbat::composition::HostCompositionManifest::is_empty(&self) -> bool
+pub fn hostbat::composition::HostCompositionManifest::len(&self) -> usize
+pub fn hostbat::composition::HostCompositionManifest::schemas(&self) -> impl core::iter::Iterator<Item = &hostbat::composition::CompositionSchema>
+pub fn hostbat::composition::HostCompositionManifest::verify_digest(&self) -> core::result::Result<bool, hostbat::error::HostError>
+pub mod hostbat::descriptor
+pub enum hostbat::descriptor::HookPhase
+pub hostbat::descriptor::HookPhase::Shutdown
+pub hostbat::descriptor::HookPhase::Startup
+impl core::fmt::Display for hostbat::descriptor::HookPhase
+pub fn hostbat::descriptor::HookPhase::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::descriptor::GuardDescriptor
+pub hostbat::descriptor::GuardDescriptor::code: alloc::string::String
+impl hostbat::descriptor::GuardDescriptor
+pub fn hostbat::descriptor::GuardDescriptor::new(code: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::descriptor::HookDescriptor
+pub hostbat::descriptor::HookDescriptor::name: alloc::string::String
+pub hostbat::descriptor::HookDescriptor::order: u32
+pub hostbat::descriptor::HookDescriptor::phase: hostbat::descriptor::HookPhase
+impl hostbat::descriptor::HookDescriptor
+pub fn hostbat::descriptor::HookDescriptor::new(phase: hostbat::descriptor::HookPhase, name: impl core::convert::Into<alloc::string::String>, order: u32) -> Self
+pub struct hostbat::descriptor::JobDescriptor
+pub hostbat::descriptor::JobDescriptor::kind: alloc::string::String
+impl hostbat::descriptor::JobDescriptor
+pub fn hostbat::descriptor::JobDescriptor::new(kind: impl core::convert::Into<alloc::string::String>) -> Self
+pub mod hostbat::error
+#[non_exhaustive] pub enum hostbat::error::HostError
+pub hostbat::error::HostError::Build(syncbat::error::BuildError)
+pub hostbat::error::HostError::CanonicalEncoding
+pub hostbat::error::HostError::CanonicalEncoding::detail: alloc::string::String
+pub hostbat::error::HostError::DuplicateEventPayloadBinding
+pub hostbat::error::HostError::DuplicateEventPayloadBinding::kind: u16
+pub hostbat::error::HostError::DuplicateEventPayloadBinding::module: alloc::string::String
+pub hostbat::error::HostError::DuplicateJobKind
+pub hostbat::error::HostError::DuplicateJobKind::kind: alloc::string::String
+pub hostbat::error::HostError::DuplicateJobKind::module: alloc::string::String
+pub hostbat::error::HostError::DuplicateModuleId
+pub hostbat::error::HostError::DuplicateModuleId::id: alloc::string::String
+pub hostbat::error::HostError::DuplicateOperation
+pub hostbat::error::HostError::DuplicateOperation::module: alloc::string::String
+pub hostbat::error::HostError::DuplicateOperation::operation: alloc::string::String
+pub hostbat::error::HostError::DuplicateReceiptNamespace
+pub hostbat::error::HostError::DuplicateReceiptNamespace::module: alloc::string::String
+pub hostbat::error::HostError::DuplicateReceiptNamespace::namespace: alloc::string::String
+pub hostbat::error::HostError::DuplicateSubscriptionId
+pub hostbat::error::HostError::DuplicateSubscriptionId::id: alloc::string::String
+pub hostbat::error::HostError::DuplicateSubscriptionId::module: alloc::string::String
+pub hostbat::error::HostError::EffectConflict
+pub hostbat::error::HostError::EffectConflict::module: alloc::string::String
+pub hostbat::error::HostError::EffectConflict::operation: alloc::string::String
+pub hostbat::error::HostError::EmptyHost
+pub hostbat::error::HostError::EventPayloadBindingConflict
+pub hostbat::error::HostError::EventPayloadBindingConflict::first_module: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingConflict::first_schema_ref: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingConflict::kind: u16
+pub hostbat::error::HostError::EventPayloadBindingConflict::second_module: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingConflict::second_schema_ref: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingDuplicateWithinModule
+pub hostbat::error::HostError::EventPayloadBindingDuplicateWithinModule::kind: u16
+pub hostbat::error::HostError::EventPayloadBindingDuplicateWithinModule::module: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingInvalid
+pub hostbat::error::HostError::EventPayloadBindingInvalid::detail: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingInvalid::kind: u16
+pub hostbat::error::HostError::EventPayloadBindingSchemaMissing
+pub hostbat::error::HostError::EventPayloadBindingSchemaMissing::kind: u16
+pub hostbat::error::HostError::EventPayloadBindingSchemaMissing::module: alloc::string::String
+pub hostbat::error::HostError::EventPayloadBindingSchemaMissing::reference: alloc::string::String
+pub hostbat::error::HostError::ModuleCoherence
+pub hostbat::error::HostError::ModuleCoherence::detail: alloc::string::String
+pub hostbat::error::HostError::ModuleCoherence::module: alloc::string::String
+pub hostbat::error::HostError::ModuleHashMismatch
+pub hostbat::error::HostError::ModuleHashMismatch::module: alloc::string::String
+pub hostbat::error::HostError::SchemaCollision(alloc::boxed::Box<hostbat::error::SchemaCollision>)
+pub hostbat::error::HostError::SchemaInvalid
+pub hostbat::error::HostError::SchemaInvalid::detail: alloc::string::String
+pub hostbat::error::HostError::SchemaInvalid::schema: alloc::string::String
+pub hostbat::error::HostError::SchemaReferenceAmbiguous
+pub hostbat::error::HostError::SchemaReferenceAmbiguous::module: alloc::string::String
+pub hostbat::error::HostError::SchemaReferenceAmbiguous::operation: core::option::Option<alloc::string::String>
+pub hostbat::error::HostError::SchemaReferenceAmbiguous::reference: alloc::string::String
+pub hostbat::error::HostError::SchemaReferenceAmbiguous::role: alloc::string::String
+pub hostbat::error::HostError::SchemaReferenceAmbiguous::versions: alloc::vec::Vec<u32>
+pub hostbat::error::HostError::SchemaReferenceMissing
+pub hostbat::error::HostError::SchemaReferenceMissing::module: alloc::string::String
+pub hostbat::error::HostError::SchemaReferenceMissing::operation: core::option::Option<alloc::string::String>
+pub hostbat::error::HostError::SchemaReferenceMissing::reference: alloc::string::String
+pub hostbat::error::HostError::SchemaReferenceMissing::role: alloc::string::String
+pub hostbat::error::HostError::SchemaValidation
+pub hostbat::error::HostError::SchemaValidation::detail: alloc::string::String
+pub hostbat::error::HostError::SchemaValidation::role: alloc::string::String
+pub hostbat::error::HostError::SchemaValidation::schema: alloc::string::String
+pub hostbat::error::HostError::SubscriptionDuplicateWithinModule
+pub hostbat::error::HostError::SubscriptionDuplicateWithinModule::id: alloc::string::String
+pub hostbat::error::HostError::SubscriptionDuplicateWithinModule::module: alloc::string::String
+pub hostbat::error::HostError::SubscriptionInvalidId
+pub hostbat::error::HostError::SubscriptionInvalidId::detail: alloc::string::String
+pub hostbat::error::HostError::SubscriptionInvalidId::id: alloc::string::String
+pub hostbat::error::HostError::SubscriptionInvalidProjectionId
+pub hostbat::error::HostError::SubscriptionInvalidProjectionId::detail: alloc::string::String
+pub hostbat::error::HostError::SubscriptionInvalidProjectionId::id: alloc::string::String
+pub hostbat::error::HostError::SubscriptionPayloadSchemaMissing
+pub hostbat::error::HostError::SubscriptionPayloadSchemaMissing::module: alloc::string::String
+pub hostbat::error::HostError::SubscriptionPayloadSchemaMissing::reference: alloc::string::String
+pub hostbat::error::HostError::SubscriptionPayloadSchemaMissing::role: alloc::string::String
+pub hostbat::error::HostError::SubscriptionPayloadSchemaMissing::subscription: alloc::string::String
+pub hostbat::error::HostError::SubscriptionReservedCategory
+pub hostbat::error::HostError::SubscriptionReservedCategory::category: u8
+impl core::convert::From<syncbat::error::BuildError> for hostbat::error::HostError
+pub fn hostbat::error::HostError::from(error: syncbat::error::BuildError) -> Self
+impl core::error::Error for hostbat::error::HostError
+pub fn hostbat::error::HostError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Display for hostbat::error::HostError
+pub fn hostbat::error::HostError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum hostbat::error::HostRuntimeError
+pub hostbat::error::HostRuntimeError::ShutdownHook(hostbat::error::HookFailure)
+pub hostbat::error::HostRuntimeError::Spawn(batpak::store::platform::spawn::SpawnError)
+pub hostbat::error::HostRuntimeError::StartupHook(hostbat::error::HookFailure)
+pub hostbat::error::HostRuntimeError::UnknownJobKind
+pub hostbat::error::HostRuntimeError::UnknownJobKind::kind: alloc::string::String
+impl core::convert::From<batpak::store::platform::spawn::SpawnError> for hostbat::error::HostRuntimeError
+pub fn hostbat::error::HostRuntimeError::from(error: batpak::store::platform::spawn::SpawnError) -> Self
+impl core::error::Error for hostbat::error::HostRuntimeError
+pub fn hostbat::error::HostRuntimeError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Display for hostbat::error::HostRuntimeError
+pub fn hostbat::error::HostRuntimeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::error::HookFailure
+pub hostbat::error::HookFailure::detail: alloc::string::String
+pub hostbat::error::HookFailure::hook: alloc::string::String
+pub hostbat::error::HookFailure::module: alloc::string::String
+pub hostbat::error::HookFailure::phase: hostbat::descriptor::HookPhase
+impl core::error::Error for hostbat::error::HookFailure
+impl core::fmt::Display for hostbat::error::HookFailure
+pub fn hostbat::error::HookFailure::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::error::SchemaCollision
+pub hostbat::error::SchemaCollision::first_encoding: alloc::string::String
+pub hostbat::error::SchemaCollision::first_module: alloc::string::String
+pub hostbat::error::SchemaCollision::role: alloc::string::String
+pub hostbat::error::SchemaCollision::schema: alloc::string::String
+pub hostbat::error::SchemaCollision::second_encoding: alloc::string::String
+pub hostbat::error::SchemaCollision::second_module: alloc::string::String
+pub hostbat::error::SchemaCollision::version: u32
+pub mod hostbat::event_payload_binding
+pub struct hostbat::event_payload_binding::EventPayloadBinding
+impl hostbat::event_payload_binding::EventPayloadBinding
+pub fn hostbat::event_payload_binding::EventPayloadBinding::kind(&self) -> batpak::event::kind::EventKind
+pub fn hostbat::event_payload_binding::EventPayloadBinding::kind_raw(&self) -> u16
+pub fn hostbat::event_payload_binding::EventPayloadBinding::new(kind: batpak::event::kind::EventKind, payload_schema_ref: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::event_payload_binding::EventPayloadBinding::payload_schema_ref(&self) -> &str
+pub mod hostbat::host
+pub struct hostbat::host::Host
+impl hostbat::host::Host
+pub fn hostbat::host::Host::composition_schemas(&self) -> &hostbat::composition::HostCompositionManifest
+pub fn hostbat::host::Host::event_payload_bindings(&self) -> impl core::iter::Iterator<Item = (&str, &hostbat::event_payload_binding::EventPayloadBinding)>
+pub fn hostbat::host::Host::fingerprint(&self) -> hostbat::identity::HostFingerprint
+pub fn hostbat::host::Host::interface_fingerprint(&self) -> hostbat::identity::InterfaceFingerprint
+pub fn hostbat::host::Host::invoke(&mut self, operation: impl core::convert::AsRef<str>, input: alloc::vec::Vec<u8>) -> core::result::Result<syncbat::core::CheckoutResult, syncbat::error::RuntimeError>
+pub fn hostbat::host::Host::is_started(&self) -> bool
+pub fn hostbat::host::Host::operations(&self) -> impl core::iter::Iterator<Item = &syncbat::operation::OperationDescriptor>
+pub fn hostbat::host::Host::schema_registry(&self) -> &hostbat::schema::SchemaRegistry
+pub fn hostbat::host::Host::shutdown(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
+pub fn hostbat::host::Host::spawn_job(&mut self, kind: impl core::convert::AsRef<str>) -> core::result::Result<(), hostbat::error::HostRuntimeError>
+pub fn hostbat::host::Host::start(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
+pub fn hostbat::host::Host::subscriptions(&self) -> impl core::iter::Iterator<Item = (&str, &hostbat::subscription::SubscriptionDescriptor)>
+pub fn hostbat::host::Host::supervisor(&self) -> &hostbat::supervisor::Supervisor
+pub struct hostbat::host::HostHook
+pub mod hostbat::host_control_backend
+pub struct hostbat::host_control_backend::HostControlEffectBackend
+impl hostbat::host_control_backend::HostControlEffectBackend
+pub fn hostbat::host_control_backend::HostControlEffectBackend::new(inner: core::option::Option<alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>>, controller: alloc::boxed::Box<dyn hostbat::host_control_backend::HostController>) -> Self
+impl syncbat::effect_backend::EffectBackend for hostbat::host_control_backend::HostControlEffectBackend
+pub fn hostbat::host_control_backend::HostControlEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::use_host_control(&mut self, control: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub struct hostbat::host_control_backend::HostControlError
+impl hostbat::host_control_backend::HostControlError
+pub fn hostbat::host_control_backend::HostControlError::message(&self) -> &str
+pub fn hostbat::host_control_backend::HostControlError::new(message: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::error::Error for hostbat::host_control_backend::HostControlError
+impl core::fmt::Display for hostbat::host_control_backend::HostControlError
+pub fn hostbat::host_control_backend::HostControlError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait hostbat::host_control_backend::HostController
+pub fn hostbat::host_control_backend::HostController::perform(&mut self, control: &str) -> core::result::Result<(), hostbat::host_control_backend::HostControlError>
+impl<F> hostbat::host_control_backend::HostController for F where F: core::ops::function::FnMut(&str) -> core::result::Result<(), hostbat::host_control_backend::HostControlError>
+pub fn F::perform(&mut self, control: &str) -> core::result::Result<(), hostbat::host_control_backend::HostControlError>
+pub mod hostbat::identity
+pub struct hostbat::identity::HostFingerprint(pub hostbat::identity::Digest)
+impl hostbat::identity::HostFingerprint
+pub const fn hostbat::identity::HostFingerprint::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::identity::HostFingerprint::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::identity::HostFingerprint
+pub fn hostbat::identity::HostFingerprint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::identity::InterfaceFingerprint(pub hostbat::identity::Digest)
+impl hostbat::identity::InterfaceFingerprint
+pub const fn hostbat::identity::InterfaceFingerprint::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::identity::InterfaceFingerprint::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::identity::InterfaceFingerprint
+pub fn hostbat::identity::InterfaceFingerprint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::identity::ModuleDigest(pub hostbat::identity::Digest)
+impl hostbat::identity::ModuleDigest
+pub const fn hostbat::identity::ModuleDigest::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::identity::ModuleDigest::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::identity::ModuleDigest
+pub fn hostbat::identity::ModuleDigest::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub type hostbat::identity::Digest = [u8; 32]
+pub mod hostbat::interface
+pub mod hostbat::manifest
+pub struct hostbat::manifest::HostModuleManifest
+impl hostbat::manifest::HostModuleManifest
+pub fn hostbat::manifest::HostModuleManifest::digest(&self) -> hostbat::identity::ModuleDigest
+pub fn hostbat::manifest::HostModuleManifest::event_payload_bindings(&self) -> impl core::iter::Iterator<Item = &hostbat::event_payload_binding::EventPayloadBinding>
+pub fn hostbat::manifest::HostModuleManifest::guard(&self) -> core::option::Option<&hostbat::descriptor::GuardDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::hooks(&self) -> impl core::iter::Iterator<Item = &hostbat::descriptor::HookDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::id(&self) -> &str
+pub fn hostbat::manifest::HostModuleManifest::jobs(&self) -> impl core::iter::Iterator<Item = &hostbat::descriptor::JobDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::operations(&self) -> impl core::iter::Iterator<Item = &syncbat::operation::OperationDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::receipt_namespaces(&self) -> impl core::iter::Iterator<Item = &str>
+pub fn hostbat::manifest::HostModuleManifest::schemas(&self) -> impl core::iter::Iterator<Item = &hostbat::schema::SchemaDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::subscriptions(&self) -> impl core::iter::Iterator<Item = &hostbat::subscription::SubscriptionDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::verify_hash(&self) -> core::result::Result<bool, hostbat::error::HostError>
+pub fn hostbat::manifest::HostModuleManifest::version(&self) -> u32
+pub mod hostbat::module
+pub struct hostbat::module::HostModule
+impl hostbat::module::HostModule
+pub fn hostbat::module::HostModule::builder(id: impl core::convert::Into<alloc::string::String>, version: u32) -> hostbat::module::HostModuleBuilder
+pub fn hostbat::module::HostModule::manifest(&self) -> &hostbat::manifest::HostModuleManifest
+pub struct hostbat::module::HostModuleBuilder
+impl hostbat::module::HostModuleBuilder
+pub fn hostbat::module::HostModuleBuilder::bind_event_payload(self, kind: batpak::event::kind::EventKind, payload_schema_ref: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::build(self) -> core::result::Result<hostbat::module::HostModule, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::guard<G>(self, descriptor: hostbat::descriptor::GuardDescriptor, guard: G) -> core::result::Result<Self, hostbat::error::HostError> where G: syncbat::admission::AdmissionGuard + 'static
+pub fn hostbat::module::HostModuleBuilder::hook<H>(self, phase: hostbat::descriptor::HookPhase, name: impl core::convert::Into<alloc::string::String>, order: u32, hook: H) -> Self where H: hostbat::module::LifecycleHook + 'static
+pub fn hostbat::module::HostModuleBuilder::job<J>(self, kind: impl core::convert::Into<alloc::string::String>, body: J) -> core::result::Result<Self, hostbat::error::HostError> where J: hostbat::module::JobBody + 'static
+pub fn hostbat::module::HostModuleBuilder::new(id: impl core::convert::Into<alloc::string::String>, version: u32) -> Self
+pub fn hostbat::module::HostModuleBuilder::operation<H>(self, descriptor: syncbat::operation::OperationDescriptor, handler: H) -> core::result::Result<Self, hostbat::error::HostError> where H: syncbat::handler::Handler + 'static
+pub fn hostbat::module::HostModuleBuilder::receipt_namespace(self, namespace: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::schema(self, descriptor: hostbat::schema::SchemaDescriptor) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::subscription(self, descriptor: hostbat::subscription::SubscriptionDescriptor) -> core::result::Result<Self, hostbat::error::HostError>
+pub trait hostbat::module::JobBody: core::marker::Send + core::marker::Sync
+pub fn hostbat::module::JobBody::make(&self) -> alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>
+impl<F> hostbat::module::JobBody for F where F: core::ops::function::Fn() -> alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)> + core::marker::Send + core::marker::Sync
+pub fn F::make(&self) -> alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>
+pub trait hostbat::module::LifecycleHook
+pub fn hostbat::module::LifecycleHook::run(&self) -> core::result::Result<(), alloc::string::String>
+impl<F> hostbat::module::LifecycleHook for F where F: core::ops::function::Fn() -> core::result::Result<(), alloc::string::String>
+pub fn F::run(&self) -> core::result::Result<(), alloc::string::String>
+pub mod hostbat::schema
+pub enum hostbat::schema::SchemaRole
+pub hostbat::schema::SchemaRole::EventPayload
+pub hostbat::schema::SchemaRole::OperationInput
+pub hostbat::schema::SchemaRole::OperationOutput
+pub hostbat::schema::SchemaRole::ReceiptPayload
+pub hostbat::schema::SchemaRole::SubscriptionPayload
+impl hostbat::schema::SchemaRole
+pub const fn hostbat::schema::SchemaRole::as_str(self) -> &'static str
+pub const fn hostbat::schema::SchemaRole::is_client_visible(self) -> bool
+impl core::fmt::Display for hostbat::schema::SchemaRole
+pub fn hostbat::schema::SchemaRole::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::schema::CanonicalEncoding(_)
+impl hostbat::schema::CanonicalEncoding
+pub const fn hostbat::schema::CanonicalEncoding::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::schema::CanonicalEncoding::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::schema::CanonicalEncoding
+pub fn hostbat::schema::CanonicalEncoding::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::schema::DiagnosticRustType(_)
+impl hostbat::schema::DiagnosticRustType
+pub fn hostbat::schema::DiagnosticRustType::as_str(&self) -> &str
+pub fn hostbat::schema::DiagnosticRustType::new(path: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for hostbat::schema::DiagnosticRustType
+pub fn hostbat::schema::DiagnosticRustType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::schema::GoldenVector
+pub hostbat::schema::GoldenVector::bytes: alloc::vec::Vec<u8>
+pub hostbat::schema::GoldenVector::case: alloc::string::String
+impl hostbat::schema::GoldenVector
+pub fn hostbat::schema::GoldenVector::new(case: impl core::convert::Into<alloc::string::String>, bytes: impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+pub struct hostbat::schema::SchemaDescriptor
+impl hostbat::schema::SchemaDescriptor
+pub fn hostbat::schema::SchemaDescriptor::diagnostic_rust_type(&self) -> core::option::Option<&hostbat::schema::DiagnosticRustType>
+pub fn hostbat::schema::SchemaDescriptor::encoding(&self) -> hostbat::schema::CanonicalEncoding
+pub fn hostbat::schema::SchemaDescriptor::golden(&self) -> impl core::iter::Iterator<Item = &hostbat::schema::GoldenVector>
+pub fn hostbat::schema::SchemaDescriptor::id(&self) -> &hostbat::schema::SchemaId
+pub fn hostbat::schema::SchemaDescriptor::new(id: hostbat::schema::SchemaId, version: hostbat::schema::SchemaVersion, role: hostbat::schema::SchemaRole, golden: alloc::vec::Vec<hostbat::schema::GoldenVector>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::schema::SchemaDescriptor::role(&self) -> hostbat::schema::SchemaRole
+pub fn hostbat::schema::SchemaDescriptor::verify_encoding(&self) -> core::result::Result<bool, hostbat::error::HostError>
+pub fn hostbat::schema::SchemaDescriptor::version(&self) -> hostbat::schema::SchemaVersion
+pub fn hostbat::schema::SchemaDescriptor::with_diagnostic_rust_type(self, rust_type: hostbat::schema::DiagnosticRustType) -> Self
+pub struct hostbat::schema::SchemaId(_)
+impl hostbat::schema::SchemaId
+pub fn hostbat::schema::SchemaId::as_str(&self) -> &str
+pub fn hostbat::schema::SchemaId::new(id: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+impl core::fmt::Display for hostbat::schema::SchemaId
+pub fn hostbat::schema::SchemaId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::schema::SchemaRegistry
+impl hostbat::schema::SchemaRegistry
+pub fn hostbat::schema::SchemaRegistry::from_descriptors<I>(descriptors: I) -> Self where I: core::iter::IntoIterator<Item = hostbat::schema::SchemaDescriptor>
+pub fn hostbat::schema::SchemaRegistry::validate(&self, schema_id: &str, role: hostbat::schema::SchemaRole, bytes: &[u8]) -> core::result::Result<(), hostbat::error::HostError>
+pub struct hostbat::schema::SchemaVersion(pub u32)
+impl hostbat::schema::SchemaVersion
+pub const fn hostbat::schema::SchemaVersion::get(self) -> u32
+impl core::fmt::Display for hostbat::schema::SchemaVersion
+pub fn hostbat::schema::SchemaVersion::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub mod hostbat::subscription
+pub enum hostbat::subscription::BackpressurePolicy
+pub hostbat::subscription::BackpressurePolicy::BoundedQueue
+pub hostbat::subscription::BackpressurePolicy::BoundedQueue::capacity: u32
+impl hostbat::subscription::BackpressurePolicy
+pub fn hostbat::subscription::BackpressurePolicy::kind(self) -> &'static str
+pub enum hostbat::subscription::SubscriptionDelivery
+pub hostbat::subscription::SubscriptionDelivery::CursorAtLeastOnce
+impl hostbat::subscription::SubscriptionDelivery
+pub const fn hostbat::subscription::SubscriptionDelivery::as_str(self) -> &'static str
+pub enum hostbat::subscription::SubscriptionSource
+pub hostbat::subscription::SubscriptionSource::EntityStream(batpak::coordinate::Coordinate)
+pub hostbat::subscription::SubscriptionSource::EventCategory(hostbat::subscription::EventCategory)
+pub hostbat::subscription::SubscriptionSource::OperationStatus(hostbat::subscription::OperationStatusSelector)
+pub hostbat::subscription::SubscriptionSource::Projection(hostbat::subscription::ProjectionId)
+pub hostbat::subscription::SubscriptionSource::ReceiptStream(hostbat::subscription::ReceiptFilter)
+impl hostbat::subscription::SubscriptionSource
+pub fn hostbat::subscription::SubscriptionSource::required_payload_role(&self) -> hostbat::schema::SchemaRole
+impl serde_core::ser::Serialize for hostbat::subscription::SubscriptionSource
+pub fn hostbat::subscription::SubscriptionSource::serialize<S>(&self, serializer: S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+pub struct hostbat::subscription::EventCategory(_)
+impl hostbat::subscription::EventCategory
+pub fn hostbat::subscription::EventCategory::get(self) -> u8
+pub fn hostbat::subscription::EventCategory::new(category: u8) -> core::result::Result<Self, hostbat::error::HostError>
+pub struct hostbat::subscription::OperationStatusSelector
+pub hostbat::subscription::OperationStatusSelector::operation: alloc::string::String
+impl hostbat::subscription::OperationStatusSelector
+pub fn hostbat::subscription::OperationStatusSelector::new(operation: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::subscription::ProjectionId(_)
+impl hostbat::subscription::ProjectionId
+pub fn hostbat::subscription::ProjectionId::as_str(&self) -> &str
+pub fn hostbat::subscription::ProjectionId::new(id: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+impl core::fmt::Display for hostbat::subscription::ProjectionId
+pub fn hostbat::subscription::ProjectionId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::subscription::ReceiptFilter
+pub hostbat::subscription::ReceiptFilter::receipt_kind: alloc::string::String
+impl hostbat::subscription::ReceiptFilter
+pub fn hostbat::subscription::ReceiptFilter::new(receipt_kind: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::subscription::SubscriptionDescriptor
+impl hostbat::subscription::SubscriptionDescriptor
+pub fn hostbat::subscription::SubscriptionDescriptor::backpressure(&self) -> hostbat::subscription::BackpressurePolicy
+pub fn hostbat::subscription::SubscriptionDescriptor::delivery(&self) -> hostbat::subscription::SubscriptionDelivery
+pub fn hostbat::subscription::SubscriptionDescriptor::id(&self) -> &hostbat::subscription::SubscriptionId
+pub fn hostbat::subscription::SubscriptionDescriptor::new(id: hostbat::subscription::SubscriptionId, source: hostbat::subscription::SubscriptionSource, payload_schema_ref: impl core::convert::Into<alloc::string::String>, delivery: hostbat::subscription::SubscriptionDelivery, backpressure: hostbat::subscription::BackpressurePolicy) -> Self
+pub fn hostbat::subscription::SubscriptionDescriptor::payload_schema_ref(&self) -> &str
+pub fn hostbat::subscription::SubscriptionDescriptor::required_payload_role(&self) -> hostbat::schema::SchemaRole
+pub fn hostbat::subscription::SubscriptionDescriptor::source(&self) -> &hostbat::subscription::SubscriptionSource
+pub struct hostbat::subscription::SubscriptionId(_)
+impl hostbat::subscription::SubscriptionId
+pub fn hostbat::subscription::SubscriptionId::as_str(&self) -> &str
+pub fn hostbat::subscription::SubscriptionId::new(id: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+impl core::fmt::Display for hostbat::subscription::SubscriptionId
+pub fn hostbat::subscription::SubscriptionId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub const hostbat::subscription::SUBSCRIPTION_WIRE_REQUIRES: &str
+pub mod hostbat::supervisor
+pub struct hostbat::supervisor::Supervisor
+impl hostbat::supervisor::Supervisor
+pub fn hostbat::supervisor::Supervisor::all_finished(&self) -> bool
+pub fn hostbat::supervisor::Supervisor::job_count(&self) -> usize
+pub fn hostbat::supervisor::Supervisor::join_all(&mut self) -> alloc::vec::Vec<(alloc::string::String, core::result::Result<(), batpak::store::platform::spawn::JoinError>)>
+pub fn hostbat::supervisor::Supervisor::new(spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
+pub fn hostbat::supervisor::Supervisor::spawn(&mut self, name: impl core::convert::Into<alloc::string::String>, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<(), batpak::store::platform::spawn::SpawnError>
+pub fn hostbat::supervisor::Supervisor::statuses(&self) -> alloc::vec::Vec<(alloc::string::String, batpak::store::platform::spawn::JobStatus)>
+pub mod hostbat::validating_effect_backend
+pub struct hostbat::validating_effect_backend::ValidatingEffectBackend
+impl hostbat::validating_effect_backend::ValidatingEffectBackend
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::new(inner: alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>, bindings: alloc::collections::btree::map::BTreeMap<u16, alloc::string::String>, registry: hostbat::schema::SchemaRegistry) -> Self
+impl syncbat::effect_backend::EffectBackend for hostbat::validating_effect_backend::ValidatingEffectBackend
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::use_host_control(&mut self, control: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub enum hostbat::BackpressurePolicy
+pub hostbat::BackpressurePolicy::BoundedQueue
+pub hostbat::BackpressurePolicy::BoundedQueue::capacity: u32
+impl hostbat::subscription::BackpressurePolicy
+pub fn hostbat::subscription::BackpressurePolicy::kind(self) -> &'static str
+pub enum hostbat::HookPhase
+pub hostbat::HookPhase::Shutdown
+pub hostbat::HookPhase::Startup
+impl core::fmt::Display for hostbat::descriptor::HookPhase
+pub fn hostbat::descriptor::HookPhase::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum hostbat::HostError
+pub hostbat::HostError::Build(syncbat::error::BuildError)
+pub hostbat::HostError::CanonicalEncoding
+pub hostbat::HostError::CanonicalEncoding::detail: alloc::string::String
+pub hostbat::HostError::DuplicateEventPayloadBinding
+pub hostbat::HostError::DuplicateEventPayloadBinding::kind: u16
+pub hostbat::HostError::DuplicateEventPayloadBinding::module: alloc::string::String
+pub hostbat::HostError::DuplicateJobKind
+pub hostbat::HostError::DuplicateJobKind::kind: alloc::string::String
+pub hostbat::HostError::DuplicateJobKind::module: alloc::string::String
+pub hostbat::HostError::DuplicateModuleId
+pub hostbat::HostError::DuplicateModuleId::id: alloc::string::String
+pub hostbat::HostError::DuplicateOperation
+pub hostbat::HostError::DuplicateOperation::module: alloc::string::String
+pub hostbat::HostError::DuplicateOperation::operation: alloc::string::String
+pub hostbat::HostError::DuplicateReceiptNamespace
+pub hostbat::HostError::DuplicateReceiptNamespace::module: alloc::string::String
+pub hostbat::HostError::DuplicateReceiptNamespace::namespace: alloc::string::String
+pub hostbat::HostError::DuplicateSubscriptionId
+pub hostbat::HostError::DuplicateSubscriptionId::id: alloc::string::String
+pub hostbat::HostError::DuplicateSubscriptionId::module: alloc::string::String
+pub hostbat::HostError::EffectConflict
+pub hostbat::HostError::EffectConflict::module: alloc::string::String
+pub hostbat::HostError::EffectConflict::operation: alloc::string::String
+pub hostbat::HostError::EmptyHost
+pub hostbat::HostError::EventPayloadBindingConflict
+pub hostbat::HostError::EventPayloadBindingConflict::first_module: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingConflict::first_schema_ref: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingConflict::kind: u16
+pub hostbat::HostError::EventPayloadBindingConflict::second_module: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingConflict::second_schema_ref: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingDuplicateWithinModule
+pub hostbat::HostError::EventPayloadBindingDuplicateWithinModule::kind: u16
+pub hostbat::HostError::EventPayloadBindingDuplicateWithinModule::module: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingInvalid
+pub hostbat::HostError::EventPayloadBindingInvalid::detail: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingInvalid::kind: u16
+pub hostbat::HostError::EventPayloadBindingSchemaMissing
+pub hostbat::HostError::EventPayloadBindingSchemaMissing::kind: u16
+pub hostbat::HostError::EventPayloadBindingSchemaMissing::module: alloc::string::String
+pub hostbat::HostError::EventPayloadBindingSchemaMissing::reference: alloc::string::String
+pub hostbat::HostError::ModuleCoherence
+pub hostbat::HostError::ModuleCoherence::detail: alloc::string::String
+pub hostbat::HostError::ModuleCoherence::module: alloc::string::String
+pub hostbat::HostError::ModuleHashMismatch
+pub hostbat::HostError::ModuleHashMismatch::module: alloc::string::String
+pub hostbat::HostError::SchemaCollision(alloc::boxed::Box<hostbat::error::SchemaCollision>)
+pub hostbat::HostError::SchemaInvalid
+pub hostbat::HostError::SchemaInvalid::detail: alloc::string::String
+pub hostbat::HostError::SchemaInvalid::schema: alloc::string::String
+pub hostbat::HostError::SchemaReferenceAmbiguous
+pub hostbat::HostError::SchemaReferenceAmbiguous::module: alloc::string::String
+pub hostbat::HostError::SchemaReferenceAmbiguous::operation: core::option::Option<alloc::string::String>
+pub hostbat::HostError::SchemaReferenceAmbiguous::reference: alloc::string::String
+pub hostbat::HostError::SchemaReferenceAmbiguous::role: alloc::string::String
+pub hostbat::HostError::SchemaReferenceAmbiguous::versions: alloc::vec::Vec<u32>
+pub hostbat::HostError::SchemaReferenceMissing
+pub hostbat::HostError::SchemaReferenceMissing::module: alloc::string::String
+pub hostbat::HostError::SchemaReferenceMissing::operation: core::option::Option<alloc::string::String>
+pub hostbat::HostError::SchemaReferenceMissing::reference: alloc::string::String
+pub hostbat::HostError::SchemaReferenceMissing::role: alloc::string::String
+pub hostbat::HostError::SchemaValidation
+pub hostbat::HostError::SchemaValidation::detail: alloc::string::String
+pub hostbat::HostError::SchemaValidation::role: alloc::string::String
+pub hostbat::HostError::SchemaValidation::schema: alloc::string::String
+pub hostbat::HostError::SubscriptionDuplicateWithinModule
+pub hostbat::HostError::SubscriptionDuplicateWithinModule::id: alloc::string::String
+pub hostbat::HostError::SubscriptionDuplicateWithinModule::module: alloc::string::String
+pub hostbat::HostError::SubscriptionInvalidId
+pub hostbat::HostError::SubscriptionInvalidId::detail: alloc::string::String
+pub hostbat::HostError::SubscriptionInvalidId::id: alloc::string::String
+pub hostbat::HostError::SubscriptionInvalidProjectionId
+pub hostbat::HostError::SubscriptionInvalidProjectionId::detail: alloc::string::String
+pub hostbat::HostError::SubscriptionInvalidProjectionId::id: alloc::string::String
+pub hostbat::HostError::SubscriptionPayloadSchemaMissing
+pub hostbat::HostError::SubscriptionPayloadSchemaMissing::module: alloc::string::String
+pub hostbat::HostError::SubscriptionPayloadSchemaMissing::reference: alloc::string::String
+pub hostbat::HostError::SubscriptionPayloadSchemaMissing::role: alloc::string::String
+pub hostbat::HostError::SubscriptionPayloadSchemaMissing::subscription: alloc::string::String
+pub hostbat::HostError::SubscriptionReservedCategory
+pub hostbat::HostError::SubscriptionReservedCategory::category: u8
+impl core::convert::From<syncbat::error::BuildError> for hostbat::error::HostError
+pub fn hostbat::error::HostError::from(error: syncbat::error::BuildError) -> Self
+impl core::error::Error for hostbat::error::HostError
+pub fn hostbat::error::HostError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Display for hostbat::error::HostError
+pub fn hostbat::error::HostError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum hostbat::HostRuntimeError
+pub hostbat::HostRuntimeError::ShutdownHook(hostbat::error::HookFailure)
+pub hostbat::HostRuntimeError::Spawn(batpak::store::platform::spawn::SpawnError)
+pub hostbat::HostRuntimeError::StartupHook(hostbat::error::HookFailure)
+pub hostbat::HostRuntimeError::UnknownJobKind
+pub hostbat::HostRuntimeError::UnknownJobKind::kind: alloc::string::String
+impl core::convert::From<batpak::store::platform::spawn::SpawnError> for hostbat::error::HostRuntimeError
+pub fn hostbat::error::HostRuntimeError::from(error: batpak::store::platform::spawn::SpawnError) -> Self
+impl core::error::Error for hostbat::error::HostRuntimeError
+pub fn hostbat::error::HostRuntimeError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Display for hostbat::error::HostRuntimeError
+pub fn hostbat::error::HostRuntimeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum hostbat::SchemaRole
+pub hostbat::SchemaRole::EventPayload
+pub hostbat::SchemaRole::OperationInput
+pub hostbat::SchemaRole::OperationOutput
+pub hostbat::SchemaRole::ReceiptPayload
+pub hostbat::SchemaRole::SubscriptionPayload
+impl hostbat::schema::SchemaRole
+pub const fn hostbat::schema::SchemaRole::as_str(self) -> &'static str
+pub const fn hostbat::schema::SchemaRole::is_client_visible(self) -> bool
+impl core::fmt::Display for hostbat::schema::SchemaRole
+pub fn hostbat::schema::SchemaRole::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum hostbat::SubscriptionDelivery
+pub hostbat::SubscriptionDelivery::CursorAtLeastOnce
+impl hostbat::subscription::SubscriptionDelivery
+pub const fn hostbat::subscription::SubscriptionDelivery::as_str(self) -> &'static str
+pub enum hostbat::SubscriptionSource
+pub hostbat::SubscriptionSource::EntityStream(batpak::coordinate::Coordinate)
+pub hostbat::SubscriptionSource::EventCategory(hostbat::subscription::EventCategory)
+pub hostbat::SubscriptionSource::OperationStatus(hostbat::subscription::OperationStatusSelector)
+pub hostbat::SubscriptionSource::Projection(hostbat::subscription::ProjectionId)
+pub hostbat::SubscriptionSource::ReceiptStream(hostbat::subscription::ReceiptFilter)
+impl hostbat::subscription::SubscriptionSource
+pub fn hostbat::subscription::SubscriptionSource::required_payload_role(&self) -> hostbat::schema::SchemaRole
+impl serde_core::ser::Serialize for hostbat::subscription::SubscriptionSource
+pub fn hostbat::subscription::SubscriptionSource::serialize<S>(&self, serializer: S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+pub struct hostbat::CanonicalEncoding(_)
+impl hostbat::schema::CanonicalEncoding
+pub const fn hostbat::schema::CanonicalEncoding::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::schema::CanonicalEncoding::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::schema::CanonicalEncoding
+pub fn hostbat::schema::CanonicalEncoding::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::CompositionSchema
+impl hostbat::composition::CompositionSchema
+pub fn hostbat::composition::CompositionSchema::descriptor(&self) -> &hostbat::schema::SchemaDescriptor
+pub fn hostbat::composition::CompositionSchema::owner_module(&self) -> &str
+pub struct hostbat::DiagnosticRustType(_)
+impl hostbat::schema::DiagnosticRustType
+pub fn hostbat::schema::DiagnosticRustType::as_str(&self) -> &str
+pub fn hostbat::schema::DiagnosticRustType::new(path: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for hostbat::schema::DiagnosticRustType
+pub fn hostbat::schema::DiagnosticRustType::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::EventCategory(_)
+impl hostbat::subscription::EventCategory
+pub fn hostbat::subscription::EventCategory::get(self) -> u8
+pub fn hostbat::subscription::EventCategory::new(category: u8) -> core::result::Result<Self, hostbat::error::HostError>
+pub struct hostbat::EventPayloadBinding
+impl hostbat::event_payload_binding::EventPayloadBinding
+pub fn hostbat::event_payload_binding::EventPayloadBinding::kind(&self) -> batpak::event::kind::EventKind
+pub fn hostbat::event_payload_binding::EventPayloadBinding::kind_raw(&self) -> u16
+pub fn hostbat::event_payload_binding::EventPayloadBinding::new(kind: batpak::event::kind::EventKind, payload_schema_ref: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::event_payload_binding::EventPayloadBinding::payload_schema_ref(&self) -> &str
+pub struct hostbat::GoldenVector
+pub hostbat::GoldenVector::bytes: alloc::vec::Vec<u8>
+pub hostbat::GoldenVector::case: alloc::string::String
+impl hostbat::schema::GoldenVector
+pub fn hostbat::schema::GoldenVector::new(case: impl core::convert::Into<alloc::string::String>, bytes: impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+pub struct hostbat::GuardDescriptor
+pub hostbat::GuardDescriptor::code: alloc::string::String
+impl hostbat::descriptor::GuardDescriptor
+pub fn hostbat::descriptor::GuardDescriptor::new(code: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::HookDescriptor
+pub hostbat::HookDescriptor::name: alloc::string::String
+pub hostbat::HookDescriptor::order: u32
+pub hostbat::HookDescriptor::phase: hostbat::descriptor::HookPhase
+impl hostbat::descriptor::HookDescriptor
+pub fn hostbat::descriptor::HookDescriptor::new(phase: hostbat::descriptor::HookPhase, name: impl core::convert::Into<alloc::string::String>, order: u32) -> Self
+pub struct hostbat::HookFailure
+pub hostbat::HookFailure::detail: alloc::string::String
+pub hostbat::HookFailure::hook: alloc::string::String
+pub hostbat::HookFailure::module: alloc::string::String
+pub hostbat::HookFailure::phase: hostbat::descriptor::HookPhase
+impl core::error::Error for hostbat::error::HookFailure
+impl core::fmt::Display for hostbat::error::HookFailure
+pub fn hostbat::error::HookFailure::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::Host
+impl hostbat::host::Host
+pub fn hostbat::host::Host::composition_schemas(&self) -> &hostbat::composition::HostCompositionManifest
+pub fn hostbat::host::Host::event_payload_bindings(&self) -> impl core::iter::Iterator<Item = (&str, &hostbat::event_payload_binding::EventPayloadBinding)>
+pub fn hostbat::host::Host::fingerprint(&self) -> hostbat::identity::HostFingerprint
+pub fn hostbat::host::Host::interface_fingerprint(&self) -> hostbat::identity::InterfaceFingerprint
+pub fn hostbat::host::Host::invoke(&mut self, operation: impl core::convert::AsRef<str>, input: alloc::vec::Vec<u8>) -> core::result::Result<syncbat::core::CheckoutResult, syncbat::error::RuntimeError>
+pub fn hostbat::host::Host::is_started(&self) -> bool
+pub fn hostbat::host::Host::operations(&self) -> impl core::iter::Iterator<Item = &syncbat::operation::OperationDescriptor>
+pub fn hostbat::host::Host::schema_registry(&self) -> &hostbat::schema::SchemaRegistry
+pub fn hostbat::host::Host::shutdown(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
+pub fn hostbat::host::Host::spawn_job(&mut self, kind: impl core::convert::AsRef<str>) -> core::result::Result<(), hostbat::error::HostRuntimeError>
+pub fn hostbat::host::Host::start(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
+pub fn hostbat::host::Host::subscriptions(&self) -> impl core::iter::Iterator<Item = (&str, &hostbat::subscription::SubscriptionDescriptor)>
+pub fn hostbat::host::Host::supervisor(&self) -> &hostbat::supervisor::Supervisor
+pub struct hostbat::HostBuilder
+impl hostbat::builder::HostBuilder
+pub fn hostbat::builder::HostBuilder::build(self) -> core::result::Result<hostbat::host::Host, hostbat::error::HostError>
+pub fn hostbat::builder::HostBuilder::effect_backend<B>(self, backend: B) -> Self where B: syncbat::effect_backend::EffectBackend + 'static
+pub fn hostbat::builder::HostBuilder::host_control<C>(self, controller: C) -> Self where C: hostbat::host_control_backend::HostController + 'static
+pub fn hostbat::builder::HostBuilder::mount(self, module: hostbat::module::HostModule) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::builder::HostBuilder::new() -> Self
+pub fn hostbat::builder::HostBuilder::receipt_sink<S>(self, sink: S) -> Self where S: syncbat::receipt::ReceiptSink + 'static
+pub fn hostbat::builder::HostBuilder::spawn_with(self, spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
+impl core::default::Default for hostbat::builder::HostBuilder
+pub fn hostbat::builder::HostBuilder::default() -> Self
+pub struct hostbat::HostCompositionManifest
+impl hostbat::composition::HostCompositionManifest
+pub fn hostbat::composition::HostCompositionManifest::digest(&self) -> hostbat::identity::HostFingerprint
+pub fn hostbat::composition::HostCompositionManifest::find(&self, id: &str, version: u32, role: hostbat::schema::SchemaRole) -> core::option::Option<&hostbat::composition::CompositionSchema>
+pub fn hostbat::composition::HostCompositionManifest::is_empty(&self) -> bool
+pub fn hostbat::composition::HostCompositionManifest::len(&self) -> usize
+pub fn hostbat::composition::HostCompositionManifest::schemas(&self) -> impl core::iter::Iterator<Item = &hostbat::composition::CompositionSchema>
+pub fn hostbat::composition::HostCompositionManifest::verify_digest(&self) -> core::result::Result<bool, hostbat::error::HostError>
+pub struct hostbat::HostControlEffectBackend
+impl hostbat::host_control_backend::HostControlEffectBackend
+pub fn hostbat::host_control_backend::HostControlEffectBackend::new(inner: core::option::Option<alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>>, controller: alloc::boxed::Box<dyn hostbat::host_control_backend::HostController>) -> Self
+impl syncbat::effect_backend::EffectBackend for hostbat::host_control_backend::HostControlEffectBackend
+pub fn hostbat::host_control_backend::HostControlEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::use_host_control(&mut self, control: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub struct hostbat::HostControlError
+impl hostbat::host_control_backend::HostControlError
+pub fn hostbat::host_control_backend::HostControlError::message(&self) -> &str
+pub fn hostbat::host_control_backend::HostControlError::new(message: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::error::Error for hostbat::host_control_backend::HostControlError
+impl core::fmt::Display for hostbat::host_control_backend::HostControlError
+pub fn hostbat::host_control_backend::HostControlError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::HostFingerprint(pub hostbat::identity::Digest)
+impl hostbat::identity::HostFingerprint
+pub const fn hostbat::identity::HostFingerprint::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::identity::HostFingerprint::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::identity::HostFingerprint
+pub fn hostbat::identity::HostFingerprint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::HostModule
+impl hostbat::module::HostModule
+pub fn hostbat::module::HostModule::builder(id: impl core::convert::Into<alloc::string::String>, version: u32) -> hostbat::module::HostModuleBuilder
+pub fn hostbat::module::HostModule::manifest(&self) -> &hostbat::manifest::HostModuleManifest
+pub struct hostbat::HostModuleBuilder
+impl hostbat::module::HostModuleBuilder
+pub fn hostbat::module::HostModuleBuilder::bind_event_payload(self, kind: batpak::event::kind::EventKind, payload_schema_ref: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::build(self) -> core::result::Result<hostbat::module::HostModule, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::guard<G>(self, descriptor: hostbat::descriptor::GuardDescriptor, guard: G) -> core::result::Result<Self, hostbat::error::HostError> where G: syncbat::admission::AdmissionGuard + 'static
+pub fn hostbat::module::HostModuleBuilder::hook<H>(self, phase: hostbat::descriptor::HookPhase, name: impl core::convert::Into<alloc::string::String>, order: u32, hook: H) -> Self where H: hostbat::module::LifecycleHook + 'static
+pub fn hostbat::module::HostModuleBuilder::job<J>(self, kind: impl core::convert::Into<alloc::string::String>, body: J) -> core::result::Result<Self, hostbat::error::HostError> where J: hostbat::module::JobBody + 'static
+pub fn hostbat::module::HostModuleBuilder::new(id: impl core::convert::Into<alloc::string::String>, version: u32) -> Self
+pub fn hostbat::module::HostModuleBuilder::operation<H>(self, descriptor: syncbat::operation::OperationDescriptor, handler: H) -> core::result::Result<Self, hostbat::error::HostError> where H: syncbat::handler::Handler + 'static
+pub fn hostbat::module::HostModuleBuilder::receipt_namespace(self, namespace: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::schema(self, descriptor: hostbat::schema::SchemaDescriptor) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::module::HostModuleBuilder::subscription(self, descriptor: hostbat::subscription::SubscriptionDescriptor) -> core::result::Result<Self, hostbat::error::HostError>
+pub struct hostbat::HostModuleManifest
+impl hostbat::manifest::HostModuleManifest
+pub fn hostbat::manifest::HostModuleManifest::digest(&self) -> hostbat::identity::ModuleDigest
+pub fn hostbat::manifest::HostModuleManifest::event_payload_bindings(&self) -> impl core::iter::Iterator<Item = &hostbat::event_payload_binding::EventPayloadBinding>
+pub fn hostbat::manifest::HostModuleManifest::guard(&self) -> core::option::Option<&hostbat::descriptor::GuardDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::hooks(&self) -> impl core::iter::Iterator<Item = &hostbat::descriptor::HookDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::id(&self) -> &str
+pub fn hostbat::manifest::HostModuleManifest::jobs(&self) -> impl core::iter::Iterator<Item = &hostbat::descriptor::JobDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::operations(&self) -> impl core::iter::Iterator<Item = &syncbat::operation::OperationDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::receipt_namespaces(&self) -> impl core::iter::Iterator<Item = &str>
+pub fn hostbat::manifest::HostModuleManifest::schemas(&self) -> impl core::iter::Iterator<Item = &hostbat::schema::SchemaDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::subscriptions(&self) -> impl core::iter::Iterator<Item = &hostbat::subscription::SubscriptionDescriptor>
+pub fn hostbat::manifest::HostModuleManifest::verify_hash(&self) -> core::result::Result<bool, hostbat::error::HostError>
+pub fn hostbat::manifest::HostModuleManifest::version(&self) -> u32
+pub struct hostbat::InterfaceFingerprint(pub hostbat::identity::Digest)
+impl hostbat::identity::InterfaceFingerprint
+pub const fn hostbat::identity::InterfaceFingerprint::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::identity::InterfaceFingerprint::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::identity::InterfaceFingerprint
+pub fn hostbat::identity::InterfaceFingerprint::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::JobDescriptor
+pub hostbat::JobDescriptor::kind: alloc::string::String
+impl hostbat::descriptor::JobDescriptor
+pub fn hostbat::descriptor::JobDescriptor::new(kind: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::ModuleDigest(pub hostbat::identity::Digest)
+impl hostbat::identity::ModuleDigest
+pub const fn hostbat::identity::ModuleDigest::bytes(&self) -> &hostbat::identity::Digest
+pub fn hostbat::identity::ModuleDigest::to_hex(&self) -> alloc::string::String
+impl core::fmt::Display for hostbat::identity::ModuleDigest
+pub fn hostbat::identity::ModuleDigest::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::OperationStatusSelector
+pub hostbat::OperationStatusSelector::operation: alloc::string::String
+impl hostbat::subscription::OperationStatusSelector
+pub fn hostbat::subscription::OperationStatusSelector::new(operation: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::ProjectionId(_)
+impl hostbat::subscription::ProjectionId
+pub fn hostbat::subscription::ProjectionId::as_str(&self) -> &str
+pub fn hostbat::subscription::ProjectionId::new(id: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+impl core::fmt::Display for hostbat::subscription::ProjectionId
+pub fn hostbat::subscription::ProjectionId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::ReceiptFilter
+pub hostbat::ReceiptFilter::receipt_kind: alloc::string::String
+impl hostbat::subscription::ReceiptFilter
+pub fn hostbat::subscription::ReceiptFilter::new(receipt_kind: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct hostbat::SchemaCollision
+pub hostbat::SchemaCollision::first_encoding: alloc::string::String
+pub hostbat::SchemaCollision::first_module: alloc::string::String
+pub hostbat::SchemaCollision::role: alloc::string::String
+pub hostbat::SchemaCollision::schema: alloc::string::String
+pub hostbat::SchemaCollision::second_encoding: alloc::string::String
+pub hostbat::SchemaCollision::second_module: alloc::string::String
+pub hostbat::SchemaCollision::version: u32
+pub struct hostbat::SchemaDescriptor
+impl hostbat::schema::SchemaDescriptor
+pub fn hostbat::schema::SchemaDescriptor::diagnostic_rust_type(&self) -> core::option::Option<&hostbat::schema::DiagnosticRustType>
+pub fn hostbat::schema::SchemaDescriptor::encoding(&self) -> hostbat::schema::CanonicalEncoding
+pub fn hostbat::schema::SchemaDescriptor::golden(&self) -> impl core::iter::Iterator<Item = &hostbat::schema::GoldenVector>
+pub fn hostbat::schema::SchemaDescriptor::id(&self) -> &hostbat::schema::SchemaId
+pub fn hostbat::schema::SchemaDescriptor::new(id: hostbat::schema::SchemaId, version: hostbat::schema::SchemaVersion, role: hostbat::schema::SchemaRole, golden: alloc::vec::Vec<hostbat::schema::GoldenVector>) -> core::result::Result<Self, hostbat::error::HostError>
+pub fn hostbat::schema::SchemaDescriptor::role(&self) -> hostbat::schema::SchemaRole
+pub fn hostbat::schema::SchemaDescriptor::verify_encoding(&self) -> core::result::Result<bool, hostbat::error::HostError>
+pub fn hostbat::schema::SchemaDescriptor::version(&self) -> hostbat::schema::SchemaVersion
+pub fn hostbat::schema::SchemaDescriptor::with_diagnostic_rust_type(self, rust_type: hostbat::schema::DiagnosticRustType) -> Self
+pub struct hostbat::SchemaId(_)
+impl hostbat::schema::SchemaId
+pub fn hostbat::schema::SchemaId::as_str(&self) -> &str
+pub fn hostbat::schema::SchemaId::new(id: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+impl core::fmt::Display for hostbat::schema::SchemaId
+pub fn hostbat::schema::SchemaId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::SchemaRegistry
+impl hostbat::schema::SchemaRegistry
+pub fn hostbat::schema::SchemaRegistry::from_descriptors<I>(descriptors: I) -> Self where I: core::iter::IntoIterator<Item = hostbat::schema::SchemaDescriptor>
+pub fn hostbat::schema::SchemaRegistry::validate(&self, schema_id: &str, role: hostbat::schema::SchemaRole, bytes: &[u8]) -> core::result::Result<(), hostbat::error::HostError>
+pub struct hostbat::SchemaVersion(pub u32)
+impl hostbat::schema::SchemaVersion
+pub const fn hostbat::schema::SchemaVersion::get(self) -> u32
+impl core::fmt::Display for hostbat::schema::SchemaVersion
+pub fn hostbat::schema::SchemaVersion::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::SubscriptionDescriptor
+impl hostbat::subscription::SubscriptionDescriptor
+pub fn hostbat::subscription::SubscriptionDescriptor::backpressure(&self) -> hostbat::subscription::BackpressurePolicy
+pub fn hostbat::subscription::SubscriptionDescriptor::delivery(&self) -> hostbat::subscription::SubscriptionDelivery
+pub fn hostbat::subscription::SubscriptionDescriptor::id(&self) -> &hostbat::subscription::SubscriptionId
+pub fn hostbat::subscription::SubscriptionDescriptor::new(id: hostbat::subscription::SubscriptionId, source: hostbat::subscription::SubscriptionSource, payload_schema_ref: impl core::convert::Into<alloc::string::String>, delivery: hostbat::subscription::SubscriptionDelivery, backpressure: hostbat::subscription::BackpressurePolicy) -> Self
+pub fn hostbat::subscription::SubscriptionDescriptor::payload_schema_ref(&self) -> &str
+pub fn hostbat::subscription::SubscriptionDescriptor::required_payload_role(&self) -> hostbat::schema::SchemaRole
+pub fn hostbat::subscription::SubscriptionDescriptor::source(&self) -> &hostbat::subscription::SubscriptionSource
+pub struct hostbat::SubscriptionId(_)
+impl hostbat::subscription::SubscriptionId
+pub fn hostbat::subscription::SubscriptionId::as_str(&self) -> &str
+pub fn hostbat::subscription::SubscriptionId::new(id: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, hostbat::error::HostError>
+impl core::fmt::Display for hostbat::subscription::SubscriptionId
+pub fn hostbat::subscription::SubscriptionId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct hostbat::Supervisor
+impl hostbat::supervisor::Supervisor
+pub fn hostbat::supervisor::Supervisor::all_finished(&self) -> bool
+pub fn hostbat::supervisor::Supervisor::job_count(&self) -> usize
+pub fn hostbat::supervisor::Supervisor::join_all(&mut self) -> alloc::vec::Vec<(alloc::string::String, core::result::Result<(), batpak::store::platform::spawn::JoinError>)>
+pub fn hostbat::supervisor::Supervisor::new(spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
+pub fn hostbat::supervisor::Supervisor::spawn(&mut self, name: impl core::convert::Into<alloc::string::String>, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<(), batpak::store::platform::spawn::SpawnError>
+pub fn hostbat::supervisor::Supervisor::statuses(&self) -> alloc::vec::Vec<(alloc::string::String, batpak::store::platform::spawn::JobStatus)>
+pub struct hostbat::ValidatingEffectBackend
+impl hostbat::validating_effect_backend::ValidatingEffectBackend
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::new(inner: alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>, bindings: alloc::collections::btree::map::BTreeMap<u16, alloc::string::String>, registry: hostbat::schema::SchemaRegistry) -> Self
+impl syncbat::effect_backend::EffectBackend for hostbat::validating_effect_backend::ValidatingEffectBackend
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::use_host_control(&mut self, control: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub const hostbat::SUBSCRIPTION_WIRE_REQUIRES: &str
+pub trait hostbat::HostController
+pub fn hostbat::HostController::perform(&mut self, control: &str) -> core::result::Result<(), hostbat::host_control_backend::HostControlError>
+impl<F> hostbat::host_control_backend::HostController for F where F: core::ops::function::FnMut(&str) -> core::result::Result<(), hostbat::host_control_backend::HostControlError>
+pub fn F::perform(&mut self, control: &str) -> core::result::Result<(), hostbat::host_control_backend::HostControlError>
+pub trait hostbat::JobBody: core::marker::Send + core::marker::Sync
+pub fn hostbat::JobBody::make(&self) -> alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>
+impl<F> hostbat::module::JobBody for F where F: core::ops::function::Fn() -> alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)> + core::marker::Send + core::marker::Sync
+pub fn F::make(&self) -> alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>
+pub trait hostbat::LifecycleHook
+pub fn hostbat::LifecycleHook::run(&self) -> core::result::Result<(), alloc::string::String>
+impl<F> hostbat::module::LifecycleHook for F where F: core::ops::function::Fn() -> core::result::Result<(), alloc::string::String>
+pub fn F::run(&self) -> core::result::Result<(), alloc::string::String>
+pub type hostbat::Digest = [u8; 32]

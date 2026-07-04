@@ -206,16 +206,44 @@ pub(crate) mod sys;
 // is a FILESYSTEM interface, so this is ALL safe `std::fs` — NO `unsafe`, fully
 // runtime-shape-checked, unit-testable against a fake tree. 8b adds the launcher's
 // CLONE_INTO_CGROUP placement + the Budget/Kill profile() honesty cells.
-#[cfg(all(feature = "backend-linux", target_os = "linux"))]
+// NOT part of the published API surface. The backend uses this host-side cgroup
+// manager via crate-internal paths, so it is `pub(crate)` for the release build;
+// it is re-exported publicly ONLY for the integration-test harness, which runs
+// under `dangerous-test-hooks` (CI uses `--all-features`). Keeps the crates.io
+// surface to the contract, not the launcher plumbing.
+#[cfg(all(
+    feature = "backend-linux",
+    target_os = "linux",
+    feature = "dangerous-test-hooks"
+))]
 pub mod cgroup;
+#[cfg(all(
+    feature = "backend-linux",
+    target_os = "linux",
+    not(feature = "dangerous-test-hooks")
+))]
+pub(crate) mod cgroup;
 
 // The HOST-SIDE launcher harness (kernel plan §10.8, step 7a): a REUSABLE, SAFE
 // orchestration that seals a launcher plan into a memfd, spawns the confinement
 // launcher with controlled inherited fds, and collects its transcript/outcome. Step
 // 7b wires this into `execute()`. SAFE except the two ledgered `sys` basement calls
 // (memfd seal + spawn pre_exec). Compiled only on Linux with the backend feature.
-#[cfg(all(feature = "backend-linux", target_os = "linux"))]
+// NOT part of the published API surface (same rationale as `cgroup` above): the
+// backend drives the launcher via crate-internal paths; the harness is re-exported
+// publicly only for the integration-test harness under `dangerous-test-hooks`.
+#[cfg(all(
+    feature = "backend-linux",
+    target_os = "linux",
+    feature = "dangerous-test-hooks"
+))]
 pub mod launch;
+#[cfg(all(
+    feature = "backend-linux",
+    target_os = "linux",
+    not(feature = "dangerous-test-hooks")
+))]
+pub(crate) mod launch;
 
 // The D6 seccomp POLICY MODEL → BPF (proof-spine S7). PURE Rust: builds a default-
 // deny launcher allowlist and assembles it to a `BpfProgram` via seccompiler's safe

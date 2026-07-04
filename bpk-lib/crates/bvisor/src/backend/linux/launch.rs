@@ -43,6 +43,7 @@ use crate::backend::linux::protocol::{LauncherState, LinuxLaunchPlanV1};
 use crate::backend::linux::sys::{self, LaunchFd};
 use std::io::Read;
 use std::os::fd::{OwnedFd, RawFd};
+#[cfg(feature = "dangerous-test-hooks")]
 use std::path::PathBuf;
 
 /// The env var that overrides the launcher binary path. When set, the harness spawns
@@ -130,6 +131,9 @@ pub struct LaunchObservation {
     pub terminal: Option<LauncherState>,
     /// Every state-machine line the launcher emitted, in order (the `# ...` note lines
     /// are dropped — they are free-form mechanism annotations, kept in [`Self::notes`]).
+    /// Test-harness only (read solely by the integration tests) — compiled under
+    /// `dangerous-test-hooks`, kept off the published API surface.
+    #[cfg(feature = "dangerous-test-hooks")]
     pub transcript: Vec<LauncherState>,
     /// The free-form mechanism notes the launcher emitted (`# mechanism=clone3 ...`,
     /// `# confinement=Applied installed=true`, `# refusal=...`), in order. These carry
@@ -155,6 +159,7 @@ pub struct LaunchObservation {
 impl LaunchObservation {
     /// Whether the workload ran confined to success: the terminal is
     /// [`LauncherState::ExecSucceeded`]. Step 7b maps this to the workload-ran outcome.
+    #[cfg(feature = "dangerous-test-hooks")]
     #[must_use]
     pub fn exec_succeeded(&self) -> bool {
         self.terminal == Some(LauncherState::ExecSucceeded)
@@ -173,6 +178,7 @@ impl LaunchObservation {
 /// Locate the launcher binary: the `BVISOR_LAUNCHER_BIN` override if set, else
 /// `default_path` (the caller's compile-time `CARGO_BIN_EXE_bvisor-linux-launcher`).
 /// Content-addressed identity is step 12 — the path is trusted as supplied here.
+#[cfg(feature = "dangerous-test-hooks")]
 #[must_use]
 pub fn resolve_launcher_path(default_path: &str) -> PathBuf {
     match std::env::var(ENV_LAUNCHER_BIN) {
@@ -217,6 +223,7 @@ pub fn unprivileged_userns_available() -> bool {
 /// confinement-unavailable detectors below admit: a capable kernel that genuinely FAILS
 /// to confine for any other reason emits no `ENOSYS` and is therefore never skipped, so a
 /// real confinement regression still RED-fails the test that exercises it.
+#[cfg(feature = "dangerous-test-hooks")]
 fn detail_is_capability_absence(detail: &str) -> bool {
     detail.contains("Function not implemented")
         || detail.contains("os error 38")
@@ -234,6 +241,7 @@ fn detail_is_capability_absence(detail: &str) -> bool {
 /// proceeds) never matches, so the test still RUNS and PASSES there; only an environment
 /// that physically cannot install confinement trips it. A test that finds this true must
 /// SKIP LOUD (never a silent pass) rather than assert a guarantee it could not exercise.
+#[cfg(feature = "dangerous-test-hooks")]
 #[must_use]
 pub fn report_confinement_unavailable(observed: &[crate::contract::report::ObservedFact]) -> bool {
     let capability_absent = observed
@@ -253,6 +261,7 @@ pub fn report_confinement_unavailable(observed: &[crate::contract::report::Obser
 /// that drive [`run_launcher`] directly (they hold the observation, not a sealed report).
 /// Same conservative posture: an `ENOSYS` capability-absence note AND a `SetupFaulted`
 /// terminal that installed no confinement.
+#[cfg(feature = "dangerous-test-hooks")]
 #[must_use]
 pub fn launch_confinement_unavailable(obs: &LaunchObservation) -> bool {
     let capability_absent = obs.notes.iter().any(|n| detail_is_capability_absence(n));
@@ -264,6 +273,7 @@ pub fn launch_confinement_unavailable(obs: &LaunchObservation) -> bool {
 /// The raw-transcript analogue, for tests that read the launcher's control transcript as a
 /// single string (a hand-rolled spawn, not the harness). Same conservative posture: an
 /// `ENOSYS` capability-absence line AND a `SetupFaulted` terminal line.
+#[cfg(feature = "dangerous-test-hooks")]
 #[must_use]
 pub fn transcript_confinement_unavailable(transcript: &str) -> bool {
     let capability_absent = transcript.lines().any(detail_is_capability_absence);
@@ -488,6 +498,7 @@ fn parse_observation(
     let terminal = transcript.iter().rev().copied().find(|s| s.is_terminal());
     LaunchObservation {
         terminal,
+        #[cfg(feature = "dangerous-test-hooks")]
         transcript,
         notes,
         confinement_installed: installed,
