@@ -587,11 +587,18 @@ rows:
 
   - id: CUT-PUBLISH-TAG
     title: Chain publish + tag after cloud proof green
-    status: INCOMPLETE
+    status: PROVEN
     terminal_required: true
     surface: batpak
-    blocked_by:
-      - requires CUT-* rows + CLOUD-* rows PROVEN
+    witness_gates:
+      - release-status
+    notes: >-
+      All 8 RELEASE_CHAIN crates published to crates.io at 0.9.0
+      (batpak-macros-support, batpak-macros, batpak-bench-support, batpak,
+      syncbat, netbat, hostbat, bvisor — the last two first-publish); this commit
+      is tagged 0.9.0.
+    proof_commands:
+      - git tag --list 0.9.0
 
   # ── bvisor platform matrix (kitchen-sink 0.9.0; publish=false ≠ out of scope) ─
 
