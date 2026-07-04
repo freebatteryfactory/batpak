@@ -12,6 +12,7 @@
 
 use super::plan_build::WasmRunConfig;
 use super::poll_once::resolve_ready;
+use super::warm::WarmCache;
 use crate::contract::capability::FsAccess;
 use crate::contract::report::{ExitStatus, Outcome};
 use std::any::Any;
@@ -20,10 +21,7 @@ use std::io::{Result as IoResult, Write};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Instant;
-use wasmi::{
-    Config, Engine, Error as WasmiError, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
-    TrapCode,
-};
+use wasmi::{Error as WasmiError, Linker, Store, StoreLimits, StoreLimitsBuilder, TrapCode};
 use wasmi_wasi::sync::dir::{Dir as SyncDir, OpenResult as SyncOpenResult};
 use wasmi_wasi::sync::{ambient_authority, clocks_ctx, random_ctx, sched_ctx, Dir as CapDir};
 use wasmi_wasi::wasi_common::pipe::WritePipe;
@@ -161,7 +159,7 @@ impl Write for CaptureBuffer {
 /// Returns the run observation; its `terminal` carries the outcome — a guest
 /// runtime terminal (`Exit`/`Failed`/`Timeout`) or a setup-failed-closed terminal
 /// (`Unsupported`/`SupervisorFault`).
-pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
+pub(super) fn run(warm: &WarmCache, config: &WasmRunConfig) -> WasmRunObservation {
     let module_ref = config.module_ref.clone();
     let mut notes = config.notes.clone();
     let bytes = match read_module(config, &mut notes) {
@@ -169,8 +167,10 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
         Err(observation) => return *observation,
     };
 
-    let engine = engine();
-    let module = match Module::new(&engine, &bytes) {
+    // Phase 1: resolve the compiled module from the warm cache (compile only on a
+    // miss) against the shared engine; both the engine and the linker below are
+    // built from `warm`, never per-run from scratch.
+    let module = match warm.resolve(&bytes) {
         Ok(module) => module,
         Err(error) => {
             notes.push(format!("module_compile_failed={error}"));
@@ -204,7 +204,7 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
         }
     };
 
-    let mut linker: Linker<WasiStoreState> = Linker::new(&engine);
+    let mut linker: Linker<WasiStoreState> = Linker::new(warm.engine());
     if let Err(error) = wasmi_wasi::add_to_linker(&mut linker, |state| &mut state.wasi) {
         notes.push(format!("wasi_linker_failed={error}"));
         return observation(
@@ -218,7 +218,7 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
         );
     }
 
-    let mut store = Store::new(&engine, state);
+    let mut store = Store::new(warm.engine(), state);
     store.limiter(|state| &mut state.limits);
     if let Err(error) = store.set_fuel(config.fuel) {
         notes.push(format!("fuel_install_failed={error}"));
@@ -285,12 +285,6 @@ fn read_module(
             )))
         }
     }
-}
-
-fn engine() -> Engine {
-    let mut config = Config::default();
-    config.consume_fuel(true);
-    Engine::new(&config)
 }
 
 fn wasi_state(

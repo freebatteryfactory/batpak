@@ -16,6 +16,8 @@ mod poll_once;
 mod report_mapping;
 #[path = "run.rs"]
 mod run;
+#[path = "warm.rs"]
+mod warm;
 
 #[cfg(feature = "dangerous-test-hooks")]
 #[path = "backend_impl_proof.rs"]
@@ -38,6 +40,10 @@ pub struct WasmBackend {
     id: BackendId,
     support: SupportMatrix,
     secret_resolver: Arc<dyn SecretResolver + Send + Sync>,
+    /// Shared engine + content-addressed compiled-module cache (Phase 1), warmed
+    /// once and reused across every `execute()` so repeated runs of the same guest
+    /// skip the dominant `Module::new` compile cost.
+    warm: warm::WarmCache,
 }
 
 impl WasmBackend {
@@ -51,6 +57,7 @@ impl WasmBackend {
             id: BackendId::new(Self::ID),
             support: super::support_matrix(),
             secret_resolver: default_secret_resolver(),
+            warm: warm::WarmCache::new(),
         }
     }
 
@@ -62,6 +69,7 @@ impl WasmBackend {
             id: BackendId::new(Self::ID),
             support: super::support_matrix(),
             secret_resolver: resolver,
+            warm: warm::WarmCache::new(),
         }
     }
 
@@ -207,7 +215,7 @@ impl Backend for WasmBackend {
         }];
         match plan_build::build(self, plan, observed) {
             Ok((config, observed)) => {
-                let observation = run::run(&config);
+                let observation = run::run(&self.warm, &config);
                 report_mapping::map_observation(self, plan, &observation, observed)
             }
             Err(failure) => {
