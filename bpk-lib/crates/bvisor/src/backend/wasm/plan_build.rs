@@ -89,13 +89,23 @@ pub(super) fn build(
     };
 
     for admitted in &plan.admitted {
-        match &admitted.requirement {
+        let lowered = match &admitted.requirement {
             BoundaryRequirement::Capability(capability) => {
-                lower_capability(backend, capability, &mut config, &mut observed)?
+                lower_capability(backend, capability, &mut config, &mut observed)
             }
             BoundaryRequirement::HostControl(control) => {
-                lower_control(control, &mut config, &mut observed)?
+                lower_control(control, &mut config, &mut observed)
             }
+        };
+        if let Err(failure) = lowered {
+            // Fail-closed before the guest runs: remove any temp roots already
+            // provisioned in this build. execute() takes the fail_closed path and
+            // never invokes the runner's cleanup, so without this a private
+            // `bvisor-wasm-tmp-*` directory leaks on every rejected plan whose
+            // admitted requirements place a `TempRoot` before a later failure
+            // (e.g. an `Environment` secret that fails to resolve).
+            remove_temp_roots(&config.temp_roots);
+            return Err(failure);
         }
     }
 
@@ -332,6 +342,15 @@ fn failure(outcome: Outcome, observed: &[ObservedFact]) -> PlanBuildFailure {
     PlanBuildFailure {
         outcome,
         observed: observed.to_vec(),
+    }
+}
+
+/// Best-effort removal of temp roots provisioned before a fail-closed build error.
+/// The plan is already rejected; a leftover directory on the rare double-failure is
+/// tolerable and cannot affect the rejected outcome.
+fn remove_temp_roots(roots: &[PathBuf]) {
+    for root in roots {
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 
