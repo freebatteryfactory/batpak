@@ -16,6 +16,7 @@ impl WasmBackend {
             id: BackendId::new(Self::ID),
             support: support_matrix(),
             secret_resolver: default_secret_resolver(),
+            warm: super::warm::WarmCache::new(),
         }
     }
 
