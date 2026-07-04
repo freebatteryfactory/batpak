@@ -1,42 +1,139 @@
-//! [`WasmBackend`] struct (scaffolding stub).
+//! [`WasmBackend`] real WASI confinement.
 //!
-//! STEP (a): wires the honest [`super::support_matrix`] into the [`Backend`]
-//! trait. `probe`/`profile` are PURE placeholders; `execute` is an honest STUB
-//! returning [`Outcome::Unsupported`] (the `wasmi`/`wasmtime` lowering lands in
-//! step (c)). Wasm has NO unsafe basement.
+//! The backend lowers an admitted [`BoundaryPlan`] into a wasmtime +
+//! `wasi_snapshot_preview1` instance. Filesystem authority is expressed only as WASI
+//! preopens, environment is built from the explicit contract policy, stdio is captured
+//! through in-memory WASI streams, and network is denied by never installing socket
+//! capabilities. Unsupported native controls fail closed before a guest is run.
+
+#[path = "backend_impl_budget.rs"]
+mod budget_profile;
+#[path = "plan_build.rs"]
+mod plan_build;
+#[path = "poll_once.rs"]
+mod poll_once;
+#[path = "backend_impl_report.rs"]
+mod report_mapping;
+#[path = "run.rs"]
+mod run;
+
+#[cfg(feature = "dangerous-test-hooks")]
+#[path = "backend_impl_proof.rs"]
+mod proof;
 
 use crate::contract::backend::Backend;
-use crate::contract::budget::BudgetProfile;
-use crate::contract::budget_witness::BudgetWitnesses;
-use crate::contract::capability::{Enforcement, SupportVerdict};
+use crate::contract::capability::{Enforcement, EvidenceClaim, EvidenceSet, SupportVerdict};
 use crate::contract::ids::BackendId;
 use crate::contract::plan::{BoundaryPlan, BoundaryRequirement};
-use crate::contract::report::{
-    BoundaryReportBody, CaptureRefs, DeniedAttempt, ObservedFact, Outcome, StagedArtifact,
-    BOUNDARY_REPORT_SCHEMA_VERSION,
-};
+use crate::contract::report::{BoundaryReportBody, ObservedFact};
+use crate::contract::secret::{MapSecretResolver, SecretResolver};
 use crate::contract::support::{
     BackendProfile, BackendProfileSnapshot, RequirementKind, SupportMatrix,
 };
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
-/// The Wasm boundary backend: WASI preopen confinement (scaffolding stub).
+/// The Wasm boundary backend: wasmtime + WASI preopen confinement.
 pub struct WasmBackend {
     id: BackendId,
     support: SupportMatrix,
+    secret_resolver: Arc<dyn SecretResolver + Send + Sync>,
 }
 
 impl WasmBackend {
     /// The stable id of the wasm backend.
     pub const ID: &'static str = "wasm";
 
-    /// Construct the wasm backend with its honest support matrix (SCOPE §4).
+    /// Construct the wasm backend with its honest support matrix.
     #[must_use]
     pub fn new() -> Self {
         Self {
             id: BackendId::new(Self::ID),
             support: super::support_matrix(),
+            secret_resolver: default_secret_resolver(),
         }
+    }
+
+    /// Construct the backend with an explicit secret resolver used for
+    /// `Environment::Exact` `SecretLease` lowering.
+    #[must_use]
+    pub fn with_secret_resolver(resolver: Arc<dyn SecretResolver + Send + Sync>) -> Self {
+        Self {
+            id: BackendId::new(Self::ID),
+            support: super::support_matrix(),
+            secret_resolver: resolver,
+        }
+    }
+
+    /// The production ceiling advertised when the wasmtime runtime is present.
+    #[must_use]
+    pub(crate) fn ceiling(&self) -> BackendProfile {
+        let mut ceiling = BTreeMap::new();
+        insert(
+            &mut ceiling,
+            RequirementKind::LaunchWorkload,
+            Enforcement::Enforced,
+            &[EvidenceClaim::TerminalOutcome],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::CaptureStreams,
+            Enforcement::Enforced,
+            &[EvidenceClaim::CapturedStreams],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::Filesystem,
+            Enforcement::Enforced,
+            &[
+                EvidenceClaim::AllowedActions,
+                EvidenceClaim::FilesystemDelta,
+                EvidenceClaim::MechanismAttestation,
+            ],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::Environment,
+            Enforcement::Enforced,
+            &[EvidenceClaim::MechanismAttestation],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::TempRoot,
+            Enforcement::Enforced,
+            &[EvidenceClaim::MechanismAttestation],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::CommitArtifact,
+            Enforcement::Enforced,
+            &[EvidenceClaim::ArtifactLineage],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::DiscardArtifact,
+            Enforcement::Enforced,
+            &[EvidenceClaim::ArtifactLineage],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::ListOutputs,
+            Enforcement::Enforced,
+            &[EvidenceClaim::ArtifactLineage],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::NetworkDenyAll,
+            Enforcement::Enforced,
+            &[EvidenceClaim::DeniedAttempts],
+        );
+        insert(
+            &mut ceiling,
+            RequirementKind::InheritedFdsNone,
+            Enforcement::Enforced,
+            &[EvidenceClaim::MechanismAttestation],
+        );
+        BackendProfile::from_ceiling(ceiling)
     }
 }
 
@@ -57,18 +154,19 @@ impl Backend for WasmBackend {
 
     fn probe(&self) -> BackendProfileSnapshot {
         let mut probed = BTreeMap::new();
-        probed.insert("scaffolding".to_string(), "true".to_string());
-        probed.insert("runtime".to_string(), "unimplemented".to_string());
+        probed.insert("runtime".to_string(), "wasmtime".to_string());
+        probed.insert("wasi".to_string(), "wasi_snapshot_preview1".to_string());
+        probed.insert("filesystem".to_string(), "wasi_preopen".to_string());
+        probed.insert("network".to_string(), "no_socket_cap".to_string());
         BackendProfileSnapshot {
             backend: self.id.clone(),
             probed,
-            budget: BudgetProfile::all_unenforced(),
+            budget: budget_profile::observed_budget_profile(),
         }
     }
 
     fn profile(&self, _snap: &BackendProfileSnapshot) -> BackendProfile {
-        // Conservative empty ceiling until the runtime exists (step c).
-        BackendProfile::from_ceiling(BTreeMap::new())
+        self.ceiling()
     }
 
     fn classify(&self, req: &BoundaryRequirement, profile: &BackendProfile) -> SupportVerdict {
@@ -81,42 +179,60 @@ impl Backend for WasmBackend {
             RequirementKind::NetworkDenyAll => "no_socket_cap",
             RequirementKind::Environment => "wasi_env",
             RequirementKind::LaunchWorkload => "wasi_instantiate",
-            RequirementKind::CaptureStreams => "wasi_stdio",
+            RequirementKind::CaptureStreams | RequirementKind::InheritedFdsNone => "wasi_stdio",
             RequirementKind::TempRoot => "wasi_preopen_tmp",
             RequirementKind::CommitArtifact | RequirementKind::DiscardArtifact => "preopen_commit",
             RequirementKind::ListOutputs => "preopen_readdir",
-            // Structurally unsupported on wasm — named honestly.
             RequirementKind::ChildSpawnDenyNewTasks
             | RequirementKind::ChildSpawnAllowThreads
             | RequirementKind::ChildSpawnAllowDescendants
             | RequirementKind::Kill
             | RequirementKind::ExposePath
             | RequirementKind::NetworkAllowList
-            | RequirementKind::InheritedFdsNone
             | RequirementKind::InheritedFdsOnly => "none/structurally-unsupported",
         };
         format!("{}:{primitive}:{enforcement:?}", self.id)
     }
 
+    /// Execute a `Workload::Wasm` guest under wasmtime + WASI confinement.
+    ///
+    /// The controlled terminals are report outcomes, not Rust errors: unsupported
+    /// native cells and setup gaps return `Unsupported`/`SupervisorFault`, guest traps
+    /// return `Failed`, fuel exhaustion returns `Timeout`, and clean guest exit returns
+    /// `Completed`.
     fn execute(&self, plan: &BoundaryPlan) -> BoundaryReportBody {
         let observed = vec![ObservedFact {
-            kind: "backend_scaffolding".to_string(),
-            detail: "wasm backend execute() is a step-(a) stub; no guest instantiated".to_string(),
+            kind: "backend_runtime".to_string(),
+            detail: "wasmtime+wasi_snapshot_preview1".to_string(),
         }];
-        BoundaryReportBody {
-            schema_version: BOUNDARY_REPORT_SCHEMA_VERSION,
-            plan_id: plan.plan_id,
-            backend: self.id.clone(),
-            profile: self.probe(),
-            outcome: Outcome::Unsupported,
-            admitted: plan.admitted.clone(),
-            observed,
-            denied: Vec::<DeniedAttempt>::new(),
-            exit: None,
-            captured: CaptureRefs::default(),
-            budget: BudgetWitnesses::unwitnessed(&plan.budgets),
-            artifacts: Vec::<StagedArtifact>::new(),
-            findings: Vec::new(),
+        match plan_build::build(self, plan, observed) {
+            Ok((config, observed)) => {
+                let observation = run::run(&config);
+                report_mapping::map_observation(self, plan, &observation, observed)
+            }
+            Err(failure) => {
+                report_mapping::fail_closed(self, plan, failure.outcome, failure.observed)
+            }
         }
     }
+}
+
+#[must_use]
+pub(super) fn default_secret_resolver() -> Arc<dyn SecretResolver + Send + Sync> {
+    Arc::new(MapSecretResolver::new())
+}
+
+fn insert(
+    table: &mut BTreeMap<RequirementKind, SupportVerdict>,
+    kind: RequirementKind,
+    enforcement: Enforcement,
+    evidence: &[EvidenceClaim],
+) {
+    table.insert(
+        kind,
+        SupportVerdict::new(
+            enforcement,
+            evidence.iter().copied().collect::<EvidenceSet>(),
+        ),
+    );
 }

@@ -21,9 +21,10 @@
 // passed the explicit declared envp. A declared marker variable proves the
 // declared set passes through.
 //
-// `#![cfg(target_os = "linux")]` — real clone3 + fexecve through the launcher bin.
+// `#![cfg(all(target_os = "linux", feature = "backend-linux"))]` — real clone3 +
+// fexecve through the launcher bin, which only builds under `backend-linux`.
 
-#![cfg(target_os = "linux")]
+#![cfg(all(target_os = "linux", feature = "backend-linux"))]
 
 use bvisor::linux::launch::{self, AuthorityFd, LaunchObservation};
 use bvisor::linux::protocol::{

@@ -1,17 +1,18 @@
-//! Wasm backend — WASI-preopen confinement (scaffolding).
+//! Wasm backend — wasmtime + WASI-preopen confinement.
 //!
-//! STEP (a) scaffolding: the HONEST per-platform [`SupportMatrix`] (pure data,
-//! always-compiled, cross-platform unit-testable) plus a `WasmBackend` struct
-//! whose `execute()` is a stub returning
-//! [`Outcome::Unsupported`](crate::contract::report::Outcome::Unsupported). A `wasmi`
-//! interpreter skeleton lands in step (c); `wasmtime` depth runs on CI. Wasm has
-//! NO unsafe basement (wasmtime/wasmi are safe Rust), so there is NO `sys.rs`.
+//! The HONEST per-platform [`SupportMatrix`] is pure data and always compiled. With
+//! `backend-wasm` enabled, [`WasmBackend`] instantiates [`Workload::Wasm`](crate::Workload::Wasm)
+//! modules with wasmtime and `wasi_snapshot_preview1`: declared filesystem roots
+//! become WASI preopens, `Environment::Exact` becomes explicit WASI env, stdio is
+//! captured with WASI pipes, temp roots are private preopens, and network deny-all is
+//! enforced by installing no socket capability. Wasm has no raw OS basement here.
 //!
-//! HONESTY (SCOPE §4 — Wasm): FS/env/stdio/`TempRoot`/`Commit`/`Discard`/`List`
-//! Enforced via WASI preopens. `ChildSpawn` / `Kill` / `ExposePath`(Mount) are
-//! STRUCTURALLY [`Enforcement::Unsupported`] — a wasm guest has no native fork or
-//! kill, and there is no host mount to expose. `NetworkAllowList` is also
-//! `Unsupported`. These are load-bearing fail-closed cells — NEVER fake a fork.
+//! HONESTY (SCOPE §4 — Wasm): FS/env/stdio/`TempRoot`/`Commit`/`Discard`/`List` and
+//! `InheritedFdsNone` are Enforced through the WASI capability set. `ChildSpawn` /
+//! `Kill` / `ExposePath`(Mount), `NetworkAllowList`, and selective inherited-fd
+//! keep-lists are STRUCTURALLY [`Enforcement::Unsupported`] — a wasm guest has no
+//! native fork/kill/mount or raw host-fd broker. These are load-bearing fail-closed
+//! cells; never emulate a native primitive in the report.
 
 use crate::contract::capability::{Enforcement, EvidenceClaim, SupportVerdict};
 use crate::contract::support::{RequirementKind, SupportMatrix};

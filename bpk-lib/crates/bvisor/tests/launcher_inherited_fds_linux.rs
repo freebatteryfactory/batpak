@@ -23,9 +23,10 @@
 //     read end (the marker never crossed the boundary). The host-side read is the
 //     non-self-report oracle: had the fd leaked, the host would read the marker.
 //
-// `#![cfg(target_os = "linux")]` — real clone3 + fexecve through the launcher bin.
+// `#![cfg(all(target_os = "linux", feature = "backend-linux"))]` — real clone3 +
+// fexecve through the launcher bin, which only builds under `backend-linux`.
 
-#![cfg(target_os = "linux")]
+#![cfg(all(target_os = "linux", feature = "backend-linux"))]
 
 use bvisor::linux::launch::{self, AuthorityFd, LaunchObservation};
 use bvisor::linux::protocol::{
