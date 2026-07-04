@@ -2,10 +2,10 @@
 #![cfg(all(feature = "backend-wasm", feature = "dangerous-test-hooks"))]
 
 use bvisor::{
-    Backend, BackendId, BackendRegistry, BoundaryPlanner, BoundaryReportBody, BoundaryRunner,
-    BoundarySpec, BudgetFinding, BudgetRequirements, Capability, EnvEntry, EnvPolicy,
-    EvidenceRequirements, FdPolicy, FsAccess, FsConfinement, HostControl, MinGuarantee, NetDest,
-    NetPolicy, Outcome, PathSet, RequirementKind, StdStreams, WasmBackend, Workload,
+    Backend, BackendRegistry, BoundaryPlanner, BoundaryReportBody, BoundarySpec, BudgetFinding,
+    BudgetRequirements, Capability, EnvEntry, EnvPolicy, EvidenceRequirements, FdPolicy, FsAccess,
+    FsConfinement, HostControl, MinGuarantee, NetDest, NetPolicy, Outcome, PathSet,
+    RequirementKind, StdStreams, WasmBackend, Workload,
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -41,16 +41,9 @@ fn compile_guest(name: &str, wat_src: &str) -> WasmFixture {
 }
 
 fn run(spec: &BoundarySpec) -> BoundaryReportBody {
-    let backend = Arc::new(WasmBackend::new());
-    let id: BackendId = backend.id();
-    let mut registry = BackendRegistry::new();
-    registry.register(Arc::clone(&backend) as Arc<dyn Backend>);
-    let plan = BoundaryPlanner::new(&registry)
-        .plan(spec, &id)
-        .expect("WasmBackend admits the test spec");
-    BoundaryRunner::new(&registry)
-        .run(&plan)
-        .expect("WasmBackend returns a sealable report")
+    // Dogfood the public one-call API: run_confined does registry -> plan -> run.
+    bvisor::run_confined(spec, Arc::new(WasmBackend::new()))
+        .expect("WasmBackend runs the spec")
         .body
 }
 
@@ -282,10 +275,6 @@ fn wasi_socket_capability_is_absent() {
     // admissibility of a REACHABLE network: the wasm backend installs no allow-list
     // broker, so an AllowList request MUST be refused. A future broker would make it
     // admissible and red this. (The ceiling half also lives in coupling_proof_wasm.)
-    let backend = Arc::new(WasmBackend::new());
-    let id = backend.id();
-    let mut registry = BackendRegistry::new();
-    registry.register(Arc::clone(&backend) as Arc<dyn Backend>);
     let mut reachable = base_spec(fixture.module_ref());
     reachable.capabilities.push(Capability::Network {
         policy: NetPolicy::AllowList(vec![NetDest {
@@ -293,10 +282,9 @@ fn wasi_socket_capability_is_absent() {
             port: 443,
         }]),
     });
+    // Exercises run_confined's Err (admission-refused) path.
     assert!(
-        BoundaryPlanner::new(&registry)
-            .plan(&reachable, &id)
-            .is_err(),
+        bvisor::run_confined(&reachable, Arc::new(WasmBackend::new())).is_err(),
         "a reachable-network (AllowList) request must be refused — no network broker exists"
     );
 }

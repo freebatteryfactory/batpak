@@ -1,0 +1,19 @@
+# bvisor semver-check classification (FIRST PUBLISH at 0.9.0).
+# bvisor has never been on crates.io, so the `cargo semver-checks` registry lookup
+# is skipped — there is no prior published version to diff against. The public
+# surface was tightened before this first publish: the Linux launcher harness
+# (`linux::launch`) and cgroup manager (`linux::cgroup`) are compiled `pub(crate)`
+# for the release build and re-exported publicly only under `dangerous-test-hooks`
+# (they are test infrastructure, not contract). `linux::protocol` stays public — it
+# is the host<->launcher wire contract the separate launcher binary depends on.
+package: bvisor
+baseline_version: 0.9.0
+current_version: 0.9.0
+witness: target/semver-public-api/semver-checks.txt
+summary: "First publish at 0.9.0; no prior crates.io baseline to diff. Linux launcher-harness internals gated behind dangerous-test-hooks; protocol kept public for the launcher binary."
+
+public_api_baseline_removals: []
+public_api_baseline_additions: []
+accidental_leaks_hidden: []
+
+entries: []

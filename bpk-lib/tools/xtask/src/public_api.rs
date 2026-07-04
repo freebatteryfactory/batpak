@@ -31,6 +31,18 @@ const PUBLIC_API_PACKAGES: &[PublicApiPackage] = &[
         features: &[],
         has_semver_registry_baseline: false,
     },
+    PublicApiPackage {
+        package: "hostbat",
+        baseline: "hostbat.txt",
+        features: &[],
+        has_semver_registry_baseline: false,
+    },
+    PublicApiPackage {
+        package: "bvisor",
+        baseline: "bvisor.txt",
+        features: &["backend-linux", "backend-wasm"],
+        has_semver_registry_baseline: false,
+    },
 ];
 
 const PUBLIC_API_RUSTUP_TOOLCHAIN: &str = "nightly-2025-12-11";

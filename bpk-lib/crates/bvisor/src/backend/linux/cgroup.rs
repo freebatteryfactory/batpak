@@ -135,6 +135,7 @@ impl CgroupLimits {
     }
 
     /// This same limit set with `memory.max` (bytes) added.
+    #[cfg(feature = "dangerous-test-hooks")]
     #[must_use]
     pub fn and_memory_max(self, memory_max: u64) -> Self {
         Self {
@@ -266,6 +267,7 @@ impl CgroupLeaf {
 
     /// Which controllers were genuinely delegated + had their limit written. The
     /// HONEST backing for 8b's `Budget=Enforced` cell.
+    #[cfg(feature = "dangerous-test-hooks")]
     #[must_use]
     pub fn setup(&self) -> CgroupSetup {
         self.setup
@@ -420,6 +422,7 @@ impl Drop for CgroupLeaf {
 /// often delegates the slice while the process sits in a managed leaf within it).
 /// Returns `None` — an HONEST "no delegation" — when no candidate round-trips,
 /// rather than guessing a base the backend cannot actually use.
+#[cfg(feature = "dangerous-test-hooks")]
 #[must_use]
 pub fn probe_cgroup_delegation() -> Option<PathBuf> {
     let root = Path::new(CGROUP_V2_ROOT);

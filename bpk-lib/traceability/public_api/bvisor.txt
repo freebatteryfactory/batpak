@@ -1,0 +1,1531 @@
+pub mod bvisor
+pub mod bvisor::linux
+pub mod bvisor::linux::protocol
+#[non_exhaustive] pub enum bvisor::linux::protocol::DecodeError
+pub bvisor::linux::protocol::DecodeError::Canonical(alloc::string::String)
+pub bvisor::linux::protocol::DecodeError::Envelope(bvisor::linux::protocol::EnvelopeReject)
+impl core::convert::From<bvisor::linux::protocol::EnvelopeReject> for bvisor::linux::protocol::DecodeError
+pub fn bvisor::linux::protocol::DecodeError::from(r: bvisor::linux::protocol::EnvelopeReject) -> Self
+impl core::error::Error for bvisor::linux::protocol::DecodeError
+impl core::fmt::Display for bvisor::linux::protocol::DecodeError
+pub fn bvisor::linux::protocol::DecodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::linux::protocol::DescriptorKind
+pub bvisor::linux::protocol::DescriptorKind::Directory
+pub bvisor::linux::protocol::DescriptorKind::Pipe
+pub bvisor::linux::protocol::DescriptorKind::Regular
+pub bvisor::linux::protocol::DescriptorKind::Socket
+#[non_exhaustive] pub enum bvisor::linux::protocol::DescriptorRole
+pub bvisor::linux::protocol::DescriptorRole::CgroupDir
+pub bvisor::linux::protocol::DescriptorRole::ControlChannel
+pub bvisor::linux::protocol::DescriptorRole::ReadRoot
+pub bvisor::linux::protocol::DescriptorRole::Stderr
+pub bvisor::linux::protocol::DescriptorRole::Stdin
+pub bvisor::linux::protocol::DescriptorRole::Stdout
+pub bvisor::linux::protocol::DescriptorRole::TargetExe
+pub bvisor::linux::protocol::DescriptorRole::WriteRoot
+impl bvisor::linux::protocol::DescriptorRole
+pub fn bvisor::linux::protocol::DescriptorRole::is_singleton(self) -> bool
+#[non_exhaustive] pub enum bvisor::linux::protocol::EncodeError
+pub bvisor::linux::protocol::EncodeError::Canonical(alloc::string::String)
+impl core::error::Error for bvisor::linux::protocol::EncodeError
+impl core::fmt::Display for bvisor::linux::protocol::EncodeError
+pub fn bvisor::linux::protocol::EncodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::linux::protocol::EnvelopeReject
+pub bvisor::linux::protocol::EnvelopeReject::BadMagic
+pub bvisor::linux::protocol::EnvelopeReject::DigestMismatch
+pub bvisor::linux::protocol::EnvelopeReject::LengthMismatch
+pub bvisor::linux::protocol::EnvelopeReject::Truncated
+pub bvisor::linux::protocol::EnvelopeReject::UnsupportedVersion
+pub bvisor::linux::protocol::EnvelopeReject::UnsupportedVersion::found: u16
+impl core::convert::From<bvisor::linux::protocol::EnvelopeReject> for bvisor::linux::protocol::DecodeError
+pub fn bvisor::linux::protocol::DecodeError::from(r: bvisor::linux::protocol::EnvelopeReject) -> Self
+impl core::error::Error for bvisor::linux::protocol::EnvelopeReject
+impl core::fmt::Display for bvisor::linux::protocol::EnvelopeReject
+pub fn bvisor::linux::protocol::EnvelopeReject::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::linux::protocol::LauncherState
+pub bvisor::linux::protocol::LauncherState::AmbientAuthorityPhaseResolved
+pub bvisor::linux::protocol::LauncherState::ChildCreated
+pub bvisor::linux::protocol::LauncherState::ConfinementPhaseResolved
+pub bvisor::linux::protocol::LauncherState::ExecSucceeded
+pub bvisor::linux::protocol::LauncherState::HandlesVerified
+pub bvisor::linux::protocol::LauncherState::IdentityPhaseResolved
+pub bvisor::linux::protocol::LauncherState::IdentityVerified
+pub bvisor::linux::protocol::LauncherState::LauncherStarted
+pub bvisor::linux::protocol::LauncherState::PlanVerified
+pub bvisor::linux::protocol::LauncherState::ReadyToExec
+pub bvisor::linux::protocol::LauncherState::SetupFaulted
+pub bvisor::linux::protocol::LauncherState::SetupRefused
+pub bvisor::linux::protocol::LauncherState::VisibilityPhaseResolved
+impl bvisor::linux::protocol::LauncherState
+pub fn bvisor::linux::protocol::LauncherState::is_terminal(self) -> bool
+pub fn bvisor::linux::protocol::LauncherState::non_terminal_progression() -> &'static [Self]
+#[non_exhaustive] pub enum bvisor::linux::protocol::PhaseResult
+pub bvisor::linux::protocol::PhaseResult::Applied
+pub bvisor::linux::protocol::PhaseResult::Faulted
+pub bvisor::linux::protocol::PhaseResult::NotRequired
+pub bvisor::linux::protocol::PhaseResult::Refused
+#[non_exhaustive] pub enum bvisor::linux::protocol::RefusalReason
+pub bvisor::linux::protocol::RefusalReason::HandleMismatch
+pub bvisor::linux::protocol::RefusalReason::IdentityMismatch
+pub bvisor::linux::protocol::RefusalReason::MissingPrimitive
+pub bvisor::linux::protocol::RefusalReason::PlanInvalid
+#[non_exhaustive] pub enum bvisor::linux::protocol::SetupPhase
+pub bvisor::linux::protocol::SetupPhase::AmbientAuthority
+pub bvisor::linux::protocol::SetupPhase::Confinement
+pub bvisor::linux::protocol::SetupPhase::Identity
+pub bvisor::linux::protocol::SetupPhase::Visibility
+impl bvisor::linux::protocol::SetupPhase
+pub fn bvisor::linux::protocol::SetupPhase::resolved_state(self) -> bvisor::linux::protocol::LauncherState
+#[non_exhaustive] pub enum bvisor::linux::protocol::TableReject
+pub bvisor::linux::protocol::TableReject::DuplicateSingletonRole
+pub bvisor::linux::protocol::TableReject::DuplicateSingletonRole::role: bvisor::linux::protocol::DescriptorRole
+pub bvisor::linux::protocol::TableReject::DuplicateSlotIndex
+pub bvisor::linux::protocol::TableReject::DuplicateSlotIndex::slot_index: u32
+impl core::error::Error for bvisor::linux::protocol::TableReject
+impl core::fmt::Display for bvisor::linux::protocol::TableReject
+pub fn bvisor::linux::protocol::TableReject::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct bvisor::linux::protocol::DescriptorShape
+pub bvisor::linux::protocol::DescriptorShape::kind: bvisor::linux::protocol::DescriptorKind
+pub bvisor::linux::protocol::DescriptorShape::writable: bool
+pub struct bvisor::linux::protocol::DescriptorSlotV1
+pub bvisor::linux::protocol::DescriptorSlotV1::expected: bvisor::linux::protocol::DescriptorShape
+pub bvisor::linux::protocol::DescriptorSlotV1::role: bvisor::linux::protocol::DescriptorRole
+pub bvisor::linux::protocol::DescriptorSlotV1::slot_index: u32
+pub struct bvisor::linux::protocol::LinuxLaunchBodyV1
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::attempt_id: bvisor::AttemptId
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::descriptor_table: alloc::vec::Vec<bvisor::linux::protocol::DescriptorSlotV1>
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::h_a: bvisor::AdmissionProgramHash
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::h_l: bvisor::Digest32
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::h_p: bvisor::BackendProfileHash
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::lowering: bvisor::linux::protocol::LoweringWireV1
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::plan_id: bvisor::BoundaryPlanHash
+pub bvisor::linux::protocol::LinuxLaunchBodyV1::target: bvisor::linux::protocol::TargetSpecV1
+pub struct bvisor::linux::protocol::LinuxLaunchPlanV1
+pub bvisor::linux::protocol::LinuxLaunchPlanV1::body: bvisor::linux::protocol::LinuxLaunchBodyV1
+impl bvisor::linux::protocol::LinuxLaunchPlanV1
+pub fn bvisor::linux::protocol::LinuxLaunchPlanV1::decode(bytes: &[u8]) -> core::result::Result<Self, bvisor::linux::protocol::DecodeError>
+pub fn bvisor::linux::protocol::LinuxLaunchPlanV1::encode(&self) -> core::result::Result<alloc::vec::Vec<u8>, bvisor::linux::protocol::EncodeError>
+pub struct bvisor::linux::protocol::LoweringWireEntryV1
+pub bvisor::linux::protocol::LoweringWireEntryV1::decl_digest: bvisor::Digest32
+pub bvisor::linux::protocol::LoweringWireEntryV1::id: alloc::string::String
+pub bvisor::linux::protocol::LoweringWireEntryV1::param_digest: bvisor::Digest32
+pub bvisor::linux::protocol::LoweringWireEntryV1::phase_code: u8
+pub bvisor::linux::protocol::LoweringWireEntryV1::version: u32
+pub struct bvisor::linux::protocol::LoweringWireV1
+pub bvisor::linux::protocol::LoweringWireV1::entries: alloc::vec::Vec<bvisor::linux::protocol::LoweringWireEntryV1>
+impl bvisor::linux::protocol::LoweringWireV1
+pub fn bvisor::linux::protocol::LoweringWireV1::from_schedule(schedule: &bvisor::LoweringSchedule) -> Self
+#[non_exhaustive] pub struct bvisor::linux::protocol::NetworkNsRequest
+impl bvisor::linux::protocol::NetworkNsRequest
+pub fn bvisor::linux::protocol::NetworkNsRequest::new() -> Self
+#[non_exhaustive] pub struct bvisor::linux::protocol::SeccompRequest
+pub bvisor::linux::protocol::SeccompRequest::deny_inet_sockets: bool
+pub bvisor::linux::protocol::SeccompRequest::deny_new_tasks: bool
+impl bvisor::linux::protocol::SeccompRequest
+pub fn bvisor::linux::protocol::SeccompRequest::denies_anything(self) -> bool
+pub fn bvisor::linux::protocol::SeccompRequest::deny_new_tasks() -> Self
+pub fn bvisor::linux::protocol::SeccompRequest::with_inet_socket_deny(self) -> Self
+pub struct bvisor::linux::protocol::TargetSpecV1
+pub bvisor::linux::protocol::TargetSpecV1::argv: alloc::vec::Vec<alloc::string::String>
+pub bvisor::linux::protocol::TargetSpecV1::envp: alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
+pub bvisor::linux::protocol::TargetSpecV1::exe_slot: u32
+pub bvisor::linux::protocol::TargetSpecV1::network_namespace: core::option::Option<bvisor::linux::protocol::NetworkNsRequest>
+pub bvisor::linux::protocol::TargetSpecV1::seccomp: core::option::Option<bvisor::linux::protocol::SeccompRequest>
+pub bvisor::linux::protocol::TargetSpecV1::user_namespace: core::option::Option<bvisor::linux::protocol::UserNsRequest>
+#[non_exhaustive] pub struct bvisor::linux::protocol::UserNsRequest
+impl bvisor::linux::protocol::UserNsRequest
+pub fn bvisor::linux::protocol::UserNsRequest::new() -> Self
+pub const bvisor::linux::protocol::HEADER_LEN: usize
+pub const bvisor::linux::protocol::MAGIC: [u8; 8]
+pub const bvisor::linux::protocol::PROTO_VERSION: u16
+pub fn bvisor::linux::protocol::can_exec(state: bvisor::linux::protocol::LauncherState) -> bool
+pub fn bvisor::linux::protocol::confinement_installed(scheduled_confinement_action_count: usize, confinement_result: bvisor::linux::protocol::PhaseResult) -> bool
+pub fn bvisor::linux::protocol::frame(body: &[u8]) -> alloc::vec::Vec<u8>
+pub fn bvisor::linux::protocol::is_valid_transition(from: bvisor::linux::protocol::LauncherState, to: bvisor::linux::protocol::LauncherState) -> bool
+pub fn bvisor::linux::protocol::outcome_class(terminal: bvisor::linux::protocol::LauncherState) -> core::option::Option<bvisor::Outcome>
+pub fn bvisor::linux::protocol::parse_and_verify(bytes: &[u8]) -> core::result::Result<&[u8], bvisor::linux::protocol::EnvelopeReject>
+pub fn bvisor::linux::protocol::phase_resolution_consistent(scheduled: &[bvisor::linux::protocol::LoweringWireEntryV1], observed: &[bvisor::linux::protocol::LoweringWireEntryV1], result: bvisor::linux::protocol::PhaseResult) -> bool
+pub fn bvisor::linux::protocol::ready_to_exec(child_created: bool, phases: [(bvisor::linux::protocol::SetupPhase, bvisor::linux::protocol::PhaseResult); 4], observed_schedule_digest: bvisor::Digest32, h_l: bvisor::Digest32) -> bool
+pub fn bvisor::linux::protocol::validate_table(table: &[bvisor::linux::protocol::DescriptorSlotV1]) -> core::result::Result<(), bvisor::linux::protocol::TableReject>
+pub mod bvisor::linux::seccomp
+#[non_exhaustive] pub enum bvisor::linux::seccomp::DefaultAction
+pub bvisor::linux::seccomp::DefaultAction::Errno(u32)
+pub bvisor::linux::seccomp::DefaultAction::KillProcess
+#[non_exhaustive] pub enum bvisor::linux::seccomp::SeccompCompileError
+pub bvisor::linux::seccomp::SeccompCompileError::Assembler(alloc::string::String)
+pub bvisor::linux::seccomp::SeccompCompileError::CanonicalEncoding(alloc::string::String)
+pub bvisor::linux::seccomp::SeccompCompileError::DenylistDeniesMandatoryBase
+pub bvisor::linux::seccomp::SeccompCompileError::DenylistDeniesMandatoryBase::syscall: &'static str
+pub bvisor::linux::seccomp::SeccompCompileError::EmptyAllowlist
+pub bvisor::linux::seccomp::SeccompCompileError::EmptyDenylist
+pub bvisor::linux::seccomp::SeccompCompileError::MissingMandatoryBase
+pub bvisor::linux::seccomp::SeccompCompileError::MissingMandatoryBase::syscall: &'static str
+impl core::error::Error for bvisor::SeccompCompileError
+impl core::fmt::Display for bvisor::SeccompCompileError
+pub fn bvisor::SeccompCompileError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct bvisor::linux::seccomp::CompiledFilter
+impl bvisor::CompiledFilter
+pub fn bvisor::CompiledFilter::bpf_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn bvisor::CompiledFilter::evidence(&self) -> &bvisor::SeccompEvidence
+pub fn bvisor::CompiledFilter::program(&self) -> &seccompiler::backend::bpf::BpfProgram
+pub struct bvisor::linux::seccomp::SeccompPolicy
+impl bvisor::SeccompPolicy
+pub fn bvisor::SeccompPolicy::allow(self, syscall: bvisor::Syscall) -> Self
+pub fn bvisor::SeccompPolicy::allowlist(&self) -> impl core::iter::Iterator<Item = bvisor::Syscall> + '_
+pub fn bvisor::SeccompPolicy::compile(&self, arch: bvisor::SeccompArch) -> core::result::Result<bvisor::CompiledFilter, bvisor::SeccompCompileError>
+pub fn bvisor::SeccompPolicy::default_action(&self) -> bvisor::DefaultAction
+pub fn bvisor::SeccompPolicy::deny_new_tasks(deny_action: bvisor::DefaultAction) -> Self
+pub fn bvisor::SeccompPolicy::denylist(deny_action: bvisor::DefaultAction, deny_syscalls: impl core::iter::IntoIterator<Item = bvisor::Syscall>) -> Self
+pub fn bvisor::SeccompPolicy::is_denylist(&self) -> bool
+pub fn bvisor::SeccompPolicy::launcher_base(default_action: bvisor::DefaultAction) -> Self
+pub fn bvisor::SeccompPolicy::mandatory_base() -> [bvisor::Syscall; 4]
+pub fn bvisor::SeccompPolicy::network_deny_did(deny_action: bvisor::DefaultAction) -> Self
+pub fn bvisor::SeccompPolicy::policy_digest(&self) -> core::result::Result<[u8; 32], bvisor::SeccompCompileError>
+pub fn bvisor::SeccompPolicy::socket_syscall() -> bvisor::Syscall
+pub fn bvisor::SeccompPolicy::task_creation_syscalls() -> alloc::vec::Vec<bvisor::Syscall>
+pub struct bvisor::linux::seccomp::Syscall
+impl bvisor::Syscall
+pub fn bvisor::Syscall::name(self) -> &'static str
+pub fn bvisor::Syscall::number(self) -> i64
+pub const bvisor::linux::seccomp::SECCOMPILER_VERSION: &str
+pub fn bvisor::linux::seccomp::seccomp_filter_available() -> bool
+pub struct bvisor::linux::LinuxBackend
+impl bvisor::LinuxBackend
+pub const bvisor::LinuxBackend::ID: &'static str
+pub fn bvisor::LinuxBackend::new() -> Self
+pub fn bvisor::LinuxBackend::with_launcher_path(launcher_path: std::path::PathBuf) -> Self
+pub fn bvisor::LinuxBackend::with_secret_resolver(self, resolver: alloc::sync::Arc<(dyn bvisor::SecretResolver + core::marker::Send + core::marker::Sync)>) -> Self
+impl bvisor::Backend for bvisor::LinuxBackend
+pub fn bvisor::LinuxBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::LinuxBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::LinuxBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::LinuxBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::LinuxBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::LinuxBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::LinuxBackend::support(&self) -> &bvisor::SupportMatrix
+impl core::default::Default for bvisor::LinuxBackend
+pub fn bvisor::LinuxBackend::default() -> Self
+pub fn bvisor::linux::support_matrix() -> bvisor::SupportMatrix
+pub mod bvisor::macos
+pub fn bvisor::macos::support_matrix() -> bvisor::SupportMatrix
+pub mod bvisor::wasm
+pub struct bvisor::wasm::WasmBackend
+impl bvisor::WasmBackend
+pub const bvisor::WasmBackend::ID: &'static str
+pub fn bvisor::WasmBackend::new() -> Self
+pub fn bvisor::WasmBackend::with_secret_resolver(resolver: alloc::sync::Arc<(dyn bvisor::SecretResolver + core::marker::Send + core::marker::Sync)>) -> Self
+impl bvisor::Backend for bvisor::WasmBackend
+pub fn bvisor::WasmBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::WasmBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::WasmBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::WasmBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::WasmBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::WasmBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::WasmBackend::support(&self) -> &bvisor::SupportMatrix
+impl core::default::Default for bvisor::WasmBackend
+pub fn bvisor::WasmBackend::default() -> Self
+pub fn bvisor::wasm::support_matrix() -> bvisor::SupportMatrix
+pub mod bvisor::windows
+pub fn bvisor::windows::support_matrix() -> bvisor::SupportMatrix
+#[non_exhaustive] pub enum bvisor::AdmissionDivergence
+pub bvisor::AdmissionDivergence::CircuitError
+pub bvisor::AdmissionDivergence::CircuitError::reason: &'static str
+pub bvisor::AdmissionDivergence::CircuitError::reference: alloc::boxed::Box<bvisor::AdmissionOutcome>
+pub bvisor::AdmissionDivergence::OutcomeMismatch
+pub bvisor::AdmissionDivergence::OutcomeMismatch::circuit: alloc::boxed::Box<bvisor::AdmissionOutcome>
+pub bvisor::AdmissionDivergence::OutcomeMismatch::reference: alloc::boxed::Box<bvisor::AdmissionOutcome>
+impl core::error::Error for bvisor::AdmissionDivergence
+impl core::fmt::Display for bvisor::AdmissionDivergence
+pub fn bvisor::AdmissionDivergence::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum bvisor::AdmissionOutcome
+pub bvisor::AdmissionOutcome::Admitted
+pub bvisor::AdmissionOutcome::Admitted::trace: alloc::vec::Vec<bool>
+pub bvisor::AdmissionOutcome::Refused
+pub bvisor::AdmissionOutcome::Refused::budget_dimension: u64
+pub bvisor::AdmissionOutcome::Refused::budget_reason: u64
+pub bvisor::AdmissionOutcome::Refused::membrane: u64
+pub bvisor::AdmissionOutcome::Refused::refusal_code: u64
+pub bvisor::AdmissionOutcome::Refused::schedule_reason: u64
+pub bvisor::AdmissionOutcome::Refused::trace: alloc::vec::Vec<bool>
+pub enum bvisor::BoundaryFinding
+pub bvisor::BoundaryFinding::NoConfinement
+pub bvisor::BoundaryFinding::NoConfinement::requirement: bvisor::BoundaryRequirement
+pub bvisor::BoundaryFinding::RequirementAdmitted
+pub bvisor::BoundaryFinding::RequirementAdmitted::enforcement: bvisor::Enforcement
+pub bvisor::BoundaryFinding::RequirementAdmitted::requirement: bvisor::BoundaryRequirement
+pub enum bvisor::BoundaryRequirement
+pub bvisor::BoundaryRequirement::Capability(bvisor::Capability)
+pub bvisor::BoundaryRequirement::HostControl(bvisor::HostControl)
+pub enum bvisor::BudgetDimension
+pub bvisor::BudgetDimension::Cpu
+pub bvisor::BudgetDimension::HandleCount
+pub bvisor::BudgetDimension::Network
+pub bvisor::BudgetDimension::ProcessCount
+pub bvisor::BudgetDimension::ResidentMemory
+pub bvisor::BudgetDimension::Storage
+pub bvisor::BudgetDimension::Wall
+#[non_exhaustive] pub enum bvisor::BudgetFailure
+pub bvisor::BudgetFailure::BelowDerivedMinimum
+pub bvisor::BudgetFailure::CapacityExceeded
+pub bvisor::BudgetFailure::EvidenceMissing
+pub bvisor::BudgetFailure::GuaranteeInsufficient
+pub enum bvisor::BudgetFinding
+pub bvisor::BudgetFinding::EnforcementFault
+pub bvisor::BudgetFinding::ExceededWithinMediatedOvershoot
+pub bvisor::BudgetFinding::LimitReachedEnforced
+pub bvisor::BudgetFinding::ObservationUnavailable
+pub bvisor::BudgetFinding::WithinLimit
+#[non_exhaustive] pub enum bvisor::Capability
+pub bvisor::Capability::ChildSpawn
+pub bvisor::Capability::ChildSpawn::policy: bvisor::SpawnPolicy
+pub bvisor::Capability::Environment
+pub bvisor::Capability::Environment::policy: bvisor::EnvPolicy
+pub bvisor::Capability::Filesystem
+pub bvisor::Capability::Filesystem::access: bvisor::FsAccess
+pub bvisor::Capability::Filesystem::confinement: bvisor::FsConfinement
+pub bvisor::Capability::Filesystem::recursive: bool
+pub bvisor::Capability::Filesystem::scope: bvisor::PathSet
+pub bvisor::Capability::InheritedFds
+pub bvisor::Capability::InheritedFds::policy: bvisor::FdPolicy
+pub bvisor::Capability::Network
+pub bvisor::Capability::Network::policy: bvisor::NetPolicy
+pub enum bvisor::CommitDurability
+pub bvisor::CommitDurability::Atomic
+pub bvisor::CommitDurability::BestEffortDurable
+pub bvisor::CommitDurability::Durable
+pub enum bvisor::CompareRel
+pub bvisor::CompareRel::Ule
+pub bvisor::CompareRel::Ult
+#[non_exhaustive] pub enum bvisor::DefaultAction
+pub bvisor::DefaultAction::Errno(u32)
+pub bvisor::DefaultAction::KillProcess
+#[non_exhaustive] pub enum bvisor::DispositionAction
+pub bvisor::DispositionAction::Discard
+pub bvisor::DispositionAction::Promote
+pub bvisor::DispositionAction::Refuse
+pub bvisor::DispositionAction::Retain
+#[non_exhaustive] pub enum bvisor::DispositionPhase
+pub bvisor::DispositionPhase::Applied
+pub bvisor::DispositionPhase::Applied::durability: bvisor::CommitDurability
+pub bvisor::DispositionPhase::Decided
+pub bvisor::DispositionPhase::Decided::action: bvisor::DispositionAction
+pub bvisor::DispositionPhase::Failed
+pub bvisor::DispositionPhase::Failed::reason: alloc::string::String
+pub enum bvisor::Enforcement
+pub bvisor::Enforcement::Enforced
+pub bvisor::Enforcement::Mediated
+pub bvisor::Enforcement::Unsupported
+impl bvisor::Enforcement
+pub fn bvisor::Enforcement::meet(self, other: Self) -> Self
+#[non_exhaustive] pub enum bvisor::EnvLowerError
+pub bvisor::EnvLowerError::Invalid(bvisor::EnvPolicyError)
+pub bvisor::EnvLowerError::Secret(bvisor::SecretResolveError)
+impl core::error::Error for bvisor::EnvLowerError
+impl core::fmt::Display for bvisor::EnvLowerError
+pub fn bvisor::EnvLowerError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::EnvPolicy
+pub bvisor::EnvPolicy::Exact(alloc::vec::Vec<bvisor::EnvEntry>)
+impl bvisor::EnvPolicy
+pub fn bvisor::EnvPolicy::validate(&self) -> core::result::Result<(), bvisor::EnvPolicyError>
+#[non_exhaustive] pub enum bvisor::EnvPolicyError
+pub bvisor::EnvPolicyError::DuplicateName
+pub bvisor::EnvPolicyError::DuplicateName::name: alloc::string::String
+pub bvisor::EnvPolicyError::EmptyName
+pub bvisor::EnvPolicyError::NameHasReservedByte
+pub bvisor::EnvPolicyError::NameHasReservedByte::byte: u8
+pub bvisor::EnvPolicyError::NameHasReservedByte::name: alloc::string::String
+pub bvisor::EnvPolicyError::TooManyBytes
+pub bvisor::EnvPolicyError::TooManyBytes::found: usize
+pub bvisor::EnvPolicyError::TooManyEntries
+pub bvisor::EnvPolicyError::TooManyEntries::found: usize
+pub bvisor::EnvPolicyError::ValueHasNul
+pub bvisor::EnvPolicyError::ValueHasNul::name: alloc::string::String
+impl core::error::Error for bvisor::EnvPolicyError
+impl core::fmt::Display for bvisor::EnvPolicyError
+pub fn bvisor::EnvPolicyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::EnvSource
+pub bvisor::EnvSource::Literal(alloc::string::String)
+pub bvisor::EnvSource::SecretLease(bvisor::SecretRef)
+#[non_exhaustive] pub enum bvisor::EvalError
+pub bvisor::EvalError::ConstantWidthMismatch
+pub bvisor::EvalError::ConstantWidthMismatch::at: u32
+pub bvisor::EvalError::ConstantWidthMismatch::expected: usize
+pub bvisor::EvalError::ConstantWidthMismatch::found: usize
+pub bvisor::EvalError::InputCountMismatch
+pub bvisor::EvalError::InputCountMismatch::expected: usize
+pub bvisor::EvalError::InputCountMismatch::found: usize
+pub bvisor::EvalError::InputSlotOutOfRange
+pub bvisor::EvalError::InputSlotOutOfRange::at: u32
+pub bvisor::EvalError::InputSlotOutOfRange::slot: u16
+pub bvisor::EvalError::InputWidthMismatch
+pub bvisor::EvalError::InputWidthMismatch::expected: usize
+pub bvisor::EvalError::InputWidthMismatch::found: usize
+pub bvisor::EvalError::InputWidthMismatch::slot: usize
+pub bvisor::EvalError::Malformed
+pub bvisor::EvalError::Malformed::at: u32
+pub bvisor::EvalError::NonPredicateOutput
+pub bvisor::EvalError::NonPredicateOutput::which: &'static str
+pub bvisor::EvalError::NonPredicateOutput::width: usize
+pub bvisor::EvalError::OperandWidthMismatch
+pub bvisor::EvalError::OperandWidthMismatch::at: u32
+pub bvisor::EvalError::OperandWidthMismatch::left: usize
+pub bvisor::EvalError::OperandWidthMismatch::right: usize
+pub bvisor::EvalError::RefusalCodeTooWide
+pub bvisor::EvalError::RefusalCodeTooWide::width: usize
+pub bvisor::EvalError::ResultWidthMismatch
+pub bvisor::EvalError::ResultWidthMismatch::at: u32
+pub bvisor::EvalError::ResultWidthMismatch::expected: usize
+pub bvisor::EvalError::ResultWidthMismatch::found: usize
+impl core::error::Error for bvisor::EvalError
+impl core::fmt::Display for bvisor::EvalError
+pub fn bvisor::EvalError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::EvidenceClaim
+pub bvisor::EvidenceClaim::AllowedActions
+pub bvisor::EvidenceClaim::ArtifactLineage
+pub bvisor::EvidenceClaim::CapturedStreams
+pub bvisor::EvidenceClaim::DeniedAttempts
+pub bvisor::EvidenceClaim::FilesystemDelta
+pub bvisor::EvidenceClaim::MechanismAttestation
+pub bvisor::EvidenceClaim::NetworkActivity
+pub bvisor::EvidenceClaim::ProcessTree
+pub bvisor::EvidenceClaim::ResourceUsage
+pub bvisor::EvidenceClaim::TerminalOutcome
+impl core::iter::traits::collect::FromIterator<bvisor::EvidenceClaim> for bvisor::EvidenceSet
+pub fn bvisor::EvidenceSet::from_iter<I: core::iter::IntoIterator<Item = bvisor::EvidenceClaim>>(iter: I) -> Self
+pub enum bvisor::ExitStatus
+pub bvisor::ExitStatus::Code(i32)
+pub bvisor::ExitStatus::Signal(i32)
+pub enum bvisor::FdPolicy
+pub bvisor::FdPolicy::None
+pub bvisor::FdPolicy::Only(alloc::vec::Vec<u32>)
+pub enum bvisor::FsAccess
+pub bvisor::FsAccess::Read
+pub bvisor::FsAccess::ReadWrite
+pub bvisor::FsAccess::Write
+pub enum bvisor::FsConfinement
+pub bvisor::FsConfinement::DeclaredRootsOnly
+pub enum bvisor::GuaranteeProfile
+pub bvisor::GuaranteeProfile::Hard
+pub bvisor::GuaranteeProfile::Mediated
+pub bvisor::GuaranteeProfile::Mediated::max_overshoot: u64
+pub bvisor::GuaranteeProfile::Mediated::sample_interval_micros: u64
+impl bvisor::GuaranteeProfile
+pub fn bvisor::GuaranteeProfile::from_enforcement(enforcement: bvisor::Enforcement) -> Self
+#[non_exhaustive] pub enum bvisor::HostControl
+pub bvisor::HostControl::CaptureStreams
+pub bvisor::HostControl::CaptureStreams::streams: bvisor::StdStreams
+pub bvisor::HostControl::CommitArtifact
+pub bvisor::HostControl::CommitArtifact::durability: bvisor::CommitDurability
+pub bvisor::HostControl::DiscardArtifact
+pub bvisor::HostControl::ExposePath
+pub bvisor::HostControl::ExposePath::access: bvisor::FsAccess
+pub bvisor::HostControl::ExposePath::dest: alloc::string::String
+pub bvisor::HostControl::ExposePath::source: alloc::string::String
+pub bvisor::HostControl::ExposePath::view: bvisor::PathView
+pub bvisor::HostControl::Kill
+pub bvisor::HostControl::Kill::guarantee: bvisor::KillGuarantee
+pub bvisor::HostControl::Kill::target: bvisor::KillTarget
+pub bvisor::HostControl::LaunchWorkload
+pub bvisor::HostControl::ListOutputs
+pub bvisor::HostControl::TempRoot
+pub bvisor::HostControl::TempRoot::visibility: bvisor::PathView
+pub enum bvisor::KillGuarantee
+pub bvisor::KillGuarantee::Atomic
+pub bvisor::KillGuarantee::BestEffortAllowed
+pub enum bvisor::KillTarget
+pub bvisor::KillTarget::RunTree
+#[non_exhaustive] pub enum bvisor::LifecycleError
+pub bvisor::LifecycleError::ReportPlanMismatch
+pub bvisor::LifecycleError::ReportPlanMismatch::expected: bvisor::BoundaryPlanHash
+pub bvisor::LifecycleError::ReportPlanMismatch::found: bvisor::BoundaryPlanHash
+impl core::error::Error for bvisor::LifecycleError
+impl core::fmt::Display for bvisor::LifecycleError
+pub fn bvisor::LifecycleError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::LimitViolation
+pub bvisor::LimitViolation::DepthExceeded
+pub bvisor::LimitViolation::DepthExceeded::bound: u32
+pub bvisor::LimitViolation::DepthExceeded::depth: u32
+pub bvisor::LimitViolation::NodeCountExceeded
+pub bvisor::LimitViolation::NodeCountExceeded::bound: u64
+pub bvisor::LimitViolation::NodeCountExceeded::count: u64
+pub bvisor::LimitViolation::WidthExceeded
+pub bvisor::LimitViolation::WidthExceeded::max: u16
+pub bvisor::LimitViolation::WidthExceeded::width: u16
+#[non_exhaustive] pub enum bvisor::LoweringError
+pub bvisor::LoweringError::CanonicalEncoding(alloc::string::String)
+pub bvisor::LoweringError::ConflictingPrimitives
+pub bvisor::LoweringError::ConflictingPrimitives::a: bvisor::PrimitiveId
+pub bvisor::LoweringError::ConflictingPrimitives::b: bvisor::PrimitiveId
+pub bvisor::LoweringError::CyclicDependency
+pub bvisor::LoweringError::CyclicDependency::involved: alloc::vec::Vec<bvisor::PrimitiveId>
+pub bvisor::LoweringError::DuplicatePrimitive
+pub bvisor::LoweringError::DuplicatePrimitive::id: bvisor::PrimitiveId
+pub bvisor::LoweringError::MissingPrerequisite
+pub bvisor::LoweringError::MissingPrerequisite::missing: bvisor::PrimitiveId
+pub bvisor::LoweringError::MissingPrerequisite::primitive: bvisor::PrimitiveId
+pub bvisor::LoweringError::PhaseOrderViolation
+pub bvisor::LoweringError::PhaseOrderViolation::dependent: bvisor::PrimitiveId
+pub bvisor::LoweringError::PhaseOrderViolation::dependent_phase: bvisor::LoweringPhase
+pub bvisor::LoweringError::PhaseOrderViolation::prerequisite: bvisor::PrimitiveId
+pub bvisor::LoweringError::PhaseOrderViolation::prerequisite_phase: bvisor::LoweringPhase
+impl core::error::Error for bvisor::LoweringError
+impl core::fmt::Display for bvisor::LoweringError
+pub fn bvisor::LoweringError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum bvisor::LoweringPhase
+pub bvisor::LoweringPhase::FdHygiene
+pub bvisor::LoweringPhase::FsSetup
+pub bvisor::LoweringPhase::Launch
+pub bvisor::LoweringPhase::NamespaceCreate
+pub bvisor::LoweringPhase::Observe
+pub bvisor::LoweringPhase::PolicyInstall
+pub bvisor::LoweringPhase::PrivilegeDrop
+pub bvisor::LoweringPhase::Teardown
+impl bvisor::LoweringPhase
+pub fn bvisor::LoweringPhase::code(self) -> u8
+pub enum bvisor::MinGuarantee
+pub bvisor::MinGuarantee::Enforced
+pub bvisor::MinGuarantee::Mediated
+pub enum bvisor::NetPolicy
+pub bvisor::NetPolicy::AllowList(alloc::vec::Vec<bvisor::NetDest>)
+pub bvisor::NetPolicy::DenyAll
+pub enum bvisor::NodeOp
+pub bvisor::NodeOp::And
+pub bvisor::NodeOp::BitsetIntersection
+pub bvisor::NodeOp::BitsetSubset
+pub bvisor::NodeOp::BoundedLookup
+pub bvisor::NodeOp::BoundedLookup::table: bvisor::LookupTable
+pub bvisor::NodeOp::Compare
+pub bvisor::NodeOp::Compare::rel: bvisor::CompareRel
+pub bvisor::NodeOp::Constant
+pub bvisor::NodeOp::Constant::bytes: alloc::vec::Vec<u8>
+pub bvisor::NodeOp::Eq
+pub bvisor::NodeOp::Input
+pub bvisor::NodeOp::Input::slot: bvisor::InputSlot
+pub bvisor::NodeOp::Not
+pub bvisor::NodeOp::Or
+pub bvisor::NodeOp::Select
+impl bvisor::NodeOp
+pub fn bvisor::NodeOp::bit_cost(&self, governing_width: bvisor::Width) -> u32
+pub fn bvisor::NodeOp::operand_count(&self) -> usize
+pub fn bvisor::NodeOp::produces_single_bit(&self) -> bool
+pub enum bvisor::Outcome
+pub bvisor::Outcome::Completed
+pub bvisor::Outcome::Denied
+pub bvisor::Outcome::Failed
+pub bvisor::Outcome::Killed
+pub bvisor::Outcome::SupervisorFault
+pub bvisor::Outcome::Timeout
+pub bvisor::Outcome::Unsupported
+pub enum bvisor::PathView
+pub bvisor::PathView::PrivateToBoundary
+#[non_exhaustive] pub enum bvisor::PlanError
+pub bvisor::PlanError::BudgetInvalid
+pub bvisor::PlanError::BudgetInvalid::detail: alloc::string::String
+pub bvisor::PlanError::BudgetRefused
+pub bvisor::PlanError::BudgetRefused::backend: bvisor::BackendId
+pub bvisor::PlanError::BudgetRefused::dimension: bvisor::BudgetDimension
+pub bvisor::PlanError::BudgetRefused::failure: bvisor::BudgetFailure
+pub bvisor::PlanError::EvidenceUnsatisfiable
+pub bvisor::PlanError::EvidenceUnsatisfiable::backend: bvisor::BackendId
+pub bvisor::PlanError::EvidenceUnsatisfiable::detail: alloc::string::String
+pub bvisor::PlanError::InvalidPolicy
+pub bvisor::PlanError::InvalidPolicy::detail: alloc::string::String
+pub bvisor::PlanError::ProfileInsufficient
+pub bvisor::PlanError::ProfileInsufficient::backend: bvisor::BackendId
+pub bvisor::PlanError::ProfileInsufficient::detail: alloc::string::String
+pub bvisor::PlanError::ShadowDivergence
+pub bvisor::PlanError::ShadowDivergence::detail: alloc::string::String
+pub bvisor::PlanError::UnknownBackend
+pub bvisor::PlanError::UnknownBackend::backend: bvisor::BackendId
+pub bvisor::PlanError::Unsupported
+pub bvisor::PlanError::Unsupported::backend: bvisor::BackendId
+pub bvisor::PlanError::Unsupported::requirement: bvisor::BoundaryRequirement
+pub bvisor::PlanError::WorkloadIncompatible
+pub bvisor::PlanError::WorkloadIncompatible::backend: bvisor::BackendId
+pub bvisor::PlanError::WorkloadIncompatible::workload: bvisor::Workload
+impl core::error::Error for bvisor::PlanError
+impl core::fmt::Display for bvisor::PlanError
+pub fn bvisor::PlanError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::ProgramError
+pub bvisor::ProgramError::ArityMismatch
+pub bvisor::ProgramError::ArityMismatch::at: u32
+pub bvisor::ProgramError::ArityMismatch::expected: usize
+pub bvisor::ProgramError::ArityMismatch::found: usize
+pub bvisor::ProgramError::NodeIdOutOfRange
+pub bvisor::ProgramError::NodeIdOutOfRange::at: u32
+pub bvisor::ProgramError::NodeIdOutOfRange::referenced: bvisor::NodeId
+pub bvisor::ProgramError::NonCanonicalEdge
+pub bvisor::ProgramError::NonCanonicalEdge::at: u32
+pub bvisor::ProgramError::NonCanonicalEdge::referenced: bvisor::NodeId
+pub bvisor::ProgramError::TooManyNodes
+pub bvisor::ProgramError::TooManyNodes::count: usize
+impl core::error::Error for bvisor::ProgramError
+impl core::fmt::Display for bvisor::ProgramError
+pub fn bvisor::ProgramError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::ProofGateError
+pub bvisor::ProofGateError::DigestMismatch
+pub bvisor::ProofGateError::DigestMismatch::expected: alloc::string::String
+pub bvisor::ProofGateError::DigestMismatch::found: alloc::string::String
+pub bvisor::ProofGateError::EquivalenceNotProven
+pub bvisor::ProofGateError::EquivalenceNotProven::verdicts: alloc::vec::Vec<alloc::string::String>
+pub bvisor::ProofGateError::IndependentNotConfirmed
+pub bvisor::ProofGateError::IndependentNotConfirmed::verdict: alloc::string::String
+pub bvisor::ProofGateError::PlantedNotDetected
+pub bvisor::ProofGateError::PlantedNotDetected::verdict: alloc::string::String
+pub enum bvisor::ProofStatus
+pub bvisor::ProofStatus::PromotionCandidate
+pub bvisor::ProofStatus::ProvenAuthority
+#[non_exhaustive] pub enum bvisor::QfBvError
+pub bvisor::QfBvError::Compile
+pub bvisor::QfBvError::ConstantTooWide
+pub bvisor::QfBvError::ConstantTooWide::bytes: usize
+pub bvisor::QfBvError::MissingOperand
+pub bvisor::QfBvError::MissingOperand::node: u32
+pub bvisor::QfBvError::MissingOperand::operand: usize
+pub bvisor::QfBvError::UnsupportedOp
+pub bvisor::QfBvError::UnsupportedOp::op: &'static str
+impl core::error::Error for bvisor::QfBvError
+impl core::fmt::Display for bvisor::QfBvError
+pub fn bvisor::QfBvError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::QualificationStatus
+pub bvisor::QualificationStatus::FailClosed
+pub bvisor::QualificationStatus::FaultInjected
+pub bvisor::QualificationStatus::Incomplete
+pub bvisor::QualificationStatus::Proven
+pub bvisor::QualificationStatus::Waived
+impl bvisor::QualificationStatus
+pub fn bvisor::QualificationStatus::permits_enforced(self) -> bool
+#[non_exhaustive] pub enum bvisor::RecoveryAction
+pub bvisor::RecoveryAction::Absent
+pub bvisor::RecoveryAction::CanonicalRefusal
+pub bvisor::RecoveryAction::CanonicalRefusal::reason: alloc::string::String
+pub bvisor::RecoveryAction::Completed
+pub bvisor::RecoveryAction::FinishDisposition
+pub bvisor::RecoveryAction::FinishDisposition::artifacts: alloc::vec::Vec<bvisor::ArtifactFix>
+pub bvisor::RecoveryAction::RollBack
+pub bvisor::RecoveryAction::RollBack::orphans: alloc::vec::Vec<bvisor::QuarantineRecord>
+impl bvisor::RecoveryAction
+pub fn bvisor::RecoveryAction::classification(&self) -> core::option::Option<bvisor::RecoveryClassification>
+pub enum bvisor::RecoveryClassification
+pub bvisor::RecoveryClassification::CanonicalRefusal
+pub bvisor::RecoveryClassification::Completed
+pub bvisor::RecoveryClassification::RolledBack
+#[non_exhaustive] pub enum bvisor::RequirementKind
+pub bvisor::RequirementKind::CaptureStreams
+pub bvisor::RequirementKind::ChildSpawnAllowDescendants
+pub bvisor::RequirementKind::ChildSpawnAllowThreads
+pub bvisor::RequirementKind::ChildSpawnDenyNewTasks
+pub bvisor::RequirementKind::CommitArtifact
+pub bvisor::RequirementKind::DiscardArtifact
+pub bvisor::RequirementKind::Environment
+pub bvisor::RequirementKind::ExposePath
+pub bvisor::RequirementKind::Filesystem
+pub bvisor::RequirementKind::InheritedFdsNone
+pub bvisor::RequirementKind::InheritedFdsOnly
+pub bvisor::RequirementKind::Kill
+pub bvisor::RequirementKind::LaunchWorkload
+pub bvisor::RequirementKind::ListOutputs
+pub bvisor::RequirementKind::NetworkAllowList
+pub bvisor::RequirementKind::NetworkDenyAll
+pub bvisor::RequirementKind::TempRoot
+impl bvisor::RequirementKind
+pub const bvisor::RequirementKind::ALL: [Self; 17]
+pub fn bvisor::RequirementKind::of(req: &bvisor::BoundaryRequirement) -> Self
+#[non_exhaustive] pub enum bvisor::RunStep
+pub bvisor::RunStep::Faulted(alloc::string::String)
+pub bvisor::RunStep::Observed(bvisor::ObservedFact)
+pub bvisor::RunStep::Sealed(alloc::boxed::Box<bvisor::BoundaryReport>)
+#[non_exhaustive] pub enum bvisor::ScheduleDivergence
+pub bvisor::ScheduleDivergence::CircuitError
+pub bvisor::ScheduleDivergence::CircuitError::reason: &'static str
+pub bvisor::ScheduleDivergence::CircuitError::reference: bvisor::ScheduleOutcome
+pub bvisor::ScheduleDivergence::OutcomeMismatch
+pub bvisor::ScheduleDivergence::OutcomeMismatch::circuit: bvisor::ScheduleOutcome
+pub bvisor::ScheduleDivergence::OutcomeMismatch::reference: bvisor::ScheduleOutcome
+impl core::error::Error for bvisor::ScheduleDivergence
+impl core::fmt::Display for bvisor::ScheduleDivergence
+pub fn bvisor::ScheduleDivergence::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum bvisor::ScheduleOutcome
+pub bvisor::ScheduleOutcome::Admitted
+pub bvisor::ScheduleOutcome::Refused
+pub bvisor::ScheduleOutcome::Refused::reason: bvisor::ScheduleRefusal
+impl bvisor::ScheduleOutcome
+pub fn bvisor::ScheduleOutcome::code(self) -> u8
+#[non_exhaustive] pub enum bvisor::ScheduleRefusal
+pub bvisor::ScheduleRefusal::ConflictCoPresent
+pub bvisor::ScheduleRefusal::DeclIntegrity
+pub bvisor::ScheduleRefusal::DuplicatePrimitive
+pub bvisor::ScheduleRefusal::IndexOutOfRange
+pub bvisor::ScheduleRefusal::MissingPrerequisite
+pub bvisor::ScheduleRefusal::NonCanonical
+pub bvisor::ScheduleRefusal::PhaseOutOfOrder
+pub bvisor::ScheduleRefusal::PrereqOutOfOrder
+pub bvisor::ScheduleRefusal::RequirementUncovered
+impl bvisor::ScheduleRefusal
+pub fn bvisor::ScheduleRefusal::code(self) -> u8
+pub fn bvisor::ScheduleRefusal::from_code(code: u8) -> core::option::Option<Self>
+impl core::error::Error for bvisor::ScheduleRefusal
+impl core::fmt::Display for bvisor::ScheduleRefusal
+pub fn bvisor::ScheduleRefusal::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::SeccompActionKind
+pub bvisor::SeccompActionKind::Allow
+pub bvisor::SeccompActionKind::Errno(u32)
+pub bvisor::SeccompActionKind::KillProcess
+impl bvisor::SeccompActionKind
+pub fn bvisor::SeccompActionKind::wire_tag(self) -> (u8, u32)
+#[non_exhaustive] pub enum bvisor::SeccompArch
+pub bvisor::SeccompArch::Aarch64
+pub bvisor::SeccompArch::Riscv64
+pub bvisor::SeccompArch::X86_64
+impl bvisor::SeccompArch
+pub fn bvisor::SeccompArch::as_str(self) -> &'static str
+#[non_exhaustive] pub enum bvisor::SeccompCompileError
+pub bvisor::SeccompCompileError::Assembler(alloc::string::String)
+pub bvisor::SeccompCompileError::CanonicalEncoding(alloc::string::String)
+pub bvisor::SeccompCompileError::DenylistDeniesMandatoryBase
+pub bvisor::SeccompCompileError::DenylistDeniesMandatoryBase::syscall: &'static str
+pub bvisor::SeccompCompileError::EmptyAllowlist
+pub bvisor::SeccompCompileError::EmptyDenylist
+pub bvisor::SeccompCompileError::MissingMandatoryBase
+pub bvisor::SeccompCompileError::MissingMandatoryBase::syscall: &'static str
+impl core::error::Error for bvisor::SeccompCompileError
+impl core::fmt::Display for bvisor::SeccompCompileError
+pub fn bvisor::SeccompCompileError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::SeccompObservedMode
+pub bvisor::SeccompObservedMode::Disabled
+pub bvisor::SeccompObservedMode::Filter
+pub bvisor::SeccompObservedMode::Strict
+#[non_exhaustive] pub enum bvisor::SecretResolveError
+pub bvisor::SecretResolveError::Backend
+pub bvisor::SecretResolveError::Backend::detail: alloc::string::String
+pub bvisor::SecretResolveError::Backend::reference: bvisor::SecretRef
+pub bvisor::SecretResolveError::Unknown
+pub bvisor::SecretResolveError::Unknown::reference: bvisor::SecretRef
+impl core::error::Error for bvisor::SecretResolveError
+impl core::fmt::Display for bvisor::SecretResolveError
+pub fn bvisor::SecretResolveError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum bvisor::SpawnPolicy
+pub bvisor::SpawnPolicy::AllowDescendantsWithinBoundary
+pub bvisor::SpawnPolicy::AllowThreadsWithinBoundary
+pub bvisor::SpawnPolicy::DenyNewTasks
+#[non_exhaustive] pub enum bvisor::ValidationError
+pub bvisor::ValidationError::Arity
+pub bvisor::ValidationError::Arity::at: u32
+pub bvisor::ValidationError::Arity::expected: usize
+pub bvisor::ValidationError::Arity::found: usize
+pub bvisor::ValidationError::CertificateMismatch
+pub bvisor::ValidationError::ConstantBytes
+pub bvisor::ValidationError::ConstantBytes::at: u32
+pub bvisor::ValidationError::ConstantBytes::expected: usize
+pub bvisor::ValidationError::ConstantBytes::found: usize
+pub bvisor::ValidationError::Encoding
+pub bvisor::ValidationError::InputSlotOutOfRange
+pub bvisor::ValidationError::InputSlotOutOfRange::at: u32
+pub bvisor::ValidationError::InputSlotOutOfRange::slot: u16
+pub bvisor::ValidationError::InputWidthMismatch
+pub bvisor::ValidationError::InputWidthMismatch::at: u32
+pub bvisor::ValidationError::InputWidthMismatch::declared: u16
+pub bvisor::ValidationError::InputWidthMismatch::input: u16
+pub bvisor::ValidationError::InputWidthOutOfRange
+pub bvisor::ValidationError::InputWidthOutOfRange::slot: usize
+pub bvisor::ValidationError::InputWidthOutOfRange::width: u16
+pub bvisor::ValidationError::Limit(bvisor::LimitViolation)
+pub bvisor::ValidationError::LookupBound
+pub bvisor::ValidationError::LookupBound::at: u32
+pub bvisor::ValidationError::LookupBound::reason: &'static str
+pub bvisor::ValidationError::LookupKeyWidth
+pub bvisor::ValidationError::LookupKeyWidth::at: u32
+pub bvisor::ValidationError::LookupKeyWidth::expected: u16
+pub bvisor::ValidationError::LookupKeyWidth::found: u16
+pub bvisor::ValidationError::MalformedEncoding
+pub bvisor::ValidationError::NodeWidthOutOfRange
+pub bvisor::ValidationError::NodeWidthOutOfRange::at: u32
+pub bvisor::ValidationError::NodeWidthOutOfRange::width: u16
+pub bvisor::ValidationError::NonCanonicalEdge
+pub bvisor::ValidationError::NonCanonicalEdge::at: u32
+pub bvisor::ValidationError::NonCanonicalEdge::operand: u32
+pub bvisor::ValidationError::NonCanonicalEncoding
+pub bvisor::ValidationError::OperandOutOfRange
+pub bvisor::ValidationError::OperandOutOfRange::at: u32
+pub bvisor::ValidationError::OperandOutOfRange::operand: u32
+pub bvisor::ValidationError::OperandTyping
+pub bvisor::ValidationError::OperandTyping::at: u32
+pub bvisor::ValidationError::OperandTyping::reason: &'static str
+pub bvisor::ValidationError::OutputNotPredicate
+pub bvisor::ValidationError::OutputNotPredicate::which: &'static str
+pub bvisor::ValidationError::OutputNotPredicate::width: u16
+pub bvisor::ValidationError::OutputRefOutOfRange
+pub bvisor::ValidationError::OutputRefOutOfRange::id: u32
+pub bvisor::ValidationError::OutputRefOutOfRange::which: &'static str
+pub bvisor::ValidationError::OutputWidth
+pub bvisor::ValidationError::OutputWidth::at: u32
+pub bvisor::ValidationError::OutputWidth::reason: &'static str
+pub bvisor::ValidationError::RefusalCodeTooWide
+pub bvisor::ValidationError::RefusalCodeTooWide::width: u16
+pub bvisor::ValidationError::SchemaVersion
+pub bvisor::ValidationError::SchemaVersion::found: u16
+pub bvisor::ValidationError::TooLarge
+impl core::error::Error for bvisor::ValidationError
+impl core::fmt::Display for bvisor::ValidationError
+pub fn bvisor::ValidationError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum bvisor::Workload
+pub bvisor::Workload::Process
+pub bvisor::Workload::Process::args: alloc::vec::Vec<alloc::string::String>
+pub bvisor::Workload::Process::exe: alloc::string::String
+pub bvisor::Workload::Wasm
+pub bvisor::Workload::Wasm::module_ref: alloc::string::String
+pub struct bvisor::AdmissionInputs
+pub bvisor::AdmissionInputs::budget: alloc::vec::Vec<bvisor::BudgetInputs>
+pub bvisor::AdmissionInputs::live_profile: u64
+pub bvisor::AdmissionInputs::planned_profile: u64
+pub bvisor::AdmissionInputs::requirements: alloc::vec::Vec<bvisor::RequirementInputs>
+pub bvisor::AdmissionInputs::schedule: bvisor::ScheduleInputs
+pub struct bvisor::AdmissionProgram
+impl bvisor::AdmissionProgram
+pub fn bvisor::AdmissionProgram::bit_depth(&self) -> u32
+pub fn bvisor::AdmissionProgram::bit_levels(&self) -> alloc::vec::Vec<u32>
+pub fn bvisor::AdmissionProgram::canonical_bytes(&self) -> core::result::Result<alloc::vec::Vec<u8>, rmp_serde::encode::Error>
+pub fn bvisor::AdmissionProgram::certify(&self) -> core::result::Result<bvisor::ProgramCertificate, rmp_serde::encode::Error>
+pub fn bvisor::AdmissionProgram::digest(&self) -> core::result::Result<bvisor::AdmissionProgramHash, rmp_serde::encode::Error>
+pub fn bvisor::AdmissionProgram::inputs(&self) -> &[bvisor::InputDecl]
+pub fn bvisor::AdmissionProgram::max_width(&self) -> bvisor::Width
+pub fn bvisor::AdmissionProgram::new(inputs: alloc::vec::Vec<bvisor::InputDecl>, nodes: alloc::vec::Vec<bvisor::Node>, outputs: bvisor::Outputs) -> core::result::Result<Self, bvisor::ProgramError>
+pub fn bvisor::AdmissionProgram::node_count(&self) -> usize
+pub fn bvisor::AdmissionProgram::nodes(&self) -> &[bvisor::Node]
+pub fn bvisor::AdmissionProgram::outputs(&self) -> &bvisor::Outputs
+pub fn bvisor::AdmissionProgram::schema_version(&self) -> u16
+pub struct bvisor::AdmissionProgramHash(pub bvisor::Digest32)
+pub struct bvisor::AdmissionShape
+pub bvisor::AdmissionShape::budget_dims: usize
+pub bvisor::AdmissionShape::budget_width: bvisor::Width
+pub bvisor::AdmissionShape::conflict_width: bvisor::Width
+pub bvisor::AdmissionShape::evidence_width: bvisor::Width
+pub bvisor::AdmissionShape::hash_width: bvisor::Width
+pub bvisor::AdmissionShape::requirements: usize
+pub bvisor::AdmissionShape::schedule: bvisor::ScheduleShape
+pub struct bvisor::AdmittedBudget
+pub bvisor::AdmittedBudget::effective_limit: u64
+pub bvisor::AdmittedBudget::mechanism: alloc::string::String
+pub bvisor::AdmittedBudget::profile_digest: bvisor::Digest32
+pub bvisor::AdmittedBudget::promised_evidence: bvisor::EvidenceSet
+pub bvisor::AdmittedBudget::required_evidence: bvisor::EvidenceSet
+pub bvisor::AdmittedBudget::required_guarantee: bvisor::MinGuarantee
+pub bvisor::AdmittedBudget::selected_guarantee: bvisor::Enforcement
+pub struct bvisor::AdmittedBudgets
+pub bvisor::AdmittedBudgets::cpu_micros: bvisor::AdmittedBudget
+pub bvisor::AdmittedBudgets::handle_count: bvisor::AdmittedBudget
+pub bvisor::AdmittedBudgets::network_bytes: bvisor::AdmittedBudget
+pub bvisor::AdmittedBudgets::process_count: bvisor::AdmittedBudget
+pub bvisor::AdmittedBudgets::resident_bytes: bvisor::AdmittedBudget
+pub bvisor::AdmittedBudgets::storage_bytes: bvisor::AdmittedBudget
+pub bvisor::AdmittedBudgets::wall_micros: bvisor::AdmittedBudget
+pub struct bvisor::AdmittedRequirement
+pub bvisor::AdmittedRequirement::enforcement: bvisor::Enforcement
+pub bvisor::AdmittedRequirement::mechanism: alloc::string::String
+pub bvisor::AdmittedRequirement::requirement: bvisor::BoundaryRequirement
+pub struct bvisor::ArtifactFix
+pub bvisor::ArtifactFix::action: bvisor::DispositionAction
+pub bvisor::ArtifactFix::artifact: bvisor::ArtifactId
+pub struct bvisor::ArtifactId(pub bvisor::Digest32)
+impl bvisor::ArtifactId
+pub fn bvisor::ArtifactId::derive(attempt: bvisor::AttemptId, slot: &str, content: bvisor::ContentHash) -> Self
+pub struct bvisor::ArtifactReality
+pub bvisor::ArtifactReality::promoted_bytes_present: bool
+pub bvisor::ArtifactReality::quarantined_bytes_present: bool
+pub struct bvisor::AttemptId(pub bvisor::Digest32)
+pub struct bvisor::BackendId(_)
+impl bvisor::BackendId
+pub fn bvisor::BackendId::as_str(&self) -> &str
+pub fn bvisor::BackendId::new(id: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for bvisor::BackendId
+pub fn bvisor::BackendId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct bvisor::BackendProfile
+impl bvisor::BackendProfile
+pub fn bvisor::BackendProfile::ceiling_for(&self, kind: bvisor::RequirementKind) -> bvisor::SupportVerdict
+pub fn bvisor::BackendProfile::enforced_kinds(&self) -> alloc::vec::Vec<bvisor::RequirementKind>
+pub fn bvisor::BackendProfile::from_ceiling(ceiling: alloc::collections::btree::map::BTreeMap<bvisor::RequirementKind, bvisor::SupportVerdict>) -> Self
+pub struct bvisor::BackendProfileHash(pub bvisor::Digest32)
+impl bvisor::BackendProfileHash
+pub fn bvisor::BackendProfileHash::of(canonical_bytes: &[u8]) -> Self
+pub struct bvisor::BackendProfileSnapshot
+pub bvisor::BackendProfileSnapshot::backend: bvisor::BackendId
+pub bvisor::BackendProfileSnapshot::budget: bvisor::BudgetProfile
+pub bvisor::BackendProfileSnapshot::probed: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub struct bvisor::BackendRegistry
+impl bvisor::BackendRegistry
+pub fn bvisor::BackendRegistry::backend(&self, id: &bvisor::BackendId) -> core::option::Option<&alloc::sync::Arc<dyn bvisor::Backend>>
+pub fn bvisor::BackendRegistry::new() -> Self
+pub fn bvisor::BackendRegistry::register(&mut self, backend: alloc::sync::Arc<dyn bvisor::Backend>)
+pub struct bvisor::Boundary<S: bvisor::BoundaryState>
+impl bvisor::Boundary<bvisor::Planned>
+pub fn bvisor::Boundary<bvisor::Planned>::as_plan(&self) -> &bvisor::BoundaryPlan
+pub fn bvisor::Boundary<bvisor::Planned>::plan_id(&self) -> bvisor::BoundaryPlanHash
+pub fn bvisor::Boundary<bvisor::Planned>::start(self, attempt: bvisor::AttemptId) -> bvisor::Boundary<bvisor::Started>
+impl bvisor::Boundary<bvisor::Reported>
+pub fn bvisor::Boundary<bvisor::Reported>::as_plan(&self) -> &bvisor::BoundaryPlan
+pub fn bvisor::Boundary<bvisor::Reported>::attempt(&self) -> bvisor::AttemptId
+pub fn bvisor::Boundary<bvisor::Reported>::into_parts(self) -> (bvisor::BoundaryPlan, bvisor::AttemptId, bvisor::BoundaryReport)
+pub fn bvisor::Boundary<bvisor::Reported>::into_report_event(self) -> bvisor::BoundaryReportEvent
+pub fn bvisor::Boundary<bvisor::Reported>::plan_id(&self) -> bvisor::BoundaryPlanHash
+pub fn bvisor::Boundary<bvisor::Reported>::report(&self) -> &bvisor::BoundaryReport
+pub fn bvisor::Boundary<bvisor::Reported>::report_event(&self) -> bvisor::BoundaryReportEvent
+impl bvisor::Boundary<bvisor::Spec>
+pub fn bvisor::Boundary<bvisor::Spec>::backend(&self) -> &bvisor::BackendId
+pub fn bvisor::Boundary<bvisor::Spec>::plan(self, registry: &bvisor::BackendRegistry) -> core::result::Result<bvisor::Boundary<bvisor::Planned>, bvisor::PlanError>
+pub fn bvisor::Boundary<bvisor::Spec>::propose(spec: bvisor::BoundarySpec, backend: bvisor::BackendId) -> Self
+pub fn bvisor::Boundary<bvisor::Spec>::spec(&self) -> &bvisor::BoundarySpec
+impl bvisor::Boundary<bvisor::Started>
+pub fn bvisor::Boundary<bvisor::Started>::as_plan(&self) -> &bvisor::BoundaryPlan
+pub fn bvisor::Boundary<bvisor::Started>::attempt(&self) -> bvisor::AttemptId
+pub fn bvisor::Boundary<bvisor::Started>::into_reported(self, report: bvisor::BoundaryReport) -> core::result::Result<bvisor::Boundary<bvisor::Reported>, bvisor::LifecycleError>
+pub fn bvisor::Boundary<bvisor::Started>::plan_id(&self) -> bvisor::BoundaryPlanHash
+pub fn bvisor::Boundary<bvisor::Started>::started_event(&self) -> bvisor::BoundaryStartedEvent
+pub struct bvisor::BoundaryDispositionEvent
+pub bvisor::BoundaryDispositionEvent::artifact: bvisor::ArtifactId
+pub bvisor::BoundaryDispositionEvent::attempt: bvisor::AttemptId
+pub bvisor::BoundaryDispositionEvent::phase: bvisor::DispositionPhase
+pub bvisor::BoundaryDispositionEvent::plan_id: bvisor::BoundaryPlanHash
+impl batpak::event::payload::EventPayload for bvisor::BoundaryDispositionEvent
+pub const bvisor::BoundaryDispositionEvent::KIND: batpak::event::kind::EventKind
+pub const bvisor::BoundaryDispositionEvent::PAYLOAD_VERSION: u16
+pub struct bvisor::BoundaryPlan
+pub bvisor::BoundaryPlan::admitted: alloc::vec::Vec<bvisor::AdmittedRequirement>
+pub bvisor::BoundaryPlan::backend: bvisor::BackendId
+pub bvisor::BoundaryPlan::budgets: bvisor::AdmittedBudgets
+pub bvisor::BoundaryPlan::evidence: bvisor::EvidenceRequirements
+pub bvisor::BoundaryPlan::plan_id: bvisor::BoundaryPlanHash
+pub bvisor::BoundaryPlan::profile: bvisor::BackendProfileSnapshot
+pub bvisor::BoundaryPlan::schema_version: u16
+pub bvisor::BoundaryPlan::workload: bvisor::Workload
+pub struct bvisor::BoundaryPlanHash(pub bvisor::Digest32)
+pub struct bvisor::BoundaryPlanner<'r>
+impl<'r> bvisor::BoundaryPlanner<'r>
+pub fn bvisor::BoundaryPlanner<'r>::new(registry: &'r bvisor::BackendRegistry) -> Self
+pub fn bvisor::BoundaryPlanner<'r>::plan(&self, spec: &bvisor::BoundarySpec, backend: &bvisor::BackendId) -> core::result::Result<bvisor::BoundaryPlan, bvisor::PlanError>
+pub struct bvisor::BoundaryRecoveryEvent
+pub bvisor::BoundaryRecoveryEvent::classification: bvisor::RecoveryClassification
+pub bvisor::BoundaryRecoveryEvent::plan_id: bvisor::BoundaryPlanHash
+pub bvisor::BoundaryRecoveryEvent::quarantined: alloc::vec::Vec<bvisor::QuarantineRecord>
+impl batpak::event::payload::EventPayload for bvisor::BoundaryRecoveryEvent
+pub const bvisor::BoundaryRecoveryEvent::KIND: batpak::event::kind::EventKind
+pub const bvisor::BoundaryRecoveryEvent::PAYLOAD_VERSION: u16
+pub struct bvisor::BoundaryReport
+pub bvisor::BoundaryReport::body: bvisor::BoundaryReportBody
+pub bvisor::BoundaryReport::body_hash: bvisor::BoundaryReportHash
+pub struct bvisor::BoundaryReportBody
+pub bvisor::BoundaryReportBody::admitted: alloc::vec::Vec<bvisor::AdmittedRequirement>
+pub bvisor::BoundaryReportBody::artifacts: alloc::vec::Vec<bvisor::StagedArtifact>
+pub bvisor::BoundaryReportBody::backend: bvisor::BackendId
+pub bvisor::BoundaryReportBody::budget: bvisor::BudgetWitnesses
+pub bvisor::BoundaryReportBody::captured: bvisor::CaptureRefs
+pub bvisor::BoundaryReportBody::denied: alloc::vec::Vec<bvisor::DeniedAttempt>
+pub bvisor::BoundaryReportBody::exit: core::option::Option<bvisor::ExitStatus>
+pub bvisor::BoundaryReportBody::findings: alloc::vec::Vec<bvisor::BoundaryFinding>
+pub bvisor::BoundaryReportBody::observed: alloc::vec::Vec<bvisor::ObservedFact>
+pub bvisor::BoundaryReportBody::outcome: bvisor::Outcome
+pub bvisor::BoundaryReportBody::plan_id: bvisor::BoundaryPlanHash
+pub bvisor::BoundaryReportBody::profile: bvisor::BackendProfileSnapshot
+pub bvisor::BoundaryReportBody::schema_version: u16
+impl bvisor::BoundaryReportBody
+pub fn bvisor::BoundaryReportBody::body_hash(&self) -> core::result::Result<bvisor::BoundaryReportHash, rmp_serde::encode::Error>
+pub struct bvisor::BoundaryReportEvent
+pub bvisor::BoundaryReportEvent::report: bvisor::BoundaryReport
+impl batpak::event::payload::EventPayload for bvisor::BoundaryReportEvent
+pub const bvisor::BoundaryReportEvent::KIND: batpak::event::kind::EventKind
+pub const bvisor::BoundaryReportEvent::PAYLOAD_VERSION: u16
+pub struct bvisor::BoundaryReportHash(pub bvisor::Digest32)
+pub struct bvisor::BoundaryRun
+impl bvisor::BoundaryRun
+pub fn bvisor::BoundaryRun::drive_step(&mut self) -> core::option::Option<bvisor::RunStep>
+impl core::iter::Iterator for bvisor::BoundaryRun
+pub type bvisor::BoundaryRun::Item = bvisor::RunStep
+pub fn bvisor::BoundaryRun::next(&mut self) -> core::option::Option<bvisor::RunStep>
+pub struct bvisor::BoundaryRunner<'r>
+impl<'r> bvisor::BoundaryRunner<'r>
+pub fn bvisor::BoundaryRunner<'r>::begin(&self, plan: &bvisor::BoundaryPlan) -> core::result::Result<bvisor::BoundaryRun, bvisor::PlanError>
+pub fn bvisor::BoundaryRunner<'r>::new(registry: &'r bvisor::BackendRegistry) -> Self
+pub fn bvisor::BoundaryRunner<'r>::run(&self, plan: &bvisor::BoundaryPlan) -> core::result::Result<bvisor::BoundaryReport, bvisor::PlanError>
+pub struct bvisor::BoundarySpec
+pub bvisor::BoundarySpec::budgets: bvisor::BudgetRequirements
+pub bvisor::BoundarySpec::capabilities: alloc::vec::Vec<bvisor::Capability>
+pub bvisor::BoundarySpec::controls: alloc::vec::Vec<bvisor::HostControl>
+pub bvisor::BoundarySpec::evidence: bvisor::EvidenceRequirements
+pub bvisor::BoundarySpec::workload: bvisor::Workload
+pub struct bvisor::BoundaryStartedEvent
+pub bvisor::BoundaryStartedEvent::plan: bvisor::BoundaryPlan
+impl batpak::event::payload::EventPayload for bvisor::BoundaryStartedEvent
+pub const bvisor::BoundaryStartedEvent::KIND: batpak::event::kind::EventKind
+pub const bvisor::BoundaryStartedEvent::PAYLOAD_VERSION: u16
+pub struct bvisor::BudgetAvailability
+pub bvisor::BudgetAvailability::available: u64
+pub bvisor::BudgetAvailability::enforcement: bvisor::Enforcement
+pub bvisor::BudgetAvailability::evidence: bvisor::EvidenceSet
+pub bvisor::BudgetAvailability::mechanism: alloc::string::String
+impl bvisor::BudgetAvailability
+pub fn bvisor::BudgetAvailability::unenforced() -> Self
+pub struct bvisor::BudgetInputs
+pub bvisor::BudgetInputs::available: u64
+pub bvisor::BudgetInputs::derived_min: u64
+pub bvisor::BudgetInputs::evidence_available: u64
+pub bvisor::BudgetInputs::evidence_required: u64
+pub bvisor::BudgetInputs::guarantee_available: u8
+pub bvisor::BudgetInputs::guarantee_required: u8
+pub bvisor::BudgetInputs::limit: u64
+pub struct bvisor::BudgetProfile
+pub bvisor::BudgetProfile::cpu_micros: bvisor::BudgetAvailability
+pub bvisor::BudgetProfile::handle_count: bvisor::BudgetAvailability
+pub bvisor::BudgetProfile::network_bytes: bvisor::BudgetAvailability
+pub bvisor::BudgetProfile::process_count: bvisor::BudgetAvailability
+pub bvisor::BudgetProfile::resident_bytes: bvisor::BudgetAvailability
+pub bvisor::BudgetProfile::storage_bytes: bvisor::BudgetAvailability
+pub bvisor::BudgetProfile::wall_micros: bvisor::BudgetAvailability
+impl bvisor::BudgetProfile
+pub fn bvisor::BudgetProfile::all_unenforced() -> Self
+pub struct bvisor::BudgetRefusal
+pub bvisor::BudgetRefusal::dimension: bvisor::BudgetDimension
+pub bvisor::BudgetRefusal::failure: bvisor::BudgetFailure
+pub struct bvisor::BudgetRequest
+pub bvisor::BudgetRequest::evidence: bvisor::EvidenceSet
+pub bvisor::BudgetRequest::guarantee: bvisor::MinGuarantee
+pub bvisor::BudgetRequest::limit: u64
+impl bvisor::BudgetRequest
+pub fn bvisor::BudgetRequest::deny_all() -> Self
+pub fn bvisor::BudgetRequest::uniform(limit: u64, guarantee: bvisor::MinGuarantee) -> Self
+pub struct bvisor::BudgetRequirements
+pub bvisor::BudgetRequirements::cpu_micros: bvisor::BudgetRequest
+pub bvisor::BudgetRequirements::handle_count: bvisor::BudgetRequest
+pub bvisor::BudgetRequirements::network_bytes: bvisor::BudgetRequest
+pub bvisor::BudgetRequirements::process_count: bvisor::BudgetRequest
+pub bvisor::BudgetRequirements::resident_bytes: bvisor::BudgetRequest
+pub bvisor::BudgetRequirements::storage_bytes: bvisor::BudgetRequest
+pub bvisor::BudgetRequirements::wall_micros: bvisor::BudgetRequest
+impl bvisor::BudgetRequirements
+pub fn bvisor::BudgetRequirements::deny_all() -> Self
+pub fn bvisor::BudgetRequirements::uniform(limit: u64, guarantee: bvisor::MinGuarantee) -> Self
+pub struct bvisor::BudgetWitness
+pub bvisor::BudgetWitness::admitted_limit: u64
+pub bvisor::BudgetWitness::evidence: bvisor::EvidenceSet
+pub bvisor::BudgetWitness::finding: bvisor::BudgetFinding
+pub bvisor::BudgetWitness::mechanism: alloc::string::String
+pub bvisor::BudgetWitness::observed_usage: u64
+pub bvisor::BudgetWitness::required_guarantee: bvisor::MinGuarantee
+pub bvisor::BudgetWitness::supplied_guarantee: bvisor::GuaranteeProfile
+impl bvisor::BudgetWitness
+pub fn bvisor::BudgetWitness::classify(admitted_limit: u64, observed_usage: u64) -> bvisor::BudgetFinding
+pub fn bvisor::BudgetWitness::unwitnessed(admitted: &bvisor::AdmittedBudget) -> Self
+pub fn bvisor::BudgetWitness::witnessed(admitted: &bvisor::AdmittedBudget, observed_usage: u64) -> Self
+pub struct bvisor::BudgetWitnesses
+pub bvisor::BudgetWitnesses::cpu_micros: bvisor::BudgetWitness
+pub bvisor::BudgetWitnesses::handle_count: bvisor::BudgetWitness
+pub bvisor::BudgetWitnesses::network_bytes: bvisor::BudgetWitness
+pub bvisor::BudgetWitnesses::process_count: bvisor::BudgetWitness
+pub bvisor::BudgetWitnesses::resident_bytes: bvisor::BudgetWitness
+pub bvisor::BudgetWitnesses::storage_bytes: bvisor::BudgetWitness
+pub bvisor::BudgetWitnesses::wall_micros: bvisor::BudgetWitness
+impl bvisor::BudgetWitnesses
+pub fn bvisor::BudgetWitnesses::unwitnessed(admitted: &bvisor::AdmittedBudgets) -> Self
+pub fn bvisor::BudgetWitnesses::with_process_count(admitted: &bvisor::AdmittedBudgets, process_peak_observed: u64) -> Self
+pub fn bvisor::BudgetWitnesses::with_wall(admitted: &bvisor::AdmittedBudgets, wall_micros_observed: u64) -> Self
+pub struct bvisor::CanonicalPolicy
+impl bvisor::CanonicalPolicy
+pub fn bvisor::CanonicalPolicy::as_bytes(&self) -> &[u8]
+pub fn bvisor::CanonicalPolicy::of_env(policy: &bvisor::EnvPolicy) -> Self
+pub fn bvisor::CanonicalPolicy::of_fd(policy: &bvisor::FdPolicy) -> Self
+pub fn bvisor::CanonicalPolicy::of_net(policy: &bvisor::NetPolicy) -> Self
+pub fn bvisor::CanonicalPolicy::of_spawn(policy: &bvisor::SpawnPolicy) -> Self
+pub struct bvisor::CaptureRefs
+pub bvisor::CaptureRefs::stderr: core::option::Option<alloc::string::String>
+pub bvisor::CaptureRefs::stdout: core::option::Option<alloc::string::String>
+pub struct bvisor::CertNode
+pub bvisor::CertNode::bit_level: u32
+pub bvisor::CertNode::operands: alloc::vec::Vec<bvisor::NodeId>
+pub bvisor::CertNode::single_bit: bool
+pub bvisor::CertNode::width: bvisor::Width
+pub struct bvisor::CircuitBuilder
+impl bvisor::CircuitBuilder
+pub fn bvisor::CircuitBuilder::and(&mut self, a: bvisor::NodeId, b: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::and_reduce(&mut self, items: &[bvisor::NodeId]) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::bitset_intersection(&mut self, a: bvisor::NodeId, b: bvisor::NodeId, width: bvisor::Width) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::bitset_subset(&mut self, a: bvisor::NodeId, b: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::compare_ule(&mut self, a: bvisor::NodeId, b: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::compare_ult(&mut self, a: bvisor::NodeId, b: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::constant(&mut self, bytes: alloc::vec::Vec<u8>, width: bvisor::Width) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::equal(&mut self, a: bvisor::NodeId, b: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::finish(self, outputs: bvisor::Outputs) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::CircuitBuilder::input(&mut self, width: bvisor::Width) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::new() -> Self
+pub fn bvisor::CircuitBuilder::not(&mut self, a: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::or(&mut self, a: bvisor::NodeId, b: bvisor::NodeId) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::or_reduce(&mut self, items: &[bvisor::NodeId]) -> bvisor::NodeId
+pub fn bvisor::CircuitBuilder::select(&mut self, cond: bvisor::NodeId, a: bvisor::NodeId, b: bvisor::NodeId, width: bvisor::Width) -> bvisor::NodeId
+pub struct bvisor::CompiledFilter
+impl bvisor::CompiledFilter
+pub fn bvisor::CompiledFilter::bpf_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn bvisor::CompiledFilter::evidence(&self) -> &bvisor::SeccompEvidence
+pub fn bvisor::CompiledFilter::program(&self) -> &seccompiler::backend::bpf::BpfProgram
+pub struct bvisor::ContentHash(pub bvisor::Digest32)
+pub struct bvisor::Decision
+pub bvisor::Decision::admit: bool
+pub bvisor::Decision::membranes: alloc::vec::Vec<bool>
+pub bvisor::Decision::refusal_code: u64
+pub struct bvisor::DeniedAttempt
+pub bvisor::DeniedAttempt::detail: alloc::string::String
+pub bvisor::DeniedAttempt::requirement: bvisor::BoundaryRequirement
+pub struct bvisor::DerivedMinimums
+pub bvisor::DerivedMinimums::cpu_micros: u64
+pub bvisor::DerivedMinimums::handle_count: u64
+pub bvisor::DerivedMinimums::network_bytes: u64
+pub bvisor::DerivedMinimums::process_count: u64
+pub bvisor::DerivedMinimums::resident_bytes: u64
+pub bvisor::DerivedMinimums::storage_bytes: u64
+pub bvisor::DerivedMinimums::wall_micros: u64
+pub struct bvisor::DispositionState
+pub bvisor::DispositionState::applied: bool
+pub bvisor::DispositionState::decided: core::option::Option<bvisor::DispositionAction>
+pub bvisor::DispositionState::failed: bool
+pub struct bvisor::EnvEntry
+pub bvisor::EnvEntry::name: alloc::string::String
+pub bvisor::EnvEntry::source: bvisor::EnvSource
+impl bvisor::EnvEntry
+pub fn bvisor::EnvEntry::lease(name: impl core::convert::Into<alloc::string::String>, lease: bvisor::SecretRef) -> Self
+pub fn bvisor::EnvEntry::literal(name: impl core::convert::Into<alloc::string::String>, value: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct bvisor::EvidenceRequirements
+pub bvisor::EvidenceRequirements::require_captured_streams: bool
+pub bvisor::EvidenceRequirements::require_exit_status: bool
+impl bvisor::EvidenceRequirements
+pub fn bvisor::EvidenceRequirements::required_claims(&self) -> bvisor::EvidenceSet
+pub struct bvisor::EvidenceSet(_)
+impl bvisor::EvidenceSet
+pub fn bvisor::EvidenceSet::contains(&self, claim: bvisor::EvidenceClaim) -> bool
+pub fn bvisor::EvidenceSet::extend_from(&mut self, other: &Self)
+pub fn bvisor::EvidenceSet::insert(&mut self, claim: bvisor::EvidenceClaim) -> bool
+pub fn bvisor::EvidenceSet::intersection(&self, other: &Self) -> Self
+pub fn bvisor::EvidenceSet::is_empty(&self) -> bool
+pub fn bvisor::EvidenceSet::is_subset(&self, other: &Self) -> bool
+pub fn bvisor::EvidenceSet::iter(&self) -> impl core::iter::Iterator<Item = bvisor::EvidenceClaim> + '_
+pub fn bvisor::EvidenceSet::len(&self) -> usize
+pub fn bvisor::EvidenceSet::new() -> Self
+pub fn bvisor::EvidenceSet::union(&self, other: &Self) -> Self
+impl core::iter::traits::collect::FromIterator<bvisor::EvidenceClaim> for bvisor::EvidenceSet
+pub fn bvisor::EvidenceSet::from_iter<I: core::iter::IntoIterator<Item = bvisor::EvidenceClaim>>(iter: I) -> Self
+pub struct bvisor::InertBackend
+impl bvisor::InertBackend
+pub const bvisor::InertBackend::ID: &'static str
+pub fn bvisor::InertBackend::new() -> Self
+impl bvisor::Backend for bvisor::InertBackend
+pub fn bvisor::InertBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::InertBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::InertBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::InertBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::InertBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::InertBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::InertBackend::support(&self) -> &bvisor::SupportMatrix
+impl core::default::Default for bvisor::InertBackend
+pub fn bvisor::InertBackend::default() -> Self
+pub struct bvisor::InputDecl
+pub bvisor::InputDecl::width: bvisor::Width
+pub struct bvisor::InputSlot(pub u16)
+pub struct bvisor::Lane
+impl bvisor::Lane
+pub fn bvisor::Lane::bit(value: bool) -> Self
+pub fn bvisor::Lane::bits(&self) -> &[bool]
+pub fn bvisor::Lane::from_bits(bits: alloc::vec::Vec<bool>) -> Self
+pub fn bvisor::Lane::from_le_bytes(bytes: &[u8], width: bvisor::Width) -> Self
+pub fn bvisor::Lane::width_bits(&self) -> usize
+pub fn bvisor::Lane::zeros(width: bvisor::Width) -> Self
+pub struct bvisor::LinuxBackend
+impl bvisor::LinuxBackend
+pub const bvisor::LinuxBackend::ID: &'static str
+pub fn bvisor::LinuxBackend::new() -> Self
+pub fn bvisor::LinuxBackend::with_launcher_path(launcher_path: std::path::PathBuf) -> Self
+pub fn bvisor::LinuxBackend::with_secret_resolver(self, resolver: alloc::sync::Arc<(dyn bvisor::SecretResolver + core::marker::Send + core::marker::Sync)>) -> Self
+impl bvisor::Backend for bvisor::LinuxBackend
+pub fn bvisor::LinuxBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::LinuxBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::LinuxBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::LinuxBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::LinuxBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::LinuxBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::LinuxBackend::support(&self) -> &bvisor::SupportMatrix
+impl core::default::Default for bvisor::LinuxBackend
+pub fn bvisor::LinuxBackend::default() -> Self
+pub struct bvisor::LookupTable
+pub bvisor::LookupTable::entries: alloc::vec::Vec<alloc::vec::Vec<u8>>
+pub bvisor::LookupTable::key_width: bvisor::Width
+pub struct bvisor::LoweringSchedule
+impl bvisor::LoweringSchedule
+pub fn bvisor::LoweringSchedule::digest(&self) -> core::result::Result<bvisor::Digest32, bvisor::LoweringError>
+pub fn bvisor::LoweringSchedule::entries(&self) -> &[bvisor::ScheduleEntry]
+pub fn bvisor::LoweringSchedule::is_empty(&self) -> bool
+pub fn bvisor::LoweringSchedule::len(&self) -> usize
+pub fn bvisor::LoweringSchedule::steps(&self) -> impl core::iter::Iterator<Item = &bvisor::PrimitiveId>
+pub struct bvisor::MapSecretResolver
+impl bvisor::MapSecretResolver
+pub fn bvisor::MapSecretResolver::new() -> Self
+pub fn bvisor::MapSecretResolver::with(self, reference: impl core::convert::Into<alloc::string::String>, value: impl core::convert::Into<alloc::string::String>) -> Self
+impl bvisor::SecretResolver for bvisor::MapSecretResolver
+pub fn bvisor::MapSecretResolver::resolve(&self, reference: &bvisor::SecretRef) -> core::result::Result<alloc::string::String, bvisor::SecretResolveError>
+pub struct bvisor::MechanismDigest(pub [u8; 32])
+impl bvisor::MechanismDigest
+pub fn bvisor::MechanismDigest::of_mechanism(mechanism: &str) -> Self
+pub fn bvisor::MechanismDigest::to_hex(self) -> alloc::string::String
+pub struct bvisor::NetDest
+pub bvisor::NetDest::host: alloc::string::String
+pub bvisor::NetDest::port: u16
+pub struct bvisor::Node
+pub bvisor::Node::op: bvisor::NodeOp
+pub bvisor::Node::operands: alloc::vec::Vec<bvisor::NodeId>
+pub bvisor::Node::width: bvisor::Width
+pub struct bvisor::NodeId(pub u32)
+pub struct bvisor::ObservedFact
+pub bvisor::ObservedFact::detail: alloc::string::String
+pub bvisor::ObservedFact::kind: alloc::string::String
+pub struct bvisor::Outputs
+pub bvisor::Outputs::admit: bvisor::NodeId
+pub bvisor::Outputs::membranes: alloc::vec::Vec<bvisor::NodeId>
+pub bvisor::Outputs::refusal_code: bvisor::NodeId
+pub struct bvisor::PathSet
+pub bvisor::PathSet::roots: alloc::vec::Vec<alloc::string::String>
+impl bvisor::PathSet
+pub fn bvisor::PathSet::empty() -> Self
+pub struct bvisor::Planned
+impl bvisor::BoundaryState for bvisor::Planned
+pub struct bvisor::PlannerInputs
+pub bvisor::PlannerInputs::enforcement: alloc::vec::Vec<u8>
+pub bvisor::PlannerInputs::evidence_available: u16
+pub bvisor::PlannerInputs::evidence_required: u16
+pub struct bvisor::PrimitiveDeclInputs
+pub bvisor::PrimitiveDeclInputs::conflicts: u64
+pub bvisor::PrimitiveDeclInputs::covers: u64
+pub bvisor::PrimitiveDeclInputs::decl_digest: u64
+pub bvisor::PrimitiveDeclInputs::param_digest: u64
+pub bvisor::PrimitiveDeclInputs::phase: u8
+pub bvisor::PrimitiveDeclInputs::prerequisites: u64
+pub struct bvisor::PrimitiveId(_)
+impl bvisor::PrimitiveId
+pub fn bvisor::PrimitiveId::as_str(&self) -> &str
+pub fn bvisor::PrimitiveId::new(id: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for bvisor::PrimitiveId
+pub fn bvisor::PrimitiveId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct bvisor::PrimitiveVersion(_)
+impl bvisor::PrimitiveVersion
+pub fn bvisor::PrimitiveVersion::get(self) -> u32
+pub fn bvisor::PrimitiveVersion::new(version: u32) -> Self
+impl core::fmt::Display for bvisor::PrimitiveVersion
+pub fn bvisor::PrimitiveVersion::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct bvisor::Privilege(_)
+impl bvisor::Privilege
+pub fn bvisor::Privilege::as_str(&self) -> &str
+pub fn bvisor::Privilege::new(name: impl core::convert::Into<alloc::string::String>) -> Self
+impl core::fmt::Display for bvisor::Privilege
+pub fn bvisor::Privilege::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct bvisor::ProfileFacts
+pub bvisor::ProfileFacts::has_cgroup_kill: bool
+pub bvisor::ProfileFacts::has_pids_peak: bool
+pub bvisor::ProfileFacts::has_seccomp_filter: bool
+pub bvisor::ProfileFacts::has_unprivileged_userns: bool
+pub bvisor::ProfileFacts::landlock_abi: i64
+pub struct bvisor::ProfileFloor
+pub bvisor::ProfileFloor::landlock_abi_min: core::option::Option<u8>
+pub bvisor::ProfileFloor::requires_cgroup_kill: bool
+pub bvisor::ProfileFloor::requires_pids_peak: bool
+pub bvisor::ProfileFloor::requires_seccomp_filter: bool
+pub bvisor::ProfileFloor::requires_unprivileged_userns: bool
+impl bvisor::ProfileFloor
+pub const fn bvisor::ProfileFloor::cgroup_descendant_boundary() -> Self
+pub fn bvisor::ProfileFloor::satisfied_by(&self, facts: &bvisor::ProfileFacts) -> bool
+pub const fn bvisor::ProfileFloor::seccomp_filter() -> Self
+pub const fn bvisor::ProfileFloor::structural() -> Self
+pub const fn bvisor::ProfileFloor::unprivileged_userns_netns() -> Self
+pub struct bvisor::ProgramCertificate
+pub bvisor::ProgramCertificate::bit_depth: u32
+pub bvisor::ProgramCertificate::digest: bvisor::AdmissionProgramHash
+pub bvisor::ProgramCertificate::input_width: bvisor::Width
+pub bvisor::ProgramCertificate::node_count: usize
+pub bvisor::ProgramCertificate::nodes: alloc::vec::Vec<bvisor::CertNode>
+pub bvisor::ProgramCertificate::schema_version: u16
+pub struct bvisor::ProgramLimits
+pub bvisor::ProgramLimits::depth_coeff: u32
+pub bvisor::ProgramLimits::depth_const: u32
+pub bvisor::ProgramLimits::max_width: u16
+pub bvisor::ProgramLimits::node_base: u32
+pub bvisor::ProgramLimits::node_per_width: u32
+impl bvisor::ProgramLimits
+pub fn bvisor::ProgramLimits::check(&self, program: &bvisor::AdmissionProgram) -> core::result::Result<(), bvisor::LimitViolation>
+pub fn bvisor::ProgramLimits::max_bit_depth(&self, width: bvisor::Width) -> u32
+pub fn bvisor::ProgramLimits::max_nodes(&self, width: bvisor::Width) -> u64
+pub struct bvisor::ProofReceipt
+pub bvisor::ProofReceipt::independent_solver: alloc::string::String
+pub bvisor::ProofReceipt::independent_verdict: alloc::string::String
+pub bvisor::ProofReceipt::planted_verdict: alloc::string::String
+pub bvisor::ProofReceipt::primary_solver: alloc::string::String
+pub bvisor::ProofReceipt::primary_verdicts: alloc::vec::Vec<alloc::string::String>
+pub bvisor::ProofReceipt::smt_digest: alloc::string::String
+pub struct bvisor::QualificationRow
+pub bvisor::QualificationRow::backend: &'static str
+pub bvisor::QualificationRow::key: bvisor::RequirementKind
+pub bvisor::QualificationRow::mechanism: &'static str
+pub bvisor::QualificationRow::profile_floor: bvisor::ProfileFloor
+pub bvisor::QualificationRow::proof_receipts: &'static [&'static str]
+pub bvisor::QualificationRow::status: bvisor::QualificationStatus
+impl bvisor::QualificationRow
+pub fn bvisor::QualificationRow::mechanism_digest(&self) -> bvisor::MechanismDigest
+pub struct bvisor::QuarantineRecord
+pub bvisor::QuarantineRecord::kind: alloc::string::String
+pub bvisor::QuarantineRecord::reference: alloc::string::String
+pub struct bvisor::RecoveryProbe
+pub bvisor::RecoveryProbe::artifacts: alloc::collections::btree::map::BTreeMap<bvisor::ArtifactId, bvisor::ArtifactReality>
+pub bvisor::RecoveryProbe::orphans: alloc::vec::Vec<bvisor::QuarantineRecord>
+pub bvisor::RecoveryProbe::torn_report: bool
+impl bvisor::RecoveryProbe
+pub fn bvisor::RecoveryProbe::any_promoted(&self) -> bool
+pub struct bvisor::Reported
+impl bvisor::BoundaryState for bvisor::Reported
+pub struct bvisor::RequirementInputs
+pub bvisor::RequirementInputs::conflict_forbidden: u64
+pub bvisor::RequirementInputs::conflict_present: u64
+pub bvisor::RequirementInputs::enforcement: u8
+pub bvisor::RequirementInputs::evidence_available: u64
+pub bvisor::RequirementInputs::evidence_required: u64
+pub struct bvisor::RunView
+pub bvisor::RunView::attempt: bvisor::AttemptId
+pub bvisor::RunView::dispositions: alloc::collections::btree::map::BTreeMap<bvisor::ArtifactId, bvisor::DispositionState>
+pub bvisor::RunView::plan_id: bvisor::BoundaryPlanHash
+pub bvisor::RunView::recovery_recorded: bool
+pub bvisor::RunView::reported: bool
+pub bvisor::RunView::started: bool
+impl bvisor::RunView
+pub fn bvisor::RunView::new(attempt: bvisor::AttemptId, plan_id: bvisor::BoundaryPlanHash) -> Self
+pub fn bvisor::RunView::observe_disposition(&mut self, event: &bvisor::BoundaryDispositionEvent)
+pub fn bvisor::RunView::observe_recovery(&mut self, _event: &bvisor::BoundaryRecoveryEvent)
+pub fn bvisor::RunView::observe_report(&mut self, _event: &bvisor::BoundaryReportEvent)
+pub fn bvisor::RunView::observe_started(&mut self, _event: &bvisor::BoundaryStartedEvent)
+pub struct bvisor::ScaffoldingBackend
+impl bvisor::ScaffoldingBackend
+pub fn bvisor::ScaffoldingBackend::macos() -> Self
+pub fn bvisor::ScaffoldingBackend::wasm() -> Self
+pub fn bvisor::ScaffoldingBackend::windows() -> Self
+impl bvisor::Backend for bvisor::ScaffoldingBackend
+pub fn bvisor::ScaffoldingBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::ScaffoldingBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::ScaffoldingBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::ScaffoldingBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::ScaffoldingBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::ScaffoldingBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::ScaffoldingBackend::support(&self) -> &bvisor::SupportMatrix
+pub struct bvisor::ScheduleEntry
+impl bvisor::ScheduleEntry
+pub fn bvisor::ScheduleEntry::decl_digest(&self) -> &bvisor::Digest32
+pub fn bvisor::ScheduleEntry::id(&self) -> &bvisor::PrimitiveId
+pub fn bvisor::ScheduleEntry::param_digest(&self) -> &bvisor::Digest32
+pub fn bvisor::ScheduleEntry::phase(&self) -> bvisor::LoweringPhase
+pub fn bvisor::ScheduleEntry::version(&self) -> bvisor::PrimitiveVersion
+pub struct bvisor::ScheduleInputs
+pub bvisor::ScheduleInputs::declarations: alloc::vec::Vec<bvisor::PrimitiveDeclInputs>
+pub bvisor::ScheduleInputs::required: u64
+pub bvisor::ScheduleInputs::schedule: alloc::vec::Vec<bvisor::ScheduleSlotInputs>
+pub struct bvisor::ScheduleShape
+pub bvisor::ScheduleShape::covers_width: bvisor::Width
+pub bvisor::ScheduleShape::declarations: usize
+pub bvisor::ScheduleShape::digest_width: bvisor::Width
+pub bvisor::ScheduleShape::index_width: bvisor::Width
+pub bvisor::ScheduleShape::phase_width: bvisor::Width
+pub bvisor::ScheduleShape::slots: usize
+pub bvisor::ScheduleShape::universe_width: bvisor::Width
+pub struct bvisor::ScheduleSlotInputs
+pub bvisor::ScheduleSlotInputs::claimed_decl_digest: u64
+pub bvisor::ScheduleSlotInputs::claimed_param_digest: u64
+pub bvisor::ScheduleSlotInputs::primitive: u64
+#[non_exhaustive] pub struct bvisor::SeccompEvidence
+pub bvisor::SeccompEvidence::action_profile: alloc::vec::Vec<bvisor::SeccompActionKind>
+pub bvisor::SeccompEvidence::bpf_digest: bvisor::Digest32
+pub bvisor::SeccompEvidence::observed_installed_mode: core::option::Option<bvisor::SeccompObservedMode>
+pub bvisor::SeccompEvidence::policy_digest: bvisor::Digest32
+pub bvisor::SeccompEvidence::seccompiler_version: alloc::string::String
+pub bvisor::SeccompEvidence::target_arch: bvisor::SeccompArch
+pub struct bvisor::SeccompPolicy
+impl bvisor::SeccompPolicy
+pub fn bvisor::SeccompPolicy::allow(self, syscall: bvisor::Syscall) -> Self
+pub fn bvisor::SeccompPolicy::allowlist(&self) -> impl core::iter::Iterator<Item = bvisor::Syscall> + '_
+pub fn bvisor::SeccompPolicy::compile(&self, arch: bvisor::SeccompArch) -> core::result::Result<bvisor::CompiledFilter, bvisor::SeccompCompileError>
+pub fn bvisor::SeccompPolicy::default_action(&self) -> bvisor::DefaultAction
+pub fn bvisor::SeccompPolicy::deny_new_tasks(deny_action: bvisor::DefaultAction) -> Self
+pub fn bvisor::SeccompPolicy::denylist(deny_action: bvisor::DefaultAction, deny_syscalls: impl core::iter::IntoIterator<Item = bvisor::Syscall>) -> Self
+pub fn bvisor::SeccompPolicy::is_denylist(&self) -> bool
+pub fn bvisor::SeccompPolicy::launcher_base(default_action: bvisor::DefaultAction) -> Self
+pub fn bvisor::SeccompPolicy::mandatory_base() -> [bvisor::Syscall; 4]
+pub fn bvisor::SeccompPolicy::network_deny_did(deny_action: bvisor::DefaultAction) -> Self
+pub fn bvisor::SeccompPolicy::policy_digest(&self) -> core::result::Result<[u8; 32], bvisor::SeccompCompileError>
+pub fn bvisor::SeccompPolicy::socket_syscall() -> bvisor::Syscall
+pub fn bvisor::SeccompPolicy::task_creation_syscalls() -> alloc::vec::Vec<bvisor::Syscall>
+pub struct bvisor::SecretRef(pub alloc::string::String)
+impl bvisor::SecretRef
+pub fn bvisor::SecretRef::id(&self) -> &str
+pub fn bvisor::SecretRef::new(id: impl core::convert::Into<alloc::string::String>) -> Self
+pub struct bvisor::Spec
+impl bvisor::BoundaryState for bvisor::Spec
+pub struct bvisor::StagedArtifact
+pub bvisor::StagedArtifact::artifact_id: bvisor::ArtifactId
+pub bvisor::StagedArtifact::content_hash: bvisor::ContentHash
+pub bvisor::StagedArtifact::name: alloc::string::String
+pub struct bvisor::Started
+impl bvisor::BoundaryState for bvisor::Started
+pub struct bvisor::StdStreams
+pub bvisor::StdStreams::stderr: bool
+pub bvisor::StdStreams::stdin: bool
+pub bvisor::StdStreams::stdout: bool
+impl bvisor::StdStreams
+pub fn bvisor::StdStreams::capture_out_err() -> Self
+pub struct bvisor::SupportMatrix
+impl bvisor::SupportMatrix
+pub fn bvisor::SupportMatrix::best_case_for(&self, kind: bvisor::RequirementKind) -> bvisor::SupportVerdict
+pub fn bvisor::SupportMatrix::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::SupportMatrix::declared_kinds(&self) -> alloc::vec::Vec<bvisor::RequirementKind>
+pub fn bvisor::SupportMatrix::declares(&self, kind: bvisor::RequirementKind) -> bool
+pub fn bvisor::SupportMatrix::from_best_case(best_case: alloc::collections::btree::map::BTreeMap<bvisor::RequirementKind, bvisor::SupportVerdict>) -> Self
+pub struct bvisor::SupportVerdict
+pub bvisor::SupportVerdict::enforcement: bvisor::Enforcement
+pub bvisor::SupportVerdict::evidence: bvisor::EvidenceSet
+impl bvisor::SupportVerdict
+pub fn bvisor::SupportVerdict::meet(&self, other: &Self) -> Self
+pub fn bvisor::SupportVerdict::new(enforcement: bvisor::Enforcement, evidence: bvisor::EvidenceSet) -> Self
+pub fn bvisor::SupportVerdict::unsupported() -> Self
+pub struct bvisor::Syscall
+impl bvisor::Syscall
+pub fn bvisor::Syscall::name(self) -> &'static str
+pub fn bvisor::Syscall::number(self) -> i64
+pub struct bvisor::TranslatedCircuit
+pub bvisor::TranslatedCircuit::admit: alloc::string::String
+pub bvisor::TranslatedCircuit::body: alloc::string::String
+pub struct bvisor::WasmBackend
+impl bvisor::WasmBackend
+pub const bvisor::WasmBackend::ID: &'static str
+pub fn bvisor::WasmBackend::new() -> Self
+pub fn bvisor::WasmBackend::with_secret_resolver(resolver: alloc::sync::Arc<(dyn bvisor::SecretResolver + core::marker::Send + core::marker::Sync)>) -> Self
+impl bvisor::Backend for bvisor::WasmBackend
+pub fn bvisor::WasmBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::WasmBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::WasmBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::WasmBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::WasmBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::WasmBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::WasmBackend::support(&self) -> &bvisor::SupportMatrix
+impl core::default::Default for bvisor::WasmBackend
+pub fn bvisor::WasmBackend::default() -> Self
+pub struct bvisor::Width(_)
+impl bvisor::Width
+pub const fn bvisor::Width::get(self) -> u16
+pub fn bvisor::Width::new(bits: u16) -> core::option::Option<Self>
+pub const fn bvisor::Width::one() -> Self
+pub const bvisor::ADMISSION_CIRCUIT_PROOF: bvisor::ProofStatus
+pub const bvisor::ADMISSION_PROGRAM_SCHEMA_VERSION: u16
+pub const bvisor::BOUNDARY_PLAN_SCHEMA_VERSION: u16
+pub const bvisor::BOUNDARY_REPORT_SCHEMA_VERSION: u16
+pub const bvisor::FROZEN_LIMITS: bvisor::ProgramLimits
+pub const bvisor::LINUX_QUALIFICATION_LEDGER: &[bvisor::QualificationRow]
+pub const bvisor::MAX_ENV_ENTRIES: usize
+pub const bvisor::MAX_ENV_TOTAL_BYTES: usize
+pub const bvisor::MAX_LOOKUP_ENTRIES: usize
+pub const bvisor::MAX_PRIMITIVES: usize
+pub const bvisor::MAX_WIDTH: u16
+pub const bvisor::SECCOMPILER_VERSION: &str
+pub const bvisor::WASM_QUALIFICATION_LEDGER: &[bvisor::QualificationRow]
+pub trait bvisor::Backend: core::marker::Send + core::marker::Sync
+pub fn bvisor::Backend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::Backend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::Backend::id(&self) -> bvisor::BackendId
+pub fn bvisor::Backend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::Backend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::Backend::profile(&self, snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::Backend::support(&self) -> &bvisor::SupportMatrix
+impl bvisor::Backend for bvisor::InertBackend
+pub fn bvisor::InertBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::InertBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::InertBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::InertBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::InertBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::InertBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::InertBackend::support(&self) -> &bvisor::SupportMatrix
+impl bvisor::Backend for bvisor::LinuxBackend
+pub fn bvisor::LinuxBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::LinuxBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::LinuxBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::LinuxBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::LinuxBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::LinuxBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::LinuxBackend::support(&self) -> &bvisor::SupportMatrix
+impl bvisor::Backend for bvisor::ScaffoldingBackend
+pub fn bvisor::ScaffoldingBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::ScaffoldingBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::ScaffoldingBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::ScaffoldingBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::ScaffoldingBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::ScaffoldingBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::ScaffoldingBackend::support(&self) -> &bvisor::SupportMatrix
+impl bvisor::Backend for bvisor::WasmBackend
+pub fn bvisor::WasmBackend::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::WasmBackend::execute(&self, plan: &bvisor::BoundaryPlan) -> bvisor::BoundaryReportBody
+pub fn bvisor::WasmBackend::id(&self) -> bvisor::BackendId
+pub fn bvisor::WasmBackend::mechanism(&self, requirement: &bvisor::BoundaryRequirement, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::WasmBackend::probe(&self) -> bvisor::BackendProfileSnapshot
+pub fn bvisor::WasmBackend::profile(&self, _snap: &bvisor::BackendProfileSnapshot) -> bvisor::BackendProfile
+pub fn bvisor::WasmBackend::support(&self) -> &bvisor::SupportMatrix
+pub trait bvisor::BoundaryState: bvisor::contract::lifecycle::sealed::Sealed
+impl bvisor::BoundaryState for bvisor::Planned
+impl bvisor::BoundaryState for bvisor::Reported
+impl bvisor::BoundaryState for bvisor::Spec
+impl bvisor::BoundaryState for bvisor::Started
+pub trait bvisor::PrimitiveDecl
+pub fn bvisor::PrimitiveDecl::classify(&self, req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::PrimitiveDecl::conflicts(&self) -> &[bvisor::PrimitiveId]
+pub fn bvisor::PrimitiveDecl::covers(&self) -> &[bvisor::RequirementKind]
+pub fn bvisor::PrimitiveDecl::id(&self) -> bvisor::PrimitiveId
+pub fn bvisor::PrimitiveDecl::phase(&self) -> bvisor::LoweringPhase
+pub fn bvisor::PrimitiveDecl::prerequisites(&self) -> &[bvisor::PrimitiveId]
+pub fn bvisor::PrimitiveDecl::required_privileges(&self) -> &[bvisor::Privilege]
+pub fn bvisor::PrimitiveDecl::version(&self) -> bvisor::PrimitiveVersion
+pub fn bvisor::PrimitiveDecl::witness(&self, observed: &bvisor::BoundaryReportBody, out: &mut bvisor::EvidenceSet)
+pub trait bvisor::SecretResolver
+pub fn bvisor::SecretResolver::resolve(&self, reference: &bvisor::SecretRef) -> core::result::Result<alloc::string::String, bvisor::SecretResolveError>
+impl bvisor::SecretResolver for bvisor::MapSecretResolver
+pub fn bvisor::MapSecretResolver::resolve(&self, reference: &bvisor::SecretRef) -> core::result::Result<alloc::string::String, bvisor::SecretResolveError>
+pub fn bvisor::adjudicate_dimension(request: &bvisor::BudgetRequest, availability: &bvisor::BudgetAvailability, profile_digest: bvisor::Digest32) -> core::result::Result<bvisor::AdmittedBudget, bvisor::BudgetFailure>
+pub fn bvisor::budget_admit(requirements: &bvisor::BudgetRequirements, profile: &bvisor::BudgetProfile, derived: &bvisor::DerivedMinimums, profile_digest: bvisor::Digest32) -> core::result::Result<bvisor::AdmittedBudgets, bvisor::BudgetRefusal>
+pub fn bvisor::budget_membrane_equivalence_smt(dims: usize, budget_width: bvisor::Width, evidence_width: bvisor::Width) -> core::result::Result<alloc::string::String, bvisor::QfBvError>
+pub fn bvisor::budget_planted_disagreement_smt(dims: usize, budget_width: bvisor::Width, evidence_width: bvisor::Width) -> core::result::Result<alloc::string::String, bvisor::QfBvError>
+pub fn bvisor::classify_via_primitives(primitives: &[&dyn bvisor::PrimitiveDecl], req: &bvisor::BoundaryRequirement, profile: &bvisor::BackendProfile) -> bvisor::SupportVerdict
+pub fn bvisor::compile_admission(shape: &bvisor::AdmissionShape) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_budget_detail(dims: usize, budget_width: bvisor::Width, evidence_width: bvisor::Width) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_budget_membrane(dims: usize, budget_width: bvisor::Width, evidence_width: bvisor::Width) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_conflict_membrane(reqs: usize, width: bvisor::Width) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_evidence_membrane(reqs: usize, evidence_width: bvisor::Width) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_profile_drift_membrane(hash_width: bvisor::Width) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_schedule(primitives: &[&dyn bvisor::PrimitiveDecl]) -> core::result::Result<bvisor::LoweringSchedule, bvisor::LoweringError>
+pub fn bvisor::compile_schedule_membrane(shape: &bvisor::ScheduleShape) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compile_support_membrane(reqs: usize) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ProgramError>
+pub fn bvisor::compose_membranes(builder: &mut bvisor::CircuitBuilder, membranes: &[bvisor::NodeId]) -> (bvisor::NodeId, bvisor::NodeId)
+pub fn bvisor::decode_validated(bytes: &[u8], limits: &bvisor::ProgramLimits) -> core::result::Result<bvisor::AdmissionProgram, bvisor::ValidationError>
+pub fn bvisor::derive_minimums(spec: &bvisor::BoundarySpec) -> bvisor::DerivedMinimums
+pub fn bvisor::enforced_claim_is_qualified(claim: bvisor::Enforcement, qualification: bvisor::QualificationStatus) -> bool
+pub fn bvisor::evaluate(program: &bvisor::AdmissionProgram, inputs: &[bvisor::Lane]) -> core::result::Result<bvisor::Decision, bvisor::EvalError>
+pub fn bvisor::linux_ledger_row(key: bvisor::RequirementKind) -> core::option::Option<&'static bvisor::QualificationRow>
+pub fn bvisor::linux_mechanism(primitive: &str, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub fn bvisor::lower_env(policy: &bvisor::EnvPolicy, resolver: &dyn bvisor::SecretResolver) -> core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, bvisor::EnvLowerError>
+pub fn bvisor::planner_reference(inputs: &bvisor::PlannerInputs) -> bvisor::AdmissionOutcome
+pub fn bvisor::planner_shadow_check(inputs: &bvisor::PlannerInputs) -> core::result::Result<bvisor::AdmissionOutcome, bvisor::AdmissionDivergence>
+pub fn bvisor::reconcile(view: &bvisor::RunView, probe: &bvisor::RecoveryProbe) -> bvisor::RecoveryAction
+pub fn bvisor::reference_admission(inputs: &bvisor::AdmissionInputs) -> bvisor::AdmissionOutcome
+pub fn bvisor::reference_schedule_admission(inputs: &bvisor::ScheduleInputs) -> bvisor::ScheduleOutcome
+pub fn bvisor::run_confined(spec: &bvisor::BoundarySpec, backend: alloc::sync::Arc<dyn bvisor::Backend>) -> core::result::Result<bvisor::BoundaryReport, bvisor::PlanError>
+pub fn bvisor::schedule_refusal(inputs: &bvisor::ScheduleInputs) -> core::option::Option<bvisor::ScheduleRefusal>
+pub fn bvisor::schedule_shadow_check(inputs: &bvisor::ScheduleInputs) -> core::result::Result<bvisor::ScheduleOutcome, bvisor::ScheduleDivergence>
+pub fn bvisor::shadow_check(inputs: &bvisor::AdmissionInputs) -> core::result::Result<bvisor::AdmissionOutcome, bvisor::AdmissionDivergence>
+pub fn bvisor::shape_of(inputs: &bvisor::ScheduleInputs) -> bvisor::ScheduleShape
+pub fn bvisor::smt_digest(smt: &str) -> alloc::string::String
+pub fn bvisor::translate(program: &bvisor::AdmissionProgram) -> core::result::Result<bvisor::TranslatedCircuit, bvisor::QfBvError>
+pub fn bvisor::validate(program: &bvisor::AdmissionProgram, limits: &bvisor::ProgramLimits) -> core::result::Result<bvisor::ProgramCertificate, bvisor::ValidationError>
+pub fn bvisor::verify_certificate(program: &bvisor::AdmissionProgram, claimed: &bvisor::ProgramCertificate, limits: &bvisor::ProgramLimits) -> core::result::Result<(), bvisor::ValidationError>
+pub fn bvisor::verify_receipt(receipt: &bvisor::ProofReceipt, expected_digest: &str) -> core::result::Result<(), bvisor::ProofGateError>
+pub fn bvisor::wasm_ledger_row(key: bvisor::RequirementKind) -> core::option::Option<&'static bvisor::QualificationRow>
+pub fn bvisor::wasm_mechanism(primitive: &str, enforcement: bvisor::Enforcement) -> alloc::string::String
+pub type bvisor::Digest32 = [u8; 32]
