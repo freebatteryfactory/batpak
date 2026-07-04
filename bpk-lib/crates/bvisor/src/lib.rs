@@ -20,6 +20,7 @@
 //! [`InertBackend`]. No real OS backends, no `SimBackend`, no host wiring yet.
 
 mod backend;
+mod confined;
 mod contract;
 
 #[cfg(feature = "dangerous-test-hooks")]
@@ -30,6 +31,7 @@ pub mod host;
 
 pub use backend::inert::InertBackend;
 pub use backend::scaffolding::ScaffoldingBackend;
+pub use confined::run_confined;
 
 // The per-platform HONEST support matrices are always available (pure data, so
 // the honesty is cross-platform testable). The OS backend STRUCTS are re-exported
