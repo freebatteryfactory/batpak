@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-07-01
+## [0.9.0] - 2026-07-04
+
+### Added
+- `bvisor`: real Wasm confinement backend on the wasmi interpreter + WASI
+  preview1 (`WasmBackend`) — CVE-clean and tokio-free — alongside the Linux
+  backend, plus a warm-execution cache (shared engine + content-addressed
+  compiled-module cache) that amortizes per-run setup.
+- `bvisor::run_confined(spec, backend)` — one-call confined execution wrapping the
+  `BackendRegistry` → `BoundaryPlanner` → `BoundaryRunner` pipeline.
+- First publish of `bvisor` and `hostbat` to crates.io at 0.9.0.
+
+### Changed
+- `bvisor`: the Linux launcher harness (`linux::launch`) and cgroup manager
+  (`linux::cgroup`) are now `pub(crate)` for the release build (re-exported
+  publicly only under `dangerous-test-hooks`), tightening the published API to the
+  contract surface; `linux::protocol` stays public for the launcher binary.
 
 ### Removed
 - Retired the in-repo `bpk-ts` workspace and TypeScript client gates (`just

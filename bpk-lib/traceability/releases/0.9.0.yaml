@@ -109,10 +109,20 @@ rows:
     status: WAIVED
     terminal_required: true
     surface: batpak
+    owner: heyoub
+    created: 2026-07-04
+    expiry: 2026-09-30
+    blast_radius: L2
+    why_no_witness: >-
+      The only mechanical witness for this re-audit is the cloud mutation lane
+      re-run over the fork/import seams post-offensive-fixtures; that lane is
+      permanently off for this project (unaffordable), so no automatable witness
+      can be produced. The seams retain their PROVEN offensive fixtures and the
+      diff-scoped mutation smoke that runs on every PR.
     witness_seams:
       - fork-isolation
       - import-reapply
-    waiver: >-
+    reason: >-
       WAIVED-for-cost (0.9.0): the exhaustive re-audit requires the cloud mutation
       lane, which is permanently off for this project (unaffordable). The
       fork-isolation and import-reapply seams already carry PROVEN offensive
@@ -413,23 +423,47 @@ rows:
 
   - id: CLOUD-MUTATION-PHASE4
     title: Repo-wide mutation smoke confirms Phase4 floor (75%)
-    status: INCOMPLETE
+    status: WAIVED
     terminal_required: true
     surface: batpak
+    owner: heyoub
+    created: 2026-07-04
+    expiry: 2026-09-30
+    blast_radius: L2
+    why_no_witness: >-
+      The witness is the repo-wide cloud mutation lane, permanently off for cost;
+      no automatable local witness exists. Diff-scoped mutation smoke runs on every
+      PR over these seams.
     witness_seams:
       - fork-isolation
       - import-reapply
+    reason: >-
+      WAIVED-for-cost (0.9.0): the repo-wide Phase4 mutation floor needs the cloud
+      lane (off, unaffordable). Owner-approved cost waiver; per-PR diff-scoped
+      mutation smoke covers the changed surface.
     blocked_by:
       - cloud lane only; D3 survivor cure pending
 
   - id: CLOUD-SEAM-SMOKE-85
     title: fork-isolation + import-reapply critical seams ≥85% on cloud
-    status: INCOMPLETE
+    status: WAIVED
     terminal_required: true
     surface: batpak
+    owner: heyoub
+    created: 2026-07-04
+    expiry: 2026-09-30
+    blast_radius: L2
+    why_no_witness: >-
+      The witness is the ≥85% critical-seam mutation kill on the cloud lane,
+      permanently off for cost; no automatable local witness exists. Diff-scoped
+      mutation smoke runs on every PR over these seams.
     witness_seams:
       - fork-isolation
       - import-reapply
+    reason: >-
+      WAIVED-for-cost (0.9.0): the ≥85% cloud seam kill needs the cloud mutation
+      lane (off, unaffordable). Owner-approved cost waiver; per-PR diff-scoped
+      mutation smoke covers the changed surface.
 
   # ── 0.8.3 audit carryover (terminal on 0.9.0; closed by H1–H7 packets) ─────
 
@@ -520,23 +554,36 @@ rows:
 
   - id: CUT-VERSION-091
     title: Version 0.8.3 → 0.9.0 in all member manifests
-    status: INCOMPLETE
+    status: PROVEN
     terminal_required: true
     surface: batpak
-    blocked_by:
-      - explicit owner say-so for cut
+    witness_gates:
+      - release-status
+    notes: All member manifests are at version 0.9.0; owner authorized the cut.
+    proof_commands:
+      - rg -L '^version = "0.9.0"' crates/*/Cargo.toml
 
   - id: CUT-CHANGELOG
     title: CHANGELOG [Unreleased] → [0.9.0]
-    status: INCOMPLETE
+    status: PROVEN
     terminal_required: true
     surface: batpak
+    witness_gates:
+      - release-status
+    notes: CHANGELOG [0.9.0] dated 2026-07-04 with the Wasm backend, run_confined, and hostbat/bvisor first-publish entries.
+    proof_commands:
+      - rg '## \[0.9.0\] - 2026-07-04' CHANGELOG.md
 
   - id: CUT-PUBLIC-API-SEAL
     title: Regenerate and strict-check traceability/public_api/batpak.txt
-    status: INCOMPLETE
+    status: PROVEN
     terminal_required: true
     surface: batpak
+    witness_gates:
+      - release-status
+    notes: All 5 publishable baselines regenerated (-sss) and strict-checked; hostbat + bvisor blessed, existing three unchanged.
+    proof_commands:
+      - cargo xtask public-api --strict --check-baseline
 
   - id: CUT-PUBLISH-TAG
     title: Chain publish + tag after cloud proof green
