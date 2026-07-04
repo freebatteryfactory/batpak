@@ -4,8 +4,8 @@
 use bvisor::{
     Backend, BackendId, BackendRegistry, BoundaryPlanner, BoundaryReportBody, BoundaryRunner,
     BoundarySpec, BudgetFinding, BudgetRequirements, Capability, EnvEntry, EnvPolicy,
-    EvidenceRequirements, FdPolicy, FsAccess, FsConfinement, HostControl, MinGuarantee, NetPolicy,
-    Outcome, PathSet, RequirementKind, StdStreams, WasmBackend, Workload,
+    EvidenceRequirements, FdPolicy, FsAccess, FsConfinement, HostControl, MinGuarantee, NetDest,
+    NetPolicy, Outcome, PathSet, RequirementKind, StdStreams, WasmBackend, Workload,
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -261,32 +261,43 @@ fn fuel_exhaustion_maps_to_timeout() {
 #[test]
 fn wasi_socket_capability_is_absent() {
     let fixture = compile_guest("try_socket", include_str!("fixtures/wasm/try_socket.wat"));
-    let mut spec = base_spec(fixture.module_ref());
-    spec.capabilities.push(Capability::Network {
+    // DenyAll admission path runs to completion; the report records the mechanism.
+    let mut deny = base_spec(fixture.module_ref());
+    deny.capabilities.push(Capability::Network {
         policy: NetPolicy::DenyAll,
     });
-    let body = run(&spec);
-    // ANTI-VACUOUS: the guest links cleanly (imports only fd_write + sock_recv,
-    // both provided) and WITNESSES the denial — it attempts sock_recv on a
-    // non-socket fd and traps via `unreachable` iff the call unexpectedly
-    // succeeds. So `Completed` proves the socket op was denied; a reachable
-    // socket would flip the outcome to non-Completed and red this test. It is
-    // NOT an unknown-import link failure and NOT a printed sticker.
-    assert_eq!(
-        body.outcome,
-        Outcome::Completed,
-        "sock_recv on a non-socket fd must be denied (a reachable socket traps): {:?}",
-        body.observed
-    );
+    let body = run(&deny);
+    assert_eq!(body.outcome, Outcome::Completed);
     assert_eq!(body.captured.stdout, Some("inline:13b".to_string()));
-    assert!(
-        body.denied.is_empty(),
-        "socket denial is proven by the guest's witnessed sock_recv failure"
-    );
     assert!(
         observed_contains(&body, "network_deny_all", "no WASI socket"),
         "report must record the no-socket mechanism: {:?}",
         body.observed
+    );
+
+    // ANTI-VACUOUS witness. preview1 exposes no sock_open, so a guest can never
+    // obtain a socket regardless of policy — a guest probe cannot witness a leak (a
+    // leaked socket sits at an fd the guest never names; see the fixture note). The
+    // property that ACTUALLY flips if a network capability is ever added is the
+    // admissibility of a REACHABLE network: the wasm backend installs no allow-list
+    // broker, so an AllowList request MUST be refused. A future broker would make it
+    // admissible and red this. (The ceiling half also lives in coupling_proof_wasm.)
+    let backend = Arc::new(WasmBackend::new());
+    let id = backend.id();
+    let mut registry = BackendRegistry::new();
+    registry.register(Arc::clone(&backend) as Arc<dyn Backend>);
+    let mut reachable = base_spec(fixture.module_ref());
+    reachable.capabilities.push(Capability::Network {
+        policy: NetPolicy::AllowList(vec![NetDest {
+            host: "example".to_string(),
+            port: 443,
+        }]),
+    });
+    assert!(
+        BoundaryPlanner::new(&registry)
+            .plan(&reachable, &id)
+            .is_err(),
+        "a reachable-network (AllowList) request must be refused — no network broker exists"
     );
 }
 
