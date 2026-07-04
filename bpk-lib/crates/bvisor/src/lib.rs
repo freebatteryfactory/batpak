@@ -109,8 +109,9 @@ pub use contract::primitive::{
     classify_via_primitives, LoweringPhase, PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
 };
 pub use contract::qualification::{
-    enforced_claim_is_qualified, linux_ledger_row, linux_mechanism, MechanismDigest, ProfileFacts,
-    ProfileFloor, QualificationRow, QualificationStatus, LINUX_QUALIFICATION_LEDGER,
+    enforced_claim_is_qualified, linux_ledger_row, linux_mechanism, wasm_ledger_row,
+    wasm_mechanism, MechanismDigest, ProfileFacts, ProfileFloor, QualificationRow,
+    QualificationStatus, LINUX_QUALIFICATION_LEDGER, WASM_QUALIFICATION_LEDGER,
 };
 pub use contract::recovery::{
     reconcile, ArtifactFix, ArtifactReality, DispositionState, QuarantineRecord, RecoveryAction,

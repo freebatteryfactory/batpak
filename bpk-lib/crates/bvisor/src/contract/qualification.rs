@@ -307,6 +307,12 @@ pub fn linux_mechanism(primitive: &str, enforcement: Enforcement) -> String {
     format!("linux:{primitive}:{enforcement:?}")
 }
 
+/// Derive the [`MechanismDigest`] source string for a Wasm mechanism.
+#[must_use]
+pub fn wasm_mechanism(primitive: &str, enforcement: Enforcement) -> String {
+    format!("wasm:{primitive}:{enforcement:?}")
+}
+
 /// The COMMITTED Linux qualification ledger (S1): the CURRENTLY-PROVEN cells, each
 /// citing its real passing oracle(s), plus the explicitly-stated non-proven cells.
 ///
@@ -604,6 +610,176 @@ pub const LINUX_QUALIFICATION_LEDGER: &[QualificationRow] = &[
 #[must_use]
 pub fn linux_ledger_row(key: RequirementKind) -> Option<&'static QualificationRow> {
     LINUX_QUALIFICATION_LEDGER.iter().find(|r| r.key == key)
+}
+
+/// The committed Wasm qualification ledger. Every production `Enforced` Wasm
+/// ceiling cell has a `Proven` row backed by the live grid oracle; structurally
+/// unsupported native cells are stated explicitly and stay absent from the ceiling.
+pub const WASM_QUALIFICATION_LEDGER: &[QualificationRow] = &[
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::Filesystem,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:wasi_preopen:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::g1_wasi_preopen_denies_secret_read_outside_declared_root",
+            "crates/bvisor/tests/grid_wasm.rs::g3_wasi_preopen_denies_write_outside_quarantine",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::LaunchWorkload,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:wasi_instantiate:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasm_profile_admits_declared_roots_spec",
+            "crates/bvisor/tests/grid_wasm.rs::g7_wasi_preopen_commit_allows_in_root_output",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::CaptureStreams,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:wasi_stdio:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasi_capture_streams_records_guest_output",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::Environment,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:wasi_env:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasi_env_exact_is_delivered_to_guest",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::TempRoot,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:wasi_preopen_tmp:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasi_temp_root_is_private_and_writable",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::CommitArtifact,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:preopen_commit:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::g7_wasi_preopen_commit_allows_in_root_output",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::DiscardArtifact,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:preopen_commit:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasi_temp_root_is_private_and_writable",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::ListOutputs,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:preopen_readdir:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::g7_wasi_preopen_commit_allows_in_root_output",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::NetworkDenyAll,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:no_socket_cap:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasi_socket_capability_is_absent",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::InheritedFdsNone,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:wasi_stdio:Enforced",
+        status: QualificationStatus::Proven,
+        proof_receipts: &[
+            "crates/bvisor/tests/grid_wasm.rs::wasi_no_inherited_fds_contract_runs_without_raw_fd_authority",
+        ],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::InheritedFdsOnly,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::ChildSpawnDenyNewTasks,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::ChildSpawnAllowThreads,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::ChildSpawnAllowDescendants,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::Kill,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::ExposePath,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+    QualificationRow {
+        backend: "wasm",
+        key: RequirementKind::NetworkAllowList,
+        profile_floor: ProfileFloor::structural(),
+        mechanism: "wasm:none/structurally-unsupported:Unsupported",
+        status: QualificationStatus::FailClosed,
+        proof_receipts: &[],
+    },
+];
+
+/// Look up the committed Wasm ledger row for a requirement key.
+#[must_use]
+pub fn wasm_ledger_row(key: RequirementKind) -> Option<&'static QualificationRow> {
+    WASM_QUALIFICATION_LEDGER.iter().find(|r| r.key == key)
 }
 
 #[cfg(test)]
