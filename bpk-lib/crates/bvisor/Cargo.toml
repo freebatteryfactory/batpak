@@ -4,8 +4,7 @@ version = "0.9.0"
 edition = "2021"
 rust-version = "1.92"
 license = "MIT OR Apache-2.0"
-description = "Publish-false boundary supervisor: platform-agnostic boundary contract (types + fail-closed planner + honest InertBackend). ZERO OS code, ZERO BatPak writes in the trait."
-publish = false
+description = "Sync-first boundary supervisor: platform-agnostic boundary contract (types + fail-closed planner) with real Linux (landlock/seccomp/cgroups) and Wasm (wasmi/WASI) confinement backends. ZERO OS code, ZERO BatPak writes in the Backend trait."
 
 [lib]
 path = "src/lib.rs"
