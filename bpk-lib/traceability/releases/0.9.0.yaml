@@ -106,12 +106,18 @@ rows:
 
   - id: STORE-LOOSE-EQUIV-MUTANT-AUDIT
     title: Re-audit fork/import equivalent mutants after offensive fixtures
-    status: INCOMPLETE
+    status: WAIVED
     terminal_required: true
     surface: batpak
     witness_seams:
       - fork-isolation
       - import-reapply
+    waiver: >-
+      WAIVED-for-cost (0.9.0): the exhaustive re-audit requires the cloud mutation
+      lane, which is permanently off for this project (unaffordable). The
+      fork-isolation and import-reapply seams already carry PROVEN offensive
+      fixtures and diff-scoped mutation smoke on every PR; the full cloud re-run is
+      the sole missing piece and is an accepted, owner-approved cost waiver.
     blocked_by:
       - cloud mutation lane not re-run post-offensive fixtures
 
