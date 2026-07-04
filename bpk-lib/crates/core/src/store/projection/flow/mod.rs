@@ -437,7 +437,19 @@ where
 {
     // 1a: Build replay plan
     let relevant_kinds = T::relevant_event_kinds();
-    let preparation = match store.index.projection_replay_plan(entity, relevant_kinds) {
+    let plan = store.index.projection_replay_plan(entity, relevant_kinds);
+    // `plan_build_us` covers ONLY the plan-construction span. The cache-key,
+    // prefetch, and group-local phases below each start from a fresh mono
+    // timestamp, so every per-phase timing is a disjoint sub-span of the
+    // projection and their floored sum can never exceed `total_us` (which spans
+    // them all). Measuring it from `t_start` after the whole prepare block — as
+    // this did before — made `plan_build_us` overlap its own sub-phases, so
+    // summing them double-counted and `accounted <= total_us` flaked whenever a
+    // sub-phase happened to round up to >=1us on a noisy runner.
+    if let Some(t) = timings.as_deref_mut() {
+        t.plan_build_us = elapsed_us(store.runtime.clock(), t_start);
+    }
+    let preparation = match plan {
         None => ProjectionPreparation::Empty,
         Some(plan) => {
             let t_cache_key = store.runtime.now_mono_ns();
@@ -476,7 +488,7 @@ where
             let group_local_fresh =
                 group_local_projection_freshness(group_local_slot.as_ref(), &replay, freshness)
                     .is_fresh();
-            if let Some(t) = timings.as_deref_mut() {
+            if let Some(t) = timings {
                 t.group_local_lookup_us = elapsed_us(store.runtime.clock(), t_group);
             }
 
@@ -487,9 +499,6 @@ where
             })
         }
     };
-    if let Some(t) = timings {
-        t.plan_build_us = elapsed_us(store.runtime.clock(), t_start);
-    }
     preparation
 }
 
