@@ -1,4 +1,4 @@
-// REAL wasmtime/WASI confinement through WasmBackend::execute().
+// REAL wasmi/WASI confinement through WasmBackend::execute().
 #![cfg(all(feature = "backend-wasm", feature = "dangerous-test-hooks"))]
 
 use bvisor::{
@@ -266,14 +266,22 @@ fn wasi_socket_capability_is_absent() {
         policy: NetPolicy::DenyAll,
     });
     let body = run(&spec);
-    assert!(
-        matches!(body.outcome, Outcome::Failed | Outcome::Unsupported),
-        "missing WASI socket import must not complete as if a socket capability existed: {:?}",
+    // ANTI-VACUOUS: the guest links cleanly (imports only fd_write + sock_recv,
+    // both provided) and WITNESSES the denial — it attempts sock_recv on a
+    // non-socket fd and traps via `unreachable` iff the call unexpectedly
+    // succeeds. So `Completed` proves the socket op was denied; a reachable
+    // socket would flip the outcome to non-Completed and red this test. It is
+    // NOT an unknown-import link failure and NOT a printed sticker.
+    assert_eq!(
+        body.outcome,
+        Outcome::Completed,
+        "sock_recv on a non-socket fd must be denied (a reachable socket traps): {:?}",
         body.observed
     );
+    assert_eq!(body.captured.stdout, Some("inline:13b".to_string()));
     assert!(
         body.denied.is_empty(),
-        "socket denial is proven by absent cap"
+        "socket denial is proven by the guest's witnessed sock_recv failure"
     );
     assert!(
         observed_contains(&body, "network_deny_all", "no WASI socket"),

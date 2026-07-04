@@ -14,7 +14,7 @@ use crate::contract::report::{
     BOUNDARY_REPORT_SCHEMA_VERSION,
 };
 
-/// Map a wasmtime run observation onto the durable report body.
+/// Map a wasmi run observation onto the durable report body.
 pub(super) fn map_observation(
     backend: &WasmBackend,
     plan: &BoundaryPlan,
@@ -24,7 +24,7 @@ pub(super) fn map_observation(
     observed.push(ObservedFact {
         kind: "workload_launched".to_string(),
         detail: format!(
-            "wasmtime module {} (confined={})",
+            "wasmi module {} (confined={})",
             obs.module_ref, obs.filesystem_confined
         ),
     });
@@ -61,7 +61,7 @@ pub(super) fn map_observation(
         observed.push(ObservedFact {
             kind: "fuel_witnessed".to_string(),
             detail: format!(
-                "wasmtime fuel consumed={used} against limit={}",
+                "wasmi fuel consumed={used} against limit={}",
                 plan.budgets.cpu_micros.effective_limit
             ),
         });

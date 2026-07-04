@@ -1,6 +1,6 @@
 //! [`WasmBackend`] real WASI confinement.
 //!
-//! The backend lowers an admitted [`BoundaryPlan`] into a wasmtime +
+//! The backend lowers an admitted [`BoundaryPlan`] into a wasmi +
 //! `wasi_snapshot_preview1` instance. Filesystem authority is expressed only as WASI
 //! preopens, environment is built from the explicit contract policy, stdio is captured
 //! through in-memory WASI streams, and network is denied by never installing socket
@@ -33,7 +33,7 @@ use crate::contract::support::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// The Wasm boundary backend: wasmtime + WASI preopen confinement.
+/// The Wasm boundary backend: wasmi + WASI preopen confinement.
 pub struct WasmBackend {
     id: BackendId,
     support: SupportMatrix,
@@ -65,7 +65,7 @@ impl WasmBackend {
         }
     }
 
-    /// The production ceiling advertised when the wasmtime runtime is present.
+    /// The production ceiling advertised when the wasmi runtime is present.
     #[must_use]
     pub(crate) fn ceiling(&self) -> BackendProfile {
         let mut ceiling = BTreeMap::new();
@@ -154,7 +154,7 @@ impl Backend for WasmBackend {
 
     fn probe(&self) -> BackendProfileSnapshot {
         let mut probed = BTreeMap::new();
-        probed.insert("runtime".to_string(), "wasmtime".to_string());
+        probed.insert("runtime".to_string(), "wasmi".to_string());
         probed.insert("wasi".to_string(), "wasi_snapshot_preview1".to_string());
         probed.insert("filesystem".to_string(), "wasi_preopen".to_string());
         probed.insert("network".to_string(), "no_socket_cap".to_string());
@@ -194,7 +194,7 @@ impl Backend for WasmBackend {
         format!("{}:{primitive}:{enforcement:?}", self.id)
     }
 
-    /// Execute a `Workload::Wasm` guest under wasmtime + WASI confinement.
+    /// Execute a `Workload::Wasm` guest under wasmi + WASI confinement.
     ///
     /// The controlled terminals are report outcomes, not Rust errors: unsupported
     /// native cells and setup gaps return `Unsupported`/`SupervisorFault`, guest traps
@@ -203,7 +203,7 @@ impl Backend for WasmBackend {
     fn execute(&self, plan: &BoundaryPlan) -> BoundaryReportBody {
         let observed = vec![ObservedFact {
             kind: "backend_runtime".to_string(),
-            detail: "wasmtime+wasi_snapshot_preview1".to_string(),
+            detail: "wasmi+wasi_snapshot_preview1".to_string(),
         }];
         match plan_build::build(self, plan, observed) {
             Ok((config, observed)) => {

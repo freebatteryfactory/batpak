@@ -8,7 +8,7 @@
 use crate::contract::budget::{BudgetAvailability, BudgetProfile};
 use crate::contract::capability::{Enforcement, EvidenceClaim, EvidenceSet};
 
-/// The budget profile advertised by the wasmtime backend.
+/// The budget profile advertised by the wasmi backend.
 #[must_use]
 pub(super) fn observed_budget_profile() -> BudgetProfile {
     let mediated = |mechanism: &str| BudgetAvailability {
@@ -24,9 +24,9 @@ pub(super) fn observed_budget_profile() -> BudgetProfile {
         mechanism: mechanism.to_string(),
     };
     BudgetProfile {
-        wall_micros: mediated("wasmtime_fuel:mediated-wall"),
-        cpu_micros: mediated("wasmtime_fuel:mediated-cpu"),
-        resident_bytes: hard("wasmtime_store_limits:memory_size", EvidenceSet::new()),
+        wall_micros: mediated("wasmi_fuel:mediated-wall"),
+        cpu_micros: mediated("wasmi_fuel:mediated-cpu"),
+        resident_bytes: hard("wasmi_store_limits:memory_size", EvidenceSet::new()),
         process_count: hard("wasm_single_instance:no-child-process", EvidenceSet::new()),
         handle_count: mediated("wasi_handles:preopen-stdio"),
         storage_bytes: mediated("wasi_preopen:host-storage"),
