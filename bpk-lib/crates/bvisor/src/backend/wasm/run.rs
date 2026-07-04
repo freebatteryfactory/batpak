@@ -1,4 +1,4 @@
-//! Wasmtime + WASI p1 runner for [`WasmBackend`](super::WasmBackend).
+//! wasmi + WASI p1 runner for [`WasmBackend`](super::WasmBackend).
 //!
 //! The runner installs only the capabilities produced by `plan_build`: explicit
 //! preopens, explicit env, stdio capture pipes, memory limits, and fuel. There is no
@@ -16,21 +16,26 @@ use crate::contract::capability::FsAccess;
 use crate::contract::report::{ExitStatus, Outcome};
 use std::any::Any;
 use std::future::{ready, Future};
-use std::io::Cursor;
+use std::io::{Result as IoResult, Write};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Instant;
-use wasi_common::pipe::WritePipe;
-use wasi_common::table::Table;
-use wasi_common::{
+use wasmi::{
+    Config, Engine, Error as WasmiError, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
+    TrapCode,
+};
+use wasmi_wasi::sync::dir::{Dir as SyncDir, OpenResult as SyncOpenResult};
+use wasmi_wasi::sync::{ambient_authority, clocks_ctx, random_ctx, sched_ctx, Dir as CapDir};
+use wasmi_wasi::wasi_common::pipe::WritePipe;
+use wasmi_wasi::wasi_common::table::Table;
+use wasmi_wasi::wasi_common::{
     dir::{OpenResult, ReaddirCursor, ReaddirEntity, WasiDir},
     file::{FdFlags, Filestat, OFlags},
     Error, ErrorExt, SystemTimeSpec,
 };
-use wasmtime::{Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, Trap};
-use wasmtime_wasi::sync::dir::{Dir as SyncDir, OpenResult as SyncOpenResult};
-use wasmtime_wasi::sync::{ambient_authority, clocks_ctx, random_ctx, sched_ctx, Dir as CapDir};
-use wasmtime_wasi::{I32Exit, WasiCtx};
+use wasmi_wasi::WasiCtx;
+
+const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
 
 /// A boxed, already-resolved future returned by the sync `WasiDir` adapters.
 type ReadyFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -89,7 +94,7 @@ impl WasmTerminal {
     }
 }
 
-/// What the wasmtime runner observed.
+/// What the wasmi runner observed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct WasmRunObservation {
     pub module_ref: String,
@@ -107,6 +112,50 @@ struct WasiStoreState {
     limits: StoreLimits,
 }
 
+#[derive(Debug)]
+struct CaptureBuffer {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+impl CaptureBuffer {
+    fn new() -> Self {
+        Self {
+            bytes: Vec::with_capacity(MAX_CAPTURE_BYTES.min(8192)),
+            truncated: false,
+        }
+    }
+
+    fn into_parts(self) -> (Vec<u8>, bool) {
+        (self.bytes, self.truncated)
+    }
+}
+
+impl Write for CaptureBuffer {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let remaining = MAX_CAPTURE_BYTES.saturating_sub(self.bytes.len());
+        let accepted = remaining.min(buf.len());
+        self.bytes.extend_from_slice(&buf[..accepted]);
+        if accepted < buf.len() {
+            self.truncated = true;
+        }
+        Ok(buf.len())
+    }
+
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> IoResult<usize> {
+        let mut total = 0usize;
+        for buf in bufs {
+            self.write(buf)?;
+            total = total.saturating_add(buf.len());
+        }
+        Ok(total)
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
 /// Instantiate and run the configured guest.
 ///
 /// Returns the run observation; its `terminal` carries the outcome — a guest
@@ -120,22 +169,8 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
         Err(observation) => return *observation,
     };
 
-    let engine = match engine() {
-        Ok(engine) => engine,
-        Err(error) => {
-            notes.push(format!("engine_create_failed={error}"));
-            return observation(
-                config,
-                WasmTerminal::SupervisorFault(error.to_string()),
-                Vec::new(),
-                Vec::new(),
-                None,
-                None,
-                notes,
-            );
-        }
-    };
-    let module = match Module::from_binary(&engine, &bytes) {
+    let engine = engine();
+    let module = match Module::new(&engine, &bytes) {
         Ok(module) => module,
         Err(error) => {
             notes.push(format!("module_compile_failed={error}"));
@@ -151,8 +186,8 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
         }
     };
 
-    let stdout_pipe = WritePipe::new_in_memory();
-    let stderr_pipe = WritePipe::new_in_memory();
+    let stdout_pipe = WritePipe::new(CaptureBuffer::new());
+    let stderr_pipe = WritePipe::new(CaptureBuffer::new());
     let state = match wasi_state(config, stdout_pipe.clone(), stderr_pipe.clone()) {
         Ok(state) => state,
         Err(error) => {
@@ -170,7 +205,7 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
     };
 
     let mut linker: Linker<WasiStoreState> = Linker::new(&engine);
-    if let Err(error) = wasmtime_wasi::add_to_linker(&mut linker, |state| &mut state.wasi) {
+    if let Err(error) = wasmi_wasi::add_to_linker(&mut linker, |state| &mut state.wasi) {
         notes.push(format!("wasi_linker_failed={error}"));
         return observation(
             config,
@@ -199,7 +234,7 @@ pub(super) fn run(config: &WasmRunConfig) -> WasmRunObservation {
     }
 
     let started = Instant::now();
-    let terminal = match linker.instantiate(&mut store, &module) {
+    let terminal = match linker.instantiate_and_start(&mut store, &module) {
         Ok(instance) => match instance.get_typed_func::<(), ()>(&mut store, "_start") {
             Ok(start) => match start.call(&mut store, ()) {
                 Ok(()) => WasmTerminal::Exit(0),
@@ -252,16 +287,16 @@ fn read_module(
     }
 }
 
-fn engine() -> Result<Engine, wasmtime::Error> {
-    let mut config = Config::new();
+fn engine() -> Engine {
+    let mut config = Config::default();
     config.consume_fuel(true);
     Engine::new(&config)
 }
 
 fn wasi_state(
     config: &WasmRunConfig,
-    stdout: WritePipe<Cursor<Vec<u8>>>,
-    stderr: WritePipe<Cursor<Vec<u8>>>,
+    stdout: WritePipe<CaptureBuffer>,
+    stderr: WritePipe<CaptureBuffer>,
 ) -> Result<WasiStoreState, String> {
     let mut wasi = WasiCtx::new(random_ctx(), clocks_ctx(), sched_ctx(), Table::new());
     wasi.set_stdout(Box::new(stdout));
@@ -462,7 +497,7 @@ impl WasiDir for AccessLimitedDir {
         self
     }
 
-    fn open_file<'life0, 'life1, 'async_trait>(
+    fn open_file<'life0, 'life1, 'ready>(
         &'life0 self,
         symlink_follow: bool,
         path: &'life1 str,
@@ -470,11 +505,11 @@ impl WasiDir for AccessLimitedDir {
         read: bool,
         write: bool,
         fdflags: FdFlags,
-    ) -> ReadyFut<'async_trait, Result<OpenResult, Error>>
+    ) -> ReadyFut<'ready, Result<OpenResult, Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.open_file_sync(
             symlink_follow,
@@ -486,145 +521,143 @@ impl WasiDir for AccessLimitedDir {
         )))
     }
 
-    fn create_dir<'life0, 'life1, 'async_trait>(
+    fn create_dir<'life0, 'life1, 'ready>(
         &'life0 self,
         path: &'life1 str,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.create_dir_sync(path)))
     }
 
-    fn readdir<'life0, 'async_trait>(
+    fn readdir<'life0, 'ready>(
         &'life0 self,
         cursor: ReaddirCursor,
-    ) -> ReadyFut<'async_trait, Result<ReaddirEntries, Error>>
+    ) -> ReadyFut<'ready, Result<ReaddirEntries, Error>>
     where
-        'life0: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.readdir_sync(cursor)))
     }
 
-    fn symlink<'life0, 'life1, 'life2, 'async_trait>(
+    fn symlink<'life0, 'life1, 'life2, 'ready>(
         &'life0 self,
         old_path: &'life1 str,
         new_path: &'life2 str,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        'life2: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        'life2: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.symlink_sync(old_path, new_path)))
     }
 
-    fn remove_dir<'life0, 'life1, 'async_trait>(
+    fn remove_dir<'life0, 'life1, 'ready>(
         &'life0 self,
         path: &'life1 str,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.remove_dir_sync(path)))
     }
 
-    fn unlink_file<'life0, 'life1, 'async_trait>(
+    fn unlink_file<'life0, 'life1, 'ready>(
         &'life0 self,
         path: &'life1 str,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.unlink_file_sync(path)))
     }
 
-    fn read_link<'life0, 'life1, 'async_trait>(
+    fn read_link<'life0, 'life1, 'ready>(
         &'life0 self,
         path: &'life1 str,
-    ) -> ReadyFut<'async_trait, Result<PathBuf, Error>>
+    ) -> ReadyFut<'ready, Result<PathBuf, Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.read_link_sync(path)))
     }
 
-    fn get_filestat<'life0, 'async_trait>(
-        &'life0 self,
-    ) -> ReadyFut<'async_trait, Result<Filestat, Error>>
+    fn get_filestat<'life0, 'ready>(&'life0 self) -> ReadyFut<'ready, Result<Filestat, Error>>
     where
-        'life0: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.get_filestat_sync()))
     }
 
-    fn get_path_filestat<'life0, 'life1, 'async_trait>(
+    fn get_path_filestat<'life0, 'life1, 'ready>(
         &'life0 self,
         path: &'life1 str,
         follow_symlinks: bool,
-    ) -> ReadyFut<'async_trait, Result<Filestat, Error>>
+    ) -> ReadyFut<'ready, Result<Filestat, Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.get_path_filestat_sync(path, follow_symlinks)))
     }
 
-    fn rename<'life0, 'life1, 'life2, 'life3, 'async_trait>(
+    fn rename<'life0, 'life1, 'life2, 'life3, 'ready>(
         &'life0 self,
         path: &'life1 str,
         dest_dir: &'life2 dyn WasiDir,
         dest_path: &'life3 str,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        'life2: 'async_trait,
-        'life3: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        'life2: 'ready,
+        'life3: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.rename_sync(path, dest_dir, dest_path)))
     }
 
-    fn hard_link<'life0, 'life1, 'life2, 'life3, 'async_trait>(
+    fn hard_link<'life0, 'life1, 'life2, 'life3, 'ready>(
         &'life0 self,
         path: &'life1 str,
         target_dir: &'life2 dyn WasiDir,
         target_path: &'life3 str,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        'life2: 'async_trait,
-        'life3: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        'life2: 'ready,
+        'life3: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.hard_link_sync(path, target_dir, target_path)))
     }
 
-    fn set_times<'life0, 'life1, 'async_trait>(
+    fn set_times<'life0, 'life1, 'ready>(
         &'life0 self,
         path: &'life1 str,
         atime: Option<SystemTimeSpec>,
         mtime: Option<SystemTimeSpec>,
         follow_symlinks: bool,
-    ) -> ReadyFut<'async_trait, Result<(), Error>>
+    ) -> ReadyFut<'ready, Result<(), Error>>
     where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: Sync + 'async_trait,
+        'life0: 'ready,
+        'life1: 'ready,
+        Self: Sync + 'ready,
     {
         Box::pin(ready(self.set_times_sync(
             path,
@@ -635,13 +668,15 @@ impl WasiDir for AccessLimitedDir {
     }
 }
 
-fn pipe_contents(
-    pipe: WritePipe<Cursor<Vec<u8>>>,
-    notes: &mut Vec<String>,
-    label: &str,
-) -> Vec<u8> {
+fn pipe_contents(pipe: WritePipe<CaptureBuffer>, notes: &mut Vec<String>, label: &str) -> Vec<u8> {
     match pipe.try_into_inner() {
-        Ok(cursor) => cursor.into_inner(),
+        Ok(buffer) => {
+            let (bytes, truncated) = buffer.into_parts();
+            if truncated {
+                notes.push(format!("{label}_capture_truncated={MAX_CAPTURE_BYTES}"));
+            }
+            bytes
+        }
         Err(_) => {
             notes.push(format!("{label}_capture_unavailable=shared_pipe"));
             Vec::new()
@@ -649,14 +684,12 @@ fn pipe_contents(
     }
 }
 
-fn terminal_from_error(error: &wasmtime::Error) -> WasmTerminal {
-    if let Some(exit) = error.downcast_ref::<I32Exit>() {
-        return WasmTerminal::Exit(exit.0);
+fn terminal_from_error(error: &WasmiError) -> WasmTerminal {
+    if let Some(exit) = error.i32_exit_status() {
+        return WasmTerminal::Exit(exit);
     }
-    if let Some(trap) = error.downcast_ref::<Trap>() {
-        if *trap == Trap::OutOfFuel {
-            return WasmTerminal::Timeout(error.to_string());
-        }
+    if error.as_trap_code() == Some(TrapCode::OutOfFuel) {
+        return WasmTerminal::Timeout(error.to_string());
     }
     let detail = error.to_string();
     let lowered = detail.to_ascii_lowercase();

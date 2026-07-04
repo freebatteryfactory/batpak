@@ -10,10 +10,11 @@ use crate::contract::host_control::HostControl;
 use crate::contract::plan::{BoundaryPlan, BoundaryRequirement, Workload};
 use crate::contract::report::{ObservedFact, Outcome};
 use crate::contract::secret::lower_env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MIN_MEMORY_LIMIT: u64 = 64 * 1024;
+const TEMP_ROOT_CREATE_ATTEMPTS: u8 = 64;
 
 static TEMP_ROOT_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -25,7 +26,7 @@ pub(super) struct WasiPreopen {
     pub access: FsAccess,
 }
 
-/// Fully lowered wasmtime/WASI configuration.
+/// Fully lowered wasmi/WASI configuration.
 #[derive(Debug)]
 pub(super) struct WasmRunConfig {
     pub module_ref: String,
@@ -67,6 +68,14 @@ pub(super) fn build(
         }
     };
 
+    let memory_limit = usize_from_u64(
+        plan.budgets
+            .resident_bytes
+            .effective_limit
+            .max(MIN_MEMORY_LIMIT),
+        &mut observed,
+    )?;
+
     let mut config = WasmRunConfig {
         module_ref,
         args: vec!["bvisor-wasm-guest".to_string()],
@@ -74,12 +83,7 @@ pub(super) fn build(
         preopens: Vec::new(),
         temp_roots: Vec::new(),
         fuel: plan.budgets.cpu_micros.effective_limit.max(1),
-        memory_limit: usize_from_u64(
-            plan.budgets
-                .resident_bytes
-                .effective_limit
-                .max(MIN_MEMORY_LIMIT),
-        ),
+        memory_limit,
         filesystem_confined: false,
         notes: Vec::new(),
     };
@@ -291,18 +295,37 @@ fn lower_environment(
 }
 
 fn create_temp_root(observed: &mut Vec<ObservedFact>) -> Result<PathBuf, PlanBuildFailure> {
-    let seq = TEMP_ROOT_SEQ.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("bvisor-wasm-tmp-{}-{seq}", std::process::id()));
-    match std::fs::create_dir_all(&path) {
-        Ok(()) => Ok(path),
-        Err(error) => {
-            observed.push(ObservedFact {
-                kind: "temp_root_create_failed".to_string(),
-                detail: error.to_string(),
-            });
-            Err(failure(Outcome::SupervisorFault, observed))
+    for _ in 0..TEMP_ROOT_CREATE_ATTEMPTS {
+        let seq = TEMP_ROOT_SEQ.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("bvisor-wasm-tmp-{}-{seq}", std::process::id()));
+        match create_private_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                observed.push(ObservedFact {
+                    kind: "temp_root_create_failed".to_string(),
+                    detail: error.to_string(),
+                });
+                return Err(failure(Outcome::SupervisorFault, observed));
+            }
         }
     }
+    observed.push(ObservedFact {
+        kind: "temp_root_create_failed".to_string(),
+        detail: "exclusive temp-root name allocation exhausted".to_string(),
+    });
+    Err(failure(Outcome::SupervisorFault, observed))
+}
+
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
 }
 
 fn failure(outcome: Outcome, observed: &[ObservedFact]) -> PlanBuildFailure {
@@ -312,6 +335,15 @@ fn failure(outcome: Outcome, observed: &[ObservedFact]) -> PlanBuildFailure {
     }
 }
 
-fn usize_from_u64(value: u64) -> usize {
-    usize::try_from(value).unwrap_or(usize::MAX)
+fn usize_from_u64(value: u64, observed: &mut Vec<ObservedFact>) -> Result<usize, PlanBuildFailure> {
+    match usize::try_from(value) {
+        Ok(limit) => Ok(limit),
+        Err(error) => {
+            observed.push(ObservedFact {
+                kind: "memory_limit_unsupported".to_string(),
+                detail: format!("resident_bytes does not fit usize: {error}"),
+            });
+            Err(failure(Outcome::Unsupported, observed))
+        }
+    }
 }

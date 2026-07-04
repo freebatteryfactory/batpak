@@ -1,8 +1,8 @@
 //! Resolve an already-complete future synchronously.
 //!
-//! wasi-common's `wasmtime_wasi::sync` backend performs its filesystem work
-//! synchronously; its `WasiDir` futures are ready on first poll and never need
-//! a runtime. This mirrors wasmtime's sync executor locally with safe std APIs
+//! wasi-common's sync backend performs its filesystem work synchronously; its
+//! `WasiDir` futures are ready on first poll and never need a runtime. This
+//! mirrors the sync executor step locally with safe std APIs
 //! so the confinement layer can keep its policy logic in plain sync functions.
 
 use std::future::Future;
