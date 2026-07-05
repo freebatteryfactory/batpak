@@ -3,6 +3,7 @@ use crate::coordinate::Region;
 use crate::store::delivery::canal::CanalHandle;
 use crate::store::delivery::observation::{AtLeastOnce, CheckpointId};
 use crate::store::index::{IndexEntry, StoreIndex};
+use crate::store::platform::clock::Clock;
 use crate::store::{RestartPolicy, Store, StoreError};
 use parking_lot::Mutex;
 use std::path::Path;
@@ -72,18 +73,20 @@ fn build_worker_cursor(
     data_dir: &Path,
     checkpoint_id: Option<&CheckpointId>,
     load_saved_checkpoint: bool,
+    clock: Arc<dyn Clock>,
 ) -> Result<Cursor, StoreError> {
     match checkpoint_id {
         Some(id) if load_saved_checkpoint => {
-            Cursor::new_with_checkpoint(region.clone(), Arc::clone(index), data_dir, id)
+            Cursor::new_with_checkpoint(region.clone(), Arc::clone(index), data_dir, id, clock)
         }
         Some(id) => Ok(Cursor::new_bound_checkpoint(
             region.clone(),
             Arc::clone(index),
             data_dir,
             id.clone(),
+            clock,
         )),
-        None => Ok(Cursor::new(region.clone(), Arc::clone(index))),
+        None => Ok(Cursor::new(region.clone(), Arc::clone(index), clock)),
     }
 }
 
@@ -424,6 +427,7 @@ impl CursorWorkerLoop {
             &self.store.config.data_dir,
             self.checkpoint_id.as_ref(),
             true,
+            self.store.runtime.clock_arc(),
         ) {
             Ok(cursor) => cursor,
             Err(error) => {
@@ -588,6 +592,7 @@ impl CursorWorkerLoop {
             &self.store.config.data_dir,
             self.checkpoint_id.as_ref(),
             false,
+            self.store.runtime.clock_arc(),
         ) {
             Ok(cursor) => cursor,
             Err(error) => {
@@ -645,13 +650,18 @@ mod worker_mutation_kill;
 
 #[cfg(test)]
 mod tests {
-    use super::{build_worker_cursor, stringify_panic_payload, CursorWorkerConfig};
+    use super::{build_worker_cursor, stringify_panic_payload, Clock, CursorWorkerConfig};
     use crate::coordinate::Region;
     use crate::store::delivery::cursor::{Cursor, CursorCheckpoint};
     use crate::store::delivery::observation::CheckpointId;
     use crate::store::index::StoreIndex;
+    use crate::store::platform::clock::SystemClock;
     use std::any::Any;
     use std::sync::Arc;
+
+    fn test_clock() -> Arc<dyn Clock> {
+        Arc::new(SystemClock::new())
+    }
 
     #[test]
     fn cursor_worker_config_debug_renders_struct_name_and_fields() {
@@ -687,8 +697,9 @@ mod tests {
         Cursor::save_checkpoint(dir.path(), &id, &persisted).expect("save checkpoint");
 
         // load_saved_checkpoint = true -> new_with_checkpoint -> resumes at (7, true).
-        let loaded = build_worker_cursor(&region, &index, dir.path(), Some(&id), true)
-            .expect("build loading cursor");
+        let loaded =
+            build_worker_cursor(&region, &index, dir.path(), Some(&id), true, test_clock())
+                .expect("build loading cursor");
         assert_eq!(
             loaded.checkpoint(),
             (7, true),
@@ -698,8 +709,9 @@ mod tests {
         // load_saved_checkpoint = false -> new_bound_checkpoint -> ignores the
         // persisted position, starting fresh at (0, false). The `if true` mutant
         // would load here and report (7, true), failing this assertion.
-        let bound = build_worker_cursor(&region, &index, dir.path(), Some(&id), false)
-            .expect("build bound cursor");
+        let bound =
+            build_worker_cursor(&region, &index, dir.path(), Some(&id), false, test_clock())
+                .expect("build bound cursor");
         assert_eq!(
             bound.checkpoint(),
             (0, false),
@@ -718,6 +730,7 @@ mod tests {
             std::path::Path::new("/nonexistent"),
             None,
             true,
+            test_clock(),
         )
         .expect("build in-memory cursor");
         assert_eq!(

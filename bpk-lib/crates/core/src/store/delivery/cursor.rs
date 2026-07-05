@@ -2,11 +2,12 @@ use crate::coordinate::Region;
 use crate::store::delivery::canal::{Canal, CanalBatch, CanalClosed};
 use crate::store::delivery::observation::CheckpointId;
 use crate::store::index::{IndexEntry, StoreIndex};
+use crate::store::platform::clock::{mono_elapsed, Clock};
 use crate::store::platform::fs::StoreFs;
 use crate::store::StoreError;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod checkpoint;
 mod gap;
@@ -51,10 +52,13 @@ pub struct Cursor {
     /// constructed with a data directory and a checkpoint identifier so
     /// its position can be persisted via `save_checkpoint`.
     durable: Option<CursorDurableBinding>,
+    /// Store runtime clock; `pull_batch` measures its deadline window on
+    /// [`Clock::now_mono_ns`] so injected clocks govern pull waits.
+    clock: Arc<dyn Clock>,
 }
 
 impl Cursor {
-    pub(crate) fn new(region: Region, index: Arc<StoreIndex>) -> Self {
+    pub(crate) fn new(region: Region, index: Arc<StoreIndex>, clock: Arc<dyn Clock>) -> Self {
         Self {
             region,
             position: 0,
@@ -62,6 +66,7 @@ impl Cursor {
             index,
             gap_buffer: None,
             durable: None,
+            clock,
         }
     }
 
@@ -70,6 +75,7 @@ impl Cursor {
         index: Arc<StoreIndex>,
         data_dir: &Path,
         id: CheckpointId,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             region,
@@ -81,6 +87,7 @@ impl Cursor {
                 data_dir: data_dir.to_path_buf(),
                 id,
             }),
+            clock,
         }
     }
 
@@ -94,8 +101,9 @@ impl Cursor {
         index: Arc<StoreIndex>,
         data_dir: &Path,
         id: &CheckpointId,
+        clock: Arc<dyn Clock>,
     ) -> Result<Self, StoreError> {
-        let mut cursor = Self::new_bound_checkpoint(region, index, data_dir, id.clone());
+        let mut cursor = Self::new_bound_checkpoint(region, index, data_dir, id.clone(), clock);
         match Self::load_checkpoint(data_dir, id) {
             Ok(Some(ckpt)) => {
                 let expected_region = cursor.region.checkpoint_identity();
@@ -277,7 +285,7 @@ impl Canal for Cursor {
         if max == 0 {
             return Ok(CanalBatch::Empty);
         }
-        let start = Instant::now();
+        let started_ns = self.clock.now_mono_ns();
         loop {
             // Snapshot the visibility epoch BEFORE polling so a publish racing this
             // poll cannot be lost: if it advances the epoch between here and the park
@@ -286,10 +294,11 @@ impl Canal for Cursor {
             let batch = self.poll_batch(max);
             match batch.len() {
                 0 => {
-                    if start.elapsed() >= deadline {
+                    let elapsed = mono_elapsed(self.clock.as_ref(), started_ns);
+                    if elapsed >= deadline {
                         return Ok(CanalBatch::Empty);
                     }
-                    let remaining = deadline.saturating_sub(start.elapsed());
+                    let remaining = deadline.saturating_sub(elapsed);
                     // Park on the index's visibility edge instead of a 1 ms poll-spin:
                     // wakes promptly when the writer publishes a new visible entry, and
                     // falls back to `remaining` as a deadline safety net.
@@ -311,8 +320,9 @@ mod mutation_kill_tests {
     //! exact observable behavior of `visibility_epoch`, `park_for_data`, and the
     //! `pull_batch` empty arm so the constant/no-op/deleted-arm mutants of those
     //! items are caught.
-    use super::{Canal, CanalBatch, Cursor, CursorGapConfig, Region, StoreIndex};
+    use super::{Canal, CanalBatch, Clock, Cursor, CursorGapConfig, Region, StoreIndex};
     use crate::store::hidden_ranges::CancelledVisibilityRanges;
+    use crate::store::platform::clock::SystemClock;
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
     use std::sync::Arc;
@@ -320,6 +330,10 @@ mod mutation_kill_tests {
 
     fn fresh_index() -> Arc<StoreIndex> {
         Arc::new(StoreIndex::new())
+    }
+
+    fn test_clock() -> Arc<dyn Clock> {
+        Arc::new(SystemClock::new())
     }
 
     #[test]
@@ -337,10 +351,11 @@ mod mutation_kill_tests {
             global: vec![(2, 4), (5, 7)],
             lanes: BTreeMap::new(),
         });
-        let mut cursor =
-            Cursor::new(Region::all(), index).with_gap_config(CursorGapConfig::Enabled {
+        let mut cursor = Cursor::new(Region::all(), index, test_clock()).with_gap_config(
+            CursorGapConfig::Enabled {
                 capacity: NonZeroUsize::new(8).expect("nonzero capacity"),
-            });
+            },
+        );
 
         // expected=1, delivered=5 => skipped interval [1,5).
         cursor.record_gap(1, 5);
@@ -366,7 +381,7 @@ mod mutation_kill_tests {
         // very first idle poll (elapsed ~0 < deadline), collapsing the blocking
         // wait to an instant spin — so a 50 ms pull would return in ~0 ms.
         let index = fresh_index();
-        let mut cursor = Cursor::new(Region::all(), index);
+        let mut cursor = Cursor::new(Region::all(), index, test_clock());
 
         let deadline = Duration::from_millis(50);
         let start = Instant::now();
@@ -390,7 +405,7 @@ mod mutation_kill_tests {
     fn visibility_epoch_advances_with_each_publish() {
         // Constant mutants (`-> 0`, `-> 1`) would make the epoch never change.
         let index = fresh_index();
-        let cursor = Cursor::new(Region::all(), Arc::clone(&index));
+        let cursor = Cursor::new(Region::all(), Arc::clone(&index), test_clock());
 
         let before = cursor.visibility_epoch();
         index.reserve_sequences(1);
@@ -430,7 +445,7 @@ mod mutation_kill_tests {
         // implementation must block (roughly) for the supplied timeout when the
         // epoch never advances.
         let index = fresh_index();
-        let cursor = Cursor::new(Region::all(), index);
+        let cursor = Cursor::new(Region::all(), index, test_clock());
         let epoch = cursor.visibility_epoch();
 
         // A 50 ms floor keeps the whole-suite tax low while still proving the
@@ -453,7 +468,7 @@ mod mutation_kill_tests {
         // Deleting the `0 =>` arm of `pull_batch` would route an empty poll into
         // the `_ =>` arm and return `CanalBatch::Many(<empty>)` immediately.
         let index = fresh_index();
-        let mut cursor = Cursor::new(Region::all(), index);
+        let mut cursor = Cursor::new(Region::all(), index, test_clock());
 
         let result = cursor
             .pull_batch(8, Duration::from_millis(30))
