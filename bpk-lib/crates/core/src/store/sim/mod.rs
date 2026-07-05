@@ -10,10 +10,14 @@
 //!     [`crate::store::platform::spawn::Spawn`] cooperatively: spawned bodies
 //!     are queued and stepped on the calling thread in a deterministic order,
 //!     so there is never any OS-thread nondeterminism.
-//!   * [`fs::SimFs`] implements [`crate::store::platform::fs::StoreFs`] over an
-//!     in-memory directory tree whose write path consults a ChaCha8-style
-//!     seeded PRNG ([`fastrand`]) to apply faults (torn-write, short-read,
-//!     fsync-drop) keyed off [`crate::store::fault::InjectionPoint`].
+//!   * [`fs::SimFs`] implements [`crate::store::platform::fs::StoreFs`] as a
+//!     durability-fault injector over REAL tempfiles — not an in-memory
+//!     filesystem. Reads pass through to the platform fs; the write path
+//!     consults a ChaCha8-style seeded PRNG ([`fastrand`]) to apply faults
+//!     (torn-write, short-read, fsync-drop) keyed off
+//!     [`crate::store::fault::InjectionPoint`]. Because the bytes live on a
+//!     real filesystem behind concrete `File` handles, `SimFs` is not a
+//!     wasm-portable or diskless backend (see the `StoreFs` trait docs).
 //!
 //! On top of those, [`workload`] drives a small seeded workload and
 //! [`invariants`] checks per-step safety properties (hash-chain continuity,
@@ -67,8 +71,8 @@ pub(crate) fn seed_from_env(default: u64) -> u64 {
 }
 
 /// A fully wired deterministic simulation: a shared logical clock, a
-/// cooperative scheduler, and a fault-injecting in-memory filesystem, all
-/// derived from a single seed.
+/// cooperative scheduler, and a fault-injecting filesystem (interposing on
+/// real tempfiles), all derived from a single seed.
 ///
 /// The three backends are exposed as `Arc<dyn Trait>` so they can be installed
 /// on a [`crate::store::StoreConfig`] via `with_clock` / `with_spawner` /
