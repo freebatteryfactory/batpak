@@ -1,16 +1,13 @@
 use crate::coordinate::Coordinate;
 use crate::event::EventKind;
 use crate::store::append::{signing_downgrade_extension_key, SigningDowngradeBody};
-use crate::store::{
-    AppendReceipt, DenialReceipt, ExtensionKey, ReceiptVerification, ReceiptVerificationError,
-    StoreError,
+use crate::store::receipt_verify::{
+    cover_bytes, key_id_for_public_key, verify_claim_parts, ClaimParts, ReceiptVerifyingKeys,
 };
-use ed25519_compact::{KeyPair, PublicKey, Seed, Signature};
-use std::collections::BTreeMap;
+use crate::store::{AppendReceipt, DenialReceipt, ReceiptVerification, StoreError};
+use ed25519_compact::{KeyPair, Seed};
 use std::sync::Arc;
 use zeroize::Zeroizing;
-
-const COVER_VERSION_V1: u8 = 0x01;
 
 /// Opt-in Ed25519 signing key for receipt signatures.
 #[derive(Clone)]
@@ -27,7 +24,13 @@ impl SigningKey {
         }
     }
 
-    pub(crate) fn key_id(&self) -> [u8; 32] {
+    /// The key id receipts signed by this key carry: `blake3(public_key)`,
+    /// or the all-zero sentinel when the key has no public half.
+    ///
+    /// Public since 0.10.0 so a receipt holder can match a receipt's `key_id`
+    /// to a configured signer.
+    #[must_use]
+    pub fn key_id(&self) -> [u8; 32] {
         match self.public_key_bytes() {
             Some(bytes) => key_id_for_public_key(&bytes),
             None => [0; 32],
@@ -38,7 +41,15 @@ impl SigningKey {
         KeyPair::from_seed(Seed::new(*self.seed))
     }
 
-    fn public_key_bytes(&self) -> Option<[u8; 32]> {
+    /// The 32-byte Ed25519 public key of this signer, when derivable.
+    ///
+    /// Public since 0.10.0: this is how an embedder exports the verifying
+    /// half to build a
+    /// [`ReceiptVerifyingKeys`](crate::store::ReceiptVerifyingKeys) set for
+    /// store-free verification (issue #167). The secret seed never leaves
+    /// the type.
+    #[must_use]
+    pub fn public_key_bytes(&self) -> Option<[u8; 32]> {
         <[u8; 32]>::try_from(self.key_pair().pk.as_ref()).ok()
     }
 
@@ -61,7 +72,7 @@ impl std::fmt::Debug for SigningKey {
 #[derive(Clone, Default)]
 pub(crate) struct ReceiptSigningRegistry {
     current: Option<Arc<SigningKey>>,
-    verifying_keys: Arc<BTreeMap<[u8; 32], [u8; 32]>>,
+    verifying_keys: Arc<ReceiptVerifyingKeys>,
     /// When a signer is configured but its cover cannot be built, permit a
     /// best-effort downgrade to unsigned instead of failing the append.
     allow_downgrade: bool,
@@ -77,18 +88,18 @@ impl ReceiptSigningRegistry {
     /// This is the intended key-rotation mechanism (append the new active key
     /// last); callers must not treat the order as cosmetic.
     pub(crate) fn from_keys(keys: &[SigningKey], allow_downgrade: bool) -> Self {
-        let mut verifying_keys = BTreeMap::new();
+        let mut public_keys = Vec::new();
         let mut current = None;
         for key in keys {
             let key = Arc::new(key.clone());
             if let Some(public_key_bytes) = key.public_key_bytes() {
-                verifying_keys.insert(key.key_id(), public_key_bytes);
+                public_keys.push(public_key_bytes);
                 current = Some(key);
             }
         }
         Self {
             current,
-            verifying_keys: Arc::new(verifying_keys),
+            verifying_keys: Arc::new(ReceiptVerifyingKeys::from_public_keys(public_keys)),
             allow_downgrade,
         }
     }
@@ -139,6 +150,9 @@ impl ReceiptSigningRegistry {
         Ok(())
     }
 
+    /// Store-side append-receipt verification: a thin adapter over the ONE
+    /// verification core in [`crate::store::receipt_verify`], with the chain
+    /// metadata sourced from the committed index entry by the caller.
     pub(crate) fn verify_append_receipt(
         &self,
         receipt: &AppendReceipt,
@@ -146,40 +160,27 @@ impl ReceiptSigningRegistry {
         kind: EventKind,
         prev_hash: [u8; 32],
     ) -> ReceiptVerification {
-        // Sentinel-signed receipts (no signature, no key) bypass the cover
-        // rebuild: signing was either not configured or it downgraded due to
-        // a coordinate/extension encoding failure. Their validity is a
-        // property of the registry state, not of any computed cover.
-        if receipt.signature.is_none() && receipt.key_id == [0; 32] {
-            return if self.verifying_keys.is_empty() {
-                ReceiptVerification::UnsignedAccepted
-            } else {
-                ReceiptVerification::Invalid(ReceiptVerificationError::UnsignedReceiptRejected)
-            };
-        }
-        let cover = match cover_bytes(
-            {
-                use crate::id::EntityIdType;
-                receipt.event_id.as_u128()
+        verify_claim_parts(
+            ClaimParts {
+                event_id: {
+                    use crate::id::EntityIdType;
+                    receipt.event_id.as_u128()
+                },
+                global_sequence: receipt.global_sequence,
+                content_hash: receipt.content_hash,
+                key_id: receipt.key_id,
+                signature: receipt.signature,
+                extensions: &receipt.extensions,
+                coord,
+                kind,
+                prev_hash,
             },
-            receipt.global_sequence,
-            coord,
-            kind,
-            prev_hash,
-            receipt.content_hash,
-            &receipt.extensions,
-        ) {
-            Ok(cover) => cover,
-            Err(error) => {
-                tracing::error!(error = %error, "failed to rebuild append receipt signature cover");
-                return ReceiptVerification::Invalid(ReceiptVerificationError::CoverBuildFailed {
-                    reason: error.to_string(),
-                });
-            }
-        };
-        self.verify_signature(receipt.key_id, receipt.signature, cover)
+            &self.verifying_keys,
+        )
     }
 
+    /// Store-side denial-receipt verification; same single core as appends
+    /// (the covers are field-for-field identical).
     pub(crate) fn verify_denial_receipt(
         &self,
         receipt: &DenialReceipt,
@@ -187,66 +188,41 @@ impl ReceiptSigningRegistry {
         kind: EventKind,
         prev_hash: [u8; 32],
     ) -> ReceiptVerification {
-        if receipt.signature.is_none() && receipt.key_id == [0; 32] {
-            return if self.verifying_keys.is_empty() {
-                ReceiptVerification::UnsignedAccepted
-            } else {
-                ReceiptVerification::Invalid(ReceiptVerificationError::UnsignedReceiptRejected)
-            };
-        }
-        let cover = match cover_bytes(
-            {
-                use crate::id::EntityIdType;
-                receipt.event_id.as_u128()
+        verify_claim_parts(
+            ClaimParts {
+                event_id: {
+                    use crate::id::EntityIdType;
+                    receipt.event_id.as_u128()
+                },
+                global_sequence: receipt.global_sequence,
+                content_hash: receipt.content_hash,
+                key_id: receipt.key_id,
+                signature: receipt.signature,
+                extensions: &receipt.extensions,
+                coord,
+                kind,
+                prev_hash,
             },
-            receipt.global_sequence,
-            coord,
-            kind,
-            prev_hash,
-            receipt.content_hash,
-            &receipt.extensions,
-        ) {
-            Ok(cover) => cover,
-            Err(error) => {
-                tracing::error!(error = %error, "failed to rebuild denial receipt signature cover");
-                return ReceiptVerification::Invalid(ReceiptVerificationError::CoverBuildFailed {
-                    reason: error.to_string(),
-                });
-            }
-        };
-        self.verify_signature(receipt.key_id, receipt.signature, cover)
+            &self.verifying_keys,
+        )
     }
 
+    /// Kept as a test-visible adapter so the sentinel/unsigned disposition
+    /// cure tests keep exercising the registry-held key set through the one
+    /// shared implementation.
+    #[cfg(test)]
     fn verify_signature(
         &self,
         key_id: [u8; 32],
         signature: Option<[u8; 64]>,
         cover: [u8; 32],
     ) -> ReceiptVerification {
-        let Some(signature_bytes) = signature else {
-            return if key_id == [0; 32] && self.verifying_keys.is_empty() {
-                ReceiptVerification::UnsignedAccepted
-            } else if key_id == [0; 32] {
-                ReceiptVerification::Invalid(ReceiptVerificationError::UnsignedReceiptRejected)
-            } else {
-                ReceiptVerification::Invalid(ReceiptVerificationError::MissingSignature)
-            };
-        };
-        if key_id == [0; 32] {
-            return ReceiptVerification::Invalid(ReceiptVerificationError::ZeroKeyWithSignature);
-        };
-        let Some(public_key_bytes) = self.verifying_keys.get(&key_id) else {
-            return ReceiptVerification::Invalid(ReceiptVerificationError::UnknownSigningKey);
-        };
-        let signature = Signature::new(signature_bytes);
-        if PublicKey::new(*public_key_bytes)
-            .verify(cover, &signature)
-            .is_ok()
-        {
-            ReceiptVerification::Signed
-        } else {
-            ReceiptVerification::Invalid(ReceiptVerificationError::InvalidSignature)
-        }
+        crate::store::receipt_verify::verify_signature_with_keys(
+            &self.verifying_keys,
+            key_id,
+            signature,
+            cover,
+        )
     }
 }
 
@@ -278,66 +254,10 @@ fn downgrade_receipt_signing(receipt: &mut AppendReceipt, error: impl Into<Strin
     receipt.signature = None;
 }
 
-#[derive(Debug)]
-enum CoverBuildError {
-    CoordinateEncoding(rmp_serde::encode::Error),
-    ExtensionsEncoding(rmp_serde::encode::Error),
-}
-
-impl std::fmt::Display for CoverBuildError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CoordinateEncoding(error) => {
-                write!(
-                    f,
-                    "coordinate encoding failed while building receipt cover: {error}"
-                )
-            }
-            Self::ExtensionsEncoding(error) => {
-                write!(
-                    f,
-                    "extension encoding failed while building receipt cover: {error}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for CoverBuildError {}
-
-fn key_id_for_public_key(public_key: &[u8; 32]) -> [u8; 32] {
-    crate::event::hash::compute_hash(public_key)
-}
-
-fn cover_bytes(
-    event_id: u128,
-    sequence: u64,
-    coord: &Coordinate,
-    kind: EventKind,
-    prev_hash: [u8; 32],
-    content_hash: [u8; 32],
-    extensions: &BTreeMap<ExtensionKey, Vec<u8>>,
-) -> Result<[u8; 32], CoverBuildError> {
-    let mut cover = Vec::new();
-    cover.push(COVER_VERSION_V1);
-    cover.extend_from_slice(&event_id.to_le_bytes());
-    cover.extend_from_slice(&sequence.to_le_bytes());
-    let coord_bytes =
-        crate::canonical::to_bytes(coord).map_err(CoverBuildError::CoordinateEncoding)?;
-    cover.extend_from_slice(&coord_bytes);
-    let raw_kind = kind.as_raw_u16();
-    cover.extend_from_slice(&raw_kind.to_le_bytes());
-    cover.extend_from_slice(&prev_hash);
-    cover.extend_from_slice(&content_hash);
-    let extension_bytes =
-        crate::canonical::to_bytes(extensions).map_err(CoverBuildError::ExtensionsEncoding)?;
-    cover.extend_from_slice(&extension_bytes);
-    Ok(crate::event::hash::compute_hash(&cover))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn cover_failure_is_fatal_unless_downgrade_allowed() {
@@ -432,6 +352,9 @@ mod tests {
 mod verify_cure_tests {
     use super::*;
     use crate::store::index::DiskPos;
+    use crate::store::receipt_verify::CoverBuildError;
+    use crate::store::ReceiptVerificationError;
+    use std::collections::BTreeMap;
 
     fn receipt(key_id: [u8; 32], signature: Option<[u8; 64]>) -> AppendReceipt {
         AppendReceipt {

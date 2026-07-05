@@ -58,6 +58,7 @@ pub mod reactor_typed;
 mod read_api;
 mod read_walk;
 mod receipt_verification;
+pub(crate) mod receipt_verify;
 #[cfg(test)]
 mod runtime_contracts;
 /// On-disk segment format, frame encoding/decoding, and compaction helpers.
@@ -180,6 +181,10 @@ pub use read_walk::{
     ReadWalkSourceRef, READ_WALK_REPORT_SCHEMA_VERSION,
 };
 pub use receipt_verification::{ReceiptVerification, ReceiptVerificationError};
+// Store-free receipt verification (issue #167): verify a receipt from
+// portable inputs — ack fields + chain metadata + verifying keys — with the
+// SAME implementation the store-side methods delegate to.
+pub use receipt_verify::{verify_receipt_claim, ReceiptClaim, ReceiptVerifyingKeys};
 pub use signing::SigningKey;
 /// The canonical deterministic [`Clock`](crate::store::Clock) for simulators.
 ///
