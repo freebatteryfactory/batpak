@@ -294,8 +294,12 @@ impl Canal for Cursor {
         // clock may not advance while this thread is parked (a frozen logical
         // clock), which would otherwise re-park for the full deadline forever;
         // a timed-out park proves at least `remaining` real time passed, so
-        // `max(logical elapsed, floor)` keeps the deadline a real bound while
-        // an ADVANCING injected clock still governs the wait deterministically.
+        // `max(logical elapsed, floor)` bounds the IDLE wait while an
+        // ADVANCING injected clock still governs the wait deterministically.
+        // Early wakes (publishes outside this cursor's region) deliberately
+        // add nothing: per the `Clock` contract the injected clock is the
+        // time authority, and activity under a standing-still clock happened
+        // in zero logical time — no honest real-time charge exists for it.
         let mut waited_floor = Duration::ZERO;
         loop {
             // Snapshot the visibility epoch BEFORE polling so a publish racing this

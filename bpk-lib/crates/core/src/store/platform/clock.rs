@@ -12,6 +12,21 @@ use std::time::Instant;
 /// clock governs them and no wait path touches `std::time::Instant` directly —
 /// the one `Instant` holder is [`SystemClock`]'s process-wide monotonic anchor.
 ///
+/// Wait-timeout contract: [`Clock::now_mono_ns`] is the sole time authority
+/// for wait deadlines (`Store::wait_for_durable*`, cursor `pull_batch`, gate
+/// waits). Store activity charges a deadline only through this reading —
+/// ledger semantics: work performed while the clock stands still happened in
+/// zero logical time and consumes none of the caller's timeout, so a clock
+/// that never advances defers busy-store timeouts until the clock (or the
+/// store) moves. The idle case is still bounded without the clock's help: a
+/// park/condvar wait that runs its full OS timeout is truthful evidence that
+/// at least that much real time passed, and wait loops accumulate it as a
+/// deadline floor, so an idle store never hangs. In practice only a
+/// hand-rolled `Clock` can stand still: [`SystemClock`] always advances,
+/// `SimClock` advances its monotonic reading in lockstep with `advance_us`,
+/// and scripted wall clocks ([`crate::store::StoreConfig::with_clock_fn`])
+/// keep the real process-wide monotonic anchor.
+///
 /// Production uses [`SystemClock`]. Tests and embeddings that need repeatable
 /// store behavior can provide a custom implementation and install it with
 /// [`crate::store::StoreConfig::with_clock`].

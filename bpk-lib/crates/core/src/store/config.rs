@@ -253,6 +253,15 @@ impl StoreConfig {
     ///
     /// Negative timestamps are rejected at append/batch execution time with
     /// `StoreError::InvalidClock` rather than being truncated or panicking.
+    ///
+    /// **Wait deadlines.** The injected [`Clock::now_mono_ns`] is the time
+    /// authority for wait timeouts (`wait_for_durable*`, cursor pulls, gate
+    /// waits): store activity observed while the clock's monotonic reading
+    /// stands still consumes none of the caller's timeout, so a clock that
+    /// never advances defers busy-store timeouts until it moves. Idle waits
+    /// stay bounded regardless — a fully timed-out park is accumulated as a
+    /// real-time deadline floor. See the [`Clock`] trait docs for the full
+    /// contract.
     pub fn with_clock(mut self, clock: Option<Arc<dyn Clock>>) -> Self {
         self.clock = clock;
         self

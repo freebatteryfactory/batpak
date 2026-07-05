@@ -58,7 +58,11 @@ on-disk format changes anywhere in this release.
   cursor pull deadlines) now route through `Clock::now_mono_ns` instead of raw
   `std::time::Instant`, so injected clocks govern every wait path —
   behavior-identical on native, and the last runtime `Instant` hazard for
-  wasm32 embeddings moves behind the `Clock` seam (#164).
+  wasm32 embeddings moves behind the `Clock` seam (#164). Contract: the
+  injected clock is the wait-time authority — a custom clock whose monotonic
+  reading never advances defers busy-store timeouts by design, while idle
+  waits stay bounded by a real-time floor accumulated from fully timed-out
+  parks (see the `Clock` trait docs).
 - crates.io metadata (#163): keywords swap `causal-graph` → `embedded`; the
   README badge links to the crate page; description carries the canonical
   sentence.

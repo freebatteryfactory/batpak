@@ -255,9 +255,13 @@ impl WatermarkAdvanceHandle {
         // injected clock may not advance while this thread is parked (a frozen
         // logical clock), which would otherwise re-park for the full timeout
         // forever; a timed-out wait proves at least `remaining` real time
-        // passed, so `max(logical elapsed, floor)` keeps the caller's timeout
-        // a real bound while an ADVANCING injected clock still governs the
-        // wait deterministically.
+        // passed, so `max(logical elapsed, floor)` bounds the IDLE wait while
+        // an ADVANCING injected clock still governs the wait deterministically.
+        // Wakes that do not cover the target (another lane or a lower frontier
+        // advancing) deliberately add nothing: per the `Clock` contract the
+        // injected clock is the time authority, and activity under a
+        // standing-still clock happened in zero logical time — no honest
+        // real-time charge exists for it.
         let mut waited_floor = Duration::ZERO;
         let mut guard = self.state.lock();
         loop {
@@ -325,8 +329,9 @@ impl WatermarkAdvanceHandle {
     ) -> Result<(), StoreError> {
         let started_ns = self.clock.now_mono_ns();
         // Same real-time floor as `wait_for_watermark`: a fully timed-out
-        // condvar wait bounds the deadline even under a non-advancing
-        // injected clock.
+        // condvar wait bounds the IDLE deadline even under a non-advancing
+        // injected clock, and early wakes deliberately add nothing (the
+        // injected clock is the time authority per the `Clock` contract).
         let mut waited_floor = Duration::ZERO;
         let mut guard = self.state.lock();
         loop {
