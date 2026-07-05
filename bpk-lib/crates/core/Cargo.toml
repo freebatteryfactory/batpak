@@ -122,6 +122,12 @@ uuid = { version = ">=1.20, <1.24", default-features = false, features = [
     "v7",
     "js",
 ] }
+# `payload-encryption`'s key/nonce CSPRNG needs getrandom's JS backend on this
+# target. Feature-unification from fastrand (via flume) already enables
+# `wasm_js` today, but batpak's own wasm compile must not lean on a transitive
+# crate's target table — own the enablement here. Still optional: only the
+# `payload-encryption` feature activates the dependency; inert on native.
+getrandom = { version = "0.3", optional = true, features = ["wasm_js"] }
 
 [dev-dependencies]
 batpak-bench-support = { path = "../bench-support", version = "0.10.0" }
