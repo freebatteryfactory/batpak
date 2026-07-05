@@ -226,6 +226,10 @@ pub(crate) fn ci_windows_surface() -> Result<()> {
     ci::ci_windows_surface()
 }
 
+pub(crate) fn wasm_surface() -> Result<()> {
+    ci::wasm_surface()
+}
+
 pub(crate) fn loom() -> Result<()> {
     loom::loom()
 }

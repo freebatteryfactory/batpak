@@ -70,6 +70,37 @@ pub(crate) fn ci() -> Result<()> {
     integrity("structural-check", [])
 }
 
+/// Check-only wasm32-unknown-unknown embedding surface (issue #164): core and
+/// syncbat — plus core's `payload-encryption` feature — must keep compiling
+/// for the target. Check-only by design: no test runner, JS host, or runtime
+/// dependency is involved, so the lane stays cheap and never gates on wasm
+/// tooling. The target itself is installed by `rust-toolchain.toml`.
+pub(crate) fn wasm_surface() -> Result<()> {
+    cargo([
+        "check",
+        "-p",
+        "batpak",
+        "--target",
+        "wasm32-unknown-unknown",
+    ])?;
+    cargo([
+        "check",
+        "-p",
+        "batpak",
+        "--features",
+        "payload-encryption",
+        "--target",
+        "wasm32-unknown-unknown",
+    ])?;
+    cargo([
+        "check",
+        "-p",
+        "syncbat",
+        "--target",
+        "wasm32-unknown-unknown",
+    ])
+}
+
 /// Native Windows surface compatibility: checks, tests, and platform-sensitive fixtures.
 pub(crate) fn ci_windows_surface() -> Result<()> {
     super::check_version_pins()?;

@@ -128,6 +128,8 @@ enum XtaskCommand {
     CiFast,
     /// Native Windows surface compatibility lane.
     CiWindowsSurface,
+    /// Check-only wasm32-unknown-unknown embedding surface (issue #164).
+    WasmSurface,
     Ci,
     /// Reproduce the canonical verification bundle inside the devcontainer.
     /// The host enters the container once, then CI, coverage, and docs run
@@ -659,6 +661,7 @@ fn main() -> Result<()> {
         XtaskCommand::MetaGate(args) => commands::meta_gate(&args),
         XtaskCommand::CiFast => commands::ci_fast(),
         XtaskCommand::CiWindowsSurface => commands::ci_windows_surface(),
+        XtaskCommand::WasmSurface => commands::wasm_surface(),
         XtaskCommand::Ci => commands::ci(),
         XtaskCommand::Preflight => preflight::preflight(),
         XtaskCommand::PreCommit => {

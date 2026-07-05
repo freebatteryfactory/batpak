@@ -111,6 +111,9 @@ ci-fast:
 ci-windows:
     cd bpk-lib; cargo xtask ci-windows-surface
 
+wasm-surface:
+    cd bpk-lib; cargo xtask wasm-surface
+
 ci:
     cd bpk-lib; cargo xtask ci
 
