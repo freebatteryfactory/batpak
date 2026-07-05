@@ -19,7 +19,8 @@ pub use crate::event::{
 };
 pub use crate::id::EventId;
 pub use crate::store::{
-    AppendOptions, AppendReceipt, Closed, Freshness, Open, ReadOnly, ReceiptVerification,
-    ReceiptVerificationError, Store, StoreConfig, StoreError, SyncMode,
+    verify_receipt_claim, AppendOptions, AppendReceipt, Closed, Freshness, Open, ReadOnly,
+    ReceiptClaim, ReceiptVerification, ReceiptVerificationError, ReceiptVerifyingKeys, Store,
+    StoreConfig, StoreError, SyncMode,
 };
 pub use batpak_macros::{EventPayload, EventSourced};
