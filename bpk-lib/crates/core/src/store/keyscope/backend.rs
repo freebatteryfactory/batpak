@@ -2,17 +2,20 @@
 //! when they are durable (issue #162).
 //!
 //! The keyset's *format* and *semantics* stay single-sourced in
-//! [`persist`](super::persist): one encoded image (magic | version | crc |
-//! msgpack body), fail-closed decoding, the `Shredded` vs `KeysetMissing`
-//! distinction, and the snapshot/fork "keys never travel" contract are all
-//! unchanged. A [`KeysetBackend`] answers only the storage question — so an
-//! embedder can hold key material outside the store directory (a separate
-//! volume with a different durability profile, an OS keychain, a database row
-//! wrapping the image with a KMS) without filesystem surgery on store
-//! internals.
+//! [`persist`](crate::store::keyscope::persist): one encoded image (magic |
+//! version | crc | msgpack body), fail-closed decoding, the `Shredded` vs
+//! `KeysetMissing` distinction, and the snapshot/fork "keys never travel"
+//! contract are all unchanged. A
+//! [`KeysetBackend`](crate::store::keyscope::backend::KeysetBackend) answers
+//! only the storage question — so an embedder can hold key material outside
+//! the store directory (a separate volume with a different durability
+//! profile, an OS keychain, a database row wrapping the image with a KMS)
+//! without filesystem surgery on store internals.
 //!
-//! The default is [`FileKeysetBackend`]: today's in-directory
-//! `keyset.fbatk` file, published through the store's atomic-write seam.
+//! The default is
+//! [`FileKeysetBackend`](crate::store::keyscope::backend::FileKeysetBackend):
+//! today's in-directory `keyset.fbatk` file, published through the store's
+//! atomic-write seam.
 
 use crate::store::file_classification::KEYSET_FILENAME;
 use crate::store::platform::fs::{write_file_atomically_with_fs, RealFs, StoreFs};
