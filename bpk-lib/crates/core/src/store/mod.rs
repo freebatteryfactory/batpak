@@ -146,7 +146,13 @@ pub use keyscope::{
 #[cfg(any(feature = "alloc-count", feature = "fault-alloc"))]
 pub use platform::alloc;
 pub use platform::clock::{Clock, SystemClock};
+// StoreFs promoted from `pub(crate)` for 0.10.0 (issue #164, following the
+// Spawn seam's §12 precedent) so embeddings can supply their own reviewed
+// filesystem backend through `StoreConfig::with_fs`. The companion vocabulary
+// types its signatures carry ride along.
+pub use platform::fs::{CowStrategyUsed, PositionedReadError, RealFs, StoreFs};
 pub use platform::spawn::{JobHandle, JobStatus, JoinError, Spawn, SpawnError, ThreadSpawn};
+pub use platform::sync::ParentDirSyncAdmission;
 pub use projection::flow::ReplayInput;
 pub use projection::watch::{CursorWatcherError, ProjectionWatcher, WatcherError};
 pub use projection::{

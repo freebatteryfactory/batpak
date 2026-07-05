@@ -498,10 +498,25 @@ impl StoreConfig {
 
     /// Install a custom filesystem backend for store data-path operations.
     ///
-    /// Production uses the default [`RealFs`] (every op delegates to `std::fs`).
-    /// A deterministic simulation backend installs an alternate [`StoreFs`] here
-    /// without touching routed call sites.
-    pub(crate) fn with_fs(mut self, fs: Arc<dyn StoreFs>) -> Self {
+    /// Production uses the default [`RealFs`] (every op delegates to `std::fs`);
+    /// deterministic simulation and embeddings install an alternate [`StoreFs`]
+    /// here without touching routed call sites. Public since 0.10.0 alongside
+    /// the [`StoreFs`] promotion (issue #164); implementations must uphold the
+    /// durability contract documented on the trait.
+    ///
+    /// ```no_run
+    /// use std::sync::Arc;
+    /// use batpak::store::{RealFs, Store, StoreConfig};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let dir = tempfile::tempdir()?;
+    /// let config = StoreConfig::new(dir.path()).with_fs(Arc::new(RealFs));
+    /// let store = Store::open(config)?;
+    /// store.close()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_fs(mut self, fs: Arc<dyn StoreFs>) -> Self {
         self.fs = fs;
         self
     }

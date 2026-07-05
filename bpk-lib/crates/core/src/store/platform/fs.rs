@@ -4,10 +4,17 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
+/// Which copy strategy a [`StoreFs::cow_copy_file`] call actually used.
+///
+/// Fork prefers copy-on-write and reports what the filesystem delivered, so
+/// fork evidence can record the real cost model instead of the preference.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CowStrategyUsed {
+pub enum CowStrategyUsed {
+    /// A filesystem-level reflink (copy-on-write clone) was performed.
     Reflink,
+    /// A hardlink to the immutable source file was created.
     Hardlink,
+    /// The bytes were physically copied.
     DeepCopy,
 }
 
@@ -313,10 +320,16 @@ fn reflink_impl(_from: &Path, _to: &Path) -> io::Result<()> {
     ))
 }
 
+/// Failure of a positioned read ([`StoreFs::read_exact_at`]).
 #[derive(Debug)]
-pub(crate) enum PositionedReadError {
+pub enum PositionedReadError {
+    /// The underlying positioned read returned an I/O error.
     Io(std::io::Error),
-    ShortRead { bytes_read: usize },
+    /// End-of-file was reached before the buffer was filled.
+    ShortRead {
+        /// Bytes successfully read before the premature end-of-file.
+        bytes_read: usize,
+    },
 }
 
 pub(crate) fn read_exact_at(
@@ -375,54 +388,97 @@ pub(crate) fn read_exact_at(
 // and `RealFs::read_exact_at` delegates straight to it. Asserted empty by
 // `store_fs_fail_closed_boundary_lists_unrouted_tail_ops`.
 
-/// Filesystem seam for production and (future) deterministic simulation.
+/// Filesystem seam for production, deterministic simulation, and embeddings.
 ///
 /// Boundary: this is the narrow trait through which store code reaches the
-/// target filesystem. Production routes through [`RealFs`], whose every method
-/// is a byte-for-byte delegate to the existing `platform::fs::*` /
-/// `platform::sync::*` free functions — the only observable difference from a
-/// direct free-fn call is the indirection through a trait object. A later
-/// gauntlet item installs a `SimFs` that fakes the filesystem on an in-memory
-/// model for deterministic crash/fault tests; it is NOT built here. This trait
-/// only introduces the seam so call sites that hold a `StoreConfig` stop
-/// reaching `std::fs` (via the free fns) directly.
+/// target filesystem — no store call site touches `platform::fs::*` free
+/// functions directly (release row `STORE-PLATFORM-FS-ROUTING`). Production
+/// routes through [`RealFs`], whose every method is a byte-for-byte delegate
+/// to those free functions; the fault-injecting `SimFs` test backend
+/// interposes the same seam for deterministic crash/fault proofs. Promoted
+/// from `pub(crate)` for 0.10.0 (following the [`Spawn`] seam's precedent) so
+/// embeddings can supply their own backend via
+/// [`StoreConfig::with_fs`](crate::store::StoreConfig::with_fs).
 ///
 /// `Send + Sync` so it can live behind `Arc<dyn StoreFs>` on `StoreConfig` and
-/// be shared across threads, mirroring the [`super::spawn::Spawn`] seam.
+/// be shared across threads, mirroring the [`Spawn`] seam.
 ///
-/// Scope note: routed subset of the platform fs/sync surface. The trait covers
-/// directory iteration, directory creation, segment file creation, the sync
-/// cluster, symlink/canonicalize guards, copy/metadata, the cow copy paths, and
-/// (W3) the crash-sensitive atomic-rename / persist cluster — `rename`,
-/// `remove_file`, `named_temp_in`, `persist_temp_with_parent_sync` — so the
-/// compaction swap/rollback, visibility-range persist, and cursor-checkpoint
-/// persist sequences are fault-injectable under [`super::super::sim::fs::SimFs`],
-/// and the positioned read `read_exact_at`, so the active-segment frame read is
-/// fault-injectable too. The routing tail is now empty: no store call site
-/// reaches `platform::fs::*` directly (release row `STORE-PLATFORM-FS-ROUTING`).
-pub(crate) trait StoreFs: Send + Sync {
+/// # Durability contract (what implementations must uphold)
+///
+/// The store's crash-integrity proofs assume exactly these guarantees; an
+/// implementation that weakens any of them silently voids the store's
+/// durability claims:
+///
+/// - **Sync means durable.** [`StoreFs::sync_file_with_mode`] and
+///   [`StoreFs::sync_file_all`] must not return `Ok` before the file's
+///   contents survive a crash (the per-event / per-rotation durability
+///   boundary). [`StoreFs::sync_parent_dir`] must not return `Ok` before the
+///   freshly-created file's *name* survives a crash.
+/// - **The temp/persist pair is a single atomic publish.**
+///   [`StoreFs::named_temp_in`] stages a file the caller writes and fsyncs;
+///   [`StoreFs::persist_temp_with_parent_sync`] must install it at the final
+///   path such that a crash at any point leaves either the OLD complete file
+///   (or absence) or the NEW complete file — never a torn mixture. This is
+///   what the store's atomic-write helper and the keyset flush-before-ack
+///   fence rely on.
+/// - **Create-new is exclusive.** [`StoreFs::create_new_file`] must fail if
+///   the path already exists (`std::fs::File::create_new` semantics), so a
+///   segment can never silently truncate a predecessor.
+/// - **Symlink rejection fails closed.** [`StoreFs::reject_symlink_leaf`]
+///   must refuse a symlink leaf; treating one as writable re-opens the
+///   redirected-write hazard the guard exists to close.
+/// - **`rename`/`remove_file` are the compaction swap and reclaim points.**
+///   They must be atomic with respect to crashes to the same degree the
+///   platform rename is.
+///
+/// # Scope and limitation
+///
+/// The method signatures are anchored on concrete `std::fs::File` /
+/// [`tempfile::NamedTempFile`] handles. That makes this seam suitable for
+/// alternate *native* backends (different volumes, fault injection,
+/// instrumentation, delegation with policy) — not for a pure in-memory or
+/// wasm filesystem, which cannot mint real file handles. A handle-abstracted
+/// seam is a separate, future design (tracked with the wasm32 runtime work in
+/// issue #168).
+///
+/// [`Spawn`]: crate::store::Spawn
+pub trait StoreFs: Send + Sync {
     /// Iterate a directory's entries. Mirrors [`std::fs::read_dir`].
+    ///
+    /// # Errors
+    /// The underlying directory-read failure.
     fn read_dir(&self, path: &Path) -> io::Result<ReadDir>;
 
     /// Create a directory and all missing parents. Mirrors
     /// [`std::fs::create_dir_all`].
+    ///
+    /// # Errors
+    /// The underlying directory-creation failure.
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 
     /// Create-new the segment/data file at `path`, returning the open handle.
     ///
     /// `path` is the LOGICAL file path the caller will hold (e.g. a segment
     /// `.fbat`); a fault-injecting backend keys its durable-length model off it
-    /// so a later [`StoreFs::crash`] can truncate the file to its last fsynced
-    /// length. Mirrors [`create_new_file`].
+    /// so a simulated crash can truncate the file to its last fsynced length.
+    /// Must be create-new exclusive (`std::fs::File::create_new` semantics).
+    ///
+    /// # Errors
+    /// [`StoreError::Io`] on the creation failure — including when the path
+    /// already exists, which the exclusivity contract requires.
     fn create_new_file(&self, path: &Path) -> Result<File, StoreError>;
 
     /// Fsync the contents of `file` (backing `path`) with `mode`.
     ///
-    /// This is the per-event / per-rotation durability boundary. A backend may
-    /// honor it (advancing the durable length recorded for `path`) or, under its
-    /// seeded fault schedule, drop it (leaving the most recent bytes lost on the
-    /// next [`StoreFs::crash`]). `path` lets the backend key its durable model.
-    /// Mirrors [`super::sync::sync_file_with_mode`].
+    /// This is the per-event / per-rotation durability boundary: returning `Ok`
+    /// asserts the contents survive a crash. A fault-injecting backend may,
+    /// under its seeded fault schedule, drop the sync (leaving the most recent
+    /// bytes lost on the next simulated crash). `path` lets such a backend key
+    /// its durable-length model.
+    ///
+    /// # Errors
+    /// The sync failure; the store treats it as a durability loss and fails
+    /// closed (the writer poisons rather than advancing the durable frontier).
     fn sync_file_with_mode(
         &self,
         file: &File,
@@ -432,23 +488,42 @@ pub(crate) trait StoreFs: Send + Sync {
 
     /// Fsync the contents of `file` (backing `path`) unconditionally (`sync_all`
     /// semantics). Used on segment create where the header bytes must be durable
-    /// before the directory entry. Mirrors [`super::sync::sync_file_all_io`].
+    /// before the directory entry.
+    ///
+    /// # Errors
+    /// The underlying sync failure.
     fn sync_file_all(&self, file: &File, path: &Path) -> io::Result<()>;
 
     /// Fsync the directory entry for `path`'s parent so a freshly-created file's
-    /// name is durable. Mirrors [`super::sync::sync_parent_dir`].
+    /// name is durable.
+    ///
+    /// # Errors
+    /// The underlying directory-sync failure.
     fn sync_parent_dir(&self, path: &Path) -> Result<(), StoreError>;
 
-    /// Reject symlink leaf paths before writing. Mirrors [`reject_symlink_leaf`].
+    /// Reject symlink leaf paths before writing; a symlink leaf must fail
+    /// closed rather than redirect a store write outside the data directory.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`] with `InvalidInput` when `path` is a symlink leaf.
     fn reject_symlink_leaf(&self, path: &Path, purpose: &str) -> Result<(), StoreError>;
 
-    /// Canonicalize a path. Mirrors [`canonicalize`].
+    /// Canonicalize a path. Mirrors [`std::fs::canonicalize`].
+    ///
+    /// # Errors
+    /// The underlying canonicalization failure.
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
 
-    /// Symlink-aware metadata. Mirrors [`symlink_metadata`].
+    /// Symlink-aware metadata. Mirrors [`std::fs::symlink_metadata`].
+    ///
+    /// # Errors
+    /// The underlying metadata failure.
     fn symlink_metadata(&self, path: &Path) -> io::Result<Metadata>;
 
-    /// Copy-on-write file copy for fork. Mirrors [`cow_copy_file`].
+    /// Copy-on-write file copy for fork, reporting the strategy actually used.
+    ///
+    /// # Errors
+    /// The failure of the last strategy attempted under `preference`.
     fn cow_copy_file(
         &self,
         from: &Path,
@@ -456,32 +531,47 @@ pub(crate) trait StoreFs: Send + Sync {
         preference: crate::store::CopyPreference,
     ) -> io::Result<CowStrategyUsed>;
 
-    /// Deep file copy for snapshot. Mirrors [`copy`].
+    /// Deep file copy for snapshot. Mirrors [`std::fs::copy`].
+    ///
+    /// # Errors
+    /// The underlying copy failure.
     fn copy(&self, from: &Path, to: &Path) -> io::Result<u64>;
 
-    /// File metadata. Mirrors [`metadata`].
+    /// File metadata. Mirrors [`std::fs::metadata`].
+    ///
+    /// # Errors
+    /// The underlying metadata failure.
     fn metadata(&self, path: &Path) -> io::Result<Metadata>;
 
-    /// Rename `from` to `to`. Mirrors [`rename`].
+    /// Rename `from` to `to`. Mirrors [`std::fs::rename`].
     ///
     /// Crash-sensitive: the single atomic swap/rollback point of compaction
     /// (relocate the merged source, then restore it on rollback). Routed so a
     /// fault-injecting backend can tear the swap and a crash harness can observe
     /// the half-applied rename.
+    ///
+    /// # Errors
+    /// The underlying rename failure.
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
 
-    /// Remove the file at `path`. Mirrors [`remove_file`].
+    /// Remove the file at `path`. Mirrors [`std::fs::remove_file`].
     ///
     /// Crash-sensitive: the post-swap reclaim of superseded segments after a
     /// successful compaction. Routed so the reclaim becomes fault-injectable.
+    ///
+    /// # Errors
+    /// The underlying removal failure.
     fn remove_file(&self, path: &Path) -> io::Result<()>;
 
     /// Remove the file at `path`, reporting whether it existed (`Ok(false)` when
-    /// already absent). Mirrors [`remove_file_if_present`].
+    /// already absent).
     ///
     /// Provided in terms of [`StoreFs::remove_file`] so a fault-injecting backend
     /// only interposes the one primitive; the not-found tolerance is identical on
     /// every backend.
+    ///
+    /// # Errors
+    /// Any [`StoreFs::remove_file`] failure other than not-found.
     fn remove_file_if_present(&self, path: &Path) -> io::Result<bool> {
         match self.remove_file(path) {
             Ok(()) => Ok(true),
@@ -490,19 +580,27 @@ pub(crate) trait StoreFs: Send + Sync {
         }
     }
 
-    /// Create a uniquely-named temp file in `dir`. Mirrors [`named_temp_in`].
+    /// Create a uniquely-named temp file in `dir`.
     ///
     /// The temp file is the staging half of an atomic publish: the caller writes
     /// + fsyncs it, then hands it to [`StoreFs::persist_temp_with_parent_sync`].
+    ///
+    /// # Errors
+    /// The underlying temp-file creation failure.
     fn named_temp_in(&self, dir: &Path) -> io::Result<NamedTempFile>;
 
-    /// Persist `named_temp` as `final_path` with a parent-directory fsync.
-    /// Mirrors [`super::sync::persist_temp_with_parent_sync`].
+    /// Persist `named_temp` as `final_path` with a parent-directory fsync —
+    /// the atomic publish point (a crash leaves the old complete file or the
+    /// new one, never a torn mixture).
     ///
     /// Crash-sensitive: the atomic publish point for the visibility-range and
     /// cursor-checkpoint metadata files. Routed so a fault-injecting backend can
     /// drop the rename and a crash harness can observe a publish that the store
     /// believed durable.
+    ///
+    /// # Errors
+    /// The persist/rename failure; on error the previous complete file (or its
+    /// absence) must remain intact at `final_path`.
     fn persist_temp_with_parent_sync(
         &self,
         named_temp: NamedTempFile,
@@ -511,14 +609,18 @@ pub(crate) trait StoreFs: Send + Sync {
     ) -> io::Result<()>;
 
     /// Read exactly `buf.len()` bytes into `buf` starting at byte `offset` of
-    /// `file`. Mirrors the [`read_exact_at`] free fn.
+    /// `file`.
     ///
-    /// This is the active-segment frame read (the FD/pread path;
-    /// [`super::super::segment::scan::Reader`] holds the open handle). Routed so a
-    /// fault-injecting backend can inject a positioned-read error or a short read
-    /// where the free fn — which takes no fs handle — could not be intercepted.
-    /// The `read_at` / `#[cfg(unix)]` / `FileExt` contact stays in the free fn
-    /// under `platform/`; [`RealFs`] delegates straight to it.
+    /// This is the active-segment frame read (the FD/pread path; the segment
+    /// reader holds the open handle). Routed so a fault-injecting backend can
+    /// inject a positioned-read error or a short read. The `read_at` /
+    /// `#[cfg(unix)]` / `FileExt` contact stays in the platform free fn;
+    /// [`RealFs`] delegates straight to it.
+    ///
+    /// # Errors
+    /// [`PositionedReadError::Io`] on a read failure, or
+    /// [`PositionedReadError::ShortRead`] when end-of-file arrives before the
+    /// buffer is filled.
     fn read_exact_at(
         &self,
         file: &mut File,
@@ -531,7 +633,7 @@ pub(crate) trait StoreFs: Send + Sync {
 /// `platform::fs::*` free functions, so the default build behaves byte-for-byte
 /// as it did before the seam was introduced.
 #[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct RealFs;
+pub struct RealFs;
 
 impl StoreFs for RealFs {
     fn read_dir(&self, path: &Path) -> io::Result<ReadDir> {

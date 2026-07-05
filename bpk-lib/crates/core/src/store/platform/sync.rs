@@ -73,8 +73,17 @@ pub(crate) fn sync_file_all_io(file: &File) -> std::io::Result<()> {
     file.sync_all()
 }
 
+/// Proof token that parent-directory durability was admitted on this platform.
+///
+/// Minted only by the store's platform-evidence admission check (there is no
+/// public constructor): holding one means the current platform's
+/// parent-directory sync behavior was probed and found admissible. A custom
+/// [`StoreFs`](crate::store::StoreFs) backend receives it in
+/// [`persist_temp_with_parent_sync`](crate::store::StoreFs::persist_temp_with_parent_sync)
+/// and must treat it as the authorization to perform the publish — the token
+/// keeps the fail-closed admission decision on the store side of the seam.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ParentDirSyncAdmission {
+pub struct ParentDirSyncAdmission {
     _private: (),
 }
 
