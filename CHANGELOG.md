@@ -34,8 +34,8 @@ on-disk format changes anywhere in this release.
   must uphold documented on the trait. Note the honest limitation: the
   `File`-anchored signatures support alternate *native* backends, not an
   in-memory/wasm filesystem (see #168).
-- **wasm32-unknown-unknown embedding surface** (#164): a target-conditional
-  uuid `js` RNG feature makes `batpak`, `syncbat`, and
+- **wasm32-unknown-unknown embedding surface** (#164): target-conditional
+  uuid `js` and getrandom `wasm_js` RNG features make `batpak`, `syncbat`, and
   `batpak --features payload-encryption` compile clean for the target, and a
   check-only lane (`cargo xtask wasm-surface`, `just wasm-surface`, plus a
   cheap CI job) keeps them that way. `rust-toolchain.toml` now pins the
