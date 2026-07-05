@@ -164,12 +164,14 @@ impl WriterCore {
     }
 
     /// Durably flush the whole keyset (the durability fence). Called before an
-    /// encrypted append/batch that minted a new key is written, so the key is on
-    /// disk before its ciphertext can be.
+    /// encrypted append/batch that minted a new key is written, so the key is
+    /// durably persisted before its ciphertext can be.
     ///
     /// A no-op when encryption is not configured. Routed through the writer's
-    /// configured [`StoreFs`](crate::store::platform::fs::StoreFs) so a fault-
-    /// injecting filesystem can tear the publish in tests.
+    /// configured [`KeysetBackend`](crate::store::KeysetBackend) — the default
+    /// file backend publishes through the configured
+    /// [`StoreFs`](crate::store::StoreFs), so a fault-injecting filesystem can
+    /// tear the publish in tests.
     ///
     /// # Errors
     /// [`StoreError::Io`]/[`StoreError::Serialization`] if the atomic keyset
@@ -179,6 +181,6 @@ impl WriterCore {
             return Ok(());
         };
         let mut guard = key_store.lock();
-        guard.flush_with_fs(&self.config.data_dir, self.config.fs().as_ref())
+        guard.flush_with_backend(self.config.keyset_backend().as_ref())
     }
 }

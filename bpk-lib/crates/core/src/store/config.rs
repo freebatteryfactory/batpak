@@ -1,5 +1,7 @@
 use crate::event::EventPayloadValidation;
 #[cfg(feature = "payload-encryption")]
+use crate::store::keyscope::backend::{FileKeysetBackend, KeysetBackend};
+#[cfg(feature = "payload-encryption")]
 use crate::store::keyscope::KeyScopeGranularity;
 pub(crate) use crate::store::platform::clock::{
     clock_from_fn, wall_ms_from_timestamp_us, Clock, MonotonicClock, SystemClock,
@@ -93,6 +95,16 @@ pub struct StoreConfig {
         doc(cfg(feature = "payload-encryption"))
     )]
     pub(crate) payload_encryption: Option<KeyScopeGranularity>,
+    /// Optional pluggable keyset storage (issue #162). `None` (default) keeps
+    /// the keyset as the in-directory `keyset.fbatk` file; `Some(backend)`
+    /// routes every keyset load/persist through the caller's
+    /// [`KeysetBackend`] instead.
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    pub(crate) keyset_backend: Option<Arc<dyn KeysetBackend>>,
     /// Fault injector for testing failure scenarios.
     /// Only available with the `dangerous-test-hooks` feature.
     #[cfg(feature = "dangerous-test-hooks")]
@@ -144,6 +156,10 @@ impl StoreConfig {
             // enable crypto-shred explicitly via `with_payload_encryption`.
             #[cfg(feature = "payload-encryption")]
             payload_encryption: None,
+            // Default keyset storage is the in-directory file backend; a
+            // custom backend is installed via `with_keyset_backend`.
+            #[cfg(feature = "payload-encryption")]
+            keyset_backend: None,
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: None,
         }
@@ -339,6 +355,42 @@ impl StoreConfig {
     )]
     pub fn payload_encryption(&self) -> Option<KeyScopeGranularity> {
         self.payload_encryption
+    }
+
+    /// Install a custom [`KeysetBackend`] for crypto-shred keyset storage
+    /// (issue #162).
+    ///
+    /// By default the keyset lives as a single crash-safe file inside the
+    /// store directory ([`FileKeysetBackend`](crate::store::FileKeysetBackend)).
+    /// A custom backend holds the encoded keyset image anywhere else — a
+    /// separate volume, an OS keychain, a database row wrapped by a KMS — and
+    /// must uphold the durability obligations documented on
+    /// [`KeysetBackend`](crate::store::KeysetBackend): the store's
+    /// flush-before-ack fence and shred acknowledgement rely on them. Only
+    /// meaningful together with
+    /// [`with_payload_encryption`](Self::with_payload_encryption).
+    #[cfg(feature = "payload-encryption")]
+    #[cfg_attr(
+        all(docsrs, not(batpak_stable_docs)),
+        doc(cfg(feature = "payload-encryption"))
+    )]
+    pub fn with_keyset_backend(mut self, backend: Arc<dyn KeysetBackend>) -> Self {
+        self.keyset_backend = Some(backend);
+        self
+    }
+
+    /// The keyset backend every keyset load/persist routes through: the
+    /// configured one, or the default in-directory file backend over this
+    /// config's data dir and filesystem.
+    #[cfg(feature = "payload-encryption")]
+    pub(crate) fn keyset_backend(&self) -> Arc<dyn KeysetBackend> {
+        match &self.keyset_backend {
+            Some(backend) => Arc::clone(backend),
+            None => Arc::new(FileKeysetBackend::with_store_fs(
+                self.data_dir.clone(),
+                Arc::clone(&self.fs),
+            )),
+        }
     }
 
     /// Set the fsync strategy used after writes.
@@ -573,6 +625,8 @@ impl Clone for StoreConfig {
             event_payload_validation: self.event_payload_validation,
             #[cfg(feature = "payload-encryption")]
             payload_encryption: self.payload_encryption,
+            #[cfg(feature = "payload-encryption")]
+            keyset_backend: self.keyset_backend.clone(),
             #[cfg(feature = "dangerous-test-hooks")]
             fault_injector: self.fault_injector.clone(),
         }
@@ -609,6 +663,11 @@ impl std::fmt::Debug for StoreConfig {
         // Only the granularity is ever shown — the config holds no key material.
         #[cfg(feature = "payload-encryption")]
         debug.field("payload_encryption", &self.payload_encryption);
+        #[cfg(feature = "payload-encryption")]
+        debug.field(
+            "keyset_backend",
+            &self.keyset_backend.as_ref().map(|_| "<backend>"),
+        );
         debug.finish()
     }
 }

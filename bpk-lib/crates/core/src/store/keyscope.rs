@@ -525,6 +525,9 @@ impl KeyStore {
     }
 }
 
+/// Pluggable keyset storage seam + the default in-directory file backend.
+pub mod backend;
+
 /// Durable keyset persistence + cold-start rehydration (Stage B).
 pub mod persist;
 
