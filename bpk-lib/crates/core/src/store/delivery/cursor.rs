@@ -176,10 +176,14 @@ impl Cursor {
     /// Park until the index publishes a new visible entry past `since_epoch`, or
     /// `timeout` elapses. Replaces a poll-sleep spin; the timeout is the deadline
     /// safety net (a missed wakeup degrades to the timeout, never a hang).
-    pub(crate) fn park_for_data(&self, since_epoch: u64, timeout: Duration) {
+    ///
+    /// Returns whether the park ran its full `timeout` without a wakeup — the
+    /// real-time lower bound [`Cursor::pull_batch`] accumulates so its deadline
+    /// holds even under an injected clock that does not advance while parked.
+    pub(crate) fn park_for_data(&self, since_epoch: u64, timeout: Duration) -> bool {
         self.index
             .sequence
-            .park_for_visibility_change(since_epoch, timeout);
+            .park_for_visibility_change(since_epoch, timeout)
     }
 
     /// Configure this cursor's in-memory write-to-deliver gap observation.
@@ -286,6 +290,13 @@ impl Canal for Cursor {
             return Ok(CanalBatch::Empty);
         }
         let started_ns = self.clock.now_mono_ns();
+        // Real-time floor accumulated from FULLY timed-out parks. An injected
+        // clock may not advance while this thread is parked (a frozen logical
+        // clock), which would otherwise re-park for the full deadline forever;
+        // a timed-out park proves at least `remaining` real time passed, so
+        // `max(logical elapsed, floor)` keeps the deadline a real bound while
+        // an ADVANCING injected clock still governs the wait deterministically.
+        let mut waited_floor = Duration::ZERO;
         loop {
             // Snapshot the visibility epoch BEFORE polling so a publish racing this
             // poll cannot be lost: if it advances the epoch between here and the park
@@ -294,7 +305,7 @@ impl Canal for Cursor {
             let batch = self.poll_batch(max);
             match batch.len() {
                 0 => {
-                    let elapsed = mono_elapsed(self.clock.as_ref(), started_ns);
+                    let elapsed = mono_elapsed(self.clock.as_ref(), started_ns).max(waited_floor);
                     if elapsed >= deadline {
                         return Ok(CanalBatch::Empty);
                     }
@@ -302,7 +313,9 @@ impl Canal for Cursor {
                     // Park on the index's visibility edge instead of a 1 ms poll-spin:
                     // wakes promptly when the writer publishes a new visible entry, and
                     // falls back to `remaining` as a deadline safety net.
-                    self.park_for_data(epoch, remaining);
+                    if self.park_for_data(epoch, remaining) {
+                        waited_floor = waited_floor.saturating_add(remaining);
+                    }
                 }
                 1 => {
                     let mut batch = batch;
@@ -477,6 +490,54 @@ mod mutation_kill_tests {
         assert!(
             matches!(result, CanalBatch::Empty),
             "an empty cursor must return CanalBatch::Empty after the deadline, got a non-empty batch"
+        );
+    }
+
+    /// A clock whose monotonic reading never advances — the frozen
+    /// logical-clock regime (an injected sim clock nobody drives during the
+    /// pull). PR #169 review finding: before the timed-out-park floor,
+    /// `pull_batch` recomputed a zero elapsed forever and re-parked for the
+    /// full deadline instead of returning `CanalBatch::Empty`.
+    struct FrozenClock;
+
+    impl Clock for FrozenClock {
+        fn now_us(&self) -> i64 {
+            0
+        }
+
+        fn now_wall_ns(&self) -> i64 {
+            0
+        }
+
+        fn now_mono_ns(&self) -> i64 {
+            42
+        }
+
+        fn process_boot_ns(&self) -> u64 {
+            0
+        }
+    }
+
+    #[test]
+    fn pull_batch_deadline_is_a_real_bound_under_a_frozen_clock() {
+        let index = fresh_index();
+        let mut cursor = Cursor::new(Region::all(), index, Arc::new(FrozenClock));
+
+        let started = Instant::now();
+        let result = cursor
+            .pull_batch(8, Duration::from_millis(50))
+            .expect("pull_batch on empty cursor");
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(result, CanalBatch::Empty),
+            "PROPERTY: an empty pull under a frozen injected clock must still return \
+             Empty at the deadline (timed-out parks accumulate a real-time floor); a \
+             livelock here hangs the test instead"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(20),
+            "the deadline park must still actually block; elapsed only {elapsed:?}"
         );
     }
 }

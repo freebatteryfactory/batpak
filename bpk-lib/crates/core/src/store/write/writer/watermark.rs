@@ -251,6 +251,14 @@ impl WatermarkAdvanceHandle {
         timeout: Duration,
     ) -> Result<(), StoreError> {
         let started_ns = self.clock.now_mono_ns();
+        // Real-time floor accumulated from FULLY timed-out condvar waits. An
+        // injected clock may not advance while this thread is parked (a frozen
+        // logical clock), which would otherwise re-park for the full timeout
+        // forever; a timed-out wait proves at least `remaining` real time
+        // passed, so `max(logical elapsed, floor)` keeps the caller's timeout
+        // a real bound while an ADVANCING injected clock still governs the
+        // wait deterministically.
+        let mut waited_floor = Duration::ZERO;
         let mut guard = self.state.lock();
         loop {
             if self.poison.load(Ordering::Acquire) {
@@ -261,13 +269,15 @@ impl WatermarkAdvanceHandle {
                     target: "batpak::frontier_wait",
                     ?watermark,
                     target = ?point,
-                    waited_us = duration_micros(mono_elapsed(self.clock.as_ref(), started_ns)),
+                    waited_us = duration_micros(
+                        mono_elapsed(self.clock.as_ref(), started_ns).max(waited_floor)
+                    ),
                     "frontier wait satisfied",
                 );
                 return Ok(());
             }
 
-            let elapsed = mono_elapsed(self.clock.as_ref(), started_ns);
+            let elapsed = mono_elapsed(self.clock.as_ref(), started_ns).max(waited_floor);
             if elapsed >= timeout {
                 tracing::trace!(
                     target: "batpak::frontier_wait",
@@ -300,7 +310,9 @@ impl WatermarkAdvanceHandle {
                 });
             }
 
-            let _wait_result = self.cv.wait_for(&mut guard, remaining);
+            if self.cv.wait_for(&mut guard, remaining).timed_out() {
+                waited_floor = waited_floor.saturating_add(remaining);
+            }
         }
     }
 
@@ -312,6 +324,10 @@ impl WatermarkAdvanceHandle {
         timeout: Duration,
     ) -> Result<(), StoreError> {
         let started_ns = self.clock.now_mono_ns();
+        // Same real-time floor as `wait_for_watermark`: a fully timed-out
+        // condvar wait bounds the deadline even under a non-advancing
+        // injected clock.
+        let mut waited_floor = Duration::ZERO;
         let mut guard = self.state.lock();
         loop {
             if self.poison.load(Ordering::Acquire) {
@@ -327,13 +343,15 @@ impl WatermarkAdvanceHandle {
                     ?watermark,
                     lane,
                     target = ?point,
-                    waited_us = duration_micros(mono_elapsed(self.clock.as_ref(), started_ns)),
+                    waited_us = duration_micros(
+                        mono_elapsed(self.clock.as_ref(), started_ns).max(waited_floor)
+                    ),
                     "lane frontier wait satisfied",
                 );
                 return Ok(());
             }
 
-            let elapsed = mono_elapsed(self.clock.as_ref(), started_ns);
+            let elapsed = mono_elapsed(self.clock.as_ref(), started_ns).max(waited_floor);
             if elapsed >= timeout {
                 tracing::trace!(
                     target: "batpak::frontier_wait",
@@ -359,7 +377,9 @@ impl WatermarkAdvanceHandle {
                 });
             }
 
-            let _wait_result = self.cv.wait_for(&mut guard, remaining);
+            if self.cv.wait_for(&mut guard, remaining).timed_out() {
+                waited_floor = waited_floor.saturating_add(remaining);
+            }
         }
     }
 
