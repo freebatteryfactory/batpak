@@ -376,6 +376,9 @@ impl StoreFs for DenyRemoveFs {
     fn read_dir(&self, path: &std::path::Path) -> std::io::Result<std::fs::ReadDir> {
         RealFs.read_dir(path)
     }
+    fn read(&self, path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+        RealFs.read(path)
+    }
     fn create_dir_all(&self, path: &std::path::Path) -> std::io::Result<()> {
         RealFs.create_dir_all(path)
     }

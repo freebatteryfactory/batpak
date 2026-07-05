@@ -332,6 +332,26 @@ pub enum PositionedReadError {
     },
 }
 
+impl std::fmt::Display for PositionedReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => write!(f, "positioned read failed: {error}"),
+            Self::ShortRead { bytes_read } => {
+                write!(f, "short read: only {bytes_read} byte(s) read before EOF")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PositionedReadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::ShortRead { .. } => None,
+        }
+    }
+}
+
 pub(crate) fn read_exact_at(
     file: &mut File,
     offset: u64,
@@ -508,6 +528,18 @@ pub trait StoreFs: Send + Sync {
     /// [`StoreError::Io`] with `InvalidInput` when `path` is a symlink leaf.
     fn reject_symlink_leaf(&self, path: &Path, purpose: &str) -> Result<(), StoreError>;
 
+    /// Read the entire file at `path`. Mirrors [`std::fs::read`].
+    ///
+    /// Routed so a backend that virtualizes or fault-injects storage serves
+    /// reads from the same model it persisted into — the whole-file read pair
+    /// of the [`StoreFs::named_temp_in`] /
+    /// [`StoreFs::persist_temp_with_parent_sync`] atomic publish (the keyset
+    /// load is this method's first consumer).
+    ///
+    /// # Errors
+    /// The underlying read failure.
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+
     /// Canonicalize a path. Mirrors [`std::fs::canonicalize`].
     ///
     /// # Errors
@@ -668,6 +700,10 @@ impl StoreFs for RealFs {
 
     fn reject_symlink_leaf(&self, path: &Path, purpose: &str) -> Result<(), StoreError> {
         reject_symlink_leaf(path, purpose)
+    }
+
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        read(path)
     }
 
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {

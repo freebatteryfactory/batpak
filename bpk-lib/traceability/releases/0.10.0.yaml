@@ -165,7 +165,12 @@ rows:
   - id: CUT-PUBLISH-TAG-0100
     title: Chain publish + tag after owner sign-off
     status: INCOMPLETE
-    terminal_required: true
+    # Deliberately NOT terminal_required: the publish/tag ceremony runs AFTER
+    # `just seal` (seal is its precondition, not its consequence), so a
+    # terminal-required row here would block the very ceremony it describes.
+    # The owner flips this row to PROVEN (and may set terminal_required) when
+    # the chain is published and tagged.
+    terminal_required: false
     surface: batpak
     witness_gates:
       - release-status

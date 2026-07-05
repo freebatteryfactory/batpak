@@ -15,7 +15,7 @@
 //! `keyset.fbatk` file, published through the store's atomic-write seam.
 
 use crate::store::file_classification::KEYSET_FILENAME;
-use crate::store::platform::fs::{read as fs_read, write_file_atomically_with_fs, RealFs, StoreFs};
+use crate::store::platform::fs::{write_file_atomically_with_fs, RealFs, StoreFs};
 use crate::store::StoreError;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -129,7 +129,10 @@ fn load_keyset_bytes(
 ) -> Result<Option<Zeroizing<Vec<u8>>>, StoreError> {
     let path = dir.join(KEYSET_FILENAME);
     fs.reject_symlink_leaf(&path, "crypto-shred-keyset")?;
-    match fs_read(&path) {
+    // Read through the SAME seam the persist half publishes into, so a
+    // virtualizing or fault-injecting backend serves its own last image
+    // (PR #169 review finding: a free-fn read here bypassed the seam).
+    match fs.read(&path) {
         Ok(bytes) => Ok(Some(Zeroizing::new(bytes))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(StoreError::Io(error)),

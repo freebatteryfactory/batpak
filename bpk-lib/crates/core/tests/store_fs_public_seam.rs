@@ -57,6 +57,10 @@ fn real_fs_upholds_the_documented_backend_contract() -> Result<(), Box<dyn std::
         "create_new_file must refuse an existing path (create-new exclusivity)"
     );
 
+    // Whole-file reads route through the seam too (the keyset load path), so
+    // a virtualizing backend serves its own persisted image on load.
+    assert_eq!(fs.read(&file_path)?, b"0123456789");
+
     // read_exact_at past the end surfaces the typed short-read error, not a
     // zero-fill or a generic failure.
     let mut reopened = std::fs::File::open(&file_path)?;
@@ -74,6 +78,13 @@ fn real_fs_upholds_the_documented_backend_contract() -> Result<(), Box<dyn std::
         matches!(short, PositionedReadError::ShortRead { bytes_read: 4 }),
         "expected ShortRead with 4 bytes read, got {short:?}"
     );
+    // The error type is a std-conformant citizen for downstream `?`/anyhow
+    // propagation: Display renders the failure, Error::source chains.
+    assert_eq!(
+        short.to_string(),
+        "short read: only 4 byte(s) read before EOF"
+    );
+    assert!(std::error::Error::source(&short).is_none());
 
     // cow_copy_file reports the strategy the filesystem actually delivered;
     // DeepCopyOnly must never report a link-based strategy.

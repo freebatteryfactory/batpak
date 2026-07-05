@@ -734,6 +734,9 @@ impl crate::store::platform::fs::StoreFs for SyncFailFs {
     fn read_dir(&self, path: &std::path::Path) -> std::io::Result<std::fs::ReadDir> {
         crate::store::platform::fs::RealFs.read_dir(path)
     }
+    fn read(&self, path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+        crate::store::platform::fs::RealFs.read(path)
+    }
     fn create_dir_all(&self, path: &std::path::Path) -> std::io::Result<()> {
         crate::store::platform::fs::RealFs.create_dir_all(path)
     }

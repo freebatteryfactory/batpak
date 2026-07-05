@@ -413,6 +413,12 @@ impl StoreFs for SimFs {
         crate::store::platform::fs::reject_symlink_leaf(path, purpose)
     }
 
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        // Reads see the real file contents; the sim's fault model interposes
+        // durability (syncs, publishes, crash truncation), not read bytes.
+        crate::store::platform::fs::read(path)
+    }
+
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
         crate::store::platform::fs::canonicalize(path)
     }
