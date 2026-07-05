@@ -18,6 +18,11 @@ const ROOT_DOCS: &[RootDoc<'_>] = &[
         title: "README",
     },
     RootDoc {
+        source_path: "DOCS.md",
+        output_name: "DOCS.html",
+        title: "Documentation Map",
+    },
+    RootDoc {
         source_path: "01_FACTORY.md",
         output_name: "FACTORY.html",
         title: "Factory",

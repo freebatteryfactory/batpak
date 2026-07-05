@@ -808,6 +808,6 @@ jobs:
         # should not block CI on a one-time admin setup that the codebase
         # cannot fix from inside Rust source. Once Pages is enabled, this
         # step succeeds silently and `continue-on-error` becomes a no-op.
-        # See: https://github.com/TheFreeBatteryFactory/batpak/settings/pages
+        # See: https://github.com/freebatteryfactory/batpak/settings/pages
         continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

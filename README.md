@@ -1,24 +1,55 @@
-[![crates.io](https://img.shields.io/crates/v/batpak.svg)](https://crates.io/crates/v/batpak)
+[![crates.io](https://img.shields.io/crates/v/batpak.svg)](https://crates.io/crates/batpak)
 [![docs.rs](https://docs.rs/batpak/badge.svg)](https://docs.rs/batpak)
 [![CI](https://github.com/freebatteryfactory/batpak/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/freebatteryfactory/batpak/actions/workflows/ci.yml)
 [![license](https://img.shields.io/crates/l/batpak.svg)](#license)
 
 # batpak
 
+**batpak is an embedded, sync-first event store for Rust: an append-only,
+hash-chained journal with typed events, verifiable receipts, deterministic
+replay, and derived projections — no server, no async runtime.** Events append
+to a per-entity log, each hash-bound to its ancestor with Blake3; every
+accepted write returns a verifiable (optionally Ed25519-signed) receipt; state
+is rebuilt by deterministic replay into projections. Use it for tamper-evident
+audit trails, local-first app logs, compliance evidence, and event-sourced
+application state.
+
+Product overview: [freebatteryfactory.com/batpak/overview](https://freebatteryfactory.com/batpak/overview)
+· Documentation map: [DOCS.md](DOCS.md)
+
+## Quickstart — embedded event sourcing in Rust
+
+```sh
+cargo add batpak
+```
+
+```rust
+use batpak::prelude::*;
+
+#[derive(serde::Serialize, serde::Deserialize, EventPayload)]
+#[batpak(category = 0xF, type_id = 1)]
+struct PlayerMoved { x: i32, y: i32 }
+
+let store = Store::open(StoreConfig::new(dir.path()))?;
+let coord = Coordinate::new("player:alice", "room:dungeon")?;
+let receipt = store.append_typed(&coord, &PlayerMoved { x: 10, y: 20 })?;
+let fetched = store.get(receipt.event_id)?; // immutable, verifiable
+store.close()?;
+```
+
+The fully annotated version is [First Shape](#first-shape) below; run it for
+real with `cargo run -p batpak-examples --bin quickstart`.
+
+## The Factory Frame
+
 The Free Battery Factory makes batteries for software boundaries.
 
 > A battery does not own the machine. It powers one boundary.
 
-**batpak** is the core battery: an embedded, sync-first append-only journal with
-typed payloads, Blake3 hash-chained ancestry, verifiable receipts, deterministic
-replay, and derived projections. The **family** around it wires that journal into
+**batpak** is the core battery. The **family** around it wires that journal into
 larger hosts — `syncbat` for runtime dispatch, `netbat` for NETBAT/1 network
 terminals, and `hostbat` for manifest-owned host contracts. Circuits connect
 batteries without one owning another's state.
-
-Use it when you need a tamper-evident, replayable record of what happened:
-agent action audit trails, local-first app logs, compliance evidence,
-event-sourced application state.
 
 batpak is not a database server, queue, ORM, workflow engine, async runtime,
 network framework, or agent framework. Callers own process model, disk
@@ -125,7 +156,27 @@ accepted → written → durable → visible → applied watermarks. `wait_for_d
 batch gates, and projection progress use those watermarks. HLC coordinates
 durability and visibility inside a journal; it is not cross-machine consensus.
 
-## Why Not SQLite With An Events Table?
+## Does batpak require an async runtime?
+
+No. The core API is synchronous end-to-end: no tokio, no executor, no
+`.await`. One exclusive writer thread owns each journal, and cross-thread
+coordination happens over bounded channels inside the crate. Async
+applications embed batpak by bridging at their own boundary (for example
+`spawn_blocking` under tokio). The sync-first contract is part of the model —
+see [02_MODEL.md](02_MODEL.md).
+
+## How is batpak different from SQLite, sqlx, or EventStoreDB?
+
+The decision-stage grid, for when you are weighing alternatives:
+
+| Concern | batpak | `sqlx` on SQLite/Postgres | EventStoreDB client | Hand-rolled append log |
+| --- | --- | --- | --- | --- |
+| In-process, no server | ✅ embedded | ⚠️ file DB or DB server | ❌ dedicated server | ✅ |
+| Needs an async runtime | ❌ sync API | ✅ async | ✅ | your choice |
+| Tamper-evident hash chain | ✅ Blake3, per-entity | ❌ | ❌ | DIY |
+| Verifiable receipts | ✅ optional Ed25519 | ❌ | ❌ | DIY |
+| Deterministic replay → projections | ✅ built-in | DIY | ⚠️ server-side | DIY |
+| Typed payloads at compile time | ✅ `#[derive(EventPayload)]` | manual serde + SQL | manual | DIY |
 
 SQLite gives you durable rows. batpak gives you durable rows plus proof:
 
@@ -147,6 +198,15 @@ When batpak is the wrong tool:
 | Many writers on one mutable directory with leader election | A database server or etcd — batpak is one writer per `data_dir` |
 | Maximum write throughput over verifiable history | batpak serializes appends through a single writer on purpose |
 | Automatic Raft replication inside the core crate | Compose multiple journals and explicit host circuits instead |
+
+## How do I verify an append receipt?
+
+Every accepted write returns an `AppendReceipt`. Check it against the
+committed store with `Store::verify_append_receipt`, or — when you hold the
+ack-shaped wire fields rather than the receipt struct — with
+`Store::verify_append_receipt_wire_detailed`. The verification vocabulary
+(`Signed`, `UnsignedAccepted`, `Invalid(reason)`) and the signing model live
+in [07_RECEIPTS.md](07_RECEIPTS.md).
 
 ## Can You Trust A 0.x Store?
 
