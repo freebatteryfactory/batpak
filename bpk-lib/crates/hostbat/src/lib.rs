@@ -42,6 +42,9 @@ mod event_payload_binding_tests;
 #[cfg(test)]
 mod append_validation_tests;
 
+#[cfg(test)]
+mod host_status_capability_tests;
+
 pub mod builder;
 pub mod composition;
 pub mod descriptor;

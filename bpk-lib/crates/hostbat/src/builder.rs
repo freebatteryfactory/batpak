@@ -15,7 +15,7 @@ use std::sync::Arc;
 use batpak::store::{Spawn, ThreadSpawn};
 use syncbat::{
     AdmissionDecision, AdmissionGuard, CoreBuilder, Ctx, EffectBackend, Handler, HandlerError,
-    HandlerResult, OperationDescriptor, OperationEffectRow, ReceiptSink,
+    HandlerResult, OperationDescriptor, OperationEffectRow, OperationStatusSink, ReceiptSink,
 };
 
 use crate::composition::CompositionSchemaBuilder;
@@ -36,6 +36,7 @@ type BoxedHandler = Box<dyn Handler + 'static>;
 type BoxedReceiptSink = Box<dyn ReceiptSink + 'static>;
 type BoxedEffectBackend = Box<dyn EffectBackend + 'static>;
 type BoxedHostController = Box<dyn HostController + 'static>;
+type BoxedStatusSink = Arc<dyn OperationStatusSink + Send + Sync>;
 
 /// Domain separator for the host-composition fingerprint.
 const HOST_FINGERPRINT_DOMAIN: &str = "hostbat.host.v1";
@@ -55,6 +56,8 @@ pub struct HostBuilder {
     receipt_sink: Option<BoxedReceiptSink>,
     effect_backend: Option<BoxedEffectBackend>,
     host_control: Option<BoxedHostController>,
+    status_sink: Option<BoxedStatusSink>,
+    granted_capabilities: BTreeSet<String>,
 }
 
 impl Default for HostBuilder {
@@ -73,6 +76,8 @@ impl Default for HostBuilder {
             receipt_sink: None,
             effect_backend: None,
             host_control: None,
+            status_sink: None,
+            granted_capabilities: BTreeSet::new(),
         }
     }
 }
@@ -99,6 +104,48 @@ impl HostBuilder {
         S: ReceiptSink + 'static,
     {
         self.receipt_sink = Some(Box::new(sink));
+        self
+    }
+
+    /// Wire an operation-status sink through to the composed runtime.
+    ///
+    /// Operations mounted through this host then emit
+    /// [`syncbat::OperationStatusFactV1`] lifecycle facts (started / terminal)
+    /// exactly as they would through a bare
+    /// [`syncbat::CoreBuilder::status_sink`]. Without a sink bound, no
+    /// lifecycle facts are recorded.
+    #[must_use]
+    pub fn status_sink<S>(mut self, sink: S) -> Self
+    where
+        S: OperationStatusSink + Send + Sync + 'static,
+    {
+        self.status_sink = Some(Arc::new(sink));
+        self
+    }
+
+    /// Grant one runtime capability token to the composed runtime (repeatable).
+    ///
+    /// An operation declaring a required capability token (via
+    /// `OperationEffectRow::requires_capability` or the `#[operation]` macro)
+    /// dispatches only when every named token was granted here; otherwise the
+    /// runtime fails closed, exactly as with
+    /// [`syncbat::CoreBuilder::grant_capability`].
+    #[must_use]
+    pub fn grant_capability(mut self, capability: impl Into<String>) -> Self {
+        self.granted_capabilities.insert(capability.into());
+        self
+    }
+
+    /// Grant several runtime capability tokens; see [`Self::grant_capability`]
+    /// for the gate semantics.
+    #[must_use]
+    pub fn grant_capabilities<I, S>(mut self, capabilities: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.granted_capabilities
+            .extend(capabilities.into_iter().map(Into::into));
         self
     }
 
@@ -277,6 +324,12 @@ impl HostBuilder {
             // was assembled without one explicitly records no receipts; opt out
             // here so the absence is a stated choice rather than a silent drop.
             core_builder.without_receipts();
+        }
+        if let Some(sink) = self.status_sink {
+            core_builder.status_sink_boxed(sink);
+        }
+        if !self.granted_capabilities.is_empty() {
+            core_builder.grant_capabilities(self.granted_capabilities);
         }
         // The store-effect backend, schema-validated at the append boundary. The
         // host-control layer wraps this OUTER so store axes still flow through it.
