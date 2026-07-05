@@ -1,8 +1,9 @@
 use crate::store::config::duration_micros;
+use crate::store::platform::clock::{mono_elapsed, Clock};
 use crate::store::{
     AppendReceipt, HlcPoint, Open, Store, StoreError, StoreInvariant, WatermarkKind,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 struct GateWaitMeasurement {
     result: Result<(), StoreError>,
@@ -10,6 +11,7 @@ struct GateWaitMeasurement {
 }
 
 fn measure_gate_wait<ResolveTarget, WaitForTarget>(
+    clock: &dyn Clock,
     resolve_target: ResolveTarget,
     wait_for_target: WaitForTarget,
 ) -> Result<GateWaitMeasurement, StoreError>
@@ -18,10 +20,10 @@ where
     WaitForTarget: FnOnce(HlcPoint) -> Result<(), StoreError>,
 {
     let target = resolve_target()?;
-    let started = Instant::now();
+    let started_ns = clock.now_mono_ns();
     let result = wait_for_target(target);
     Ok(GateWaitMeasurement {
-        waited_us: duration_micros(started.elapsed()),
+        waited_us: duration_micros(mono_elapsed(clock, started_ns)),
         result,
     })
 }
@@ -80,6 +82,7 @@ impl Store<Open> {
         gate: DurabilityGate,
     ) -> Result<(), StoreError> {
         let measurement = measure_gate_wait(
+            self.runtime.clock(),
             || self.receipt_point(receipt),
             |target| match gate.kind {
                 WatermarkKind::Accepted => self.wait_for_accepted(target, gate.timeout),
@@ -104,10 +107,12 @@ impl Store<Open> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::platform::clock::SystemClock;
     use std::sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
     };
+    use std::time::Instant;
 
     #[test]
     fn timeout_accessor_returns_the_configured_wait_not_default() {
@@ -133,6 +138,7 @@ mod tests {
         let before_lookup = Instant::now();
 
         let measurement = measure_gate_wait(
+            &SystemClock::new(),
             || {
                 std::thread::sleep(Duration::from_millis(40));
                 lookup_complete.store(true, Ordering::SeqCst);
@@ -156,6 +162,64 @@ mod tests {
             measurement.waited_us < lookup_inclusive_us / 2,
             "waited_us must measure only the watermark wait window, not receipt lookup work; waited_us={} lookup_inclusive_us={lookup_inclusive_us}",
             measurement.waited_us
+        );
+        assert!(measurement.result.is_ok());
+    }
+
+    /// A clock whose monotonic reading advances a fixed amount per sample.
+    /// Pins the seam: `waited_us` must come from [`Clock::now_mono_ns`], so a
+    /// regression back to ambient `Instant::now()` reads real elapsed time
+    /// (~0us here) instead of the scripted step and fails the equality.
+    struct SteppingClock {
+        mono_ns: AtomicI64,
+        step_ns: i64,
+    }
+
+    impl Clock for SteppingClock {
+        fn now_us(&self) -> i64 {
+            0
+        }
+
+        fn now_wall_ns(&self) -> i64 {
+            0
+        }
+
+        fn now_mono_ns(&self) -> i64 {
+            self.mono_ns.fetch_add(self.step_ns, Ordering::SeqCst)
+        }
+
+        fn process_boot_ns(&self) -> u64 {
+            0
+        }
+    }
+
+    #[test]
+    fn gate_wait_measurement_reads_the_injected_clock() {
+        let step_ns = 7_000_000_i64; // 7ms per sample
+        let clock = SteppingClock {
+            mono_ns: AtomicI64::new(0),
+            step_ns,
+        };
+
+        let measurement = measure_gate_wait(
+            &clock,
+            || {
+                Ok(HlcPoint {
+                    wall_ms: 1,
+                    global_sequence: 1,
+                })
+            },
+            |_| Ok(()),
+        )
+        .expect("measurement succeeds");
+
+        // Exactly two mono samples bracket the wait: started at 0, ended at
+        // step_ns, so waited_us is the scripted delta — deterministic, no
+        // tolerance window needed.
+        assert_eq!(
+            measurement.waited_us,
+            u64::try_from(step_ns).unwrap_or(u64::MAX) / 1000,
+            "waited_us must be derived from the injected Clock::now_mono_ns samples"
         );
         assert!(measurement.result.is_ok());
     }

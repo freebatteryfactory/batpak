@@ -1,4 +1,5 @@
 use crate::store::config::duration_micros;
+use crate::store::platform::clock::mono_elapsed;
 use crate::store::stats::{
     FrontierView, HlcPoint, LaneFrontierView, WatermarkKind, WatermarkSnapshot,
 };
@@ -8,13 +9,16 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub(crate) struct WatermarkAdvanceHandle {
     state: Arc<Mutex<WatermarkState>>,
     cv: Arc<Condvar>,
     poison: Arc<AtomicBool>,
+    /// Same clock the wrapped [`WatermarkState`] stamps with; wait loops
+    /// measure their deadlines on it so injected clocks govern frontier waits.
+    clock: Arc<dyn Clock>,
 }
 
 pub(crate) struct WatermarkGuard<'a> {
@@ -96,10 +100,12 @@ impl LaneWatermarks {
 
 impl WatermarkAdvanceHandle {
     fn new(state: WatermarkState) -> Self {
+        let clock = Arc::clone(&state.clock);
         Self {
             state: Arc::new(Mutex::new(state)),
             cv: Arc::new(Condvar::new()),
             poison: Arc::new(AtomicBool::new(false)),
+            clock,
         }
     }
 
@@ -244,7 +250,7 @@ impl WatermarkAdvanceHandle {
         point: HlcPoint,
         timeout: Duration,
     ) -> Result<(), StoreError> {
-        let started = Instant::now();
+        let started_ns = self.clock.now_mono_ns();
         let mut guard = self.state.lock();
         loop {
             if self.poison.load(Ordering::Acquire) {
@@ -255,13 +261,13 @@ impl WatermarkAdvanceHandle {
                     target: "batpak::frontier_wait",
                     ?watermark,
                     target = ?point,
-                    waited_us = duration_micros(started.elapsed()),
+                    waited_us = duration_micros(mono_elapsed(self.clock.as_ref(), started_ns)),
                     "frontier wait satisfied",
                 );
                 return Ok(());
             }
 
-            let elapsed = started.elapsed();
+            let elapsed = mono_elapsed(self.clock.as_ref(), started_ns);
             if elapsed >= timeout {
                 tracing::trace!(
                     target: "batpak::frontier_wait",
@@ -305,7 +311,7 @@ impl WatermarkAdvanceHandle {
         point: HlcPoint,
         timeout: Duration,
     ) -> Result<(), StoreError> {
-        let started = Instant::now();
+        let started_ns = self.clock.now_mono_ns();
         let mut guard = self.state.lock();
         loop {
             if self.poison.load(Ordering::Acquire) {
@@ -321,13 +327,13 @@ impl WatermarkAdvanceHandle {
                     ?watermark,
                     lane,
                     target = ?point,
-                    waited_us = duration_micros(started.elapsed()),
+                    waited_us = duration_micros(mono_elapsed(self.clock.as_ref(), started_ns)),
                     "lane frontier wait satisfied",
                 );
                 return Ok(());
             }
 
-            let elapsed = started.elapsed();
+            let elapsed = mono_elapsed(self.clock.as_ref(), started_ns);
             if elapsed >= timeout {
                 tracing::trace!(
                     target: "batpak::frontier_wait",

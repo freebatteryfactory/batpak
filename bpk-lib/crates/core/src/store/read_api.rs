@@ -742,7 +742,11 @@ impl<State: crate::store::StoreState> Store<State> {
     /// require the checkpoint-bound cursor worker surface rather than this
     /// constructor.
     pub fn cursor_guaranteed(&self, region: &Region) -> Cursor {
-        Cursor::new(region.clone(), Arc::clone(&self.index))
+        Cursor::new(
+            region.clone(),
+            Arc::clone(&self.index),
+            self.runtime.clock_arc(),
+        )
     }
 }
 

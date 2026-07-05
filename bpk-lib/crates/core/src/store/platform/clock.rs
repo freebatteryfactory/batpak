@@ -7,9 +7,10 @@ use std::time::Instant;
 ///
 /// Boundary: this seam owns every clock value that lands on disk, appears in a
 /// public report or receipt, or participates in identity such as UUIDv7 wall
-/// bits. Process-local wait deadlines still use `Instant`: cursor pull waits,
-/// frontier waits, and writer idle backoff compute elapsed time for local
-/// scheduling only, and never become durable bytes or receipt/report identity.
+/// bits. Process-local wait deadlines (cursor pull waits, frontier waits, gate
+/// wait measurement) also route through [`Clock::now_mono_ns`], so an injected
+/// clock governs them and no wait path touches `std::time::Instant` directly —
+/// the one `Instant` holder is [`SystemClock`]'s process-wide monotonic anchor.
 ///
 /// Production uses [`SystemClock`]. Tests and embeddings that need repeatable
 /// store behavior can provide a custom implementation and install it with
@@ -23,6 +24,16 @@ pub trait Clock: Send + Sync {
     fn now_mono_ns(&self) -> i64;
     /// Return the process-epoch marker for monotonic metadata.
     fn process_boot_ns(&self) -> u64;
+}
+
+/// Elapsed time between a saved [`Clock::now_mono_ns`] sample and now.
+///
+/// Total: a non-monotonic reading clamps to zero rather than panicking, and
+/// the clamp makes the `i64 -> u64` conversion infallible. Wait loops use this
+/// instead of `Instant::elapsed` so injected clocks govern local deadlines.
+pub(crate) fn mono_elapsed(clock: &dyn Clock, started_ns: i64) -> std::time::Duration {
+    let delta_ns = clock.now_mono_ns().saturating_sub(started_ns).max(0);
+    std::time::Duration::from_nanos(u64::try_from(delta_ns).unwrap_or(u64::MAX))
 }
 
 /// Returns microseconds since Unix epoch, saturating to `i64::MAX` if the system
