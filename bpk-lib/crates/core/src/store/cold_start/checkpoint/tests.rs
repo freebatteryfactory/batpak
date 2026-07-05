@@ -83,7 +83,7 @@ fn round_trip_with_entries() {
         crate::encoding::from_bytes(body).expect("checkpoint body should deserialize directly");
     assert_eq!(direct.entries.len(), 16);
     assert!(
-        validate_watermark_segment(dir, 0, 4096).is_ok(),
+        validate_watermark_segment(dir, 0, 4096, &crate::store::platform::fs::RealFs).is_ok(),
         "round-trip fixture must satisfy watermark validation"
     );
 
@@ -133,7 +133,8 @@ fn current_version_snapshot_restores_checkpoint_directly() {
     )
     .expect("write checkpoint");
 
-    let loaded = try_load_checkpoint_snapshot(dir).expect("load checkpoint snapshot");
+    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
+        .expect("load checkpoint snapshot");
 
     assert_eq!(loaded.entries.len(), 16);
     assert_eq!(loaded.watermark.watermark_offset, 4096);
@@ -199,7 +200,8 @@ fn current_version_checkpoint_restores_receipt_extensions_directly() {
 
     write_checkpoint(&idx, dir, 0, 64).expect("write checkpoint");
 
-    let loaded = try_load_checkpoint_snapshot(dir).expect("load checkpoint snapshot");
+    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
+        .expect("load checkpoint snapshot");
     assert!(
         loaded.receipt_extensions_hydrated,
         "PROPERTY: current checkpoints must not need frame hydration for receipt extensions."
@@ -386,7 +388,7 @@ fn future_version_is_a_canonical_refusal_not_a_silent_rebuild() {
     // every non-Loaded outcome to None, so we assert directly on the reader.)
     assert!(
         matches!(
-            format::read_checkpoint_file(dir),
+            format::read_checkpoint_file(dir, &crate::store::platform::fs::RealFs),
             crate::store::cold_start::FileLoad::FutureVersion { found, supported }
                 if found == future && supported == format::CHECKPOINT_VERSION
         ),
@@ -571,7 +573,8 @@ fn v3_checkpoint_defaults_lane_depth_to_zero() {
     bytes.extend_from_slice(&body);
     std::fs::write(&path, bytes).expect("write v3 checkpoint");
 
-    let loaded = try_load_checkpoint_snapshot(dir).expect("load v3 checkpoint snapshot");
+    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
+        .expect("load v3 checkpoint snapshot");
     assert!(loaded.entries.iter().all(|entry| entry.dag_lane == 0));
     assert!(loaded.entries.iter().all(|entry| entry.dag_depth == 0));
 }
@@ -661,7 +664,8 @@ fn v4_checkpoint_preserves_lane_depth_and_defaults_reserved_stats() {
         },
     );
 
-    let loaded = try_load_checkpoint_snapshot(dir).expect("load v4 checkpoint snapshot");
+    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
+        .expect("load v4 checkpoint snapshot");
     assert!(
         loaded.entries.iter().all(|entry| entry.dag_lane == 7),
         "PROPERTY: checkpoint v4 must preserve persisted DAG lane coordinates."
@@ -774,7 +778,8 @@ fn v5_checkpoint_preserves_reserved_stats_and_requires_extension_hydration() {
         },
     );
 
-    let loaded = try_load_checkpoint_snapshot(dir).expect("load v5 checkpoint snapshot");
+    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
+        .expect("load v5 checkpoint snapshot");
     assert!(loaded.entries.iter().all(|entry| entry.dag_lane == 5));
     assert!(loaded.entries.iter().all(|entry| entry.dag_depth == 8));
     assert_eq!(

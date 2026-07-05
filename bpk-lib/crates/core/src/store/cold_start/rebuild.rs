@@ -104,7 +104,8 @@ impl<'a> RestorePlanner<'a> {
     fn build(&self) -> Result<RestorePlan, StoreError> {
         // Pending compaction requires marker-aware segment reconciliation
         // before stale mmap/checkpoint artifacts can be trusted.
-        let has_pending_compaction = load_pending_compaction(self.data_dir)?.is_some();
+        let has_pending_compaction =
+            load_pending_compaction(self.data_dir, self.reader.fs())?.is_some();
         let mut snapshot_loads = SnapshotLoadDiagnostics::default();
 
         if !has_pending_compaction && self.policy.try_mmap_index() {
@@ -113,7 +114,8 @@ impl<'a> RestorePlanner<'a> {
                 crate::store::fault::InjectionPoint::MmapIndexLoad,
                 self.fault_injector,
             )?;
-            let mmap_load = super::mmap::load_mmap_snapshot(self.data_dir, self.clock);
+            let mmap_load =
+                super::mmap::load_mmap_snapshot(self.data_dir, self.clock, self.reader.fs());
             snapshot_loads.record_mmap(&mmap_load);
             // A future-version mmap artifact is a CANONICAL TYPED REFUSAL, NOT a
             // silent rebuild-from-scan: a future writer may have written data
@@ -149,7 +151,8 @@ impl<'a> RestorePlanner<'a> {
                 crate::store::fault::InjectionPoint::CheckpointDecode,
                 self.fault_injector,
             )?;
-            let checkpoint_load = super::checkpoint::load_checkpoint_snapshot(self.data_dir);
+            let checkpoint_load =
+                super::checkpoint::load_checkpoint_snapshot(self.data_dir, self.reader.fs());
             snapshot_loads.record_checkpoint(&checkpoint_load);
             // A future-version checkpoint is a CANONICAL TYPED REFUSAL, NOT a
             // silent rebuild-from-scan — same stance as the mmap path above. A
@@ -313,7 +316,7 @@ pub(crate) fn open_index(
     // have evicted the events) and the index rebuild above must NOT overwrite
     // it. A missing/corrupt file degrades to empty (logged loudly); a
     // future-version file is a hard error. justifies: INV-IDEMPOTENCY-DURABLE-WINDOW
-    match crate::store::index::idemp::read_idemp_file(data_dir)? {
+    match crate::store::index::idemp::read_idemp_file(data_dir, reader.fs())? {
         crate::store::index::idemp::IdempLoad::Loaded(entries) => {
             index.idemp.restore(entries);
         }
@@ -337,7 +340,8 @@ pub(crate) fn open_index(
         crate::store::fault::InjectionPoint::HiddenRangesLoad,
         fault_injector,
     )?;
-    if let Some(ranges) = crate::store::hidden_ranges::load_cancelled_ranges(data_dir)? {
+    if let Some(ranges) = crate::store::hidden_ranges::load_cancelled_ranges(data_dir, reader.fs())?
+    {
         index.restore_cancelled_visibility_ranges(ranges);
     }
     let phase_hidden_ranges_us = elapsed_us(clock, t_hidden);
@@ -442,7 +446,7 @@ fn scanned_entries_from_sidx_footer(
     )?;
     #[cfg(not(feature = "dangerous-test-hooks"))]
     disabled_fault_injection_input(fault_injector);
-    match crate::store::segment::sidx::read_footer(path) {
+    match crate::store::segment::sidx::read_footer(reader.fs(), path) {
         Ok(Some((entries, strings))) => {
             let mut scanned = Vec::with_capacity(entries.len());
             let mut reserved_kind_fallbacks = ReservedKindFallbackStats::default();
@@ -562,7 +566,7 @@ fn collect_tail_entries(
     allocator_floor: u64,
     fault_injector: FaultInjectorRef<'_>,
 ) -> Result<Vec<IndexEntry>, StoreError> {
-    let entries = segment_paths(data_dir)?;
+    let entries = segment_paths(data_dir, reader.fs())?;
     let recoverable_tail_segment_id = entries.last().map(|(segment_id, _)| *segment_id);
     let mut batch_state = crate::store::segment::scan::BatchRecoveryState::default();
     let mut tracker = SequenceTracker {
@@ -658,7 +662,7 @@ fn collect_rebuild_entries(
     data_dir: &Path,
     fault_injector: FaultInjectorRef<'_>,
 ) -> Result<RebuildResult, StoreError> {
-    let entries = segment_paths(data_dir)?;
+    let entries = segment_paths(data_dir, reader.fs())?;
     let recoverable_tail_segment_id = entries.last().map(|(segment_id, _)| *segment_id);
     let configured_active_segment = reader.active_segment_id();
     let active_segment_id = (configured_active_segment != 0).then_some(configured_active_segment);

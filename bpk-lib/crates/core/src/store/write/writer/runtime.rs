@@ -156,7 +156,10 @@ pub(super) fn writer_thread_main(
                     }
                 }
 
-                seg_id = match find_latest_segment_id(&runtime.config.data_dir) {
+                seg_id = match find_latest_segment_id(
+                    &runtime.config.data_dir,
+                    runtime.config.fs().as_ref(),
+                ) {
                     Ok(latest) => next_restart_segment_id(latest, seg_id),
                     Err(error) => {
                         // Terminal exit: cannot resume the writer — poison the gate.
@@ -520,11 +523,13 @@ fn drain_shutdown_queue(
 }
 
 /// Find the latest segment ID by scanning data_dir for .fbat files.
-pub(crate) fn find_latest_segment_id(dir: &std::path::Path) -> Result<Option<u64>, StoreError> {
+pub(crate) fn find_latest_segment_id(
+    dir: &std::path::Path,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+) -> Result<Option<u64>, StoreError> {
     let mut latest = None;
-    for entry in crate::store::platform::fs::read_dir(dir).map_err(StoreError::Io)? {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+    for entry in fs.read_dir(dir).map_err(StoreError::Io)? {
+        let path = dir.join(&entry.name);
         match StoreFileKind::from_path(&path) {
             StoreFileKind::Segment(segment_id) => {
                 latest = Some(latest.unwrap_or(0).max(segment_id.as_u64()));

@@ -1,17 +1,18 @@
-//! The promoted `StoreFs` seam (0.10.0, issue #164).
+//! The handle-abstracted `StoreFs` seam (0.10.0, issues #164/#168).
 //!
-//! PROVES: `StoreConfig::with_fs` is public and functional — a store opened
-//! with an explicitly-installed [`batpak::store::RealFs`] backend appends,
-//! reads, and verifies identically to the default construction, so the
-//! promotion is wired, not merely visible.
+//! PROVES: `StoreConfig::with_fs` is public and functional, and the seam's
+//! backend contract holds over the production backend through ABSTRACT
+//! handles ([`StoreFile`], [`StagedFile`], [`StoreDirLockGuard`]) — no
+//! concrete `std::fs` type appears in any assertion. The contract body is
+//! parameterized over `&dyn StoreFs` so every backend (RealFs here; MemFs in
+//! `store_fs_backend_conformance`) runs the identical corpus.
 
-use std::io::Write;
 use std::sync::Arc;
 
 use batpak::prelude::*;
-use batpak::store::{
-    CopyPreference, CowStrategyUsed, ParentDirSyncAdmission, PositionedReadError, RealFs, StoreFs,
-};
+use batpak::store::{ParentDirSyncAdmission, RealFs};
+
+mod common;
 
 #[derive(serde::Serialize, serde::Deserialize, EventPayload)]
 #[batpak(category = 0xF, type_id = 21)]
@@ -42,66 +43,7 @@ fn store_opened_with_installed_real_fs_appends_and_reads() -> Result<(), Box<dyn
 #[test]
 fn real_fs_upholds_the_documented_backend_contract() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
-    let fs: &dyn StoreFs = &RealFs;
-
-    // create_new_file is exclusive: a second create at the same path must fail
-    // rather than silently truncate the first.
-    let file_path = dir.path().join("segment.probe");
-    let mut file = fs.create_new_file(&file_path)?;
-    file.write_all(b"0123456789")?;
-    fs.sync_file_all(&file, &file_path)?;
-    drop(file);
-    let second = fs.create_new_file(&file_path);
-    assert!(
-        second.is_err(),
-        "create_new_file must refuse an existing path (create-new exclusivity)"
-    );
-
-    // Whole-file reads route through the seam too (the keyset load path), so
-    // a virtualizing backend serves its own persisted image on load.
-    assert_eq!(fs.read(&file_path)?, b"0123456789");
-
-    // read_exact_at past the end surfaces the typed short-read error, not a
-    // zero-fill or a generic failure.
-    let mut reopened = std::fs::File::open(&file_path)?;
-    let mut buf = [0u8; 8];
-    let short = match fs.read_exact_at(&mut reopened, 6, &mut buf) {
-        Ok(()) => {
-            return Err(std::io::Error::other(
-                "PROPERTY: reading 8 bytes at offset 6 of a 10-byte file must short-read",
-            )
-            .into())
-        }
-        Err(error) => error,
-    };
-    assert!(
-        matches!(short, PositionedReadError::ShortRead { bytes_read: 4 }),
-        "expected ShortRead with 4 bytes read, got {short:?}"
-    );
-    // The error type is a std-conformant citizen for downstream `?`/anyhow
-    // propagation: Display renders the failure, Error::source chains.
-    assert_eq!(
-        short.to_string(),
-        "short read: only 4 byte(s) read before EOF"
-    );
-    assert!(std::error::Error::source(&short).is_none());
-
-    // cow_copy_file reports the strategy the filesystem actually delivered;
-    // DeepCopyOnly must never report a link-based strategy.
-    let copy_path = dir.path().join("segment.copy");
-    let used = fs.cow_copy_file(&file_path, &copy_path, CopyPreference::DeepCopyOnly)?;
-    assert_eq!(
-        used,
-        CowStrategyUsed::DeepCopy,
-        "DeepCopyOnly preference must report a deep copy"
-    );
-    assert_eq!(fs.metadata(&copy_path)?.len(), 10);
-
-    // remove_file_if_present reports presence honestly on both edges.
-    assert!(fs.remove_file_if_present(&copy_path)?);
-    assert!(!fs.remove_file_if_present(&copy_path)?);
-
-    Ok(())
+    common::backend_upholds_the_documented_contract(&RealFs, dir.path())
 }
 
 #[test]

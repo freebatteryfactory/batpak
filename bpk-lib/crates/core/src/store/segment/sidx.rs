@@ -551,7 +551,10 @@ pub(crate) fn read_entries_unauthenticated<R: Read + Seek>(
     footer::read_entries_unauthenticated(reader, segment_id)
 }
 
-pub(crate) fn read_footer(path: &Path) -> Result<Option<SidxFooterData>, StoreError> {
+pub(crate) fn read_footer(
+    fs: &dyn crate::store::platform::fs::StoreFs,
+    path: &Path,
+) -> Result<Option<SidxFooterData>, StoreError> {
     // Derive a segment_id for error messages from the filename ("000042.fbat" → 42).
     // Falls back to 0 if the filename is malformed, but surfaces the parse failure
     // so a corrupt name on disk is not invisible.
@@ -567,7 +570,9 @@ pub(crate) fn read_footer(path: &Path) -> Result<Option<SidxFooterData>, StoreEr
         }
     };
 
-    let mut file = crate::store::platform::fs::open_file(path).map_err(StoreError::Io)?;
+    let mut file = crate::store::platform::fs::StoreFileCursor::new(
+        fs.open_file(path).map_err(StoreError::Io)?,
+    );
 
     let Some(layout) = footer::read_layout(&mut file, segment_id)? else {
         return Ok(None);

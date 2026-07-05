@@ -1,8 +1,7 @@
 use crate::store::platform::fs::StoreFs;
-use crate::store::{platform, HiddenRangesCorruption, StoreError};
+use crate::store::{HiddenRangesCorruption, StoreError};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::io::{BufWriter, Write};
 use std::path::Path;
 
 pub(crate) const VISIBILITY_RANGES_MAGIC: &[u8; 6] = b"FBATVR";
@@ -109,19 +108,16 @@ pub(crate) fn write_cancelled_ranges(
     .map_err(|error| StoreError::Serialization(Box::new(error)))?;
     let crc = crc32fast::hash(&body);
 
-    let tmp = fs.named_temp_in(data_dir).map_err(StoreError::Io)?;
-    {
-        let file = tmp.as_file();
-        let mut writer = BufWriter::new(file);
-        writer.write_all(VISIBILITY_RANGES_MAGIC)?;
-        writer.write_all(&VISIBILITY_RANGES_VERSION.to_le_bytes())?;
-        writer.write_all(&crc.to_le_bytes())?;
-        writer.write_all(&body)?;
-        writer.flush()?;
-    }
-    crate::store::platform::sync::sync_file_all_io(tmp.as_file()).map_err(StoreError::Io)?;
+    let mut tmp = fs.named_temp_in(data_dir).map_err(StoreError::Io)?;
+    tmp.write_all(VISIBILITY_RANGES_MAGIC)
+        .map_err(StoreError::Io)?;
+    tmp.write_all(&VISIBILITY_RANGES_VERSION.to_le_bytes())
+        .map_err(StoreError::Io)?;
+    tmp.write_all(&crc.to_le_bytes()).map_err(StoreError::Io)?;
+    tmp.write_all(&body).map_err(StoreError::Io)?;
+    tmp.sync_all().map_err(StoreError::Io)?;
     let admission = crate::store::platform::sync::admit_current_parent_dir_sync()?;
-    fs.persist_temp_with_parent_sync(tmp, &final_path, admission)
+    tmp.persist(&final_path, admission)
         .map_err(StoreError::Io)?;
     Ok(())
 }
@@ -143,9 +139,10 @@ pub(crate) fn write_cancelled_ranges(
 /// re-opening.
 pub(crate) fn load_cancelled_ranges(
     data_dir: &Path,
+    fs: &dyn StoreFs,
 ) -> Result<Option<CancelledVisibilityRanges>, StoreError> {
     let path = data_dir.join(VISIBILITY_RANGES_FILENAME);
-    let raw = match platform::fs::read(&path) {
+    let raw = match fs.read(&path) {
         Ok(raw) => raw,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {

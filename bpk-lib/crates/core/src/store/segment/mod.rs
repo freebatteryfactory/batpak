@@ -25,7 +25,7 @@ use crate::event::Event;
 use crate::store::{EncodedBytes, ExtensionKey, StoreError};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 // serde(with) resolves via string path — no explicit wire import needed.
 
 /// Segment file format: magic(4) + header_len(4 BE) + header(msgpack) + frames
@@ -94,7 +94,7 @@ pub struct Segment<State> {
     pub header: SegmentHeader,
     /// Filesystem path to the segment file.
     pub path: std::path::PathBuf,
-    file: Option<std::fs::File>,
+    file: Option<Box<dyn crate::store::platform::fs::StoreFile>>,
     written_bytes: u64,
     /// Filesystem backend through which this segment's create + fsync durability
     /// boundary is routed. Production is [`RealFs`]; a deterministic-simulation
@@ -324,9 +324,10 @@ impl Segment<Active> {
         // points at the inode is durable, so a power loss immediately after a
         // rotation cannot lose the freshly-created segment's directory entry.
         // Mirrors the write_file_atomically file-then-dir precedent in
-        // platform/fs.rs. Routed through `fs` so a sim backend records the
-        // create's durable length (and can drop the fsync under its schedule).
-        fs.sync_file_all(&file, &path).map_err(StoreError::Io)?;
+        // platform/fs.rs. The handle was minted by `fs`, so a sim backend
+        // records the create's durable length (and can drop the fsync under
+        // its schedule).
+        file.sync_all().map_err(StoreError::Io)?;
         fs.sync_parent_dir(&path)?;
 
         Ok(Self {
@@ -361,7 +362,12 @@ impl Segment<Active> {
         &mut self,
         path: &std::path::Path,
     ) -> Result<u64, StoreError> {
-        let mut source = crate::store::platform::fs::open_file(path).map_err(StoreError::Io)?;
+        // Opened through the seam so a virtual backend serves the compaction
+        // source from its own model; the cursor adapter provides the
+        // sequential Read + Seek the boundary scanners need.
+        let mut source = crate::store::platform::fs::StoreFileCursor::new(
+            self.fs.open_file(path).map_err(StoreError::Io)?,
+        );
         let mut magic = [0u8; 4];
         source.read_exact(&mut magic).map_err(StoreError::Io)?;
         if &magic != SEGMENT_MAGIC {
@@ -458,7 +464,8 @@ impl Segment<Active> {
         let offset = self.written_bytes;
         if let Some(ref mut destination) = self.file {
             let bytes_to_copy = copy_end.saturating_sub(frames_start);
-            let copied = std::io::copy(&mut source.take(bytes_to_copy), destination)
+            let mut sink = crate::store::platform::fs::StoreFileWriter(destination.as_mut());
+            let copied = std::io::copy(&mut source.take(bytes_to_copy), &mut sink)
                 .map_err(StoreError::Io)?;
             self.written_bytes += copied;
         }
@@ -475,10 +482,11 @@ impl Segment<Active> {
     /// # Errors
     /// Returns `StoreError::Io` if the OS-level sync call fails.
     pub fn sync_with_mode(&mut self, mode: &crate::store::SyncMode) -> Result<(), StoreError> {
-        if let Some(ref f) = self.file {
-            // Routed through `fs` so a sim backend records this segment's durable
-            // length at the sync boundary (and may drop it under its schedule).
-            self.fs.sync_file_with_mode(f, &self.path, mode)?;
+        if let Some(ref mut f) = self.file {
+            // The handle was minted by the configured backend, so a sim
+            // backend records this segment's durable length at the sync
+            // boundary (and may drop it under its schedule).
+            crate::store::platform::sync::sync_store_file_with_mode(f.as_mut(), mode)?;
         }
         Ok(())
     }
@@ -495,7 +503,13 @@ impl Segment<Active> {
         collector: &crate::store::segment::sidx::SidxEntryCollector,
     ) -> Result<(), StoreError> {
         if let Some(ref mut f) = self.file {
-            collector.write_footer(f, self.header.segment_id)?;
+            // The append adapter supplies `stream_position` (= written_bytes,
+            // the segment's own append cursor) without a random-access seek.
+            let mut writer = crate::store::platform::fs::StoreFileAppendWriter::new(
+                f.as_mut(),
+                self.written_bytes,
+            );
+            collector.write_footer(&mut writer, self.header.segment_id)?;
         }
         Ok(())
     }

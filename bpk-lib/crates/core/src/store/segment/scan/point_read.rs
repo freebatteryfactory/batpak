@@ -5,7 +5,6 @@ use crate::store::index::DiskPos;
 use crate::store::segment;
 use crate::store::{EncodedBytes, ExtensionKey, StoreError};
 use std::collections::BTreeMap;
-use std::fs::File;
 
 impl Reader {
     pub(super) fn read_active_frame_into(
@@ -15,24 +14,20 @@ impl Reader {
     ) -> Result<(), StoreError> {
         let segment_id = pos.segment_id;
         let offset = pos.offset;
-        let fs = &self.fs;
         self.with_fd(segment_id, |f| {
-            fs.read_exact_at(f, offset, buf)
-                .map_err(|error| match error {
-                    crate::store::platform::fs::PositionedReadError::Io(error) => {
-                        StoreError::Io(error)
+            f.read_exact_at(offset, buf).map_err(|error| match error {
+                crate::store::platform::fs::PositionedReadError::Io(error) => StoreError::Io(error),
+                crate::store::platform::fs::PositionedReadError::ShortRead { bytes_read } => {
+                    if bytes_read == 0 {
+                        StoreError::corrupt_eof(segment_id)
+                    } else {
+                        StoreError::corrupt_segment_with_detail(
+                            segment_id,
+                            "active frame read ended before requested length",
+                        )
                     }
-                    crate::store::platform::fs::PositionedReadError::ShortRead { bytes_read } => {
-                        if bytes_read == 0 {
-                            StoreError::corrupt_eof(segment_id)
-                        } else {
-                            StoreError::corrupt_segment_with_detail(
-                                segment_id,
-                                "active frame read ended before requested length",
-                            )
-                        }
-                    }
-                })
+                }
+            })
         })
     }
 
@@ -282,14 +277,14 @@ impl Reader {
         Ok(results)
     }
 
-    /// Run `op` against the cached (or freshly opened) file descriptor for `segment_id`,
+    /// Run `op` against the cached (or freshly opened) store handle for `segment_id`,
     /// holding the FD cache lock for the duration. LRU order is maintained on each call.
-    /// On Windows this is required: cloned File handles share the OS file cursor, so
-    /// seek+read must happen under the lock. On Unix, read_at(pread) is cursor-safe but
-    /// still benefits from the single-lock path for cache consistency.
+    /// On non-unix real files this is required: cloned handles share the OS file
+    /// cursor, so seek+read must happen under the lock. On Unix, read_at(pread) is
+    /// cursor-safe but still benefits from the single-lock path for cache consistency.
     fn with_fd<F, T>(&self, segment_id: u64, op: F) -> Result<T, StoreError>
     where
-        F: FnOnce(&mut File) -> Result<T, StoreError>,
+        F: FnOnce(&mut dyn crate::store::platform::fs::StoreFile) -> Result<T, StoreError>,
     {
         let mut cache = self.fd_cache.lock();
         if let Some(pos) = cache.order.iter().position(|&id| id == segment_id) {
@@ -297,7 +292,7 @@ impl Reader {
             cache.order.push(segment_id);
         } else {
             let path = self.data_dir.join(segment::segment_filename(segment_id));
-            let file = crate::store::platform::fs::open_file(&path).map_err(StoreError::Io)?;
+            let file = self.fs.open_file(&path).map_err(StoreError::Io)?;
             if cache.fds.len() >= cache.budget {
                 if let Some(oldest) = cache.order.first().copied() {
                     cache.fds.remove(&oldest);
@@ -313,6 +308,6 @@ impl Reader {
                 "segment fd missing after cache insert",
             ))
         })?;
-        op(file)
+        op(file.as_mut())
     }
 }

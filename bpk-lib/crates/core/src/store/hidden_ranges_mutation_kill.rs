@@ -13,7 +13,6 @@ use super::{
     load_cancelled_ranges, normalize_lane_ranges, normalize_ranges, write_cancelled_ranges,
     CancelledVisibilityRanges, VISIBILITY_RANGES_FILENAME,
 };
-use crate::store::platform::fs::RealFs;
 use crate::store::{HiddenRangesCorruption, StoreError};
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -79,7 +78,7 @@ fn load_cancelled_ranges_rejects_a_short_file_and_reads_a_full_length_header() {
         .expect("create the truncated ranges file")
         .write_all(&[0u8; 5])
         .expect("write a 5-byte truncated file");
-    let short_result = load_cancelled_ranges(short_dir.path());
+    let short_result = load_cancelled_ranges(short_dir.path(), &crate::store::platform::fs::RealFs);
     assert!(
         matches!(
             &short_result,
@@ -100,7 +99,7 @@ fn load_cancelled_ranges_rejects_a_short_file_and_reads_a_full_length_header() {
         .expect("create the exact-length ranges file")
         .write_all(&[0u8; 12])
         .expect("write an exactly-header-length file");
-    let exact_result = load_cancelled_ranges(exact_dir.path());
+    let exact_result = load_cancelled_ranges(exact_dir.path(), &crate::store::platform::fs::RealFs);
     assert!(
         matches!(
             &exact_result,
@@ -125,7 +124,7 @@ fn load_cancelled_ranges_fails_closed_on_a_non_not_found_read_error() {
     crate::store::platform::fs::create_dir_all(&dir.path().join(VISIBILITY_RANGES_FILENAME))
         .expect("materialize a directory at the metadata path");
 
-    let result = load_cancelled_ranges(dir.path());
+    let result = load_cancelled_ranges(dir.path(), &crate::store::platform::fs::RealFs);
     assert!(
         matches!(
             &result,
@@ -152,9 +151,11 @@ fn write_persists_lane_ranges_even_when_the_global_set_is_empty() {
         global: Vec::new(),
         lanes: lane_map([(5u32, vec![(10, 20)])]),
     };
-    write_cancelled_ranges(dir.path(), &ranges, &RealFs).expect("persist lane-only ranges");
+    write_cancelled_ranges(dir.path(), &ranges, &crate::store::platform::fs::RealFs)
+        .expect("persist lane-only ranges");
 
-    let loaded = load_cancelled_ranges(dir.path()).expect("load persisted ranges");
+    let loaded = load_cancelled_ranges(dir.path(), &crate::store::platform::fs::RealFs)
+        .expect("load persisted ranges");
     assert_eq!(
         loaded,
         Some(CancelledVisibilityRanges {

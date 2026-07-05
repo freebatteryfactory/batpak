@@ -159,7 +159,8 @@ pub fn __fuzz_hidden_ranges(data: &[u8]) -> Result<bool, StoreError> {
         .path()
         .join(crate::store::hidden_ranges::VISIBILITY_RANGES_FILENAME);
     std::fs::write(&path, data).map_err(StoreError::Io)?;
-    crate::store::hidden_ranges::load_cancelled_ranges(dir.path()).map(|ranges| ranges.is_some())
+    crate::store::hidden_ranges::load_cancelled_ranges(dir.path(), &crate::store::RealFs)
+        .map(|ranges| ranges.is_some())
 }
 
 /// `load_mmap_index(dir, &clock)` (cold_start/mmap/load.rs).

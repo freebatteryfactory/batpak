@@ -33,7 +33,7 @@
 //! sidecar + window-priority hybrid that makes a within-window keyed retry an
 //! unconditional no-op regardless of compaction, cold-start, or load.
 
-use crate::store::platform::fs::{read as fs_read, write_file_atomically_with_fs, StoreFs};
+use crate::store::platform::fs::{write_file_atomically_with_fs, StoreFs};
 use crate::store::{EncodedBytes, ExtensionKey, StoreError};
 use dashmap::DashMap;
 use std::collections::BTreeMap;
@@ -510,7 +510,6 @@ impl IdempotencyStore {
             &final_path,
             "idempotency-store",
             |file| {
-                use std::io::Write;
                 file.write_all(IDEMP_MAGIC).map_err(StoreError::Io)?;
                 file.write_all(&IDEMP_VERSION.to_le_bytes())
                     .map_err(StoreError::Io)?;
@@ -552,9 +551,12 @@ pub(crate) enum IdempLoad {
 /// * On-disk version NEWER than [`IDEMP_VERSION`] → hard
 ///   [`StoreError::IdempotencyFutureVersion`], mirroring the schema-evo
 ///   FutureVersion stance: a reader can never reconstruct a format it predates.
-pub(crate) fn read_idemp_file(data_dir: &Path) -> Result<IdempLoad, StoreError> {
+pub(crate) fn read_idemp_file(
+    data_dir: &Path,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+) -> Result<IdempLoad, StoreError> {
     let path = data_dir.join(IDEMP_FILENAME);
-    let raw = match fs_read(&path) {
+    let raw = match fs.read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(IdempLoad::Missing)
@@ -850,7 +852,8 @@ mod tests {
         store
             .flush(dir.path(), &crate::store::platform::fs::RealFs)
             .expect("flush idempotency store to disk");
-        let loaded = read_idemp_file(dir.path()).expect("read back the flushed idempotency file");
+        let loaded = read_idemp_file(dir.path(), &crate::store::platform::fs::RealFs)
+            .expect("read back the flushed idempotency file");
         assert!(matches!(&loaded, IdempLoad::Loaded(e) if e.len() == 2));
     }
 

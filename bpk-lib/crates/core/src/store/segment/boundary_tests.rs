@@ -723,15 +723,64 @@ fn try_decode_frame_at_short_circuits_below_a_header_without_consuming() {
     );
 }
 
-/// A [`StoreFs`] that fails `sync_file_with_mode` with a sentinel error; every
-/// other op delegates to [`RealFs`] so segment creation still succeeds. Used to
-/// prove `Segment::sync_with_mode` PROPAGATES a backend sync failure rather than
-/// swallowing it — the `-> Ok(())` mutant would silently report durability that
-/// never happened.
-struct SyncFailFs;
+/// A [`StoreFs`] whose minted handles fail their syncs with a sentinel error
+/// once armed; every other op delegates to [`RealFs`] so segment creation
+/// still succeeds (arming happens after create). Used to prove
+/// `Segment::sync_with_mode` PROPAGATES a backend sync failure rather than
+/// swallowing it — the `-> Ok(())` mutant would silently report durability
+/// that never happened.
+struct SyncFailFs {
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Handle wrapper whose syncs fail with the sentinel once the double is
+/// armed. Creation's unconditional header sync runs BEFORE arming, so the
+/// segment comes up healthy and only the sync-under-test fails.
+struct SyncFailFile {
+    inner: Box<dyn crate::store::platform::fs::StoreFile>,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl SyncFailFile {
+    fn injected(&self) -> Option<std::io::Error> {
+        self.armed
+            .load(std::sync::atomic::Ordering::Acquire)
+            .then(|| std::io::Error::other("injected: handle sync failed"))
+    }
+}
+
+impl crate::store::platform::fs::StoreFile for SyncFailFile {
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.inner.write_all(buf)
+    }
+    fn sync_data(&mut self) -> std::io::Result<()> {
+        match self.injected() {
+            Some(error) => Err(error),
+            None => self.inner.sync_data(),
+        }
+    }
+    fn sync_all(&mut self) -> std::io::Result<()> {
+        match self.injected() {
+            Some(error) => Err(error),
+            None => self.inner.sync_all(),
+        }
+    }
+    fn len(&self) -> std::io::Result<u64> {
+        self.inner.len()
+    }
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read_at(offset, buf)
+    }
+    fn as_std_file(&self) -> Option<&std::fs::File> {
+        self.inner.as_std_file()
+    }
+}
 
 impl crate::store::platform::fs::StoreFs for SyncFailFs {
-    fn read_dir(&self, path: &std::path::Path) -> std::io::Result<std::fs::ReadDir> {
+    fn read_dir(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<Vec<crate::store::platform::fs::DirEntryInfo>> {
         crate::store::platform::fs::RealFs.read_dir(path)
     }
     fn read(&self, path: &std::path::Path) -> std::io::Result<Vec<u8>> {
@@ -743,37 +792,31 @@ impl crate::store::platform::fs::StoreFs for SyncFailFs {
     fn create_new_file(
         &self,
         path: &std::path::Path,
-    ) -> Result<std::fs::File, crate::store::StoreError> {
-        crate::store::platform::fs::RealFs.create_new_file(path)
+    ) -> Result<Box<dyn crate::store::platform::fs::StoreFile>, StoreError> {
+        Ok(Box::new(SyncFailFile {
+            inner: crate::store::platform::fs::RealFs.create_new_file(path)?,
+            armed: std::sync::Arc::clone(&self.armed),
+        }))
     }
-    fn sync_file_with_mode(
-        &self,
-        _file: &std::fs::File,
-        _path: &std::path::Path,
-        _mode: &crate::store::SyncMode,
-    ) -> Result<(), crate::store::StoreError> {
-        Err(crate::store::StoreError::corrupt_segment_with_detail(
-            4242,
-            "injected: sync_file_with_mode failed",
-        ))
-    }
-    fn sync_file_all(&self, file: &std::fs::File, path: &std::path::Path) -> std::io::Result<()> {
-        crate::store::platform::fs::RealFs.sync_file_all(file, path)
-    }
-    fn sync_parent_dir(&self, path: &std::path::Path) -> Result<(), crate::store::StoreError> {
-        crate::store::platform::fs::RealFs.sync_parent_dir(path)
-    }
-    fn reject_symlink_leaf(
+    fn open_file(
         &self,
         path: &std::path::Path,
-        purpose: &str,
-    ) -> Result<(), crate::store::StoreError> {
+    ) -> std::io::Result<Box<dyn crate::store::platform::fs::StoreFile>> {
+        crate::store::platform::fs::RealFs.open_file(path)
+    }
+    fn sync_parent_dir(&self, path: &std::path::Path) -> Result<(), StoreError> {
+        crate::store::platform::fs::RealFs.sync_parent_dir(path)
+    }
+    fn reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> Result<(), StoreError> {
         crate::store::platform::fs::RealFs.reject_symlink_leaf(path, purpose)
     }
     fn canonicalize(&self, path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
         crate::store::platform::fs::RealFs.canonicalize(path)
     }
-    fn symlink_metadata(&self, path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+    fn symlink_metadata(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<crate::store::platform::fs::FileStat> {
         crate::store::platform::fs::RealFs.symlink_metadata(path)
     }
     fn cow_copy_file(
@@ -787,7 +830,10 @@ impl crate::store::platform::fs::StoreFs for SyncFailFs {
     fn copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<u64> {
         crate::store::platform::fs::RealFs.copy(from, to)
     }
-    fn metadata(&self, path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+    fn metadata(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<crate::store::platform::fs::FileStat> {
         crate::store::platform::fs::RealFs.metadata(path)
     }
     fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
@@ -796,25 +842,17 @@ impl crate::store::platform::fs::StoreFs for SyncFailFs {
     fn remove_file(&self, path: &std::path::Path) -> std::io::Result<()> {
         crate::store::platform::fs::RealFs.remove_file(path)
     }
-    fn named_temp_in(&self, dir: &std::path::Path) -> std::io::Result<tempfile::NamedTempFile> {
+    fn named_temp_in(
+        &self,
+        dir: &std::path::Path,
+    ) -> std::io::Result<Box<dyn crate::store::platform::fs::StagedFile>> {
         crate::store::platform::fs::RealFs.named_temp_in(dir)
     }
-    fn persist_temp_with_parent_sync(
+    fn try_lock_store_dir(
         &self,
-        named_temp: tempfile::NamedTempFile,
-        final_path: &std::path::Path,
-        admission: crate::store::platform::sync::ParentDirSyncAdmission,
-    ) -> std::io::Result<()> {
-        crate::store::platform::fs::RealFs
-            .persist_temp_with_parent_sync(named_temp, final_path, admission)
-    }
-    fn read_exact_at(
-        &self,
-        file: &mut std::fs::File,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Result<(), crate::store::platform::fs::PositionedReadError> {
-        crate::store::platform::fs::RealFs.read_exact_at(file, offset, buf)
+        lock_path: &std::path::Path,
+    ) -> Result<Option<Box<dyn crate::store::platform::fs::StoreDirLockGuard>>, StoreError> {
+        crate::store::platform::fs::RealFs.try_lock_store_dir(lock_path)
     }
 }
 
@@ -825,10 +863,14 @@ fn sync_with_mode_propagates_the_backend_sync_failure() {
     // that swallows a failed fsync would report durability that never happened. The
     // `-> Ok(())` mutant drops the fs call entirely and returns success.
     let dir = TempDir::new().expect("tmpdir");
+    let armed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let fs: std::sync::Arc<dyn crate::store::platform::fs::StoreFs> =
-        std::sync::Arc::new(SyncFailFs);
+        std::sync::Arc::new(SyncFailFs {
+            armed: std::sync::Arc::clone(&armed),
+        });
     let mut segment =
         Segment::create_with_created_ns_on(dir.path(), 9, 0, &fs).expect("create over SyncFailFs");
+    armed.store(true, std::sync::atomic::Ordering::Release);
 
     let err = segment
         .sync_with_mode(&crate::store::SyncMode::default())
@@ -836,8 +878,7 @@ fn sync_with_mode_propagates_the_backend_sync_failure() {
     assert!(
         matches!(
             err,
-            StoreError::CorruptSegment { segment_id: 4242, ref detail }
-            if detail.contains("injected: sync_file_with_mode failed")
+            StoreError::Io(ref error) if error.to_string().contains("injected: handle sync failed")
         ),
         "sync_with_mode must propagate the exact backend sync failure; got {err:?}"
     );

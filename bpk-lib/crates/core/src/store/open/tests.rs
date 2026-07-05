@@ -18,7 +18,7 @@ fn next_active_segment_id_is_one_past_latest_existing_segment() -> Result<(), St
     )?;
 
     assert_eq!(
-        next_active_segment_id(dir.path())?,
+        next_active_segment_id(dir.path(), &crate::store::platform::fs::RealFs)?,
         8,
         "PROPERTY: reader active segment must be one past the highest existing segment so the last sealed segment remains mmap-eligible"
     );

@@ -62,13 +62,21 @@ fn sync_parent_dir_io(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn sync_file_with_mode(file: &File, mode: &SyncMode) -> Result<(), StoreError> {
+/// [`sync_file_with_mode`] over an abstract store handle: the per-event /
+/// per-rotation durability dispatch, backend-independent.
+pub(crate) fn sync_store_file_with_mode(
+    file: &mut dyn crate::store::platform::fs::StoreFile,
+    mode: &SyncMode,
+) -> Result<(), StoreError> {
     match mode {
         SyncMode::SyncAll => file.sync_all().map_err(StoreError::Io),
         SyncMode::SyncData => file.sync_data().map_err(StoreError::Io),
     }
 }
 
+/// Test-only escape for flushing REAL bytes to disk outside the fault layer
+/// (the crash-model tests need the OS to have the tail before truncation).
+#[cfg(test)]
 pub(crate) fn sync_file_all_io(file: &File) -> std::io::Result<()> {
     file.sync_all()
 }
@@ -112,15 +120,16 @@ mod tests {
     use std::error::Error;
 
     #[test]
-    fn sync_file_with_mode_surfaces_platform_sync_errors() -> Result<(), Box<dyn Error>> {
+    fn sync_store_file_with_mode_surfaces_platform_sync_errors() -> Result<(), Box<dyn Error>> {
         let file = File::open("/dev/null")?;
+        let mut handle = crate::store::platform::fs::RealStoreFile::new(file);
 
         assert!(
             matches!(
-                sync_file_with_mode(&file, &SyncMode::SyncAll),
+                sync_store_file_with_mode(&mut handle, &SyncMode::SyncAll),
                 Err(StoreError::Io(_))
             ),
-            "PROPERTY: sync_file_with_mode must map platform sync errors to StoreError::Io, not report success"
+            "PROPERTY: sync_store_file_with_mode must map platform sync errors to StoreError::Io, not report success"
         );
         Ok(())
     }

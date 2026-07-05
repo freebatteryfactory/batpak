@@ -1,5 +1,4 @@
 use crate::store::file_classification::StoreFileKind;
-use crate::store::platform;
 use crate::store::platform::fs::StoreFs;
 use crate::store::segment;
 use crate::store::StoreError;
@@ -26,12 +25,14 @@ pub(super) fn compaction_source_temp_path(data_dir: &Path, merged_id: u64) -> Pa
 
 pub(super) fn load_pending_compaction(
     data_dir: &Path,
+    fs: &dyn StoreFs,
 ) -> Result<Option<PendingCompaction>, StoreError> {
     let path = pending_compaction_path(data_dir);
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = platform::fs::read(&path).map_err(StoreError::Io)?;
+    let bytes = match fs.read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(StoreError::Io(error)),
+    };
     let marker = serde_json::from_slice::<PendingCompaction>(&bytes)
         .map_err(|_| StoreError::DataDirMalformed { path: path.clone() })?;
     Ok(Some(marker))
@@ -66,7 +67,7 @@ pub(crate) fn clear_pending_compaction(
     let path = pending_compaction_path(data_dir);
     match fs.remove_file(&path) {
         Ok(()) => {
-            crate::store::platform::sync::sync_parent_dir(&path)?;
+            fs.sync_parent_dir(&path)?;
             Ok(())
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -74,11 +75,13 @@ pub(crate) fn clear_pending_compaction(
     }
 }
 
-pub(super) fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, PathBuf)>, StoreError> {
+pub(super) fn segment_paths(
+    data_dir: &Path,
+    fs: &dyn StoreFs,
+) -> Result<Vec<(u64, PathBuf)>, StoreError> {
     let mut entries = Vec::new();
-    for entry in platform::fs::read_dir(data_dir).map_err(StoreError::Io)? {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+    for entry in fs.read_dir(data_dir).map_err(StoreError::Io)? {
+        let path = data_dir.join(&entry.name);
         let kind = StoreFileKind::from_path(&path);
         if let StoreFileKind::MalformedSegment(error) = &kind {
             tracing::warn!(
@@ -95,7 +98,7 @@ pub(super) fn segment_paths(data_dir: &Path) -> Result<Vec<(u64, PathBuf)>, Stor
         };
         entries.push((segment_id.as_u64(), path));
     }
-    if let Some(marker) = load_pending_compaction(data_dir)? {
+    if let Some(marker) = load_pending_compaction(data_dir, fs)? {
         let merged_present = entries
             .iter()
             .any(|(segment_id, _)| *segment_id == marker.merged_id);
@@ -151,7 +154,7 @@ mod tests {
         clear_pending_compaction, pending_compaction_path, segment_paths, write_pending_compaction,
     };
     use crate::store::platform;
-    use crate::store::platform::fs::RealFs;
+
     use crate::store::segment;
     use crate::store::StoreError;
 
@@ -165,7 +168,7 @@ mod tests {
         let marker = pending_compaction_path(dir.path());
         std::fs::create_dir(&marker).expect("create directory at marker path");
 
-        let result = clear_pending_compaction(dir.path(), &RealFs);
+        let result = clear_pending_compaction(dir.path(), &crate::store::platform::fs::RealFs);
         assert!(
             matches!(result, Err(StoreError::Io(_))),
             "a non-NotFound removal failure must propagate as Err(Io), not be \
@@ -178,7 +181,8 @@ mod tests {
         // The NotFound arm: an absent marker is a clean no-op success — this
         // anchors that the error-path test above is the discriminating case.
         let dir = tempfile::tempdir().expect("tempdir");
-        clear_pending_compaction(dir.path(), &RealFs).expect("absent marker clears cleanly");
+        clear_pending_compaction(dir.path(), &crate::store::platform::fs::RealFs)
+            .expect("absent marker clears cleanly");
     }
 
     #[test]
@@ -194,9 +198,10 @@ mod tests {
             platform::fs::create_new_file(&dir.path().join(segment::segment_filename(1)))
                 .expect("create segment 1"),
         );
-        write_pending_compaction(dir.path(), 7, &[1, 3], &RealFs).expect("write pending marker");
+        write_pending_compaction(dir.path(), 7, &[1, 3], &crate::store::platform::fs::RealFs)
+            .expect("write pending marker");
 
-        let result = segment_paths(dir.path());
+        let result = segment_paths(dir.path(), &crate::store::platform::fs::RealFs);
         assert!(
             matches!(
                 &result,
@@ -217,9 +222,11 @@ mod tests {
         let path_two = dir.path().join(segment::segment_filename(2));
         drop(platform::fs::create_new_file(&path_one).expect("create segment 1"));
         drop(platform::fs::create_new_file(&path_two).expect("create segment 2"));
-        write_pending_compaction(dir.path(), 7, &[1, 2], &RealFs).expect("write pending marker");
+        write_pending_compaction(dir.path(), 7, &[1, 2], &crate::store::platform::fs::RealFs)
+            .expect("write pending marker");
 
-        let entries = segment_paths(dir.path()).expect("recover with all sources present");
+        let entries = segment_paths(dir.path(), &crate::store::platform::fs::RealFs)
+            .expect("recover with all sources present");
         assert_eq!(
             entries,
             vec![(1, path_one), (2, path_two)],

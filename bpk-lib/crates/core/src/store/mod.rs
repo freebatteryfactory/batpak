@@ -157,7 +157,11 @@ pub use platform::clock::{Clock, SystemClock};
 // Spawn seam's §12 precedent) so embeddings can supply their own reviewed
 // filesystem backend through `StoreConfig::with_fs`. The companion vocabulary
 // types its signatures carry ride along.
-pub use platform::fs::{CowStrategyUsed, PositionedReadError, RealFs, StoreFs};
+pub use platform::fs::{
+    CowStrategyUsed, DirEntryInfo, FileKind, FileStat, PositionedReadError, RealFs, StagedFile,
+    StoreDirLockGuard, StoreFile, StoreFs,
+};
+pub use platform::mem_fs::MemFs;
 pub use platform::spawn::{JobHandle, JobStatus, JoinError, Spawn, SpawnError, ThreadSpawn};
 pub use platform::sync::ParentDirSyncAdmission;
 pub use projection::flow::ReplayInput;

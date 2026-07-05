@@ -8,8 +8,28 @@ use memmap2::Mmap;
 use std::io::Read;
 use std::path::Path;
 
+/// The mmap-index backing bytes: a real memory map when the seam handle is
+/// backed by an OS file and the platform admits mmap, or an owned whole-file
+/// read when it is not (virtual backends). Byte-identical downstream — every
+/// consumer slices `&bytes[..]`.
+pub(super) enum MmapIndexBytes {
+    Mapped(Mmap),
+    Owned(Vec<u8>),
+}
+
+impl std::ops::Deref for MmapIndexBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Mapped(mmap) => mmap,
+            Self::Owned(bytes) => bytes,
+        }
+    }
+}
+
 pub(super) struct LoadedMmapIndex {
-    pub(super) mmap: Mmap,
+    pub(super) mmap: MmapIndexBytes,
     pub(super) interner_strings: Vec<String>,
     pub(super) routing: RoutingSummary,
     pub(super) entries_offset: usize,
@@ -49,10 +69,11 @@ fn read_mmap_usize(bytes: Option<&[u8]>, field: &str) -> Result<usize, String> {
 pub(super) fn load_mmap_index(
     data_dir: &Path,
     clock: &dyn crate::store::Clock,
+    fs: &dyn crate::store::platform::fs::StoreFs,
 ) -> FileLoad<LoadedMmapIndex> {
     let path = data_dir.join(super::MMAP_INDEX_FILENAME);
-    let mut file = match crate::store::platform::fs::open_file(&path) {
-        Ok(file) => file,
+    let mut file = match fs.open_file(&path) {
+        Ok(handle) => crate::store::platform::fs::StoreFileCursor::new(handle),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return FileLoad::Missing,
         Err(error) => {
             tracing::warn!(
@@ -198,8 +219,8 @@ pub(super) fn load_mmap_index(
         0
     };
 
-    let metadata = match file.metadata() {
-        Ok(meta) => meta,
+    let metadata_len = match file.get_ref().len() {
+        Ok(len) => len,
         Err(error) => {
             tracing::warn!(
                 target: "batpak::mmap_index",
@@ -211,7 +232,7 @@ pub(super) fn load_mmap_index(
         }
     };
 
-    let file_len = match usize::try_from(metadata.len()) {
+    let file_len = match usize::try_from(metadata_len) {
         Ok(len) => len,
         Err(_) => {
             tracing::warn!(
@@ -313,7 +334,7 @@ pub(super) fn load_mmap_index(
         ));
     }
 
-    match validate_watermark_segment(data_dir, watermark_segment_id, watermark_offset) {
+    match validate_watermark_segment(data_dir, watermark_segment_id, watermark_offset, fs) {
         Ok(()) => {}
         Err(WatermarkValidationError::OffsetPastTail {
             path: watermark_segment_path,
@@ -349,36 +370,59 @@ pub(super) fn load_mmap_index(
         }
     }
 
-    // SAFETY: Mmap::map requires a valid open file descriptor. The `file`
-    // handle remains open for the duration of the mapping. The mmap index
-    // file is read-only and not written to while open — external modification
-    // would be a usage error, not a correctness concern for safe Rust callers.
-    let evidence = crate::store::platform::evidence::collect_for_store_path(data_dir, clock);
-    let admission =
-        match crate::store::platform::mmap::admit_mmap_index(evidence.store_path.mmap_index) {
-            Ok(admission) => admission,
+    // The map is a native-only optimization: it needs a real OS file behind
+    // the seam handle (the `as_std_file` escape) AND platform admission. A
+    // virtual backend (or a host without mmap) takes the owned whole-file
+    // read instead — byte-identical downstream, since every consumer slices.
+    let mmap = match file.get_ref().as_std_file() {
+        Some(std_file) => {
+            // SAFETY: Mmap::map requires a valid open file descriptor. The
+            // handle remains open for the duration of the mapping. The mmap
+            // index file is read-only and not written to while open —
+            // external modification would be a usage error, not a
+            // correctness concern for safe Rust callers.
+            let evidence =
+                crate::store::platform::evidence::collect_for_store_path(data_dir, clock);
+            let admission = match crate::store::platform::mmap::admit_mmap_index(
+                evidence.store_path.mmap_index,
+            ) {
+                Ok(admission) => admission,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "batpak::mmap_index",
+                        path = %path.display(),
+                        error = %error,
+                        "mmap index admission failed"
+                    );
+                    return invalid_load(format!("mmap index admission failed: {error}"));
+                }
+            };
+            match unsafe { crate::store::platform::mmap::map_mmap_index_file(std_file, admission) }
+            {
+                Ok(mmap) => MmapIndexBytes::Mapped(mmap),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "batpak::mmap_index",
+                        path = %path.display(),
+                        error = %error,
+                        "failed to mmap index file"
+                    );
+                    return invalid_load(format!("failed to mmap index file: {error}"));
+                }
+            }
+        }
+        None => match fs.read(&path) {
+            Ok(bytes) => MmapIndexBytes::Owned(bytes),
             Err(error) => {
                 tracing::warn!(
                     target: "batpak::mmap_index",
                     path = %path.display(),
                     error = %error,
-                    "mmap index admission failed"
+                    "failed to read mmap index"
                 );
-                return invalid_load(format!("mmap index admission failed: {error}"));
+                return invalid_load(format!("failed to read mmap index: {error}"));
             }
-        };
-    let mmap = match unsafe { crate::store::platform::mmap::map_mmap_index_file(&file, admission) }
-    {
-        Ok(mmap) => mmap,
-        Err(error) => {
-            tracing::warn!(
-                target: "batpak::mmap_index",
-                path = %path.display(),
-                error = %error,
-                "failed to mmap index file"
-            );
-            return invalid_load(format!("failed to mmap index file: {error}"));
-        }
+        },
     };
 
     let actual_crc = crc32fast::hash(&mmap[12..]);

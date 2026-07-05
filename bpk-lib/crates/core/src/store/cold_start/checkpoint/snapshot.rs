@@ -44,28 +44,40 @@ pub(crate) struct LoadedCheckpointSnapshot {
 /// which may be higher than `entries.len()` due to burned batch slots.
 #[cfg(test)]
 pub(crate) fn try_load_checkpoint(data_dir: &Path) -> Option<LoadedCheckpointData> {
-    let loaded = match format::read_checkpoint_file(data_dir) {
+    let loaded = match format::read_checkpoint_file(data_dir, &crate::store::platform::fs::RealFs) {
         FileLoad::Loaded(loaded) => loaded,
         FileLoad::Missing | FileLoad::Invalid { .. } | FileLoad::FutureVersion { .. } => {
             return None
         }
     };
-    match decode_checkpoint_data(data_dir, &loaded.path, loaded.version, &loaded.body) {
+    match decode_checkpoint_data(
+        &crate::store::platform::fs::RealFs,
+        data_dir,
+        &loaded.path,
+        loaded.version,
+        &loaded.body,
+    ) {
         FileLoad::Loaded(loaded) => Some(loaded),
         FileLoad::Missing | FileLoad::Invalid { .. } | FileLoad::FutureVersion { .. } => None,
     }
 }
 
 #[cfg(test)]
-pub(crate) fn try_load_checkpoint_snapshot(data_dir: &Path) -> Option<LoadedCheckpointSnapshot> {
-    match load_checkpoint_snapshot(data_dir) {
+pub(crate) fn try_load_checkpoint_snapshot(
+    data_dir: &Path,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+) -> Option<LoadedCheckpointSnapshot> {
+    match load_checkpoint_snapshot(data_dir, fs) {
         FileLoad::Loaded(snapshot) => Some(snapshot),
         FileLoad::Missing | FileLoad::Invalid { .. } | FileLoad::FutureVersion { .. } => None,
     }
 }
 
-pub(crate) fn load_checkpoint_snapshot(data_dir: &Path) -> FileLoad<LoadedCheckpointSnapshot> {
-    let raw = match format::read_checkpoint_file(data_dir) {
+pub(crate) fn load_checkpoint_snapshot(
+    data_dir: &Path,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+) -> FileLoad<LoadedCheckpointSnapshot> {
+    let raw = match format::read_checkpoint_file(data_dir, fs) {
         FileLoad::Loaded(raw) => raw,
         FileLoad::Missing => return FileLoad::Missing,
         FileLoad::Invalid { reason } => {
@@ -81,10 +93,10 @@ pub(crate) fn load_checkpoint_snapshot(data_dir: &Path) -> FileLoad<LoadedCheckp
         }
     };
     if raw.version == format::CHECKPOINT_VERSION {
-        return decode_checkpoint_snapshot_v6(data_dir, &raw.path, &raw.body);
+        return decode_checkpoint_snapshot_v6(fs, data_dir, &raw.path, &raw.body);
     }
 
-    let loaded = match decode_checkpoint_data(data_dir, &raw.path, raw.version, &raw.body) {
+    let loaded = match decode_checkpoint_data(fs, data_dir, &raw.path, raw.version, &raw.body) {
         FileLoad::Loaded(loaded) => loaded,
         FileLoad::Missing => return FileLoad::Missing,
         FileLoad::Invalid { reason } => return FileLoad::Invalid { reason },
@@ -141,6 +153,7 @@ pub(crate) fn load_checkpoint_snapshot(data_dir: &Path) -> FileLoad<LoadedCheckp
 }
 
 fn decode_checkpoint_data(
+    fs: &dyn crate::store::platform::fs::StoreFs,
     data_dir: &Path,
     path: &Path,
     version: u16,
@@ -160,6 +173,7 @@ fn decode_checkpoint_data(
         path,
         data.watermark_segment_id,
         data.watermark_offset,
+        fs,
     ) {
         FileLoad::Loaded(watermark) => watermark,
         FileLoad::Missing => return FileLoad::Missing,
@@ -189,6 +203,7 @@ fn decode_checkpoint_data(
 }
 
 fn decode_checkpoint_snapshot_v6(
+    fs: &dyn crate::store::platform::fs::StoreFs,
     data_dir: &Path,
     path: &Path,
     body: &[u8],
@@ -207,6 +222,7 @@ fn decode_checkpoint_snapshot_v6(
         path,
         data.watermark_segment_id,
         data.watermark_offset,
+        fs,
     ) {
         FileLoad::Loaded(watermark) => watermark,
         FileLoad::Missing => return FileLoad::Missing,
@@ -256,8 +272,9 @@ fn validate_checkpoint_watermark(
     path: &Path,
     watermark_segment_id: u64,
     watermark_offset: u64,
+    fs: &dyn crate::store::platform::fs::StoreFs,
 ) -> FileLoad<WatermarkInfo> {
-    match validate_watermark_segment(data_dir, watermark_segment_id, watermark_offset) {
+    match validate_watermark_segment(data_dir, watermark_segment_id, watermark_offset, fs) {
         Ok(()) => {}
         Err(WatermarkValidationError::MissingSegment { path: seg_path }) => {
             tracing::warn!(

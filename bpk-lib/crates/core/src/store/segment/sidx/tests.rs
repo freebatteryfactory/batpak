@@ -1,4 +1,5 @@
 use super::*;
+use crate::store::platform::fs::RealFs;
 use proptest::prelude::*;
 use std::io::Cursor;
 use tempfile::NamedTempFile;
@@ -343,7 +344,7 @@ fn footer_round_trip() {
     tmp.write_all(&buf).expect("write buf to temp file");
     tmp.flush().expect("flush temp file");
 
-    let (entries, strings) = read_footer(tmp.path())
+    let (entries, strings) = read_footer(&RealFs, tmp.path())
         .expect("read_footer must not error")
         .expect("SIDX footer must be found");
 
@@ -373,7 +374,7 @@ fn read_footer_returns_none_without_magic() {
     tmp.write_all(b"FBAT\x00\x00\x00\x00some bytes that are not a sidx footer at all")
         .expect("write");
     tmp.flush().expect("flush");
-    let result = read_footer(tmp.path()).expect("must not IO-error");
+    let result = read_footer(&RealFs, tmp.path()).expect("must not IO-error");
     assert!(result.is_none(), "non-SIDX file must return None");
 }
 
@@ -384,7 +385,7 @@ fn read_footer_returns_none_for_old_sidx_magic() {
     tmp.write_all(b"SIDX").expect("write old magic");
     tmp.flush().expect("flush");
 
-    let result = read_footer(tmp.path()).expect("must not IO-error");
+    let result = read_footer(&RealFs, tmp.path()).expect("must not IO-error");
     assert!(result.is_none(), "old SIDX magic must fall back cleanly");
 }
 
@@ -395,7 +396,7 @@ fn read_footer_returns_none_for_tiny_file() {
     let mut tmp = NamedTempFile::new().expect("create temp file");
     tmp.write_all(b"AB").expect("write");
     tmp.flush().expect("flush");
-    let result = read_footer(tmp.path()).expect("must not IO-error");
+    let result = read_footer(&RealFs, tmp.path()).expect("must not IO-error");
     assert!(result.is_none(), "tiny file must return None");
 }
 
@@ -404,7 +405,7 @@ fn read_footer_returns_none_for_tiny_file() {
 #[test]
 fn read_footer_returns_none_for_empty_file() {
     let tmp = NamedTempFile::new().expect("create temp file");
-    let result = read_footer(tmp.path()).expect("must not IO-error");
+    let result = read_footer(&RealFs, tmp.path()).expect("must not IO-error");
     assert!(result.is_none(), "empty file must return None");
 }
 
@@ -425,7 +426,7 @@ fn read_footer_allows_empty_string_table_range_to_reach_decoder() {
     tmp.write_all(&bytes).expect("write malformed footer");
     tmp.flush().expect("flush malformed footer");
 
-    let err = read_footer(tmp.path()).expect_err("empty string table bytes are malformed");
+    let err = read_footer(&RealFs, tmp.path()).expect_err("empty string table bytes are malformed");
     assert!(
         matches!(err, StoreError::Serialization(_)),
         "PROPERTY: string_table_offset == entries_start is a valid range boundary; malformed empty bytes must reach the MessagePack decoder instead of being rejected as an offset-overlap corruption"
@@ -497,7 +498,7 @@ fn footer_round_trip_zero_entries() {
     tmp.write_all(&buf).expect("write");
     tmp.flush().expect("flush");
 
-    let (entries, strings) = read_footer(tmp.path())
+    let (entries, strings) = read_footer(&RealFs, tmp.path())
         .expect("read_footer must not error")
         .expect("footer must be found");
 
@@ -552,7 +553,7 @@ fn read_footer_returns_none_on_crc_mismatch() {
     tmp.write_all(&buf).expect("write");
     tmp.flush().expect("flush");
 
-    let result = read_footer(tmp.path()).expect("read_footer must not IO-error");
+    let result = read_footer(&RealFs, tmp.path()).expect("read_footer must not IO-error");
     assert!(
         result.is_none(),
         "PROPERTY: a CRC mismatch over the covered region must read as None (frame-scan fallback), never trusting the bytes"
@@ -572,7 +573,7 @@ fn read_footer_returns_none_for_sdx2_magic() {
     tmp.write_all(b"SDX2").expect("write old SDX2 magic");
     tmp.flush().expect("flush");
 
-    let result = read_footer(tmp.path()).expect("read_footer must not IO-error");
+    let result = read_footer(&RealFs, tmp.path()).expect("read_footer must not IO-error");
     assert!(
         result.is_none(),
         "PROPERTY: an old SDX2 footer must fall back cleanly to None, not be trusted as an SDX3 footer"

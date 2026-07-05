@@ -1,6 +1,7 @@
 use super::*;
 use crate::coordinate::DagPosition;
 use crate::event::EventKind;
+use crate::store::platform::fs::RealFs;
 use crate::store::segment::scan::recovery::sidx_fast_path::SidxTailCoverage;
 use crate::store::segment::sidx::{kind_to_raw, read_footer, SidxEntry, SidxEntryCollector};
 use std::io::ErrorKind;
@@ -132,12 +133,12 @@ fn batch_recovery_state_refuses_items_past_declared_count() {
 #[test]
 fn sidx_covers_segment_tail_requires_last_entry_to_reach_footer_start() {
     let tmp = footer_file(64, &[sample_entry(0, 64)]);
-    let (entries, _) = read_footer(tmp.path())
+    let (entries, _) = read_footer(&RealFs, tmp.path())
         .expect("read footer")
         .expect("footer should be present");
 
     assert_eq!(
-        Reader::sidx_covers_segment_tail(tmp.path(), &entries),
+        Reader::sidx_covers_segment_tail(&RealFs, tmp.path(), &entries),
         SidxTailCoverage::Complete,
         "PROPERTY: SIDX coverage is complete only when the last indexed frame tail reaches the footer start"
     );
@@ -146,12 +147,12 @@ fn sidx_covers_segment_tail_requires_last_entry_to_reach_footer_start() {
 #[test]
 fn sidx_covers_segment_tail_rejects_trailing_unindexed_bytes() {
     let tmp = footer_file(80, &[sample_entry(0, 64)]);
-    let (entries, _) = read_footer(tmp.path())
+    let (entries, _) = read_footer(&RealFs, tmp.path())
         .expect("read footer")
         .expect("footer should be present");
 
     assert_eq!(
-        Reader::sidx_covers_segment_tail(tmp.path(), &entries),
+        Reader::sidx_covers_segment_tail(&RealFs, tmp.path(), &entries),
         SidxTailCoverage::Incomplete,
         "PROPERTY: trailing bytes between the last indexed frame and the footer force frame-scan fallback"
     );
@@ -160,7 +161,7 @@ fn sidx_covers_segment_tail_rejects_trailing_unindexed_bytes() {
 #[test]
 fn sidx_covers_segment_tail_treats_truly_empty_segment_as_covered() {
     let tmp = footer_file(0, &[]);
-    let (entries, _) = read_footer(tmp.path())
+    let (entries, _) = read_footer(&RealFs, tmp.path())
         .expect("read footer")
         .expect("footer should be present");
 
@@ -169,7 +170,7 @@ fn sidx_covers_segment_tail_treats_truly_empty_segment_as_covered() {
         "SANITY: empty-footer fixture should not produce SIDX entries"
     );
     assert_eq!(
-        Reader::sidx_covers_segment_tail(tmp.path(), &entries),
+        Reader::sidx_covers_segment_tail(&RealFs, tmp.path(), &entries),
         SidxTailCoverage::Complete,
         "PROPERTY: an empty segment with an empty SIDX footer is fully covered and must not be forced onto the frame-scan fallback"
     );
@@ -178,7 +179,7 @@ fn sidx_covers_segment_tail_treats_truly_empty_segment_as_covered() {
 #[test]
 fn sidx_covers_segment_tail_rejects_empty_footer_after_frames() {
     let tmp = footer_file(64, &[]);
-    let (entries, _) = read_footer(tmp.path())
+    let (entries, _) = read_footer(&RealFs, tmp.path())
         .expect("read footer")
         .expect("footer should be present");
 
@@ -187,7 +188,7 @@ fn sidx_covers_segment_tail_rejects_empty_footer_after_frames() {
         "SANITY: fixture should have frames before an empty SIDX footer"
     );
     assert_eq!(
-        Reader::sidx_covers_segment_tail(tmp.path(), &entries),
+        Reader::sidx_covers_segment_tail(&RealFs, tmp.path(), &entries),
         SidxTailCoverage::Incomplete,
         "PROPERTY: an empty SIDX footer does not cover preceding frame bytes and must force frame-scan fallback"
     );
@@ -414,7 +415,7 @@ fn sidx_covers_segment_tail_rejects_offset_length_overflow() {
     // never trusting a corrupt offset on the unverified fast path.
     let overflowing = sample_entry(u64::MAX - 16, 64);
     let tmp = footer_file(64, &[overflowing]);
-    let (entries, _) = read_footer(tmp.path())
+    let (entries, _) = read_footer(&RealFs, tmp.path())
         .expect("read footer")
         .expect("footer should be present");
 
@@ -429,7 +430,7 @@ fn sidx_covers_segment_tail_rejects_offset_length_overflow() {
         "SANITY: round-trip must preserve the near-MAX frame_offset that triggers overflow"
     );
     assert_eq!(
-        Reader::sidx_covers_segment_tail(tmp.path(), &entries),
+        Reader::sidx_covers_segment_tail(&RealFs, tmp.path(), &entries),
         SidxTailCoverage::Incomplete,
         "PROPERTY: a frame_offset + frame_length that overflows u64 is corruption and must degrade to the frame-scan fallback, not silently saturate"
     );
@@ -767,7 +768,7 @@ fn sidx_covers_segment_tail_admits_a_bare_sixteen_byte_footer() {
     .expect("write 16-byte footer");
 
     assert_eq!(
-        Reader::sidx_covers_segment_tail(&path, &[]),
+        Reader::sidx_covers_segment_tail(&RealFs, &path, &[]),
         SidxTailCoverage::Complete,
         "a 16-byte bare footer (zero entries, offset 0) is fully covered: max_tail == sidx_start"
     );
@@ -791,7 +792,7 @@ fn sidx_covers_segment_tail_treats_a_subtrailer_file_as_incomplete() {
     .expect("write 10-byte file");
 
     assert_eq!(
-        Reader::sidx_covers_segment_tail(&path, &[]),
+        Reader::sidx_covers_segment_tail(&RealFs, &path, &[]),
         SidxTailCoverage::Incomplete,
         "a sub-trailer file degrades to Incomplete (frame-scan), never Unreadable"
     );

@@ -1,6 +1,5 @@
 use super::Cursor;
 use crate::store::delivery::observation::CheckpointId;
-use crate::store::platform;
 use crate::store::platform::fs::{RealFs, StoreFs};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -73,8 +72,21 @@ impl Cursor {
         data_dir: &Path,
         id: &CheckpointId,
     ) -> std::io::Result<Option<CursorCheckpoint>> {
+        Self::load_checkpoint_with_fs(data_dir, id, &RealFs)
+    }
+
+    /// [`Cursor::load_checkpoint`], routed through the supplied [`StoreFs`]
+    /// backend so a virtualizing backend serves the checkpoint it persisted.
+    ///
+    /// # Errors
+    /// As [`Cursor::load_checkpoint`].
+    pub(crate) fn load_checkpoint_with_fs(
+        data_dir: &Path,
+        id: &CheckpointId,
+        fs: &dyn StoreFs,
+    ) -> std::io::Result<Option<CursorCheckpoint>> {
         let path = cursor_checkpoint_path(data_dir, id);
-        let bytes = match platform::fs::read(&path) {
+        let bytes = match fs.read(&path) {
             Ok(b) => b,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
@@ -111,13 +123,13 @@ impl Cursor {
     }
 
     /// [`Cursor::save_checkpoint`], routed through the supplied [`StoreFs`]
-    /// backend so the temp-file create and the atomic publish
-    /// ([`StoreFs::persist_temp_with_parent_sync`]) are fault-injectable under
+    /// backend so the staged create, the staging sync, and the atomic publish
+    /// ([`crate::store::StagedFile::persist`]) are fault-injectable under
     /// `SimFs`. The durable-cursor write path calls this with the store's
     /// configured fs; `RealFs` makes it byte-for-byte the production behavior.
     ///
     /// # Errors
-    /// Returns any I/O error from temp-file creation, write, fsync, or the
+    /// Returns any I/O error from temp-file creation, write, sync, or the
     /// atomic publish. Encoding errors are surfaced as `io::Error` with kind
     /// `Other`.
     pub(crate) fn save_checkpoint_with_fs(
@@ -133,18 +145,14 @@ impl Cursor {
         let final_path = cursor_checkpoint_path(data_dir, id);
 
         let mut tmp = fs.named_temp_in(&dir)?;
-        {
-            use std::io::Write;
-            tmp.write_all(&bytes)?;
-            tmp.flush()?;
-        }
-        // Fsync the temp contents before rename; `persist_temp_with_parent_sync`
-        // does a defensive fsync too, but doing it here keeps the
-        // durability boundary explicit.
-        crate::store::platform::sync::sync_file_all_io(tmp.as_file())?;
+        tmp.write_all(&bytes)?;
+        // Sync the staged contents before the publish: the durability
+        // boundary stays explicit at the call site (persist implementations
+        // may re-sync defensively).
+        tmp.sync_all()?;
         let admission = crate::store::platform::sync::admit_current_parent_dir_sync()
             .map_err(|error| std::io::Error::other(error.to_string()))?;
-        fs.persist_temp_with_parent_sync(tmp, &final_path, admission)?;
+        tmp.persist(&final_path, admission)?;
         Ok(())
     }
 }

@@ -230,7 +230,8 @@ impl WriterHandle {
             .fs()
             .create_dir_all(&config.data_dir)
             .map_err(StoreError::Io)?;
-        let initial_segment_id = find_latest_segment_id(&config.data_dir)?.unwrap_or(0) + 1;
+        let initial_segment_id =
+            find_latest_segment_id(&config.data_dir, config.fs().as_ref())?.unwrap_or(0) + 1;
         let initial_segment = Segment::<Active>::create_with_created_ns_on(
             &config.data_dir,
             initial_segment_id,
@@ -307,7 +308,8 @@ impl WriterHandle {
             .fs()
             .create_dir_all(&config.data_dir)
             .map_err(StoreError::Io)?;
-        let initial_segment_id = find_latest_segment_id(&config.data_dir)?.unwrap_or(0) + 1;
+        let initial_segment_id =
+            find_latest_segment_id(&config.data_dir, config.fs().as_ref())?.unwrap_or(0) + 1;
         let initial_segment = Segment::<Active>::create_with_created_ns_on(
             &config.data_dir,
             initial_segment_id,
