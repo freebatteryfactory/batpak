@@ -8,12 +8,14 @@
 #![cfg_attr(not(test), deny(clippy::expect_used))]
 // cast_possible_truncation and cast_sign_loss are enforced via [lints.clippy] in Cargo.toml.
 // Each intentional cast has an inline #[allow] with a justification comment.
-//! Sync-first event sourcing for Rust: append-only segments, causal metadata,
-//! caller-defined gates, and typed projections.
+//! batpak is an embedded, sync-first event store for Rust: an append-only,
+//! hash-chained journal with typed events, verifiable receipts, deterministic
+//! replay, and derived projections — no server, no async runtime.
 //!
-//! Batpak stores immutable events in segment files, tracks causation metadata,
-//! evaluates caller-defined gates before commit, and rebuilds typed projections through
-//! a synchronous API that does not require an async runtime.
+//! The store keeps immutable events in append-only segment files, tracks
+//! causation metadata, and evaluates caller-defined gates before commit;
+//! state is rebuilt by replaying the log into typed projections, all through
+//! a synchronous API.
 //!
 //! Use it when you need a tamper-evident, replayable record of what happened:
 //! every event is hash-bound to its per-entity ancestor with Blake3, every
