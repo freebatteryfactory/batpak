@@ -153,7 +153,7 @@ checksum = "fd307490d624467aa6f74b0eabb77633d1f758a7b25f12bceb0b22e08d9726f6"
 
 [[package]]
 name = "batpak"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "arbitrary",
  "batpak-bench-support",
@@ -194,14 +194,14 @@ dependencies = [
 
 [[package]]
 name = "batpak-bench-support"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "criterion",
 ]
 
 [[package]]
 name = "batpak-examples"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "batpak",
  "flume",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "batpak-macros"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "batpak-macros-support",
  "proc-macro2",
@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "batpak-macros-support"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "inventory",
  "rmpv",
@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "batpak-testkit"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "batpak",
  "batpak-macros",
@@ -313,7 +313,7 @@ checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
 
 [[package]]
 name = "bvisor"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "batpak",
  "hostbat",
@@ -1012,7 +1012,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hostbat"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "batpak",
  "rmpv",
@@ -1262,7 +1262,7 @@ dependencies = [
 
 [[package]]
 name = "netbat"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "criterion",
  "flume",
@@ -1948,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "syncbat"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "batpak",
  "batpak-macros",

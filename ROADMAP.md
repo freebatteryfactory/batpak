@@ -131,8 +131,12 @@ Opinions stay in the semantics; ergonomics carry them.
   (bvisor/hostbat are the first real consumers) generate friction notes;
   each friction note becomes a line item here. Live feedback shapes the
   surface — this is deliberately *not* designed in a vacuum.
-- [ ] **0.10.0 breaking window (reserved)**: API-shape changes discovered by
-  dogfooding land in one coordinated pre-1.0 window, not a drip.
+- [x] **0.10.0 breaking window (reserved)**: API-shape changes discovered by
+  dogfooding land in one coordinated pre-1.0 window, not a drip. CONSUMED by
+  the 0.10.0 PR (issues #162–#167 + the `#[non_exhaustive]` sweep): the
+  StoreFs and KeysetBackend seams went public, receipt verification gained a
+  store-free surface, and the two error enums froze extensibly. Remaining
+  pre-1.0 shape changes need their own justification, not this window.
 - [ ] **1.0 exit criteria**: ergonomics audit findings resolved or explicitly
   waived; `#[non_exhaustive]` sweep complete; baselines green across ALL
   published crates; heavy matrix (24-shard mutation, fuzz, chaos, loom,
