@@ -63,7 +63,11 @@ impl std::error::Error for DecodeSource {
 /// The two variants separate the two distinct failure modes at the type
 /// level, so callers (including derive-generated dispatch code) never
 /// conflate "this event is not for me" with "this event was malformed."
+///
+/// `#[non_exhaustive]` since 0.10.0 (ROADMAP §2): adding a decode failure
+/// mode is an extension, not a semver break; match with a wildcard arm.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum TypedDecodeError {
     /// The event's kind did not match the target type's `KIND`.
     ///

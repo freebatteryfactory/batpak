@@ -41,7 +41,12 @@ impl ReceiptVerification {
 }
 
 /// Reason a receipt failed verification.
+///
+/// `#[non_exhaustive]` since 0.10.0 (ROADMAP §2): adding a verification
+/// failure mode is an extension, not a semver break; match with a wildcard
+/// arm.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ReceiptVerificationError {
     /// The receipt's event id is absent from the current store index.
     MissingCommittedEvent,
