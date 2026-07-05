@@ -190,17 +190,25 @@ impl StoreFs for BrokenExclusivityFs {
 #[test]
 fn conformance_corpus_detects_a_divergent_backend() {
     // RED-fixture discipline for the shared-drive corpus: a backend that
-    // violates create-new exclusivity must FAIL the shared body. If this
-    // test ever passes the corpus, the corpus stopped biting.
+    // violates create-new exclusivity must FAIL the shared body. The corpus
+    // reports divergence either as an `Err` or as a failed assertion (a
+    // panic) — both count as detection here. If this test ever sees the
+    // corpus succeed, the corpus stopped biting.
     let fs = BrokenExclusivityFs {
         inner: MemFs::new(),
     };
     let root = Path::new("/virtual/divergent");
     fs.create_dir_all(root)
         .expect("in-memory dir creation is infallible");
-    let verdict = common::backend_upholds_the_documented_contract(&fs, root);
+    let verdict = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        common::backend_upholds_the_documented_contract(&fs, root)
+    }));
+    let detected = match verdict {
+        Err(_assertion_panic) => true,
+        Ok(outcome) => outcome.is_err(),
+    };
     assert!(
-        verdict.is_err(),
+        detected,
         "PROPERTY: the conformance corpus must detect a create-new exclusivity violation"
     );
 }
