@@ -5,11 +5,23 @@
 # rules over 0.8.0; additive wire ops are a patch pre-1.0.
 package: batpak
 baseline_version: 0.7.0
-current_version: 0.8.3
+current_version: 0.10.0
 witness: target/semver-public-api/semver-checks.txt
-summary: "15 major semver-check rules are classified in the 0.8.0 witness; prelude narrowing adds intentional enum/function/struct/trait alias removals. All classified intentional_0_8 or path_relocation unless noted. 0.8.1 adds only new public items (additive, patch pre-1.0). 0.8.3 adds the schema-evolution + durable-idempotency surface (event::upcast module, EventPayload::PAYLOAD_VERSION, EventHeader::payload_version, EventKind::is_reserved, TypedDecodeError::{FutureVersion,Upcast}, IdempotencyRetention/OverflowPolicy + config setters, IdempotencyKey::for_operation, new StoreError variants) — additive, patch pre-1.0; netbat/syncbat baselines re-normalized to canonical std/core paths under the current toolchain (no API change)."
+summary: "15 major semver-check rules are classified in the 0.8.0 witness; prelude narrowing adds intentional enum/function/struct/trait alias removals. All classified intentional_0_8 or path_relocation unless noted. 0.8.1 adds only new public items (additive, patch pre-1.0). 0.8.3 adds the schema-evolution + durable-idempotency surface (event::upcast module, EventPayload::PAYLOAD_VERSION, EventHeader::payload_version, EventKind::is_reserved, TypedDecodeError::{FutureVersion,Upcast}, IdempotencyRetention/OverflowPolicy + config setters, IdempotencyKey::for_operation, new StoreError variants) — additive, patch pre-1.0; netbat/syncbat baselines re-normalized to canonical std/core paths under the current toolchain (no API change). 0.10.0 is the reserved pre-1.0 breaking window: #[non_exhaustive] lands on TypedDecodeError and ReceiptVerificationError (rule enum_marked_non_exhaustive — intentional; downstream exhaustive matches need a wildcard arm once), and the additive surface grows the StoreFs seam family (StoreFs, RealFs, CowStrategyUsed, PositionedReadError, ParentDirSyncAdmission, StoreConfig::with_fs), the store-free receipt verification surface (receipt_verify: verify_receipt_claim, ReceiptClaim, ReceiptVerifyingKeys; SigningKey::{key_id,public_key_bytes}), and the pluggable keyset seam (KeysetBackend, FileKeysetBackend, StoreConfig::with_keyset_backend)."
 
 entries:
+  - rule: enum_marked_non_exhaustive
+    item: TypedDecodeError
+    disposition: intentional_0_10
+    changelog: CHANGELOG.md
+    note: 0.10.0 breaking window; adding a decode failure mode stops being a semver break.
+
+  - rule: enum_marked_non_exhaustive
+    item: ReceiptVerificationError
+    disposition: intentional_0_10
+    changelog: CHANGELOG.md
+    note: 0.10.0 breaking window; adding a verification failure mode stops being a semver break.
+
   - rule: auto_trait_impl_removed
     item: TypedReactorHandle::Sync
     disposition: intentional_0_8

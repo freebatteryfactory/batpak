@@ -176,7 +176,7 @@ impl core::error::Error for batpak::event::decode::DecodeSource
 pub fn batpak::event::decode::DecodeSource::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::decode::DecodeSource
 pub fn batpak::event::decode::DecodeSource::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub enum batpak::event::decode::TypedDecodeError
+#[non_exhaustive] pub enum batpak::event::decode::TypedDecodeError
 pub batpak::event::decode::TypedDecodeError::DecodeFailure
 pub batpak::event::decode::TypedDecodeError::DecodeFailure::kind: batpak::event::kind::EventKind
 pub batpak::event::decode::TypedDecodeError::DecodeFailure::source: batpak::event::decode::DecodeSource
@@ -463,7 +463,7 @@ pub batpak::event::StateExtentCost::ConstantTime
 pub batpak::event::StateExtentCost::Expensive
 pub batpak::event::StateExtentCost::Incremental
 pub batpak::event::StateExtentCost::Unavailable
-pub enum batpak::event::TypedDecodeError
+#[non_exhaustive] pub enum batpak::event::TypedDecodeError
 pub batpak::event::TypedDecodeError::DecodeFailure
 pub batpak::event::TypedDecodeError::DecodeFailure::kind: batpak::event::kind::EventKind
 pub batpak::event::TypedDecodeError::DecodeFailure::source: batpak::event::decode::DecodeSource
@@ -1188,7 +1188,7 @@ impl batpak::prelude::ReceiptVerification
 pub fn batpak::prelude::ReceiptVerification::error(&self) -> core::option::Option<&batpak::prelude::ReceiptVerificationError>
 pub fn batpak::prelude::ReceiptVerification::is_signed(&self) -> bool
 pub fn batpak::prelude::ReceiptVerification::is_valid(&self) -> bool
-pub enum batpak::prelude::ReceiptVerificationError
+#[non_exhaustive] pub enum batpak::prelude::ReceiptVerificationError
 pub batpak::prelude::ReceiptVerificationError::ContentHashMismatch
 pub batpak::prelude::ReceiptVerificationError::CoverBuildFailed
 pub batpak::prelude::ReceiptVerificationError::CoverBuildFailed::reason: alloc::string::String
@@ -1386,7 +1386,7 @@ pub fn batpak::prelude::StoreError::fmt(&self, f: &mut core::fmt::Formatter<'_>)
 #[non_exhaustive] pub enum batpak::prelude::SyncMode
 pub batpak::prelude::SyncMode::SyncAll
 pub batpak::prelude::SyncMode::SyncData
-pub enum batpak::prelude::TypedDecodeError
+#[non_exhaustive] pub enum batpak::prelude::TypedDecodeError
 pub batpak::prelude::TypedDecodeError::DecodeFailure
 pub batpak::prelude::TypedDecodeError::DecodeFailure::kind: batpak::event::kind::EventKind
 pub batpak::prelude::TypedDecodeError::DecodeFailure::source: batpak::event::decode::DecodeSource
@@ -1585,6 +1585,18 @@ pub struct batpak::prelude::ReadOnly
 impl batpak::store::StoreState for batpak::store::ReadOnly
 pub fn batpak::store::ReadOnly::shutdown_writer(&mut self, _should_shutdown: bool)
 pub fn batpak::store::ReadOnly::writer_queue_len(&self) -> core::option::Option<usize>
+pub struct batpak::prelude::ReceiptClaim
+pub batpak::prelude::ReceiptClaim::content_hash: [u8; 32]
+pub batpak::prelude::ReceiptClaim::event_id: batpak::id::EventId
+pub batpak::prelude::ReceiptClaim::extensions: alloc::collections::btree::map::BTreeMap<batpak::store::ExtensionKey, batpak::store::EncodedBytes>
+pub batpak::prelude::ReceiptClaim::global_sequence: u64
+pub batpak::prelude::ReceiptClaim::key_id: [u8; 32]
+pub batpak::prelude::ReceiptClaim::signature: core::option::Option<[u8; 64]>
+pub struct batpak::prelude::ReceiptVerifyingKeys
+impl batpak::prelude::ReceiptVerifyingKeys
+pub fn batpak::prelude::ReceiptVerifyingKeys::empty() -> Self
+pub fn batpak::prelude::ReceiptVerifyingKeys::from_public_keys<I>(public_keys: I) -> Self where I: core::iter::IntoIterator<Item = [u8; 32]>
+pub fn batpak::prelude::ReceiptVerifyingKeys::is_empty(&self) -> bool
 pub struct batpak::prelude::Region
 impl batpak::coordinate::Region
 pub fn batpak::coordinate::Region::all() -> Self
@@ -1745,6 +1757,7 @@ pub fn batpak::prelude::StoreConfig::with_enable_checkpoint(self, enable_checkpo
 pub fn batpak::prelude::StoreConfig::with_enable_mmap_index(self, enable_mmap_index: bool) -> Self
 pub fn batpak::prelude::StoreConfig::with_event_payload_validation(self, validation: batpak::event::payload::EventPayloadValidation) -> Self
 pub fn batpak::prelude::StoreConfig::with_fd_budget(self, fd_budget: usize) -> Self
+pub fn batpak::prelude::StoreConfig::with_fs(self, fs: alloc::sync::Arc<dyn batpak::store::StoreFs>) -> Self
 pub fn batpak::prelude::StoreConfig::with_group_commit_max_batch(self, group_commit_max_batch: u32) -> Self
 pub fn batpak::prelude::StoreConfig::with_idempotency_overflow(self, overflow: batpak::store::OverflowPolicy) -> Self
 pub fn batpak::prelude::StoreConfig::with_idempotency_retention(self, retention: batpak::store::IdempotencyRetention) -> Self
@@ -1805,6 +1818,7 @@ pub type batpak::event::sourcing::RawMsgpackInput::Payload = alloc::vec::Vec<u8>
 pub const batpak::event::sourcing::RawMsgpackInput::MODE: batpak::event::sourcing::ReplayLane
 pub fn batpak::prelude::revalidate_event_payload_registry() -> core::result::Result<(), batpak::event::payload::EventPayloadRegistryError>
 pub fn batpak::prelude::validate_event_payload_registry() -> core::result::Result<(), batpak::event::payload::EventPayloadRegistryError>
+pub fn batpak::prelude::verify_receipt_claim(claim: &batpak::prelude::ReceiptClaim, coord: &batpak::coordinate::Coordinate, kind: batpak::event::kind::EventKind, prev_hash: [u8; 32], keys: &batpak::prelude::ReceiptVerifyingKeys) -> batpak::prelude::ReceiptVerification
 pub fn batpak::prelude::verify_registry() -> core::result::Result<(), batpak::event::payload::EventPayloadRegistryError>
 pub type batpak::prelude::ProjectionEvent<T> = batpak::event::Event<batpak::event::sourcing::ProjectionPayload<T>>
 pub type batpak::prelude::ProjectionPayload<T> = <<T as batpak::event::sourcing::EventSourced>::Input as batpak::event::sourcing::ProjectionInput>::Payload
@@ -2682,6 +2696,10 @@ pub enum batpak::store::CopyPreference
 pub batpak::store::CopyPreference::DeepCopyOnly
 pub batpak::store::CopyPreference::HardlinkOnly
 pub batpak::store::CopyPreference::ReflinkThenHardlink
+pub enum batpak::store::CowStrategyUsed
+pub batpak::store::CowStrategyUsed::DeepCopy
+pub batpak::store::CowStrategyUsed::Hardlink
+pub batpak::store::CowStrategyUsed::Reflink
 pub enum batpak::store::CursorGapConfig
 pub batpak::store::CursorGapConfig::Disabled
 pub batpak::store::CursorGapConfig::Enabled
@@ -2797,6 +2815,10 @@ pub batpak::store::ParentDirSyncEvidence::ProbeFailed
 pub batpak::store::ParentDirSyncEvidence::RenameOnly
 pub batpak::store::ParentDirSyncEvidence::UnixFsync
 pub batpak::store::ParentDirSyncEvidence::Unknown
+pub enum batpak::store::PositionedReadError
+pub batpak::store::PositionedReadError::Io(std::io::Error)
+pub batpak::store::PositionedReadError::ShortRead
+pub batpak::store::PositionedReadError::ShortRead::bytes_read: usize
 #[non_exhaustive] pub enum batpak::store::ProfileInvalidKind
 pub batpak::store::ProfileInvalidKind::DecodeJson(serde_json::error::Error)
 pub batpak::store::ProfileInvalidKind::FingerprintEncode(serde_json::error::Error)
@@ -2934,7 +2956,7 @@ impl batpak::prelude::ReceiptVerification
 pub fn batpak::prelude::ReceiptVerification::error(&self) -> core::option::Option<&batpak::prelude::ReceiptVerificationError>
 pub fn batpak::prelude::ReceiptVerification::is_signed(&self) -> bool
 pub fn batpak::prelude::ReceiptVerification::is_valid(&self) -> bool
-pub enum batpak::store::ReceiptVerificationError
+#[non_exhaustive] pub enum batpak::store::ReceiptVerificationError
 pub batpak::store::ReceiptVerificationError::ContentHashMismatch
 pub batpak::store::ReceiptVerificationError::CoverBuildFailed
 pub batpak::store::ReceiptVerificationError::CoverBuildFailed::reason: alloc::string::String
@@ -3657,6 +3679,7 @@ pub fn batpak::store::Outbox<'a>::stage_with_causation(&mut self, coord: batpak:
 pub fn batpak::store::Outbox<'a>::stage_with_options(&mut self, coord: batpak::coordinate::Coordinate, kind: batpak::event::kind::EventKind, payload: &impl serde_core::ser::Serialize, options: batpak::prelude::AppendOptions) -> core::result::Result<&mut Self, batpak::prelude::StoreError>
 pub fn batpak::store::Outbox<'a>::stage_with_options_and_causation(&mut self, coord: batpak::coordinate::Coordinate, kind: batpak::event::kind::EventKind, payload: &impl serde_core::ser::Serialize, options: batpak::prelude::AppendOptions, causation: batpak::store::CausationRef) -> core::result::Result<&mut Self, batpak::prelude::StoreError>
 pub fn batpak::store::Outbox<'a>::submit_flush(&mut self) -> core::result::Result<batpak::store::BatchAppendTicket, batpak::prelude::StoreError>
+pub struct batpak::store::ParentDirSyncAdmission
 #[non_exhaustive] pub struct batpak::store::PlatformAdmissionSummary
 pub batpak::store::PlatformAdmissionSummary::mmap_index: batpak::store::stats::MmapAdmissionSummary
 pub batpak::store::PlatformAdmissionSummary::parent_dir_sync: batpak::store::stats::ParentDirSyncAdmissionSummary
@@ -3758,6 +3781,33 @@ pub batpak::store::ReadWalkRequest::limit: core::option::Option<usize>
 pub batpak::store::ReadWalkRequest::region: batpak::coordinate::Region
 impl batpak::store::ReadWalkRequest
 pub fn batpak::store::ReadWalkRequest::full(region: batpak::coordinate::Region) -> Self
+pub struct batpak::store::RealFs
+impl batpak::store::StoreFs for batpak::store::RealFs
+pub fn batpak::store::RealFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
+pub fn batpak::store::RealFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
+pub fn batpak::store::RealFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
+pub fn batpak::store::RealFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<std::fs::File, batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
+pub fn batpak::store::RealFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<tempfile::file::NamedTempFile>
+pub fn batpak::store::RealFs::persist_temp_with_parent_sync(&self, named_temp: tempfile::file::NamedTempFile, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::ReadDir>
+pub fn batpak::store::RealFs::read_exact_at(&self, file: &mut std::fs::File, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::RealFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
+pub fn batpak::store::RealFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
+pub fn batpak::store::RealFs::sync_file_all(&self, file: &std::fs::File, _path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::sync_file_with_mode(&self, file: &std::fs::File, _path: &std::path::Path, mode: &batpak::prelude::SyncMode) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::sync_parent_dir(&self, path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub struct batpak::store::ReceiptClaim
+pub batpak::store::ReceiptClaim::content_hash: [u8; 32]
+pub batpak::store::ReceiptClaim::event_id: batpak::id::EventId
+pub batpak::store::ReceiptClaim::extensions: alloc::collections::btree::map::BTreeMap<batpak::store::ExtensionKey, batpak::store::EncodedBytes>
+pub batpak::store::ReceiptClaim::global_sequence: u64
+pub batpak::store::ReceiptClaim::key_id: [u8; 32]
+pub batpak::store::ReceiptClaim::signature: core::option::Option<[u8; 64]>
 pub struct batpak::store::ReceiptExtensionKey<P: batpak::store::ReceiptExtensionNamespace>
 impl<P: batpak::store::ReceiptExtensionNamespace> batpak::store::ReceiptExtensionKey<P>
 pub fn batpak::store::ReceiptExtensionKey<P>::as_key(&self) -> &batpak::store::ExtensionKey
@@ -3769,6 +3819,11 @@ impl<P: batpak::store::ReceiptExtensionNamespace> batpak::store::ReceiptExtensio
 pub fn batpak::store::ReceiptExtensionValue<P>::new(bytes: impl core::convert::Into<batpak::store::EncodedBytes>) -> Self
 impl<P: batpak::store::ReceiptExtensionNamespace> core::clone::Clone for batpak::store::ReceiptExtensionValue<P>
 pub fn batpak::store::ReceiptExtensionValue<P>::clone(&self) -> Self
+pub struct batpak::store::ReceiptVerifyingKeys
+impl batpak::prelude::ReceiptVerifyingKeys
+pub fn batpak::prelude::ReceiptVerifyingKeys::empty() -> Self
+pub fn batpak::prelude::ReceiptVerifyingKeys::from_public_keys<I>(public_keys: I) -> Self where I: core::iter::IntoIterator<Item = [u8; 32]>
+pub fn batpak::prelude::ReceiptVerifyingKeys::is_empty(&self) -> bool
 #[non_exhaustive] pub struct batpak::store::SigningDowngradeBody
 pub batpak::store::SigningDowngradeBody::reason: batpak::store::SigningDowngradeReason
 pub batpak::store::SigningDowngradeBody::schema_version: u16
@@ -3778,6 +3833,8 @@ pub const batpak::store::SigningExtensionNamespace::PREFIX: &'static str
 pub struct batpak::store::SigningKey
 impl batpak::store::SigningKey
 pub fn batpak::store::SigningKey::from_bytes(bytes: [u8; 32]) -> Self
+pub fn batpak::store::SigningKey::key_id(&self) -> [u8; 32]
+pub fn batpak::store::SigningKey::public_key_bytes(&self) -> core::option::Option<[u8; 32]>
 impl core::fmt::Debug for batpak::store::SigningKey
 pub fn batpak::store::SigningKey::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct batpak::store::SnapshotEvidenceReport
@@ -3949,6 +4006,7 @@ pub fn batpak::prelude::StoreConfig::with_enable_checkpoint(self, enable_checkpo
 pub fn batpak::prelude::StoreConfig::with_enable_mmap_index(self, enable_mmap_index: bool) -> Self
 pub fn batpak::prelude::StoreConfig::with_event_payload_validation(self, validation: batpak::event::payload::EventPayloadValidation) -> Self
 pub fn batpak::prelude::StoreConfig::with_fd_budget(self, fd_budget: usize) -> Self
+pub fn batpak::prelude::StoreConfig::with_fs(self, fs: alloc::sync::Arc<dyn batpak::store::StoreFs>) -> Self
 pub fn batpak::prelude::StoreConfig::with_group_commit_max_batch(self, group_commit_max_batch: u32) -> Self
 pub fn batpak::prelude::StoreConfig::with_idempotency_overflow(self, overflow: batpak::store::OverflowPolicy) -> Self
 pub fn batpak::prelude::StoreConfig::with_idempotency_retention(self, retention: batpak::store::IdempotencyRetention) -> Self
@@ -4199,6 +4257,44 @@ pub trait batpak::store::Spawn: core::marker::Send + core::marker::Sync
 pub fn batpak::store::Spawn::spawn(&self, name: alloc::string::String, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::JobHandle>, batpak::store::SpawnError>
 impl batpak::store::Spawn for batpak::store::ThreadSpawn
 pub fn batpak::store::ThreadSpawn::spawn(&self, name: alloc::string::String, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::JobHandle>, batpak::store::SpawnError>
+pub trait batpak::store::StoreFs: core::marker::Send + core::marker::Sync
+pub fn batpak::store::StoreFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
+pub fn batpak::store::StoreFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
+pub fn batpak::store::StoreFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
+pub fn batpak::store::StoreFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<std::fs::File, batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
+pub fn batpak::store::StoreFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<tempfile::file::NamedTempFile>
+pub fn batpak::store::StoreFs::persist_temp_with_parent_sync(&self, named_temp: tempfile::file::NamedTempFile, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::ReadDir>
+pub fn batpak::store::StoreFs::read_exact_at(&self, file: &mut std::fs::File, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::StoreFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
+pub fn batpak::store::StoreFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
+pub fn batpak::store::StoreFs::sync_file_all(&self, file: &std::fs::File, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::sync_file_with_mode(&self, file: &std::fs::File, path: &std::path::Path, mode: &batpak::prelude::SyncMode) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::sync_parent_dir(&self, path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+impl batpak::store::StoreFs for batpak::store::RealFs
+pub fn batpak::store::RealFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
+pub fn batpak::store::RealFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
+pub fn batpak::store::RealFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
+pub fn batpak::store::RealFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<std::fs::File, batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
+pub fn batpak::store::RealFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<tempfile::file::NamedTempFile>
+pub fn batpak::store::RealFs::persist_temp_with_parent_sync(&self, named_temp: tempfile::file::NamedTempFile, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::ReadDir>
+pub fn batpak::store::RealFs::read_exact_at(&self, file: &mut std::fs::File, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::RealFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
+pub fn batpak::store::RealFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
+pub fn batpak::store::RealFs::sync_file_all(&self, file: &std::fs::File, _path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::sync_file_with_mode(&self, file: &std::fs::File, _path: &std::path::Path, mode: &batpak::prelude::SyncMode) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::sync_parent_dir(&self, path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub trait batpak::store::StoreState: sealed::Sealed
 pub fn batpak::store::StoreState::shutdown_writer(&mut self, should_shutdown: bool)
 pub fn batpak::store::StoreState::writer_queue_len(&self) -> core::option::Option<usize>
@@ -4226,6 +4322,7 @@ pub fn batpak::store::store_data_dir_identity_hash(path: &std::path::Path) -> ba
 pub fn batpak::store::store_resource_evidence_report_from_diagnostics(d: &batpak::store::stats::StoreDiagnostics) -> core::result::Result<batpak::store::StoreResourceEvidenceReport, batpak::store::StoreResourceReportError>
 pub fn batpak::store::store_resource_report_body_from_diagnostics(d: &batpak::store::stats::StoreDiagnostics) -> batpak::store::StoreResourceReportBody
 pub fn batpak::store::store_resource_report_body_hash(body: &batpak::store::StoreResourceReportBody) -> core::result::Result<batpak::store::StoreResourceHash, batpak::store::StoreResourceReportError>
+pub fn batpak::store::verify_receipt_claim(claim: &batpak::prelude::ReceiptClaim, coord: &batpak::coordinate::Coordinate, kind: batpak::event::kind::EventKind, prev_hash: [u8; 32], keys: &batpak::prelude::ReceiptVerifyingKeys) -> batpak::prelude::ReceiptVerification
 pub type batpak::store::ChainWalkHash = [u8; 32]
 pub type batpak::store::CompactionEvidenceHash = [u8; 32]
 pub type batpak::store::EncodedBytes = alloc::vec::Vec<u8>
