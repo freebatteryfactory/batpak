@@ -138,6 +138,12 @@ pub use index::IndexEntry;
     all(docsrs, not(batpak_stable_docs)),
     doc(cfg(feature = "payload-encryption"))
 )]
+pub use keyscope::backend::{FileKeysetBackend, KeysetBackend};
+#[cfg(feature = "payload-encryption")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "payload-encryption"))
+)]
 pub use keyscope::{
     scope_for, KeyScope, KeyScopeGranularity, KeyStore, KeyStoreError, PayloadKey, ShredScope,
 };

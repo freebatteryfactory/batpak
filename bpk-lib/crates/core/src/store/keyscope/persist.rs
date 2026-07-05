@@ -54,9 +54,9 @@
 //! store; every other outcome fails the open so the operator can restore the real
 //! keyset from backup.
 
+use super::backend::{FileKeysetBackendRef, KeysetBackend};
 use super::{KeyScope, KeyScopeGranularity, KeyStore, PayloadKey, KEY_LEN};
-use crate::store::file_classification::KEYSET_FILENAME;
-use crate::store::platform::fs::{read as fs_read, write_file_atomically_with_fs, RealFs, StoreFs};
+use crate::store::platform::fs::{RealFs, StoreFs};
 use crate::store::StoreError;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -144,17 +144,54 @@ impl KeyStore {
     }
 
     /// [`KeyStore::flush`] routed through the supplied [`StoreFs`] backend so a
-    /// fault-injecting filesystem can tear the atomic publish. The whole keyset is
-    /// rewritten and published through the atomic temp-file-then-rename seam, so a
-    /// torn flush leaves the on-disk keyset either the OLD complete version or the
-    /// NEW one — never partially written. The transient serialized body carries
-    /// raw key material and is held in a [`Zeroizing`] buffer wiped on drop; the
-    /// per-entry plaintext key copies are wiped explicitly once encoded.
+    /// fault-injecting filesystem can tear the atomic publish. A thin wrapper
+    /// over [`KeyStore::flush_with_backend`] with the borrowed file backend.
     ///
     /// # Errors
     /// Returns [`StoreError::Io`] if the atomic write fails, or
     /// [`StoreError::Serialization`] if the keyset cannot be encoded.
     pub(crate) fn flush_with_fs(&mut self, dir: &Path, fs: &dyn StoreFs) -> Result<(), StoreError> {
+        self.flush_with_backend(&FileKeysetBackendRef { dir, fs })
+    }
+
+    /// Persist the whole keyset through the supplied [`KeysetBackend`] (issue
+    /// #162): encode the full image (header + body), hand it to the backend's
+    /// atomic durable publish, then clear the dirty fence signal. The whole
+    /// keyset is rewritten on every flush so there is exactly ONE atomic
+    /// publish point; a torn flush leaves the persisted keyset either the OLD
+    /// complete version or the NEW one — never partially written. The
+    /// transient serialized image carries raw key material and is held in a
+    /// [`Zeroizing`] buffer wiped on drop; the per-entry plaintext key copies
+    /// are wiped explicitly once encoded.
+    ///
+    /// # Errors
+    /// Returns the backend's persist failure ([`StoreError::Io`] for the file
+    /// backend), or [`StoreError::Serialization`] if the keyset cannot be
+    /// encoded. On error the dirty signal stays set, so the next ciphertext
+    /// write re-flushes before it can ack.
+    pub(crate) fn flush_with_backend(
+        &mut self,
+        backend: &dyn KeysetBackend,
+    ) -> Result<(), StoreError> {
+        let image = self.encoded_image()?;
+        backend.persist(&image)?;
+        // The whole keyset is now durably persisted — the in-memory keys match
+        // the last flush, so clear the fence's dirty signal. Only reached on a
+        // successful publish; a torn/failed flush leaves `dirty` set so the next
+        // ciphertext write re-flushes before it can ack.
+        self.dirty = false;
+        tracing::debug!(
+            target: "batpak::keyscope",
+            count = self.keys.len(),
+            "flushed crypto-shred keyset"
+        );
+        Ok(())
+    }
+
+    /// Encode the full keyset image — `magic(6) | version(2 le) | crc(4 le) |
+    /// body(msgpack)` — into one [`Zeroizing`] buffer. The format is owned
+    /// here; backends treat the image as opaque bytes.
+    fn encoded_image(&self) -> Result<Zeroizing<Vec<u8>>, StoreError> {
         let mut wire = KeysetWire {
             granularity: granularity_to_disc(self.granularity),
             entries: Vec::with_capacity(self.keys.len()),
@@ -180,33 +217,12 @@ impl KeyStore {
         }
 
         let crc = crc32fast::hash(&body);
-        let final_path = dir.join(KEYSET_FILENAME);
-        write_file_atomically_with_fs(
-            dir,
-            &final_path,
-            "crypto-shred-keyset",
-            |file| {
-                use std::io::Write;
-                file.write_all(KEYSET_MAGIC).map_err(StoreError::Io)?;
-                file.write_all(&KEYSET_VERSION.to_le_bytes())
-                    .map_err(StoreError::Io)?;
-                file.write_all(&crc.to_le_bytes()).map_err(StoreError::Io)?;
-                file.write_all(&body).map_err(StoreError::Io)?;
-                Ok(())
-            },
-            fs,
-        )?;
-        // The whole keyset is now durable on disk — the in-memory keys match the
-        // last flush, so clear the fence's dirty signal. Only reached on a
-        // successful publish; a torn/failed flush leaves `dirty` set so the next
-        // ciphertext write re-flushes before it can ack.
-        self.dirty = false;
-        tracing::debug!(
-            target: "batpak::keyscope",
-            count = self.keys.len(),
-            "flushed crypto-shred keyset"
-        );
-        Ok(())
+        let mut image = Zeroizing::new(Vec::with_capacity(HEADER_LEN + body.len()));
+        image.extend_from_slice(KEYSET_MAGIC);
+        image.extend_from_slice(&KEYSET_VERSION.to_le_bytes());
+        image.extend_from_slice(&crc.to_le_bytes());
+        image.extend_from_slice(&body);
+        Ok(image)
     }
 
     /// Cold-start rehydration: load the keyset from `dir` into a fresh
@@ -233,15 +249,9 @@ impl KeyStore {
         Self::load_with_fs(dir, &RealFs, granularity)
     }
 
-    /// [`KeyStore::load`] routed through the supplied [`StoreFs`] backend.
-    ///
-    /// An ABSENT file (first open, or a store that never flushed) yields an empty
-    /// store. Any OTHER problem — wrong magic, short/truncated header, CRC
-    /// mismatch, unsupported version, a decode failure, or a persisted granularity
-    /// that disagrees with `granularity` — is a hard [`StoreError::KeysetCorrupt`]
-    /// (fail closed): silently starting empty would crypto-shred every payload the
-    /// real keyset protects. Rehydrated keys land in [`Zeroizing`] storage and
-    /// every transient key buffer is wiped before this returns.
+    /// [`KeyStore::load`] routed through the supplied [`StoreFs`] backend. A
+    /// thin wrapper over [`KeyStore::load_with_backend`] with the borrowed
+    /// file backend.
     ///
     /// # Errors
     /// Returns [`StoreError::KeysetCorrupt`] on any unreadable/undecodable/
@@ -252,25 +262,38 @@ impl KeyStore {
         fs: &dyn StoreFs,
         granularity: KeyScopeGranularity,
     ) -> Result<Self, StoreError> {
-        let path = dir.join(KEYSET_FILENAME);
-        // Defence for keys at rest: never follow a symlink where the keyset sits,
-        // mirroring the write path's leaf guard.
-        fs.reject_symlink_leaf(&path, "crypto-shred-keyset")?;
-        let raw = match fs_read(&path) {
-            // The file carries raw keys — read into a Zeroizing buffer.
-            Ok(bytes) => Zeroizing::new(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                // File absent — no keys were ever written. Mark the keyset
-                // absent-on-load so a later read of a pre-existing encrypted event
-                // reports KeysetMissing (lost keyset) rather than a Shredded
-                // lookalike (D24). A fresh store also lands here but has no
-                // pre-existing encrypted events, so it never trips KeysetMissing;
-                // its first append mints an in-memory key that reads find.
-                return Ok(Self::new_absent(granularity));
-            }
-            Err(error) => return Err(StoreError::Io(error)),
-        };
-        decode_keyset(&raw, granularity)
+        Self::load_with_backend(&FileKeysetBackendRef { dir, fs }, granularity)
+    }
+
+    /// Cold-start rehydration through the supplied [`KeysetBackend`] (issue
+    /// #162).
+    ///
+    /// An ABSENT image (`Ok(None)` — first open, or a store that never
+    /// flushed) yields an empty store marked absent-on-load, so a later read
+    /// of a pre-existing encrypted event reports `KeysetMissing` (lost keyset)
+    /// rather than a `Shredded` lookalike (D24); a fresh store also lands here
+    /// but has no pre-existing encrypted events, so it never trips
+    /// `KeysetMissing`. Any OTHER problem — wrong magic, short/truncated
+    /// header, CRC mismatch, unsupported version, a decode failure, or a
+    /// persisted granularity that disagrees with `granularity` — is a hard
+    /// [`StoreError::KeysetCorrupt`] (fail closed): silently starting empty
+    /// would crypto-shred every payload the real keyset protects. Rehydrated
+    /// keys land in [`Zeroizing`] storage and every transient key buffer is
+    /// wiped before this returns.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::KeysetCorrupt`] on any undecodable/
+    /// granularity-mismatched keyset, or the backend's read failure.
+    pub(crate) fn load_with_backend(
+        backend: &dyn KeysetBackend,
+        granularity: KeyScopeGranularity,
+    ) -> Result<Self, StoreError> {
+        match backend.load()? {
+            // The image carries raw keys — the backend contract already hands
+            // it over in a Zeroizing buffer.
+            Some(raw) => decode_keyset(&raw, granularity),
+            None => Ok(Self::new_absent(granularity)),
+        }
     }
 }
 

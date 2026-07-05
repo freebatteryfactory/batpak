@@ -77,7 +77,7 @@ impl Store<Open> {
         // disk) — the fail-safe direction, since the payload stays recoverable
         // until the destruction is durably published.
         let destroyed = guard.destroy(&scope);
-        guard.flush_with_fs(&self.config.data_dir, self.config.fs().as_ref())?;
+        guard.flush_with_backend(self.config.keyset_backend().as_ref())?;
         Ok(destroyed)
     }
 }

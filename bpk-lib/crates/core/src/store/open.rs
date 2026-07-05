@@ -166,7 +166,7 @@ fn load_key_store(
         return Ok(None);
     };
     let key_store =
-        keyscope::KeyStore::load_with_fs(&config.data_dir, config.fs().as_ref(), granularity)?;
+        keyscope::KeyStore::load_with_backend(config.keyset_backend().as_ref(), granularity)?;
     Ok(Some(Arc::new(Mutex::new(key_store))))
 }
 
