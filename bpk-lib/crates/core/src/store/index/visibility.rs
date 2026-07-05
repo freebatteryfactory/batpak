@@ -176,11 +176,24 @@ impl SequenceGate {
     /// elapses (the deadline safety net — a missed wakeup degrades to the caller's
     /// timeout, never a hang). If a publish already advanced the epoch since the
     /// snapshot, returns immediately without parking (lost-wakeup guard).
-    pub(crate) fn park_for_visibility_change(&self, since_epoch: u64, timeout: Duration) {
+    ///
+    /// Returns whether the park ran its FULL `timeout` without a wakeup. A
+    /// `true` is a truthful real-time lower bound ("at least `timeout` real
+    /// time passed here") that the caller accumulates as a deadline floor, so
+    /// pull deadlines stay bounded even under an injected [`Clock`] whose
+    /// monotonic reading does not advance while this thread is parked.
+    ///
+    /// [`Clock`]: crate::store::Clock
+    pub(crate) fn park_for_visibility_change(&self, since_epoch: u64, timeout: Duration) -> bool {
         let mut guard = self.visibility_wakeup.0.lock();
         if self.visibility_epoch.load(Ordering::Acquire) == since_epoch {
-            let _timeout_state = self.visibility_wakeup.1.wait_for(&mut guard, timeout);
+            return self
+                .visibility_wakeup
+                .1
+                .wait_for(&mut guard, timeout)
+                .timed_out();
         }
+        false
     }
 
     /// Reserve `n` sequences. Returns first in `[first, first + n)`.

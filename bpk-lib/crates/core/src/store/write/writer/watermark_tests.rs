@@ -411,3 +411,64 @@ fn advance_durable_is_a_noop_once_the_writer_is_poisoned() {
          guard would let it advance to 9"
     );
 }
+
+/// A clock whose monotonic reading never advances — the frozen logical-clock
+/// regime (an injected sim clock nobody drives during the wait). PR #169
+/// review finding: before the timed-out-park floor, these waits recomputed a
+/// zero elapsed forever and never returned `WaitTimeout`.
+struct FrozenClock;
+
+impl crate::store::Clock for FrozenClock {
+    fn now_us(&self) -> i64 {
+        0
+    }
+
+    fn now_wall_ns(&self) -> i64 {
+        0
+    }
+
+    fn now_mono_ns(&self) -> i64 {
+        42
+    }
+
+    fn process_boot_ns(&self) -> u64 {
+        0
+    }
+}
+
+#[test]
+fn wait_for_durable_times_out_in_real_time_under_a_frozen_clock() {
+    let handle = WatermarkState::handle(Arc::new(FrozenClock));
+
+    let result = handle.wait_for_durable(point(5), Duration::from_millis(50));
+    assert!(
+        matches!(
+            result,
+            Err(StoreError::WaitTimeout {
+                watermark: WatermarkKind::Durable,
+                ..
+            })
+        ),
+        "PROPERTY: the caller's timeout must bound the wait in REAL time even when \
+         the injected clock's now_mono_ns never advances (timed-out parks accumulate \
+         a real-time floor); a livelock here hangs the test instead"
+    );
+}
+
+#[test]
+fn wait_for_durable_on_lane_times_out_in_real_time_under_a_frozen_clock() {
+    let handle = WatermarkState::handle(Arc::new(FrozenClock));
+
+    let result = handle.wait_for_durable_on_lane(0, point(5), Duration::from_millis(50));
+    assert!(
+        matches!(
+            result,
+            Err(StoreError::WaitTimeout {
+                watermark: WatermarkKind::Durable,
+                ..
+            })
+        ),
+        "PROPERTY: the lane wait's timeout must bound the wait in REAL time even when \
+         the injected clock's now_mono_ns never advances"
+    );
+}
