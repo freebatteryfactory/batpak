@@ -387,6 +387,10 @@ fn with_fs_installs_custom_filesystem_backend() {
         ) -> Result<(), crate::store::StoreError> {
             self.inner.reject_symlink_leaf(path, purpose)
         }
+        fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
+            self.inner.read(path)
+        }
+
         fn canonicalize(&self, path: &Path) -> std::io::Result<std::path::PathBuf> {
             self.inner.canonicalize(path)
         }

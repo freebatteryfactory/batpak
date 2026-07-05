@@ -246,6 +246,8 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: [rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
