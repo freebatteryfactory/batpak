@@ -87,8 +87,9 @@ can be derived from source, derive it and delete both the list and its guard.
 
 ## 2. Semantic hardening (small, sharp)
 
-- [ ] `#[non_exhaustive]` on `TypedDecodeError` and `ReceiptVerificationError`
-  (adding a variant is currently a semver break by construction).
+- [x] `#[non_exhaustive]` on `TypedDecodeError` and `ReceiptVerificationError`
+  (adding a variant is currently a semver break by construction). LANDED in
+  the 0.10.0 window PR — no in-repo exhaustive matches needed wildcarding.
 - [ ] Public-api baselines for the 3 unguarded published crates
   (`batpak-macros-support`, `batpak-macros`, `batpak-bench-support`).
 - [ ] syncbat exposes batpak types (`EventId`, `StoreError`, `Store<Open>`)
