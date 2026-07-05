@@ -138,6 +138,10 @@ fn check_root_markdown_allowlist(project_root: &Path) -> Result<()> {
         "CODE_OF_CONDUCT.md",
         "12_CONFORMANCE.md",
         "CONTRIBUTING.md",
+        // One-screen documentation map (issue #163): the docs-build "Documentation
+        // Map" slot after the README, indexing the twelve numbered guides and the
+        // reading paths. Canonical reading surface, not planning debt.
+        "DOCS.md",
         "06_EVENTS.md",
         "01_FACTORY.md",
         "11_INTEGRATION.md",

@@ -111,6 +111,18 @@ chacha20poly1305 = { version = "0.10", optional = true, default-features = false
 getrandom = { version = "0.3", optional = true }
 # NO TOKIO. Invariant 1.
 
+# wasm32-unknown-unknown has no ambient OS RNG: route UUIDv7 randomness through
+# the JS host via uuid's `js` feature (issue #164 ask 1). This is the first
+# target-conditional dependency table in the family outside bvisor; it is inert
+# on every native target — a per-target feature addition never resolves
+# elsewhere. See the getrandom pinning notes above before touching versions.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+uuid = { version = ">=1.20, <1.24", default-features = false, features = [
+    "std",
+    "v7",
+    "js",
+] }
+
 [dev-dependencies]
 batpak-bench-support = { path = "../bench-support", version = "0.9.0" }
 batpak-testkit = { path = "../testkit" }

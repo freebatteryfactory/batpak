@@ -237,6 +237,31 @@ jobs:
         working-directory: bpk-lib
         run: cargo xtask ci-windows-surface
 
+  # Check-only wasm32-unknown-unknown embedding surface (issue #164): keeps
+  # core + syncbat (and core's payload-encryption feature) compiling for the
+  # target. Deliberately check-only — no test runner, JS host, or wasm tooling
+  # — so the lane stays cheap enough to run on every Rust-touching PR.
+  wasm-surface:
+    name: wasm32 embedding surface (check-only)
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # 1.92.0
+        with:
+          toolchain: 1.92.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: wasm-surface
+          workspaces: bpk-lib
+      - name: Check-only wasm32 embedding surface
+        working-directory: bpk-lib
+        run: cargo xtask wasm-surface
+
   feature-isolation:
     runs-on: blacksmith-8vcpu-ubuntu-2404
     needs: [ci-fast-linux, verify-linux, rust-changed]
