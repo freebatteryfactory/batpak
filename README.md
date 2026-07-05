@@ -204,9 +204,13 @@ When batpak is the wrong tool:
 Every accepted write returns an `AppendReceipt`. Check it against the
 committed store with `Store::verify_append_receipt`, or — when you hold the
 ack-shaped wire fields rather than the receipt struct — with
-`Store::verify_append_receipt_wire_detailed`. The verification vocabulary
-(`Signed`, `UnsignedAccepted`, `Invalid(reason)`) and the signing model live
-in [07_RECEIPTS.md](07_RECEIPTS.md).
+`Store::verify_append_receipt_wire_detailed`. A party holding only the
+receipt fields, the event's chain metadata, and the verifying keys needs no
+store at all: `verify_receipt_claim` (in `batpak::store`) returns the same
+verdict from portable inputs, backed by the same implementation the store
+delegates to. The verification vocabulary (`Signed`, `UnsignedAccepted`,
+`Invalid(reason)`) and the signing model live in
+[07_RECEIPTS.md](07_RECEIPTS.md).
 
 ## Can You Trust A 0.x Store?
 

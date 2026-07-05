@@ -1,0 +1,177 @@
+# release 0.10.0 — terminal status ledger (Truth Gate program board).
+#
+# Each row is a release milestone or blocker with a terminal status:
+#   PROVEN | FAIL-CLOSED | WAIVED | FAULT-INJECTED | INCOMPLETE
+#
+# Normal `just inspect` validates schema + witness references + `justifies:` headers.
+# Strict release mode (`just seal`, `cargo xtask release --dry-run`) additionally
+# requires every `terminal_required: true` row to reach a terminal status.
+#
+# 0.10.0 is the reserved pre-1.0 breaking window (ROADMAP §3): the coordinated
+# API-shape cut driven by dogfood feedback — issues #162–#168 plus the
+# #[non_exhaustive] sweep — landed as one PR.
+
+release: "0.10.0"
+active: true
+
+rows:
+  # ── 0.10.0 window surfaces ──────────────────────────────────────────────────
+
+  - id: STORE-FS-PUBLIC-SEAM
+    title: StoreFs promoted to reviewed-public with documented durability contract (#164)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/tests/store_fs_public_seam.rs::store_opened_with_installed_real_fs_appends_and_reads
+      - crates/core/tests/store_fs_public_seam.rs::real_fs_upholds_the_documented_backend_contract
+    notes: >-
+      StoreFs/RealFs public with StoreConfig::with_fs installer; trait docs
+      carry the sync-means-durable / atomic-publish / create-new-exclusive /
+      symlink-fail-closed obligations plus the honest File-anchored limitation
+      (no in-memory/wasm backend on this seam — see #168 findings).
+    proof_commands:
+      - cargo nextest run -p batpak -E 'binary(store_fs_public_seam)'
+
+  - id: STORE-RECEIPT-VERIFY-STORE-FREE
+    title: Store-free receipt/chain verification surface (#167)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/tests/receipt_verify_store_free.rs::store_free_and_store_side_verification_agree_on_a_signed_receipt
+      - crates/core/tests/receipt_verify_store_free.rs::store_free_verification_binds_every_covered_field
+      - crates/core/tests/receipt_verify_store_free.rs::store_free_key_dispositions_match_the_store_taxonomy
+    notes: >-
+      verify_receipt_claim(claim, coord, kind, prev_hash, keys) verifies from
+      portable inputs with ONE implementation — the store-side registry
+      delegates to the same core, so the two surfaces cannot disagree.
+      wasm32-clean (blake3 + ed25519 only).
+    proof_commands:
+      - cargo nextest run -p batpak -E 'binary(receipt_verify_store_free)'
+
+  - id: STORE-KEYSET-BACKEND-SEAM
+    title: KeysetBackend pluggable keyset storage with frozen semantics (#162)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/tests/keyset_backend.rs::mint_persists_through_the_backend_before_the_append_acks
+      - crates/core/tests/keyset_backend.rs::shred_publishes_the_destruction_through_the_backend
+      - crates/core/tests/keyset_backend.rs::corrupt_backend_bytes_fail_the_open_closed
+      - crates/core/tests/keyset_backend.rs::lost_backend_over_existing_ciphertext_reads_as_keyset_missing
+    notes: >-
+      Bytes-level seam; format and fail-closed taxonomy stay single-sourced in
+      persist.rs; the flush-before-ack fence and the shred ack point are trait
+      obligations; the default FileKeysetBackend is byte-identical to 0.9.0's
+      in-directory file.
+    proof_commands:
+      - cargo nextest run -p batpak --all-features -E 'binary(keyset_backend)'
+
+  - id: STORE-CLOCK-WAIT-SEAM
+    title: Wait deadlines route through Clock::now_mono_ns (#164)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/src/store/gate.rs::gate_wait_measurement_reads_the_injected_clock
+    notes: >-
+      Gate wait measurement, frontier/watermark waits, and cursor pull
+      deadlines sample the injected clock; the one remaining Instant holder is
+      SystemClock's process-wide monotonic anchor.
+    proof_commands:
+      - cargo nextest run -p batpak -E 'test(/gate|watermark|cursor/)'
+
+  - id: HOSTBAT-BUILDER-PASSTHROUGHS
+    title: HostBuilder status_sink + capability-grant passthroughs (#166)
+    status: PROVEN
+    terminal_required: true
+    surface: hostbat
+    witness_tests:
+      - crates/hostbat/src/host_status_capability_tests.rs::status_sink_receives_started_and_terminal_facts_through_host_builder
+      - crates/hostbat/src/host_status_capability_tests.rs::capability_requiring_operation_is_denied_without_a_grant
+      - crates/hostbat/src/host_status_capability_tests.rs::grant_capability_admits_the_same_operation
+    notes: Forwarded verbatim to the inner CoreBuilder during build(); existing behavior unchanged.
+    proof_commands:
+      - cargo nextest run -p hostbat
+
+  - id: WASM32-CHECK-SURFACE
+    title: wasm32-unknown-unknown check-only embedding surface (#164/#168)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_gates:
+      - release-status
+    notes: >-
+      cargo xtask wasm-surface checks batpak, batpak --features
+      payload-encryption, and syncbat for wasm32-unknown-unknown; wired as a
+      cheap check-only CI job. The #168 runtime smoke stays open — the
+      File-anchored StoreFs contract cannot be satisfied in-memory on wasm; a
+      handle-abstracted seam is a 0.11 design item (findings posted on #168).
+    proof_commands:
+      - cargo xtask wasm-surface
+
+  - id: SEMVER-NON-EXHAUSTIVE-SWEEP
+    title: '#[non_exhaustive] on TypedDecodeError + ReceiptVerificationError (ROADMAP §2)'
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_gates:
+      - release-status
+    notes: >-
+      The 0.10.0 window's intentional breaks, classified in
+      traceability/public_api/batpak_semver_checklist.yaml; no in-repo
+      exhaustive match needed wildcarding.
+    proof_commands:
+      - cargo xtask public-api --strict --check-baseline
+
+  # ── Cut mechanics ───────────────────────────────────────────────────────────
+
+  - id: CUT-VERSION-0100
+    title: Version 0.9.0 → 0.10.0 in all member manifests
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_gates:
+      - release-status
+    notes: All member manifests and path-dep pins are at 0.10.0 (lockstep).
+    proof_commands:
+      - cargo xtask check-version-pins
+
+  - id: CUT-CHANGELOG-0100
+    title: CHANGELOG [Unreleased] → [0.10.0]
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_gates:
+      - release-status
+    notes: >-
+      CHANGELOG [0.10.0] dated 2026-07-05 with the window surfaces (#162–#167),
+      the wasm32 enablement, and the non_exhaustive migration note.
+    proof_commands:
+      - rg '## \[0.10.0\] - 2026-07-05' CHANGELOG.md
+
+  - id: CUT-PUBLIC-API-SEAL-0100
+    title: Regenerate and strict-check traceability/public_api baselines
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_gates:
+      - release-status
+    notes: All 5 publishable baselines re-blessed and strict-checked; semver checklists updated.
+    proof_commands:
+      - cargo xtask public-api --strict --check-baseline
+
+  - id: CUT-PUBLISH-TAG-0100
+    title: Chain publish + tag after owner sign-off
+    status: INCOMPLETE
+    terminal_required: true
+    surface: batpak
+    witness_gates:
+      - release-status
+    notes: >-
+      Owner ceremony: `just seal` then `just ship dry` / `just ship real`
+      publish the RELEASE_CHAIN crates at 0.10.0 and tag the release. Not part
+      of the 0.10.0 window PR.
+    proof_commands:
+      - just seal

@@ -4,6 +4,77 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-05
+
+The reserved pre-1.0 breaking window (ROADMAP §3): API-shape changes driven by
+dogfood feedback (#162–#168), landed as one coordinated cut. No wire or
+on-disk format changes anywhere in this release.
+
+### Added
+- **Store-free receipt verification** (#167): `batpak::store::receipt_verify`
+  — `verify_receipt_claim(claim, coord, kind, prev_hash, keys)` verifies an
+  append/denial receipt from portable inputs (`ReceiptClaim` ack fields +
+  chain metadata + `ReceiptVerifyingKeys`) with no `Store::open` and no
+  filesystem. One implementation: the store-side methods delegate to the same
+  core, so store-free and store-side verdicts can never disagree.
+  `SigningKey::public_key_bytes` / `SigningKey::key_id` are now public so an
+  embedder can export the verifying half of a configured signer. Exported via
+  `batpak::store` and the prelude; wasm32-clean.
+- **`KeysetBackend` — pluggable crypto-shred keyset storage** (#162): a
+  bytes-level seam (`load` / durable atomic `persist`) installed with
+  `StoreConfig::with_keyset_backend`, so key material can live outside the
+  store directory (separate volume, OS keychain, KMS-wrapped row). The keyset
+  format and every fail-closed rule stay single-sourced; the flush-before-ack
+  fence and the shred ack point are now documented trait obligations. Default
+  unchanged: `FileKeysetBackend` writes the same in-directory `keyset.fbatk`.
+- **`StoreFs` is reviewed-public** (#164): the filesystem seam (`StoreFs`,
+  `RealFs`, `StoreConfig::with_fs`, plus the vocabulary types its signatures
+  carry — `CowStrategyUsed`, `PositionedReadError`, `ParentDirSyncAdmission`)
+  following the `Spawn` precedent, with the durability contract implementers
+  must uphold documented on the trait. Note the honest limitation: the
+  `File`-anchored signatures support alternate *native* backends, not an
+  in-memory/wasm filesystem (see #168).
+- **wasm32-unknown-unknown embedding surface** (#164): a target-conditional
+  uuid `js` RNG feature makes `batpak`, `syncbat`, and
+  `batpak --features payload-encryption` compile clean for the target, and a
+  check-only lane (`cargo xtask wasm-surface`, `just wasm-surface`, plus a
+  cheap CI job) keeps them that way. `rust-toolchain.toml` now pins the
+  wasm32 target.
+- **hostbat `HostBuilder` passthroughs** (#166): `status_sink` (operation
+  lifecycle facts for mounted ops), `grant_capability`, and
+  `grant_capabilities` forward to the composed `syncbat::CoreBuilder`,
+  unblocking kits whose ops declare `requires_capabilities`.
+- **`DOCS.md`** (#163): a one-screen documentation map at the repo root,
+  wired into the Pages build after the README.
+
+### Changed
+- One canonical definition now opens all three citation surfaces — README,
+  crate-root rustdoc, crates.io description: "batpak is an embedded,
+  sync-first event store for Rust…" (#165). The README is restructured
+  answer-first (definition, 30-second quickstart, comparison grid,
+  query-phrase headings); the factory framing follows the definition instead
+  of preceding it.
+- Wait deadlines (durability-gate wait measurement, frontier/watermark waits,
+  cursor pull deadlines) now route through `Clock::now_mono_ns` instead of raw
+  `std::time::Instant`, so injected clocks govern every wait path —
+  behavior-identical on native, and the last runtime `Instant` hazard for
+  wasm32 embeddings moves behind the `Clock` seam (#164).
+- crates.io metadata (#163): keywords swap `causal-graph` → `embedded`; the
+  README badge links to the crate page; description carries the canonical
+  sentence.
+- `TypedDecodeError` and `ReceiptVerificationError` are `#[non_exhaustive]`
+  (ROADMAP §2): adding a failure mode is no longer a semver break.
+- `tempfile::NamedTempFile` is now a public-API type through the `StoreFs`
+  trait signatures (bounded by the existing `>=3.24, <3.25` pin).
+
+### Migration
+- Downstream exhaustive `match` expressions over `TypedDecodeError` or
+  `ReceiptVerificationError` need a wildcard arm (`_ =>`). `matches!`-style
+  checks are unaffected.
+- No other source changes expected: every other 0.10.0 surface is additive.
+  No wire, receipt-cover, or on-disk format changes; the keyset file format
+  and location are unchanged unless a custom `KeysetBackend` is installed.
+
 ## [0.9.0] - 2026-07-04
 
 ### Added
