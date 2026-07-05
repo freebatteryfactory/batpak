@@ -30,8 +30,7 @@ pub(crate) fn compact(
         .read_dir(&store.config.data_dir)
         .map_err(StoreError::Io)?
     {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+        let path = store.config.data_dir.join(&entry.name);
         let seg_id = match StoreFileKind::from_path(&path) {
             StoreFileKind::Segment(segment_id) => segment_id.as_u64(),
             StoreFileKind::MalformedSegment(error) => {
@@ -121,7 +120,7 @@ pub(crate) fn compact(
     let mut segments_removed = 0_usize;
     for (_, path) in &sealed {
         if let Ok(meta) = fs.metadata(path) {
-            bytes_reclaimed += meta.len();
+            bytes_reclaimed += meta.len;
         }
         fs.remove_file(path).map_err(StoreError::Io)?;
         segments_removed += 1;
@@ -453,9 +452,10 @@ fn rebuild_fresh_compaction_index(
         &store.reader,
         &store.config.data_dir,
     )?;
-    if let Some(ranges) =
-        crate::store::hidden_ranges::load_cancelled_ranges(&store.config.data_dir)?
-    {
+    if let Some(ranges) = crate::store::hidden_ranges::load_cancelled_ranges(
+        &store.config.data_dir,
+        store.config.fs().as_ref(),
+    )? {
         fresh_index.restore_cancelled_visibility_ranges(ranges);
     }
 

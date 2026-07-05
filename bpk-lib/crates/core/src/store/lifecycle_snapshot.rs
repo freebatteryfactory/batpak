@@ -61,7 +61,7 @@ pub(crate) fn snapshot(
         .idemp
         .flush(&store.config.data_dir, fs.as_ref())?;
     let (source_watermark_segment_id, source_watermark_offset) =
-        latest_segment_watermark(&store.config.data_dir)?;
+        latest_segment_watermark(&store.config.data_dir, fs.as_ref())?;
     fs.reject_symlink_leaf(dest, "snapshot destination")?;
     fs.create_dir_all(dest).map_err(StoreError::Io)?;
     let cleared_artifact_count = clear_snapshot_store_artifacts(fs.as_ref(), dest)?;
@@ -76,11 +76,10 @@ pub(crate) fn snapshot(
         });
     }
     for entry in entries {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+        let path = store.config.data_dir.join(&entry.name);
         let source_kind = StoreFileKind::from_path(&path);
         if let Some(file_kind) = snapshot_source_file_kind(&source_kind) {
-            let dest_path = dest.join(entry.file_name());
+            let dest_path = dest.join(&entry.name);
             fs.reject_symlink_leaf(&dest_path, "snapshot entry")?;
             fs.copy(&path, &dest_path).map_err(StoreError::Io)?;
             acc.record(file_kind, &source_kind);
@@ -144,14 +143,15 @@ pub(super) fn clear_snapshot_store_artifacts(
     let entries = fs.read_dir(dest).map_err(StoreError::Io)?;
     let mut removed = 0;
     for entry in entries {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+        let path = dest.join(&entry.name);
         if snapshot_destination_should_clear(&path) {
             removed += usize::from(remove_file_if_present(&path)?);
             continue;
         }
 
-        if path.is_dir() && StoreFileKind::from_path(&path) == StoreFileKind::CursorDirectory {
+        if entry.kind == crate::store::platform::fs::FileKind::Dir
+            && StoreFileKind::from_path(&path) == StoreFileKind::CursorDirectory
+        {
             removed += usize::from(remove_dir_all_if_present(&path)?);
         }
     }
@@ -176,7 +176,6 @@ mod tests {
         let dest = tempfile::TempDir::new().expect("create snapshot destination");
         let write_fixture = |name: &str, bytes: &'static [u8]| {
             write_file_atomically(dest.path(), &dest.path().join(name), name, |file| {
-                use std::io::Write;
                 file.write_all(bytes).map_err(StoreError::Io)
             })
             .expect("write fixture through the platform seam");

@@ -48,7 +48,7 @@ pub(crate) fn fork(
         .idemp
         .flush(&store.config.data_dir, fs.as_ref())?;
     let (source_watermark_segment_id, source_watermark_offset) =
-        latest_segment_watermark(&store.config.data_dir)?;
+        latest_segment_watermark(&store.config.data_dir, fs.as_ref())?;
     let active_segment_id = source_watermark_segment_id;
 
     fs.reject_symlink_leaf(dest, "fork destination")?;
@@ -79,12 +79,10 @@ pub(crate) fn fork(
     }
 
     for entry in entries {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+        let path = store.config.data_dir.join(&entry.name);
         let source_kind = StoreFileKind::from_path(&path);
-        let file_name = entry.file_name();
-        let file_name_display = file_name.to_string_lossy().into_owned();
-        let dest_path = dest.join(&file_name);
+        let file_name_display = entry.name.to_string_lossy().into_owned();
+        let dest_path = dest.join(&entry.name);
         fs.reject_symlink_leaf(&dest_path, "fork entry")?;
 
         fork_entry(
@@ -131,16 +129,12 @@ fn clear_fork_store_artifacts(
     let entries = fs.read_dir(dest).map_err(StoreError::Io)?;
     let mut removed = 0;
     for entry in entries {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+        let path = dest.join(&entry.name);
         if !StoreFileKind::from_path(&path).should_clear_from_fork_destination() {
             continue;
         }
-        let is_dir = fs
-            .symlink_metadata(&path)
-            .map_err(StoreError::Io)?
-            .file_type()
-            .is_dir();
+        let is_dir = fs.symlink_metadata(&path).map_err(StoreError::Io)?.kind
+            == crate::store::platform::fs::FileKind::Dir;
         if is_dir {
             removed += usize::from(remove_dir_all_if_present(&path)?);
         } else {

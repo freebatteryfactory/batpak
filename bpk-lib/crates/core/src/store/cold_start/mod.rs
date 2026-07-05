@@ -86,11 +86,13 @@ pub(crate) enum WatermarkValidationError {
     },
 }
 
-pub(crate) fn latest_segment_watermark(data_dir: &Path) -> Result<(u64, u64), StoreError> {
+pub(crate) fn latest_segment_watermark(
+    data_dir: &Path,
+    fs: &dyn platform::fs::StoreFs,
+) -> Result<(u64, u64), StoreError> {
     let mut max: Option<(u64, PathBuf)> = None;
-    for entry in platform::fs::read_dir(data_dir).map_err(StoreError::Io)? {
-        let entry = entry.map_err(StoreError::Io)?;
-        let path = entry.path();
+    for entry in fs.read_dir(data_dir).map_err(StoreError::Io)? {
+        let path = data_dir.join(&entry.name);
         let segment_id = match StoreFileKind::from_path(&path) {
             StoreFileKind::Segment(segment_id) => segment_id.as_u64(),
             StoreFileKind::MalformedSegment(error) => {
@@ -122,7 +124,7 @@ pub(crate) fn latest_segment_watermark(data_dir: &Path) -> Result<(u64, u64), St
 
     match max {
         Some((segment_id, path)) => {
-            let offset = platform::fs::metadata(&path).map_err(StoreError::Io)?.len();
+            let offset = fs.metadata(&path).map_err(StoreError::Io)?.len;
             Ok((segment_id, offset))
         }
         None => Ok((0, 0)),
@@ -133,15 +135,16 @@ pub(crate) fn validate_watermark_segment(
     data_dir: &Path,
     watermark_segment_id: u64,
     watermark_offset: u64,
+    fs: &dyn platform::fs::StoreFs,
 ) -> Result<(), WatermarkValidationError> {
     let watermark_segment_path = data_dir.join(crate::store::segment::segment_filename(
         watermark_segment_id,
     ));
-    match platform::fs::metadata(&watermark_segment_path) {
-        Ok(meta) if meta.len() >= watermark_offset => Ok(()),
+    match fs.metadata(&watermark_segment_path) {
+        Ok(meta) if meta.len >= watermark_offset => Ok(()),
         Ok(meta) => Err(WatermarkValidationError::OffsetPastTail {
             path: watermark_segment_path,
-            file_len: meta.len(),
+            file_len: meta.len,
             watermark_offset,
         }),
         Err(_) => Err(WatermarkValidationError::MissingSegment {
@@ -168,7 +171,6 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("create temp dir");
         let write_segment = |name: &str, bytes: &'static [u8]| {
             platform::fs::write_file_atomically(dir.path(), &dir.path().join(name), name, |file| {
-                use std::io::Write;
                 file.write_all(bytes).map_err(StoreError::Io)
             })
             .expect("write segment fixture through the platform seam");
@@ -178,7 +180,8 @@ mod tests {
         write_segment("000007.fbat", b"123456789");
 
         let (segment_id, offset) =
-            latest_segment_watermark(dir.path()).expect("watermark scan succeeds");
+            latest_segment_watermark(dir.path(), &crate::store::platform::fs::RealFs)
+                .expect("watermark scan succeeds");
         assert_eq!(segment_id, 7, "the max id wins regardless of tie order");
 
         let mut expected: Option<(u64, PathBuf)> = None;
@@ -219,21 +222,22 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("create temp dir");
         let name = crate::store::segment::segment_filename(3);
         platform::fs::write_file_atomically(dir.path(), &dir.path().join(&name), &name, |file| {
-            use std::io::Write;
             file.write_all(b"12345").map_err(StoreError::Io)
         })
         .expect("write the 5-byte segment fixture through the platform seam");
 
         // Inclusive side: a watermark at EXACTLY the tail (and at 0) is valid.
-        validate_watermark_segment(dir.path(), 3, 5)
+        validate_watermark_segment(dir.path(), 3, 5, &crate::store::platform::fs::RealFs)
             .expect("offset == file length is a valid watermark (`>=` is inclusive)");
-        validate_watermark_segment(dir.path(), 3, 0).expect("offset 0 is always within the tail");
+        validate_watermark_segment(dir.path(), 3, 0, &crate::store::platform::fs::RealFs)
+            .expect("offset 0 is always within the tail");
 
         // Past-tail side: ONE byte past the tail must degrade to OffsetPastTail
         // carrying the exact observed evidence — under the `true` guard this
         // arm is unreachable and the bogus watermark validates.
-        let past_tail = validate_watermark_segment(dir.path(), 3, 6)
-            .expect_err("an offset one byte past the file length must be rejected");
+        let past_tail =
+            validate_watermark_segment(dir.path(), 3, 6, &crate::store::platform::fs::RealFs)
+                .expect_err("an offset one byte past the file length must be rejected");
         assert!(
             matches!(
                 &past_tail,
@@ -248,8 +252,9 @@ mod tests {
 
         // Absent-file side: a watermark naming a segment that does not exist is
         // MissingSegment, never OffsetPastTail and never Ok.
-        let missing = validate_watermark_segment(dir.path(), 9, 0)
-            .expect_err("a watermark naming an absent segment must be rejected");
+        let missing =
+            validate_watermark_segment(dir.path(), 9, 0, &crate::store::platform::fs::RealFs)
+                .expect_err("a watermark naming an absent segment must be rejected");
         assert!(
             matches!(
                 &missing,

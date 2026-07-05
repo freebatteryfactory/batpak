@@ -42,7 +42,7 @@ pub(crate) fn __fuzz_decode_mmap_entry(buf: &[u8], version: u16) -> bool {
 #[cfg(feature = "dangerous-test-hooks")]
 pub(crate) fn __fuzz_load_mmap_index(data_dir: &Path) -> &'static str {
     let clock = crate::store::SystemClock::new();
-    match load_mmap_index(data_dir, &clock) {
+    match load_mmap_index(data_dir, &clock, &crate::store::platform::fs::RealFs) {
         FileLoad::Missing => "missing",
         FileLoad::Loaded(_) => "loaded",
         FileLoad::Invalid { .. } => "invalid",
@@ -51,7 +51,7 @@ pub(crate) fn __fuzz_load_mmap_index(data_dir: &Path) -> &'static str {
 }
 use rayon::prelude::*;
 use std::collections::BTreeMap;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 pub(crate) struct LoadedMmapSnapshot {
@@ -201,11 +201,24 @@ pub(crate) fn write_mmap_index_with_reserved_kind_fallbacks(
     header_tail.extend_from_slice(&summary_bytes_len.to_le_bytes());
     header_tail.extend_from_slice(&extension_blob_len.to_le_bytes());
 
+    // Hash-first, write-forward: the CRC is finalized BEFORE any byte is
+    // staged, so the writer never needs to seek back and patch a placeholder
+    // — an append-only staged handle (any backend) can take the write. The
+    // fixed-size entries are encoded twice (hash pass + write pass), which
+    // is cheaper than buffering `entry_count × MMAP_ENTRY_SIZE_V5` bytes.
     let mut hasher = crc32fast::Hasher::new();
     hasher.update(&header_tail);
     hasher.update(&interner_bytes);
     hasher.update(&summary_bytes);
     hasher.update(&extension_blob);
+    {
+        let mut buf = [0u8; format::MMAP_ENTRY_SIZE_V5];
+        for entry in &mmap_entries {
+            entry.encode_into_v5(&mut buf);
+            hasher.update(&buf);
+        }
+    }
+    let crc = hasher.finalize();
 
     let final_path = data_dir.join(MMAP_INDEX_FILENAME);
     crate::store::platform::fs::write_file_atomically_with_fs(
@@ -221,7 +234,7 @@ pub(crate) fn write_mmap_index_with_reserved_kind_fallbacks(
                 .write_all(&format::MMAP_INDEX_VERSION.to_le_bytes())
                 .map_err(StoreError::Io)?;
             writer
-                .write_all(&0u32.to_le_bytes())
+                .write_all(&crc.to_le_bytes())
                 .map_err(StoreError::Io)?;
             writer.write_all(&header_tail).map_err(StoreError::Io)?;
             writer.write_all(&interner_bytes).map_err(StoreError::Io)?;
@@ -231,16 +244,10 @@ pub(crate) fn write_mmap_index_with_reserved_kind_fallbacks(
             let mut buf = [0u8; format::MMAP_ENTRY_SIZE_V5];
             for entry in &mmap_entries {
                 entry.encode_into_v5(&mut buf);
-                hasher.update(&buf);
                 writer.write_all(&buf).map_err(StoreError::Io)?;
             }
 
             writer.flush().map_err(StoreError::Io)?;
-            drop(writer);
-
-            let crc = hasher.finalize();
-            file.seek(SeekFrom::Start(8)).map_err(StoreError::Io)?;
-            file.write_all(&crc.to_le_bytes()).map_err(StoreError::Io)?;
             Ok(())
         },
         fs,
@@ -266,7 +273,7 @@ pub(crate) fn try_restore_mmap_index(
     data_dir: &Path,
 ) -> Option<(WatermarkInfo, u64)> {
     let clock = crate::store::SystemClock::new();
-    let loaded = try_load_mmap_snapshot(data_dir, &clock)?;
+    let loaded = try_load_mmap_snapshot(data_dir, &clock, &crate::store::platform::fs::RealFs)?;
     index
         .interner
         .replace_from_full_snapshot(&loaded.interner_strings)
@@ -281,8 +288,9 @@ pub(crate) fn try_restore_mmap_index(
 pub(crate) fn try_load_mmap_snapshot(
     data_dir: &Path,
     clock: &dyn crate::store::Clock,
+    fs: &dyn crate::store::platform::fs::StoreFs,
 ) -> Option<LoadedMmapSnapshot> {
-    match load_mmap_snapshot(data_dir, clock) {
+    match load_mmap_snapshot(data_dir, clock, fs) {
         FileLoad::Loaded(snapshot) => Some(snapshot),
         FileLoad::Missing | FileLoad::Invalid { .. } | FileLoad::FutureVersion { .. } => None,
     }
@@ -291,8 +299,9 @@ pub(crate) fn try_load_mmap_snapshot(
 pub(crate) fn load_mmap_snapshot(
     data_dir: &Path,
     clock: &dyn crate::store::Clock,
+    fs: &dyn crate::store::platform::fs::StoreFs,
 ) -> FileLoad<LoadedMmapSnapshot> {
-    let loaded = match load_mmap_index(data_dir, clock) {
+    let loaded = match load_mmap_index(data_dir, clock, fs) {
         FileLoad::Loaded(loaded) => loaded,
         FileLoad::Missing => return FileLoad::Missing,
         FileLoad::Invalid { reason } => return FileLoad::Invalid { reason },

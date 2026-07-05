@@ -540,7 +540,8 @@ fn read_idemp_file_distinguishes_missing_from_unreadable() {
     // Invalid: Missing is silent, Invalid is logged loudly as data-shaped
     // damage. The NotFound guard's `==` -> `!=` mutant swaps both outcomes.
     let dir = tempfile::TempDir::new().expect("create temp data dir");
-    let missing = read_idemp_file(dir.path()).expect("an absent idemp file is not an error");
+    let missing = read_idemp_file(dir.path(), &crate::store::platform::fs::RealFs)
+        .expect("an absent idemp file is not an error");
     assert!(
         matches!(missing, IdempLoad::Missing),
         "an absent index.idemp is Missing (first open), never Invalid"
@@ -551,8 +552,8 @@ fn read_idemp_file_distinguishes_missing_from_unreadable() {
     // the read error, never be misreported as the silent Missing.
     std::fs::create_dir(dir.path().join(IDEMP_FILENAME))
         .expect("squat a directory on the idemp filename");
-    let unreadable =
-        read_idemp_file(dir.path()).expect("an unreadable idemp file degrades, not errors");
+    let unreadable = read_idemp_file(dir.path(), &crate::store::platform::fs::RealFs)
+        .expect("an unreadable idemp file degrades, not errors");
     assert!(
         matches!(&unreadable, IdempLoad::Invalid { reason } if reason.starts_with("read failed")),
         "an unreadable index.idemp is Invalid with the read error as its reason"

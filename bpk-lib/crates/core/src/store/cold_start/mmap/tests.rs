@@ -54,8 +54,12 @@ fn mmap_index_roundtrip_restores_entries() {
     let src = make_index(8);
     write_mmap_index(&src, tmp.path(), 7, 512).expect("write mmap index");
 
-    let snapshot = try_load_mmap_snapshot(tmp.path(), &crate::store::SystemClock::new())
-        .expect("load snapshot");
+    let snapshot = try_load_mmap_snapshot(
+        tmp.path(),
+        &crate::store::SystemClock::new(),
+        &crate::store::platform::fs::RealFs,
+    )
+    .expect("load snapshot");
     assert_eq!(snapshot.routing.entry_count, 8);
     assert!(
         !snapshot.routing.chunks.is_empty(),
@@ -115,8 +119,12 @@ fn mmap_index_roundtrip_restores_receipt_extensions() {
 
     write_mmap_index(&idx, tmp.path(), 7, 512).expect("write mmap index");
 
-    let snapshot = try_load_mmap_snapshot(tmp.path(), &crate::store::SystemClock::new())
-        .expect("load snapshot");
+    let snapshot = try_load_mmap_snapshot(
+        tmp.path(),
+        &crate::store::SystemClock::new(),
+        &crate::store::platform::fs::RealFs,
+    )
+    .expect("load snapshot");
     assert!(
         snapshot.receipt_extensions_hydrated,
         "PROPERTY: mmap v5 snapshots must carry receipt-extension maps directly."

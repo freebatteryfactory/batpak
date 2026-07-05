@@ -33,8 +33,12 @@ fn test_store_with_writer(tx: flume::Sender<writer::WriterCommand>) -> (Store, T
         #[cfg(feature = "payload-encryption")]
         key_store: None,
         state: Open(writer::WriterHandle::from_parts_for_test(tx, subscribers)),
-        _store_lock: dir_lock::StoreDirLock::acquire(dir.path(), StoreLockMode::Mutable)
-            .expect("test store lock"),
+        _store_lock: dir_lock::StoreDirLock::acquire(
+            dir.path(),
+            StoreLockMode::Mutable,
+            &crate::store::platform::fs::RealFs,
+        )
+        .expect("test store lock"),
     };
     (store, dir)
 }

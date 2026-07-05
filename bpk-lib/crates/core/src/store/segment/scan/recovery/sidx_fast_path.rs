@@ -25,15 +25,16 @@ impl Reader {
     /// Returns `Unreadable` when disk/footer evidence cannot prove coverage.
     /// Callers frame-scan unless this returns `Complete`.
     pub(super) fn sidx_covers_segment_tail(
+        fs: &dyn crate::store::platform::fs::StoreFs,
         path: &Path,
         sidx_entries: &[SidxEntry],
     ) -> SidxTailCoverage {
-        let file_len = match crate::store::platform::fs::metadata(path) {
-            Ok(metadata) => metadata.len(),
+        let file_len = match fs.metadata(path) {
+            Ok(stat) => stat.len,
             Err(_) => return SidxTailCoverage::Unreadable,
         };
-        let mut file = match crate::store::platform::fs::open_file(path) {
-            Ok(file) => file,
+        let mut file = match fs.open_file(path) {
+            Ok(handle) => crate::store::platform::fs::StoreFileCursor::new(handle),
             Err(_) => return SidxTailCoverage::Unreadable,
         };
         if file_len < 16 {
@@ -95,9 +96,9 @@ impl Reader {
             return Ok(false);
         }
 
-        match segment::sidx::read_footer(path) {
+        match segment::sidx::read_footer(self.fs.as_ref(), path) {
             Ok(Some((sidx_entries, strings)))
-                if Self::sidx_covers_segment_tail(path, &sidx_entries)
+                if Self::sidx_covers_segment_tail(self.fs.as_ref(), path, &sidx_entries)
                     == SidxTailCoverage::Complete =>
             {
                 for se in sidx_entries {

@@ -12,7 +12,6 @@ use crate::store::{Clock, EncodedBytes, ExtensionKey, StoreError};
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
 use std::io::{Error, ErrorKind, Read};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -98,7 +97,7 @@ pub struct Reader {
 }
 
 struct FdCache {
-    fds: HashMap<u64, File>,
+    fds: HashMap<u64, Box<dyn crate::store::platform::fs::StoreFile>>,
     order: Vec<u64>, // LRU order: most recent at end
     budget: usize,
 }
@@ -344,6 +343,11 @@ impl Reader {
         self.active_segment_id.load(Ordering::Acquire)
     }
 
+    /// The filesystem seam this reader resolves segment bytes through.
+    pub(crate) fn fs(&self) -> &dyn StoreFs {
+        self.fs.as_ref()
+    }
+
     /// Check if a segment is sealed (not the active segment).
     fn is_sealed(&self, segment_id: u64) -> bool {
         segment_id < self.active_segment_id.load(Ordering::Acquire)
@@ -365,15 +369,21 @@ impl Reader {
         let Some(admission) = self.sealed_mmap_admission else {
             return Ok(None);
         };
-        // Map the segment file
+        // Map the segment file. The handle comes from the configured seam;
+        // only a handle backed by a real OS file can feed the mmap admission
+        // (`as_std_file`), so a virtual backend routes to the byte-identical
+        // FD/pread fallback exactly like a host without mmap support.
         let path = self.data_dir.join(segment::segment_filename(segment_id));
-        let file = crate::store::platform::fs::open_file(&path).map_err(StoreError::Io)?;
+        let handle = self.fs.open_file(&path).map_err(StoreError::Io)?;
+        let Some(file) = handle.as_std_file() else {
+            return Ok(None);
+        };
         // SAFETY: memmap2::Mmap::map is unsafe because the file could be modified externally.
         // Sealed segments are immutable by design — only compaction deletes them, and
         // evict_segment drops the mapping before deletion. The admission token only
         // attests the mmap mechanism; the immutability proof above is unchanged.
         let mmap =
-            unsafe { crate::store::platform::mmap::map_sealed_segment_file(&file, admission) }
+            unsafe { crate::store::platform::mmap::map_sealed_segment_file(file, admission) }
                 .map_err(StoreError::Io)?;
         self.sealed_maps.insert(segment_id, mmap);
         // Return the just-inserted entry

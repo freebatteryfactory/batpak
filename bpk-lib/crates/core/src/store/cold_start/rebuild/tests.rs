@@ -94,7 +94,8 @@ fn parallel_sidx_footer_read_matches_sequential_footer_read() {
     }
     store.close().expect("close store");
 
-    let entries = segment_paths(dir.path()).expect("segment paths");
+    let entries =
+        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
     let active_segment = entries.last().expect("at least one segment").0;
     let sealed_segments: Vec<_> = entries
         .into_iter()
@@ -253,7 +254,8 @@ fn build_snapshot_plan_adds_chunk_when_tail_is_present() {
     }
     store.close().expect("close store");
 
-    let entries = segment_paths(dir.path()).expect("segment paths");
+    let entries =
+        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
     let watermark_segment_id = entries
         .first()
         .map(|(segment_id, _)| *segment_id)
@@ -400,7 +402,8 @@ fn segment_paths_ignore_superseded_sources_when_merge_is_present() {
     write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
         .expect("write marker");
 
-    let paths = segment_paths(dir.path()).expect("segment paths");
+    let paths =
+        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
     let ids: Vec<_> = paths.iter().map(|(segment_id, _)| *segment_id).collect();
 
     assert_eq!(
@@ -427,7 +430,8 @@ fn segment_paths_restore_temp_source_when_merge_not_published() {
     write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
         .expect("write marker");
 
-    let paths = segment_paths(dir.path()).expect("segment paths");
+    let paths =
+        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
     let ids: Vec<_> = paths.iter().map(|(segment_id, _)| *segment_id).collect();
 
     assert_eq!(
@@ -451,7 +455,7 @@ fn segment_paths_reject_missing_sources_even_if_unrelated_segments_exist() {
     write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
         .expect("write marker");
 
-    let err = segment_paths(dir.path()).expect_err(
+    let err = segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect_err(
         "PROPERTY: pending compaction must fail when a declared source segment is missing",
     );
 
@@ -488,7 +492,8 @@ fn open_index_skips_fast_paths_when_pending_compaction_marker_exists() {
     }
     store.close().expect("close");
 
-    let existing = segment_paths(dir.path()).expect("segment paths");
+    let existing =
+        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
     let merged_id = existing.first().expect("segment id").0;
     write_pending_compaction(
         dir.path(),
@@ -537,7 +542,8 @@ fn collect_tail_entries_keeps_events_from_the_watermark_segment() {
     }
     store.close().expect("close");
 
-    let entries = segment_paths(dir.path()).expect("segment paths");
+    let entries =
+        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
     assert!(
         entries.len() >= 2,
         "SANITY: rotating config should create multiple segments for watermark-tail testing"

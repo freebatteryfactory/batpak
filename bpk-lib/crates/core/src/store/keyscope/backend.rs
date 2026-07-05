@@ -150,10 +150,7 @@ fn persist_keyset_bytes(dir: &Path, fs: &dyn StoreFs, encoded: &[u8]) -> Result<
         dir,
         &final_path,
         "crypto-shred-keyset",
-        |file| {
-            use std::io::Write;
-            file.write_all(encoded).map_err(StoreError::Io)
-        },
+        |file| file.write_all(encoded).map_err(StoreError::Io),
         fs,
     )
 }

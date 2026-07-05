@@ -165,7 +165,6 @@ fn report_for_run_hashes_a_readable_merged_segment_and_passes_counts_through() {
         &merged,
         "merged segment fixture",
         |file| {
-            use std::io::Write;
             file.write_all(merged_bytes)
                 .map_err(crate::store::StoreError::Io)
         },

@@ -356,26 +356,28 @@ fn with_fs_installs_custom_filesystem_backend() {
         inner: RealFs,
     }
     impl StoreFs for RecordingFs {
-        fn read_dir(&self, path: &Path) -> std::io::Result<std::fs::ReadDir> {
+        fn read_dir(
+            &self,
+            path: &Path,
+        ) -> std::io::Result<Vec<crate::store::platform::fs::DirEntryInfo>> {
             self.inner.read_dir(path)
         }
         fn create_dir_all(&self, path: &Path) -> std::io::Result<()> {
             self.created.store(true, Ordering::Release);
             self.inner.create_dir_all(path)
         }
-        fn create_new_file(&self, path: &Path) -> Result<std::fs::File, crate::store::StoreError> {
+        fn create_new_file(
+            &self,
+            path: &Path,
+        ) -> Result<Box<dyn crate::store::platform::fs::StoreFile>, crate::store::StoreError>
+        {
             self.inner.create_new_file(path)
         }
-        fn sync_file_with_mode(
+        fn open_file(
             &self,
-            file: &std::fs::File,
             path: &Path,
-            mode: &crate::store::SyncMode,
-        ) -> Result<(), crate::store::StoreError> {
-            self.inner.sync_file_with_mode(file, path, mode)
-        }
-        fn sync_file_all(&self, file: &std::fs::File, path: &Path) -> std::io::Result<()> {
-            self.inner.sync_file_all(file, path)
+        ) -> std::io::Result<Box<dyn crate::store::platform::fs::StoreFile>> {
+            self.inner.open_file(path)
         }
         fn sync_parent_dir(&self, path: &Path) -> Result<(), crate::store::StoreError> {
             self.inner.sync_parent_dir(path)
@@ -394,7 +396,10 @@ fn with_fs_installs_custom_filesystem_backend() {
         fn canonicalize(&self, path: &Path) -> std::io::Result<std::path::PathBuf> {
             self.inner.canonicalize(path)
         }
-        fn symlink_metadata(&self, path: &Path) -> std::io::Result<std::fs::Metadata> {
+        fn symlink_metadata(
+            &self,
+            path: &Path,
+        ) -> std::io::Result<crate::store::platform::fs::FileStat> {
             self.inner.symlink_metadata(path)
         }
         fn cow_copy_file(
@@ -408,7 +413,7 @@ fn with_fs_installs_custom_filesystem_backend() {
         fn copy(&self, from: &Path, to: &Path) -> std::io::Result<u64> {
             self.inner.copy(from, to)
         }
-        fn metadata(&self, path: &Path) -> std::io::Result<std::fs::Metadata> {
+        fn metadata(&self, path: &Path) -> std::io::Result<crate::store::platform::fs::FileStat> {
             self.inner.metadata(path)
         }
         fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
@@ -417,25 +422,20 @@ fn with_fs_installs_custom_filesystem_backend() {
         fn remove_file(&self, path: &Path) -> std::io::Result<()> {
             self.inner.remove_file(path)
         }
-        fn named_temp_in(&self, dir: &Path) -> std::io::Result<tempfile::NamedTempFile> {
+        fn named_temp_in(
+            &self,
+            dir: &Path,
+        ) -> std::io::Result<Box<dyn crate::store::platform::fs::StagedFile>> {
             self.inner.named_temp_in(dir)
         }
-        fn persist_temp_with_parent_sync(
+        fn try_lock_store_dir(
             &self,
-            named_temp: tempfile::NamedTempFile,
-            final_path: &Path,
-            admission: crate::store::platform::sync::ParentDirSyncAdmission,
-        ) -> std::io::Result<()> {
-            self.inner
-                .persist_temp_with_parent_sync(named_temp, final_path, admission)
-        }
-        fn read_exact_at(
-            &self,
-            file: &mut std::fs::File,
-            offset: u64,
-            buf: &mut [u8],
-        ) -> Result<(), crate::store::platform::fs::PositionedReadError> {
-            self.inner.read_exact_at(file, offset, buf)
+            lock_path: &Path,
+        ) -> Result<
+            Option<Box<dyn crate::store::platform::fs::StoreDirLockGuard>>,
+            crate::store::StoreError,
+        > {
+            self.inner.try_lock_store_dir(lock_path)
         }
     }
 

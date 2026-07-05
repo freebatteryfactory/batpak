@@ -15,6 +15,7 @@ pub(crate) mod clock;
 pub(crate) mod evidence;
 pub(crate) mod fs;
 pub(crate) mod lock;
+pub(crate) mod mem_fs;
 pub(crate) mod mmap;
 pub(crate) mod path_identity;
 pub(crate) mod profile;

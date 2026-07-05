@@ -70,13 +70,17 @@ fn open_components(
 ) -> Result<OpenComponents, StoreError> {
     validate_payload_registry_for_open(&config)?;
     config.fs().create_dir_all(&config.data_dir)?;
-    config.data_dir = platform::fs::canonicalize(&config.data_dir).map_err(StoreError::Io)?;
+    config.data_dir = config
+        .fs()
+        .canonicalize(&config.data_dir)
+        .map_err(StoreError::Io)?;
     let configured_signing_keys = config.signing_keys.len();
     tracing::debug!(
         configured_signing_keys,
         "opening store with configured signing registry"
     );
-    let store_lock = dir_lock::StoreDirLock::acquire(&config.data_dir, lock_mode)?;
+    let store_lock =
+        dir_lock::StoreDirLock::acquire(&config.data_dir, lock_mode, config.fs().as_ref())?;
     // Rehydrate the durable crypto-shred keyset UNDER the store lock (fail closed
     // on corrupt) and share it through the runtime, so the writer's mint/seal/
     // flush path and the store's decrypt-on-read path operate on ONE live keyset.
@@ -130,7 +134,7 @@ fn open_components(
 
     // Tell the reader which segment is active (for mmap dispatch).
     // The writer's initial segment ID is the highest existing + 1.
-    let active_seg_id = next_active_segment_id(&config.data_dir)?;
+    let active_seg_id = next_active_segment_id(&config.data_dir, config.fs().as_ref())?;
     reader.set_active_segment(active_seg_id);
 
     Ok(OpenComponents {
@@ -144,8 +148,11 @@ fn open_components(
     })
 }
 
-fn next_active_segment_id(data_dir: &std::path::Path) -> Result<u64, StoreError> {
-    Ok(write::writer::find_latest_segment_id(data_dir)?.unwrap_or(0) + 1)
+fn next_active_segment_id(
+    data_dir: &std::path::Path,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+) -> Result<u64, StoreError> {
+    Ok(write::writer::find_latest_segment_id(data_dir, fs)?.unwrap_or(0) + 1)
 }
 
 /// Cold-start hook for the opt-in crypto-shred keyset (Stage B).

@@ -31,7 +31,9 @@ impl Reader {
             }
         };
 
-        let mut file = crate::store::platform::fs::open_file(path).map_err(StoreError::Io)?;
+        let mut file = crate::store::platform::fs::StoreFileCursor::new(
+            self.fs.open_file(path).map_err(StoreError::Io)?,
+        );
         let file_len = file.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
         let boundary = segment::detect_sidx_boundary(&mut file, file_len, segment_id)?;
         let frames_end = boundary.map_or(file_len, |b| b.frames_end);
