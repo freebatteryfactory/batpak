@@ -4,11 +4,14 @@ pub struct hostbat::builder::HostBuilder
 impl hostbat::builder::HostBuilder
 pub fn hostbat::builder::HostBuilder::build(self) -> core::result::Result<hostbat::host::Host, hostbat::error::HostError>
 pub fn hostbat::builder::HostBuilder::effect_backend<B>(self, backend: B) -> Self where B: syncbat::effect_backend::EffectBackend + 'static
+pub fn hostbat::builder::HostBuilder::grant_capabilities<I, S>(self, capabilities: I) -> Self where I: core::iter::IntoIterator<Item = S>, S: core::convert::Into<alloc::string::String>
+pub fn hostbat::builder::HostBuilder::grant_capability(self, capability: impl core::convert::Into<alloc::string::String>) -> Self
 pub fn hostbat::builder::HostBuilder::host_control<C>(self, controller: C) -> Self where C: hostbat::host_control_backend::HostController + 'static
 pub fn hostbat::builder::HostBuilder::mount(self, module: hostbat::module::HostModule) -> core::result::Result<Self, hostbat::error::HostError>
 pub fn hostbat::builder::HostBuilder::new() -> Self
 pub fn hostbat::builder::HostBuilder::receipt_sink<S>(self, sink: S) -> Self where S: syncbat::receipt::ReceiptSink + 'static
 pub fn hostbat::builder::HostBuilder::spawn_with(self, spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
+pub fn hostbat::builder::HostBuilder::status_sink<S>(self, sink: S) -> Self where S: syncbat::operation_status_sink::OperationStatusSink + core::marker::Send + core::marker::Sync + 'static
 impl core::default::Default for hostbat::builder::HostBuilder
 pub fn hostbat::builder::HostBuilder::default() -> Self
 pub mod hostbat::composition
@@ -596,11 +599,14 @@ pub struct hostbat::HostBuilder
 impl hostbat::builder::HostBuilder
 pub fn hostbat::builder::HostBuilder::build(self) -> core::result::Result<hostbat::host::Host, hostbat::error::HostError>
 pub fn hostbat::builder::HostBuilder::effect_backend<B>(self, backend: B) -> Self where B: syncbat::effect_backend::EffectBackend + 'static
+pub fn hostbat::builder::HostBuilder::grant_capabilities<I, S>(self, capabilities: I) -> Self where I: core::iter::IntoIterator<Item = S>, S: core::convert::Into<alloc::string::String>
+pub fn hostbat::builder::HostBuilder::grant_capability(self, capability: impl core::convert::Into<alloc::string::String>) -> Self
 pub fn hostbat::builder::HostBuilder::host_control<C>(self, controller: C) -> Self where C: hostbat::host_control_backend::HostController + 'static
 pub fn hostbat::builder::HostBuilder::mount(self, module: hostbat::module::HostModule) -> core::result::Result<Self, hostbat::error::HostError>
 pub fn hostbat::builder::HostBuilder::new() -> Self
 pub fn hostbat::builder::HostBuilder::receipt_sink<S>(self, sink: S) -> Self where S: syncbat::receipt::ReceiptSink + 'static
 pub fn hostbat::builder::HostBuilder::spawn_with(self, spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
+pub fn hostbat::builder::HostBuilder::status_sink<S>(self, sink: S) -> Self where S: syncbat::operation_status_sink::OperationStatusSink + core::marker::Send + core::marker::Sync + 'static
 impl core::default::Default for hostbat::builder::HostBuilder
 pub fn hostbat::builder::HostBuilder::default() -> Self
 pub struct hostbat::HostCompositionManifest

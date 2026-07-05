@@ -3,9 +3,9 @@
 # lookup is skipped — there is no prior published version to diff against.
 package: hostbat
 baseline_version: 0.9.0
-current_version: 0.9.0
+current_version: 0.10.0
 witness: target/semver-public-api/semver-checks.txt
-summary: "First publish at 0.9.0; no prior crates.io baseline to diff."
+summary: "First publish at 0.9.0; no prior crates.io baseline to diff. 0.10.0 adds only the HostBuilder status_sink / grant_capability / grant_capabilities passthroughs (#166) — additive."
 
 public_api_baseline_removals: []
 public_api_baseline_additions: []
