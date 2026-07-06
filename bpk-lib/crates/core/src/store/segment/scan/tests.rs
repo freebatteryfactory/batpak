@@ -575,13 +575,16 @@ fn corrupt_sealed_frame_surfaces_same_error_class_on_both_paths() {
 }
 
 #[test]
-fn sealed_mmap_probe_runs_at_construction_not_per_read() {
-    // A reader constructed on a normal (writable) dir admits mmap exactly once
-    // at construction; subsequent sealed reads must not re-probe or re-temp-file.
+fn sealed_mmap_probe_runs_once_lazily_not_per_read() {
+    // A reader over a normal (writable) dir with real-file-backed handles admits
+    // mmap exactly once — resolved LAZILY on first need and cached (NOT at
+    // construction, so a virtual backend never probes); subsequent sealed reads
+    // must not re-probe or re-temp-file. Reading admission here resolves that
+    // one-time probe up front for the reads below.
     let (reader, dir) = test_reader();
     assert!(
         reader.sealed_mmap_admitted_for_test(),
-        "PROPERTY: on a writable data dir the one-time construction probe must admit mmap"
+        "PROPERTY: on a writable data dir with real handles the one-time lazy probe must admit mmap"
     );
 
     // Perform several sealed reads of distinct segment ids; none of these may
