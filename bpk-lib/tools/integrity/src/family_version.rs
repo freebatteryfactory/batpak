@@ -45,8 +45,7 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
         if !rel.ends_with("_semver_checklist.yaml") {
             continue;
         }
-        let checklist: SemverChecklist =
-            load_yaml(&path).with_context(|| format!("load {rel}"))?;
+        let checklist: SemverChecklist = load_yaml(&path).with_context(|| format!("load {rel}"))?;
         if let Some(violation) =
             checklist_drift(&rel, &checklist.current_version, &workspace_version)
         {
