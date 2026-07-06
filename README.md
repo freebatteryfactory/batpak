@@ -121,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "stored {} at sequence {} in scope {}",
         fetched.event.header.event_id,
-        receipt.sequence,
+        receipt.global_sequence,
         fetched.coordinate.scope()
     );
 
