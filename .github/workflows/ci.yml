@@ -60,7 +60,7 @@ jobs:
   # asking for the `heavy` proof profile.
   rust-changed:
     name: Detect Rust-relevant changes
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.detect.outputs.rust }}
     steps:
@@ -93,7 +93,7 @@ jobs:
 
   ci-fast-linux:
     name: CI fast (ubuntu-devcontainer)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -119,7 +119,7 @@ jobs:
     # resolve the merge-base and read commit trailers. The classifier is pure and
     # unit/mutation-tested in tools/integrity/src/meta_gate.rs.
     name: Agent-safety meta-gate
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
     steps:
@@ -154,7 +154,7 @@ jobs:
     # baseline stage cannot block a PR. Ratcheting the default-PR floor upward
     # is a deferred follow-up; data must precede the ratchet.
     name: Coverage baseline (advisory)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [ci-fast-linux, rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
     continue-on-error: true
@@ -183,7 +183,7 @@ jobs:
 
   verify-linux:
     name: Verify (ubuntu-devcontainer)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'verify' ||
@@ -210,7 +210,7 @@ jobs:
 
   ci-windows:
     name: CI Windows surface (native)
-    runs-on: blacksmith-8vcpu-windows-2025
+    runs-on: windows-latest
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'windows' ||
@@ -243,7 +243,7 @@ jobs:
   # — so the lane stays cheap enough to run on every Rust-touching PR.
   wasm-surface:
     name: wasm32 embedding surface (check-only)
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
     permissions:
@@ -265,7 +265,7 @@ jobs:
         run: cargo xtask wasm-surface
 
   feature-isolation:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [ci-fast-linux, verify-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -303,7 +303,7 @@ jobs:
     # is unit-tested on every PR; THIS job runs the #[ignore]d solver harness on the
     # heavy lane. Runs outside the devcontainer so it can install the solvers directly.
     name: QF_BV admission equivalence (pinned z3 + cvc5)
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [ci-fast-linux, verify-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -358,7 +358,7 @@ jobs:
 
   smoke-consumers:
     name: Smoke (quickstart, packaged consumer, template)
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [verify-linux]
     if: >-
       (github.event_name == 'workflow_dispatch' &&
@@ -418,7 +418,7 @@ jobs:
 
   mutants-smoke:
     name: Mutation smoke (${{ matrix.seam }})
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     # COST GUARD (2026-07-02): the 21-seam smoke matrix ran on EVERY Rust PR at
     # 16-vCPU each (~$8-10/PR) — the routine bill driver. Now OPT-IN: add the
     # `run-mutants` PR label to run it, or dispatch `proof=mutants`/`heavy`.
@@ -501,7 +501,7 @@ jobs:
 
   mutants-smoke-repo-wide:
     name: Mutation smoke (repo-wide ratchet)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     # COST GUARD (2026-07-02): OPT-IN, same `run-mutants` label as the smoke
     # matrix above. Runs only the single repo-wide shard 0/48
     # (REPO_WIDE_SMOKE_SHARD, lanes.rs) — but at 16-vCPU for ~60min it added
@@ -532,7 +532,7 @@ jobs:
 
   loom-schedule-proof:
     name: Loom schedule proof
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'loom' ||
@@ -556,7 +556,7 @@ jobs:
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask loom'
 
   mutants-full:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     # COST GUARD (2026-07-02): the 24-shard whole-repo matrix is 16-vCPU x ~5h x
     # 24 = ~1900 vCPU-hours per run — the whale on the Blacksmith bill. It no
     # longer rides `proof=heavy` alone; it needs the explicit opt-in flag too, so
@@ -603,7 +603,7 @@ jobs:
 
   chaos-proof:
     name: Chaos (dm-flakey)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'chaos' ||
@@ -640,7 +640,7 @@ jobs:
     # meta-test inside the same binary reds if any declared fuzz `[[bin]]` loses its
     # regression fixture or dispatcher wiring, so the gate can't be hollowed out.
     name: Fuzz replay (committed corpus)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [ci-fast-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -678,7 +678,7 @@ jobs:
     # registry can never drift. Runs every PR (gated only by rust-changed), like the
     # fuzz-replay gate above.
     name: Gauntlet — prove the gates bite
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [ci-fast-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -716,7 +716,7 @@ jobs:
     # rust-src for -Z build-std of the sanitizer runtime), so this job uses a
     # native nightly toolchain instead of the 1.92.0 devcontainer lane.
     name: Fuzz smoke (frame_decode)
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [ci-fast-linux, rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
@@ -801,7 +801,7 @@ jobs:
           retention-days: 14
 
   docs:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [verify-linux]
     if: github.ref == 'refs/heads/main'
     permissions:
