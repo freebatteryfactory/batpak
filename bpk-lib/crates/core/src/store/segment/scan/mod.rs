@@ -79,16 +79,18 @@ pub struct Reader {
     /// ID of the current active (writable) segment. Set by the writer on rotation.
     /// Segments with ID < this are sealed and safe for mmap.
     active_segment_id: AtomicU64,
-    /// Cached sealed-segment mmap admission, probed exactly ONCE at construction.
+    /// Cached sealed-segment mmap admission, resolved LAZILY at most once — on
+    /// the first sealed read whose handle is real-file-backed (`as_std_file`).
     ///
-    /// Mmap support is an immutable host fact, so there is no reason to re-probe
-    /// it per segment. Crucially, the probe writes a temp file into `data_dir`
-    /// (see `platform::evidence`), so re-probing on every first map would require
-    /// write access to the data dir on the *read* path — breaking reads of a
-    /// perfectly intact sealed segment on a read-only mount or full disk.
-    /// `None` means mmap is not admitted; sealed reads then fall back to the
-    /// FD/pread path, which produces byte-identical results.
-    sealed_mmap_admission: Option<crate::store::platform::mmap::SealedSegmentMmapAdmission>,
+    /// The probe writes a temp file into `data_dir` (see `platform::evidence`),
+    /// so it must never run for a virtual backend (MemFs / wasm) whose handles
+    /// never map: deferring it past the `as_std_file()` check upholds the
+    /// no-host-files contract. It is still probed exactly once (cached here),
+    /// never per segment — so a read-only mount / full disk sees at most one
+    /// failed probe, which resolves to `None` and routes sealed reads to the
+    /// byte-identical FD/pread fallback rather than hard-failing.
+    sealed_mmap_admission:
+        std::sync::OnceLock<Option<crate::store::platform::mmap::SealedSegmentMmapAdmission>>,
     /// Latched once a handle's `as_std_file()` first returns `None`, so
     /// `get_or_map_sealed` stops re-opening + re-probing every sealed read on a
     /// virtual backend (MemFs / wasm) whose handles never memory-map.
@@ -98,6 +100,9 @@ pub struct Reader {
     /// simulation installs a `SimFs` so the FD/pread read is fault-injectable.
     /// Sealed reads go through mmap and do not consult this seam.
     fs: Arc<dyn StoreFs>,
+    /// Retained so the lazy `sealed_mmap_admission` probe can run on the first
+    /// real-file-backed sealed read (never at construction, never for virtual).
+    clock: Arc<dyn Clock>,
 }
 
 struct FdCache {
@@ -310,17 +315,12 @@ impl Reader {
         clock: &Arc<dyn Clock>,
         fs: Arc<dyn StoreFs>,
     ) -> Self {
-        // Probe mmap admission ONCE here. This is the only temp-file probe over
-        // the Reader's lifetime; sealed reads never re-probe. A probe failure
-        // (e.g. a read-only data dir, where the probe's temp file cannot be
-        // written) leaves `sealed_mmap_admission == None`, which routes sealed
-        // reads to the FD/pread fallback instead of hard-failing.
-        let sealed_mmap_admission = crate::store::platform::mmap::admit_sealed_segment_mmap(
-            crate::store::platform::evidence::collect_for_store_path(&data_dir, &**clock)
-                .store_path
-                .sealed_segment_mmap,
-        )
-        .ok();
+        // Do NOT probe mmap admission here: `collect_for_store_path` writes a
+        // temp file into `data_dir`, which must never happen for a virtual
+        // backend (MemFs / wasm). The probe is deferred to the first sealed read
+        // that produces a real-file-backed handle (see
+        // `resolve_sealed_mmap_admission`), then cached — so it runs at most once
+        // and only when there is genuinely an OS file to map.
         Self {
             data_dir,
             fd_cache: Mutex::new(FdCache {
@@ -331,10 +331,32 @@ impl Reader {
             buffer_pool: Mutex::new(Vec::new()),
             sealed_maps: DashMap::new(),
             active_segment_id: AtomicU64::new(0),
-            sealed_mmap_admission,
+            sealed_mmap_admission: std::sync::OnceLock::new(),
             mmap_handle_unsupported: std::sync::OnceLock::new(),
             fs,
+            clock: Arc::clone(clock),
         }
+    }
+
+    /// Resolve the sealed-segment mmap admission, probing the host at most once
+    /// and caching the result. MUST be called only after a real-file-backed
+    /// handle is in hand (`as_std_file() == Some`) so the host temp-file probe
+    /// never runs for a virtual backend. A probe failure (read-only / full data
+    /// dir) resolves to `None`, routing the read to the FD/pread fallback.
+    fn resolve_sealed_mmap_admission(
+        &self,
+    ) -> Option<crate::store::platform::mmap::SealedSegmentMmapAdmission> {
+        *self.sealed_mmap_admission.get_or_init(|| {
+            crate::store::platform::mmap::admit_sealed_segment_mmap(
+                crate::store::platform::evidence::collect_for_store_path(
+                    &self.data_dir,
+                    &*self.clock,
+                )
+                .store_path
+                .sealed_segment_mmap,
+            )
+            .ok()
+        })
     }
 
     /// Set the active segment ID. Called by the writer after spawn and on rotation.
@@ -370,23 +392,26 @@ impl Reader {
         if let Some(entry) = self.sealed_maps.get(&segment_id) {
             return Ok(Some(entry));
         }
-        // Mmap not admitted on this host/mount: signal the FD/pread fallback.
-        let Some(admission) = self.sealed_mmap_admission else {
-            return Ok(None);
-        };
         // A virtual backend's handles never map (`as_std_file` -> None); once
-        // observed, stop re-opening + re-probing on every sealed read.
+        // observed, stop re-opening on every sealed read.
         if self.mmap_handle_unsupported.get() == Some(&true) {
             return Ok(None);
         }
-        // Map the segment file. The handle comes from the configured seam;
-        // only a handle backed by a real OS file can feed the mmap admission
-        // (`as_std_file`), so a virtual backend routes to the byte-identical
-        // FD/pread fallback exactly like a host without mmap support.
+        // Open the segment through the seam. Only a handle backed by a real OS
+        // file can feed the mmap admission (`as_std_file`), so a virtual backend
+        // latches here and routes to the byte-identical FD/pread fallback —
+        // WITHOUT ever probing the host for mmap admission.
         let path = self.data_dir.join(segment::segment_filename(segment_id));
         let handle = self.fs.open_file(&path).map_err(StoreError::Io)?;
         let Some(file) = handle.as_std_file() else {
             let _ = self.mmap_handle_unsupported.set(true);
+            return Ok(None);
+        };
+        // Real-file-backed handle in hand: NOW resolve the mmap admission — the
+        // host temp-file probe runs here at most once (cached), never for a
+        // virtual backend, which returned above. Not admitted / a failed probe
+        // routes to the FD/pread fallback.
+        let Some(admission) = self.resolve_sealed_mmap_admission() else {
             return Ok(None);
         };
         // SAFETY: memmap2::Mmap::map is unsafe because the file could be modified externally.
@@ -445,13 +470,19 @@ impl Reader {
     /// dir). Sealed reads then exercise the FD/pread fallback path.
     #[cfg(test)]
     pub(super) fn disable_sealed_mmap_for_test(&mut self) {
-        self.sealed_mmap_admission = None;
+        // Pre-seal the lazy cell to `None` so the probe never runs and sealed
+        // reads take the FD/pread fallback.
+        let cell = std::sync::OnceLock::new();
+        let _ = cell.set(None);
+        self.sealed_mmap_admission = cell;
     }
 
-    /// Test-only: report whether sealed-segment mmap was admitted at construction.
+    /// Test-only: report whether sealed-segment mmap is admitted. Resolves the
+    /// lazy admission (tests run over `RealFs`, where the temp-file probe is
+    /// legitimate) and reports the result.
     #[cfg(test)]
     pub(super) fn sealed_mmap_admitted_for_test(&self) -> bool {
-        self.sealed_mmap_admission.is_some()
+        self.resolve_sealed_mmap_admission().is_some()
     }
 
     /// Evict a segment from FD cache and mmap cache.
