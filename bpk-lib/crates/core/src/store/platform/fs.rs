@@ -167,14 +167,6 @@ pub(crate) fn remove_dir_all(path: &Path) -> io::Result<()> {
     std::fs::remove_dir_all(path)
 }
 
-pub(crate) fn remove_dir_all_if_present(path: &Path) -> io::Result<bool> {
-    match remove_dir_all(path) {
-        Ok(()) => Ok(true),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error),
-    }
-}
-
 pub(crate) fn named_temp_in(dir: &Path) -> io::Result<NamedTempFile> {
     NamedTempFile::new_in(dir)
 }
@@ -551,6 +543,44 @@ pub trait StoreFs: Send + Sync {
         }
     }
 
+    /// Recursively remove the directory at `path` and its contents.
+    ///
+    /// The provided default removes the directory's CONTENTS through the seam
+    /// ([`StoreFs::read_dir`] + [`StoreFs::remove_file`], recursing into
+    /// subdirectories) — sufficient for a virtual backend where a directory is
+    /// only a key prefix, so a snapshot/fork cleanup routed through `fs` clears
+    /// stale artifacts on any backend. A backend with real directory entries
+    /// (e.g. [`RealFs`]) overrides this to also remove the now-empty directory.
+    ///
+    /// # Errors
+    /// The underlying read/remove failure.
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
+        for entry in self.read_dir(path)? {
+            let child = path.join(&entry.name);
+            if entry.kind == FileKind::Dir {
+                self.remove_dir_all(&child)?;
+            } else {
+                self.remove_file_if_present(&child)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove the directory at `path` and its contents, reporting whether it
+    /// existed (`Ok(false)` when already absent). Provided in terms of
+    /// [`StoreFs::remove_dir_all`].
+    ///
+    /// # Errors
+    /// Any [`StoreFs::remove_dir_all`] failure other than the directory being
+    /// absent.
+    fn remove_dir_all_if_present(&self, path: &Path) -> io::Result<bool> {
+        match self.remove_dir_all(path) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Stage a uniquely-named temp file in `dir`.
     ///
     /// The staging half of an atomic publish: the caller writes + syncs the
@@ -656,6 +686,10 @@ impl StoreFs for RealFs {
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         remove_file(path)
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
+        remove_dir_all(path)
     }
 
     fn named_temp_in(&self, dir: &Path) -> io::Result<Box<dyn StagedFile>> {

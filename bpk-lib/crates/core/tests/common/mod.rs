@@ -109,6 +109,29 @@ pub fn backend_upholds_the_documented_contract(
     assert!(fs.remove_file_if_present(&copy_path)?);
     assert!(!fs.remove_file_if_present(&copy_path)?);
 
+    // remove_dir_all clears a directory's contents through the seam — the
+    // snapshot/fork cleanup depends on this being backend-agnostic (a host
+    // remove_dir_all silently no-ops on a virtual backend, which would leave
+    // stale segments/cursor state at a reused destination).
+    let cleanup_dir = root.join("cleanup_dir");
+    fs.create_dir_all(&cleanup_dir)?;
+    let stale = cleanup_dir.join("stale.bin");
+    let mut stale_file = fs.create_new_file(&stale)?;
+    stale_file.write_all(b"stale-artifact")?;
+    drop(stale_file);
+    assert!(
+        fs.read(&stale).is_ok(),
+        "planted artifact exists before removal"
+    );
+    assert!(
+        fs.remove_dir_all_if_present(&cleanup_dir)?,
+        "an existing directory reports removed"
+    );
+    assert!(
+        matches!(fs.read(&stale), Err(error) if error.kind() == std::io::ErrorKind::NotFound),
+        "remove_dir_all must clear directory contents through the seam"
+    );
+
     // The store-directory lock excludes a second cooperating owner while the
     // guard lives, and frees the slot when it drops.
     let lock_path = root.join(".probe.lock");

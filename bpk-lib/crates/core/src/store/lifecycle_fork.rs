@@ -10,7 +10,6 @@ use crate::store::fork_report::{
 use crate::store::platform::fs::StoreFs;
 use crate::store::{Open, Store, StoreError};
 
-use super::lifecycle_fs::{remove_dir_all_if_present, remove_file_if_present};
 use super::sync;
 
 /// Carrier folded across `fork`'s directory walk.
@@ -136,9 +135,12 @@ fn clear_fork_store_artifacts(
         let is_dir = fs.symlink_metadata(&path).map_err(StoreError::Io)?.kind
             == crate::store::platform::fs::FileKind::Dir;
         if is_dir {
-            removed += usize::from(remove_dir_all_if_present(&path)?);
+            removed += usize::from(
+                fs.remove_dir_all_if_present(&path)
+                    .map_err(StoreError::Io)?,
+            );
         } else {
-            removed += usize::from(remove_file_if_present(&path)?);
+            removed += usize::from(fs.remove_file_if_present(&path).map_err(StoreError::Io)?);
         }
     }
     Ok(removed)
