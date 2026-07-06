@@ -205,3 +205,47 @@ Exit conditions to revisit the posture — not before: (a) 1.0 ships and
 external consumers exist; (b) a crate needs an independent release cadence;
 (c) team size > 1 makes lockstep releases a coordination tax. Until then,
 independent crate versioning is complexity without a customer.
+
+## 5. Post-0.10.0 arc — Muterprater (proof-pressure engine)
+
+**NOT a 0.10.0 blocker.** The 0.10.0 hardening sprint makes the gauntlet floor
+truthful (gates that bite); Muterprater is the next-arc nervous system that
+decides WHERE to apply proof pressure. Synthesized from a research brain-dump +
+GPT-Pro (2026-07-06).
+
+North star: **not "better cargo-mutants."** A mutation-grounded proof-pressure
+engine — build repo facts, explain mutation survivors, synthesize candidate
+tests (only in the testing-ledger harness shapes), and PROMOTE only tests that
+kill a real mutant or pin a declared invariant. Motto: *intent authored, code
+convicted, proof remembered.*
+
+The substrate already exists (do NOT rebuild): the repo-IR fact column-store,
+ast-grep calipers, the testing-ledger oracle vocabulary (Oracle / Property /
+State-Machine / Equivalence / Fault-Injection / Runtime-And-Boundary /
+Structural), the mutation lanes, the meta-gate, the factory ledger, nextest.
+Muterprater is the SPINE that binds them — not a new tool universe.
+
+Placement: internal `tools/muterprater` package, `publish = false`, called by
+xtask (xtask stays command authority; batpak policy stays in `traceability/`).
+Three rings — (1) generic engine, (2) batpak adapter, (3) batpak policy; only
+ring 1 ever extracts, and only after a second repo wants it.
+
+Staged slices (post-cut; each a small PR, in order):
+- [ ] `muterprater explain-survivors` — join CI mutation-smoke output + seam
+  registry + testing ledger + ast-grep facts + repo-IR → "survivor → seam →
+  missing oracle → suggested harness pattern". First vertebra; no source writes.
+- [ ] ast-grep facts → repo-IR columns (`SgMatchFact`); split `ast-grep gate`
+  (blocking subset, into `ci-fast`) from `ast-grep audit` (broad, inspect-only).
+- [ ] ast-grep-rewrite mutant backend, **diff-scoped**: operator mutants on
+  CHANGED files only, compile once, run only affected tests — the potato-viable
+  loop. Families: comparison / boolean / Result-collapse / Option-collapse /
+  ignored-result / direct-machine-contact.
+- [ ] candidate SYNTHESIS into `target/muterprater/candidates/` (never source)
+  + PROMOTION gate: no oracle / no invariant / no killed-mutant ⇒ no promotion
+  (guards against foam-peanut tests).
+- [ ] (the dragon, last) compile-once mutation runtime (mutant schemata / MIR
+  IR — "compile once, betray many"). Only after the planner has proved value.
+
+Do NOT: publish early · make the runtime `batpak` crate depend on it · move the
+whole gauntlet into it in one swing · bury it in xtask as a module blob · start
+with the compile-once interpreter.

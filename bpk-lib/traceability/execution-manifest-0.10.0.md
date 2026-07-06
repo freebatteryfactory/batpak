@@ -5,9 +5,20 @@
 > ✂ = supersession flag (code another batch deletes/cuts — do the deleter first).
 > Paths are workspace-relative (under `bpk-lib/`). "scan" = enumerate exact sites when the batch starts.
 
-## Ordering rule
-gates → **WP7 keep/wire/cut decisions** → deletions → functional bugs → wire-in survivors →
-SoT → macros → docs → cut. The OWNER-CUT decisions gate PR-3 (they decide delete vs wire).
+## Ordering rule (compounding-refined 2026-07-06)
+gates → OWNER-CUT decisions (RESOLVED) → deletions → **SoT infra** → **macros** →
+functional bugs → wire-in survivors + witnesses → docs → cut.
+
+Two composing principles:
+- **Deletion-first** — don't polish/gate/macro/doc code we're about to delete.
+- **Infra-first** — the force-multipliers (package-family oracle, error-derive, `wire_header`)
+  land BEFORE the mechanical batches that ride on them, so each later PR is cheaper: new error
+  types become free, new crates auto-derive across coverage/MSRV/public-API/release/docs, format
+  changes are one-place.
+
+Override: pull functional bugs (C3, H2/H3) up to right after deletions if you want the real
+defects fixed sooner — the only compounding cost is H2/H3's new `stream_code` variant being
+hand-rolled instead of derived (trivial). Recommendation: keep the oracle first regardless.
 
 ---
 
