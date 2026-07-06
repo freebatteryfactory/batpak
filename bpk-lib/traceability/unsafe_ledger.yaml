@@ -398,3 +398,42 @@ entries:
       return (failure) is surfaced so the caller child_fails — the target NEVER runs
       un-filtered (a DenyNewTasks workload must not run able to fork).
     requirement: ChildSpawn
+  - file: crates/bvisor/launcher/linux/sys.rs
+    anchor: linux-launcher-run-child
+    syscall: async-signal-safe child branch — userns SYS_read, sigprocmask, close, optional fchdir, restrict_self (prctl + landlock_restrict_self), PR_SET_NO_NEW_PRIVS, seccomp(SET_MODE_FILTER), fexecve
+    safety_invariant: >-
+      The extracted async-signal-safe CHILD branch (post-clone3). It touches ONLY the
+      pre-built ChildExecPlan (argv/envp pointer arrays into parent-owned CStrings, the scrub
+      close-list, the optional sync-pipe read fd, the exec/cwd/error fds — ALL allocated
+      BEFORE this call) plus the optional parent-built landlock ruleset, by INDEXING
+      already-mapped copy-on-write memory, and issues ONLY async-signal-safe syscalls. It
+      performs NO heap allocation, takes NO lock, calls NO allocating Rust std, runs no
+      destructor, and no unwinding crosses the fork; it DIVERGES (`!`) — either fexecve
+      replaces the image (O_CLOEXEC error/ruleset/sync fds auto-close ⇒ parent reads EOF ⇒
+      success) or child_fail writes errno + `_exit(127)`s (parent observes the fault), so the
+      target NEVER runs unconfined/unmapped. This is the fn-body counterpart of the
+      linux-launcher-clone3-child block whose CHILD branch it implements.
+    requirement: ChildSpawn
+  - file: crates/bvisor/launcher/linux/sys.rs
+    anchor: linux-launcher-child-fail
+    syscall: __errno_location (read), write (errno bytes to error fd), _exit(127)
+    safety_invariant: >-
+      Callable ONLY from the async-signal-safe child window with a valid `error_fd`. Reads
+      the current errno via __errno_location, `write`s the fixed-width errno bytes to the
+      O_CLOEXEC error pipe (partial writes are irrelevant — the parent only distinguishes EOF
+      = success from any bytes = failure), then `_exit(127)`. Allocates nothing, takes no
+      lock, runs no destructor, and DIVERGES (`!`) — the target NEVER runs and the parent
+      observes the fault (fail closed).
+    requirement: ChildSpawn
+  - file: crates/bvisor/src/backend/linux/sys.rs
+    anchor: linux-backend-apply-fd-placements
+    syscall: dup2 (place each relocated source onto its fixed target fd), fcntl(F_GETFD/F_SETFD) (toggle CLOEXEC)
+    safety_invariant: >-
+      Runs in the child pre-exec window. Indexes ONLY the already-allocated `plan`
+      FdPlacement slice (copy-on-write read — no allocator) and issues ONLY async-signal-safe
+      syscalls: `dup2` (duplicate each relocated source onto its fixed target fd number) and
+      `fcntl` F_GETFD/F_SETFD (toggle the target's CLOEXEC bit). It performs NO heap
+      allocation, takes NO lock, and dereferences no raw pointer beyond the slice it reads.
+      Each dup2 duplicates into the CHILD's own fd table, so there is no cross-process
+      aliasing; the parent-owned source fds stay valid until after the parent's spawn.
+    requirement: InheritedFds
