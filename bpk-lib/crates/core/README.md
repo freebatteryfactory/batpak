@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Accepted events are immutable.
     let fetched = store.get(receipt.event_id)?;
-    println!("stored {} at sequence {}", fetched.event.header.event_id, receipt.sequence);
+    println!("stored {} at sequence {}", fetched.event.header.event_id, receipt.global_sequence);
 
     store.close()?;
     Ok(())

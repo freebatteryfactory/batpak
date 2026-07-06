@@ -17,7 +17,7 @@ use hostbat::{HostBuilder, HostModule};
 let module = HostModule::builder("my.module", 1)
     .operation(descriptor, handler)?
     .build()?;
-let host = HostBuilder::new().mount(module)?.build()?;
+let mut host = HostBuilder::new().mount(module)?.build()?;
 let out = host.invoke("my.op", input)?;
 ```
 
