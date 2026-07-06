@@ -110,9 +110,10 @@ fn map_or_read_index_bytes(
     let Some(std_file) = std_file else {
         return read_index_owned(fs, path);
     };
-    let mmap_evidence = crate::store::platform::evidence::collect_for_store_path(data_dir, clock)
-        .store_path
-        .mmap_index;
+    let mmap_evidence =
+        crate::store::platform::evidence::collect_for_store_path(data_dir, clock, fs)
+            .store_path
+            .mmap_index;
     map_or_read_index_bytes_with_evidence(Some(std_file), fs, path, mmap_evidence)
 }
 
