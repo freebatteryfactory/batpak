@@ -23,10 +23,6 @@
   lines: 51
   nesting: 3
   cyclomatic: 25
-- key: "crates/core/src/store/cold_start/mmap.rs::write_mmap_index_with_reserved_kind_fallbacks"
-  lines: 101
-  nesting: 4
-  cyclomatic: 25
 - key: "crates/core/src/store/cold_start/mmap.rs::load_mmap_snapshot"
   lines: 115
   nesting: 4

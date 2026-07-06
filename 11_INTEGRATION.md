@@ -76,6 +76,17 @@ embedder-registered table and the reference host registers none.
 
 Filesystem, clock, lock, sync, and mmap contact should route through the platform boundary where the store owns that behavior.
 
+The filesystem boundary is a **swappable seam**: the store's fs backend is
+installed through `StoreConfig::with_fs`, and its methods traffic in abstract
+handles rather than concrete OS types, so an embedder can supply an alternate
+backend. A pure in-memory reference backend (`MemFs`) ships public — the store
+runs its full life cycle over it, on the host target, with no host files at
+all, which removes the last architectural blocker to a non-POSIX (`wasm32`,
+Durable-Object) runtime; the `wasm32-unknown-unknown` compile surface is checked
+by `just wasm-surface`. A host that mounts modules composes the same way:
+`HostBuilder` forwards `status_sink` and capability grants through to the inner
+runtime rather than reimplementing them.
+
 ## Larger Systems
 
 Use circuits and terminals to connect batteries. Do not hide ownership by letting one battery mutate another battery's state through an unmodeled route.

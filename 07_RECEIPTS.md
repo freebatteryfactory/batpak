@@ -33,6 +33,12 @@ Wire `outcome` is `"signed"`, `"unsigned_accepted"`, or `"invalid"`. When invali
 `reason_code` is a stable snake-case string mapped from substrate verification
 errors — never debug formatting.
 
+Verification is also available **store-free**: from portable inputs — the
+receipt's ack fields, the covered chain metadata (coordinate, kind,
+previous-hash), and the verifying keys — with no store open and no filesystem.
+The store-free and store-side surfaces share ONE implementation, so their
+verdicts cannot disagree, and the store-free path is `wasm32`-clean.
+
 ## Reports
 
 Evidence reports are receipt-shaped artifacts for inspections and derived views. They should name inputs, output hashes, versions, and the reason for any refusal or fallback.

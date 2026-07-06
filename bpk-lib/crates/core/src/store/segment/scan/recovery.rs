@@ -7,6 +7,7 @@ use tail::PayloadReadFailure;
 
 use super::{read_frame_header_or_clean_eof, FrameScanTailPolicy, Reader, ScannedIndexEntry};
 use crate::event::{EventHeader, EventKind, HashChain};
+use crate::store::platform::fs::StoreFileCursor;
 use crate::store::segment::{self, SegmentHeader, SEGMENT_MAGIC};
 use crate::store::{EncodedBytes, ExtensionKey, StoreError};
 use serde::Deserialize;
@@ -103,9 +104,7 @@ impl Reader {
             return Ok(());
         }
 
-        let mut file = crate::store::platform::fs::StoreFileCursor::new(
-            self.fs.open_file(path).map_err(StoreError::Io)?,
-        );
+        let mut file = StoreFileCursor::new(self.fs.open_file(path).map_err(StoreError::Io)?);
         let file_len = file.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
         let boundary = segment::detect_sidx_boundary(&mut file, file_len, segment_id)?;
         let frames_end = boundary.map_or(file_len, |b| b.frames_end);

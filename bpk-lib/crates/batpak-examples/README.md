@@ -40,7 +40,7 @@ Build all demos: `cargo build -p batpak-examples --bins`.
 - `subscription_fanout.rs` - larger end-to-end example that combines multiple surfaces. Run: `cargo run -p batpak-examples --bin subscription_fanout`.
 - `submit_pipeline.rs` - explicit submit pipeline and ticket handling. Run: `cargo run -p batpak-examples --bin submit_pipeline`.
 
-## 0.9.0 Headline Features
+## Fork, Import, Lanes And Idempotency
 
 - `fork_clone.rs` - fork a store into an isolated directory and reopen read-only. Run: `cargo run -p batpak-examples --bin fork_clone`.
 - `import_events.rs` - re-apply events from a source store with import provenance. Run: `cargo run -p batpak-examples --bin import_events`.

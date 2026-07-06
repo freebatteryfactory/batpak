@@ -2725,6 +2725,11 @@ pub batpak::store::ExtensionKeyError::TooLong
 impl core::error::Error for batpak::store::ExtensionKeyError
 impl core::fmt::Display for batpak::store::ExtensionKeyError
 pub fn batpak::store::ExtensionKeyError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum batpak::store::FileKind
+pub batpak::store::FileKind::Dir
+pub batpak::store::FileKind::File
+pub batpak::store::FileKind::Other
+pub batpak::store::FileKind::Symlink
 pub enum batpak::store::ForkCopyStrategy
 pub batpak::store::ForkCopyStrategy::DeepCopy
 pub batpak::store::ForkCopyStrategy::Hardlink
@@ -3473,6 +3478,9 @@ pub batpak::store::DenialRequest::options: batpak::prelude::AppendOptions
 pub batpak::store::DenialRequest::pipeline_id: core::option::Option<alloc::string::String>
 pub batpak::store::DenialRequest::proposed_content_hash: core::option::Option<[u8; 32]>
 pub batpak::store::DenialRequest::proposed_kind: batpak::event::kind::EventKind
+pub struct batpak::store::DirEntryInfo
+pub batpak::store::DirEntryInfo::kind: batpak::store::FileKind
+pub batpak::store::DirEntryInfo::name: std::ffi::os_str::OsString
 pub struct batpak::store::DurabilityGate
 impl batpak::store::DurabilityGate
 pub fn batpak::store::DurabilityGate::kind(&self) -> batpak::store::stats::WatermarkKind
@@ -3482,6 +3490,9 @@ pub struct batpak::store::ExtensionKey(_)
 impl batpak::store::ExtensionKey
 pub fn batpak::store::ExtensionKey::as_str(&self) -> &str
 pub fn batpak::store::ExtensionKey::new(key: impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, batpak::store::ExtensionKeyError>
+pub struct batpak::store::FileStat
+pub batpak::store::FileStat::kind: batpak::store::FileKind
+pub batpak::store::FileStat::len: u64
 pub struct batpak::store::ForkOptions
 pub batpak::store::ForkOptions::copy_preference: batpak::store::CopyPreference
 pub batpak::store::ForkOptions::exclude_caches: bool
@@ -3632,6 +3643,27 @@ pub batpak::store::LaneFrontierView::lane: u32
 pub batpak::store::LaneFrontierView::visible_hlc: batpak::store::stats::HlcPoint
 pub batpak::store::LaneFrontierView::visible_minus_durable_seq: i64
 pub batpak::store::LaneFrontierView::written_hlc: batpak::store::stats::HlcPoint
+pub struct batpak::store::MemFs
+impl batpak::store::MemFs
+pub fn batpak::store::MemFs::new() -> Self
+impl batpak::store::StoreFs for batpak::store::MemFs
+pub fn batpak::store::MemFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
+pub fn batpak::store::MemFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
+pub fn batpak::store::MemFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, _preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
+pub fn batpak::store::MemFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>, batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::MemFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StagedFile>>
+pub fn batpak::store::MemFs::open_file(&self, path: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>>
+pub fn batpak::store::MemFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
+pub fn batpak::store::MemFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
+pub fn batpak::store::MemFs::reject_symlink_leaf(&self, _path: &std::path::Path, _purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
+pub fn batpak::store::MemFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::MemFs::sync_parent_dir(&self, _path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::try_lock_store_dir(&self, lock_path: &std::path::Path) -> core::result::Result<core::option::Option<alloc::boxed::Box<dyn batpak::store::StoreDirLockGuard>>, batpak::prelude::StoreError>
 pub struct batpak::store::NativeCache
 impl batpak::store::projection::NativeCache
 pub fn batpak::store::projection::NativeCache::open(path: impl core::convert::AsRef<std::path::Path>) -> core::result::Result<Self, batpak::prelude::StoreError>
@@ -3791,21 +3823,19 @@ pub fn batpak::store::RealFs::canonicalize(&self, path: &std::path::Path) -> std
 pub fn batpak::store::RealFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
 pub fn batpak::store::RealFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
 pub fn batpak::store::RealFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::RealFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<std::fs::File, batpak::prelude::StoreError>
-pub fn batpak::store::RealFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
-pub fn batpak::store::RealFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<tempfile::file::NamedTempFile>
-pub fn batpak::store::RealFs::persist_temp_with_parent_sync(&self, named_temp: tempfile::file::NamedTempFile, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>, batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::RealFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StagedFile>>
+pub fn batpak::store::RealFs::open_file(&self, path: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>>
 pub fn batpak::store::RealFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
-pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::ReadDir>
-pub fn batpak::store::RealFs::read_exact_at(&self, file: &mut std::fs::File, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::RealFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::RealFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::RealFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::RealFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::RealFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
-pub fn batpak::store::RealFs::sync_file_all(&self, file: &std::fs::File, _path: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::RealFs::sync_file_with_mode(&self, file: &std::fs::File, _path: &std::path::Path, mode: &batpak::prelude::SyncMode) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
 pub fn batpak::store::RealFs::sync_parent_dir(&self, path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::try_lock_store_dir(&self, lock_path: &std::path::Path) -> core::result::Result<core::option::Option<alloc::boxed::Box<dyn batpak::store::StoreDirLockGuard>>, batpak::prelude::StoreError>
 pub struct batpak::store::ReceiptClaim
 pub batpak::store::ReceiptClaim::content_hash: [u8; 32]
 pub batpak::store::ReceiptClaim::event_id: batpak::id::EventId
@@ -4262,46 +4292,74 @@ pub trait batpak::store::Spawn: core::marker::Send + core::marker::Sync
 pub fn batpak::store::Spawn::spawn(&self, name: alloc::string::String, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::JobHandle>, batpak::store::SpawnError>
 impl batpak::store::Spawn for batpak::store::ThreadSpawn
 pub fn batpak::store::ThreadSpawn::spawn(&self, name: alloc::string::String, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::JobHandle>, batpak::store::SpawnError>
+pub trait batpak::store::StagedFile: core::marker::Send + core::marker::Sync
+pub fn batpak::store::StagedFile::persist(self: alloc::boxed::Box<Self>, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::StagedFile::sync_all(&mut self) -> std::io::error::Result<()>
+pub fn batpak::store::StagedFile::write_all(&mut self, buf: &[u8]) -> std::io::error::Result<()>
+pub trait batpak::store::StoreDirLockGuard: core::marker::Send + core::marker::Sync
+pub trait batpak::store::StoreFile: core::marker::Send + core::marker::Sync
+pub fn batpak::store::StoreFile::as_std_file(&self) -> core::option::Option<&std::fs::File>
+pub fn batpak::store::StoreFile::is_empty(&self) -> std::io::error::Result<bool>
+pub fn batpak::store::StoreFile::len(&self) -> std::io::error::Result<u64>
+pub fn batpak::store::StoreFile::read_at(&mut self, offset: u64, buf: &mut [u8]) -> std::io::error::Result<usize>
+pub fn batpak::store::StoreFile::read_exact_at(&mut self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::StoreFile::sync_all(&mut self) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFile::sync_data(&mut self) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFile::write_all(&mut self, buf: &[u8]) -> std::io::error::Result<()>
 pub trait batpak::store::StoreFs: core::marker::Send + core::marker::Sync
 pub fn batpak::store::StoreFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
 pub fn batpak::store::StoreFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
 pub fn batpak::store::StoreFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
 pub fn batpak::store::StoreFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::StoreFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<std::fs::File, batpak::prelude::StoreError>
-pub fn batpak::store::StoreFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
-pub fn batpak::store::StoreFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<tempfile::file::NamedTempFile>
-pub fn batpak::store::StoreFs::persist_temp_with_parent_sync(&self, named_temp: tempfile::file::NamedTempFile, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>, batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::StoreFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StagedFile>>
+pub fn batpak::store::StoreFs::open_file(&self, path: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>>
 pub fn batpak::store::StoreFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
-pub fn batpak::store::StoreFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::ReadDir>
-pub fn batpak::store::StoreFs::read_exact_at(&self, file: &mut std::fs::File, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::StoreFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::StoreFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::StoreFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::StoreFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::StoreFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::StoreFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
-pub fn batpak::store::StoreFs::sync_file_all(&self, file: &std::fs::File, path: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::StoreFs::sync_file_with_mode(&self, file: &std::fs::File, path: &std::path::Path, mode: &batpak::prelude::SyncMode) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
 pub fn batpak::store::StoreFs::sync_parent_dir(&self, path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::try_lock_store_dir(&self, lock_path: &std::path::Path) -> core::result::Result<core::option::Option<alloc::boxed::Box<dyn batpak::store::StoreDirLockGuard>>, batpak::prelude::StoreError>
+impl batpak::store::StoreFs for batpak::store::MemFs
+pub fn batpak::store::MemFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
+pub fn batpak::store::MemFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
+pub fn batpak::store::MemFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, _preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
+pub fn batpak::store::MemFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>, batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::MemFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StagedFile>>
+pub fn batpak::store::MemFs::open_file(&self, path: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>>
+pub fn batpak::store::MemFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
+pub fn batpak::store::MemFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
+pub fn batpak::store::MemFs::reject_symlink_leaf(&self, _path: &std::path::Path, _purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
+pub fn batpak::store::MemFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::MemFs::sync_parent_dir(&self, _path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::try_lock_store_dir(&self, lock_path: &std::path::Path) -> core::result::Result<core::option::Option<alloc::boxed::Box<dyn batpak::store::StoreDirLockGuard>>, batpak::prelude::StoreError>
 impl batpak::store::StoreFs for batpak::store::RealFs
 pub fn batpak::store::RealFs::canonicalize(&self, path: &std::path::Path) -> std::io::error::Result<std::path::PathBuf>
 pub fn batpak::store::RealFs::copy(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<u64>
 pub fn batpak::store::RealFs::cow_copy_file(&self, from: &std::path::Path, to: &std::path::Path, preference: batpak::store::CopyPreference) -> std::io::error::Result<batpak::store::CowStrategyUsed>
 pub fn batpak::store::RealFs::create_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::RealFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<std::fs::File, batpak::prelude::StoreError>
-pub fn batpak::store::RealFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
-pub fn batpak::store::RealFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<tempfile::file::NamedTempFile>
-pub fn batpak::store::RealFs::persist_temp_with_parent_sync(&self, named_temp: tempfile::file::NamedTempFile, final_path: &std::path::Path, admission: batpak::store::ParentDirSyncAdmission) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::create_new_file(&self, path: &std::path::Path) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>, batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
+pub fn batpak::store::RealFs::named_temp_in(&self, dir: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StagedFile>>
+pub fn batpak::store::RealFs::open_file(&self, path: &std::path::Path) -> std::io::error::Result<alloc::boxed::Box<dyn batpak::store::StoreFile>>
 pub fn batpak::store::RealFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
-pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::ReadDir>
-pub fn batpak::store::RealFs::read_exact_at(&self, file: &mut std::fs::File, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
+pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::RealFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::RealFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::RealFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::RealFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::RealFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<std::fs::Metadata>
-pub fn batpak::store::RealFs::sync_file_all(&self, file: &std::fs::File, _path: &std::path::Path) -> std::io::error::Result<()>
-pub fn batpak::store::RealFs::sync_file_with_mode(&self, file: &std::fs::File, _path: &std::path::Path, mode: &batpak::prelude::SyncMode) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::symlink_metadata(&self, path: &std::path::Path) -> std::io::error::Result<batpak::store::FileStat>
 pub fn batpak::store::RealFs::sync_parent_dir(&self, path: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::try_lock_store_dir(&self, lock_path: &std::path::Path) -> core::result::Result<core::option::Option<alloc::boxed::Box<dyn batpak::store::StoreDirLockGuard>>, batpak::prelude::StoreError>
 pub trait batpak::store::StoreState: sealed::Sealed
 pub fn batpak::store::StoreState::shutdown_writer(&mut self, should_shutdown: bool)
 pub fn batpak::store::StoreState::writer_queue_len(&self) -> core::option::Option<usize>

@@ -261,6 +261,7 @@
     - crates/core/src/store/platform/mmap.rs
     - crates/core/src/store/platform/evidence.rs
     - crates/core/src/store/platform/profile.rs
+    - crates/core/src/store/platform/mem_fs.rs
 - id: ART-STORE-PLATFORM-FIXTURES
   kind: tests
   paths:

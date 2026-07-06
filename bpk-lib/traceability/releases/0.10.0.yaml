@@ -28,10 +28,36 @@ rows:
     notes: >-
       StoreFs/RealFs public with StoreConfig::with_fs installer; trait docs
       carry the sync-means-durable / atomic-publish / create-new-exclusive /
-      symlink-fail-closed obligations plus the honest File-anchored limitation
-      (no in-memory/wasm backend on this seam — see #168 findings).
+      symlink-fail-closed obligations. The seam is handle-abstracted
+      (StoreFile / StagedFile / StoreDirLockGuard) — see
+      STORE-FS-HANDLE-ABSTRACTION — so a pure in-memory backend implements it;
+      no File-anchored limitation remains.
     proof_commands:
       - cargo nextest run -p batpak -E 'binary(store_fs_public_seam)'
+
+  - id: STORE-FS-HANDLE-ABSTRACTION
+    title: StoreFs retyped onto abstract handles + public MemFs + layered SimFs (#168)
+    status: PROVEN
+    terminal_required: true
+    surface: batpak
+    witness_tests:
+      - crates/core/tests/store_fs_backend_conformance.rs::mem_fs_upholds_the_documented_backend_contract
+      - crates/core/tests/store_fs_backend_conformance.rs::store_runs_end_to_end_on_a_purely_in_memory_backend
+      - crates/core/tests/store_fs_backend_conformance.rs::in_memory_store_directory_lock_excludes_a_second_open
+      - crates/core/tests/store_fs_backend_conformance.rs::conformance_corpus_detects_a_divergent_backend
+    notes: >-
+      StoreFs traffics in abstract handles (StoreFile / StagedFile /
+      StoreDirLockGuard) with owned DirEntryInfo / FileKind / FileStat returns,
+      so any backend implements it. MemFs is a public pure in-memory reference
+      backend that passes the SAME shared conformance corpus as RealFs
+      (tests/common); a real Store opens, appends, reads, and reopens
+      end-to-end on it with no host path; a planted-divergence red fixture
+      proves the corpus bites. Platform-only mmap admits itself through
+      StoreFile::as_std_file; virtual handles take the byte-identical
+      positioned-read fallback. SimFs is now a fault layer over any inner
+      backend, not a real-file fork.
+    proof_commands:
+      - cargo nextest run -p batpak --all-features -E 'binary(store_fs_backend_conformance)'
 
   - id: STORE-RECEIPT-VERIFY-STORE-FREE
     title: Store-free receipt/chain verification surface (#167)
@@ -105,9 +131,11 @@ rows:
     notes: >-
       cargo xtask wasm-surface checks batpak, batpak --features
       payload-encryption, and syncbat for wasm32-unknown-unknown; wired as a
-      cheap check-only CI job. The #168 runtime smoke stays open — the
-      File-anchored StoreFs contract cannot be satisfied in-memory on wasm; a
-      handle-abstracted seam is a 0.11 design item (findings posted on #168).
+      cheap check-only CI job. The #168 architectural blocker is removed: the
+      StoreFs seam is handle-abstracted in 0.10.0 and MemFs satisfies the
+      in-memory contract (see STORE-FS-HANDLE-ABSTRACTION), proven end-to-end
+      on the host target. The wasm32 wasm-bindgen-test runtime smoke itself is
+      not part of this cut.
     proof_commands:
       - cargo xtask wasm-surface
 

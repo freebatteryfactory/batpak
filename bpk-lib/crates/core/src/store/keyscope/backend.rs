@@ -68,10 +68,10 @@ pub trait KeysetBackend: Send + Sync {
 
 /// The default [`KeysetBackend`]: a single `keyset.fbatk` file inside the
 /// store directory, published through the store's crash-safe atomic-write
-/// seam ([`StoreFs::named_temp_in`] + [`StoreFs::persist_temp_with_parent_sync`]).
+/// seam ([`StoreFs::named_temp_in`] + [`StagedFile::persist`]).
 ///
 /// [`StoreFs::named_temp_in`]: crate::store::StoreFs::named_temp_in
-/// [`StoreFs::persist_temp_with_parent_sync`]: crate::store::StoreFs::persist_temp_with_parent_sync
+/// [`StagedFile::persist`]: crate::store::StagedFile::persist
 pub struct FileKeysetBackend {
     dir: PathBuf,
     fs: Arc<dyn StoreFs>,

@@ -74,6 +74,15 @@ fn stale_patch_versions(current: &str) -> Result<Vec<String>> {
     let (major, minor, patch) = parse_family_version(current)?;
     let mut stale = Vec::new();
     match (major, minor) {
+        (0, 10) => {
+            for value in 0..=3 {
+                stale.push(format!("0.8.{value}"));
+            }
+            stale.push("0.9.0".to_owned());
+            for value in 0..patch {
+                stale.push(format!("0.10.{value}"));
+            }
+        }
         (0, 9) => {
             for value in 0..=3 {
                 stale.push(format!("0.8.{value}"));

@@ -366,8 +366,44 @@ impl SimFs {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (path, state) in durable.iter() {
-            let _truncated = crate::store::platform::fs::truncate_file_to(path, state.durable_len);
+            // A real-file-backed inner truncates in place (RealFs behavior,
+            // unchanged). A virtual inner (e.g. MemFs) has no OS file to
+            // truncate, so rewrite it to its durable prefix through the seam —
+            // the crash model is then backend-agnostic.
+            if crate::store::platform::fs::truncate_file_to(path, state.durable_len).is_ok() {
+                continue;
+            }
+            self.crash_truncate_via_seam(path, state.durable_len);
         }
+    }
+
+    /// Backend-agnostic crash truncation for a virtual inner: rewrite `path` to
+    /// its first `durable_len` bytes through the seam's atomic publish, so a
+    /// backend without real OS files (e.g. [`MemFs`](crate::store::MemFs))
+    /// still loses the write-but-unsynced tail on crash.
+    fn crash_truncate_via_seam(&self, path: &Path, durable_len: u64) {
+        let Ok(full) = self.inner.read(path) else {
+            return;
+        };
+        let keep = usize::try_from(durable_len)
+            .unwrap_or(usize::MAX)
+            .min(full.len());
+        if keep >= full.len() {
+            return;
+        }
+        let Some(dir) = path.parent() else {
+            return;
+        };
+        let Ok(mut tmp) = self.inner.named_temp_in(dir) else {
+            return;
+        };
+        if tmp.write_all(&full[..keep]).is_err() || tmp.sync_all().is_err() {
+            return;
+        }
+        let Ok(admission) = crate::store::platform::sync::admit_current_parent_dir_sync() else {
+            return;
+        };
+        let _ = tmp.persist(path, admission);
     }
 
     /// Register a file written outside the segment sync seam (fork copy /

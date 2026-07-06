@@ -14,6 +14,7 @@ pub mod alloc;
 pub(crate) mod clock;
 pub(crate) mod evidence;
 pub(crate) mod fs;
+pub(crate) mod handle;
 pub(crate) mod lock;
 pub(crate) mod mem_fs;
 pub(crate) mod mmap;

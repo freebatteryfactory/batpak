@@ -27,13 +27,22 @@ on-disk format changes anywhere in this release.
   format and every fail-closed rule stay single-sourced; the flush-before-ack
   fence and the shred ack point are now documented trait obligations. Default
   unchanged: `FileKeysetBackend` writes the same in-directory `keyset.fbatk`.
-- **`StoreFs` is reviewed-public** (#164): the filesystem seam (`StoreFs`,
-  `RealFs`, `StoreConfig::with_fs`, plus the vocabulary types its signatures
-  carry — `CowStrategyUsed`, `PositionedReadError`, `ParentDirSyncAdmission`)
-  following the `Spawn` precedent, with the durability contract implementers
-  must uphold documented on the trait. Note the honest limitation: the
-  `File`-anchored signatures support alternate *native* backends, not an
-  in-memory/wasm filesystem (see #168).
+- **`StoreFs` is reviewed-public and handle-abstracted** (#164, #168): the
+  filesystem seam (`StoreFs`, `RealFs`, `StoreConfig::with_fs`, plus the
+  vocabulary types its signatures carry — `CowStrategyUsed`,
+  `PositionedReadError`, `ParentDirSyncAdmission`) following the `Spawn`
+  precedent, with the durability contract implementers must uphold documented
+  on the trait. The seam traffics in abstract handles (`StoreFile`,
+  `StagedFile`, `StoreDirLockGuard`, with owned `DirEntryInfo` / `FileKind` /
+  `FileStat` returns), not concrete `std::fs` types, so any backend can
+  implement it — including a pure in-memory one.
+- **`MemFs` — public in-memory `StoreFs` backend** (#168): a reference
+  filesystem holding the entire store in-process (no OS file, no tempfile, no
+  mmap), so an embedder on a non-POSIX host has a worked example and a real
+  `Store` runs open→append→read→reopen entirely in memory. The
+  deterministic-simulation `SimFs` is now a fault *layer* over any inner
+  backend rather than a real-file fork, and a two-backend conformance corpus
+  runs the same contract over `RealFs` and `MemFs`.
 - **wasm32-unknown-unknown embedding surface** (#164): target-conditional
   uuid `js` and getrandom `wasm_js` RNG features make `batpak`, `syncbat`, and
   `batpak --features payload-encryption` compile clean for the target, and a
@@ -68,8 +77,6 @@ on-disk format changes anywhere in this release.
   sentence.
 - `TypedDecodeError` and `ReceiptVerificationError` are `#[non_exhaustive]`
   (ROADMAP §2): adding a failure mode is no longer a semver break.
-- `tempfile::NamedTempFile` is now a public-API type through the `StoreFs`
-  trait signatures (bounded by the existing `>=3.24, <3.25` pin).
 
 ### Migration
 - Downstream exhaustive `match` expressions over `TypedDecodeError` or

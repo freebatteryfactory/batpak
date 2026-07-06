@@ -286,10 +286,12 @@ pub mod __sim {
         SymlinkDestOutcome, STALE_RANGES_FILE, STALE_SEGMENT_FILE,
     };
     pub use crate::store::sim::fork_recovery::{
-        fork_fault_replay_seed, run_seeded_fork_fault_public, ForkFaultOutcomePublic,
+        fork_fault_replay_seed, run_seeded_fork_fault_mem_fs_public, run_seeded_fork_fault_public,
+        ForkFaultOutcomePublic,
     };
     pub use crate::store::sim::import_recovery::{
-        import_fault_replay_seed, run_seeded_import_fault_public, ImportFaultOutcomePublic,
+        import_fault_replay_seed, run_seeded_import_fault_mem_fs_public,
+        run_seeded_import_fault_public, ImportFaultOutcomePublic,
     };
     pub use crate::store::sim::recovery::{
         recovery_replay_seed, run_seeded_recovery, RecoveryOutcomePublic,
