@@ -208,6 +208,10 @@ impl StagedFile for MemStagedFile {
         if tree.dirs.contains(final_path) {
             return Err(MemFs::is_a_directory(final_path));
         }
+        // The parent directory must exist, like a RealFs rename into a missing
+        // directory fails `NotFound` — never publish an unreachable file whose
+        // parent isn't in the tree (which `read_dir` could never enumerate).
+        MemFs::parent_must_exist(&tree, final_path)?;
         // One locked insert IS the atomic publish: a reader sees the old
         // complete bytes or the new complete bytes, never a mixture, and
         // the name is as durable as the medium the moment it lands.
@@ -516,6 +520,31 @@ mod tests {
             fs.read(&final_path).expect("read published bytes"),
             b"published-bytes",
             "a fresh publish lands the staged bytes atomically"
+        );
+    }
+
+    #[test]
+    fn persist_into_a_missing_parent_directory_fails_not_found() {
+        // A publish whose parent directory does not exist fails closed with
+        // NotFound (like a RealFs rename into a missing directory) — never
+        // inserting an unreachable file that `read_dir` could not enumerate.
+        let fs = MemFs::new();
+        let root = Path::new("/virtual/publish-parent");
+        fs.create_dir_all(root).expect("seed root");
+        let mut staged = fs.named_temp_in(root).expect("stage temp");
+        staged.write_all(b"orphan").expect("write staged");
+        staged.sync_all().expect("sync staged");
+        let admission = admit_current_parent_dir_sync().expect("mint parent-dir-sync admission");
+
+        let orphan = Path::new("/virtual/missing/file");
+        let published = staged.persist(orphan, admission);
+        assert!(
+            matches!(&published, Err(error) if error.kind() == io::ErrorKind::NotFound),
+            "publishing into a missing parent must fail NotFound, got {published:?}"
+        );
+        assert!(
+            matches!(fs.read(orphan), Err(error) if error.kind() == io::ErrorKind::NotFound),
+            "no unreachable file may be inserted for a missing-parent publish"
         );
     }
 }

@@ -188,3 +188,62 @@ fn crash_truncates_the_virtual_inner_even_when_a_host_file_shadows_the_path() {
         "a virtual-inner crash must not mutate an unrelated same-named host file"
     );
 }
+
+#[test]
+fn a_dropped_staged_sync_loses_the_publish_on_crash() {
+    // A staged atomic publish (cursor checkpoint, keyset, visibility ranges,
+    // cold-start artifact) whose staged `sync_all` is DROPPED must not survive a
+    // crash — the metadata bytes were never durable. `fsync_drop_one_in = 1`
+    // drops every sync, so this staged sync is dropped.
+    let mem = crate::store::platform::mem_fs::MemFs::new();
+    let dir = std::path::Path::new("/virtual/staged-drop");
+    mem.create_dir_all(dir).expect("seed dir");
+    let sim = SimFs::layered(0xDACE_D40F, 1, Arc::new(mem.clone()));
+
+    let final_path = dir.join("cursor.ckpt");
+    let mut staged = sim.named_temp_in(dir).expect("stage");
+    staged.write_all(b"checkpoint-bytes").expect("write staged");
+    staged
+        .sync_all()
+        .expect("staged sync (dropped by the schedule)");
+    let admission = crate::store::platform::sync::admit_current_parent_dir_sync()
+        .expect("mint parent-dir-sync admission");
+    staged.persist(&final_path, admission).expect("publish");
+
+    // The publish landed on the medium...
+    assert_eq!(
+        mem.read(&final_path).expect("read published"),
+        b"checkpoint-bytes"
+    );
+    sim.crash();
+    // ...but a DROPPED staged sync means the crash loses it (zero durable prefix).
+    assert!(
+        mem.read(&final_path).expect("read after crash").is_empty(),
+        "a dropped staged sync must lose the publish on crash, not survive it"
+    );
+}
+
+#[test]
+fn an_honored_staged_sync_survives_a_crash() {
+    // The dual: with no sync drops, the honored staged sync makes the publish
+    // durable, so it survives the crash intact.
+    let mem = crate::store::platform::mem_fs::MemFs::new();
+    let dir = std::path::Path::new("/virtual/staged-honored");
+    mem.create_dir_all(dir).expect("seed dir");
+    let sim = SimFs::layered(0xDACE_5A7E, 0, Arc::new(mem.clone()));
+
+    let final_path = dir.join("cursor.ckpt");
+    let mut staged = sim.named_temp_in(dir).expect("stage");
+    staged.write_all(b"checkpoint-bytes").expect("write staged");
+    staged.sync_all().expect("staged sync (honored)");
+    let admission = crate::store::platform::sync::admit_current_parent_dir_sync()
+        .expect("mint parent-dir-sync admission");
+    staged.persist(&final_path, admission).expect("publish");
+
+    sim.crash();
+    assert_eq!(
+        mem.read(&final_path).expect("read after crash"),
+        b"checkpoint-bytes",
+        "an honored staged sync makes the publish durable across a crash"
+    );
+}
