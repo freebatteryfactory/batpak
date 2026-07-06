@@ -163,6 +163,7 @@ impl Store<Open> {
                 Arc::clone(&self.index),
                 &self.config.data_dir,
                 &id,
+                self.config.fs().as_ref(),
                 self.runtime.clock_arc(),
             )?,
             None => self.cursor_guaranteed(&region),

@@ -101,10 +101,15 @@ impl Cursor {
         index: Arc<StoreIndex>,
         data_dir: &Path,
         id: &CheckpointId,
+        fs: &dyn StoreFs,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, StoreError> {
         let mut cursor = Self::new_bound_checkpoint(region, index, data_dir, id.clone(), clock);
-        match Self::load_checkpoint(data_dir, id) {
+        // Resume MUST read through the SAME backend the save path writes to
+        // (`persist_current` routes through the configured `StoreFs`). Reading
+        // via `RealFs` here would treat a virtual-backend checkpoint as missing
+        // and silently resume from position 0 — broken durable resume.
+        match Self::load_checkpoint_with_fs(data_dir, id, fs) {
             Ok(Some(ckpt)) => {
                 let expected_region = cursor.region.checkpoint_identity();
                 if ckpt.region_identity.as_deref() != Some(expected_region.as_str()) {
