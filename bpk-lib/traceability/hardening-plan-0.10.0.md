@@ -76,10 +76,14 @@
   entries; structural-check green). Red fixture `unanchored_unsafe_fn_body_fails_closed` bites
   (would pass-as-green under the old visitor); positive twin passes. Detector-hardening, no new
   waiver. `unsafe_ledger.rs` visitor + fixtures; `unsafe_ledger.yaml` +3 entries. DONE.
-- [ ] **C2/LD1** family version-drift gate `ast_grep_family_version.rs` — match `block_mapping_pair`
-  (not `plain_scalar`) so the regex can match; wire into CI; sync stale checklists (`syncbat`/
-  `netbat` `0.8.2`, `bvisor` `0.9.0` → `0.10.0`). `traceability/public_api/*_semver_checklist.yaml`.
-  Fix detector FIRST, then update YAML.
+- [x] **C2/LD1** Replaced the provably-vacuous ast-grep caliper with a NATIVE integrity check
+  `family_version::check` (reads each `*_semver_checklist.yaml` `current_version`, asserts it ==
+  the workspace family version from `crates/core/Cargo.toml`; no external `sg`, no hand-coded
+  stale table, forward-safe). Wired into `structural::run()` ⇒ runs in `ci_fast` ⇒ CI. Synced the
+  3 drifted checklists (syncbat/netbat `0.8.2`, bvisor `0.9.0` → `0.10.0`). Red fixture
+  `stale_checklist_version_is_flagged` convicts `0.8.2`-under-`0.10.0`; real-repo structural-check
+  green after sync. NOTE: the old `ast_grep_family_version` xtask cmd is now superseded (dead) —
+  remove in WP3 SoT. DONE.
 - [ ] **LD2** `crates/core/tests/compat_matrix/support.rs:32` — make `SUPPORTED_{MMAP,CHECKPOINT,
   IDEMP,VISIBILITY}_VERSION` `pub` + derive (stop shadowing the real consts). Restores
   `INV-ONDISK-FORWARD-COMPAT-CANONICAL` for 4 formats (currently passes `6==6` vacuously).
