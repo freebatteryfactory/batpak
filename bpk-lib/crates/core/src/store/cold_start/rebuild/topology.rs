@@ -103,7 +103,7 @@ pub(super) fn segment_paths(
             .iter()
             .any(|(segment_id, _)| *segment_id == marker.merged_id);
         let temp_source_path = compaction_source_temp_path(data_dir, marker.merged_id);
-        let temp_source_exists = temp_source_path.exists();
+        let temp_source_exists = fs.metadata(&temp_source_path).is_ok();
         let stale_finalized_marker = merged_present
             && !temp_source_exists
             && marker

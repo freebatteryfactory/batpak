@@ -89,6 +89,10 @@ pub struct Reader {
     /// `None` means mmap is not admitted; sealed reads then fall back to the
     /// FD/pread path, which produces byte-identical results.
     sealed_mmap_admission: Option<crate::store::platform::mmap::SealedSegmentMmapAdmission>,
+    /// Latched once a handle's `as_std_file()` first returns `None`, so
+    /// `get_or_map_sealed` stops re-opening + re-probing every sealed read on a
+    /// virtual backend (MemFs / wasm) whose handles never memory-map.
+    mmap_handle_unsupported: std::sync::OnceLock<bool>,
     /// Filesystem seam for the active-segment positioned frame read. Production
     /// installs [`crate::store::platform::fs::RealFs`]; a deterministic
     /// simulation installs a `SimFs` so the FD/pread read is fault-injectable.
@@ -328,6 +332,7 @@ impl Reader {
             sealed_maps: DashMap::new(),
             active_segment_id: AtomicU64::new(0),
             sealed_mmap_admission,
+            mmap_handle_unsupported: std::sync::OnceLock::new(),
             fs,
         }
     }
@@ -369,6 +374,11 @@ impl Reader {
         let Some(admission) = self.sealed_mmap_admission else {
             return Ok(None);
         };
+        // A virtual backend's handles never map (`as_std_file` -> None); once
+        // observed, stop re-opening + re-probing on every sealed read.
+        if self.mmap_handle_unsupported.get() == Some(&true) {
+            return Ok(None);
+        }
         // Map the segment file. The handle comes from the configured seam;
         // only a handle backed by a real OS file can feed the mmap admission
         // (`as_std_file`), so a virtual backend routes to the byte-identical
@@ -376,6 +386,7 @@ impl Reader {
         let path = self.data_dir.join(segment::segment_filename(segment_id));
         let handle = self.fs.open_file(&path).map_err(StoreError::Io)?;
         let Some(file) = handle.as_std_file() else {
+            let _ = self.mmap_handle_unsupported.set(true);
             return Ok(None);
         };
         // SAFETY: memmap2::Mmap::map is unsafe because the file could be modified externally.
