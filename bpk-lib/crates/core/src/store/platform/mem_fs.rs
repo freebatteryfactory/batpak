@@ -57,7 +57,8 @@ struct MemTree {
 /// let store = Store::open(config)?;
 /// let receipt = store.append(
 ///     &Coordinate::new("entity:mem", "scope:demo")?,
-///     serde_json::json!({ "purely": "in-memory" }),
+///     EventKind::custom(0xF, 0x01),
+///     &serde_json::json!({ "purely": "in-memory" }),
 /// )?;
 /// assert!(store.verify_append_receipt(&receipt).is_valid());
 /// store.close()?;
@@ -249,6 +250,12 @@ impl StoreFs for MemFs {
         let mut current = PathBuf::new();
         for component in path.components() {
             current.push(component);
+            if tree.files.contains_key(&current) {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("MemFs: not a directory: {}", current.display()),
+                ));
+            }
             tree.dirs.insert(current.clone());
         }
         Ok(())
@@ -257,7 +264,7 @@ impl StoreFs for MemFs {
     fn create_new_file(&self, path: &Path) -> Result<Box<dyn StoreFile>, StoreError> {
         let mut tree = self.lock_tree();
         MemFs::parent_must_exist(&tree, path).map_err(StoreError::Io)?;
-        if tree.files.contains_key(path) {
+        if tree.files.contains_key(path) || tree.dirs.contains(path) {
             return Err(StoreError::Io(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 format!("MemFs: file exists: {}", path.display()),
