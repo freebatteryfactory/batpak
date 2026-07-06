@@ -12,7 +12,7 @@ use batpak::store::{
     compaction_strategy_shape, report_for_run, report_skipped, BatchAppendItem, Canal, CanalBatch,
     CanalClosed, CanalHandle, CanalItem, CausationRef, CompactionEvidenceHash,
     CompactionEvidenceReport, CompactionReportBody, CompactionReportFinding,
-    CompactionStrategyShape, StoreError, COMPACTION_REPORT_SCHEMA_VERSION,
+    CompactionStrategyShape, MemFs, StoreError, COMPACTION_REPORT_SCHEMA_VERSION,
 };
 use batpak_testkit::prelude::*;
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ fn compaction_report_helpers_cover_engine_paths() {
         segments_removed: 0,
         bytes_reclaimed: 0,
     };
-    let _ = report_for_run(&cfg, 9, &sealed, None, &result, None).expect("run");
+    let _ = report_for_run(&cfg, 9, &sealed, None, &result, None, &MemFs::new()).expect("run");
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn compaction_failure_emits_preswap_rollback_finding() {
         segments_removed: 0,
         bytes_reclaimed: 0,
     };
-    let rep = report_for_run(&cfg, 3, &sealed, Some(99), &result, None).expect("rep");
+    let rep = report_for_run(&cfg, 3, &sealed, Some(99), &result, None, &MemFs::new()).expect("rep");
     assert!(
         matches!(
             rep.findings.as_slice(),
@@ -187,7 +187,7 @@ fn compaction_performed_without_output_path_emits_hash_unavailable() {
         bytes_reclaimed: 64,
     };
 
-    let rep = report_for_run(&cfg, 3, &sealed, Some(99), &result, None).expect("rep");
+    let rep = report_for_run(&cfg, 3, &sealed, Some(99), &result, None, &MemFs::new()).expect("rep");
 
     assert_eq!(rep.output_segment_bytes_hash, None);
     assert!(
