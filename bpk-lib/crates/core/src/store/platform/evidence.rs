@@ -1,3 +1,4 @@
+use crate::store::platform::fs::{StoreFile, StoreFs};
 use crate::store::stats::{
     ActiveSegmentReadEvidence, ClockEvidence, HostEvidenceSummary, LockLeafSymlinkProtection,
     MmapAdmissionSummary, MmapEvidence, ParentDirSyncAdmissionSummary, ParentDirSyncEvidence,
@@ -6,14 +7,14 @@ use crate::store::stats::{
 };
 use crate::store::Clock;
 use memmap2::MmapOptions;
-use std::io::Write;
 use std::path::Path;
 
 pub(crate) fn collect_for_store_path(
     data_dir: &Path,
     clock: &dyn Clock,
+    fs: &dyn StoreFs,
 ) -> PlatformEvidenceSummary {
-    let mmap_evidence = mmap_evidence_for_store_path(data_dir);
+    let mmap_evidence = mmap_evidence_for_store_path(data_dir, fs);
     let store_path = StorePathEvidenceSummary {
         path_status: path_status(data_dir),
         parent_dir_sync: parent_dir_sync_evidence(),
@@ -79,7 +80,10 @@ pub(crate) fn active_segment_read_evidence() -> ActiveSegmentReadEvidence {
     }
 }
 
-pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path) -> MmapEvidence {
+/// Leaf name of the private one-byte mmap-capability probe file.
+const MMAP_PROBE_LEAF: &str = ".batpak-mmap-probe";
+
+pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) -> MmapEvidence {
     match path_status(data_dir) {
         StorePathStatusEvidence::ObservedDirectory => {}
         StorePathStatusEvidence::ObservedUnsupportedNotDirectory => {
@@ -89,16 +93,33 @@ pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path) -> MmapEvidence {
         StorePathStatusEvidence::ProbeFailed { .. } => return MmapEvidence::ProbeFailed,
     }
 
-    let Ok(mut probe) = tempfile::NamedTempFile::new_in(data_dir) else {
+    // Probe THROUGH the configured backend so a purely in-memory store never
+    // touches the host filesystem (issue #171): a MemFs probe stays in memory
+    // and its `as_std_file()` is `None`, so mmap is observed-unsupported and NO
+    // host tempfile is ever created; RealFs mints a real file to actually map.
+    let probe_path = data_dir.join(MMAP_PROBE_LEAF);
+    let _ = fs.remove_file_if_present(&probe_path);
+    let Ok(mut probe) = fs.create_new_file(&probe_path) else {
         return MmapEvidence::ProbeFailed;
     };
-    if probe.write_all(&[0]).and_then(|()| probe.flush()).is_err() {
+    let evidence = probe_mmap_admission(&mut *probe);
+    let _ = fs.remove_file_if_present(&probe_path);
+    evidence
+}
+
+fn probe_mmap_admission(probe: &mut dyn StoreFile) -> MmapEvidence {
+    if probe.write_all(&[0]).is_err() {
         return MmapEvidence::ProbeFailed;
     }
+    // A virtual backend's handle exposes no OS file, so mmap is definitively
+    // unsupported for it — reported without touching the host.
+    let Some(file) = probe.as_std_file() else {
+        return MmapEvidence::ObservedUnsupported;
+    };
     // SAFETY: the probe file is private to this function, one byte long, and
     // dropped immediately after the map attempt. This observes the target mmap
     // mechanism; it does not establish store semantics.
-    match unsafe { MmapOptions::new().len(1).map(probe.as_file()) } {
+    match unsafe { MmapOptions::new().len(1).map(file) } {
         Ok(_map) => MmapEvidence::FileBacked,
         Err(error) => mmap_map_error_evidence(&error),
     }
@@ -224,7 +245,7 @@ mod tests {
         let missing = dir.path().join("missing-store-path");
 
         assert_eq!(
-            mmap_evidence_for_store_path(&missing),
+            mmap_evidence_for_store_path(&missing, &crate::store::platform::fs::RealFs),
             MmapEvidence::Unknown,
             "PROPERTY: mmap evidence for a missing path must stay Unknown, not ProbeFailed"
         );
@@ -238,7 +259,7 @@ mod tests {
         std::fs::write(&file_path, b"not a directory")?;
 
         assert_eq!(
-            mmap_evidence_for_store_path(&file_path),
+            mmap_evidence_for_store_path(&file_path, &crate::store::platform::fs::RealFs),
             MmapEvidence::ObservedUnsupported,
             "PROPERTY: mmap probing must not create temp probes under a non-directory store path"
         );

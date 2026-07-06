@@ -212,3 +212,27 @@ fn conformance_corpus_detects_a_divergent_backend() {
         "PROPERTY: the conformance corpus must detect a create-new exclusivity violation"
     );
 }
+
+/// Issue #171: `Store::diagnostics()` must probe mmap capability THROUGH the
+/// configured backend, never the host filesystem. A `data_dir` that also exists
+/// on the host (a real tempdir) is the smoking gun: the pre-fix host probe
+/// created a `NamedTempFile` there and reported `FileBacked`; the fix routes the
+/// probe through `MemFs` (in-memory, `StoreFile::as_std_file() == None`), so the
+/// mmap evidence is `ObservedUnsupported` and no host file is ever created.
+#[test]
+fn diagnostics_over_memfs_reports_virtual_mmap_evidence_not_file_backed() {
+    let host_dir = tempfile::tempdir().expect("real host tempdir");
+    let fs = MemFs::new();
+    let config = StoreConfig::new(host_dir.path()).with_fs(Arc::new(fs.clone()));
+    let store = Store::open(config).expect("open MemFs store on a host-shadowed data_dir");
+
+    let diagnostics = store.diagnostics();
+    assert_eq!(
+        diagnostics.platform_evidence.store_path.mmap_index,
+        batpak::store::stats::MmapEvidence::ObservedUnsupported,
+        "MemFs diagnostics must report virtual (unsupported) mmap evidence, never FileBacked \
+         (issue #171); the pre-fix host probe reported FileBacked and touched the host directory"
+    );
+
+    store.close().expect("close");
+}

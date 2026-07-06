@@ -351,6 +351,7 @@ impl Reader {
                 crate::store::platform::evidence::collect_for_store_path(
                     &self.data_dir,
                     &*self.clock,
+                    self.fs.as_ref(),
                 )
                 .store_path
                 .sealed_segment_mmap,

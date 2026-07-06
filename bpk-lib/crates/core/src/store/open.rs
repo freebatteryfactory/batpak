@@ -104,6 +104,7 @@ fn open_components(
                 profile_path,
                 &config.data_dir,
                 runtime.clock(),
+                config.fs().as_ref(),
             )?;
     }
     let config = Arc::new(config);
