@@ -166,3 +166,41 @@ fn write_persists_lane_ranges_even_when_the_global_set_is_empty() {
          drops the write and load returns None"
     );
 }
+
+#[test]
+fn clearing_all_ranges_over_a_virtual_backend_syncs_the_parent_through_fs() {
+    // The empty-ranges cleanup removes visibility_ranges.fbv and syncs its
+    // parent. Over a MemFs backend that sync MUST route through `fs` (a no-op),
+    // not a host fsync of a `/virtual/...` parent — which fails NotFound and
+    // would make fence/compaction cleanup report a spurious error even though
+    // the backend removal succeeded. Catches a regression to the host
+    // `platform::sync::sync_parent_dir` call in the empty branch.
+    use crate::store::platform::fs::StoreFs;
+    use crate::store::platform::mem_fs::MemFs;
+
+    let fs = MemFs::new();
+    let data_dir = std::path::Path::new("/virtual/hidden-ranges");
+    fs.create_dir_all(data_dir).expect("seed data dir");
+
+    // Seed a non-empty ranges file.
+    let non_empty = CancelledVisibilityRanges {
+        global: vec![(1, 3)],
+        lanes: BTreeMap::new(),
+    };
+    write_cancelled_ranges(data_dir, &non_empty, &fs).expect("write non-empty ranges");
+    let final_path = data_dir.join(VISIBILITY_RANGES_FILENAME);
+    assert!(fs.read(&final_path).is_ok(), "the ranges file was written");
+
+    // Clear ALL ranges: the empty branch removes the file and syncs the parent
+    // through `fs`. Must succeed — the pre-fix host fsync errored NotFound here.
+    let empty = CancelledVisibilityRanges {
+        global: Vec::new(),
+        lanes: BTreeMap::new(),
+    };
+    write_cancelled_ranges(data_dir, &empty, &fs)
+        .expect("clearing all ranges over MemFs must succeed, not host-fsync a virtual path");
+    assert!(
+        matches!(fs.read(&final_path), Err(error) if error.kind() == std::io::ErrorKind::NotFound),
+        "the ranges file is removed when all ranges are cleared"
+    );
+}
