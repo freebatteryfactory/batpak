@@ -3658,6 +3658,8 @@ pub fn batpak::store::MemFs::open_file(&self, path: &std::path::Path) -> std::io
 pub fn batpak::store::MemFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
 pub fn batpak::store::MemFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::MemFs::reject_symlink_leaf(&self, _path: &std::path::Path, _purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::remove_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::remove_dir_all_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::MemFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::MemFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::MemFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
@@ -3830,6 +3832,8 @@ pub fn batpak::store::RealFs::open_file(&self, path: &std::path::Path) -> std::i
 pub fn batpak::store::RealFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
 pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::RealFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::remove_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::remove_dir_all_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::RealFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::RealFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::RealFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
@@ -4318,6 +4322,8 @@ pub fn batpak::store::StoreFs::open_file(&self, path: &std::path::Path) -> std::
 pub fn batpak::store::StoreFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
 pub fn batpak::store::StoreFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::StoreFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::StoreFs::remove_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::StoreFs::remove_dir_all_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::StoreFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::StoreFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::StoreFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
@@ -4336,6 +4342,8 @@ pub fn batpak::store::MemFs::open_file(&self, path: &std::path::Path) -> std::io
 pub fn batpak::store::MemFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
 pub fn batpak::store::MemFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::MemFs::reject_symlink_leaf(&self, _path: &std::path::Path, _purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::MemFs::remove_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::MemFs::remove_dir_all_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::MemFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::MemFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::MemFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>
@@ -4354,6 +4362,8 @@ pub fn batpak::store::RealFs::open_file(&self, path: &std::path::Path) -> std::i
 pub fn batpak::store::RealFs::read(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<u8>>
 pub fn batpak::store::RealFs::read_dir(&self, path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<batpak::store::DirEntryInfo>>
 pub fn batpak::store::RealFs::reject_symlink_leaf(&self, path: &std::path::Path, purpose: &str) -> core::result::Result<(), batpak::prelude::StoreError>
+pub fn batpak::store::RealFs::remove_dir_all(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn batpak::store::RealFs::remove_dir_all_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::RealFs::remove_file(&self, path: &std::path::Path) -> std::io::error::Result<()>
 pub fn batpak::store::RealFs::remove_file_if_present(&self, path: &std::path::Path) -> std::io::error::Result<bool>
 pub fn batpak::store::RealFs::rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::error::Result<()>

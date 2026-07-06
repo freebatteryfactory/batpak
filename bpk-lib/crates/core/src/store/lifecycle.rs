@@ -11,8 +11,6 @@ use serde::Serialize;
 mod lifecycle_compact;
 #[path = "lifecycle_fork.rs"]
 mod lifecycle_fork;
-#[path = "lifecycle_fs.rs"]
-mod lifecycle_fs;
 #[path = "lifecycle_snapshot.rs"]
 mod lifecycle_snapshot;
 

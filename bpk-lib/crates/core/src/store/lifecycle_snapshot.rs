@@ -138,21 +138,22 @@ pub(super) fn clear_snapshot_store_artifacts(
     fs: &dyn crate::store::platform::fs::StoreFs,
     dest: &std::path::Path,
 ) -> Result<usize, StoreError> {
-    use super::lifecycle_fs::{remove_dir_all_if_present, remove_file_if_present};
-
     let entries = fs.read_dir(dest).map_err(StoreError::Io)?;
     let mut removed = 0;
     for entry in entries {
         let path = dest.join(&entry.name);
         if snapshot_destination_should_clear(&path) {
-            removed += usize::from(remove_file_if_present(&path)?);
+            removed += usize::from(fs.remove_file_if_present(&path).map_err(StoreError::Io)?);
             continue;
         }
 
         if entry.kind == crate::store::platform::fs::FileKind::Dir
             && StoreFileKind::from_path(&path) == StoreFileKind::CursorDirectory
         {
-            removed += usize::from(remove_dir_all_if_present(&path)?);
+            removed += usize::from(
+                fs.remove_dir_all_if_present(&path)
+                    .map_err(StoreError::Io)?,
+            );
         }
     }
     Ok(removed)
