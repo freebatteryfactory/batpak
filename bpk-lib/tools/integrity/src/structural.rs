@@ -6,7 +6,8 @@ use crate::shared_checks::{collect_dead_code_silencer_sites, load_dead_code_sile
 use crate::source_cache::SourceCache;
 use crate::{
     agent_surface, architecture_lints, chaos_contract, ci_container_contract, ci_parity,
-    complexity, dangerous_hooks_contract, docs_catalog, glob_coverage, harness_lints,
+    complexity, dangerous_hooks_contract, docs_catalog, family_version, glob_coverage,
+    harness_lints,
     invariant_bridge, literal_regex_contract, mutation_exclusion_registry, public_surface,
     scope_exclusion_contract, store_pub_fn_coverage, wallclock,
 };
@@ -27,6 +28,7 @@ pub(crate) fn run() -> Result<()> {
     let mut source_cache = SourceCache::new(&repo_root);
     architecture_lints::check(&repo_root, &tracked_files, &mut source_cache)?;
     agent_surface::check(&repo_root)?;
+    family_version::check(&repo_root)?;
     harness_lints::check(&repo_root, &tracked_files, &mut source_cache)?;
 
     // invariant-bridge: receipt over the tracked-file surface it scans.
