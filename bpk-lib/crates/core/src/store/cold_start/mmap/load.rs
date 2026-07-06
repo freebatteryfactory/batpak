@@ -574,14 +574,20 @@ pub(super) fn load_mmap_index(
 #[cfg(test)]
 mod tests {
     use super::{map_or_read_index_bytes_with_evidence, MmapIndexBytes};
-    use crate::store::platform::fs::RealFs;
+    use crate::store::platform::fs::{RealFs, StoreFs};
     use crate::store::stats::MmapEvidence;
 
-    fn write_index(payload: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
-        let dir = tempfile::TempDir::new().expect("create temp dir");
-        let path = dir.path().join("mmap.index");
-        std::fs::write(&path, payload).expect("write index bytes");
-        (dir, path)
+    // Write a fixture index file THROUGH the platform seam. The structural gate
+    // forbids raw `std::fs` machine-contact outside src/store/platform, and
+    // routing create/open through `RealFs` exercises the exact handle path the
+    // cold-start loader uses (`open_file(..).as_std_file()`).
+    fn write_index(fs: &RealFs, path: &std::path::Path, payload: &[u8]) {
+        let mut file = fs.create_new_file(path).expect("create index");
+        file.write_all(payload).expect("write index bytes");
+        // No sync: the test reads these bytes back in-process, where the OS
+        // page cache already serves them; durability is not under test here (and
+        // routing a real-file sync belongs to src/store/platform).
+        drop(file);
     }
 
     // The mmap capability gate is a CAPABILITY gate, not a trust gate: every
@@ -591,18 +597,21 @@ mod tests {
     // `Some(std_file)` branch can never regress back to returning `Err`.
     #[test]
     fn refused_mmap_evidence_falls_back_to_owned_read() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let path = dir.path().join("mmap.index");
         let payload = b"owned-fallback-bytes-are-byte-identical-downstream";
-        let (_dir, path) = write_index(payload);
         let fs = RealFs;
-        let file = std::fs::File::open(&path).expect("open index");
+        write_index(&fs, &path, payload);
+        let handle = fs.open_file(&path).expect("open index");
 
         for refused in [
             MmapEvidence::Unknown,
             MmapEvidence::ObservedUnsupported,
             MmapEvidence::ProbeFailed,
         ] {
-            let bytes = map_or_read_index_bytes_with_evidence(Some(&file), &fs, &path, refused)
-                .expect("a refused capability gate must fall back, not error");
+            let bytes =
+                map_or_read_index_bytes_with_evidence(handle.as_std_file(), &fs, &path, refused)
+                    .expect("a refused capability gate must fall back, not error");
             assert!(
                 matches!(bytes, MmapIndexBytes::Owned(_)),
                 "refused mmap evidence {refused:?} must read owned bytes, not error"
@@ -614,13 +623,15 @@ mod tests {
     // A FileBacked-admissible host maps the real file (the fast path stays fast).
     #[test]
     fn admitted_evidence_maps_the_real_file() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let path = dir.path().join("mmap.index");
         let payload = b"mapped-path-bytes";
-        let (_dir, path) = write_index(payload);
         let fs = RealFs;
-        let file = std::fs::File::open(&path).expect("open index");
+        write_index(&fs, &path, payload);
+        let handle = fs.open_file(&path).expect("open index");
 
         let bytes = map_or_read_index_bytes_with_evidence(
-            Some(&file),
+            handle.as_std_file(),
             &fs,
             &path,
             MmapEvidence::FileBacked,
@@ -636,9 +647,11 @@ mod tests {
     // A virtual handle (no OS file) always reads owned, whatever the evidence.
     #[test]
     fn virtual_handle_reads_owned_regardless_of_evidence() {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let path = dir.path().join("mmap.index");
         let payload = b"virtual-owned-bytes";
-        let (_dir, path) = write_index(payload);
         let fs = RealFs;
+        write_index(&fs, &path, payload);
 
         let bytes =
             map_or_read_index_bytes_with_evidence(None, &fs, &path, MmapEvidence::FileBacked)
