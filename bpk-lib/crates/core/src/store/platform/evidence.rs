@@ -99,12 +99,13 @@ pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) ->
     // touches the host filesystem (issue #171): a MemFs probe stays in memory
     // and its `as_std_file()` is `None`, so mmap is observed-unsupported and NO
     // host tempfile is ever created; RealFs mints a real file to actually map.
-    // A per-call unique leaf (pid + counter) so concurrent probes on the same
-    // backend never remove each other's just-created probe — the fixed-name race
-    // the previous `NamedTempFile` avoided by construction.
+    // A per-call unique leaf (a process-wide atomic counter) so concurrent
+    // probes never remove each other's just-created file — the fixed-name race
+    // the previous `NamedTempFile` avoided by construction. No pid component:
+    // the store's exclusive dir lock already means one process per `data_dir`,
+    // and `std::process::id()` panics on no-pid targets such as wasm32.
     let probe_path = data_dir.join(format!(
-        ".batpak-mmap-probe-{}-{}",
-        std::process::id(),
+        ".batpak-mmap-probe-{}",
         MMAP_PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = fs.remove_file_if_present(&probe_path);
