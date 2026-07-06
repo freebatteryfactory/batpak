@@ -70,12 +70,12 @@
 ## WORK PACKAGES
 
 ### WP1 — Prove the gates bite (CROWN — do first; a green gate without a red fixture is superstition)
-- [ ] **C1** unsafe-ledger detector must visit unsafe ops inside `unsafe fn` bodies (today only
-  `visit_expr_unsafe` = `unsafe {}` blocks). Anchor newly-surfaced naked-FFI sites. Red fixture:
-  unanchored unsafe op in an `unsafe fn` FAILS the gate. Positive fixture: anchored passes.
-  Detector-hardening, NOT a waiver — do not broaden the unsafe allowance.
-  `tools/integrity/src/unsafe_ledger.rs:333`; sites `bvisor/launcher/linux/sys.rs:648 child_fail`,
-  `:533 run_child`, `backend/linux/sys.rs:332 apply_fd_placements`.
+- [x] **C1** unsafe-ledger detector now visits `unsafe fn` bodies (`visit_item_fn` +
+  `visit_impl_item_fn`), not only `unsafe {}` blocks. The 3 surfaced naked-FFI sites
+  (`run_child`, `child_fail`, `apply_fd_placements`) are anchored + ledgered (23 sites ↔ 23
+  entries; structural-check green). Red fixture `unanchored_unsafe_fn_body_fails_closed` bites
+  (would pass-as-green under the old visitor); positive twin passes. Detector-hardening, no new
+  waiver. `unsafe_ledger.rs` visitor + fixtures; `unsafe_ledger.yaml` +3 entries. DONE.
 - [ ] **C2/LD1** family version-drift gate `ast_grep_family_version.rs` — match `block_mapping_pair`
   (not `plain_scalar`) so the regex can match; wire into CI; sync stale checklists (`syncbat`/
   `netbat` `0.8.2`, `bvisor` `0.9.0` → `0.10.0`). `traceability/public_api/*_semver_checklist.yaml`.
