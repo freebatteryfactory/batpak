@@ -1,4 +1,4 @@
-use crate::store::platform::fs::{StoreFile, StoreFs};
+use crate::store::platform::fs::{FileKind, StoreFile, StoreFs};
 use crate::store::stats::{
     ActiveSegmentReadEvidence, ClockEvidence, HostEvidenceSummary, LockLeafSymlinkProtection,
     MmapAdmissionSummary, MmapEvidence, ParentDirSyncAdmissionSummary, ParentDirSyncEvidence,
@@ -16,7 +16,7 @@ pub(crate) fn collect_for_store_path(
 ) -> PlatformEvidenceSummary {
     let mmap_evidence = mmap_evidence_for_store_path(data_dir, fs);
     let store_path = StorePathEvidenceSummary {
-        path_status: path_status(data_dir),
+        path_status: path_status(data_dir, fs),
         parent_dir_sync: parent_dir_sync_evidence(),
         lock_leaf_symlink_protection: lock_leaf_symlink_protection(),
         mmap_index: mmap_evidence,
@@ -34,9 +34,9 @@ pub(crate) fn collect_for_store_path(
     }
 }
 
-pub(crate) fn path_status(data_dir: &Path) -> StorePathStatusEvidence {
-    match super::fs::metadata(data_dir) {
-        Ok(metadata) if metadata.is_dir() => StorePathStatusEvidence::ObservedDirectory,
+pub(crate) fn path_status(data_dir: &Path, fs: &dyn StoreFs) -> StorePathStatusEvidence {
+    match fs.metadata(data_dir) {
+        Ok(stat) if stat.kind == FileKind::Dir => StorePathStatusEvidence::ObservedDirectory,
         Ok(_) => StorePathStatusEvidence::ObservedUnsupportedNotDirectory,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             StorePathStatusEvidence::UnknownMissing
@@ -86,7 +86,7 @@ pub(crate) fn active_segment_read_evidence() -> ActiveSegmentReadEvidence {
 static MMAP_PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) -> MmapEvidence {
-    match path_status(data_dir) {
+    match path_status(data_dir, fs) {
         StorePathStatusEvidence::ObservedDirectory => {}
         StorePathStatusEvidence::ObservedUnsupportedNotDirectory => {
             return MmapEvidence::ObservedUnsupported;
@@ -112,6 +112,10 @@ pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) ->
         return MmapEvidence::ProbeFailed;
     };
     let evidence = probe_mmap_admission(&mut *probe);
+    // Release the handle BEFORE unlinking: a backend that cannot remove an open
+    // file (Windows, and virtual backends keyed on live handles) would otherwise
+    // leave the probe behind. `NamedTempFile` cleaned up on drop.
+    drop(probe);
     let _ = fs.remove_file_if_present(&probe_path);
     evidence
 }
@@ -193,7 +197,7 @@ mod tests {
         let missing = dir.path().join("missing-store-path");
 
         assert_eq!(
-            path_status(&missing),
+            path_status(&missing, &crate::store::platform::fs::RealFs),
             StorePathStatusEvidence::UnknownMissing,
             "PROPERTY: a missing store path is unknown/missing evidence, not a probe failure"
         );
@@ -207,7 +211,7 @@ mod tests {
         std::fs::write(&file_path, b"not a directory")?;
 
         assert_eq!(
-            path_status(&file_path),
+            path_status(&file_path, &crate::store::platform::fs::RealFs),
             StorePathStatusEvidence::ObservedUnsupportedNotDirectory,
             "PROPERTY: an existing non-directory path must be unsupported evidence, not accepted as a store directory"
         );
@@ -227,7 +231,7 @@ mod tests {
         let squatter = dir.path().join("squatting-file");
         std::fs::write(&squatter, b"a file squatting on a directory component")?;
 
-        let probed = path_status(&squatter.join("child"));
+        let probed = path_status(&squatter.join("child"), &crate::store::platform::fs::RealFs);
         assert!(
             matches!(
                 &probed,
@@ -241,7 +245,7 @@ mod tests {
         // the ONLY error kind the guard may classify as absence.
         let missing = dir.path().join("missing-store-path");
         assert_eq!(
-            path_status(&missing),
+            path_status(&missing, &crate::store::platform::fs::RealFs),
             StorePathStatusEvidence::UnknownMissing,
             "PROPERTY: NotFound remains the one error classified as absence"
         );
