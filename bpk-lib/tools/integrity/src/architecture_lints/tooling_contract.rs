@@ -868,14 +868,17 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
             && coverage_content.contains("coverage_profraw_dir"),
         "xtask coverage must route raw LLVM profiles into a dedicated staging directory instead of spraying .profraw files into the repo root",
     )?;
+    // Match the `--profile ci` flag pair layout-agnostically (any whitespace
+    // between the two string args) so rustfmt reformatting cannot break this gate
+    // closed while the profile is still used — matching BEHAVIOR (the flag is
+    // present), not an exact arg layout. LD4 made coverage derive its `-p <crate>`
+    // selectors from `publish::PUBLISH_CRATES`, so `"ci"` is no longer followed
+    // inline by `-p batpak`.
+    let uses_ci_profile = regex::Regex::new(r#""--profile",\s*"ci""#)
+        .context("compile coverage --profile-ci regex")?
+        .is_match(&coverage_content);
     ensure(
-        // Match the `--profile ci` flag pair regardless of what follows it (a
-        // trailing comma, `]`, or a newline). Coverage derives its `-p <crate>`
-        // selectors from `publish::PUBLISH_CRATES`, so `"ci"` is no longer
-        // followed inline by `-p batpak` — matching behavior (the flag is used),
-        // not the exact arg layout, keeps this gate from breaking on refactors.
-        coverage_content.contains("\"--profile\", \"ci\"")
-            || coverage_content.contains("\"--profile\",\n        \"ci\""),
+        uses_ci_profile,
         "xtask coverage must use the ci nextest profile so slow compile-fail tests remain truthful under coverage",
     )?;
     ensure(
@@ -1028,7 +1031,7 @@ fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
                     && content.contains("\"test\"")
                     && content.contains("\"clippy\""),
                 format!(
-                    "{label} must gate {package} (explicitly, via --workspace, or via FAMILY_CRATES) with check, test, and clippy while default-members stays core-only"
+                    "{label} must gate {package} (explicitly, via --workspace, via FAMILY_CRATES, or via PUBLISH_CRATES) with check, test, and clippy while default-members stays core-only"
                 ),
             )?;
         }
@@ -1037,11 +1040,11 @@ fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
     for package in &active_family_crates {
         ensure(
             gates_family(&coverage_rs, package),
-            format!("tools/xtask/src/coverage.rs must include {package} (explicitly or via --workspace) while default-members stays core-only"),
+            format!("tools/xtask/src/coverage.rs must include {package} (explicitly, via --workspace, via FAMILY_CRATES, or via PUBLISH_CRATES) while default-members stays core-only"),
         )?;
         ensure(
             gates_family(&docs_rs, package),
-            format!("tools/xtask/src/docs.rs must include {package} (explicitly or via --workspace) while default-members stays core-only"),
+            format!("tools/xtask/src/docs.rs must include {package} (explicitly, via --workspace, via FAMILY_CRATES, or via PUBLISH_CRATES) while default-members stays core-only"),
         )?;
     }
 
