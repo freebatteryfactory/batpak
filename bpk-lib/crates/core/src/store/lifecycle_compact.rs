@@ -170,6 +170,7 @@ pub(crate) fn compact(
         Some(merged_id),
         &result,
         Some(&merged_path),
+        fs.as_ref(),
     )?;
     Ok((result, report))
 }
@@ -234,6 +235,7 @@ fn failed_compaction_with_rollback(
         Some(ctx.merged_segment_id),
         &result,
         None,
+        ctx.fs,
     )?;
     Ok((result, report))
 }

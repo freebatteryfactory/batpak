@@ -19,6 +19,7 @@ use super::{
     CompactionStrategyShape, CompactionStructuralFingerprint, COMPACTION_REPORT_SCHEMA_VERSION,
 };
 use crate::evidence::content_hash;
+use crate::store::platform::fs::{RealFs, StoreFs};
 use crate::store::segment::{CompactionOutcome, CompactionResult};
 use crate::store::{CompactionConfig, CompactionStrategy};
 use std::path::{Path, PathBuf};
@@ -125,7 +126,7 @@ fn report_for_run_flags_a_failed_run_with_preswap_rollback_and_no_output_hash() 
         segments_removed: 0,
         bytes_reclaimed: 0,
     };
-    let body = report_for_run(&config, 5, &sealed, Some(2), &result, None)
+    let body = report_for_run(&config, 5, &sealed, Some(2), &result, None, &RealFs)
         .expect("failed run report encodes");
 
     assert!(
@@ -178,8 +179,16 @@ fn report_for_run_hashes_a_readable_merged_segment_and_passes_counts_through() {
         segments_removed: 2,
         bytes_reclaimed: 4096,
     };
-    let body = report_for_run(&config, 5, &sealed, Some(2), &result, Some(&merged))
-        .expect("performed run report encodes");
+    let body = report_for_run(
+        &config,
+        5,
+        &sealed,
+        Some(2),
+        &result,
+        Some(&merged),
+        &RealFs,
+    )
+    .expect("performed run report encodes");
 
     assert_eq!(
         body.output_segment_bytes_hash,
@@ -202,6 +211,46 @@ fn report_for_run_hashes_a_readable_merged_segment_and_passes_counts_through() {
 }
 
 #[test]
+fn report_for_run_hashes_a_merged_segment_from_a_virtual_backend() {
+    // The merged-segment evidence hash must read through the CONFIGURED backend.
+    // Over a MemFs backend the segment exists ONLY in `fs`, so the pre-fix host
+    // read reported OutputSegmentHashUnavailable (or hashed an unrelated host
+    // file); `fs.read` hashes the real merged bytes.
+    let fs = crate::store::platform::mem_fs::MemFs::new();
+    let data_dir = Path::new("/virtual/compact");
+    fs.create_dir_all(data_dir).expect("seed virtual data dir");
+    let merged = data_dir.join("000002.fbat");
+    let merged_bytes = b"virtual-merged-segment-evidence-bytes";
+    {
+        let mut seg = fs.create_new_file(&merged).expect("create merged segment");
+        seg.write_all(merged_bytes).expect("write merged bytes");
+    }
+
+    let sealed = sealed_pair();
+    let config = merge_config(1);
+    let result = CompactionResult {
+        outcome: CompactionOutcome::Performed,
+        segments_removed: 2,
+        bytes_reclaimed: 4096,
+    };
+    let body = report_for_run(&config, 5, &sealed, Some(2), &result, Some(&merged), &fs)
+        .expect("virtual-backend run report encodes");
+
+    assert_eq!(
+        body.output_segment_bytes_hash,
+        Some(content_hash(merged_bytes)),
+        "the merged segment must be hashed through the configured backend, not the host"
+    );
+    assert!(
+        !body.findings.iter().any(|finding| matches!(
+            finding,
+            CompactionReportFinding::OutputSegmentHashUnavailable { .. }
+        )),
+        "a readable virtual merged segment must not be reported unavailable"
+    );
+}
+
+#[test]
 fn report_for_run_flags_a_performed_run_whose_merged_bytes_cannot_be_hashed() {
     // A Performed run must still be evidence-complete when the merged bytes are
     // unavailable: `None` path (never materialized for hashing) and an
@@ -215,7 +264,7 @@ fn report_for_run_flags_a_performed_run_whose_merged_bytes_cannot_be_hashed() {
         bytes_reclaimed: 10,
     };
 
-    let none_body = report_for_run(&config, 5, &sealed, Some(2), &result, None)
+    let none_body = report_for_run(&config, 5, &sealed, Some(2), &result, None, &RealFs)
         .expect("performed/none report encodes");
     assert_eq!(none_body.output_segment_bytes_hash, None);
     assert!(
@@ -227,8 +276,16 @@ fn report_for_run_flags_a_performed_run_whose_merged_bytes_cannot_be_hashed() {
     );
 
     let missing = Path::new("/nonexistent/batpak/merged/never.fbat");
-    let missing_body = report_for_run(&config, 5, &sealed, Some(2), &result, Some(missing))
-        .expect("performed/unreadable report encodes");
+    let missing_body = report_for_run(
+        &config,
+        5,
+        &sealed,
+        Some(2),
+        &result,
+        Some(missing),
+        &RealFs,
+    )
+    .expect("performed/unreadable report encodes");
     assert_eq!(missing_body.output_segment_bytes_hash, None);
     assert!(
         missing_body.findings.iter().any(|finding| matches!(
