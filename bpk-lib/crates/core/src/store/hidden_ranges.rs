@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 pub(crate) const VISIBILITY_RANGES_MAGIC: &[u8; 6] = b"FBATVR";
+/// On-disk format version stored in the visibility-ranges sidecar (`visibility_ranges.fbv`) header.
 pub const VISIBILITY_RANGES_VERSION: u16 = 2;
 pub(crate) const VISIBILITY_RANGES_FILENAME: &str = "visibility_ranges.fbv";
 
