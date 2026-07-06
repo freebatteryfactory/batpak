@@ -68,9 +68,12 @@ fn read_mmap_usize(bytes: Option<&[u8]>, field: &str) -> Result<usize, String> {
 
 /// Resolve the mmap-index backing bytes: memory-map the real OS file when the
 /// seam handle exposes one (`as_std_file`) and the platform admits mmap, else
-/// fall back to an owned whole-file read (virtual backends, or hosts without
-/// mmap) — byte-identical downstream. On failure returns the `FileLoad` the
-/// caller must propagate.
+/// fall back to an owned whole-file read — byte-identical downstream. The
+/// fallback covers a virtual handle (no OS file), a host the mmap capability
+/// gate refuses (`Unknown`/`ObservedUnsupported`/`ProbeFailed`), and a mmap
+/// syscall that fails on an admitted host. Only an *unreadable* file yields the
+/// `FileLoad` reason the caller must propagate; a mappable-but-unmapped file is
+/// still a usable index, so it is never downgraded to a rebuild-from-segments.
 fn map_or_read_index_bytes(
     std_file: Option<&std::fs::File>,
     fs: &dyn crate::store::platform::fs::StoreFs,
@@ -78,49 +81,75 @@ fn map_or_read_index_bytes(
     clock: &dyn crate::store::Clock,
     path: &Path,
 ) -> Result<MmapIndexBytes, String> {
-    let Some(std_file) = std_file else {
-        // Virtual handle: no OS file to map — take the owned whole-file read.
-        return match fs.read(path) {
-            Ok(bytes) => Ok(MmapIndexBytes::Owned(bytes)),
-            Err(error) => {
-                tracing::warn!(
-                    target: "batpak::mmap_index",
-                    path = %path.display(),
-                    error = %error,
-                    "failed to read mmap index"
-                );
-                Err(format!("failed to read mmap index: {error}"))
-            }
-        };
-    };
-    // SAFETY: Mmap::map requires a valid open file descriptor. The handle
-    // remains open for the duration of the mapping. The mmap index file is
-    // read-only and not written to while open — external modification would be
-    // a usage error, not a correctness concern for safe Rust callers.
-    let evidence = crate::store::platform::evidence::collect_for_store_path(data_dir, clock);
-    let admission =
-        match crate::store::platform::mmap::admit_mmap_index(evidence.store_path.mmap_index) {
-            Ok(admission) => admission,
-            Err(error) => {
-                tracing::warn!(
-                    target: "batpak::mmap_index",
-                    path = %path.display(),
-                    error = %error,
-                    "mmap index admission failed"
-                );
-                return Err(format!("mmap index admission failed: {error}"));
-            }
-        };
-    match unsafe { crate::store::platform::mmap::map_mmap_index_file(std_file, admission) } {
-        Ok(mmap) => Ok(MmapIndexBytes::Mapped(mmap)),
+    let mmap_evidence = crate::store::platform::evidence::collect_for_store_path(data_dir, clock)
+        .store_path
+        .mmap_index;
+    map_or_read_index_bytes_with_evidence(std_file, fs, path, mmap_evidence)
+}
+
+/// The decision core of [`map_or_read_index_bytes`] with the platform mmap
+/// evidence injected, so the owned-read fallback is deterministically testable
+/// without pinning a specific host. `admit_mmap_index` is a CAPABILITY gate: it
+/// refuses hosts that cannot (or have not been proven to) mmap, never impugning
+/// the index bytes. So a refusal — like a virtual handle or a failed mmap
+/// syscall — degrades to the owned whole-file read, which downstream re-runs the
+/// same magic/version/CRC validation; a corrupt file still fails closed there.
+fn map_or_read_index_bytes_with_evidence(
+    std_file: Option<&std::fs::File>,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+    path: &Path,
+    mmap_evidence: crate::store::stats::MmapEvidence,
+) -> Result<MmapIndexBytes, String> {
+    // The owned whole-file read is the universal fallback — the only branch that
+    // may legitimately fail (an unreadable file).
+    let read_owned = || match fs.read(path) {
+        Ok(bytes) => Ok(MmapIndexBytes::Owned(bytes)),
         Err(error) => {
             tracing::warn!(
                 target: "batpak::mmap_index",
                 path = %path.display(),
                 error = %error,
-                "failed to mmap index file"
+                "failed to read mmap index"
             );
-            Err(format!("failed to mmap index file: {error}"))
+            Err(format!("failed to read mmap index: {error}"))
+        }
+    };
+
+    let Some(std_file) = std_file else {
+        // Virtual handle: no OS file to map — take the owned whole-file read.
+        return read_owned();
+    };
+    let admission = match crate::store::platform::mmap::admit_mmap_index(mmap_evidence) {
+        Ok(admission) => admission,
+        Err(error) => {
+            // Capability gate refused (this host cannot/should-not mmap here):
+            // the index bytes are still good, so read them owned rather than
+            // forcing a rebuild-from-segments.
+            tracing::warn!(
+                target: "batpak::mmap_index",
+                path = %path.display(),
+                error = %error,
+                "mmap index admission refused; falling back to owned read"
+            );
+            return read_owned();
+        }
+    };
+    // SAFETY: Mmap::map requires a valid open file descriptor. The handle
+    // remains open for the duration of the mapping. The mmap index file is
+    // read-only and not written to while open — external modification would be
+    // a usage error, not a correctness concern for safe Rust callers.
+    match unsafe { crate::store::platform::mmap::map_mmap_index_file(std_file, admission) } {
+        Ok(mmap) => Ok(MmapIndexBytes::Mapped(mmap)),
+        Err(error) => {
+            // The syscall failed on an admitted host (e.g. a transient ENOMEM):
+            // degrade to the owned read rather than discarding a usable index.
+            tracing::warn!(
+                target: "batpak::mmap_index",
+                path = %path.display(),
+                error = %error,
+                "failed to mmap index file; falling back to owned read"
+            );
+            read_owned()
         }
     }
 }
@@ -540,4 +569,84 @@ pub(super) fn load_mmap_index(
         stored_allocator,
         cumulative_reserved_kind_fallbacks,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{map_or_read_index_bytes_with_evidence, MmapIndexBytes};
+    use crate::store::platform::fs::RealFs;
+    use crate::store::stats::MmapEvidence;
+
+    fn write_index(payload: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::TempDir::new().expect("create temp dir");
+        let path = dir.path().join("mmap.index");
+        std::fs::write(&path, payload).expect("write index bytes");
+        (dir, path)
+    }
+
+    // The mmap capability gate is a CAPABILITY gate, not a trust gate: every
+    // evidence value it refuses must degrade to an owned whole-file read of the
+    // SAME bytes, never a hard error that would force a rebuild-from-segments.
+    // This is the documented "hosts without mmap" fallback, pinned so the
+    // `Some(std_file)` branch can never regress back to returning `Err`.
+    #[test]
+    fn refused_mmap_evidence_falls_back_to_owned_read() {
+        let payload = b"owned-fallback-bytes-are-byte-identical-downstream";
+        let (_dir, path) = write_index(payload);
+        let fs = RealFs;
+        let file = std::fs::File::open(&path).expect("open index");
+
+        for refused in [
+            MmapEvidence::Unknown,
+            MmapEvidence::ObservedUnsupported,
+            MmapEvidence::ProbeFailed,
+        ] {
+            let bytes = map_or_read_index_bytes_with_evidence(Some(&file), &fs, &path, refused)
+                .expect("a refused capability gate must fall back, not error");
+            assert!(
+                matches!(bytes, MmapIndexBytes::Owned(_)),
+                "refused mmap evidence {refused:?} must read owned bytes, not error"
+            );
+            assert_eq!(&*bytes, payload, "owned fallback bytes must match the file");
+        }
+    }
+
+    // A FileBacked-admissible host maps the real file (the fast path stays fast).
+    #[test]
+    fn admitted_evidence_maps_the_real_file() {
+        let payload = b"mapped-path-bytes";
+        let (_dir, path) = write_index(payload);
+        let fs = RealFs;
+        let file = std::fs::File::open(&path).expect("open index");
+
+        let bytes = map_or_read_index_bytes_with_evidence(
+            Some(&file),
+            &fs,
+            &path,
+            MmapEvidence::FileBacked,
+        )
+        .expect("admitted evidence maps the file");
+        assert!(
+            matches!(bytes, MmapIndexBytes::Mapped(_)),
+            "FileBacked evidence must memory-map the real file"
+        );
+        assert_eq!(&*bytes, payload, "mapped bytes must match the file");
+    }
+
+    // A virtual handle (no OS file) always reads owned, whatever the evidence.
+    #[test]
+    fn virtual_handle_reads_owned_regardless_of_evidence() {
+        let payload = b"virtual-owned-bytes";
+        let (_dir, path) = write_index(payload);
+        let fs = RealFs;
+
+        let bytes =
+            map_or_read_index_bytes_with_evidence(None, &fs, &path, MmapEvidence::FileBacked)
+                .expect("a virtual handle reads owned");
+        assert!(
+            matches!(bytes, MmapIndexBytes::Owned(_)),
+            "a virtual handle must read owned bytes"
+        );
+        assert_eq!(&*bytes, payload, "owned bytes must match the file");
+    }
 }
