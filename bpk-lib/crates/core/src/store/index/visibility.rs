@@ -368,16 +368,13 @@ impl SequenceGate {
         if self.active_fence.load(Ordering::Acquire) != token {
             return Err(crate::store::StoreError::VisibilityFenceNotActive);
         }
-        let _start_update =
-            self.active_fence_start
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                    Some(current.min(start))
-                });
-        let _end_update =
-            self.active_fence_end
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                    Some(current.max(end))
-                });
+        // Monotonic min/max via the dedicated atomic RMW ops (AcqRel): exactly
+        // the fetch_update(|c| c.min/max(..)) these replace, but not deprecated
+        // on the rolling nightly the fuzz lane builds under (`fetch_update` was
+        // renamed to `try_update` there; `fetch_min`/`fetch_max` are unaffected
+        // and stable since 1.45).
+        self.active_fence_start.fetch_min(start, Ordering::AcqRel);
+        self.active_fence_end.fetch_max(end, Ordering::AcqRel);
         Ok(())
     }
 
