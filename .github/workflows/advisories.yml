@@ -21,7 +21,7 @@ concurrency:
 jobs:
   audit:
     name: cargo audit + cargo deny advisories
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
       run:
