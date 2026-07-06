@@ -574,7 +574,11 @@ fn c() {
     fn unanchored_unsafe_fn_body_fails_closed() {
         let src = "unsafe fn child_fail() { do_ffi(); }\n";
         let sites = anchored_from_source(src);
-        assert_eq!(sites.len(), 1, "the `unsafe fn` must be seen as one unsafe surface");
+        assert_eq!(
+            sites.len(),
+            1,
+            "the `unsafe fn` must be seen as one unsafe surface"
+        );
         assert!(sites[0].anchor.is_empty(), "no LEDGER token ⇒ unanchored");
         let err = reconcile(&sites, &Ledger::default())
             .expect_err("an unanchored `unsafe fn` body must fail closed");
@@ -606,7 +610,11 @@ unsafe fn child_fail() { do_ffi(); }
     fn unsafe_trait_default_method_body_is_seen() {
         let with_body = "trait T {\n    unsafe fn f(&self) { do_ffi(); }\n}\n";
         let sites = anchored_from_source(with_body);
-        assert_eq!(sites.len(), 1, "a trait default `unsafe fn` body must be seen");
+        assert_eq!(
+            sites.len(),
+            1,
+            "a trait default `unsafe fn` body must be seen"
+        );
         assert!(sites[0].anchor.is_empty());
         assert!(reconcile(&sites, &Ledger::default())
             .expect_err("an unanchored trait default `unsafe fn` must fail closed")

@@ -7,9 +7,8 @@ use crate::source_cache::SourceCache;
 use crate::{
     agent_surface, architecture_lints, chaos_contract, ci_container_contract, ci_parity,
     complexity, dangerous_hooks_contract, docs_catalog, family_version, glob_coverage,
-    harness_lints,
-    invariant_bridge, literal_regex_contract, mutation_exclusion_registry, public_surface,
-    scope_exclusion_contract, store_pub_fn_coverage, wallclock,
+    harness_lints, invariant_bridge, literal_regex_contract, mutation_exclusion_registry,
+    public_surface, scope_exclusion_contract, store_pub_fn_coverage, wallclock,
 };
 use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeSet;
