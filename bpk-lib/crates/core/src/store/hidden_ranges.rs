@@ -84,7 +84,12 @@ pub(crate) fn write_cancelled_ranges(
             .remove_file_if_present(&final_path)
             .map_err(StoreError::Io)?
         {
-            crate::store::platform::sync::sync_parent_dir(&final_path)?;
+            // Route the parent-dir sync through the backend, not the host: over
+            // a virtual backend (MemFs) a host fsync of `/virtual/...` fails
+            // NotFound, so fence/compaction cleanup would report an error even
+            // though the backend removal succeeded. MemFs no-ops this; RealFs
+            // fsyncs the parent exactly as before.
+            fs.sync_parent_dir(&final_path)?;
         }
         return Ok(());
     }
