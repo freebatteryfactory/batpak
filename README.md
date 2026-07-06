@@ -63,6 +63,7 @@ placement, runtime integration, network boundaries, and application authority.
 | Runtime dispatch | `syncbat` | Operation descriptors, handler registration, runtime receipts |
 | Network terminal | `netbat` | NETBAT/1 frames, bounded request/response |
 | Host contract | `hostbat` | Client manifest, H-interface fingerprints, subscription descriptors |
+| Boundary supervisor | `bvisor` | Confined workload execution over a fail-closed boundary contract (Linux landlock/seccomp/cgroups, Wasm/WASI) |
 
 See [04_BATTERIES.md](04_BATTERIES.md) for the full battery map and
 [05_TERMINALS.md](05_TERMINALS.md) for the ten-op NETBAT profile.
