@@ -214,16 +214,15 @@ fn conformance_corpus_detects_a_divergent_backend() {
 }
 
 /// Issue #171: `Store::diagnostics()` must resolve platform evidence THROUGH the
-/// configured backend, never the host filesystem. Both failure shapes are
-/// covered:
-///   * a `data_dir` that ALSO exists on the host (real tempdir) — the pre-fix
-///     mmap probe created a `NamedTempFile` there and reported `FileBacked`;
-///   * a PURELY virtual `data_dir` (`/virtual/...`, absent on the host) — the
-///     pre-fix `path_status` used host `metadata`, saw `NotFound`, and reported
-///     the existing virtual store as `Unknown` (missing).
-/// After the fix `path_status` and the mmap probe both route through `fs`, so a
-/// MemFs store reports `ObservedUnsupported` (never `FileBacked`/`Unknown`) and
-/// no host file is ever created.
+/// configured backend, never the host filesystem. This covers both failure
+/// shapes. First, a `data_dir` that ALSO exists on the host (a real tempdir):
+/// the pre-fix mmap probe created a `NamedTempFile` there and reported
+/// `FileBacked`. Second, a PURELY virtual `data_dir` (`/virtual/...`, absent on
+/// the host): the pre-fix `path_status` used host `metadata`, saw `NotFound`,
+/// and reported the existing virtual store as `Unknown`. After the fix
+/// `path_status` and the mmap probe both route through `fs`, so a MemFs store
+/// reports `ObservedUnsupported` (never `FileBacked`/`Unknown`) and never
+/// touches the host.
 #[test]
 fn diagnostics_over_memfs_reports_virtual_mmap_evidence_not_file_backed() {
     let host_dir = tempfile::tempdir().expect("real host tempdir");
