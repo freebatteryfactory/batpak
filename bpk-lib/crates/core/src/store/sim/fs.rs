@@ -542,8 +542,11 @@ impl StoreFs for SimFs {
             .durable
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(path.to_path_buf())
-            .or_default();
+            // `insert` (not `entry().or_default()`): a recreated path — e.g.
+            // compaction reusing a merged segment id — must RESET to durable_len
+            // 0, not inherit the previous file's durable length, or a dropped
+            // sync on the new file lets `crash()` keep never-synced bytes.
+            .insert(path.to_path_buf(), DurableState::default());
         Ok(Box::new(SimStoreFile {
             inner,
             path: path.to_path_buf(),

@@ -88,6 +88,13 @@ impl MemFs {
         )
     }
 
+    fn is_a_directory(path: &Path) -> io::Error {
+        io::Error::new(
+            io::ErrorKind::IsADirectory,
+            format!("MemFs: is a directory: {}", path.display()),
+        )
+    }
+
     fn parent_must_exist(tree: &MemTree, path: &Path) -> io::Result<()> {
         match path.parent() {
             // A bare relative name has no parent to validate.
@@ -279,6 +286,9 @@ impl StoreFs for MemFs {
 
     fn open_file(&self, path: &Path) -> io::Result<Box<dyn StoreFile>> {
         let tree = self.lock_tree();
+        if tree.dirs.contains(path) {
+            return Err(MemFs::is_a_directory(path));
+        }
         if !tree.files.contains_key(path) {
             return Err(MemFs::not_found(path));
         }
@@ -300,10 +310,16 @@ impl StoreFs for MemFs {
 
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         let tree = self.lock_tree();
-        tree.files
-            .get(path)
-            .cloned()
-            .ok_or_else(|| MemFs::not_found(path))
+        if let Some(bytes) = tree.files.get(path) {
+            return Ok(bytes.clone());
+        }
+        // A directory at a file path fails closed as `IsADirectory` (like
+        // RealFs), NOT `NotFound`: loaders treat NotFound as "artifact absent"
+        // and would silently ignore a corrupt virtual store.
+        if tree.dirs.contains(path) {
+            return Err(MemFs::is_a_directory(path));
+        }
+        Err(MemFs::not_found(path))
     }
 
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
@@ -378,6 +394,21 @@ impl StoreFs for MemFs {
             Some(_) => Ok(()),
             None => Err(MemFs::not_found(path)),
         }
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
+        let mut tree = self.lock_tree();
+        if !tree.dirs.contains(path) {
+            return Err(MemFs::not_found(path));
+        }
+        // MemFs tracks directories explicitly, so — unlike the recursive
+        // default, which only clears contents — remove the directory ENTRY and
+        // every nested file/dir too; a lingering `tree.dirs` entry would keep
+        // re-appearing in `read_dir(parent)` after an `Ok(true)` removal.
+        tree.files
+            .retain(|file_path, _| !file_path.starts_with(path));
+        tree.dirs.retain(|dir_path| !dir_path.starts_with(path));
+        Ok(())
     }
 
     fn named_temp_in(&self, dir: &Path) -> io::Result<Box<dyn StagedFile>> {

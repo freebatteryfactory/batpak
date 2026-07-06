@@ -131,6 +131,18 @@ pub fn backend_upholds_the_documented_contract(
         matches!(fs.read(&stale), Err(error) if error.kind() == std::io::ErrorKind::NotFound),
         "remove_dir_all must clear directory contents through the seam"
     );
+    // The directory entry itself is gone: a second removal is a clean no-op.
+    assert!(
+        !fs.remove_dir_all_if_present(&cleanup_dir)?,
+        "an already-removed directory reports Ok(false)"
+    );
+    // Reading a directory path fails closed (not NotFound), so a corrupt
+    // virtual store is never mistaken for an absent artifact.
+    fs.create_dir_all(&cleanup_dir)?;
+    assert!(
+        matches!(fs.read(&cleanup_dir), Err(error) if error.kind() != std::io::ErrorKind::NotFound),
+        "reading a directory path must fail closed, not report NotFound"
+    );
 
     // The store-directory lock excludes a second cooperating owner while the
     // guard lives, and frees the slot when it drops.
