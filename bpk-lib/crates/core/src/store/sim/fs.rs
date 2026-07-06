@@ -33,8 +33,8 @@
 //! [`MemFs`]: crate::store::MemFs
 
 use crate::store::platform::fs::{
-    DirEntryInfo, FileStat, PositionedReadError, RealFs, StagedFile, StoreDirLockGuard, StoreFile,
-    StoreFs,
+    DirEntryInfo, FileKind, FileStat, PositionedReadError, RealFs, StagedFile, StoreDirLockGuard,
+    StoreFile, StoreFs,
 };
 use crate::store::StoreError;
 use std::collections::BTreeMap;
@@ -678,10 +678,30 @@ impl StoreFs for SimFs {
         self.inner.remove_file(path)?;
         // The file is unlinked: forget its durable prefix so a recreated path
         // starts fresh and `crash()` never resurrects a stale length. The
-        // trait-default `remove_dir_all` funnels through this method, so
-        // recursive removals inherit the same cleanup.
+        // `remove_dir_all` override below funnels child removals through this
+        // method, so recursive removals inherit the same cleanup.
         self.state.forget_durable(path);
         Ok(())
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
+        // Clear the contents through the per-file faultable path (as the trait
+        // default does) so recursive removals still model crashes and forget
+        // each removed child's durable prefix via `remove_file`...
+        for entry in self.read_dir(path)? {
+            let child = path.join(&entry.name);
+            if entry.kind == FileKind::Dir {
+                self.remove_dir_all(&child)?;
+            } else {
+                self.remove_file_if_present(&child)?;
+            }
+        }
+        // ...then remove the now-empty directory ENTRY itself through the inner
+        // backend. The trait default stops after clearing contents, which would
+        // leave the directory alive under RealFs and MemFs alike — letting
+        // `clear_fork_store_artifacts` / `clear_snapshot_store_artifacts` report
+        // the cursor directory removed while stale destination state survives.
+        self.inner.remove_dir_all(path)
     }
 
     fn named_temp_in(&self, dir: &Path) -> io::Result<Box<dyn StagedFile>> {
@@ -784,5 +804,58 @@ mod tests {
             0,
             "PROPERTY: an all-dropped-sync file loses its entire tail on crash"
         );
+    }
+
+    #[test]
+    fn remove_dir_all_removes_the_directory_entry_over_every_inner() {
+        // SimFs is a fault LAYER; directory removal must remove the ENTRY, not
+        // merely clear contents like the trait default. Otherwise fork/snapshot
+        // cleanup over a SimFs-wrapped backend reports a cursor directory
+        // removed while it survives, leaving stale destination state. Proven
+        // over both a real-file and an in-memory inner — delegation must hold
+        // regardless of backend.
+        let real_dir = tempfile::tempdir().expect("tmpdir");
+        let cases: Vec<(SimFs, std::path::PathBuf)> = vec![
+            (
+                SimFs::layered(0x5117_D111, 0, Arc::new(RealFs)),
+                real_dir.path().join("store"),
+            ),
+            (
+                SimFs::layered(
+                    0x5117_D222,
+                    0,
+                    Arc::new(crate::store::platform::mem_fs::MemFs::new()),
+                ),
+                std::path::PathBuf::from("/virtual/sim-remove-dir"),
+            ),
+        ];
+
+        for (fs, root) in cases {
+            let dir = root.join("cursors");
+            fs.create_dir_all(&dir).expect("seed directory");
+            let child = dir.join("resume.ckpt");
+            let mut file = fs.create_new_file(&child).expect("create child");
+            file.write_all(b"checkpoint").expect("write child");
+            file.sync_all().expect("sync child");
+            drop(file);
+
+            assert!(
+                fs.remove_dir_all_if_present(&dir)
+                    .expect("remove existing directory"),
+                "an existing directory reports removed"
+            );
+            // The ENTRY is gone: the child reads NotFound and a second removal
+            // is a clean no-op. The trait-default gap would keep the empty
+            // directory alive and report Ok(true) again here.
+            assert!(
+                matches!(fs.read(&child), Err(error) if error.kind() == io::ErrorKind::NotFound),
+                "a child under a removed directory must be gone"
+            );
+            assert!(
+                !fs.remove_dir_all_if_present(&dir)
+                    .expect("second removal of an absent directory"),
+                "an already-removed directory reports Ok(false) — the entry is truly gone"
+            );
+        }
     }
 }
