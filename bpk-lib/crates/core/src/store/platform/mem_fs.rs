@@ -95,6 +95,13 @@ impl MemFs {
         )
     }
 
+    fn not_a_directory(path: &Path) -> io::Error {
+        io::Error::new(
+            io::ErrorKind::NotADirectory,
+            format!("MemFs: not a directory: {}", path.display()),
+        )
+    }
+
     fn parent_must_exist(tree: &MemTree, path: &Path) -> io::Result<()> {
         match path.parent() {
             // A bare relative name has no parent to validate.
@@ -239,6 +246,12 @@ impl StoreFs for MemFs {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntryInfo>> {
         let tree = self.lock_tree();
         if !tree.dirs.contains(path) {
+            // A FILE at a directory path fails closed as `NotADirectory` (like
+            // RealFs's ENOTDIR), NOT `NotFound`: a corrupt virtual store is
+            // never mistaken for an empty or absent directory.
+            if tree.files.contains_key(path) {
+                return Err(MemFs::not_a_directory(path));
+            }
             return Err(MemFs::not_found(path));
         }
         let mut entries = Vec::new();
@@ -375,6 +388,10 @@ impl StoreFs for MemFs {
             None if tree.dirs.contains(from) => return Err(MemFs::is_a_directory(from)),
             None => return Err(MemFs::not_found(from)),
         };
+        // The destination's parent must exist, like RealFs's `std::fs::copy`
+        // fails `NotFound` when it cannot open the destination — never leave an
+        // unreachable file whose parent isn't in the tree.
+        MemFs::parent_must_exist(&tree, to)?;
         let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         tree.files.insert(to.to_path_buf(), bytes);
         Ok(len)
@@ -407,6 +424,10 @@ impl StoreFs for MemFs {
         if tree.dirs.contains(to) {
             return Err(MemFs::is_a_directory(to));
         }
+        // The destination's parent must exist (RealFs rename into a missing
+        // directory fails NotFound). Checked BEFORE removing `from`, so a
+        // refused rename leaves the source intact.
+        MemFs::parent_must_exist(&tree, to)?;
         let bytes = tree
             .files
             .remove(from)
@@ -418,6 +439,13 @@ impl StoreFs for MemFs {
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         let mut tree = self.lock_tree();
+        // A directory at `path` fails closed (like RealFs's remove_file on a
+        // directory errors), NOT `NotFound`: otherwise `remove_file_if_present`
+        // would report `Ok(false)` ("nothing to remove") and silently mask a
+        // corrupt store where a directory sits where a file is expected.
+        if tree.dirs.contains(path) {
+            return Err(MemFs::is_a_directory(path));
+        }
         match tree.files.remove(path) {
             Some(_) => Ok(()),
             None => Err(MemFs::not_found(path)),

@@ -162,6 +162,37 @@ pub fn backend_upholds_the_documented_contract(
         "a rename refused for a directory destination must leave the source intact"
     );
 
+    // read_dir on a FILE path fails closed as not-a-directory (RealFs ENOTDIR),
+    // never NotFound — a corrupt store isn't mistaken for an empty directory.
+    let read_dir_on_file = fs.read_dir(&file_path);
+    assert!(
+        matches!(&read_dir_on_file, Err(error) if error.kind() != std::io::ErrorKind::NotFound),
+        "read_dir on a file must fail closed (not NotFound), got {read_dir_on_file:?}"
+    );
+    // remove_file on a DIRECTORY errors rather than reporting Ok(false): a
+    // directory where a file is expected must surface, not read as "absent".
+    assert!(
+        fs.remove_file_if_present(&cleanup_dir).is_err(),
+        "remove_file on a directory must error, not silently report Ok(false)"
+    );
+    // copy and rename into a MISSING parent directory fail closed (RealFs seam
+    // contract), never publishing an unreachable file the tree can't enumerate.
+    let missing_parent = root.join("absent_dir").join("target.bin");
+    assert!(
+        fs.cow_copy_file(&file_path, &missing_parent, CopyPreference::DeepCopyOnly)
+            .is_err(),
+        "copy into a missing parent directory must fail, not insert an unreachable file"
+    );
+    assert!(
+        fs.rename(&file_path, &missing_parent).is_err(),
+        "rename into a missing parent directory must fail, not insert an unreachable file"
+    );
+    assert_eq!(
+        fs.metadata(&file_path)?.kind,
+        FileKind::File,
+        "a rename into a missing parent must leave the source intact"
+    );
+
     // The store-directory lock excludes a second cooperating owner while the
     // guard lives, and frees the slot when it drops.
     let lock_path = root.join(".probe.lock");
