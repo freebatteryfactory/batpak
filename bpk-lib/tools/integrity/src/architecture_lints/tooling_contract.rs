@@ -1009,6 +1009,12 @@ fn check_syncbat_is_explicitly_gated(repo_root: &Path) -> Result<()> {
         content.contains(&format!("\"{package}\""))
             || content.contains("--workspace")
             || content.contains("FAMILY_CRATES")
+            // `PUBLISH_CRATES` is the publish-crate oracle (batpak/syncbat/netbat/
+            // hostbat/bvisor). A file deriving its package set from it provably
+            // covers every family crate — the same dynamic guarantee as
+            // `FAMILY_CRATES`/`--workspace`, and stronger (LD4: coverage derives
+            // from it, so `syncbat` is gated without naming the literal).
+            || content.contains("PUBLISH_CRATES")
     };
 
     for (label, content) in [
