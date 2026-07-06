@@ -199,6 +199,15 @@ impl StagedFile for MemStagedFile {
         _admission: crate::store::platform::sync::ParentDirSyncAdmission,
     ) -> io::Result<()> {
         let mut tree = self.tree.lock().unwrap_or_else(PoisonError::into_inner);
+        // A directory already at `final_path` fails the publish closed, like a
+        // RealFs rename over a directory: without this a corrupt virtual store
+        // (e.g. a `cursors/<id>.ckpt/` directory) would end up present as BOTH a
+        // file and a directory — `read()` serving the new bytes while
+        // `read_dir()` still reports a directory. The collision invariant (a
+        // path is never in both `tree.files` and `tree.dirs`) holds on publish.
+        if tree.dirs.contains(final_path) {
+            return Err(MemFs::is_a_directory(final_path));
+        }
         // One locked insert IS the atomic publish: a reader sees the old
         // complete bytes or the new complete bytes, never a mixture, and
         // the name is as durable as the medium the moment it lands.
@@ -442,5 +451,63 @@ impl StoreFs for MemFs {
             path: lock_path.to_path_buf(),
             tree: Arc::clone(&self.tree),
         })))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::platform::sync::admit_current_parent_dir_sync;
+
+    #[test]
+    fn persist_over_a_directory_fails_closed_preserving_the_collision_invariant() {
+        // An atomic publish onto a path that already exists as a directory (a
+        // corrupt virtual store, e.g. a `visibility_ranges.fbv/` directory)
+        // must fail closed like a RealFs rename over a directory — never insert
+        // a file that would leave the path present as BOTH a file and a dir.
+        let fs = MemFs::new();
+        let root = Path::new("/virtual/publish");
+        fs.create_dir_all(root).expect("seed root");
+        let occupied = root.join("visibility_ranges.fbv");
+        fs.create_dir_all(&occupied)
+            .expect("seed occupying directory");
+
+        let mut staged = fs.named_temp_in(root).expect("stage temp");
+        staged.write_all(b"fresh-metadata").expect("write staged");
+        staged.sync_all().expect("sync staged");
+        let admission = admit_current_parent_dir_sync().expect("mint parent-dir-sync admission");
+
+        let published = staged.persist(&occupied, admission);
+        assert!(
+            matches!(&published, Err(error) if error.kind() == io::ErrorKind::IsADirectory),
+            "publishing onto a directory must fail closed with IsADirectory, got {published:?}"
+        );
+        // The path is still ONLY a directory — the failed publish inserted no
+        // colliding file, so a read fails closed as IsADirectory (not bytes).
+        assert!(
+            matches!(fs.read(&occupied), Err(error) if error.kind() == io::ErrorKind::IsADirectory),
+            "the path must stay a directory; no colliding file may be inserted"
+        );
+    }
+
+    #[test]
+    fn persist_to_a_fresh_path_publishes_atomically() {
+        let fs = MemFs::new();
+        let root = Path::new("/virtual/publish-ok");
+        fs.create_dir_all(root).expect("seed root");
+        let mut staged = fs.named_temp_in(root).expect("stage temp");
+        staged.write_all(b"published-bytes").expect("write staged");
+        staged.sync_all().expect("sync staged");
+        let admission = admit_current_parent_dir_sync().expect("mint parent-dir-sync admission");
+
+        let final_path = root.join("segment.fbat");
+        staged
+            .persist(&final_path, admission)
+            .expect("publish to a fresh path");
+        assert_eq!(
+            fs.read(&final_path).expect("read published bytes"),
+            b"published-bytes",
+            "a fresh publish lands the staged bytes atomically"
+        );
     }
 }
