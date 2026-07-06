@@ -247,3 +247,36 @@ fn an_honored_staged_sync_survives_a_crash() {
         "an honored staged sync makes the publish durable across a crash"
     );
 }
+
+#[test]
+fn mmap_probe_scratch_removal_does_not_consume_a_remove_file_fault() {
+    // An mmap-capability probe (platform evidence collection) creates and removes
+    // a scratch file through the seam. Under SimFs that scratch removal must NOT
+    // consume an armed RemoveFile fault meant for a real store remove — otherwise
+    // a fault-injection experiment that also collects evidence loses determinism.
+    let dir = tempfile::tempdir().expect("tmpdir");
+    // Arm the RemoveFile fault on its FIRST occurrence, over a real inner.
+    let sim = SimFs::new(0x0BE1_F00D, 0).with_fault_on(CrashOp::RemoveFile, 1);
+
+    // A real mmap-evidence probe: create_new_file + two scratch removes. Over a
+    // real inner it maps a real file (FileBacked), and the exempted scratch
+    // removes do NOT advance the RemoveFile schedule.
+    let evidence = crate::store::platform::evidence::mmap_evidence_for_store_path(dir.path(), &sim);
+    assert_eq!(
+        evidence,
+        crate::store::stats::MmapEvidence::FileBacked,
+        "the probe over a real inner reports FileBacked without consuming the fault"
+    );
+
+    // The armed RemoveFile fault is STILL pending: the first REAL remove faults.
+    let victim = dir.path().join("segment.fbat");
+    {
+        let mut file = sim.create_new_file(&victim).expect("create victim");
+        file.write_all(b"x").expect("write victim");
+    }
+    assert!(
+        sim.remove_file(&victim).is_err(),
+        "the armed RemoveFile fault must still fire on the first real remove — the \
+         probe's scratch removes must not have consumed it"
+    );
+}

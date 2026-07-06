@@ -80,6 +80,12 @@ pub(crate) fn active_segment_read_evidence() -> ActiveSegmentReadEvidence {
     }
 }
 
+/// Leaf-name prefix of the private one-byte mmap-capability probe file. The
+/// `SimFs` fault layer exempts this scratch from its crash-fault schedule (see
+/// its `remove_file`), so an evidence probe never consumes an armed `RemoveFile`
+/// fault meant for real store data.
+pub(crate) const MMAP_PROBE_PREFIX: &str = ".batpak-mmap-probe-";
+
 /// Monotonic counter that makes each mmap-probe path unique within the process,
 /// so concurrent diagnostics/profile probes on the same backend never share (and
 /// delete) one another's probe file.
@@ -105,7 +111,7 @@ pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) ->
     // the store's exclusive dir lock already means one process per `data_dir`,
     // and `std::process::id()` panics on no-pid targets such as wasm32.
     let probe_path = data_dir.join(format!(
-        ".batpak-mmap-probe-{}",
+        "{MMAP_PROBE_PREFIX}{}",
         MMAP_PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = fs.remove_file_if_present(&probe_path);
