@@ -4,6 +4,7 @@
 
 use crate::evidence::{content_hash, sort_findings};
 use crate::store::append::{CompactionConfig, CompactionStrategy};
+use crate::store::platform::fs::StoreFs;
 use crate::store::segment::{CompactionOutcome, CompactionResult};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -213,6 +214,7 @@ pub fn report_for_run(
     merged_segment_id: Option<u64>,
     result: &CompactionResult,
     merged_segment_path_for_hash: Option<&Path>,
+    fs: &dyn StoreFs,
 ) -> Result<CompactionReportBody, rmp_serde::encode::Error> {
     let mut source_segment_ids_sorted: Vec<u64> = sealed.iter().map(|(id, _)| *id).collect();
     source_segment_ids_sorted.sort();
@@ -225,7 +227,11 @@ pub fn report_for_run(
 
     let output_segment_bytes_hash = match (&result.outcome, merged_segment_path_for_hash) {
         (CompactionOutcome::Performed, Some(path)) => {
-            match crate::store::platform::fs::read(path) {
+            // Hash the merged segment through the CONFIGURED backend, not the
+            // host: on a virtual backend (MemFs) the segment exists only in
+            // `fs`, so a host read would report it unavailable (or hash an
+            // unrelated same-named host file).
+            match fs.read(path) {
                 Ok(bytes) => Some(content_hash(&bytes)),
                 Err(err) => {
                     findings.push(CompactionReportFinding::OutputSegmentHashUnavailable {
