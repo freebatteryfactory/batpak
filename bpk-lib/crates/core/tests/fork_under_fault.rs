@@ -7,7 +7,10 @@
 
 #![cfg(feature = "dangerous-test-hooks")]
 
-use batpak::__sim::{fork_fault_replay_seed, run_seeded_fork_fault_public, RecoveredClass};
+use batpak::__sim::{
+    fork_fault_replay_seed, run_seeded_fork_fault_mem_fs_public, run_seeded_fork_fault_public,
+    RecoveredClass,
+};
 
 fn assert_legal_fork_classification(
     outcome: &batpak::__sim::ForkFaultOutcomePublic,
@@ -51,5 +54,23 @@ fn fork_under_fault_diverges_across_seeds() -> Result<(), Box<dyn std::error::Er
         a.digest, b.digest,
         "PROPERTY: distinct seeds should diverge in fork fault digest"
     );
+    Ok(())
+}
+
+#[test]
+fn fork_under_fault_over_mem_fs_is_legal_and_deterministic(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // The SAME seeded fork-crash-recovery scenario, driven over a pure
+    // in-memory backend (no host files at all) — proving the SimFs fault layer
+    // and the {CommittedPrefix | RolledBack | CanonicalRefusal} oracle are
+    // backend-agnostic, not tied to real-file truncation.
+    let seed = fork_fault_replay_seed(0xF00F_5EED);
+    let first = run_seeded_fork_fault_mem_fs_public(seed).map_err(std::io::Error::other)?;
+    let second = run_seeded_fork_fault_mem_fs_public(seed).map_err(std::io::Error::other)?;
+    assert_eq!(
+        first, second,
+        "PROPERTY: identical seed (0x{seed:X}) must yield identical MemFs fork fault classification + digest"
+    );
+    assert_legal_fork_classification(&first, seed)?;
     Ok(())
 }

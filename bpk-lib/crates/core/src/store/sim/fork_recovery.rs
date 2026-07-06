@@ -36,11 +36,12 @@ fn outcome_digest(seed: u64, classification: Classification, dest_event_count: u
 /// Classify `dest` after a fault: legal outcomes only.
 pub(crate) fn classify_fork_destination(
     dest: &Path,
+    fs: &Arc<dyn crate::store::platform::fs::StoreFs>,
 ) -> Result<(Classification, usize), StoreError> {
-    if !dest.exists() {
+    if fs.metadata(dest).is_err() {
         return Ok((Classification::RolledBack, 0));
     }
-    match Store::open_read_only(StoreConfig::new(dest)) {
+    match Store::open_read_only(StoreConfig::new(dest).with_fs(Arc::clone(fs))) {
         Ok(store) => {
             let count = store.stats().event_count;
             if count == 0 {
@@ -54,14 +55,33 @@ pub(crate) fn classify_fork_destination(
     }
 }
 
-/// One seeded fork-under-fault scenario over SimFs (StoreFs-level faults only).
+/// One seeded fork-under-fault scenario over SimFs (StoreFs-level faults only),
+/// the fault layer composed over the production [`RealFs`] backend.
+///
+/// [`RealFs`]: crate::store::platform::fs::RealFs
 pub(crate) fn run_seeded_fork_fault(seed: u64) -> Result<ForkFaultOutcome, String> {
+    let inner: Arc<dyn crate::store::platform::fs::StoreFs> =
+        Arc::new(crate::store::platform::fs::RealFs);
+    run_seeded_fork_fault_over(seed, &inner)
+}
+
+/// [`run_seeded_fork_fault`] with the SimFs fault layer composed over an
+/// arbitrary `inner` backend, so the SAME seeded scenario drives a store over
+/// real files or over a pure in-memory backend ([`MemFs`](crate::store::MemFs)).
+pub(crate) fn run_seeded_fork_fault_over(
+    seed: u64,
+    inner: &Arc<dyn crate::store::platform::fs::StoreFs>,
+) -> Result<ForkFaultOutcome, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("seed=0x{seed:X}: tmpdir: {e}"))?;
     let source_dir = dir.path().join("source");
     let dest_dir = dir.path().join("dest");
 
     let fsync_drop = if seed.is_multiple_of(5) { 4 } else { 0 };
-    let sim_fs = Arc::new(SimFs::new(seed ^ 0xF0_0F_00, fsync_drop));
+    let sim_fs = Arc::new(SimFs::layered(
+        seed ^ 0xF0_0F_00,
+        fsync_drop,
+        Arc::clone(inner),
+    ));
     let config = StoreConfig::new(&source_dir)
         .with_sync_every_n_events(1)
         .with_segment_max_bytes(512)
@@ -91,7 +111,7 @@ pub(crate) fn run_seeded_fork_fault(seed: u64) -> Result<ForkFaultOutcome, Strin
 
     sim_fs.crash();
 
-    let (classification, dest_event_count) = classify_fork_destination(&dest_dir)
+    let (classification, dest_event_count) = classify_fork_destination(&dest_dir, inner)
         .map_err(|e| format!("seed=0x{seed:X}: classify: {e}"))?;
 
     if matches!(classification, Classification::CommittedPrefix)
@@ -133,6 +153,21 @@ pub fn run_seeded_fork_fault_public(seed: u64) -> Result<ForkFaultOutcomePublic,
     })
 }
 
+/// [`run_seeded_fork_fault_public`], but with the SimFs fault layer composed
+/// over a pure in-memory [`MemFs`](crate::store::MemFs) backend — the SAME
+/// seeded crash-recovery scenario proven backend-agnostic, with no host files.
+///
+/// # Errors
+/// As [`run_seeded_fork_fault_public`].
+pub fn run_seeded_fork_fault_mem_fs_public(seed: u64) -> Result<ForkFaultOutcomePublic, String> {
+    let inner: Arc<dyn crate::store::platform::fs::StoreFs> = Arc::new(crate::store::MemFs::new());
+    run_seeded_fork_fault_over(seed, &inner).map(|o| ForkFaultOutcomePublic {
+        classification: o.classification.into(),
+        digest: o.digest,
+        dest_event_count: o.dest_event_count,
+    })
+}
+
 /// Replay seed helper honoring `BATPAK_SEED`.
 pub fn fork_fault_replay_seed(default: u64) -> u64 {
     super::seed_from_env(default)
@@ -141,6 +176,10 @@ pub fn fork_fault_replay_seed(default: u64) -> u64 {
 #[cfg(all(test, feature = "dangerous-test-hooks"))]
 mod tests {
     use super::*;
+
+    fn real_fs() -> Arc<dyn crate::store::platform::fs::StoreFs> {
+        Arc::new(crate::store::platform::fs::RealFs)
+    }
 
     /// A dest whose read-only open fails with a CANONICAL corruption error must
     /// classify as `CanonicalRefusal` — never propagate as a hard `Err`. A dir
@@ -162,7 +201,7 @@ mod tests {
         )
         .expect("plant malformed compaction marker");
 
-        let classified = classify_fork_destination(&dest);
+        let classified = classify_fork_destination(&dest, &real_fs());
         assert!(
             matches!(classified, Ok((Classification::CanonicalRefusal, 0))),
             "a canonical corruption error must map to Ok(CanonicalRefusal), got {classified:?}"
@@ -179,7 +218,7 @@ mod tests {
         let dest_file = dir.path().join("not-a-directory");
         crate::store::platform::fs::create_new_file(&dest_file).expect("create plain file");
 
-        let classified = classify_fork_destination(&dest_file);
+        let classified = classify_fork_destination(&dest_file, &real_fs());
         assert!(
             classified.is_err(),
             "a non-canonical open error must propagate as Err, not be swallowed as \

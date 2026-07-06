@@ -64,3 +64,29 @@ fn import_under_fault_diverges_across_seeds() -> Result<(), Box<dyn std::error::
     );
     Ok(())
 }
+
+#[test]
+fn import_under_fault_over_mem_fs_crash_reimport_deduplicates(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // The SAME seeded import-crash-reimport scenario over a pure in-memory
+    // backend (no host files) — proving the SimFs fault layer, the durable
+    // import-key dedup, and the crash model are backend-agnostic.
+    let seed = batpak::__sim::import_fault_replay_seed(0x1B00_DEAD);
+    let first = batpak::__sim::run_seeded_import_fault_mem_fs_public(seed)
+        .map_err(std::io::Error::other)?;
+    let second = batpak::__sim::run_seeded_import_fault_mem_fs_public(seed)
+        .map_err(std::io::Error::other)?;
+    assert_eq!(
+        first, second,
+        "PROPERTY: identical seed (0x{seed:X}) must recover identical MemFs import fault digest"
+    );
+    assert_eq!(
+        first.dest_user_events, first.source_user_events,
+        "PROPERTY: MemFs destination must hold every source user event after crash + re-import"
+    );
+    assert!(
+        first.reimport_deduplicated > 0,
+        "PROPERTY: the post-crash re-import over MemFs must deduplicate at least one already-imported event (seed=0x{seed:X})"
+    );
+    Ok(())
+}

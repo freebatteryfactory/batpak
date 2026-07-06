@@ -33,6 +33,19 @@ fn outcome_digest(
 /// Drive import on a real `Store` over `SimFs`, crash without shutdown, reopen,
 /// re-import, and verify deduplication plus byte-isomorphic payloads.
 pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, String> {
+    let inner: Arc<dyn crate::store::platform::fs::StoreFs> =
+        Arc::new(crate::store::platform::fs::RealFs);
+    run_seeded_import_fault_over(seed, &inner)
+}
+
+/// [`run_seeded_import_fault`] with the SimFs fault layer (over the clean
+/// source and reopen stores too) composed over an arbitrary `inner` backend,
+/// so the SAME seeded scenario drives a store over real files or over a pure
+/// in-memory backend ([`MemFs`](crate::store::MemFs)).
+pub(crate) fn run_seeded_import_fault_over(
+    seed: u64,
+    inner: &Arc<dyn crate::store::platform::fs::StoreFs>,
+) -> Result<ImportFaultOutcome, String> {
     let root = tempfile::tempdir().map_err(|e| format!("seed=0x{seed:X}: tmpdir: {e}"))?;
     let source_path = root.path().join("source");
     let dest_path = root.path().join("dest");
@@ -44,6 +57,7 @@ pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, S
     {
         let source = Store::open(
             StoreConfig::new(&source_path)
+                .with_fs(Arc::clone(inner))
                 .with_sync_every_n_events(1)
                 .with_enable_checkpoint(false)
                 .with_enable_mmap_index(false),
@@ -63,15 +77,21 @@ pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, S
             .map_err(|e| format!("seed=0x{seed:X}: close source: {e}"))?;
     }
 
-    let source = Store::<ReadOnly>::open_read_only(StoreConfig::new(&source_path))
-        .map_err(|e| format!("seed=0x{seed:X}: reopen source: {e}"))?;
+    let source = Store::<ReadOnly>::open_read_only(
+        StoreConfig::new(&source_path).with_fs(Arc::clone(inner)),
+    )
+    .map_err(|e| format!("seed=0x{seed:X}: reopen source: {e}"))?;
 
     let options = ImportOptions::new("source-fault")
         .map_err(|e| format!("seed=0x{seed:X}: options: {e}"))?
         .with_chunk_size(1);
 
     let fsync_drop = if seed.is_multiple_of(5) { 4 } else { 0 };
-    let sim_fs = Arc::new(SimFs::new(seed ^ 0x1B00_0001, fsync_drop));
+    let sim_fs = Arc::new(SimFs::layered(
+        seed ^ 0x1B00_0001,
+        fsync_drop,
+        Arc::clone(inner),
+    ));
     {
         let config = StoreConfig::new(&dest_path)
             .with_fs(Arc::clone(&sim_fs) as Arc<dyn crate::store::platform::fs::StoreFs>)
@@ -87,6 +107,7 @@ pub(crate) fn run_seeded_import_fault(seed: u64) -> Result<ImportFaultOutcome, S
 
     let dest = Store::open(
         StoreConfig::new(&dest_path)
+            .with_fs(Arc::clone(inner))
             .with_sync_every_n_events(1)
             .with_enable_checkpoint(false)
             .with_enable_mmap_index(false),
@@ -186,6 +207,24 @@ pub struct ImportFaultOutcomePublic {
 /// post-crash re-import fails to preserve payload bytes, hash chains, or dedup.
 pub fn run_seeded_import_fault_public(seed: u64) -> Result<ImportFaultOutcomePublic, String> {
     run_seeded_import_fault(seed).map(|o| ImportFaultOutcomePublic {
+        digest: o.digest,
+        source_user_events: o.source_user_events,
+        dest_user_events: o.dest_user_events,
+        reimport_deduplicated: o.reimport_deduplicated,
+    })
+}
+
+/// [`run_seeded_import_fault_public`], but with the SimFs fault layer composed
+/// over a pure in-memory [`MemFs`](crate::store::MemFs) backend — the SAME
+/// seeded import-crash-reimport scenario proven backend-agnostic, no host files.
+///
+/// # Errors
+/// As [`run_seeded_import_fault_public`].
+pub fn run_seeded_import_fault_mem_fs_public(
+    seed: u64,
+) -> Result<ImportFaultOutcomePublic, String> {
+    let inner: Arc<dyn crate::store::platform::fs::StoreFs> = Arc::new(crate::store::MemFs::new());
+    run_seeded_import_fault_over(seed, &inner).map(|o| ImportFaultOutcomePublic {
         digest: o.digest,
         source_user_events: o.source_user_events,
         dest_user_events: o.dest_user_events,

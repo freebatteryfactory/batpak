@@ -39,6 +39,36 @@ pub(super) fn check(
         "target_os = \"macos\"",
     ];
 
+    // The handle-abstracted StoreFs (0.10.0, ADR-0034) mints `StoreFile` /
+    // `StagedFile` handles whose `sync_all` / `sync_data` / `read_at` ARE the
+    // seam-routed, fault-injectable calls — not raw `std::fs::File` operations
+    // bypassing the platform seam. These sites (plus the `SimFs` fault layer
+    // and the test doubles that wrap those handles) legitimately invoke the
+    // handle methods outside `src/store/platform`; the raw-`File` hazard is
+    // still caught by the AST visitor and by these needles everywhere else.
+    const ALLOWED_SEAM_HANDLE_OPS: &[(&str, &str)] = &[
+        ("crates/core/src/store/hidden_ranges.rs", ".sync_all("),
+        ("crates/core/src/store/segment/mod.rs", ".sync_all("),
+        (
+            "crates/core/src/store/delivery/cursor/checkpoint.rs",
+            ".sync_all(",
+        ),
+        ("crates/core/src/store/sim/fs.rs", ".sync_all("),
+        ("crates/core/src/store/sim/fs.rs", ".read_at("),
+        (
+            "crates/core/src/store/segment/boundary_tests.rs",
+            ".sync_all(",
+        ),
+        (
+            "crates/core/src/store/segment/boundary_tests.rs",
+            ".sync_data(",
+        ),
+        (
+            "crates/core/src/store/segment/boundary_tests.rs",
+            ".read_at(",
+        ),
+    ];
+
     for path in tracked_files {
         let rel = relative(repo_root, path);
         if !(rel.starts_with("crates/core/src/store/") || rel.starts_with("src/store/"))
@@ -76,13 +106,18 @@ pub(super) fn check(
             }
             let line = strip_string_literals(line);
             for (needle, description) in banned_calls {
-                ensure(
-                    !line.contains(needle),
-                    format!(
-                        "structural-check: target-sensitive {description} must route through src/store/platform; found `{needle}` in {rel}:{}",
-                        line_index + 1
-                    ),
-                )?;
+                if line.contains(needle) {
+                    let allowed_seam_op = ALLOWED_SEAM_HANDLE_OPS
+                        .iter()
+                        .any(|&(arel, aneedle)| rel.as_str() == arel && needle == aneedle);
+                    ensure(
+                        allowed_seam_op,
+                        format!(
+                            "structural-check: target-sensitive {description} must route through src/store/platform; found `{needle}` in {rel}:{}",
+                            line_index + 1
+                        ),
+                    )?;
+                }
             }
             for needle in banned_target_cfgs {
                 ensure(

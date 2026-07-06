@@ -62,8 +62,8 @@ fn sync_parent_dir_io(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// [`sync_file_with_mode`] over an abstract store handle: the per-event /
-/// per-rotation durability dispatch, backend-independent.
+/// Dispatch a store handle's sync by `mode` — the per-event / per-rotation
+/// durability boundary, backend-independent.
 pub(crate) fn sync_store_file_with_mode(
     file: &mut dyn crate::store::platform::fs::StoreFile,
     mode: &SyncMode,
@@ -87,7 +87,7 @@ pub(crate) fn sync_file_all_io(file: &File) -> std::io::Result<()> {
 /// public constructor): holding one means the current platform's
 /// parent-directory sync behavior was probed and found admissible. A custom
 /// [`StoreFs`](crate::store::StoreFs) backend receives it in
-/// [`persist_temp_with_parent_sync`](crate::store::StoreFs::persist_temp_with_parent_sync)
+/// [`StagedFile::persist`](crate::store::StagedFile::persist)
 /// and must treat it as the authorization to perform the publish — the token
 /// keeps the fail-closed admission decision on the store side of the seam.
 #[derive(Clone, Copy, Debug)]
