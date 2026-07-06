@@ -1,7 +1,7 @@
 //! Wasm backend — wasmi + WASI-preopen confinement.
 //!
 //! The HONEST per-platform [`SupportMatrix`] is pure data and always compiled. With
-//! `backend-wasm` enabled, [`WasmBackend`] instantiates [`Workload::Wasm`](crate::Workload::Wasm)
+//! `backend-wasm` enabled, `WasmBackend` instantiates [`Workload::Wasm`](crate::Workload::Wasm)
 //! modules with wasmi and `wasi_snapshot_preview1`: declared filesystem roots
 //! become WASI preopens, `Environment::Exact` becomes explicit WASI env, stdio is
 //! captured with WASI pipes, temp roots are private preopens, and network deny-all is
