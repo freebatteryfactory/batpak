@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 pub(crate) const VISIBILITY_RANGES_MAGIC: &[u8; 6] = b"FBATVR";
-pub(crate) const VISIBILITY_RANGES_VERSION: u16 = 2;
+pub const VISIBILITY_RANGES_VERSION: u16 = 2;
 pub(crate) const VISIBILITY_RANGES_FILENAME: &str = "visibility_ranges.fbv";
 
 #[derive(Serialize, Deserialize)]

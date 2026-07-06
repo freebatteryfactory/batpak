@@ -9,7 +9,6 @@ use syncbat::{
 };
 
 const REQUEST_CALL_V1_HEX: &str = include_str!("golden/request_call_v1.hex");
-const REQUEST_CALL_LEGACY_HEX: &str = include_str!("golden/request_call_legacy.hex");
 const REQUEST_DECODE_INPUT_HEX: &str = include_str!("golden/request_decode_input.hex");
 const REQUEST_EMPTY_LINE_HEX: &str = include_str!("golden/request_empty_line.hex");
 const REQUEST_INPUT_TOO_LARGE_HEX: &str = include_str!("golden/request_input_too_large.hex");
@@ -175,15 +174,14 @@ fn inspect_core_reports_healthy_when_all_operations_are_mounted() {
 }
 
 #[test]
-fn decodes_line_protocol_frame() {
-    let frame = nb::decode_line(
-        &fixture_bytes("request_call_legacy", REQUEST_CALL_LEGACY_HEX),
-        &nb::Limits::default(),
-    )
-    .expect("frame decodes");
-
-    assert_eq!(frame.operation(), "ping");
-    assert_eq!(frame.input(), b"hello");
+fn rejects_unversioned_legacy_call_frame() {
+    // Pre-0.10.0 unversioned `CALL <op> <hex>` frames are no longer accepted —
+    // only the versioned `NETBAT/1 CALL ...` frame decodes. ("68656c6c6f" = "hello".)
+    let legacy = b"CALL ping 68656c6c6f\n";
+    assert!(
+        nb::decode_line(legacy, &nb::Limits::default()).is_err(),
+        "PROPERTY: an unversioned legacy CALL frame must be rejected (NETBAT/1 prefix required)"
+    );
 }
 
 #[test]

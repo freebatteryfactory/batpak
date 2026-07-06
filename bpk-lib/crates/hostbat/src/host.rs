@@ -19,7 +19,6 @@ use crate::error::{HookFailure, HostRuntimeError};
 use crate::event_payload_binding::EventPayloadBinding;
 use crate::identity::{HostFingerprint, InterfaceFingerprint};
 use crate::module::{BoxedHook, BoxedJob};
-use crate::schema::SchemaRegistry;
 use crate::subscription::SubscriptionDescriptor;
 use crate::supervisor::Supervisor;
 
@@ -74,7 +73,6 @@ pub struct Host {
     subscriptions: Vec<(String, SubscriptionDescriptor)>,
     event_payload_bindings: Vec<(String, EventPayloadBinding)>,
     composition_schemas: HostCompositionManifest,
-    schema_registry: SchemaRegistry,
     startup: Vec<HostHook>,
     shutdown: Vec<HostHook>,
     job_factories: BTreeMap<String, BoxedJob>,
@@ -92,7 +90,6 @@ pub(crate) struct HostParts {
     pub(crate) subscriptions: Vec<(String, SubscriptionDescriptor)>,
     pub(crate) event_payload_bindings: Vec<(String, EventPayloadBinding)>,
     pub(crate) composition_schemas: HostCompositionManifest,
-    pub(crate) schema_registry: SchemaRegistry,
     pub(crate) startup: Vec<HostHook>,
     pub(crate) shutdown: Vec<HostHook>,
     pub(crate) job_factories: BTreeMap<String, BoxedJob>,
@@ -109,7 +106,6 @@ impl Host {
             subscriptions,
             event_payload_bindings,
             composition_schemas,
-            schema_registry,
             startup,
             shutdown,
             job_factories,
@@ -123,7 +119,6 @@ impl Host {
             subscriptions,
             event_payload_bindings,
             composition_schemas,
-            schema_registry,
             startup,
             shutdown,
             job_factories,
@@ -168,12 +163,6 @@ impl Host {
     #[must_use]
     pub fn composition_schemas(&self) -> &HostCompositionManifest {
         &self.composition_schemas
-    }
-
-    /// Runtime schema registry used to validate operation input/output bytes.
-    #[must_use]
-    pub fn schema_registry(&self) -> &SchemaRegistry {
-        &self.schema_registry
     }
 
     /// Whether [`start`](Self::start) has completed successfully.

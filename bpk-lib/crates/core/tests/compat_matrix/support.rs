@@ -11,8 +11,9 @@ use batpak::event::EventKind;
 use batpak::store::{
     decode_fork_evidence_wire, decode_import_provenance_wire, encode_fork_evidence_wire,
     encode_import_provenance_wire, fork_report_body_hash, provenance_from_extensions, ForkOptions,
-    ImportOptions, ImportSelector, Store, StoreConfig, StoreError,
-    FORK_EVIDENCE_REPORT_SCHEMA_VERSION, IMPORT_PROVENANCE_SCHEMA_VERSION,
+    ImportOptions, ImportSelector, Store, StoreConfig, StoreError, CHECKPOINT_VERSION,
+    FORK_EVIDENCE_REPORT_SCHEMA_VERSION, IDEMP_VERSION, IMPORT_PROVENANCE_SCHEMA_VERSION,
+    MMAP_INDEX_VERSION, VISIBILITY_RANGES_VERSION,
 };
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -29,10 +30,10 @@ use std::path::{Path, PathBuf};
 /// * `SUPPORTED_VISIBILITY_VERSION` ← `store::hidden_ranges::VISIBILITY_RANGES_VERSION`
 /// * `SUPPORTED_FORK_EVIDENCE_VERSION` ← `store::fork_report::FORK_EVIDENCE_REPORT_SCHEMA_VERSION`
 /// * `SUPPORTED_IMPORT_PROVENANCE_VERSION` ← `store::import::IMPORT_PROVENANCE_SCHEMA_VERSION`
-pub const SUPPORTED_MMAP_VERSION: u16 = 5;
-pub const SUPPORTED_CHECKPOINT_VERSION: u16 = 6;
-pub const SUPPORTED_IDEMP_VERSION: u16 = 1;
-pub const SUPPORTED_VISIBILITY_VERSION: u16 = 2;
+pub const SUPPORTED_MMAP_VERSION: u16 = MMAP_INDEX_VERSION;
+pub const SUPPORTED_CHECKPOINT_VERSION: u16 = CHECKPOINT_VERSION;
+pub const SUPPORTED_IDEMP_VERSION: u16 = IDEMP_VERSION;
+pub const SUPPORTED_VISIBILITY_VERSION: u16 = VISIBILITY_RANGES_VERSION;
 pub const SUPPORTED_FORK_EVIDENCE_VERSION: u16 = FORK_EVIDENCE_REPORT_SCHEMA_VERSION;
 pub const SUPPORTED_IMPORT_PROVENANCE_VERSION: u16 = IMPORT_PROVENANCE_SCHEMA_VERSION;
 

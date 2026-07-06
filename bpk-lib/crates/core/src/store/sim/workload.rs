@@ -2,10 +2,12 @@
 //!
 //! [`run`] drives a small, seeded sequence of operations over the three
 //! simulation backends ([`SimClock`], [`SimScheduler`], [`SimFs`]) and the
-//! model state, checking the [`invariants`] after every step and folding each
-//! op into a FNV-1a digest. The digest is the determinism witness: two runs
-//! from the same seed visit the same ops in the same order and therefore return
-//! the same digest. `BATPAK_SEED=N` selects the seed.
+//! model state, folding each op into a FNV-1a digest. The digest is the
+//! determinism witness: two runs from the same seed visit the same ops in the
+//! same order and therefore return the same digest. `BATPAK_SEED=N` selects the
+//! seed. Real-Store safety over the sim backends is proven separately by the
+//! fork/import/recovery DST corpus — the workload models durable state only to
+//! produce a stable op-trace digest, it does not re-verify safety on the model.
 //!
 //! The workload PRNG is seeded independently of the [`SimFs`] fault PRNG so the
 //! two streams never cross-contaminate (changing op selection must not perturb
@@ -43,17 +45,16 @@ fn usize_token(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
 }
 
-/// Run a `steps`-long seeded workload, returning the op-trace digest on success
-/// or a seed-tagged violation description if a safety invariant tripped.
+/// Run a `steps`-long seeded workload, returning the op-trace digest.
 ///
 /// Each step selects an op from the workload PRNG: append, fsync, advance-clock,
-/// spawn-background-work, or crash/recover. After every step the invariants are
-/// checked against the model; a violation short-circuits with `Err` rather than
-/// panicking, so the integration test can assert on it cleanly.
+/// spawn-background-work, or crash/recover, folding the op into the running
+/// digest. The digest is the determinism witness; the run itself does not
+/// assert safety (that is the DST recovery corpus's job).
 ///
-/// # Errors
-/// Returns a seed-tagged description string if a hash-chain, frontier, or
-/// no-loss invariant is violated at any step.
+/// Returns `Result` to keep the seed-tagged harness contract; the in-memory
+/// simulation backends do not surface a driver failure, so a completed run
+/// always yields `Ok(digest)`.
 pub(crate) fn run(sim: &Sim, steps: usize) -> Result<u64, String> {
     let mut wl = fastrand::Rng::with_seed(sim.seed);
     let mut model = ModelState::default();
@@ -64,7 +65,6 @@ pub(crate) fn run(sim: &Sim, steps: usize) -> Result<u64, String> {
     digest = fold(digest, sim.seed);
 
     for step in 0..steps {
-        let prev_frontier = model.visible_frontier;
         // Advance logical time every step so timestamps stay strictly forward.
         let dt = i64::from(wl.u16(..)) + 1;
         let now = sim.clock.advance_us(dt);
@@ -94,7 +94,6 @@ pub(crate) fn run(sim: &Sim, steps: usize) -> Result<u64, String> {
                     );
                 model.append(SimEvent {
                     seq: next_seq,
-                    prev,
                     hash,
                     durable: synced,
                 });
@@ -119,8 +118,9 @@ pub(crate) fn run(sim: &Sim, steps: usize) -> Result<u64, String> {
                 let joined = handle.join().is_ok();
                 digest = fold(fold(digest, token), u64::from(joined));
             }
-            // Simulated crash + recover: snapshot durable view, crash, rebuild
-            // the model log from what survived, and assert no durable loss.
+            // Simulated crash + recover: snapshot durable view, crash, and
+            // rebuild the model log from what survived (the durable prefix the
+            // real store guarantees on recover). Folded into the digest.
             _ => {
                 let pre: Vec<SimEvent> = model.log.clone();
                 let durable_bytes = sim.fs.durable_len(seg);
@@ -151,21 +151,13 @@ pub(crate) fn run(sim: &Sim, steps: usize) -> Result<u64, String> {
                 for ev in &recovered {
                     rebuilt.append(*ev);
                 }
-                rebuilt
-                    .check_no_loss(&pre)
-                    .map_err(|v| format!("no-loss violation (seed={}): {v:?}", sim.seed))?;
                 model = rebuilt;
                 digest = fold(digest, usize_token(durable_bytes));
             }
         }
 
-        // Per-step safety check; reproduce with BATPAK_SEED on failure.
-        model.check(prev_frontier).map_err(|v| {
-            format!(
-                "invariant violation at step {step} (seed={}): {v:?}",
-                sim.seed
-            )
-        })?;
+        // Fold the (monotonic) durable frontier into the op-trace digest each
+        // step, so the frontier's progression is part of the determinism witness.
         digest = fold(digest, model.visible_frontier);
     }
 

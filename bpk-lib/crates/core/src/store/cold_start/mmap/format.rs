@@ -7,7 +7,7 @@ use crate::store::index::{DiskPos, IndexEntry, RoutingSummary};
 use crate::store::StoreError;
 
 pub(super) const MMAP_INDEX_MAGIC: &[u8; 6] = b"FBATIX";
-pub(super) const MMAP_INDEX_VERSION: u16 = 5;
+pub const MMAP_INDEX_VERSION: u16 = 5;
 pub(crate) const MMAP_INDEX_FILENAME: &str = "index.fbati";
 
 pub(super) const PREFIX_LEN: usize = 6 + 2 + 4;

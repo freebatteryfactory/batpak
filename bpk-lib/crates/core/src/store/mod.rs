@@ -133,6 +133,13 @@ pub use import::{
     ImportSelector, SourceNamespace, IMPORT_PROVENANCE_SCHEMA_VERSION,
 };
 pub use index::IndexEntry;
+// Live on-disk / in-memory format version constants, promoted to `pub` (LD2)
+// so the cross-version compat matrix derives its supported-version table from
+// the single source of truth instead of hardcoding the numbers.
+pub use cold_start::checkpoint::format::CHECKPOINT_VERSION;
+pub use cold_start::mmap::format::MMAP_INDEX_VERSION;
+pub use hidden_ranges::VISIBILITY_RANGES_VERSION;
+pub use index::idemp::IDEMP_VERSION;
 #[cfg(feature = "payload-encryption")]
 #[cfg_attr(
     all(docsrs, not(batpak_stable_docs)),

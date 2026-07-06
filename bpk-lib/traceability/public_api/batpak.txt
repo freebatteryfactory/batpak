@@ -1651,7 +1651,6 @@ pub fn batpak::store::Store<batpak::store::Open>::close(self) -> core::result::R
 pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::store::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::fork(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::fork_with_evidence(&self, dest: &std::path::Path, options: batpak::store::ForkOptions) -> core::result::Result<batpak::store::ForkReport, batpak::prelude::StoreError>
-pub fn batpak::store::Store<batpak::store::Open>::snapshot(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence(&self, dest: &std::path::Path) -> core::result::Result<batpak::store::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence_with_options(&self, dest: &std::path::Path, options: batpak::store::SnapshotOptions) -> core::result::Result<batpak::store::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
@@ -3939,7 +3938,6 @@ pub fn batpak::store::Store<batpak::store::Open>::close(self) -> core::result::R
 pub fn batpak::store::Store<batpak::store::Open>::compact(&self, config: &batpak::store::CompactionConfig) -> core::result::Result<(batpak::store::segment::CompactionResult, batpak::store::CompactionReportBody), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::fork(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::fork_with_evidence(&self, dest: &std::path::Path, options: batpak::store::ForkOptions) -> core::result::Result<batpak::store::ForkReport, batpak::prelude::StoreError>
-pub fn batpak::store::Store<batpak::store::Open>::snapshot(&self, dest: &std::path::Path) -> core::result::Result<(), batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence(&self, dest: &std::path::Path) -> core::result::Result<batpak::store::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::snapshot_with_evidence_with_options(&self, dest: &std::path::Path, options: batpak::store::SnapshotOptions) -> core::result::Result<batpak::store::SnapshotEvidenceReport, batpak::prelude::StoreError>
 pub fn batpak::store::Store<batpak::store::Open>::sync(&self) -> core::result::Result<(), batpak::prelude::StoreError>
@@ -4217,16 +4215,20 @@ pub fn batpak::store::stats::WriterPressure::headroom(&self) -> usize
 pub fn batpak::store::stats::WriterPressure::is_idle(&self) -> bool
 pub fn batpak::store::stats::WriterPressure::utilization(&self) -> f64
 pub const batpak::store::CHAIN_WALK_REPORT_SCHEMA_VERSION: u16
+pub const batpak::store::CHECKPOINT_VERSION: u16
 pub const batpak::store::COMPACTION_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::FORK_EVIDENCE_REPORT_SCHEMA_VERSION: u16
+pub const batpak::store::IDEMP_VERSION: u16
 pub const batpak::store::IMPORT_PROVENANCE_SCHEMA_VERSION: u16
 pub const batpak::store::MAX_CHECKPOINT_ID_LEN: usize
+pub const batpak::store::MMAP_INDEX_VERSION: u16
 pub const batpak::store::PROJECTION_RUN_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::READ_WALK_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::SIGNING_DOWNGRADE_SCHEMA_VERSION: u16
 pub const batpak::store::SNAPSHOT_EVIDENCE_REPORT_SCHEMA_VERSION: u16
 pub const batpak::store::STORE_RESOURCE_REPORT_SCHEMA_VERSION: u32
 pub const batpak::store::SUBSCRIBER_FRONTIER_REPORT_SCHEMA_VERSION: u16
+pub const batpak::store::VISIBILITY_RANGES_VERSION: u16
 pub trait batpak::store::Canal: core::marker::Send
 pub type batpak::store::Canal::Error: core::error::Error + core::marker::Send + core::marker::Sync + 'static
 pub type batpak::store::Canal::Item: batpak::store::delivery::canal::CanalItem + core::marker::Send
@@ -4303,7 +4305,6 @@ pub fn batpak::store::StagedFile::write_all(&mut self, buf: &[u8]) -> std::io::e
 pub trait batpak::store::StoreDirLockGuard: core::marker::Send + core::marker::Sync
 pub trait batpak::store::StoreFile: core::marker::Send + core::marker::Sync
 pub fn batpak::store::StoreFile::as_std_file(&self) -> core::option::Option<&std::fs::File>
-pub fn batpak::store::StoreFile::is_empty(&self) -> std::io::error::Result<bool>
 pub fn batpak::store::StoreFile::len(&self) -> std::io::error::Result<u64>
 pub fn batpak::store::StoreFile::read_at(&mut self, offset: u64, buf: &mut [u8]) -> std::io::error::Result<usize>
 pub fn batpak::store::StoreFile::read_exact_at(&mut self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>

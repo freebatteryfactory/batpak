@@ -221,12 +221,6 @@ impl CoreBuilder {
         self
     }
 
-    /// Clear any configured receipt sink.
-    pub fn clear_receipt_sink(&mut self) -> &mut Self {
-        self.receipt_sink = None;
-        self
-    }
-
     /// Explicitly build a core that records no receipts.
     ///
     /// [`Self::build`] fails closed with [`BuildError::MissingReceiptSink`] when

@@ -204,7 +204,6 @@ name = "batpak-examples"
 version = "0.10.0"
 dependencies = [
  "batpak",
- "flume",
  "rmp-serde",
  "serde",
  "serde_json",

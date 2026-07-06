@@ -18,7 +18,7 @@
 //! The magic + version occupy the first 8 bytes; the 4-byte CRC immediately follows;
 //! the variable-length msgpack body fills the rest of the file.
 
-mod format;
+pub(crate) mod format;
 mod snapshot;
 mod write;
 

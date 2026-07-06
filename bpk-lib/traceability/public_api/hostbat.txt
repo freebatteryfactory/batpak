@@ -10,7 +10,6 @@ pub fn hostbat::builder::HostBuilder::host_control<C>(self, controller: C) -> Se
 pub fn hostbat::builder::HostBuilder::mount(self, module: hostbat::module::HostModule) -> core::result::Result<Self, hostbat::error::HostError>
 pub fn hostbat::builder::HostBuilder::new() -> Self
 pub fn hostbat::builder::HostBuilder::receipt_sink<S>(self, sink: S) -> Self where S: syncbat::receipt::ReceiptSink + 'static
-pub fn hostbat::builder::HostBuilder::spawn_with(self, spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
 pub fn hostbat::builder::HostBuilder::status_sink<S>(self, sink: S) -> Self where S: syncbat::operation_status_sink::OperationStatusSink + core::marker::Send + core::marker::Sync + 'static
 impl core::default::Default for hostbat::builder::HostBuilder
 pub fn hostbat::builder::HostBuilder::default() -> Self
@@ -180,7 +179,6 @@ pub fn hostbat::host::Host::interface_fingerprint(&self) -> hostbat::identity::I
 pub fn hostbat::host::Host::invoke(&mut self, operation: impl core::convert::AsRef<str>, input: alloc::vec::Vec<u8>) -> core::result::Result<syncbat::core::CheckoutResult, syncbat::error::RuntimeError>
 pub fn hostbat::host::Host::is_started(&self) -> bool
 pub fn hostbat::host::Host::operations(&self) -> impl core::iter::Iterator<Item = &syncbat::operation::OperationDescriptor>
-pub fn hostbat::host::Host::schema_registry(&self) -> &hostbat::schema::SchemaRegistry
 pub fn hostbat::host::Host::shutdown(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
 pub fn hostbat::host::Host::spawn_job(&mut self, kind: impl core::convert::AsRef<str>) -> core::result::Result<(), hostbat::error::HostRuntimeError>
 pub fn hostbat::host::Host::start(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
@@ -381,7 +379,6 @@ pub const hostbat::subscription::SUBSCRIPTION_WIRE_REQUIRES: &str
 pub mod hostbat::supervisor
 pub struct hostbat::supervisor::Supervisor
 impl hostbat::supervisor::Supervisor
-pub fn hostbat::supervisor::Supervisor::all_finished(&self) -> bool
 pub fn hostbat::supervisor::Supervisor::job_count(&self) -> usize
 pub fn hostbat::supervisor::Supervisor::join_all(&mut self) -> alloc::vec::Vec<(alloc::string::String, core::result::Result<(), batpak::store::platform::spawn::JoinError>)>
 pub fn hostbat::supervisor::Supervisor::new(spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
@@ -589,7 +586,6 @@ pub fn hostbat::host::Host::interface_fingerprint(&self) -> hostbat::identity::I
 pub fn hostbat::host::Host::invoke(&mut self, operation: impl core::convert::AsRef<str>, input: alloc::vec::Vec<u8>) -> core::result::Result<syncbat::core::CheckoutResult, syncbat::error::RuntimeError>
 pub fn hostbat::host::Host::is_started(&self) -> bool
 pub fn hostbat::host::Host::operations(&self) -> impl core::iter::Iterator<Item = &syncbat::operation::OperationDescriptor>
-pub fn hostbat::host::Host::schema_registry(&self) -> &hostbat::schema::SchemaRegistry
 pub fn hostbat::host::Host::shutdown(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
 pub fn hostbat::host::Host::spawn_job(&mut self, kind: impl core::convert::AsRef<str>) -> core::result::Result<(), hostbat::error::HostRuntimeError>
 pub fn hostbat::host::Host::start(&mut self) -> core::result::Result<(), hostbat::error::HostRuntimeError>
@@ -605,7 +601,6 @@ pub fn hostbat::builder::HostBuilder::host_control<C>(self, controller: C) -> Se
 pub fn hostbat::builder::HostBuilder::mount(self, module: hostbat::module::HostModule) -> core::result::Result<Self, hostbat::error::HostError>
 pub fn hostbat::builder::HostBuilder::new() -> Self
 pub fn hostbat::builder::HostBuilder::receipt_sink<S>(self, sink: S) -> Self where S: syncbat::receipt::ReceiptSink + 'static
-pub fn hostbat::builder::HostBuilder::spawn_with(self, spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self
 pub fn hostbat::builder::HostBuilder::status_sink<S>(self, sink: S) -> Self where S: syncbat::operation_status_sink::OperationStatusSink + core::marker::Send + core::marker::Sync + 'static
 impl core::default::Default for hostbat::builder::HostBuilder
 pub fn hostbat::builder::HostBuilder::default() -> Self
@@ -750,7 +745,6 @@ impl core::fmt::Display for hostbat::subscription::SubscriptionId
 pub fn hostbat::subscription::SubscriptionId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct hostbat::Supervisor
 impl hostbat::supervisor::Supervisor
-pub fn hostbat::supervisor::Supervisor::all_finished(&self) -> bool
 pub fn hostbat::supervisor::Supervisor::job_count(&self) -> usize
 pub fn hostbat::supervisor::Supervisor::join_all(&mut self) -> alloc::vec::Vec<(alloc::string::String, core::result::Result<(), batpak::store::platform::spawn::JoinError>)>
 pub fn hostbat::supervisor::Supervisor::new(spawn: alloc::sync::Arc<dyn batpak::store::platform::spawn::Spawn>) -> Self

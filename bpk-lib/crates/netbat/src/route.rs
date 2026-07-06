@@ -220,12 +220,6 @@ impl ServerModule {
     pub fn operation_count(&self) -> usize {
         self.module.operation_count()
     }
-
-    /// Consume the wrapper and return the syncbat module descriptor.
-    #[must_use]
-    pub fn into_module(self) -> syncbat::Module {
-        self.module
-    }
 }
 
 /// Minimal server-boundary registry.

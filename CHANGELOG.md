@@ -7,8 +7,13 @@ All notable changes to this project will be documented in this file.
 ## [0.10.0] - 2026-07-05
 
 The reserved pre-1.0 breaking window (ROADMAP §3): API-shape changes driven by
-dogfood feedback (#162–#168), landed as one coordinated cut. No wire or
-on-disk format changes anywhere in this release.
+dogfood feedback (#162–#168), landed as one coordinated cut, followed by a
+debt sweep that removes deprecated API duals, dead code, and readers for
+superseded legacy formats. The format the store and wire *write today* is
+unchanged and reads back byte-for-byte; but the legacy-format readers are gone,
+so a store or frame written by an earlier batpak version is no longer
+guaranteed readable — pre-1.0 there is no migration (see **Removed** and
+`SUPPORT.md`).
 
 ### Added
 - **Store-free receipt verification** (#167): `batpak::store::receipt_verify`
@@ -78,13 +83,39 @@ on-disk format changes anywhere in this release.
 - `TypedDecodeError` and `ReceiptVerificationError` are `#[non_exhaustive]`
   (ROADMAP §2): adding a failure mode is no longer a semver break.
 
+### Removed
+- **Legacy on-disk / wire format readers** (pre-1.0 debt sweep): readers for
+  several superseded formats are gone, so a store or frame written by an earlier
+  batpak version is no longer guaranteed readable (no migration pre-1.0 — see
+  `SUPPORT.md`). Dropped: **checkpoint formats v2 / v3 / v4** (only the current
+  v5/v6 checkpoint is loaded; an older checkpoint is ignored and the index
+  rebuilds from segments), the **netbat legacy unversioned `CALL` request
+  frame** (only the versioned `NETBAT/1 CALL …` frame decodes), and the
+  **projection-cache 16-byte legacy trailer** (a legacy cache entry is now a
+  fail-closed miss → rebuild). The format written today is unchanged and
+  round-trips byte-for-byte.
+- **Deprecated API duals and dead surface** (pre-1.0 debt sweep): the
+  `#[deprecated]` `Store::snapshot()` wrapper (use `snapshot_with_evidence`),
+  the `#[doc(hidden)]` `Subscription::receiver()` dual (use
+  `filtered_receiver()` — identical semantics), `StoreFile::is_empty`, hostbat
+  `Host::schema_registry` / `Supervisor::all_finished` / `HostBuilder::spawn_with`,
+  syncbat `CoreBuilder::clear_receipt_sink` / `OperationDescriptor::with_title`,
+  and the dead netbat `ServerModule::into_module` bridge. The phantom `blake3`
+  cargo feature is removed (blake3 hashing was always unconditional).
+
 ### Migration
 - Downstream exhaustive `match` expressions over `TypedDecodeError` or
   `ReceiptVerificationError` need a wildcard arm (`_ =>`). `matches!`-style
   checks are unaffected.
-- No other source changes expected: every other 0.10.0 surface is additive.
-  No wire, receipt-cover, or on-disk format changes; the keyset file format
-  and location are unchanged unless a custom `KeysetBackend` is installed.
+- The current-format store and wire round-trip unchanged, and the keyset file
+  format and location are unchanged unless a custom `KeysetBackend` is
+  installed. But because the legacy-format readers were removed, a store
+  directory or peer written by an earlier batpak version is no longer
+  guaranteed to open — pin the writer and reader to the same batpak version
+  until the format stabilizes at 1.0.
+- API-dual removals: replace `Store::snapshot()` → `snapshot_with_evidence`
+  and `Subscription::receiver()` → `Subscription::filtered_receiver()`
+  (identical semantics).
 
 ## [0.9.0] - 2026-07-04
 

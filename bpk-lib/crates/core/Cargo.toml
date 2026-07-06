@@ -21,13 +21,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Default features are production-safe. Crash/fault injection hooks are
 # intentionally excluded so downstream default builds cannot name test-only
 # writer panic, frontier mutation, or fault injection surfaces.
-# blake3 is a mandatory dependency (formerly a feature); evidence hashes,
-# chain integrity, and receipt signing all rely on it and have no honest
-# degraded mode worth maintaining. Keep the feature name as a no-op
-# default compatibility alias so older consumers and generated templates that
-# request `features = ["blake3"]` still resolve to the mandatory implementation.
-default = ["blake3"]
-blake3 = []
+# blake3 is a mandatory dependency (see `[dependencies]`); evidence hashes,
+# chain integrity, and receipt signing all rely on it unconditionally and there
+# is no degraded mode. It is NOT a cargo feature — there is nothing to toggle.
+default = []
 dangerous-test-hooks = ["dep:fastrand", "batpak-testkit/dangerous-test-hooks"]
 # Test-only global-allocator shims (off by default; never in a normal build).
 # A `#[global_allocator]` is process-wide, so each shim must be installed by a

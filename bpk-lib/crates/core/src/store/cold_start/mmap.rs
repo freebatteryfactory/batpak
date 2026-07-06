@@ -5,7 +5,7 @@
 //! mmap it, restore the interner snapshot, replay the entry section, then
 //! replay only the durable tail after the recorded watermark.
 
-mod format;
+pub(crate) mod format;
 mod load;
 
 pub(crate) use format::MMAP_INDEX_FILENAME;

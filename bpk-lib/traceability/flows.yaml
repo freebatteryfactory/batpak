@@ -21,7 +21,7 @@
     - ART-SYNCBAT-WIRE-GOLDENS
     - ART-ADR-SYNCBAT-CONTRACT
 - id: FLOW-NETBAT-CALL
-  summary: netbat decodes a bounded NETBAT/1 CALL line or legacy CALL line, revalidates the RequestFrame, dispatches through syncbat Core::checkout_frame, enforces output limits, and writes a stable OK or ERR response without taking ownership of runtime or durability semantics.
+  summary: netbat decodes a bounded NETBAT/1 CALL line, revalidates the RequestFrame, dispatches through syncbat Core::checkout_frame, enforces output limits, and writes a stable OK or ERR response without taking ownership of runtime or durability semantics.
   artifacts:
     - ART-NETBAT-SOURCE
     - ART-NETBAT-TESTS

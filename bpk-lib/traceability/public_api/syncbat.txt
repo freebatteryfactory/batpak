@@ -19,7 +19,6 @@ impl syncbat::builder::CoreBuilder
 pub fn syncbat::builder::CoreBuilder::admission_guard<G>(&mut self, guard: G) -> &mut Self where G: syncbat::admission::AdmissionGuard + 'static
 pub fn syncbat::builder::CoreBuilder::build(self) -> core::result::Result<syncbat::core::Core, syncbat::error::BuildError>
 pub fn syncbat::builder::CoreBuilder::clear_admission_guard(&mut self) -> &mut Self
-pub fn syncbat::builder::CoreBuilder::clear_receipt_sink(&mut self) -> &mut Self
 pub fn syncbat::builder::CoreBuilder::clear_status_sink(&mut self) -> &mut Self
 pub fn syncbat::builder::CoreBuilder::effect_backend<B>(&mut self, backend: B) -> &mut Self where B: syncbat::effect_backend::EffectBackend + 'static
 pub fn syncbat::builder::CoreBuilder::effect_backend_boxed(&mut self, backend: alloc::boxed::Box<(dyn syncbat::effect_backend::EffectBackend + 'static)>) -> &mut Self
@@ -279,7 +278,6 @@ pub fn syncbat::operation::OperationDescriptor::title(&self) -> core::option::Op
 pub fn syncbat::operation::OperationDescriptor::validate(&self) -> core::result::Result<(), syncbat::operation::DescriptorValidationError>
 pub fn syncbat::operation::OperationDescriptor::with_effect_row(self, effect_row: syncbat::effect::OperationEffectRow) -> Self
 pub fn syncbat::operation::OperationDescriptor::with_owned_title(self, title: impl core::convert::Into<alloc::string::String>) -> Self
-pub fn syncbat::operation::OperationDescriptor::with_title(self, title: &'static str) -> Self
 pub struct syncbat::operation::OperationRegisterItem
 impl syncbat::operation::OperationRegisterItem
 pub fn syncbat::operation::OperationRegisterItem::descriptor(&self) -> &syncbat::operation::OperationDescriptor
@@ -1327,7 +1325,6 @@ impl syncbat::builder::CoreBuilder
 pub fn syncbat::builder::CoreBuilder::admission_guard<G>(&mut self, guard: G) -> &mut Self where G: syncbat::admission::AdmissionGuard + 'static
 pub fn syncbat::builder::CoreBuilder::build(self) -> core::result::Result<syncbat::core::Core, syncbat::error::BuildError>
 pub fn syncbat::builder::CoreBuilder::clear_admission_guard(&mut self) -> &mut Self
-pub fn syncbat::builder::CoreBuilder::clear_receipt_sink(&mut self) -> &mut Self
 pub fn syncbat::builder::CoreBuilder::clear_status_sink(&mut self) -> &mut Self
 pub fn syncbat::builder::CoreBuilder::effect_backend<B>(&mut self, backend: B) -> &mut Self where B: syncbat::effect_backend::EffectBackend + 'static
 pub fn syncbat::builder::CoreBuilder::effect_backend_boxed(&mut self, backend: alloc::boxed::Box<(dyn syncbat::effect_backend::EffectBackend + 'static)>) -> &mut Self
@@ -1510,7 +1507,6 @@ pub fn syncbat::operation::OperationDescriptor::title(&self) -> core::option::Op
 pub fn syncbat::operation::OperationDescriptor::validate(&self) -> core::result::Result<(), syncbat::operation::DescriptorValidationError>
 pub fn syncbat::operation::OperationDescriptor::with_effect_row(self, effect_row: syncbat::effect::OperationEffectRow) -> Self
 pub fn syncbat::operation::OperationDescriptor::with_owned_title(self, title: impl core::convert::Into<alloc::string::String>) -> Self
-pub fn syncbat::operation::OperationDescriptor::with_title(self, title: &'static str) -> Self
 pub struct syncbat::OperationEffectRow
 impl syncbat::effect::OperationEffectRow
 pub fn syncbat::effect::OperationEffectRow::appends_event(self, event_target: impl core::convert::Into<alloc::string::String>) -> Self

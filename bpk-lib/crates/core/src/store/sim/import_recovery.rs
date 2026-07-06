@@ -241,9 +241,6 @@ pub fn import_fault_replay_seed(default: u64) -> u64 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ImportCeilingOutcome {
     pub(crate) digest: u64,
-    pub(crate) imported: u64,
-    pub(crate) replay_deduplicated: u64,
-    pub(crate) final_event_count: usize,
 }
 
 fn ceiling_outcome_digest(
@@ -333,9 +330,6 @@ pub(crate) fn run_seeded_import_same_store_ceiling(
 
     Ok(ImportCeilingOutcome {
         digest: ceiling_outcome_digest(seed, report.imported, replay.deduplicated, final_count),
-        imported: report.imported,
-        replay_deduplicated: replay.deduplicated,
-        final_event_count: final_count,
     })
 }
 

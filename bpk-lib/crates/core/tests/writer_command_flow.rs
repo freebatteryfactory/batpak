@@ -313,7 +313,7 @@ fn notification_is_not_observable_before_published_visibility() {
         )])
         .expect("submit append batch");
     let notification = subscription
-        .receiver()
+        .filtered_receiver()
         .recv_timeout(Duration::from_secs(2))
         .expect("notification for submitted append");
 

@@ -16,8 +16,9 @@ fn sim_is_deterministic() -> Result<(), String> {
     let seed = batpak::__sim::replay_seed(0xDEAD_BEEF);
     let steps = 256;
 
-    // A tripped invariant returns Err here and fails the test cleanly (no
-    // panic!), surfacing the seed-tagged violation for BATPAK_SEED replay.
+    // The workload driver returns Result for the seed-tagged harness contract;
+    // the in-memory backends do not surface a driver failure, so both runs
+    // complete and the test compares their op-trace digests.
     let first = batpak::__sim::run_seeded_workload(seed, steps)?;
     let second = batpak::__sim::run_seeded_workload(seed, steps)?;
 

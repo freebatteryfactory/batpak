@@ -191,10 +191,6 @@ pub fn scan_for_kind_collisions() {
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
-/// Minimum valid category value (inclusive).
-pub const CATEGORY_MIN: u8 = 1;
-/// Maximum valid category value (inclusive, 4 bits).
-pub const CATEGORY_MAX: u8 = 15;
 /// Maximum valid type_id value (inclusive, 12 bits).
 pub const TYPE_ID_MAX: u16 = 0x0FFF;
 

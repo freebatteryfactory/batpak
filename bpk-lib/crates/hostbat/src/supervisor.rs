@@ -61,13 +61,6 @@ impl Supervisor {
         self.running.len()
     }
 
-    /// Whether every tracked job has finished (clean or panicked) without
-    /// blocking.
-    #[must_use]
-    pub fn all_finished(&self) -> bool {
-        self.running.iter().all(|job| job.handle.is_finished())
-    }
-
     /// The non-blocking status of every tracked job, in spawn order.
     #[must_use]
     pub fn statuses(&self) -> Vec<(String, JobStatus)> {

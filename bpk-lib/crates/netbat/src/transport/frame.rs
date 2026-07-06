@@ -74,12 +74,8 @@ impl ResponseFrame {
 /// NETBAT/1 CALL <operation-name> <hex-input>\n
 /// ```
 ///
-/// The legacy first-rung frame is still accepted for callers that already
-/// speak it:
-///
-/// ```text
-/// CALL <operation-name> <hex-input>\n
-/// ```
+/// The `NETBAT/1` protocol prefix is mandatory; the pre-0.10.0 unversioned
+/// `CALL <operation-name> <hex-input>` frame is no longer accepted.
 ///
 /// `operation-name` must be non-empty ASCII graphic bytes with no whitespace.
 /// Input bytes are hex-encoded to keep the transport line deterministic and
@@ -105,27 +101,21 @@ pub fn decode_line(line: &[u8], limits: &Limits) -> Result<RequestFrame, NetbatE
     let first = parts.next().ok_or(NetbatError::MalformedRequest {
         reason: "missing verb",
     })?;
-    let (verb, operation, input) = if first.starts_with(PROTOCOL_PREFIX.as_bytes()) {
-        validate_protocol_version(first)?;
-        let verb = parts.next().ok_or(NetbatError::MalformedRequest {
-            reason: "missing verb",
-        })?;
-        let operation = parts.next().ok_or(NetbatError::MalformedRequest {
-            reason: "missing operation",
-        })?;
-        let input = parts.next().ok_or(NetbatError::MalformedRequest {
-            reason: "missing input",
-        })?;
-        (verb, operation, input)
-    } else {
-        let operation = parts.next().ok_or(NetbatError::MalformedRequest {
-            reason: "missing operation",
-        })?;
-        let input = parts.next().ok_or(NetbatError::MalformedRequest {
-            reason: "missing input",
-        })?;
-        (first, operation, input)
-    };
+    if !first.starts_with(PROTOCOL_PREFIX.as_bytes()) {
+        return Err(NetbatError::MalformedRequest {
+            reason: "missing NETBAT/1 protocol prefix",
+        });
+    }
+    validate_protocol_version(first)?;
+    let verb = parts.next().ok_or(NetbatError::MalformedRequest {
+        reason: "missing verb",
+    })?;
+    let operation = parts.next().ok_or(NetbatError::MalformedRequest {
+        reason: "missing operation",
+    })?;
+    let input = parts.next().ok_or(NetbatError::MalformedRequest {
+        reason: "missing input",
+    })?;
 
     if parts.next().is_some() {
         return Err(NetbatError::MalformedRequest {

@@ -375,7 +375,7 @@ pub fn run_chaos_probes() -> (f64, u64, bool, bool, u64, f64, bool) {
     }
     std::thread::sleep(std::time::Duration::from_millis(50));
     let mut received = 0;
-    while sub.receiver().try_recv().is_ok() {
+    while sub.filtered_receiver().try_recv().is_ok() {
         received += 1;
     }
     let delivery_rate = received as f64 / sub_n as f64;

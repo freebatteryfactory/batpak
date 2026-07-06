@@ -166,7 +166,6 @@ pub fn netbat::Server::routes(&self) -> impl core::iter::Iterator<Item = &netbat
 pub struct netbat::ServerModule
 impl netbat::ServerModule
 pub fn netbat::ServerModule::expose(module: syncbat::module::Module, base_path: impl core::convert::AsRef<str>) -> core::result::Result<Self, netbat::RouteValidationError>
-pub fn netbat::ServerModule::into_module(self) -> syncbat::module::Module
 pub fn netbat::ServerModule::module(&self) -> &syncbat::module::Module
 pub fn netbat::ServerModule::name(&self) -> &str
 pub fn netbat::ServerModule::operation_count(&self) -> usize

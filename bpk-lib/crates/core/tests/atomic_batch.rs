@@ -791,7 +791,7 @@ fn batch_subscription_atomicity_no_partial_visibility() {
     // already broadcast (synchronously, before responding to append).
     fn drain(sub: &batpak::store::Subscription) -> usize {
         let mut count = 0;
-        while sub.receiver().try_recv().is_ok() {
+        while sub.filtered_receiver().try_recv().is_ok() {
             count += 1;
         }
         count

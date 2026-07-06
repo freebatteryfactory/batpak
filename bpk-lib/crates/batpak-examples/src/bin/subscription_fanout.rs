@@ -10,7 +10,7 @@
 //!
 //! Plus: filtering, composable SubscriptionOps, and cross-thread event delivery.
 //!
-//! No async. No tokio. Just threads and flume channels.
+//! No async. No tokio. Just threads and batpak subscriptions.
 //!
 //! Run: `cargo run -p batpak-examples --bin subscription_fanout`
 

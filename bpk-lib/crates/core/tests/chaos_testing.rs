@@ -324,7 +324,7 @@ fn chaos_subscription_write_storm() {
     // complete before we drain, so every notification is already sitting in the channel
     // buffer. No sleep needed; tight try_recv until empty is deterministic.
     let mut received = 0;
-    while sub.receiver().try_recv().is_ok() {
+    while sub.filtered_receiver().try_recv().is_ok() {
         received += 1;
     }
 

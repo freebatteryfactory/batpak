@@ -78,13 +78,6 @@ impl InternId {
     pub(crate) fn sentinel() -> Self {
         Self(SENTINEL_ID)
     }
-
-    /// Returns `true` if this is the sentinel ID (slot 0, empty string).
-    #[cfg(test)]
-    #[inline]
-    pub(crate) fn is_sentinel(self) -> bool {
-        self.0 == SENTINEL_ID
-    }
 }
 
 // ── StringInterner ────────────────────────────────────────────────────────────
@@ -301,14 +294,6 @@ impl StringInterner {
         let iter = strings.iter().skip(1).map(|s| Arc::<str>::from(s.as_str()));
         self.install_snapshot_iter(iter)
     }
-
-    /// Returns the number of unused [`InternId`] slots remaining in the `u32`
-    /// id domain — the headroom before [`intern`](StringInterner::intern) would
-    /// fail with [`StoreError::InternerExhausted`].
-    #[cfg(test)]
-    pub(crate) fn remaining_capacity(&self) -> u32 {
-        u32::MAX - self.next_id.load(Ordering::Acquire)
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -324,14 +309,6 @@ mod tests {
             .resolve(InternId(0))
             .expect("sentinel must always resolve");
         assert_eq!(resolved.as_ref(), "");
-    }
-
-    #[test]
-    fn sentinel_is_sentinel() {
-        assert!(InternId::sentinel().is_sentinel());
-        let interner = StringInterner::new();
-        let real_id = interner.intern("hello").expect("intern hello");
-        assert!(!real_id.is_sentinel());
     }
 
     #[test]
@@ -410,24 +387,6 @@ mod tests {
                 .expect("re-intern entity:banana"),
             id_b
         );
-    }
-
-    #[test]
-    fn remaining_capacity_shrinks_as_ids_are_issued() {
-        let interner = StringInterner::new();
-        // Fresh interner: next_id == 1, so headroom is u32::MAX - 1.
-        let start = interner.remaining_capacity();
-        assert_eq!(start, u32::MAX - 1);
-
-        let _a = interner.intern("a").expect("intern a");
-        assert_eq!(interner.remaining_capacity(), start - 1);
-
-        // Re-interning an existing string consumes no new id.
-        let _dup = interner.intern("a").expect("intern a again");
-        assert_eq!(interner.remaining_capacity(), start - 1);
-
-        let _b = interner.intern("b").expect("intern b");
-        assert_eq!(interner.remaining_capacity(), start - 2);
     }
 
     #[test]

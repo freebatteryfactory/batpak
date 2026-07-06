@@ -67,8 +67,9 @@ backend-macos = []
 
 [dependencies]
 # batpak by path for the EventPayload derive + inventory registration and the
-# canonical encoding / blake3 hash helpers reused for report sealing. The `blake3`
-# default feature backs `event::hash::compute_hash`, which seals report bodies.
+# canonical encoding / blake3 hash helpers reused for report sealing. blake3 is
+# a mandatory batpak dependency and backs `event::hash::compute_hash`, which
+# seals report bodies.
 # The contract itself stays OS-free and writes no BatPak.
 batpak = { path = "../core", version = "0.10.0" }
 serde = { version = "1", features = ["derive"] }

@@ -65,17 +65,6 @@ impl Subscription {
         &self.rx
     }
 
-    /// F8: legacy raw-receiver accessor. Retained under
-    /// `#[doc(hidden)]` so existing async consumers keep compiling, but
-    /// new callers should use [`Subscription::filtered_receiver`] — the
-    /// semantics are identical (both receivers are pre-filtered at the
-    /// writer push point since F8), and the name advertises the
-    /// contract.
-    #[doc(hidden)]
-    pub fn receiver(&self) -> &Receiver<Notification> {
-        &self.rx
-    }
-
     /// Create a composable ops wrapper for chainable filter/map/take.
     pub fn ops(self) -> SubscriptionOps {
         SubscriptionOps {

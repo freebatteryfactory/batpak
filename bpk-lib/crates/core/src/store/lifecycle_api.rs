@@ -282,15 +282,6 @@ impl Store<Open> {
         lifecycle::snapshot(self, dest, options)
     }
 
-    /// Deprecated snapshot wrapper that drops [`SnapshotEvidenceReport`].
-    ///
-    /// # Errors
-    /// Returns `StoreError::Io` if creating the destination directory or copying segment files fails.
-    #[deprecated(note = "use snapshot_with_evidence; snapshot evidence is now first-class")]
-    pub fn snapshot(&self, dest: &std::path::Path) -> Result<(), StoreError> {
-        self.snapshot_with_evidence(dest).map(|_| ())
-    }
-
     /// Fork the current store into a self-contained destination directory and
     /// return deterministic fork evidence.
     ///

@@ -1,6 +1,6 @@
-use super::{checkpoint_entries_to_index_entries, CheckpointEntry};
+use super::CheckpointEntry;
 use crate::store::cold_start::{FileLoad, ReservedKindFallbackStats};
-use crate::store::index::{recommended_restore_chunk_count, RoutingSummary};
+use crate::store::index::RoutingSummary;
 use crate::store::platform::fs::{write_file_atomically_with_fs, StoreFs};
 use crate::store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -11,48 +11,15 @@ use std::path::{Path, PathBuf};
 pub(super) const CHECKPOINT_MAGIC: &[u8; 6] = b"FBATCK";
 
 /// Format version stored in the checkpoint header.
-/// v6: v5 plus receipt-extension maps in checkpoint entries.
-/// v2 checkpoints remain readable as a fallback; v1 is rejected.
-pub(super) const CHECKPOINT_VERSION: u16 = 6;
+/// v6: v5 plus receipt-extension maps in checkpoint entries. The reader accepts
+/// the current v5/v6 snapshot; pre-0.10.0 v2/v3/v4 checkpoints are no longer
+/// read — an older checkpoint is ignored and the index rebuilds from segments.
+pub const CHECKPOINT_VERSION: u16 = 6;
 
 /// Final checkpoint filename inside the data directory.
 pub(crate) const CHECKPOINT_FILENAME: &str = "index.ckpt";
 
 const HEADER_LEN: usize = 6 + 2 + 4;
-
-/// Checkpoint format v2: includes interner snapshot + InternId-based entries.
-#[derive(Serialize, Deserialize)]
-pub(super) struct CheckpointDataV2 {
-    pub(super) global_sequence: u64,
-    pub(super) watermark_segment_id: u64,
-    pub(super) watermark_offset: u64,
-    /// Interner snapshot: ordered list of interned strings (index = InternId).
-    /// The sentinel (empty string at index 0) is included.
-    pub(super) interner_strings: Vec<String>,
-    pub(super) entries: Vec<CheckpointEntry>,
-}
-
-/// Checkpoint format v3: v2 plus additive routing/chunk summaries.
-#[derive(Serialize, Deserialize)]
-pub(super) struct CheckpointDataV3 {
-    pub(super) global_sequence: u64,
-    pub(super) watermark_segment_id: u64,
-    pub(super) watermark_offset: u64,
-    pub(super) interner_strings: Vec<String>,
-    pub(super) routing: RoutingSummary,
-    pub(super) entries: Vec<CheckpointEntry>,
-}
-
-/// Checkpoint format v4: v3 plus DAG lane/depth inside each entry.
-#[derive(Serialize, Deserialize)]
-pub(super) struct CheckpointDataV4 {
-    pub(super) global_sequence: u64,
-    pub(super) watermark_segment_id: u64,
-    pub(super) watermark_offset: u64,
-    pub(super) interner_strings: Vec<String>,
-    pub(super) routing: RoutingSummary,
-    pub(super) entries: Vec<CheckpointEntry>,
-}
 
 /// Checkpoint format v6: v5 plus receipt-extension maps in entries.
 #[derive(Serialize, Deserialize)]
@@ -179,49 +146,6 @@ pub(super) fn decode_checkpoint_data(
     body: &[u8],
 ) -> Option<DecodedCheckpointData> {
     match version {
-        2 => {
-            let data: CheckpointDataV2 =
-                decode_body(path, body, "checkpoint deserialisation failed — ignoring")?;
-            let routing = RoutingSummary::from_sorted_entries(
-                &checkpoint_entries_to_index_entries(&data.entries, &data.interner_strings).ok()?,
-                recommended_restore_chunk_count(data.entries.len()),
-            );
-            Some(DecodedCheckpointData {
-                entries: data.entries,
-                interner_strings: data.interner_strings,
-                watermark_segment_id: data.watermark_segment_id,
-                watermark_offset: data.watermark_offset,
-                global_sequence: data.global_sequence,
-                routing,
-                cumulative_reserved_kind_fallbacks: ReservedKindFallbackStats::default(),
-            })
-        }
-        3 => {
-            let data: CheckpointDataV3 =
-                decode_body(path, body, "checkpoint deserialisation failed — ignoring")?;
-            Some(DecodedCheckpointData {
-                entries: data.entries,
-                interner_strings: data.interner_strings,
-                watermark_segment_id: data.watermark_segment_id,
-                watermark_offset: data.watermark_offset,
-                global_sequence: data.global_sequence,
-                routing: data.routing,
-                cumulative_reserved_kind_fallbacks: ReservedKindFallbackStats::default(),
-            })
-        }
-        4 => {
-            let data: CheckpointDataV4 =
-                decode_body(path, body, "checkpoint deserialisation failed — ignoring")?;
-            Some(DecodedCheckpointData {
-                entries: data.entries,
-                interner_strings: data.interner_strings,
-                watermark_segment_id: data.watermark_segment_id,
-                watermark_offset: data.watermark_offset,
-                global_sequence: data.global_sequence,
-                routing: data.routing,
-                cumulative_reserved_kind_fallbacks: ReservedKindFallbackStats::default(),
-            })
-        }
         5 | 6 => {
             let data: CheckpointDataV6 =
                 decode_body(path, body, "checkpoint deserialisation failed — ignoring")?;

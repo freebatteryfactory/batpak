@@ -404,285 +404,32 @@ fn older_unsupported_version_still_degrades_gracefully() {
 
     let idx = StoreIndex::new();
     write_checkpoint(&idx, dir, 0, 0).expect("write");
-
-    // Forge an OLDER, no-longer-decodable version (1: rejected by
-    // decode_checkpoint_data). Fix the CRC so the version branch — not a CRC
-    // mismatch — is what classifies it. An older artifact must keep its
-    // graceful-rebuild path (decode returns None → silent rebuild), distinct
-    // from the future-version hard refusal above.
     let path = dir.join(format::CHECKPOINT_FILENAME);
-    let mut raw = crate::store::platform::fs::read(&path).expect("read");
-    raw[6] = 1;
-    raw[7] = 0;
-    let body_crc = crc32fast::hash(&raw[12..]);
-    raw[8..12].copy_from_slice(&body_crc.to_le_bytes());
-    // Route the forge rewrite through the platform boundary (the same atomic
-    // write the store itself uses) rather than a raw `std::fs::write`.
-    crate::store::platform::fs::write_file_atomically(dir, &path, "checkpoint-forge", |file| {
-        std::io::Write::write_all(file, &raw).map_err(crate::store::StoreError::Io)
-    })
-    .expect("rewrite forged older-version checkpoint");
+    let base = crate::store::platform::fs::read(&path).expect("read");
 
-    assert!(
-        try_load_checkpoint(dir).is_none(),
-        "older unsupported version must degrade to None (rebuild), not refuse"
-    );
-}
-
-#[test]
-fn v2_checkpoint_fallback_is_still_readable() {
-    let tmp = TempDir::new().expect("tempdir");
-    let dir = tmp.path();
-    touch_segment(dir, 0);
-
-    let idx = make_index(6);
-    let mut entries: Vec<CheckpointEntry> = idx
-        .all_entries()
-        .into_iter()
-        .map(|e| CheckpointEntry {
-            event_id: e.event_id,
-            correlation_id: e.correlation_id,
-            causation_id: e.causation_id,
-            entity_id: e.entity_id.as_u32(),
-            scope_id: e.scope_id.as_u32(),
-            kind: e.kind,
-            wall_ms: e.wall_ms,
-            clock: e.clock,
-            dag_lane: e.dag_lane,
-            dag_depth: e.dag_depth,
-            prev_hash: e.hash_chain.prev_hash,
-            event_hash: e.hash_chain.event_hash,
-            segment_id: e.disk_pos.segment_id,
-            offset: e.disk_pos.offset,
-            length: e.disk_pos.length,
-            global_sequence: e.global_sequence,
-            receipt_extensions: BTreeMap::new(),
+    // Forge OLDER, no-longer-decodable versions: v1 was always rejected, and the
+    // legacy v2/v3/v4 readers are removed in 0.10.0 (only v5/v6 decode). Fix the
+    // CRC each time so the version branch — not a CRC mismatch — is what
+    // classifies it. An older artifact must keep its graceful-rebuild path
+    // (decode returns None → silent rebuild), distinct from the future-version
+    // hard refusal above.
+    for legacy_version in [1u16, 2, 3, 4] {
+        let mut raw = base.clone();
+        raw[6..8].copy_from_slice(&legacy_version.to_le_bytes());
+        let body_crc = crc32fast::hash(&raw[12..]);
+        raw[8..12].copy_from_slice(&body_crc.to_le_bytes());
+        // Route the forge rewrite through the platform boundary (the same atomic
+        // write the store itself uses) rather than a raw `std::fs::write`.
+        crate::store::platform::fs::write_file_atomically(dir, &path, "checkpoint-forge", |file| {
+            std::io::Write::write_all(file, &raw).map_err(crate::store::StoreError::Io)
         })
-        .collect();
-    entries.sort_by_key(|entry| entry.global_sequence);
-    let mut interner_strings = vec![String::new()];
-    interner_strings.extend(idx.interner.to_snapshot());
-    let body = crate::encoding::to_bytes(&format::CheckpointDataV2 {
-        global_sequence: idx.global_sequence(),
-        watermark_segment_id: 0,
-        watermark_offset: 0,
-        interner_strings,
-        entries,
-    })
-    .expect("serialize v2 checkpoint");
-    let crc = crc32fast::hash(&body);
-    let path = dir.join(format::CHECKPOINT_FILENAME);
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(format::CHECKPOINT_MAGIC);
-    bytes.extend_from_slice(&2u16.to_le_bytes());
-    bytes.extend_from_slice(&crc.to_le_bytes());
-    bytes.extend_from_slice(&body);
-    std::fs::write(&path, bytes).expect("write v2 checkpoint");
+        .expect("rewrite forged older-version checkpoint");
 
-    let loaded = try_load_checkpoint(dir).expect("load v2 checkpoint");
-    assert_eq!(loaded.entries.len(), 6);
-    assert_eq!(loaded.routing.entry_count, 6);
-    assert!(
-        !loaded.routing.chunks.is_empty(),
-        "v2 fallback should synthesize chunk summaries on load"
-    );
-}
-
-#[test]
-fn v3_checkpoint_defaults_lane_depth_to_zero() {
-    #[derive(Serialize)]
-    struct LegacyCheckpointEntryV3 {
-        #[serde(with = "crate::wire::u128_bytes")]
-        event_id: u128,
-        #[serde(with = "crate::wire::u128_bytes")]
-        correlation_id: u128,
-        #[serde(with = "crate::wire::option_u128_bytes")]
-        causation_id: Option<u128>,
-        entity_id: u32,
-        scope_id: u32,
-        kind: EventKind,
-        wall_ms: u64,
-        clock: u32,
-        prev_hash: [u8; 32],
-        event_hash: [u8; 32],
-        segment_id: u64,
-        offset: u64,
-        length: u32,
-        global_sequence: u64,
+        assert!(
+            try_load_checkpoint(dir).is_none(),
+            "PROPERTY: legacy checkpoint v{legacy_version} must degrade to None (rebuild), not decode"
+        );
     }
-
-    #[derive(Serialize)]
-    struct LegacyCheckpointDataV3 {
-        global_sequence: u64,
-        watermark_segment_id: u64,
-        watermark_offset: u64,
-        interner_strings: Vec<String>,
-        routing: RoutingSummary,
-        entries: Vec<LegacyCheckpointEntryV3>,
-    }
-
-    let tmp = TempDir::new().expect("tempdir");
-    let dir = tmp.path();
-    touch_segment(dir, 0);
-
-    let idx = make_index(4);
-    let mut legacy_entries: Vec<LegacyCheckpointEntryV3> = idx
-        .all_entries()
-        .into_iter()
-        .map(|e| LegacyCheckpointEntryV3 {
-            event_id: e.event_id,
-            correlation_id: e.correlation_id,
-            causation_id: e.causation_id,
-            entity_id: e.entity_id.as_u32(),
-            scope_id: e.scope_id.as_u32(),
-            kind: e.kind,
-            wall_ms: e.wall_ms,
-            clock: e.clock,
-            prev_hash: e.hash_chain.prev_hash,
-            event_hash: e.hash_chain.event_hash,
-            segment_id: e.disk_pos.segment_id,
-            offset: e.disk_pos.offset,
-            length: e.disk_pos.length,
-            global_sequence: e.global_sequence,
-        })
-        .collect();
-    legacy_entries.sort_by_key(|entry| entry.global_sequence);
-    let mut interner_strings = vec![String::new()];
-    interner_strings.extend(idx.interner.to_snapshot());
-    let mut sorted_entries = idx.all_entries();
-    sorted_entries.sort_by_key(|entry| entry.global_sequence);
-    let routing = RoutingSummary::from_sorted_entries(
-        &sorted_entries,
-        recommended_restore_chunk_count(sorted_entries.len()),
-    );
-    let body = crate::encoding::to_bytes(&LegacyCheckpointDataV3 {
-        global_sequence: idx.global_sequence(),
-        watermark_segment_id: 0,
-        watermark_offset: 0,
-        interner_strings,
-        routing,
-        entries: legacy_entries,
-    })
-    .expect("serialize v3 checkpoint");
-    let crc = crc32fast::hash(&body);
-    let path = dir.join(format::CHECKPOINT_FILENAME);
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(format::CHECKPOINT_MAGIC);
-    bytes.extend_from_slice(&3u16.to_le_bytes());
-    bytes.extend_from_slice(&crc.to_le_bytes());
-    bytes.extend_from_slice(&body);
-    std::fs::write(&path, bytes).expect("write v3 checkpoint");
-
-    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
-        .expect("load v3 checkpoint snapshot");
-    assert!(loaded.entries.iter().all(|entry| entry.dag_lane == 0));
-    assert!(loaded.entries.iter().all(|entry| entry.dag_depth == 0));
-}
-
-#[test]
-fn v4_checkpoint_preserves_lane_depth_and_defaults_reserved_stats() {
-    #[derive(Serialize)]
-    struct LegacyCheckpointEntryV4 {
-        #[serde(with = "crate::wire::u128_bytes")]
-        event_id: u128,
-        #[serde(with = "crate::wire::u128_bytes")]
-        correlation_id: u128,
-        #[serde(with = "crate::wire::option_u128_bytes")]
-        causation_id: Option<u128>,
-        entity_id: u32,
-        scope_id: u32,
-        kind: EventKind,
-        wall_ms: u64,
-        clock: u32,
-        dag_lane: u32,
-        dag_depth: u32,
-        prev_hash: [u8; 32],
-        event_hash: [u8; 32],
-        segment_id: u64,
-        offset: u64,
-        length: u32,
-        global_sequence: u64,
-    }
-
-    #[derive(Serialize)]
-    struct LegacyCheckpointDataV4 {
-        global_sequence: u64,
-        watermark_segment_id: u64,
-        watermark_offset: u64,
-        interner_strings: Vec<String>,
-        routing: RoutingSummary,
-        entries: Vec<LegacyCheckpointEntryV4>,
-    }
-
-    let tmp = TempDir::new().expect("tempdir");
-    let dir = tmp.path();
-    touch_segment(dir, 0);
-
-    let idx = make_index(4);
-    let mut legacy_entries: Vec<LegacyCheckpointEntryV4> = idx
-        .all_entries()
-        .into_iter()
-        .map(|e| LegacyCheckpointEntryV4 {
-            event_id: e.event_id,
-            correlation_id: e.correlation_id,
-            causation_id: e.causation_id,
-            entity_id: e.entity_id.as_u32(),
-            scope_id: e.scope_id.as_u32(),
-            kind: e.kind,
-            wall_ms: e.wall_ms,
-            clock: e.clock,
-            dag_lane: 7,
-            dag_depth: 3,
-            prev_hash: e.hash_chain.prev_hash,
-            event_hash: e.hash_chain.event_hash,
-            segment_id: e.disk_pos.segment_id,
-            offset: e.disk_pos.offset,
-            length: e.disk_pos.length,
-            global_sequence: e.global_sequence,
-        })
-        .collect();
-    legacy_entries.sort_by_key(|entry| entry.global_sequence);
-    let mut interner_strings = vec![String::new()];
-    interner_strings.extend(idx.interner.to_snapshot());
-    let mut sorted_entries = idx.all_entries();
-    sorted_entries.sort_by_key(|entry| entry.global_sequence);
-    let routing = RoutingSummary::from_sorted_entries(
-        &sorted_entries,
-        recommended_restore_chunk_count(sorted_entries.len()),
-    );
-
-    write_legacy_checkpoint_body(
-        dir,
-        4,
-        &LegacyCheckpointDataV4 {
-            global_sequence: idx.global_sequence(),
-            watermark_segment_id: 0,
-            watermark_offset: 0,
-            interner_strings,
-            routing,
-            entries: legacy_entries,
-        },
-    );
-
-    let loaded = try_load_checkpoint_snapshot(dir, &crate::store::platform::fs::RealFs)
-        .expect("load v4 checkpoint snapshot");
-    assert!(
-        loaded.entries.iter().all(|entry| entry.dag_lane == 7),
-        "PROPERTY: checkpoint v4 must preserve persisted DAG lane coordinates."
-    );
-    assert!(
-        loaded.entries.iter().all(|entry| entry.dag_depth == 3),
-        "PROPERTY: checkpoint v4 must preserve persisted DAG depth coordinates."
-    );
-    assert_eq!(
-        loaded.cumulative_reserved_kind_fallbacks,
-        ReservedKindFallbackStats::default(),
-        "PROPERTY: checkpoint v4 must default missing cumulative reserved-kind fallback stats to empty."
-    );
-    assert!(
-        !loaded.receipt_extensions_hydrated,
-        "PROPERTY: checkpoint v4 must require authoritative frame hydration for receipt extensions."
-    );
 }
 
 #[test]

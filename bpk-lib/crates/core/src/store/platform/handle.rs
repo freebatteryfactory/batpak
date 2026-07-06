@@ -148,15 +148,6 @@ pub trait StoreFile: Send + Sync {
     /// The underlying metadata failure.
     fn len(&self) -> io::Result<u64>;
 
-    /// Whether the backing file is empty. Provided in terms of
-    /// [`StoreFile::len`].
-    ///
-    /// # Errors
-    /// The underlying metadata failure.
-    fn is_empty(&self) -> io::Result<bool> {
-        Ok(self.len()? == 0)
-    }
-
     /// Read up to `buf.len()` bytes at absolute byte `offset`, returning how
     /// many were read (`0` = end of file). Positioned: must not disturb any
     /// sequential cursor another clone of the same OS file shares.

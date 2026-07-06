@@ -227,7 +227,7 @@ fn reactive_subscribe_react_append_pattern() {
     let root_receipt = writer.join().expect("writer thread");
 
     // Receive the notification
-    let rx = sub.receiver();
+    let rx = sub.filtered_receiver();
     let notif = rx
         .recv_timeout(std::time::Duration::from_secs(2))
         .expect("should receive notification");

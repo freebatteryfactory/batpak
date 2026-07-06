@@ -41,7 +41,7 @@ fn subscription_receives_matching_events() {
     // Should receive 3 matching notifications
     let mut count = 0;
     // Use try_recv in a loop since channel is bounded and events already sent
-    let rx = sub.receiver();
+    let rx = sub.filtered_receiver();
     while let Ok(notif) = rx.try_recv() {
         if region.matches_event(notif.coord.entity(), notif.coord.scope(), notif.kind) {
             count += 1;
@@ -88,7 +88,7 @@ fn subscription_filters_by_region() {
     writer.join().expect("writer");
 
     // Raw receiver gets all events, but region filter should match only entity:a
-    let rx = sub.receiver();
+    let rx = sub.filtered_receiver();
     let mut matching = 0;
     while let Ok(notif) = rx.try_recv() {
         if region.matches_event(notif.coord.entity(), notif.coord.scope(), notif.kind) {

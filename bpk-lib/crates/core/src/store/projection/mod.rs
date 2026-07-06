@@ -104,10 +104,6 @@ pub struct CacheMeta {
     pub process_boot_ns: Option<u64>,
 }
 
-/// Legacy byte layout: value bytes followed by 16 bytes of metadata
-/// (watermark u64 LE + cached_at_us i64 LE).
-const CACHE_META_LEGACY_SIZE: usize = 16;
-
 /// Current byte layout: value bytes followed by 40 bytes of metadata
 /// (watermark u64 LE + cached_at_us i64 LE + cached_at_mono_ns i64 LE +
 /// process_boot_ns u64 LE + magic u64 LE).
@@ -138,14 +134,14 @@ impl CacheMeta {
         buf
     }
 
-    /// Decode value + metadata from a cache-stored byte buffer. Handles both
-    /// current (40-byte trailer + magic) and legacy (16-byte trailer) formats.
-    /// Legacy entries return `None` for the monotonic fields.
+    /// Decode value + metadata from a cache-stored byte buffer written in the
+    /// current 40-byte-trailer-plus-magic format. Pre-0.10.0 legacy 16-byte
+    /// trailer entries are no longer read.
     ///
-    /// Current-vs-legacy is disambiguated by a trailing-8-byte magic heuristic
+    /// Current-format entries are recognized by a trailing-8-byte magic heuristic
     /// (there is no leading magic/version/length header). Terminal FAIL-CLOSED
-    /// policy (audit R18): the cache is fully rebuildable — a misread is a miss,
-    /// not corruption — witnessed by
+    /// policy (audit R18): the cache is fully rebuildable — an unrecognized entry
+    /// is a miss, not corruption — witnessed by
     /// `projection/mod.rs::cache_meta_rebuild_only_policy_uses_trailing_magic_not_leading_header`.
     pub(crate) fn decode_from_bytes(bytes: &[u8]) -> Result<(Vec<u8>, Self), StoreError> {
         // Try current format first: last 8 bytes == magic.
@@ -186,29 +182,12 @@ impl CacheMeta {
                 ));
             }
         }
-        // Fall back to legacy: 16-byte trailer, no magic.
-        if bytes.len() < CACHE_META_LEGACY_SIZE {
-            return Err(StoreError::cache_msg("corrupt cache metadata: too short"));
-        }
-        let (value, meta_bytes) = bytes.split_at(bytes.len() - CACHE_META_LEGACY_SIZE);
-        let watermark = u64::from_le_bytes(
-            meta_bytes[..8]
-                .try_into()
-                .map_err(|_| StoreError::cache_msg("corrupt cache metadata"))?,
-        );
-        let cached_at_us = i64::from_le_bytes(
-            meta_bytes[8..16]
-                .try_into()
-                .map_err(|_| StoreError::cache_msg("corrupt cache metadata"))?,
-        );
-        Ok((
-            value.to_vec(),
-            Self {
-                watermark,
-                cached_at_us,
-                cached_at_mono_ns: None,
-                process_boot_ns: None,
-            },
+        // No trailing magic: not a current-format entry. Pre-0.10.0 legacy
+        // 16-byte-trailer entries are no longer read — the projection cache is
+        // fully rebuildable, so an unrecognized entry is a miss (fail-closed),
+        // never corruption of durable state.
+        Err(StoreError::cache_msg(
+            "unrecognized projection-cache entry format",
         ))
     }
 }
@@ -487,38 +466,20 @@ mod tests {
     }
 
     #[test]
-    fn cache_meta_legacy_trailer_decodes_as_none_mono() {
-        // Legacy layout: 16-byte trailer (watermark u64 LE + cached_at_us i64 LE),
-        // no magic. Produced by older writers before monotonic fields existed.
+    fn cache_meta_legacy_trailer_is_now_a_miss_not_decoded() {
+        // Pre-0.10.0 legacy layout: a 16-byte trailer (watermark u64 LE +
+        // cached_at_us i64 LE) with NO trailing magic. The legacy reader is
+        // removed, so such an entry no longer decodes — it is an unrecognized
+        // entry and returns Err (a fail-closed cache miss → rebuild), never a
+        // silently-decoded stale value.
         let mut buf = Vec::new();
         buf.extend_from_slice(b"legacy payload");
         buf.extend_from_slice(&99u64.to_le_bytes());
         buf.extend_from_slice(&1_234_567i64.to_le_bytes());
-        let (value, meta) =
-            CacheMeta::decode_from_bytes(&buf).expect("legacy decode should succeed");
-        assert_eq!(value, b"legacy payload");
-        assert_eq!(meta.watermark, 99);
-        assert_eq!(meta.cached_at_us, 1_234_567);
-        assert!(meta.cached_at_mono_ns.is_none());
-        assert!(meta.process_boot_ns.is_none());
-    }
-
-    #[test]
-    fn cache_meta_decode_accepts_exact_legacy_trailer_with_empty_value() {
-        // Boundary: a buffer of exactly CACHE_META_LEGACY_SIZE (no magic, empty
-        // value) is the smallest valid legacy entry. Pins the `<` length guard:
-        // an off-by-one `<=` would reject this exact-size buffer as "too short".
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&7u64.to_le_bytes());
-        buf.extend_from_slice(&123i64.to_le_bytes());
-        assert_eq!(buf.len(), CACHE_META_LEGACY_SIZE);
-
-        let (value, meta) = CacheMeta::decode_from_bytes(&buf)
-            .expect("exact-size legacy trailer must decode, not be rejected as too short");
-        assert!(value.is_empty());
-        assert_eq!(meta.watermark, 7);
-        assert_eq!(meta.cached_at_us, 123);
-        assert!(meta.cached_at_mono_ns.is_none());
+        assert!(
+            CacheMeta::decode_from_bytes(&buf).is_err(),
+            "PROPERTY: a legacy (no-magic) cache entry is no longer read — it is a miss, not a decode"
+        );
     }
 
     #[test]

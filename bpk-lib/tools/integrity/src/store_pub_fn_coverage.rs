@@ -13,14 +13,6 @@ const ALLOWLIST: &[&str] = &[
     // `subscription` is doc(hidden) glue for async integration, exercised
     // indirectly via `subscribe` in every subscription test.
     "subscription",
-    // `snapshot` is the `#[deprecated]` one-line wrapper
-    // (`self.snapshot_with_evidence(dest).map(|_| ())`, lifecycle_api.rs); no test
-    // calls it directly — the whole snapshot surface is exercised via the
-    // evidence-returning `snapshot_with_evidence` the wrapper delegates to. Under
-    // receiver-typed coverage matching it is no longer laundered green by unrelated
-    // `.snapshot()` calls on watermark guards / sequences, so it is allowlisted
-    // explicitly. (Owner follow-up: delete the deprecated wrapper outright.)
-    "snapshot",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]

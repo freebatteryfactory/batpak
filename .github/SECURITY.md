@@ -9,5 +9,5 @@ Security-sensitive changes should preserve:
 - sync-only production runtime
 - explicit trust boundaries
 - append-only event durability
-- hash-chain integrity when `blake3` is enabled
+- hash-chain integrity (blake3 is a mandatory dependency, always on)
 - traceability and auditability of behavior changes

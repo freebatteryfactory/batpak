@@ -189,7 +189,6 @@
   kind: golden-fixtures
   paths:
     - crates/netbat/tests/golden/request_call_v1.hex
-    - crates/netbat/tests/golden/request_call_legacy.hex
     - crates/netbat/tests/golden/request_decode_input.hex
     - crates/netbat/tests/golden/request_empty_line.hex
     - crates/netbat/tests/golden/request_input_too_large.hex

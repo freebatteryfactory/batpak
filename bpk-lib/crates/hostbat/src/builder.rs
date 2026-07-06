@@ -89,14 +89,6 @@ impl HostBuilder {
         Self::default()
     }
 
-    /// Use a custom [`Spawn`] backend for the supervisor (e.g. a deterministic
-    /// test scheduler). Replaces the default [`ThreadSpawn`].
-    #[must_use]
-    pub fn spawn_with(mut self, spawn: Arc<dyn Spawn>) -> Self {
-        self.spawn = spawn;
-        self
-    }
-
     /// Attach the receipt sink the composed runtime records into.
     #[must_use]
     pub fn receipt_sink<S>(mut self, sink: S) -> Self
@@ -376,7 +368,6 @@ impl HostBuilder {
             subscriptions,
             event_payload_bindings,
             composition_schemas,
-            schema_registry,
             startup,
             shutdown,
             job_factories: lowered.job_factories,

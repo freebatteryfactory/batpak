@@ -47,7 +47,7 @@ pub(crate) const IDEMP_MAGIC: &[u8; 6] = b"FBATID";
 
 /// On-disk format version stored in the `index.idemp` header.
 /// v1: initial durable idempotency sidecar.
-pub(crate) const IDEMP_VERSION: u16 = 1;
+pub const IDEMP_VERSION: u16 = 1;
 
 /// Final filename inside the data directory.
 pub(crate) const IDEMP_FILENAME: &str = "index.idemp";

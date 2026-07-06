@@ -183,13 +183,6 @@ impl OperationDescriptor {
         }
     }
 
-    /// Return a copy of this descriptor with a human-readable title attached.
-    #[must_use]
-    pub fn with_title(mut self, title: &'static str) -> Self {
-        self.title = Some(DescriptorText::static_str(title));
-        self
-    }
-
     /// Return a copy of this descriptor with an owned human-readable title
     /// attached.
     #[must_use]
