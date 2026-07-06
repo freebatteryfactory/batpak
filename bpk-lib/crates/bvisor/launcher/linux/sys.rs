@@ -530,6 +530,13 @@ pub(crate) fn clone3_child(
 /// `restrict_self` (`prctl` + `landlock_restrict_self`), the STANDALONE
 /// `prctl(PR_SET_NO_NEW_PRIVS)`, and `seccomp(SECCOMP_SET_MODE_FILTER, ..)` on the pre-built
 /// BPF (a fixed stack `sock_fprog`).
+// SAFETY (LEDGER:linux-launcher-run-child): the async-signal-safe child branch. Indexes
+// only parent-allocated `ChildExecPlan`/ruleset memory and issues only async-signal-safe
+// syscalls (userns-rendezvous `SYS_read`, `sigprocmask`, `close`, optional `fchdir`,
+// `restrict_self`, `PR_SET_NO_NEW_PRIVS`, `seccomp` on the pre-built BPF, `fexecve`); it
+// allocates nothing, takes no lock, runs no destructor, and DIVERGES (exec replaces the
+// image, or `child_fail` `_exit`s), so the target never runs unconfined. Full contract in
+// traceability/unsafe_ledger.yaml.
 unsafe fn run_child(
     plan: &ChildExecPlan,
     confinement: Option<RulesetCreated>,
@@ -645,6 +652,11 @@ unsafe fn run_child(
 
 /// Report the current errno to the error pipe and `_exit(127)` — async-signal-safe.
 /// Diverges. SAFETY: callable only from the child window with a valid `error_fd`.
+// SAFETY (LEDGER:linux-launcher-child-fail): callable only from the async-signal-safe
+// child window with a valid `error_fd`; reads errno, `write`s the fixed-width errno bytes
+// to the O_CLOEXEC error pipe, then `_exit(127)`. Allocation-free, async-signal-safe, and
+// diverges — the target never runs and the parent observes the fault (fail closed). Full
+// contract in traceability/unsafe_ledger.yaml.
 unsafe fn child_fail(error_fd: RawFd) -> ! {
     let errno = *libc::__errno_location();
     let bytes = errno.to_ne_bytes();

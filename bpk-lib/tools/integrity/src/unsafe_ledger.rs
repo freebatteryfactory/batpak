@@ -323,27 +323,77 @@ pub(crate) fn reconcile(sites: &[AnchoredSite], ledger: &Ledger) -> Result<()> {
     )
 }
 
-/// A syn visitor recording the line of every `unsafe` block in one file.
+/// A syn visitor recording the line of every basement `unsafe` SURFACE in one file:
+/// both `unsafe { ... }` expression blocks AND `unsafe fn` declarations.
+///
+/// The `unsafe fn` arm is load-bearing: inside an `unsafe fn` (edition 2021) the whole
+/// body is an implicit unsafe context, so naked FFI needs no inner `unsafe { ... }`
+/// block. A visitor that recorded only `visit_expr_unsafe` would be BLIND to those
+/// operations — leaving them unanchored and unreconciled while the gate this backs (the
+/// compensating control for the safe-Rust-basement exemption) reads green. An `unsafe fn`
+/// is a single unsafe surface: its declaration carries the `LEDGER:<id>` anchor and one
+/// ledger entry covers its body's safety contract.
 struct UnsafeSiteVisitor {
     file: String,
     sites: Vec<UnsafeSite>,
 }
 
-impl<'ast> Visit<'ast> for UnsafeSiteVisitor {
-    fn visit_expr_unsafe(&mut self, node: &'ast syn::ExprUnsafe) {
+impl UnsafeSiteVisitor {
+    fn record(&mut self, line: usize) {
         self.sites.push(UnsafeSite {
             file: self.file.clone(),
-            line: node.unsafe_token.span().start().line,
+            line,
         });
+    }
+}
+
+impl<'ast> Visit<'ast> for UnsafeSiteVisitor {
+    fn visit_expr_unsafe(&mut self, node: &'ast syn::ExprUnsafe) {
+        self.record(node.unsafe_token.span().start().line);
         syn::visit::visit_expr_unsafe(self, node);
+    }
+
+    /// A free `unsafe fn` — its body is an implicit unsafe context (naked FFI, no inner
+    /// block). Anchored at the `unsafe` keyword line, like an `unsafe { ... }` block.
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        if let Some(unsafe_token) = &node.sig.unsafety {
+            self.record(unsafe_token.span().start().line);
+        }
+        syn::visit::visit_item_fn(self, node);
+    }
+
+    /// An `unsafe fn` method in an `impl` block — same implicit-unsafe body.
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        if let Some(unsafe_token) = &node.sig.unsafety {
+            self.record(unsafe_token.span().start().line);
+        }
+        syn::visit::visit_impl_item_fn(self, node);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_basement, reconcile, resolve_anchors, AnchoredSite, Ledger, LedgerEntry};
+    use super::{
+        is_basement, reconcile, resolve_anchors, AnchoredSite, Ledger, LedgerEntry,
+        UnsafeSiteVisitor,
+    };
 
     const BASEMENT: &str = "crates/bvisor/src/backend/linux/sys.rs";
+
+    /// Run the FULL detection path (visitor → anchor resolution) on `src`, exactly as
+    /// `collect_anchored_sites` does for a real basement file. The `unsafe fn` fixtures
+    /// below use this to prove the visitor now SEES `unsafe fn` bodies, not only
+    /// `unsafe { }` blocks.
+    fn anchored_from_source(src: &str) -> Vec<AnchoredSite> {
+        let parsed = syn::parse_file(src).expect("fixture source parses");
+        let mut visitor = UnsafeSiteVisitor {
+            file: BASEMENT.to_string(),
+            sites: Vec::new(),
+        };
+        syn::visit::Visit::visit_file(&mut visitor, &parsed);
+        let lines: Vec<usize> = visitor.sites.iter().map(|s| s.line).collect();
+        resolve_anchors(BASEMENT, src, &lines).expect("anchor regex compiles")
+    }
 
     fn entry(anchor: &str) -> LedgerEntry {
         LedgerEntry {
@@ -502,5 +552,38 @@ fn c() {
         let err = reconcile(&[], &ledger)
             .expect_err("a ledger entry outside a basement must fail closed");
         assert!(err.to_string().contains("outside a sanctioned basement"));
+    }
+
+    /// C1 regression (crown gate hole): a naked `unsafe fn` body — no inner `unsafe { }`,
+    /// no `LEDGER:` anchor — must be SEEN as a site and fail closed. Before the visitor
+    /// learned `unsafe fn`, this source produced ZERO sites, so `reconcile` passed
+    /// vacuously while real FFI (the launcher's `child_fail`/`run_child`) went
+    /// unanchored. This fixture would pass-as-green under the old detector; it now bites.
+    #[test]
+    fn unanchored_unsafe_fn_body_fails_closed() {
+        let src = "unsafe fn child_fail() { do_ffi(); }\n";
+        let sites = anchored_from_source(src);
+        assert_eq!(sites.len(), 1, "the `unsafe fn` must be seen as one unsafe surface");
+        assert!(sites[0].anchor.is_empty(), "no LEDGER token ⇒ unanchored");
+        let err = reconcile(&sites, &Ledger::default())
+            .expect_err("an unanchored `unsafe fn` body must fail closed");
+        assert!(err.to_string().contains("unanchored `unsafe` block"));
+    }
+
+    /// The positive twin: an `unsafe fn` anchored via a `// SAFETY (LEDGER:<id>)` comment
+    /// and registered in the ledger passes, exactly like an anchored `unsafe { }` block.
+    #[test]
+    fn anchored_unsafe_fn_body_passes() {
+        let src = "\
+// SAFETY (LEDGER:linux-launcher-child-fail): async-signal-safe errno write + _exit.
+unsafe fn child_fail() { do_ffi(); }
+";
+        let sites = anchored_from_source(src);
+        assert_eq!(sites.len(), 1);
+        assert_eq!(sites[0].anchor, "linux-launcher-child-fail");
+        let ledger = Ledger {
+            entries: vec![entry("linux-launcher-child-fail")],
+        };
+        assert!(reconcile(&sites, &ledger).is_ok());
     }
 }

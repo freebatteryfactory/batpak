@@ -329,6 +329,12 @@ pub(crate) fn spawn_launcher_with_fds(
 /// lock, and dereferences no raw pointer beyond the slice it reads. Each `dup2` duplicates
 /// into the CHILD's own fd table, so there is no cross-process aliasing; the parent-owned
 /// source fds stay valid until after the parent's `spawn`.
+// SAFETY (LEDGER:linux-backend-apply-fd-placements): runs in the child pre-exec window;
+// indexes only the already-allocated `plan` slice (copy-on-write read, no allocator) and
+// issues only async-signal-safe syscalls (`dup2` onto fixed target fd numbers, `fcntl`
+// F_GETFD/F_SETFD to toggle CLOEXEC); no heap alloc, no lock, no raw-pointer deref beyond
+// the slice, and each `dup2` duplicates into the CHILD's own fd table (no cross-process
+// aliasing). Full contract in traceability/unsafe_ledger.yaml.
 unsafe fn apply_fd_placements(plan: &[FdPlacement]) -> io::Result<()> {
     let mut i = 0usize;
     while i < plan.len() {
