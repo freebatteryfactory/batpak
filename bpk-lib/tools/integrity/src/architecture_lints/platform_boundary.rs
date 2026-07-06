@@ -55,6 +55,10 @@ pub(super) fn check(
         ),
         ("crates/core/src/store/sim/fs.rs", ".sync_all("),
         ("crates/core/src/store/sim/fs.rs", ".read_at("),
+        // The SimFs unit tests, split out of fs.rs to keep it under the line
+        // cap; they drive the same seam handles (a honored `sync_all` records
+        // the durable length the crash model truncates to).
+        ("crates/core/src/store/sim/fs_tests.rs", ".sync_all("),
         (
             "crates/core/src/store/segment/boundary_tests.rs",
             ".sync_all(",

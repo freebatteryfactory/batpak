@@ -396,11 +396,21 @@ impl SimFs {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (path, state) in durable.iter() {
-            // A real-file-backed inner truncates in place (RealFs behavior,
-            // unchanged). A virtual inner (e.g. MemFs) has no OS file to
-            // truncate, so rewrite it to its durable prefix through the seam —
-            // the crash model is then backend-agnostic.
-            if crate::store::platform::fs::truncate_file_to(path, state.durable_len).is_ok() {
+            // A real-file-backed inner truncates its OS file in place (RealFs
+            // behavior, unchanged). A virtual inner (e.g. MemFs) has no OS file,
+            // so it is rewritten to its durable prefix through the seam — the
+            // crash model is backend-agnostic. Probe the INNER handle to decide:
+            // a blind host `truncate_file_to` could otherwise succeed against an
+            // unrelated same-named host file when the inner is virtual, skip the
+            // seam rewrite, and leave the virtual file at its full pre-crash
+            // length (and mutate that host file as a side effect).
+            let inner_is_real_file = matches!(
+                self.inner.open_file(path),
+                Ok(handle) if handle.as_std_file().is_some()
+            );
+            if inner_is_real_file
+                && crate::store::platform::fs::truncate_file_to(path, state.durable_len).is_ok()
+            {
                 continue;
             }
             self.crash_truncate_via_seam(path, state.durable_len);
@@ -725,137 +735,5 @@ impl StoreFs for SimFs {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn same_seed_same_fsync_drop_schedule() {
-        let a = SimFs::new(99, 4);
-        let b = SimFs::new(99, 4);
-        let pa: Vec<_> = (0..64).map(|_| a.state.fsync_dropped()).collect();
-        let pb: Vec<_> = (0..64).map(|_| b.state.fsync_dropped()).collect();
-        assert_eq!(
-            pa, pb,
-            "PROPERTY: identical seeds produce identical fsync-drop schedules"
-        );
-    }
-
-    #[test]
-    fn crash_truncates_to_durable_length() {
-        let dir = tempfile::tempdir().expect("tmpdir");
-        // Never drop syncs here so the durability is purely the unsynced tail.
-        let fs = SimFs::new(1, 0);
-        let path = dir.path().join("seg.fbat");
-        let mut file = fs.create_new_file(&path).expect("create");
-        file.write_all(b"durable").expect("write durable");
-        file.sync_all().expect("honored sync");
-        let durable = fs.durable_len(&path);
-        // Write more, do NOT route a sync through the fault layer: this tail
-        // must be lost on crash. Flush the real bytes through the platform
-        // seam (the structural gate forbids a bare `.sync_all()` outside
-        // src/store/platform) so the tail is genuinely on disk before the
-        // crash truncates it back to durable_len.
-        file.write_all(b"-and-lost-tail").expect("write tail");
-        crate::store::platform::sync::sync_file_all_io(
-            file.as_std_file()
-                .expect("SimFs over RealFs mints real files"),
-        )
-        .expect("flush real bytes to disk");
-        fs.crash();
-        let recovered = crate::store::platform::fs::metadata(&path)
-            .expect("stat")
-            .len();
-        assert_eq!(
-            recovered, durable,
-            "PROPERTY: a crash truncates the real file to its last durable (synced) length"
-        );
-        assert_eq!(
-            recovered,
-            b"durable".len() as u64,
-            "PROPERTY: only the synced prefix survives the crash"
-        );
-    }
-
-    #[test]
-    fn dropped_fsync_does_not_advance_durable_length() {
-        let dir = tempfile::tempdir().expect("tmpdir");
-        // Always drop syncs (1-in-1): durable length must never advance.
-        let fs = SimFs::new(7, 1);
-        let path = dir.path().join("seg.fbat");
-        let mut file = fs.create_new_file(&path).expect("create");
-        file.write_all(b"unsynced").expect("write");
-        crate::store::platform::sync::sync_file_all_io(
-            file.as_std_file()
-                .expect("SimFs over RealFs mints real files"),
-        )
-        .expect("flush real bytes");
-        file.sync_all()
-            .expect("dropped sync still returns Ok to the store");
-        assert_eq!(
-            fs.durable_len(&path),
-            0,
-            "PROPERTY: a dropped sync returns Ok but never advances the durable length"
-        );
-        fs.crash();
-        assert_eq!(
-            crate::store::platform::fs::metadata(&path)
-                .expect("stat")
-                .len(),
-            0,
-            "PROPERTY: an all-dropped-sync file loses its entire tail on crash"
-        );
-    }
-
-    #[test]
-    fn remove_dir_all_removes_the_directory_entry_over_every_inner() {
-        // SimFs is a fault LAYER; directory removal must remove the ENTRY, not
-        // merely clear contents like the trait default. Otherwise fork/snapshot
-        // cleanup over a SimFs-wrapped backend reports a cursor directory
-        // removed while it survives, leaving stale destination state. Proven
-        // over both a real-file and an in-memory inner — delegation must hold
-        // regardless of backend.
-        let real_dir = tempfile::tempdir().expect("tmpdir");
-        let cases: Vec<(SimFs, std::path::PathBuf)> = vec![
-            (
-                SimFs::layered(0x5117_D111, 0, Arc::new(RealFs)),
-                real_dir.path().join("store"),
-            ),
-            (
-                SimFs::layered(
-                    0x5117_D222,
-                    0,
-                    Arc::new(crate::store::platform::mem_fs::MemFs::new()),
-                ),
-                std::path::PathBuf::from("/virtual/sim-remove-dir"),
-            ),
-        ];
-
-        for (fs, root) in cases {
-            let dir = root.join("cursors");
-            fs.create_dir_all(&dir).expect("seed directory");
-            let child = dir.join("resume.ckpt");
-            let mut file = fs.create_new_file(&child).expect("create child");
-            file.write_all(b"checkpoint").expect("write child");
-            file.sync_all().expect("sync child");
-            drop(file);
-
-            assert!(
-                fs.remove_dir_all_if_present(&dir)
-                    .expect("remove existing directory"),
-                "an existing directory reports removed"
-            );
-            // The ENTRY is gone: the child reads NotFound and a second removal
-            // is a clean no-op. The trait-default gap would keep the empty
-            // directory alive and report Ok(true) again here.
-            assert!(
-                matches!(fs.read(&child), Err(error) if error.kind() == io::ErrorKind::NotFound),
-                "a child under a removed directory must be gone"
-            );
-            assert!(
-                !fs.remove_dir_all_if_present(&dir)
-                    .expect("second removal of an absent directory"),
-                "an already-removed directory reports Ok(false) — the entry is truly gone"
-            );
-        }
-    }
-}
+#[path = "fs_tests.rs"]
+mod tests;

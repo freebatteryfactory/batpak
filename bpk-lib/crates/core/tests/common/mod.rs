@@ -150,6 +150,17 @@ pub fn backend_upholds_the_documented_contract(
             .is_err(),
         "copying onto a directory must fail, not create a file+dir collision"
     );
+    // Renaming onto a directory path fails closed too (like RealFs's
+    // std::fs::rename), leaving the source intact — never a file+dir collision.
+    assert!(
+        fs.rename(&file_path, &cleanup_dir).is_err(),
+        "renaming onto a directory must fail, not create a file+dir collision"
+    );
+    assert_eq!(
+        fs.metadata(&file_path)?.kind,
+        FileKind::File,
+        "a rename refused for a directory destination must leave the source intact"
+    );
 
     // The store-directory lock excludes a second cooperating owner while the
     // guard lives, and frees the slot when it drops.
