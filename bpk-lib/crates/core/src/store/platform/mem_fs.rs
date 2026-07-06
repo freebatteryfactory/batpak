@@ -350,11 +350,18 @@ impl StoreFs for MemFs {
 
     fn copy(&self, from: &Path, to: &Path) -> io::Result<u64> {
         let mut tree = self.lock_tree();
-        let bytes = tree
-            .files
-            .get(from)
-            .cloned()
-            .ok_or_else(|| MemFs::not_found(from))?;
+        // Copying onto a directory would leave the path in both `files` and
+        // `dirs` — a file+dir collision `RealFs`'s `std::fs::copy` refuses. Fail
+        // closed so a reused snapshot/fork destination can't split one path
+        // into two conflicting artifacts.
+        if tree.dirs.contains(to) {
+            return Err(MemFs::is_a_directory(to));
+        }
+        let bytes = match tree.files.get(from) {
+            Some(bytes) => bytes.clone(),
+            None if tree.dirs.contains(from) => return Err(MemFs::is_a_directory(from)),
+            None => return Err(MemFs::not_found(from)),
+        };
         let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         tree.files.insert(to.to_path_buf(), bytes);
         Ok(len)

@@ -181,6 +181,36 @@ impl SimState {
         durable.entry(path.to_path_buf()).or_default().durable_len = len;
     }
 
+    /// Mirror a POSIX rename: carry `from`'s durable bookkeeping to `to`,
+    /// replacing any prior entry there. When `from` was untracked its bytes
+    /// are untracked at `to` as well, so any stale `to` entry is dropped —
+    /// otherwise a later `crash()` would truncate `to` to a length that
+    /// belonged to whatever used to live at that path.
+    fn move_durable(&self, from: &Path, to: &Path) {
+        let mut durable = self
+            .durable
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match durable.remove(from) {
+            Some(state) => {
+                durable.insert(to.to_path_buf(), state);
+            }
+            None => {
+                durable.remove(to);
+            }
+        }
+    }
+
+    /// Forget `path`'s durable bookkeeping when the file is unlinked, so a
+    /// recreated path starts fresh and `crash()` cannot resurrect a stale
+    /// length for it.
+    fn forget_durable(&self, path: &Path) {
+        self.durable
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(path);
+    }
+
     /// Advance the counter for `op` and return `true` when THIS occurrence must
     /// fault. A no-op (returns `false`) when no schedule targets `op`.
     fn op_fault_strikes(&self, op: CrashOp) -> bool {
@@ -627,7 +657,15 @@ impl StoreFs for SimFs {
         if self.state.op_fault_strikes(CrashOp::Rename) {
             return Err(SimState::injected_op_fault(CrashOp::Rename));
         }
-        self.inner.rename(from, to)
+        self.inner.rename(from, to)?;
+        // A rename moves the inode and replaces `to`: carry the durable-length
+        // bookkeeping with it so a later `crash()` truncates the renamed path
+        // to ITS durable prefix, never a stale length keyed to the old path.
+        // A compaction rollback renames `.compact-src` back over a recreated
+        // segment id — without this the restored segment inherits the aborted
+        // segment's durable length and `crash()` truncates it wrongly.
+        self.state.move_durable(from, to);
+        Ok(())
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
@@ -637,7 +675,13 @@ impl StoreFs for SimFs {
         if self.state.op_fault_strikes(CrashOp::RemoveFile) {
             return Err(SimState::injected_op_fault(CrashOp::RemoveFile));
         }
-        self.inner.remove_file(path)
+        self.inner.remove_file(path)?;
+        // The file is unlinked: forget its durable prefix so a recreated path
+        // starts fresh and `crash()` never resurrects a stale length. The
+        // trait-default `remove_dir_all` funnels through this method, so
+        // recursive removals inherit the same cleanup.
+        self.state.forget_durable(path);
+        Ok(())
     }
 
     fn named_temp_in(&self, dir: &Path) -> io::Result<Box<dyn StagedFile>> {
