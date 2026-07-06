@@ -66,6 +66,27 @@ fn read_mmap_usize(bytes: Option<&[u8]>, field: &str) -> Result<usize, String> {
     usize::try_from(value).map_err(|_| format!("mmap index {field} is too large"))
 }
 
+/// Read the mmap index into owned bytes through the seam. The universal
+/// fallback for every non-mapped path (virtual handle, refused admission,
+/// failed mmap syscall) — it touches nothing but `fs.read`, never the host.
+fn read_index_owned(
+    fs: &dyn crate::store::platform::fs::StoreFs,
+    path: &Path,
+) -> Result<MmapIndexBytes, String> {
+    match fs.read(path) {
+        Ok(bytes) => Ok(MmapIndexBytes::Owned(bytes)),
+        Err(error) => {
+            tracing::warn!(
+                target: "batpak::mmap_index",
+                path = %path.display(),
+                error = %error,
+                "failed to read mmap index"
+            );
+            Err(format!("failed to read mmap index: {error}"))
+        }
+    }
+}
+
 /// Resolve the mmap-index backing bytes: memory-map the real OS file when the
 /// seam handle exposes one (`as_std_file`) and the platform admits mmap, else
 /// fall back to an owned whole-file read — byte-identical downstream. The
@@ -81,10 +102,18 @@ fn map_or_read_index_bytes(
     clock: &dyn crate::store::Clock,
     path: &Path,
 ) -> Result<MmapIndexBytes, String> {
+    // A virtual handle (no OS file) takes the owned read WITHOUT collecting
+    // platform evidence: `collect_for_store_path` probes the HOST filesystem
+    // (including a temp-file mmap probe under `data_dir`), which a purely
+    // virtual backend (MemFs) must never trigger — even when `data_dir` also
+    // happens to name a real host path. Only a real-file-backed handle needs it.
+    let Some(std_file) = std_file else {
+        return read_index_owned(fs, path);
+    };
     let mmap_evidence = crate::store::platform::evidence::collect_for_store_path(data_dir, clock)
         .store_path
         .mmap_index;
-    map_or_read_index_bytes_with_evidence(std_file, fs, path, mmap_evidence)
+    map_or_read_index_bytes_with_evidence(Some(std_file), fs, path, mmap_evidence)
 }
 
 /// The decision core of [`map_or_read_index_bytes`] with the platform mmap
@@ -100,24 +129,9 @@ fn map_or_read_index_bytes_with_evidence(
     path: &Path,
     mmap_evidence: crate::store::stats::MmapEvidence,
 ) -> Result<MmapIndexBytes, String> {
-    // The owned whole-file read is the universal fallback — the only branch that
-    // may legitimately fail (an unreadable file).
-    let read_owned = || match fs.read(path) {
-        Ok(bytes) => Ok(MmapIndexBytes::Owned(bytes)),
-        Err(error) => {
-            tracing::warn!(
-                target: "batpak::mmap_index",
-                path = %path.display(),
-                error = %error,
-                "failed to read mmap index"
-            );
-            Err(format!("failed to read mmap index: {error}"))
-        }
-    };
-
     let Some(std_file) = std_file else {
         // Virtual handle: no OS file to map — take the owned whole-file read.
-        return read_owned();
+        return read_index_owned(fs, path);
     };
     let admission = match crate::store::platform::mmap::admit_mmap_index(mmap_evidence) {
         Ok(admission) => admission,
@@ -131,7 +145,7 @@ fn map_or_read_index_bytes_with_evidence(
                 error = %error,
                 "mmap index admission refused; falling back to owned read"
             );
-            return read_owned();
+            return read_index_owned(fs, path);
         }
     };
     // SAFETY: Mmap::map requires a valid open file descriptor. The handle
@@ -149,7 +163,7 @@ fn map_or_read_index_bytes_with_evidence(
                 error = %error,
                 "failed to mmap index file; falling back to owned read"
             );
-            read_owned()
+            read_index_owned(fs, path)
         }
     }
 }
@@ -573,7 +587,7 @@ pub(super) fn load_mmap_index(
 
 #[cfg(test)]
 mod tests {
-    use super::{map_or_read_index_bytes_with_evidence, MmapIndexBytes};
+    use super::{map_or_read_index_bytes, map_or_read_index_bytes_with_evidence, MmapIndexBytes};
     use crate::store::platform::fs::{RealFs, StoreFs};
     use crate::store::stats::MmapEvidence;
 
@@ -661,5 +675,34 @@ mod tests {
             "a virtual handle must read owned bytes"
         );
         assert_eq!(&*bytes, payload, "owned bytes must match the file");
+    }
+
+    // The OUTER resolver must short-circuit a virtual handle to the owned read
+    // BEFORE `collect_for_store_path` (which probes the host filesystem). Drive
+    // it end-to-end over a MemFs index with a virtual data_dir: it returns the
+    // owned bytes through the seam without ever reaching the host-evidence path.
+    #[test]
+    fn a_virtual_handle_resolves_owned_without_host_evidence() {
+        use crate::store::platform::clock::SystemClock;
+        use crate::store::platform::mem_fs::MemFs;
+
+        let fs = MemFs::new();
+        let data_dir = std::path::Path::new("/virtual/mmap-store");
+        fs.create_dir_all(data_dir).expect("seed virtual data dir");
+        let path = data_dir.join("mmap.index");
+        let payload = b"virtual-index-bytes";
+        {
+            let mut index = fs.create_new_file(&path).expect("create index");
+            index.write_all(payload).expect("write index");
+        }
+        let clock = SystemClock::new();
+
+        let bytes = map_or_read_index_bytes(None, &fs, data_dir, &clock, &path)
+            .expect("a virtual handle resolves to the owned read");
+        assert!(
+            matches!(bytes, MmapIndexBytes::Owned(_)),
+            "a virtual handle must resolve to owned bytes"
+        );
+        assert_eq!(&*bytes, payload, "owned bytes must match the virtual index");
     }
 }
