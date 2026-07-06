@@ -166,3 +166,50 @@ fn committed_active_release_has_exactly_one_active_file() -> Result<(), Box<dyn 
     )?;
     Ok(())
 }
+
+#[test]
+fn release_status_strict_rejects_expired_non_terminal_waiver(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // An EXPIRED, NON-terminal WAIVED row must still fail `--strict`. The old
+    // strict path only expiry-checked `terminal_required` rows, so a plain
+    // (non-terminal) expired waiver slipped through the cut.
+    let root = temp_release_root("strict-expired-nonterminal")?;
+    write_invariants(&root, &["INV-FIXTURE"])?;
+    write_seam_registry(&root)?;
+    write_release(
+        &root,
+        r#"release: "0.9.0"
+active: true
+rows:
+  - id: STORE-EXPIRED-WAIVER
+    title: fixture expired non-terminal waiver
+    status: WAIVED
+    terminal_required: false
+    surface: batpak
+    owner: fixture-owner
+    reason: deliberately waived for this fixture
+    blast_radius: L2
+    why_no_witness: no mechanical witness exists for this fixture surface
+    created: "2000-01-01"
+    expiry: "2000-01-31"
+"#,
+    )?;
+    let err = match check(
+        &root,
+        &ReleaseCheckOptions {
+            strict: true,
+            target: Some("0.9.0".to_owned()),
+            active_only: false,
+        },
+    ) {
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY: strict mode must reject an expired non-terminal WAIVED row",
+            )
+            .into())
+        }
+        Err(e) => e,
+    };
+    assert!(err.to_string().contains("expired"), "wrong error: {err:#}");
+    Ok(())
+}

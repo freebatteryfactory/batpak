@@ -21,10 +21,30 @@ use std::process::Command;
 /// The cfg that flips ProductionFlip fixtures to their illegal-behavior assertion.
 const RED_CFG: &str = "--cfg gauntlet_red_fixture";
 
-/// Minimum number of ProductionFlip fixtures we expect (the core S2/S3/perf-alloc
-/// sentinels plus the bvisor C1 grid + reconciliation oracles). If the registry
-/// ever returns fewer, the lane fails closed rather than vacuously pass.
-const MIN_FIXTURES: usize = 5;
+/// The EXACT number of blocking `ProductionFlip` fixtures the registry must return
+/// (`batpak-integrity production-flip-fixtures`, the single source of truth). Pinned
+/// to the true current count so a silently-DROPPED fixture (or an undocumented
+/// added one) fails the lane — an equality check, not a floor.
+///
+/// xtask cannot depend on `batpak-integrity`, and the registry CLI emits only the
+/// fixture list (whose length is exactly what we are validating), so an exact count
+/// cannot be derived independently at runtime; per the tightening mandate this is
+/// pinned here and any registry drift fails the lane until it is consciously bumped.
+const EXPECTED_FIXTURES: usize = 15;
+
+/// Verify the registry returned EXACTLY [`EXPECTED_FIXTURES`] ProductionFlip
+/// fixtures. A mere floor lets a silently-dropped fixture slip through while the
+/// count stays above the floor; this fails closed on ANY drift.
+fn check_fixture_count(actual: usize) -> Result<()> {
+    if actual != EXPECTED_FIXTURES {
+        bail!(
+            "prove-gates-bite: expected EXACTLY {EXPECTED_FIXTURES} ProductionFlip fixture(s) from \
+             the registry, got {actual} — a fixture was dropped or added without updating \
+             EXPECTED_FIXTURES (the registry's ProductionFlip set drifted from the pinned count)"
+        );
+    }
+    Ok(())
+}
 
 /// Resolve the cargo `--package` that owns a registry fixture reference from its
 /// `<repo-rel-file>::<test_fn>` path. ProductionFlip fixtures live under
@@ -55,14 +75,13 @@ fn uses_exact_filter(package: &str) -> bool {
 
 pub(crate) fn run() -> Result<()> {
     let fixtures = production_flip_fixtures()?;
-    if fixtures.len() < MIN_FIXTURES {
-        bail!(
-            "prove-gates-bite: expected >= {MIN_FIXTURES} ProductionFlip fixtures from the \
-             registry, got {} ({:?}) — the registry list shrank unexpectedly",
+    check_fixture_count(fixtures.len()).with_context(|| {
+        format!(
+            "the registry's ProductionFlip fixture set changed: got {} ({:?})",
             fixtures.len(),
             fixtures
-        );
-    }
+        )
+    })?;
     outln!(
         "prove-gates-bite: {} ProductionFlip fixture(s) to bite:",
         fixtures.len()
@@ -165,4 +184,25 @@ fn production_flip_fixtures() -> Result<Vec<String>> {
         .map(str::to_owned)
         .collect();
     Ok(fixtures)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_fixture_count, EXPECTED_FIXTURES};
+
+    #[test]
+    fn fixture_count_is_exact_not_a_floor() {
+        // Exactly the expected count passes.
+        check_fixture_count(EXPECTED_FIXTURES).expect("the exact registry count passes");
+        // A silently-dropped fixture (one fewer) must FAIL — a mere floor of
+        // MIN_FIXTURES would have let this slip through.
+        let err = check_fixture_count(EXPECTED_FIXTURES - 1)
+            .expect_err("a dropped ProductionFlip fixture must fail the lane");
+        assert!(err.to_string().contains("ProductionFlip"), "{err:?}");
+        // An undocumented ADDED fixture must also fail (forces a conscious bump).
+        assert!(
+            check_fixture_count(EXPECTED_FIXTURES + 1).is_err(),
+            "an unexpected extra fixture must also fail the exact count"
+        );
+    }
 }

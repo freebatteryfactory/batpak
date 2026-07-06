@@ -15,9 +15,10 @@ pub(crate) fn release_manifest(args: ReleaseManifestArgs) -> Result<()> {
     let project_root = project_root()?;
     let repo_root = repo_root()?;
     let target_dir = cargo_target_dir()?;
-    let worktree_summary =
-        git_output(&project_root, ["status", "--short"]).unwrap_or_else(|_| String::new());
-    let dirty = !worktree_summary.trim().is_empty();
+    let (worktree_summary, dirty) = worktree_status(
+        git_output(&project_root, ["status", "--short"]),
+        args.strict,
+    )?;
     if args.strict && dirty {
         bail!("release-manifest: dirty worktree refused by --strict");
     }
@@ -305,6 +306,27 @@ fn gate_logs(root: &Path) -> Vec<GateLog> {
     .collect()
 }
 
+/// Resolve the worktree `git status --short` summary and its dirty flag. Under
+/// `--strict`, a FAILURE to read `git status` must fail closed (Err) rather than
+/// being treated as a clean tree — otherwise a broken/absent git makes the
+/// dirty-refusal check pass open. Without `--strict` a git error is a soft empty
+/// (the manifest still renders on a best-effort basis).
+fn worktree_status(summary: Result<String>, strict: bool) -> Result<(String, bool)> {
+    match summary {
+        Ok(summary) => {
+            let dirty = !summary.trim().is_empty();
+            Ok((summary, dirty))
+        }
+        // Under --strict a git failure cannot be assumed clean: propagate it so the
+        // dirty refusal fails closed instead of passing open on a broken/absent git.
+        Err(err) if strict => Err(err.context(
+            "release-manifest: --strict cannot confirm a clean worktree (git status failed)",
+        )),
+        // Best-effort (non-strict): a git error is a soft empty summary.
+        Err(_) => Ok((String::new(), false)),
+    }
+}
+
 fn git_output<const N: usize>(root: &Path, args: [&str; N]) -> Result<String> {
     let mut command = Command::new("git");
     command.current_dir(root).args(args);
@@ -336,8 +358,40 @@ fn one_line(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{one_line, render_manifest, FileEvidence, GateLog, ReleaseManifest, VersionPinRow};
+    use super::{
+        one_line, render_manifest, worktree_status, FileEvidence, GateLog, ReleaseManifest,
+        VersionPinRow,
+    };
+    use anyhow::anyhow;
     use std::path::PathBuf;
+
+    #[test]
+    fn worktree_status_fails_closed_on_git_error_under_strict() {
+        // Clean tree under strict: Ok, not dirty.
+        let (summary, dirty) = worktree_status(Ok(String::new()), true).expect("clean strict ok");
+        assert!(!dirty && summary.is_empty());
+
+        // Dirty tree under strict: Ok with dirty=true (the refusal bail is at the
+        // call site, so the flag must be reported truthfully).
+        let (_, dirty) =
+            worktree_status(Ok(" M file".to_owned()), true).expect("dirty value under strict");
+        assert!(dirty);
+
+        // Git ERROR under strict MUST fail closed (Err), never silently reported
+        // as a clean worktree that slips past the --strict dirty refusal.
+        let err = worktree_status(Err(anyhow!("git exploded")), true)
+            .expect_err("a git error under --strict must fail closed");
+        assert!(
+            err.to_string().contains("git status failed")
+                || err.to_string().contains("git exploded"),
+            "{err:?}"
+        );
+
+        // Git error WITHOUT strict: soft empty (best-effort manifest still renders).
+        let (summary, dirty) =
+            worktree_status(Err(anyhow!("git exploded")), false).expect("non-strict soft clean");
+        assert!(!dirty && summary.is_empty());
+    }
 
     #[test]
     fn one_line_collapses_empty_and_multiline_text() {

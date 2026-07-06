@@ -292,13 +292,19 @@ fn check_catalog_test_coverage(
         .filter(|invariant| !invariant_has_test_artifact(repo_root, invariant, artifact_map))
         .map(|invariant| invariant.id.clone())
         .collect::<Vec<_>>();
-    let waiver_names = citation_waivers.names();
-    let escalate = uncovered
-        .iter()
-        .filter(|invariant| !ledger_citations.contains(*invariant))
-        .filter(|invariant| !waives_invariant(&waiver_names, invariant))
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut escalate = Vec::new();
+    for invariant in &uncovered {
+        if ledger_citations.contains(invariant) {
+            continue;
+        }
+        // A name-match waiver only excuses coverage when it carries a witness; a
+        // witnessless matching waiver fails closed (via `contains`) rather than
+        // laundering the gap.
+        if citation_waivers.waives_invariant_with_witness(invariant)? {
+            continue;
+        }
+        escalate.push(invariant.clone());
+    }
     ensure(
         escalate.is_empty(),
         format!(
@@ -418,16 +424,24 @@ impl CitationWaivers {
         Ok(true)
     }
 
-    fn names(&self) -> BTreeSet<String> {
-        self.entries.keys().cloned().collect()
+    /// True when some waiver whose name matches `invariant` (exact, or the
+    /// per-artifact `<invariant>:<path>` form) is present AND carries a witness.
+    /// A matching but witnessless waiver fails closed via [`contains`] (which
+    /// bails when the witness is absent), so a name-only match can never launder
+    /// a witnessless citation.
+    fn waives_invariant_with_witness(&self, invariant: &str) -> Result<bool> {
+        let prefix = format!("{invariant}:");
+        let mut matched = false;
+        for name in self.entries.keys() {
+            if name == invariant || name.starts_with(&prefix) {
+                // `contains` enforces the witness requirement (bails if absent).
+                if self.contains(name)? {
+                    matched = true;
+                }
+            }
+        }
+        Ok(matched)
     }
-}
-
-fn waives_invariant(waiver_names: &BTreeSet<String>, invariant: &str) -> bool {
-    let prefix = format!("{invariant}:");
-    waiver_names
-        .iter()
-        .any(|name| name == invariant || name.starts_with(&prefix))
 }
 
 fn render_anchor(anchor: &JustifiesAnchor) -> String {
@@ -572,6 +586,51 @@ mod tests {
         assert!(
             err.to_string().contains("does not resolve to a real ADR"),
             "unexpected error: {err:#}"
+        );
+        cleanup(&repo);
+    }
+
+    #[test]
+    fn coverage_waiver_requires_witness_not_just_name_match() {
+        // An uncovered invariant excused ONLY by a name-matching waiver that
+        // carries NO witness must fail closed — a name-only match cannot launder
+        // a witnessless citation. `contains()` already enforces the witness on the
+        // ledger path; this pins the coverage path to the same rule.
+        let repo = temp_repo("coverage-witness");
+        fs::create_dir_all(repo.join("traceability")).expect("trace dir");
+        fs::write(repo.join("traceability/testing_ledger.yaml"), "[]\n").expect("ledger");
+
+        let invariants = vec![InvariantRecord {
+            id: "INV-UNCOVERED".to_owned(),
+            statement: "this invariant deliberately has no direct test artifact".to_owned(),
+            artifacts: vec![],
+        }];
+        let artifact_map: BTreeMap<&str, &ArtifactRecord> = BTreeMap::new();
+        let known: BTreeSet<String> = BTreeSet::from(["INV-UNCOVERED".to_owned()]);
+        let ledger_waivers = CitationWaivers::default();
+
+        // A citation waiver whose NAME matches the invariant but has NO witness.
+        let witnessless = WaiverRecord {
+            name: "INV-UNCOVERED:crates/core/tests/x.rs".to_owned(),
+            justification: "proven via fixture".to_owned(),
+            adr: "ADR-0001".to_owned(),
+            witness: None,
+        };
+        let mut entries = BTreeMap::new();
+        entries.insert(witnessless.name.clone(), witnessless);
+        let citation_waivers = CitationWaivers { entries };
+
+        let result = check_catalog_test_coverage(
+            &repo,
+            &invariants,
+            &artifact_map,
+            &known,
+            &ledger_waivers,
+            &citation_waivers,
+        );
+        assert!(
+            result.is_err(),
+            "a witnessless name-match waiver must NOT launder an uncovered invariant"
         );
         cleanup(&repo);
     }

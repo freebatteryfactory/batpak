@@ -79,6 +79,8 @@ fn crate_dir_for(package: &str) -> Result<&'static str> {
         "batpak" => Ok("core"),
         "syncbat" => Ok("syncbat"),
         "netbat" => Ok("netbat"),
+        "hostbat" => Ok("hostbat"),
+        "bvisor" => Ok("bvisor"),
         other => bail!("msrv-check: unknown publish crate {other}"),
     }
 }
@@ -170,5 +172,26 @@ mod tests {
         assert!(err
             .to_string()
             .contains("msrv-check: unknown publish crate other"));
+    }
+
+    /// PARITY: the MSRV gate iterates `PUBLISH_CRATES` and calls `crate_dir_for`
+    /// on each; a crate `crate_dir_for` cannot resolve bails BEFORE it is checked,
+    /// making its MSRV pass vacuous. The checked-crate set must equal the publish
+    /// family exactly — every publish crate resolves, and nothing else does.
+    #[test]
+    fn checked_crate_set_matches_the_publish_family() {
+        for package in PUBLISH_CRATES {
+            assert!(
+                crate_dir_for(package).is_ok(),
+                "crate_dir_for({package}) must resolve — the MSRV gate iterates PUBLISH_CRATES \
+                 and bails before checking any crate it cannot map (vacuous MSRV pass)"
+            );
+        }
+        // The mapping accepts EXACTLY the publish family — a non-member is rejected,
+        // so the parity is an equality, not just a superset.
+        assert!(
+            crate_dir_for("definitely-not-a-publish-crate").is_err(),
+            "crate_dir_for must reject a non-publish crate"
+        );
     }
 }

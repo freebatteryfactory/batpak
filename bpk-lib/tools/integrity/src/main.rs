@@ -304,7 +304,7 @@ fn run_meta_gate(
         weaken_ok_trailers,
     };
     let repo_root = repo_surface::repo_root()?;
-    let l4_entries = meta_gate::load_l4_entries(&repo_root);
+    let l4_entries = meta_gate::load_l4_entries(&repo_root)?;
     meta_gate::evaluate(&diff, &l4_entries, &ctx)?;
     outln!("meta-gate: ok (no unapproved weakening detected)");
     Ok(())

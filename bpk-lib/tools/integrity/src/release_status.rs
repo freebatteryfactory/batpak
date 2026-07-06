@@ -371,21 +371,22 @@ fn validate_row_references(
     Ok(())
 }
 
-fn validate_row_terminal(row: &ReleaseRow, tag: &str) -> Result<()> {
-    if !row.terminal_required {
-        return Ok(());
+fn validate_row_strict(row: &ReleaseRow, tag: &str) -> Result<()> {
+    // Every WAIVED row — terminal_required or not — must carry an unexpired waiver
+    // under --strict. An expired waiver fails the cut regardless of whether the row
+    // is terminal_required (the old code only expiry-checked terminal_required rows,
+    // so a plain expired waiver slipped through).
+    if matches!(row.status, ReleaseStatus::Waived) {
+        validate_waiver(row, tag, today(), true)?;
     }
-    match row.status {
-        ReleaseStatus::Incomplete => bail!(
+    // terminal_required rows must additionally have reached a terminal status.
+    if row.terminal_required && matches!(row.status, ReleaseStatus::Incomplete) {
+        bail!(
             "{tag}: terminal_required row `{id}` is INCOMPLETE — release blocked",
             id = row.id
-        ),
-        ReleaseStatus::Waived => {
-            validate_waiver(row, tag, today(), true)?;
-            Ok(())
-        }
-        ReleaseStatus::Proven | ReleaseStatus::FailClosed | ReleaseStatus::FaultInjected => Ok(()),
+        );
     }
+    Ok(())
 }
 
 fn today() -> IsoDate {
@@ -537,7 +538,7 @@ pub(crate) fn check(repo_root: &Path, opts: &ReleaseCheckOptions) -> Result<Gate
                         .is_some_and(|note| !note.trim().is_empty()),
                 );
             if opts.strict {
-                validate_row_terminal(row, &tag)?;
+                validate_row_strict(row, &tag)?;
                 assertions += 1;
             }
         }

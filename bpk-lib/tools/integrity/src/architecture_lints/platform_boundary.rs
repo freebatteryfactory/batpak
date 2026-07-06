@@ -158,6 +158,10 @@ fn check_direct_fs_contact_ratchet(
         "File::open",
         "NamedTempFile::new_in",
     ];
+    // Allowances are pinned to the ACTUALLY-OBSERVED contact count per file, so a
+    // single NEW direct-FS contact trips the ratchet. Files that no longer contact
+    // the filesystem directly (observed 0) carry no allowance at all — they default
+    // to 0 and are dropped from this table.
     const ALLOWED_DIRECT_FS_CONTACTS: &[(&str, &str, usize)] = &[
         (
             "crates/core/src/store/cold_start/checkpoint/test_support.rs",
@@ -167,7 +171,7 @@ fn check_direct_fs_contact_ratchet(
         (
             "crates/core/src/store/cold_start/checkpoint/tests.rs",
             "std::fs::read(",
-            3,
+            2,
         ),
         (
             "crates/core/src/store/cold_start/checkpoint/tests.rs",
@@ -175,17 +179,7 @@ fn check_direct_fs_contact_ratchet(
             5,
         ),
         (
-            "crates/core/src/store/cold_start/rebuild/tests.rs",
-            "std::fs::write(",
-            8,
-        ),
-        (
             "crates/core/src/store/segment/scan/tests.rs",
-            "std::fs::write(",
-            1,
-        ),
-        (
-            "crates/core/src/store/segment/scan/recovery/tests.rs",
             "std::fs::write(",
             1,
         ),
@@ -442,4 +436,52 @@ fn strip_string_literals(line: &str) -> String {
         }
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_direct_fs_contact_ratchet;
+    use crate::source_cache::SourceCache;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_repo(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "batpak-platform-boundary-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("create temp repo");
+        path
+    }
+
+    /// The direct-FS ratchet allowance must equal the actually-observed contact
+    /// count so a NEW contact trips it. `cold_start/checkpoint/tests.rs` legitimately
+    /// makes exactly two `std::fs::read(` contacts; a THIRD must fail closed. Under
+    /// the old loose allowance (3) the third slipped through — this fixture reds
+    /// against that and greens once the allowance is tightened to the observed 2.
+    #[test]
+    fn direct_fs_contact_ratchet_is_tight_to_observed_count() {
+        let repo = temp_repo("ratchet-tight");
+        let rel = "crates/core/src/store/cold_start/checkpoint/tests.rs";
+        let path = repo.join(rel);
+        fs::create_dir_all(path.parent().expect("fixture parent dir")).expect("create dirs");
+        let body = "fn t() {\n    \
+             let _a = std::fs::read(p0);\n    \
+             let _b = std::fs::read(p1);\n    \
+             let _c = std::fs::read(p2);\n}\n";
+        fs::write(&path, body).expect("write fixture file");
+        let tracked = vec![path];
+        let mut cache = SourceCache::new(&repo);
+
+        let err = check_direct_fs_contact_ratchet(&repo, &tracked, &mut cache)
+            .expect_err("a direct-FS contact beyond the observed count must trip the ratchet");
+        assert!(err.to_string().contains("ratchet exceeded"), "{err:?}");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
 }

@@ -1126,11 +1126,20 @@ pub(crate) fn parse_weaken_trailers(commits: &str) -> Vec<WeakenTrailer> {
     trailers
 }
 
-/// Load the assurance manifest for the meta-gate's L4 classification. Falls back
-/// to an empty manifest (every weakening treated as Standard) if the manifest is
-/// absent, so the meta-gate still runs in a packaged tree.
-pub(crate) fn load_l4_entries(repo_root: &Path) -> Vec<AssuranceEntry> {
-    assurance::load_manifest(repo_root).unwrap_or_default()
+/// Load the assurance manifest for the meta-gate's L4 classification.
+///
+/// An ABSENT manifest is a soft empty (every weakening treated as Standard) so the
+/// meta-gate still runs in a packaged tree with no traceability dir. A manifest
+/// that is PRESENT-BUT-MALFORMED fails closed (propagates the parse error) rather
+/// than silently collapsing to empty and disabling the L4 two-person rule.
+pub(crate) fn load_l4_entries(repo_root: &Path) -> Result<Vec<AssuranceEntry>> {
+    // ABSENT → soft empty (packaged tree with no traceability dir). PRESENT →
+    // load and propagate any parse error, so a malformed manifest cannot silently
+    // collapse to empty and disarm the L4 two-person rule.
+    if !assurance::manifest_path(repo_root).exists() {
+        return Ok(Vec::new());
+    }
+    assurance::load_manifest(repo_root)
 }
 
 #[cfg(test)]

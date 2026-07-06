@@ -838,3 +838,48 @@ fn is_raw_regex_list_element_classifies_entries() {
         "misclassified raw-regex elements: {wrong:?}"
     );
 }
+
+#[test]
+fn load_l4_entries_fails_closed_on_malformed_manifest() {
+    // ABSENT manifest → soft empty (packaged-tree fallback), NOT an error.
+    let absent = std::env::temp_dir().join(format!(
+        "batpak-meta-gate-l4-absent-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&absent).expect("create absent repo");
+    assert!(
+        load_l4_entries(&absent)
+            .expect("an absent manifest is a soft empty")
+            .is_empty(),
+        "absent manifest must resolve to an empty L4 set"
+    );
+    std::fs::remove_dir_all(&absent).expect("cleanup absent repo");
+
+    // PRESENT-BUT-MALFORMED manifest → must fail closed (propagate the parse
+    // error), never silently collapse to empty and disarm the L4 two-person rule.
+    let malformed = std::env::temp_dir().join(format!(
+        "batpak-meta-gate-l4-malformed-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(malformed.join("traceability")).expect("create trace dir");
+    std::fs::write(
+        malformed.join("traceability/assurance_levels.yaml"),
+        "- level: L4\n  globs: [unterminated\n",
+    )
+    .expect("write malformed manifest");
+    let err = load_l4_entries(&malformed)
+        .expect_err("a malformed manifest must fail closed, not silently empty");
+    assert!(
+        err.to_string().contains("assurance_levels.yaml") || err.to_string().contains("parse"),
+        "unexpected error: {err:#}"
+    );
+    std::fs::remove_dir_all(&malformed).expect("cleanup malformed repo");
+}

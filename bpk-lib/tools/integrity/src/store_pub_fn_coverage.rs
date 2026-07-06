@@ -2,6 +2,7 @@ use crate::repo_surface::{core_src_root, core_tests_root, rust_files};
 use crate::rust_ast::{callee_path_segments, tail_owner_method};
 use crate::source_cache::SourceCache;
 use anyhow::{bail, Context, Result};
+use quote::ToTokens;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::rc::Rc;
@@ -12,6 +13,14 @@ const ALLOWLIST: &[&str] = &[
     // `subscription` is doc(hidden) glue for async integration, exercised
     // indirectly via `subscribe` in every subscription test.
     "subscription",
+    // `snapshot` is the `#[deprecated]` one-line wrapper
+    // (`self.snapshot_with_evidence(dest).map(|_| ())`, lifecycle_api.rs); no test
+    // calls it directly — the whole snapshot surface is exercised via the
+    // evidence-returning `snapshot_with_evidence` the wrapper delegates to. Under
+    // receiver-typed coverage matching it is no longer laundered green by unrelated
+    // `.snapshot()` calls on watermark guards / sequences, so it is allowlisted
+    // explicitly. (Owner follow-up: delete the deprecated wrapper outright.)
+    "snapshot",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,27 +136,179 @@ pub(crate) fn inventory(
         }
     }
 
+    // Corpus-wide set of identifiers evidenced as `Store`-typed (params or `let`
+    // bindings whose type or initializer mentions the `Store` type). A method call
+    // counts as Store coverage only when its receiver is one of these idents,
+    // `self` inside an `impl Store`, or a `Store::` associated-call chain — so an
+    // unrelated same-named method on a DIFFERENT type no longer satisfies coverage.
+    let mut store_idents: BTreeSet<String> = BTreeSet::new();
+    for ast in &search_asts {
+        collect_store_idents(ast, &mut store_idents);
+    }
+
     Ok(pub_fns
         .into_iter()
         .map(|name| StorePubFnCoverage {
             allowlisted: ALLOWLIST.contains(&name.as_str()),
             covered: search_asts
                 .iter()
-                .any(|ast| ast_references_store_method(ast, &name)),
+                .any(|ast| ast_references_store_method(ast, &name, &store_idents)),
             name,
         })
         .collect())
 }
 
-fn ast_references_store_method(ast: &syn::File, name: &str) -> bool {
+/// True when an `impl` block is an inherent `impl Store` (self type's last path
+/// segment is exactly `Store`, e.g. `impl Store`, `impl Store<Open>`,
+/// `impl<T> Store<T>`) — matching the pub-fn inventory's own `impl Store` filter.
+fn impl_self_is_store(node: &syn::ItemImpl) -> bool {
+    if let syn::Type::Path(tp) = node.self_ty.as_ref() {
+        tp.path
+            .segments
+            .last()
+            .map(|s| s.ident == "Store")
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
+/// True when a token stream carries an `Ident` token exactly equal to `Store`
+/// (recursing into groups). Distinguishes the `Store` type from same-prefixed
+/// idents like `StoreConfig`/`StoreIndex`/`StoreFile`, which never match.
+fn tokens_mention_store(tokens: proc_macro2::TokenStream) -> bool {
+    tokens.into_iter().any(|tt| match tt {
+        proc_macro2::TokenTree::Ident(id) => id == "Store",
+        proc_macro2::TokenTree::Group(group) => tokens_mention_store(group.stream()),
+        proc_macro2::TokenTree::Punct(_) | proc_macro2::TokenTree::Literal(_) => false,
+    })
+}
+
+/// The bound identifier of a simple binding pattern (`x`, `mut x`, `x: T`).
+/// Returns `None` for destructuring patterns (tuples, structs) — those are not
+/// tracked as Store receivers.
+fn pat_bound_ident(pat: &syn::Pat) -> Option<String> {
+    // `syn::Pat` is a large `#[non_exhaustive]` foreign enum; use `if let` dispatch
+    // over the two relevant variants rather than a `match` with a wildcard arm
+    // (which the workspace `wildcard_enum_match_arm` lint forbids).
+    if let syn::Pat::Ident(ident) = pat {
+        Some(ident.ident.to_string())
+    } else if let syn::Pat::Type(typed) = pat {
+        pat_bound_ident(&typed.pat)
+    } else {
+        None
+    }
+}
+
+/// Collect, into `idents`, every identifier evidenced as `Store`-typed in `ast`:
+/// a function/closure parameter whose type mentions `Store`, or a `let` binding
+/// whose type annotation OR initializer mentions `Store` (so `let s = Store::open(..)`,
+/// `let s = Arc::new(Store::open(..))`, and `fn f(s: &Store)` all register `s`).
+fn collect_store_idents(ast: &syn::File, idents: &mut BTreeSet<String>) {
+    struct Collector<'a> {
+        idents: &'a mut BTreeSet<String>,
+    }
+
+    impl<'ast> Visit<'ast> for Collector<'_> {
+        fn visit_local(&mut self, node: &'ast syn::Local) {
+            if let Some(name) = pat_bound_ident(&node.pat) {
+                let typed_store = matches!(&node.pat, syn::Pat::Type(typed)
+                    if tokens_mention_store(typed.ty.to_token_stream()));
+                let init_store = node
+                    .init
+                    .as_ref()
+                    .is_some_and(|init| tokens_mention_store(init.expr.to_token_stream()));
+                if typed_store || init_store {
+                    self.idents.insert(name);
+                }
+            }
+            visit::visit_local(self, node);
+        }
+
+        fn visit_signature(&mut self, node: &'ast syn::Signature) {
+            for input in &node.inputs {
+                if let syn::FnArg::Typed(typed) = input {
+                    if tokens_mention_store(typed.ty.to_token_stream()) {
+                        if let Some(name) = pat_bound_ident(&typed.pat) {
+                            self.idents.insert(name);
+                        }
+                    }
+                }
+            }
+            visit::visit_signature(self, node);
+        }
+    }
+
+    let mut collector = Collector { idents };
+    collector.visit_file(ast);
+}
+
+fn ast_references_store_method(
+    ast: &syn::File,
+    name: &str,
+    store_idents: &BTreeSet<String>,
+) -> bool {
     struct MethodCallFinder<'a> {
         name: &'a str,
+        store_idents: &'a BTreeSet<String>,
+        self_is_store: bool,
         found: bool,
     }
 
+    impl MethodCallFinder<'_> {
+        /// True when `recv` is a `Store` value: `self` inside an `impl Store`, an
+        /// identifier evidenced as `Store`-typed, or a `Store::` associated-call
+        /// chain base (peeling `?`/`.await`/parens).
+        fn receiver_is_store(&self, recv: &syn::Expr) -> bool {
+            // `syn::Expr` is a large `#[non_exhaustive]` foreign enum; use `if let`
+            // dispatch rather than a `match` with a wildcard arm (which the
+            // workspace `wildcard_enum_match_arm` lint forbids). Peel type-preserving
+            // wrappers, then classify the base receiver.
+            if let syn::Expr::Paren(inner) = recv {
+                return self.receiver_is_store(&inner.expr);
+            }
+            if let syn::Expr::Reference(inner) = recv {
+                return self.receiver_is_store(&inner.expr);
+            }
+            if let syn::Expr::Try(inner) = recv {
+                return self.receiver_is_store(&inner.expr);
+            }
+            if let syn::Expr::Await(inner) = recv {
+                return self.receiver_is_store(&inner.base);
+            }
+            if let syn::Expr::MethodCall(inner) = recv {
+                return self.receiver_is_store(&inner.receiver);
+            }
+            if let syn::Expr::Path(path) = recv {
+                if path.path.is_ident("self") {
+                    return self.self_is_store;
+                }
+                return path
+                    .path
+                    .get_ident()
+                    .is_some_and(|ident| self.store_idents.contains(&ident.to_string()));
+            }
+            if let syn::Expr::Call(call) = recv {
+                return callee_path_segments(&call.func)
+                    .and_then(|segments| {
+                        tail_owner_method(&segments).map(|(owner, _)| owner == "Store")
+                    })
+                    .unwrap_or(false);
+            }
+            false
+        }
+    }
+
     impl<'ast> Visit<'ast> for MethodCallFinder<'_> {
+        fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+            let previous = self.self_is_store;
+            self.self_is_store = impl_self_is_store(node);
+            visit::visit_item_impl(self, node);
+            self.self_is_store = previous;
+        }
+
         fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-            if node.method == self.name {
+            if node.method == self.name && self.receiver_is_store(&node.receiver) {
                 self.found = true;
                 return;
             }
@@ -167,7 +328,12 @@ fn ast_references_store_method(ast: &syn::File, name: &str) -> bool {
         }
     }
 
-    let mut finder = MethodCallFinder { name, found: false };
+    let mut finder = MethodCallFinder {
+        name,
+        store_idents,
+        self_is_store: false,
+        found: false,
+    };
     finder.visit_file(ast);
     finder.found
 }
@@ -175,6 +341,7 @@ fn ast_references_store_method(ast: &syn::File, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{ast_references_store_method, check};
+    use crate::repo_surface::repo_root;
     use crate::source_cache::SourceCache;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -238,6 +405,42 @@ mod tests {
         fs::remove_dir_all(repo).expect("remove temp repo");
     }
 
+    /// RED FIXTURE: a `pub fn` on `impl Store` whose ONLY corpus reference is a
+    /// method call on a NON-Store receiver must NOT count as coverage. Name-only
+    /// matching wrongly credits the unrelated same-named method; receiver-typed
+    /// matching does not.
+    #[test]
+    fn store_pub_fn_coverage_ignores_same_named_method_on_other_type() {
+        let repo = temp_repo("wrong-receiver");
+        write_file(
+            &repo,
+            "crates/core/src/store/mod.rs",
+            "pub struct Store;\nimpl Store {\n    pub fn distinctive_probe(&self) -> u8 { 0 }\n}\n",
+        );
+        write_file(
+            &repo,
+            "crates/core/tests/probe.rs",
+            "struct Other;\nimpl Other {\n    fn distinctive_probe(&self) -> u8 { 0 }\n}\n\
+             #[test]\nfn t() {\n    let other = Other;\n    let _ = other.distinctive_probe();\n}\n",
+        );
+        let mut cache = SourceCache::new(&repo);
+        let err = check(&repo, &mut cache)
+            .expect_err("a same-named method on a non-Store receiver must NOT satisfy coverage");
+        assert!(err.to_string().contains("distinctive_probe"), "{err:?}");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
+
+    /// REGRESSION GUARD: tightening receiver matching must not drop any real
+    /// Store method's coverage — the committed tree must stay green.
+    #[test]
+    fn store_pub_fn_coverage_is_green_on_committed_tree() {
+        let repo = repo_root().expect("repo root resolves from tools/integrity");
+        let mut cache = SourceCache::new(&repo);
+        check(&repo, &mut cache)
+            .expect("committed Store pub fn coverage must stay green after receiver tightening");
+    }
+
     #[test]
     fn ast_reference_detection_ignores_comments_and_strings() {
         let ast = syn::parse_file(
@@ -248,8 +451,10 @@ fn unrelated() {}
 "#,
         )
         .expect("parse fixture");
+        let mut idents = std::collections::BTreeSet::new();
+        super::collect_store_idents(&ast, &mut idents);
         assert!(
-            !ast_references_store_method(&ast, "forgotten_method"),
+            !ast_references_store_method(&ast, "forgotten_method", &idents),
             "comments and strings must not satisfy Store pub fn coverage"
         );
     }
@@ -264,7 +469,13 @@ fn exercise(store: &batpak::store::Store) {
 "#,
         )
         .expect("parse method fixture");
-        assert!(ast_references_store_method(&method, "watch_projection"));
+        let mut method_idents = std::collections::BTreeSet::new();
+        super::collect_store_idents(&method, &mut method_idents);
+        assert!(ast_references_store_method(
+            &method,
+            "watch_projection",
+            &method_idents
+        ));
 
         let associated = syn::parse_file(
             r#"
@@ -274,6 +485,12 @@ fn exercise(config: batpak::store::StoreConfig) {
 "#,
         )
         .expect("parse associated fixture");
-        assert!(ast_references_store_method(&associated, "open"));
+        let mut assoc_idents = std::collections::BTreeSet::new();
+        super::collect_store_idents(&associated, &mut assoc_idents);
+        assert!(ast_references_store_method(
+            &associated,
+            "open",
+            &assoc_idents
+        ));
     }
 }

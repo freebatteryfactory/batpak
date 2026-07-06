@@ -390,8 +390,13 @@ fn cargo_test_target_and_filter(command: &str) -> Option<(&str, &str)> {
     let target = *parts.get(target_pos + 1)?;
     let mut cursor = target_pos + 2;
     while let Some(part) = parts.get(cursor) {
+        // The `-- <filter>` form passes the filter to the test binary; it must
+        // still be existence-checked. Skip the separator and keep scanning
+        // (test-runner flags after `--`, e.g. `--exact`, are handled by the
+        // flag-skipping branches below) instead of bailing.
         if *part == "--" {
-            return None;
+            cursor += 1;
+            continue;
         }
         if flag_takes_value(part) {
             cursor += 2;
@@ -921,11 +926,13 @@ mod tests {
             cargo_test_target_and_filter("cargo test --test synthetic synthetic_proof"),
             Some(("synthetic", "synthetic_proof"))
         );
+        // The `-- <filter>` form still yields the filter for existence-checking
+        // (the `--` separator is skipped, not treated as an end-of-filter).
         assert_eq!(
             cargo_test_target_and_filter(
                 "cargo test --test synthetic --features native -- synthetic_proof"
             ),
-            None
+            Some(("synthetic", "synthetic_proof"))
         );
         assert_eq!(
             cargo_test_target_and_filter("cargo test --test synthetic --package batpak proof"),
@@ -1115,6 +1122,48 @@ mod tests {
             err.to_string().contains("missing integration test target"),
             "{err:?}"
         );
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
+
+    #[test]
+    fn cargo_test_filter_after_double_dash_is_existence_checked() {
+        // The `--test T -- <filter>` invocation form must still existence-check the
+        // filter. A non-existent test named after `--` must be rejected; an
+        // existing one must pass. Under the old parser (which returned early on
+        // `--`) the non-existent test slipped through unchecked.
+        let repo = temp_repo("dashdash-filter");
+        let location = "tests/synthetic.rs";
+        fs::create_dir_all(repo.join("tests")).expect("create tests dir");
+        fs::write(
+            repo.join(location),
+            "//! PROVES: x\n//! CATCHES: y\n//! SEEDED: z\n\
+             #[test]\nfn real_proof() {}\n",
+        )
+        .expect("write synthetic test");
+        let mut source_cache = SourceCache::new(&repo);
+        let mut entry = complete_entry(location);
+
+        entry.commands = vec!["cargo test --test synthetic -- no_such_test".to_owned()];
+        let err = check_cargo_test_filter_targets_existing_test(
+            &repo,
+            &entry,
+            &entry.commands[0],
+            &mut source_cache,
+        )
+        .expect_err("a non-existent test named via `-- filter` must be rejected");
+        assert!(err.to_string().contains("matches zero"), "{err:?}");
+
+        // An EXISTING test named via `-- filter` must pass — keeps the fix
+        // non-vacuous (the double-dash form is not blanket-ignored).
+        entry.commands = vec!["cargo test --test synthetic -- real_proof".to_owned()];
+        check_cargo_test_filter_targets_existing_test(
+            &repo,
+            &entry,
+            &entry.commands[0],
+            &mut source_cache,
+        )
+        .expect("an existing test named via `-- filter` passes");
 
         fs::remove_dir_all(repo).expect("remove temp repo");
     }
