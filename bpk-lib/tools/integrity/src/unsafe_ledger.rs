@@ -369,6 +369,17 @@ impl<'ast> Visit<'ast> for UnsafeSiteVisitor {
         }
         syn::visit::visit_impl_item_fn(self, node);
     }
+
+    /// An `unsafe fn` with a DEFAULT BODY declared in a trait — that body is an
+    /// implicit unsafe context too. Only default-bodied methods are recorded: a
+    /// bodyless trait declaration (`unsafe fn f();`) carries no operations here —
+    /// the impl supplies them and is caught by `visit_impl_item_fn`.
+    fn visit_trait_item_fn(&mut self, node: &'ast syn::TraitItemFn) {
+        if let (Some(unsafe_token), true) = (&node.sig.unsafety, node.default.is_some()) {
+            self.record(unsafe_token.span().start().line);
+        }
+        syn::visit::visit_trait_item_fn(self, node);
+    }
 }
 
 #[cfg(test)]
@@ -585,5 +596,27 @@ unsafe fn child_fail() { do_ffi(); }
             entries: vec![entry("linux-launcher-child-fail")],
         };
         assert!(reconcile(&sites, &ledger).is_ok());
+    }
+
+    /// C1 completeness (CodeRabbit #174): an `unsafe fn` with a DEFAULT BODY in a
+    /// trait is an implicit unsafe context too — the visitor must see it, not
+    /// only free + impl `unsafe fn`. A bodyless trait declaration has no
+    /// operations here and is NOT a site (the impl carries them).
+    #[test]
+    fn unsafe_trait_default_method_body_is_seen() {
+        let with_body = "trait T {\n    unsafe fn f(&self) { do_ffi(); }\n}\n";
+        let sites = anchored_from_source(with_body);
+        assert_eq!(sites.len(), 1, "a trait default `unsafe fn` body must be seen");
+        assert!(sites[0].anchor.is_empty());
+        assert!(reconcile(&sites, &Ledger::default())
+            .expect_err("an unanchored trait default `unsafe fn` must fail closed")
+            .to_string()
+            .contains("unanchored"));
+
+        let declaration_only = "trait T {\n    unsafe fn f(&self);\n}\n";
+        assert!(
+            anchored_from_source(declaration_only).is_empty(),
+            "a bodyless unsafe trait declaration has no ops here → not a site"
+        );
     }
 }
