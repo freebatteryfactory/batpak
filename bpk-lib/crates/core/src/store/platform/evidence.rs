@@ -80,8 +80,10 @@ pub(crate) fn active_segment_read_evidence() -> ActiveSegmentReadEvidence {
     }
 }
 
-/// Leaf name of the private one-byte mmap-capability probe file.
-const MMAP_PROBE_LEAF: &str = ".batpak-mmap-probe";
+/// Monotonic counter that makes each mmap-probe path unique within the process,
+/// so concurrent diagnostics/profile probes on the same backend never share (and
+/// delete) one another's probe file.
+static MMAP_PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) -> MmapEvidence {
     match path_status(data_dir) {
@@ -97,7 +99,14 @@ pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) ->
     // touches the host filesystem (issue #171): a MemFs probe stays in memory
     // and its `as_std_file()` is `None`, so mmap is observed-unsupported and NO
     // host tempfile is ever created; RealFs mints a real file to actually map.
-    let probe_path = data_dir.join(MMAP_PROBE_LEAF);
+    // A per-call unique leaf (pid + counter) so concurrent probes on the same
+    // backend never remove each other's just-created probe — the fixed-name race
+    // the previous `NamedTempFile` avoided by construction.
+    let probe_path = data_dir.join(format!(
+        ".batpak-mmap-probe-{}-{}",
+        std::process::id(),
+        MMAP_PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let _ = fs.remove_file_if_present(&probe_path);
     let Ok(mut probe) = fs.create_new_file(&probe_path) else {
         return MmapEvidence::ProbeFailed;
