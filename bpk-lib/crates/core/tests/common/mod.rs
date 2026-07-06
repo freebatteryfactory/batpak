@@ -143,6 +143,13 @@ pub fn backend_upholds_the_documented_contract(
         matches!(fs.read(&cleanup_dir), Err(error) if error.kind() != std::io::ErrorKind::NotFound),
         "reading a directory path must fail closed, not report NotFound"
     );
+    // Copying onto a directory path fails closed (like RealFs's std::fs::copy),
+    // so a reused destination can never become both a file and a directory.
+    assert!(
+        fs.cow_copy_file(&file_path, &cleanup_dir, CopyPreference::DeepCopyOnly)
+            .is_err(),
+        "copying onto a directory must fail, not create a file+dir collision"
+    );
 
     // The store-directory lock excludes a second cooperating owner while the
     // guard lives, and frees the slot when it drops.
