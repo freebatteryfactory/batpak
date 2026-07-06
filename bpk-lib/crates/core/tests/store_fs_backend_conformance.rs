@@ -212,3 +212,35 @@ fn conformance_corpus_detects_a_divergent_backend() {
         "PROPERTY: the conformance corpus must detect a create-new exclusivity violation"
     );
 }
+
+/// Issue #171: `Store::diagnostics()` must resolve platform evidence THROUGH the
+/// configured backend, never the host filesystem. This covers both failure
+/// shapes. First, a `data_dir` that ALSO exists on the host (a real tempdir):
+/// the pre-fix mmap probe created a `NamedTempFile` there and reported
+/// `FileBacked`. Second, a PURELY virtual `data_dir` (`/virtual/...`, absent on
+/// the host): the pre-fix `path_status` used host `metadata`, saw `NotFound`,
+/// and reported the existing virtual store as `Unknown`. After the fix
+/// `path_status` and the mmap probe both route through `fs`, so a MemFs store
+/// reports `ObservedUnsupported` (never `FileBacked`/`Unknown`) and never
+/// touches the host.
+#[test]
+fn diagnostics_over_memfs_reports_virtual_mmap_evidence_not_file_backed() {
+    let host_dir = tempfile::tempdir().expect("real host tempdir");
+    let data_dirs: [&Path; 2] = [host_dir.path(), Path::new("/virtual/diag-store")];
+
+    for data_dir in data_dirs {
+        let fs = MemFs::new();
+        let config = StoreConfig::new(data_dir).with_fs(Arc::new(fs.clone()));
+        let store = Store::open(config).expect("open MemFs store");
+
+        let diagnostics = store.diagnostics();
+        assert_eq!(
+            diagnostics.platform_evidence.store_path.mmap_index,
+            batpak::store::stats::MmapEvidence::ObservedUnsupported,
+            "MemFs diagnostics must report ObservedUnsupported for data_dir {data_dir:?}, \
+             never FileBacked (host tempfile probe) or Unknown (host path_status)"
+        );
+
+        store.close().expect("close");
+    }
+}

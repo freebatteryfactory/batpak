@@ -1,3 +1,4 @@
+use crate::store::platform::fs::{FileKind, StoreFile, StoreFs};
 use crate::store::stats::{
     ActiveSegmentReadEvidence, ClockEvidence, HostEvidenceSummary, LockLeafSymlinkProtection,
     MmapAdmissionSummary, MmapEvidence, ParentDirSyncAdmissionSummary, ParentDirSyncEvidence,
@@ -6,16 +7,16 @@ use crate::store::stats::{
 };
 use crate::store::Clock;
 use memmap2::MmapOptions;
-use std::io::Write;
 use std::path::Path;
 
 pub(crate) fn collect_for_store_path(
     data_dir: &Path,
     clock: &dyn Clock,
+    fs: &dyn StoreFs,
 ) -> PlatformEvidenceSummary {
-    let mmap_evidence = mmap_evidence_for_store_path(data_dir);
+    let mmap_evidence = mmap_evidence_for_store_path(data_dir, fs);
     let store_path = StorePathEvidenceSummary {
-        path_status: path_status(data_dir),
+        path_status: path_status(data_dir, fs),
         parent_dir_sync: parent_dir_sync_evidence(),
         lock_leaf_symlink_protection: lock_leaf_symlink_protection(),
         mmap_index: mmap_evidence,
@@ -33,9 +34,9 @@ pub(crate) fn collect_for_store_path(
     }
 }
 
-pub(crate) fn path_status(data_dir: &Path) -> StorePathStatusEvidence {
-    match super::fs::metadata(data_dir) {
-        Ok(metadata) if metadata.is_dir() => StorePathStatusEvidence::ObservedDirectory,
+pub(crate) fn path_status(data_dir: &Path, fs: &dyn StoreFs) -> StorePathStatusEvidence {
+    match fs.metadata(data_dir) {
+        Ok(stat) if stat.kind == FileKind::Dir => StorePathStatusEvidence::ObservedDirectory,
         Ok(_) => StorePathStatusEvidence::ObservedUnsupportedNotDirectory,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             StorePathStatusEvidence::UnknownMissing
@@ -79,8 +80,19 @@ pub(crate) fn active_segment_read_evidence() -> ActiveSegmentReadEvidence {
     }
 }
 
-pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path) -> MmapEvidence {
-    match path_status(data_dir) {
+/// Leaf-name prefix of the private one-byte mmap-capability probe file. The
+/// `SimFs` fault layer exempts this scratch from its crash-fault schedule (see
+/// its `remove_file`), so an evidence probe never consumes an armed `RemoveFile`
+/// fault meant for real store data.
+pub(crate) const MMAP_PROBE_PREFIX: &str = ".batpak-mmap-probe-";
+
+/// Monotonic counter that makes each mmap-probe path unique within the process,
+/// so concurrent diagnostics/profile probes on the same backend never share (and
+/// delete) one another's probe file.
+static MMAP_PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path, fs: &dyn StoreFs) -> MmapEvidence {
+    match path_status(data_dir, fs) {
         StorePathStatusEvidence::ObservedDirectory => {}
         StorePathStatusEvidence::ObservedUnsupportedNotDirectory => {
             return MmapEvidence::ObservedUnsupported;
@@ -89,16 +101,45 @@ pub(crate) fn mmap_evidence_for_store_path(data_dir: &Path) -> MmapEvidence {
         StorePathStatusEvidence::ProbeFailed { .. } => return MmapEvidence::ProbeFailed,
     }
 
-    let Ok(mut probe) = tempfile::NamedTempFile::new_in(data_dir) else {
+    // Probe THROUGH the configured backend so a purely in-memory store never
+    // touches the host filesystem (issue #171): a MemFs probe stays in memory
+    // and its `as_std_file()` is `None`, so mmap is observed-unsupported and NO
+    // host tempfile is ever created; RealFs mints a real file to actually map.
+    // A per-call unique leaf (a process-wide atomic counter) so concurrent
+    // probes never remove each other's just-created file — the fixed-name race
+    // the previous `NamedTempFile` avoided by construction. No pid component:
+    // the store's exclusive dir lock already means one process per `data_dir`,
+    // and `std::process::id()` panics on no-pid targets such as wasm32.
+    let probe_path = data_dir.join(format!(
+        "{MMAP_PROBE_PREFIX}{}",
+        MMAP_PROBE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let _ = fs.remove_file_if_present(&probe_path);
+    let Ok(mut probe) = fs.create_new_file(&probe_path) else {
         return MmapEvidence::ProbeFailed;
     };
-    if probe.write_all(&[0]).and_then(|()| probe.flush()).is_err() {
+    let evidence = probe_mmap_admission(&mut *probe);
+    // Release the handle BEFORE unlinking: a backend that cannot remove an open
+    // file (Windows, and virtual backends keyed on live handles) would otherwise
+    // leave the probe behind. `NamedTempFile` cleaned up on drop.
+    drop(probe);
+    let _ = fs.remove_file_if_present(&probe_path);
+    evidence
+}
+
+fn probe_mmap_admission(probe: &mut dyn StoreFile) -> MmapEvidence {
+    if probe.write_all(&[0]).is_err() {
         return MmapEvidence::ProbeFailed;
     }
+    // A virtual backend's handle exposes no OS file, so mmap is definitively
+    // unsupported for it — reported without touching the host.
+    let Some(file) = probe.as_std_file() else {
+        return MmapEvidence::ObservedUnsupported;
+    };
     // SAFETY: the probe file is private to this function, one byte long, and
     // dropped immediately after the map attempt. This observes the target mmap
     // mechanism; it does not establish store semantics.
-    match unsafe { MmapOptions::new().len(1).map(probe.as_file()) } {
+    match unsafe { MmapOptions::new().len(1).map(file) } {
         Ok(_map) => MmapEvidence::FileBacked,
         Err(error) => mmap_map_error_evidence(&error),
     }
@@ -163,7 +204,7 @@ mod tests {
         let missing = dir.path().join("missing-store-path");
 
         assert_eq!(
-            path_status(&missing),
+            path_status(&missing, &crate::store::platform::fs::RealFs),
             StorePathStatusEvidence::UnknownMissing,
             "PROPERTY: a missing store path is unknown/missing evidence, not a probe failure"
         );
@@ -177,7 +218,7 @@ mod tests {
         std::fs::write(&file_path, b"not a directory")?;
 
         assert_eq!(
-            path_status(&file_path),
+            path_status(&file_path, &crate::store::platform::fs::RealFs),
             StorePathStatusEvidence::ObservedUnsupportedNotDirectory,
             "PROPERTY: an existing non-directory path must be unsupported evidence, not accepted as a store directory"
         );
@@ -197,7 +238,7 @@ mod tests {
         let squatter = dir.path().join("squatting-file");
         std::fs::write(&squatter, b"a file squatting on a directory component")?;
 
-        let probed = path_status(&squatter.join("child"));
+        let probed = path_status(&squatter.join("child"), &crate::store::platform::fs::RealFs);
         assert!(
             matches!(
                 &probed,
@@ -211,7 +252,7 @@ mod tests {
         // the ONLY error kind the guard may classify as absence.
         let missing = dir.path().join("missing-store-path");
         assert_eq!(
-            path_status(&missing),
+            path_status(&missing, &crate::store::platform::fs::RealFs),
             StorePathStatusEvidence::UnknownMissing,
             "PROPERTY: NotFound remains the one error classified as absence"
         );
@@ -224,7 +265,7 @@ mod tests {
         let missing = dir.path().join("missing-store-path");
 
         assert_eq!(
-            mmap_evidence_for_store_path(&missing),
+            mmap_evidence_for_store_path(&missing, &crate::store::platform::fs::RealFs),
             MmapEvidence::Unknown,
             "PROPERTY: mmap evidence for a missing path must stay Unknown, not ProbeFailed"
         );
@@ -238,7 +279,7 @@ mod tests {
         std::fs::write(&file_path, b"not a directory")?;
 
         assert_eq!(
-            mmap_evidence_for_store_path(&file_path),
+            mmap_evidence_for_store_path(&file_path, &crate::store::platform::fs::RealFs),
             MmapEvidence::ObservedUnsupported,
             "PROPERTY: mmap probing must not create temp probes under a non-directory store path"
         );

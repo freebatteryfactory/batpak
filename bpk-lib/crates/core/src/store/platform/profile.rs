@@ -1,3 +1,4 @@
+use crate::store::platform::fs::StoreFs;
 use crate::store::stats::{
     ClockEvidence, LockLeafSymlinkProtection, MmapAdmissionSummary, MmapEvidence,
     ParentDirSyncAdmissionSummary, ParentDirSyncEvidence, PlatformAdmissionSummary,
@@ -71,7 +72,11 @@ impl PlatformProfile {
     #[cfg(test)]
     fn from_store_path_for_test(data_dir: &Path) -> Result<Self, StoreError> {
         let clock = crate::store::SystemClock::new();
-        let evidence = crate::store::platform::evidence::collect_for_store_path(data_dir, &clock);
+        let evidence = crate::store::platform::evidence::collect_for_store_path(
+            data_dir,
+            &clock,
+            &crate::store::platform::fs::RealFs,
+        );
         Self::from_evidence(&evidence)
     }
 
@@ -79,10 +84,11 @@ impl PlatformProfile {
         profile_path: &Path,
         data_dir: &Path,
         clock: &dyn crate::store::Clock,
+        fs: &dyn StoreFs,
     ) -> Result<PlatformEvidenceSummary, StoreError> {
         let expected = Self::load(profile_path)?;
         let current_evidence =
-            crate::store::platform::evidence::collect_for_store_path(data_dir, clock);
+            crate::store::platform::evidence::collect_for_store_path(data_dir, clock, fs);
         let current = Self::from_evidence(&current_evidence)?;
         if expected.profile_body_tuple() != current.profile_body_tuple() {
             return Err(StoreError::PlatformProfileMismatch {
@@ -310,7 +316,12 @@ mod tests {
         let missing = dir.path().join("missing-store-path");
 
         let clock = crate::store::SystemClock::new();
-        let Err(error) = PlatformProfile::verify_current_store_path(&path, &missing, &clock) else {
+        let Err(error) = PlatformProfile::verify_current_store_path(
+            &path,
+            &missing,
+            &clock,
+            &crate::store::platform::fs::RealFs,
+        ) else {
             return Err(std::io::Error::other("expected profile mismatch").into());
         };
         assert!(matches!(error, StoreError::PlatformProfileMismatch { .. }));

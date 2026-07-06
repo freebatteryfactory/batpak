@@ -706,7 +706,19 @@ impl StoreFs for SimFs {
         // `remove_file_if_present` is the provided default in terms of this
         // method, so both the direct reclaim and the if-present probes funnel
         // through one faultable primitive.
-        if self.state.op_fault_strikes(CrashOp::RemoveFile) {
+        //
+        // EXEMPTION: the mmap-capability probe (platform evidence collection) is
+        // transient infrastructure, not store data — its scratch removes must
+        // NOT consume the crash-fault schedule, or an evidence probe run after
+        // arming a RemoveFile fault would swallow the fault the experiment
+        // intended for a real segment/reclaim remove.
+        let is_probe_scratch =
+            path.file_name()
+                .and_then(|leaf| leaf.to_str())
+                .is_some_and(|leaf| {
+                    leaf.starts_with(crate::store::platform::evidence::MMAP_PROBE_PREFIX)
+                });
+        if !is_probe_scratch && self.state.op_fault_strikes(CrashOp::RemoveFile) {
             return Err(SimState::injected_op_fault(CrashOp::RemoveFile));
         }
         self.inner.remove_file(path)?;

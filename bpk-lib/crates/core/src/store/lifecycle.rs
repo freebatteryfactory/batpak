@@ -195,6 +195,7 @@ pub(crate) fn diagnostics<State: crate::store::StoreState>(
         platform_evidence: crate::store::platform::evidence::collect_for_store_path(
             &store.config.data_dir,
             store.runtime.clock(),
+            store.config.fs().as_ref(),
         ),
     }
 }
