@@ -151,23 +151,28 @@ fn ensure_llvm_cov_available() -> Result<()> {
     )
 }
 
+/// The `-p <crate>` selectors for the coverage run, derived from the single
+/// publish-crate oracle (`publish::PUBLISH_CRATES`) so a newly-published family
+/// crate is measured automatically and no hand-maintained subset can drift.
+/// Seeds the package-family oracle the source-of-truth pass grows to feed
+/// coverage / MSRV / public-API / release from one list.
+fn coverage_package_args() -> Vec<&'static str> {
+    crate::publish::PUBLISH_CRATES
+        .iter()
+        .flat_map(|&package| ["-p", package])
+        .collect()
+}
+
 fn run_llvm_cov_nextest(export_dir: &Path, json_mode: bool) -> Result<()> {
     let profraw_dir = coverage_profraw_dir(export_dir)?;
     let mut command = Command::new("cargo");
-    command.args([
-        "llvm-cov",
-        "nextest",
-        "--profile",
-        "ci",
-        "-p",
-        "batpak",
-        "-p",
-        "syncbat",
-        "-p",
-        "netbat",
-        "--all-features",
-        "--no-report",
-    ]);
+    command.args(["llvm-cov", "nextest", "--profile", "ci"]);
+    // Derive the measured crate set from the single publish-crate oracle so a
+    // newly-published family crate is covered automatically — no hand list to
+    // drift. Previously hardcoded to batpak/syncbat/netbat, which silently left
+    // hostbat + bvisor (both first-published at 0.9.0) OUTSIDE the coverage floor.
+    command.args(coverage_package_args());
+    command.args(["--all-features", "--no-report"]);
     command.env(
         "LLVM_PROFILE_FILE",
         profraw_dir.join("batpak-%p-%m.profraw"),
@@ -410,10 +415,28 @@ fn split_function_name(name: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        coverage_export_dir, coverage_staging_dir, coverage_summary, split_function_name,
-        uncovered_files, uncovered_functions,
+        coverage_export_dir, coverage_package_args, coverage_staging_dir, coverage_summary,
+        split_function_name, uncovered_files, uncovered_functions,
     };
     use serde_json::json;
+
+    /// LD4 regression: the coverage floor measures EVERY publish crate, derived
+    /// from the single `PUBLISH_CRATES` oracle. The old hardcoded list covered
+    /// only batpak/syncbat/netbat, silently leaving hostbat + bvisor (published
+    /// at 0.9.0) outside the floor; a re-hardcoded subset would drop them and
+    /// fail here.
+    #[test]
+    fn coverage_measures_every_publish_crate() {
+        let args = coverage_package_args();
+        for package in crate::publish::PUBLISH_CRATES {
+            assert!(
+                args.windows(2).any(|pair| pair == ["-p", package]),
+                "coverage must instrument publish crate `{package}`"
+            );
+        }
+        assert!(args.contains(&"hostbat"), "hostbat must be measured (LD4)");
+        assert!(args.contains(&"bvisor"), "bvisor must be measured (LD4)");
+    }
 
     #[test]
     fn coverage_summary_uses_totals_block() {

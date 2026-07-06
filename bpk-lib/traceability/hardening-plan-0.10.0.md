@@ -87,9 +87,12 @@
 - [ ] **LD2** `crates/core/tests/compat_matrix/support.rs:32` — make `SUPPORTED_{MMAP,CHECKPOINT,
   IDEMP,VISIBILITY}_VERSION` `pub` + derive (stop shadowing the real consts). Restores
   `INV-ONDISK-FORWARD-COMPAT-CANONICAL` for 4 formats (currently passes `6==6` vacuously).
-- [ ] **LD4** coverage crate list derived from a package-family oracle — **SEED the oracle here**
-  (WP3 grows it). `coverage.rs:162` instruments only `-p batpak/syncbat/netbat`; add `hostbat`+
-  `bvisor`. Do NOT lower the floor to compensate if they red.
+- [x] **LD4** coverage now derives its `-p <crate>` set from the single `publish::PUBLISH_CRATES`
+  oracle (`coverage_package_args()`), auto-including hostbat + bvisor (were silently outside the
+  floor) — a re-hardcoded subset fails the regression fixture `coverage_measures_every_publish_crate`.
+  **This is the package-family oracle SEED** (WP3 grows it to feed MSRV/public-API/release too).
+  Compile-verified; fixture runs on CI. ⚠ WATCH: the 80% floor now counts hostbat/bvisor — if they
+  red, that's a real coverage gap to FILL with tests, NOT lower the floor (per anti-nerf). DONE.
 - [ ] Remaining under-checking gates + a RED FIXTURE each: H1 FS-ratchet allowlist over-broad
   (`platform_boundary.rs:161`); `prove_gates_bite.rs:27` MIN_FIXTURES 5→registry-derived (23 exist);
   `harness_lints.rs:387` `--test T -- filter` skips existence checks; `meta_gate.rs:1132` malformed
