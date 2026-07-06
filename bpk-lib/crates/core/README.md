@@ -5,8 +5,8 @@ the core battery: an embedded, sync-first append-only journal with typed
 payloads, Blake3 hash-chained ancestry, verifiable receipts, deterministic
 replay, and derived projections.
 
-The family around it — `syncbat`, `netbat`, and `hostbat` — wires
-the journal into larger Rust hosts through explicit terminals and circuits. See the
+The family around it — `syncbat`, `netbat`, `hostbat`, and `bvisor` — wires
+the journal into larger Rust hosts, network boundaries, and confined workloads. See the
 [repository README](https://github.com/freebatteryfactory/batpak/blob/main/README.md) for
 the full family map, scale-out model, and host path.
 

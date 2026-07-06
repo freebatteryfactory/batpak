@@ -10,8 +10,8 @@ Free Battery Factory is the workshop. Each battery is a bounded component that s
 | `syncbat` | Sync-first runtime contracts and dispatch surfaces. |
 | `netbat` | Server and network boundary surfaces for explicit IO. |
 | `hostbat` | Host contract projection: client manifest, H-interface fingerprints, subscription descriptors. |
+| `bvisor` | Boundary supervisor: runs a declared workload under a fail-closed boundary contract with real Linux (landlock/seccomp/cgroups) and Wasm (wasmi/WASI) confinement backends. |
 | `batpak-macros` | Derive macro support for the core substrate. |
-| `syncbat-macros` | Derive macro support for syncbat. |
 | `batpak-bench-support` | Shared benchmark support for workspace surfaces. |
 
 ## Support Crates
@@ -40,6 +40,8 @@ Need explicit network wiring? Use `netbat`.
 
 Need the live host contract as data? Use `hostbat` and prove it with `cargo test -p hostbat`.
 
+Need to run a declared workload under a confined boundary? Use `bvisor`.
+
 Need conformance or release checks? Use `just inspect`, `just verify`, and `just seal`.
 
-A non-Rust generated-client surface is intentionally out of scope for the 0.9/1.0 Rust-first line and deferred post-1.0.
+A non-Rust generated-client surface is intentionally out of scope for the pre-1.0 Rust-first line and deferred post-1.0.

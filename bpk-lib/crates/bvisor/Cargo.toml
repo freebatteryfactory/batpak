@@ -5,6 +5,8 @@ edition = "2021"
 rust-version = "1.92"
 license = "MIT OR Apache-2.0"
 description = "Sync-first boundary supervisor: platform-agnostic boundary contract (types + fail-closed planner) with real Linux (landlock/seccomp/cgroups) and Wasm (wasmi/WASI) confinement backends. ZERO OS code, ZERO BatPak writes in the Backend trait."
+documentation = "https://docs.rs/bvisor"
+readme = "README.md"
 
 [lib]
 path = "src/lib.rs"

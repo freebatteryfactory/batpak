@@ -11,7 +11,7 @@ your intent — nobody is required to read all of them.
 | [01_FACTORY.md](01_FACTORY.md) | The factory identity: batteries, boundaries, and why the metaphor exists |
 | [02_MODEL.md](02_MODEL.md) | The core model: journal, writer, sync-first contract, HLC frontier |
 | [03_INVARIANTS.md](03_INVARIANTS.md) | The named invariant catalog and what enforces each one |
-| [04_BATTERIES.md](04_BATTERIES.md) | The battery map: `batpak`, `syncbat`, `netbat`, `hostbat` |
+| [04_BATTERIES.md](04_BATTERIES.md) | The battery map: `batpak`, `syncbat`, `netbat`, `hostbat`, `bvisor` |
 | [05_TERMINALS.md](05_TERMINALS.md) | The ten-op NETBAT terminal profile |
 | [06_EVENTS.md](06_EVENTS.md) | Events, typed payloads, coordinates, canonical encoding |
 | [07_RECEIPTS.md](07_RECEIPTS.md) | Receipts, signing, and verification |

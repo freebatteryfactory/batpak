@@ -1,11 +1,11 @@
-# Roadmap — 0.9.0 → 1.0.0
+# Roadmap — 0.10.0 → 1.0.0
 
 This is a **living document**. It is re-audited every time a line item lands:
 knock an item, re-read its section, promote/demote what the change revealed.
 Items are owner-gated — nothing here merges on its own schedule. Version
-strategy: 0.9.x is the pre-1.0 breaking-change budget; a 0.10.0 window is
-reserved for API-shape changes driven by dogfood feedback before the surface
-freezes at 1.0.0.
+strategy: 0.9.x was the pre-1.0 breaking-change budget; the 0.10.0 window (now
+consumed) held the API-shape changes driven by dogfood feedback before the
+surface freezes at 1.0.0.
 
 Provenance: the coupling items came from a three-agent audit (2026-07-02) of
 the repo against Nygard's coupling taxonomy (operational / developmental /
