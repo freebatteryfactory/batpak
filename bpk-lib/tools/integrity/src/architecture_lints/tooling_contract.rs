@@ -869,8 +869,13 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
         "xtask coverage must route raw LLVM profiles into a dedicated staging directory instead of spraying .profraw files into the repo root",
     )?;
     ensure(
-        coverage_content.contains("\"nextest\",\n        \"--profile\",\n        \"ci\",")
-            || coverage_content.contains("\"nextest\", \"--profile\", \"ci\","),
+        // Match the `--profile ci` flag pair regardless of what follows it (a
+        // trailing comma, `]`, or a newline). Coverage derives its `-p <crate>`
+        // selectors from `publish::PUBLISH_CRATES`, so `"ci"` is no longer
+        // followed inline by `-p batpak` — matching behavior (the flag is used),
+        // not the exact arg layout, keeps this gate from breaking on refactors.
+        coverage_content.contains("\"--profile\", \"ci\"")
+            || coverage_content.contains("\"--profile\",\n        \"ci\""),
         "xtask coverage must use the ci nextest profile so slow compile-fail tests remain truthful under coverage",
     )?;
     ensure(
