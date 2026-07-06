@@ -395,11 +395,19 @@ impl StoreFs for MemFs {
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         let mut tree = self.lock_tree();
+        // A directory already at `to` fails the rename closed, like a RealFs
+        // rename replacing a directory with a file. Checked BEFORE removing
+        // `from` so a refused rename leaves the source intact (atomic, no
+        // side effects) and the collision invariant (a path is never in both
+        // `tree.files` and `tree.dirs`) holds.
+        if tree.dirs.contains(to) {
+            return Err(MemFs::is_a_directory(to));
+        }
         let bytes = tree
             .files
             .remove(from)
             .ok_or_else(|| MemFs::not_found(from))?;
-        // POSIX rename semantics: an existing destination is replaced.
+        // POSIX rename semantics: an existing (file) destination is replaced.
         tree.files.insert(to.to_path_buf(), bytes);
         Ok(())
     }
