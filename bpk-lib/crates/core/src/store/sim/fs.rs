@@ -530,23 +530,41 @@ impl StoreFile for SimStoreFile {
     }
 }
 
-/// [`StagedFile`] wrapper: the atomic-publish fault ([`CrashOp::PersistTemp`])
-/// on a stage minted by the inner backend.
+/// [`StagedFile`] wrapper. Two fault mechanisms ride the stage: the
+/// atomic-publish fault ([`CrashOp::PersistTemp`]) drops the whole publish, and
+/// the sync-drop schedule decides whether the staged `sync_all` makes the
+/// published bytes durable — a dropped staged sync leaves the metadata publish
+/// (cursor checkpoint, keyset, visibility ranges, cold-start artifact) at a zero
+/// durable prefix, so `crash()` loses it.
 struct SimStagedFile {
     inner: Box<dyn StagedFile>,
     state: Arc<SimState>,
+    /// Total bytes written to the stage so far.
+    written: u64,
+    /// Bytes made durable by an honored staged sync; applied to the final path
+    /// in `persist` so `crash()` truncates the publish to this prefix.
+    durable_staged: u64,
 }
 
 impl StagedFile for SimStagedFile {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.inner.write_all(buf)
+        self.inner.write_all(buf)?;
+        self.written = self
+            .written
+            .saturating_add(u64::try_from(buf.len()).unwrap_or(u64::MAX));
+        Ok(())
     }
 
     fn sync_all(&mut self) -> io::Result<()> {
-        // Staging durability is honest (matching the pre-seam behavior where
-        // the staging fsync was a direct platform call): the fault model
-        // targets the PUBLISH, which is the crash-sensitive transition.
-        self.inner.sync_all()
+        // Mirror `SimStoreFile::sync_all`: a dropped staged sync returns Ok but
+        // does NOT advance the durable prefix, so the published bytes are lost
+        // on crash. Only an honored sync makes the staged bytes durable.
+        if self.state.fsync_dropped() {
+            return Ok(());
+        }
+        self.inner.sync_all()?;
+        self.durable_staged = self.written;
+        Ok(())
     }
 
     fn persist(
@@ -561,7 +579,13 @@ impl StagedFile for SimStagedFile {
         if self.state.op_fault_strikes(CrashOp::PersistTemp) {
             return Err(SimState::injected_op_fault(CrashOp::PersistTemp));
         }
-        self.inner.persist(final_path, admission)
+        self.inner.persist(final_path, admission)?;
+        // Apply the staged durable prefix to the published path: an honored
+        // staged sync makes the bytes durable (full length); a dropped one
+        // leaves it at 0, so `crash()` truncates the whole publish away — the
+        // metadata write whose fsync silently never reached disk is lost.
+        self.state.record_durable(final_path, self.durable_staged);
+        Ok(())
     }
 }
 
@@ -721,6 +745,8 @@ impl StoreFs for SimFs {
         Ok(Box::new(SimStagedFile {
             inner,
             state: Arc::clone(&self.state),
+            written: 0,
+            durable_staged: 0,
         }))
     }
 
