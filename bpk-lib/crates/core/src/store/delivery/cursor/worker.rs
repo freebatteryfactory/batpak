@@ -4,6 +4,7 @@ use crate::store::delivery::canal::CanalHandle;
 use crate::store::delivery::observation::{AtLeastOnce, CheckpointId};
 use crate::store::index::{IndexEntry, StoreIndex};
 use crate::store::platform::clock::Clock;
+use crate::store::platform::fs::StoreFs;
 use crate::store::{RestartPolicy, Store, StoreError};
 use parking_lot::Mutex;
 use std::path::Path;
@@ -73,11 +74,12 @@ fn build_worker_cursor(
     data_dir: &Path,
     checkpoint_id: Option<&CheckpointId>,
     load_saved_checkpoint: bool,
+    fs: &dyn StoreFs,
     clock: Arc<dyn Clock>,
 ) -> Result<Cursor, StoreError> {
     match checkpoint_id {
         Some(id) if load_saved_checkpoint => {
-            Cursor::new_with_checkpoint(region.clone(), Arc::clone(index), data_dir, id, clock)
+            Cursor::new_with_checkpoint(region.clone(), Arc::clone(index), data_dir, id, fs, clock)
         }
         Some(id) => Ok(Cursor::new_bound_checkpoint(
             region.clone(),
@@ -427,6 +429,7 @@ impl CursorWorkerLoop {
             &self.store.config.data_dir,
             self.checkpoint_id.as_ref(),
             true,
+            self.store.config.fs().as_ref(),
             self.store.runtime.clock_arc(),
         ) {
             Ok(cursor) => cursor,
@@ -592,6 +595,7 @@ impl CursorWorkerLoop {
             &self.store.config.data_dir,
             self.checkpoint_id.as_ref(),
             false,
+            self.store.config.fs().as_ref(),
             self.store.runtime.clock_arc(),
         ) {
             Ok(cursor) => cursor,
@@ -656,6 +660,8 @@ mod tests {
     use crate::store::delivery::observation::CheckpointId;
     use crate::store::index::StoreIndex;
     use crate::store::platform::clock::SystemClock;
+    use crate::store::platform::fs::RealFs;
+    use crate::store::platform::mem_fs::MemFs;
     use std::any::Any;
     use std::sync::Arc;
 
@@ -697,9 +703,16 @@ mod tests {
         Cursor::save_checkpoint(dir.path(), &id, &persisted).expect("save checkpoint");
 
         // load_saved_checkpoint = true -> new_with_checkpoint -> resumes at (7, true).
-        let loaded =
-            build_worker_cursor(&region, &index, dir.path(), Some(&id), true, test_clock())
-                .expect("build loading cursor");
+        let loaded = build_worker_cursor(
+            &region,
+            &index,
+            dir.path(),
+            Some(&id),
+            true,
+            &RealFs,
+            test_clock(),
+        )
+        .expect("build loading cursor");
         assert_eq!(
             loaded.checkpoint(),
             (7, true),
@@ -709,9 +722,16 @@ mod tests {
         // load_saved_checkpoint = false -> new_bound_checkpoint -> ignores the
         // persisted position, starting fresh at (0, false). The `if true` mutant
         // would load here and report (7, true), failing this assertion.
-        let bound =
-            build_worker_cursor(&region, &index, dir.path(), Some(&id), false, test_clock())
-                .expect("build bound cursor");
+        let bound = build_worker_cursor(
+            &region,
+            &index,
+            dir.path(),
+            Some(&id),
+            false,
+            &RealFs,
+            test_clock(),
+        )
+        .expect("build bound cursor");
         assert_eq!(
             bound.checkpoint(),
             (0, false),
@@ -730,6 +750,7 @@ mod tests {
             std::path::Path::new("/nonexistent"),
             None,
             true,
+            &RealFs,
             test_clock(),
         )
         .expect("build in-memory cursor");
@@ -737,6 +758,67 @@ mod tests {
             cursor.checkpoint(),
             (0, false),
             "PROPERTY: a None checkpoint id yields a fresh in-memory cursor regardless of the flag"
+        );
+    }
+
+    #[test]
+    fn durable_cursor_resume_reads_through_the_configured_backend() {
+        // Durable resume MUST read the checkpoint back through the SAME backend
+        // the save path wrote it to. A store on a virtual backend (MemFs) saves
+        // via `persist_current` -> `save_checkpoint_with_fs(.., fs)`; a load path
+        // that hardcoded `RealFs` would never find the virtual checkpoint and
+        // would silently resume from position 0 (lost durable progress).
+        let fs = MemFs::new();
+        let data_dir = std::path::Path::new("/virtual/cursor-resume");
+        let region = Region::entity("entity:virtual-resume");
+        let index = Arc::new(StoreIndex::new());
+        let id = CheckpointId::new("batpak-virtual-cursor-resume").expect("valid id");
+
+        let persisted = CursorCheckpoint {
+            position: 7,
+            started: true,
+            process_boot_ns: None,
+            region_identity: Some(region.checkpoint_identity()),
+        };
+        // Save ONLY into the virtual backend — nothing touches the host FS.
+        Cursor::save_checkpoint_with_fs(data_dir, &id, &persisted, &fs)
+            .expect("save checkpoint into the virtual backend");
+
+        // Loading through the SAME backend resumes at the persisted position.
+        let resumed = build_worker_cursor(
+            &region,
+            &index,
+            data_dir,
+            Some(&id),
+            true,
+            &fs,
+            test_clock(),
+        )
+        .expect("build loading cursor over the virtual backend");
+        assert_eq!(
+            resumed.checkpoint(),
+            (7, true),
+            "PROPERTY: resume must read the checkpoint back through the configured StoreFs"
+        );
+
+        // The pre-fix behavior, made explicit: a `RealFs` load can never see the
+        // virtual-only checkpoint, so it resumes from 0 — the exact silent
+        // data-loss bug this fix closes. If `new_with_checkpoint` ever hardcodes
+        // `RealFs` again, the resume assertion above breaks first.
+        let via_real_fs = build_worker_cursor(
+            &region,
+            &index,
+            data_dir,
+            Some(&id),
+            true,
+            &RealFs,
+            test_clock(),
+        )
+        .expect("build over RealFs finds no virtual checkpoint");
+        assert_eq!(
+            via_real_fs.checkpoint(),
+            (0, false),
+            "PROPERTY: a RealFs load over a virtual checkpoint finds nothing — the broken resume"
         );
     }
 
