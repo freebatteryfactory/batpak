@@ -236,7 +236,7 @@ pub bvisor::AdmissionDivergence::OutcomeMismatch::circuit: alloc::boxed::Box<bvi
 pub bvisor::AdmissionDivergence::OutcomeMismatch::reference: alloc::boxed::Box<bvisor::AdmissionOutcome>
 impl core::error::Error for bvisor::AdmissionDivergence
 impl core::fmt::Display for bvisor::AdmissionDivergence
-pub fn bvisor::AdmissionDivergence::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bvisor::AdmissionDivergence::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum bvisor::AdmissionOutcome
 pub bvisor::AdmissionOutcome::Admitted
 pub bvisor::AdmissionOutcome::Admitted::trace: alloc::vec::Vec<bool>
@@ -545,7 +545,7 @@ pub bvisor::PlanError::WorkloadIncompatible::backend: bvisor::BackendId
 pub bvisor::PlanError::WorkloadIncompatible::workload: bvisor::Workload
 impl core::error::Error for bvisor::PlanError
 impl core::fmt::Display for bvisor::PlanError
-pub fn bvisor::PlanError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bvisor::PlanError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum bvisor::ProgramError
 pub bvisor::ProgramError::ArityMismatch
 pub bvisor::ProgramError::ArityMismatch::at: u32
@@ -630,6 +630,7 @@ pub bvisor::RequirementKind::NetworkDenyAll
 pub bvisor::RequirementKind::TempRoot
 impl bvisor::RequirementKind
 pub const bvisor::RequirementKind::ALL: [Self; 17]
+impl bvisor::RequirementKind
 pub fn bvisor::RequirementKind::of(req: &bvisor::BoundaryRequirement) -> Self
 #[non_exhaustive] pub enum bvisor::RunStep
 pub bvisor::RunStep::Faulted(alloc::string::String)
@@ -644,7 +645,7 @@ pub bvisor::ScheduleDivergence::OutcomeMismatch::circuit: bvisor::ScheduleOutcom
 pub bvisor::ScheduleDivergence::OutcomeMismatch::reference: bvisor::ScheduleOutcome
 impl core::error::Error for bvisor::ScheduleDivergence
 impl core::fmt::Display for bvisor::ScheduleDivergence
-pub fn bvisor::ScheduleDivergence::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn bvisor::ScheduleDivergence::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum bvisor::ScheduleOutcome
 pub bvisor::ScheduleOutcome::Admitted
 pub bvisor::ScheduleOutcome::Refused

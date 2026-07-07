@@ -92,7 +92,7 @@ impl core::convert::From<batpak::coordinate::CoordinateError> for batpak::prelud
 pub fn batpak::prelude::StoreError::from(e: batpak::coordinate::CoordinateError) -> Self
 impl core::error::Error for batpak::coordinate::CoordinateError
 impl core::fmt::Display for batpak::coordinate::CoordinateError
-pub fn batpak::coordinate::CoordinateError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::coordinate::CoordinateError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum batpak::coordinate::KindFilter
 pub batpak::coordinate::KindFilter::Any
 pub batpak::coordinate::KindFilter::Category(u8)
@@ -105,7 +105,7 @@ pub batpak::coordinate::RegionFilterError::InvertedClockRange::end: u32
 pub batpak::coordinate::RegionFilterError::InvertedClockRange::start: u32
 impl core::error::Error for batpak::coordinate::RegionFilterError
 impl core::fmt::Display for batpak::coordinate::RegionFilterError
-pub fn batpak::coordinate::RegionFilterError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::coordinate::RegionFilterError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct batpak::coordinate::ClockRange
 impl batpak::coordinate::ClockRange
 pub fn batpak::coordinate::ClockRange::end(&self) -> u32
@@ -175,7 +175,7 @@ pub batpak::event::decode::DecodeSource::Msgpack(rmp_serde::decode::Error)
 impl core::error::Error for batpak::event::decode::DecodeSource
 pub fn batpak::event::decode::DecodeSource::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::decode::DecodeSource
-pub fn batpak::event::decode::DecodeSource::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::decode::DecodeSource::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum batpak::event::decode::TypedDecodeError
 pub batpak::event::decode::TypedDecodeError::DecodeFailure
 pub batpak::event::decode::TypedDecodeError::DecodeFailure::kind: batpak::event::kind::EventKind
@@ -193,7 +193,7 @@ pub batpak::event::decode::TypedDecodeError::Upcast::source: batpak::event::upca
 impl core::error::Error for batpak::event::decode::TypedDecodeError
 pub fn batpak::event::decode::TypedDecodeError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::decode::TypedDecodeError
-pub fn batpak::event::decode::TypedDecodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::decode::TypedDecodeError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait batpak::event::decode::DecodeTyped
 pub fn batpak::event::decode::DecodeTyped::decode_typed<T: batpak::event::payload::EventPayload>(&self) -> core::result::Result<T, batpak::event::decode::TypedDecodeError>
 pub fn batpak::event::decode::DecodeTyped::route_typed<T: batpak::event::payload::EventPayload>(&self) -> core::result::Result<core::option::Option<T>, batpak::event::decode::TypedDecodeError>
@@ -392,7 +392,7 @@ pub batpak::event::upcast::UpcastError::ValueCodec(alloc::string::String)
 impl core::error::Error for batpak::event::upcast::UpcastError
 pub fn batpak::event::upcast::UpcastError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::upcast::UpcastError
-pub fn batpak::event::upcast::UpcastError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::upcast::UpcastError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct batpak::event::upcast::IncompleteUpcastChain
 pub batpak::event::upcast::IncompleteUpcastChain::current_version: u16
 pub batpak::event::upcast::IncompleteUpcastChain::kind: batpak::event::kind::EventKind
@@ -417,7 +417,7 @@ pub batpak::event::DecodeSource::Msgpack(rmp_serde::decode::Error)
 impl core::error::Error for batpak::event::decode::DecodeSource
 pub fn batpak::event::decode::DecodeSource::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::decode::DecodeSource
-pub fn batpak::event::decode::DecodeSource::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::decode::DecodeSource::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum batpak::event::EventKindError
 pub batpak::event::EventKindError::CategoryOutOfRange
 pub batpak::event::EventKindError::CategoryOutOfRange::category: u8
@@ -480,7 +480,7 @@ pub batpak::event::TypedDecodeError::Upcast::source: batpak::event::upcast::Upca
 impl core::error::Error for batpak::event::decode::TypedDecodeError
 pub fn batpak::event::decode::TypedDecodeError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::decode::TypedDecodeError
-pub fn batpak::event::decode::TypedDecodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::decode::TypedDecodeError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum batpak::event::UpcastError
 pub batpak::event::UpcastError::DuplicateStep
 pub batpak::event::UpcastError::DuplicateStep::from_version: u16
@@ -497,7 +497,7 @@ pub batpak::event::UpcastError::ValueCodec(alloc::string::String)
 impl core::error::Error for batpak::event::upcast::UpcastError
 pub fn batpak::event::upcast::UpcastError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::upcast::UpcastError
-pub fn batpak::event::upcast::UpcastError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::upcast::UpcastError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct batpak::event::Event<P>
 pub batpak::event::Event::hash_chain: core::option::Option<batpak::event::hash::HashChain>
 pub batpak::event::Event::header: batpak::event::header::EventHeader
@@ -1142,7 +1142,7 @@ impl core::convert::From<batpak::coordinate::CoordinateError> for batpak::prelud
 pub fn batpak::prelude::StoreError::from(e: batpak::coordinate::CoordinateError) -> Self
 impl core::error::Error for batpak::coordinate::CoordinateError
 impl core::fmt::Display for batpak::coordinate::CoordinateError
-pub fn batpak::coordinate::CoordinateError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::coordinate::CoordinateError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum batpak::prelude::EventKindError
 pub batpak::prelude::EventKindError::CategoryOutOfRange
 pub batpak::prelude::EventKindError::CategoryOutOfRange::category: u8
@@ -1211,7 +1211,7 @@ pub batpak::prelude::RegionFilterError::InvertedClockRange::end: u32
 pub batpak::prelude::RegionFilterError::InvertedClockRange::start: u32
 impl core::error::Error for batpak::coordinate::RegionFilterError
 impl core::fmt::Display for batpak::coordinate::RegionFilterError
-pub fn batpak::coordinate::RegionFilterError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::coordinate::RegionFilterError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum batpak::prelude::ReplayLane
 pub batpak::prelude::ReplayLane::RawMsgpack
 pub batpak::prelude::ReplayLane::Value
@@ -1403,7 +1403,7 @@ pub batpak::prelude::TypedDecodeError::Upcast::source: batpak::event::upcast::Up
 impl core::error::Error for batpak::event::decode::TypedDecodeError
 pub fn batpak::event::decode::TypedDecodeError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for batpak::event::decode::TypedDecodeError
-pub fn batpak::event::decode::TypedDecodeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::event::decode::TypedDecodeError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct batpak::prelude::AppendOptions
 pub batpak::prelude::AppendOptions::causation_id: core::option::Option<batpak::id::CausationId>
 pub batpak::prelude::AppendOptions::correlation_id: core::option::Option<batpak::id::CorrelationId>
