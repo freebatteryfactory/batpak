@@ -210,6 +210,55 @@ fn define_entity_id_custom_type() {
 }
 
 #[test]
+fn define_entity_id_serde_opt_in_matches_hand_rolled_wire() {
+    batpak::define_entity_id!(SerdeOrderId, "serde-order", serde);
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct HandRolledSerdeId(u128);
+
+    impl serde::Serialize for HandRolledSerdeId {
+        fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+            batpak::wire::u128_bytes::serialize(&self.0, ser)
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for HandRolledSerdeId {
+        fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+            batpak::wire::u128_bytes::deserialize(de).map(Self)
+        }
+    }
+
+    let raw = 0xDEAD_BEEF_CAFE_BABE_1234_5678_9ABC_DEF0u128;
+    let generated = SerdeOrderId::from(raw);
+    let hand_rolled = HandRolledSerdeId(raw);
+
+    let generated_bytes = rmp_serde::to_vec_named(&generated).expect("serialize generated id");
+    let hand_rolled_bytes =
+        rmp_serde::to_vec_named(&hand_rolled).expect("serialize hand-rolled id");
+
+    assert_eq!(
+        generated_bytes, hand_rolled_bytes,
+        "PROPERTY: define_entity_id!(..., serde) must emit byte-identical serde to the \
+         historical hand-rolled u128_bytes impl"
+    );
+
+    let decoded_generated: SerdeOrderId =
+        rmp_serde::from_slice(&hand_rolled_bytes).expect("deserialize generated id");
+    assert_eq!(
+        decoded_generated.as_u128(),
+        raw,
+        "PROPERTY: generated serde must read the historical hand-rolled wire format"
+    );
+
+    let decoded_hand_rolled: HandRolledSerdeId =
+        rmp_serde::from_slice(&generated_bytes).expect("deserialize hand-rolled id");
+    assert_eq!(
+        decoded_hand_rolled.0, raw,
+        "PROPERTY: historical hand-rolled serde must read the generated wire format"
+    );
+}
+
+#[test]
 fn event_header_new_typed_preserves_typed_ids() {
     let event_id = batpak::id::EventId::new(0x11);
     let correlation_id = batpak::id::CorrelationId::new(0x22);

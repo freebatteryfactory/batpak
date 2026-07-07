@@ -69,6 +69,7 @@ use std::path::Path;
 /// footers carried no integrity check, so they read as `Ok(None)` and fall back to the
 /// CRC-verified frame-scan rebuild rather than trusting un-CRC'd bytes.
 pub(crate) const SIDX_MAGIC: &[u8; 4] = b"SDX3";
+pub(crate) const SIDX_VERSION: u16 = 3;
 
 /// Legacy pre-0.8.3 SIDX magic. A footer tagged `SDX2` carries no CRC32, so its
 /// *content* must never be trusted on read — `read_footer`/`read_layout` keep

@@ -385,6 +385,7 @@ pub(crate) fn is_canonical_refusal(error: &crate::store::StoreError) -> bool {
             | StoreError::DataDirMalformed { .. }
             | StoreError::MmapFutureVersion { .. }
             | StoreError::IdempotencyFutureVersion { .. }
+            | StoreError::SidxFutureVersion { .. }
     )
 }
 

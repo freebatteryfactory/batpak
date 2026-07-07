@@ -130,6 +130,10 @@ fn one_of_every_variant() -> Vec<StoreError> {
             found: 2,
             supported: 1,
         },
+        StoreError::SidxFutureVersion {
+            found: 4,
+            supported: 3,
+        },
         StoreError::IdempotencyOverflowFailClosed {
             len: 1,
             max_keys: 1,
@@ -251,6 +255,7 @@ fn one_of_every_variant() -> Vec<StoreError> {
             | StoreError::HiddenRangesFutureVersion { .. }
             | StoreError::ForkEvidenceFutureVersion { .. }
             | StoreError::ImportProvenanceFutureVersion { .. }
+            | StoreError::SidxFutureVersion { .. }
             | StoreError::IdempotencyOverflowFailClosed { .. }
             | StoreError::InvalidPayloadVersion { .. }
             | StoreError::CorruptFrame { .. }

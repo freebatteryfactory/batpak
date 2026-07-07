@@ -18,13 +18,15 @@ use std::sync::Arc;
 use batpak::event::EventKind;
 use batpak::prelude::*;
 use batpak::store::{Store, StoreConfig};
+use serde::{Deserialize, Serialize};
 use syncbat::{
     Core, Ctx, EffectBackend, EffectClass, EffectError, Handler, HandlerError, HandlerResult,
     OperationDescriptor, OperationEffectRow, ReceiptEnvelope, ReceiptSink, ReceiptSinkError,
-    RecordedReceipt, RuntimeError, StoreEffectBackend,
+    RecordedReceipt, RuntimeError, StoreEffectBackend, TypedEffectEvent,
 };
 
 const KIND: EventKind = EventKind::custom(0xF, 1);
+const TYPED_KIND: EventKind = EventKind::custom(0xE, 1);
 const EVENT_CATEGORY: &str = "cat.inventory.v1";
 const PROJECTION_ID: &str = "proj.orders.v1";
 const RECEIPT_KIND: &str = "receipt.audit.v1";
@@ -44,6 +46,17 @@ fn test_store() -> (Arc<Store>, tempfile::TempDir) {
 
 fn coord() -> Coordinate {
     Coordinate::new("audit:stream", "scope:test").expect("coordinate")
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct TypedAuditEvent {
+    sequence: u64,
+    note: String,
+}
+
+impl EventPayload for TypedAuditEvent {
+    const KIND: EventKind = TYPED_KIND;
+    const PAYLOAD_VERSION: u16 = 7;
 }
 
 fn close_store(store: Arc<Store>) {
@@ -174,6 +187,43 @@ fn store_backed_query_projection_succeeds_end_to_end() {
     assert_eq!(result.output(), b"hello");
 
     drop(core);
+    close_store(store);
+}
+
+#[test]
+fn store_backed_typed_append_returns_receipt_and_preserves_typed_payload() {
+    let (store, _dir) = test_store();
+    let coordinate = coord();
+    let mut backend = StoreEffectBackend::new(Arc::clone(&store), coordinate.clone());
+    let payload = TypedAuditEvent {
+        sequence: 42,
+        note: "typed seam".to_owned(),
+    };
+    let event = TypedEffectEvent::new(&payload).expect("typed effect event encodes");
+    assert_eq!(event.kind(), TYPED_KIND);
+    assert_eq!(event.payload_version(), TypedAuditEvent::PAYLOAD_VERSION);
+
+    let receipt = backend
+        .append_typed_event(&coordinate, event)
+        .expect("typed effect append succeeds");
+
+    let entries = store.by_fact_typed::<TypedAuditEvent>();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].event_id(), receipt.event_id);
+
+    let stored = store
+        .read_raw(receipt.event_id)
+        .expect("typed effect event reads back");
+    assert_eq!(stored.event.event_kind(), TYPED_KIND);
+    assert_eq!(
+        stored.event.header.payload_version,
+        TypedAuditEvent::PAYLOAD_VERSION
+    );
+    let decoded: TypedAuditEvent =
+        batpak::canonical::from_bytes(&stored.event.payload).expect("typed payload decodes");
+    assert_eq!(decoded, payload);
+
+    drop(backend);
     close_store(store);
 }
 

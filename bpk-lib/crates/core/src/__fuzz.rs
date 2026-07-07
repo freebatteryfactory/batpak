@@ -217,3 +217,24 @@ pub fn __fuzz_sidx_footer(data: &[u8], segment_id: u64) -> Result<(bool, usize),
 
     Ok((layout_authenticated, entries.len()))
 }
+
+/// `segment::detect_sidx_boundary(&mut Read+Seek, file_len, segment_id)`.
+///
+/// Drives the boundary detector directly over arbitrary file bytes, including
+/// trailers whose final four bytes look like known, legacy, future, or unrelated
+/// magic. The returned discriminant is only for the fuzz harness; the contract is
+/// that malformed tails return `Ok("none")`, `Ok("untrusted")`, or a typed
+/// [`StoreError`] such as [`StoreError::SidxFutureVersion`], never a panic.
+#[doc(hidden)]
+pub fn __fuzz_sidx_boundary(data: &[u8], segment_id: u64) -> Result<&'static str, StoreError> {
+    use std::io::Cursor;
+
+    let file_len = u64::try_from(data.len()).unwrap_or(u64::MAX);
+    let mut cursor = Cursor::new(data);
+    let boundary = crate::store::segment::detect_sidx_boundary(&mut cursor, file_len, segment_id)?;
+    Ok(match boundary {
+        Some(boundary) if boundary.trusted => "trusted",
+        Some(_) => "untrusted",
+        None => "none",
+    })
+}

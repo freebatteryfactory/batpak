@@ -26,14 +26,14 @@
 use std::sync::Arc;
 
 use batpak::coordinate::Coordinate;
-use batpak::store::{Open, Store};
+use batpak::store::{AppendReceipt, Open, Store};
 use hostbat::{
     GoldenVector, GuardDescriptor, HostError, HostModule, SchemaDescriptor, SchemaId, SchemaRole,
     SchemaVersion,
 };
 use syncbat::{
-    AdmissionDecision, AdmissionGuard, Ctx, EffectClass, Handler, HandlerError, HandlerResult,
-    OperationDescriptor, OperationEffectRow,
+    AdmissionDecision, AdmissionGuard, Ctx, EffectBackend, EffectClass, Handler, HandlerError,
+    HandlerResult, OperationDescriptor, OperationEffectRow, StoreEffectBackend, TypedEffectEvent,
 };
 
 use crate::contract::events::BoundaryReportEvent;
@@ -55,8 +55,7 @@ const SPEC_SCHEMA_REF: &str = "bvisor.boundary.spec.v1";
 const REPORT_SCHEMA_REF: &str = "bvisor.boundary.report.v1";
 const REPORT_RECEIPT_KIND: &str = "bvisor.boundary.report.v1";
 /// Local receipt-drawer key under which the handler records the durable 0xE report's
-/// global sequence — the persist `AppendReceipt` surfaced honestly rather than dropped
-/// (see the effect-backend seam granularity-gap note in `BoundaryRunHandler::handle`).
+/// global sequence, surfacing the persist `AppendReceipt` rather than dropping it.
 const REPORT_RECEIPT_SEQUENCE_EXTENSION: &str = "bvisor.boundary.report.sequence";
 
 /// Shared admission/execution context: the backends to plan against, the chosen
@@ -75,6 +74,16 @@ impl BoundaryContext {
     /// plan, so re-deriving in the handler cannot diverge from the guard.
     fn plan(&self, spec: &BoundarySpec) -> Result<BoundaryPlan, PlanError> {
         BoundaryPlanner::new(&self.registry).plan(spec, &self.backend)
+    }
+
+    fn persist_report(&self, event: &BoundaryReportEvent) -> Result<AppendReceipt, HandlerError> {
+        let typed_event = TypedEffectEvent::new(event).map_err(|error| {
+            HandlerError::failed(format!("prepare boundary report event: {error}"))
+        })?;
+        let mut backend = StoreEffectBackend::new(Arc::clone(&self.store), self.coordinate.clone());
+        backend
+            .append_typed_event(&self.coordinate, typed_event)
+            .map_err(|error| HandlerError::failed(format!("persist boundary report: {error}")))
     }
 }
 
@@ -163,40 +172,20 @@ impl Handler for BoundaryRunHandler {
             .run(&plan)
             .map_err(|error| HandlerError::failed(error.to_string()))?;
 
-        // PERSIST: the host appends the sealed report as one durable 0xE event;
-        // replay reconstructs the boundary's terminal evidence from it.
-        //
-        // GRANULARITY GAP (effect-backend seam, tracked): this persist goes DIRECTLY
-        // through the coordinate-addressed, typed `Store::append_typed` rather than the
-        // runtime's `syncbat::EffectBackend` seam, and that is DELIBERATE, not laziness:
-        //   * the seam is `append_event(kind, payload: &[u8])` — trait-object-safe and
-        //     representation-erased. Its store-backed impl wraps `payload` as an opaque
-        //     msgpack `bin` (`StoreEffectBackend`'s `RawPayload`), whereas `append_typed`
-        //     stores the `BoundaryReportEvent` as its typed body under `T::PAYLOAD_VERSION`.
-        //     The recovery contract (`contract::recovery`) DECODES persisted 0xE events
-        //     back into a typed `BoundaryReportEvent`, so routing through the seam would
-        //     change the durable representation and break that typed readback — a real
-        //     regression, not a wire.
-        //   * the seam carries no coordinate and returns `()`, not the `AppendReceipt` this
-        //     durable append yields.
-        // Closing the gap needs a coordinate-carrying, verbatim-body, receipt-returning
-        // seam variant (a batpak-core append surface + `EffectBackend` growth) — the
-        // Track-A host seam, deliberately NOT forced here. Until then bvisor keeps the
-        // direct typed append and RECORDS the receipt below rather than discarding it.
+        // PERSIST: the host appends the sealed report through the typed
+        // `EffectBackend` seam. `StoreEffectBackend` implements that seam with
+        // `Store::append_typed`, so the 0xE report inherits the store's typed
+        // readback, encryption, keyscope, and crypto-shred behavior.
         let event = BoundaryReportEvent {
             report: report.clone(),
         };
-        let receipt = self
-            .cx
-            .store
-            .append_typed(&self.cx.coordinate, &event)
-            .map_err(|error| HandlerError::failed(format!("persist boundary report: {error}")))?;
+        let receipt = self.cx.persist_report(&event)?;
 
         // Record the persist receipt into the invocation's receipt drawer instead of
         // dropping it: the durable 0xE report's global sequence is honest evidence that
         // the seal reached the log. A LOCAL extension stays in the receipt envelope body
-        // (no batpak-side promotion), so it surfaces the receipt without contorting the
-        // representation the seam gap precludes routing through.
+        // (no batpak-side promotion), so it surfaces the receipt without changing
+        // the durable report event representation.
         cx.attach_local_extension(
             REPORT_RECEIPT_SEQUENCE_EXTENSION,
             receipt.global_sequence.to_le_bytes().to_vec(),

@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 use batpak::coordinate::Coordinate;
 use batpak::event::EventKind;
-use batpak::store::{Open, Store};
+use batpak::store::{AppendReceipt, Open, Store};
 use serde::{Serialize, Serializer};
 
-use crate::effect_backend::{EffectBackend, EffectError};
+use crate::effect_backend::{EffectBackend, EffectError, TypedEffectEvent};
 
 /// Batpak store-backed effect backend bound to one append coordinate.
 pub struct StoreEffectBackend {
@@ -33,6 +33,16 @@ impl EffectBackend for StoreEffectBackend {
         self.store
             .append(&self.coordinate, kind, &RawPayload(payload))
             .map(|_receipt| ())
+            .map_err(|error| EffectError::new(error.to_string()))
+    }
+
+    fn append_typed_event<'event>(
+        &mut self,
+        coordinate: &Coordinate,
+        event: TypedEffectEvent<'event>,
+    ) -> Result<AppendReceipt, EffectError> {
+        event
+            .append_to_store(&self.store, coordinate)
             .map_err(|error| EffectError::new(error.to_string()))
     }
 

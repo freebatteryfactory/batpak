@@ -118,7 +118,7 @@ pub use effect::{
     HostControlHandle, ObservedEffectViolation, OperationEffectRow, ProjectionReadHandle,
     ReceiptEmitHandle,
 };
-pub use effect_backend::{EffectBackend, EffectError};
+pub use effect_backend::{EffectBackend, EffectError, TypedEffectEvent};
 pub use error::{BuildError, ReceiptSinkHandlerCause, RuntimeError};
 pub use handler::{Handler, HandlerError, HandlerResult};
 pub use module::Module;

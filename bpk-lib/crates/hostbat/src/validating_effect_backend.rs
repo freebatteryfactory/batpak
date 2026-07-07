@@ -6,8 +6,10 @@
 
 use std::collections::BTreeMap;
 
+use batpak::coordinate::Coordinate;
 use batpak::event::EventKind;
-use syncbat::effect_backend::{EffectBackend, EffectError};
+use batpak::store::AppendReceipt;
+use syncbat::effect_backend::{EffectBackend, EffectError, TypedEffectEvent};
 
 use crate::schema::{SchemaRegistry, SchemaRole};
 
@@ -66,5 +68,27 @@ impl EffectBackend for ValidatingEffectBackend {
                 ))
             })?;
         self.inner.append_event(kind, payload)
+    }
+
+    fn append_typed_event<'event>(
+        &mut self,
+        coordinate: &Coordinate,
+        event: TypedEffectEvent<'event>,
+    ) -> Result<AppendReceipt, EffectError> {
+        let kind = event.kind();
+        let kind_raw = kind.as_raw_u16();
+        let schema_ref = self.bindings.get(&kind_raw).ok_or_else(|| {
+            EffectError::new(format!(
+                "event kind 0x{kind_raw:04x} has no payload schema binding"
+            ))
+        })?;
+        self.registry
+            .validate(schema_ref, SchemaRole::EventPayload, event.payload_bytes())
+            .map_err(|error| {
+                EffectError::new(format!(
+                    "event kind 0x{kind_raw:04x} payload schema validation failed: {error}"
+                ))
+            })?;
+        self.inner.append_typed_event(coordinate, event)
     }
 }

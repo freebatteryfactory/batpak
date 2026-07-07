@@ -254,6 +254,18 @@ pub enum StoreError {
         /// The maximum version this binary understands.
         supported: u16,
     },
+    /// A SIDX footer declares a segment-index footer version strictly newer than
+    /// this binary understands. Unknown SIDX-family trailer versions are a
+    /// canonical refusal, not generic segment corruption: a future footer layout
+    /// may place authenticated data after the frame region in a shape this reader
+    /// cannot interpret, so scanning through it as frame bytes would risk
+    /// misclassifying the segment. Upgrade the reader.
+    SidxFutureVersion {
+        /// Version stamped in the SIDX-family trailer magic (for example SDX4).
+        found: u16,
+        /// The maximum SIDX footer version this binary understands.
+        supported: u16,
+    },
     /// A new keyed append was refused because the durable idempotency store is
     /// at its soft cap and the configured `OverflowPolicy` is `FailClosed`
     /// (or `Backpressure`, which is treated as fail-closed). Existing
@@ -620,6 +632,7 @@ impl std::error::Error for StoreError {
             | Self::HiddenRangesFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
+            | Self::SidxFutureVersion { .. }
             | Self::IdempotencyOverflowFailClosed { .. }
             | Self::InvalidPayloadVersion { .. }
             | Self::CorruptFrame { .. }

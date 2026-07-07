@@ -119,3 +119,10 @@ path = "fuzz_targets/sidx_footer.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sidx_boundary"
+path = "fuzz_targets/sidx_boundary.rs"
+test = false
+doc = false
+bench = false

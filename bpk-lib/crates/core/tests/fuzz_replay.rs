@@ -61,6 +61,7 @@ fn dispatch_table() -> Vec<(&'static str, Replay)> {
         ("hidden_ranges", replay_hidden_ranges as Replay),
         ("mmap_index_load", replay_mmap_index_load as Replay),
         ("sidx_footer", replay_sidx_footer as Replay),
+        ("sidx_boundary", replay_sidx_boundary as Replay),
     ]
 }
 
@@ -112,6 +113,11 @@ fn replay_mmap_index_load(data: &[u8]) {
 fn replay_sidx_footer(data: &[u8]) {
     let (segment_id, body) = split_u64_prefix(data);
     let _ = __fuzz::__fuzz_sidx_footer(body, segment_id);
+}
+
+fn replay_sidx_boundary(data: &[u8]) {
+    let (segment_id, body) = split_u64_prefix(data);
+    let _ = __fuzz::__fuzz_sidx_boundary(body, segment_id);
 }
 
 /// Split an 8-byte LE `u64` prefix (matches the `sidx_entry` / `sidx_footer`

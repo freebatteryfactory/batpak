@@ -76,6 +76,7 @@ fn check_doc_hidden_public_surface(repo_root: &Path, source_cache: &mut SourceCa
         "crates/core/src/__fuzz.rs::__fuzz_hidden_ranges",
         "crates/core/src/__fuzz.rs::__fuzz_mmap_index_load",
         "crates/core/src/__fuzz.rs::__fuzz_sidx_footer",
+        "crates/core/src/__fuzz.rs::__fuzz_sidx_boundary",
         // GAUNT-SIM-2c: the `#[cfg(feature = "dangerous-test-hooks")]`
         // `#[doc(hidden)] pub mod __sim` exposes the seeded deterministic
         // simulation driver (run_seeded_workload / replay_seed) to the

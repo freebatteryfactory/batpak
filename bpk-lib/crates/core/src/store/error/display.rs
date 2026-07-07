@@ -61,6 +61,12 @@ impl StoreError {
                 "import provenance extension is version {found} but this binary understands at \
                  most version {supported}; upgrade the reader"
             ),
+            Self::SidxFutureVersion { found, supported } => write!(
+                f,
+                "SIDX footer on disk is version {found} but this binary understands at most \
+                 version {supported}; refusing to scan through an unknown footer layout; upgrade \
+                 the reader"
+            ),
             // Reached only from the four future-version arms of `Display::fmt`.
             // The remaining variants are listed explicitly (not wildcarded) so a
             // newly-added variant trips a compile error here, and return the
@@ -213,6 +219,7 @@ impl StoreError {
             | Self::HiddenRangesFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
+            | Self::SidxFutureVersion { .. }
             | Self::IdempotencyOverflowFailClosed { .. }
             | Self::InvalidPayloadVersion { .. }
             | Self::CorruptFrame { .. }
@@ -543,7 +550,8 @@ impl std::fmt::Display for StoreError {
             | Self::CheckpointFutureVersion { .. }
             | Self::HiddenRangesFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
-            | Self::ImportProvenanceFutureVersion { .. } => self.fmt_future_version(f),
+            | Self::ImportProvenanceFutureVersion { .. }
+            | Self::SidxFutureVersion { .. } => self.fmt_future_version(f),
             Self::IdempotencyOverflowFailClosed { len, max_keys } => write!(
                 f,
                 "durable idempotency store at soft cap ({len}/{max_keys}); new keyed append \

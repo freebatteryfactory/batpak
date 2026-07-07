@@ -7,6 +7,9 @@ pub(crate) mod sidx;
 mod boundary_tests;
 
 #[cfg(test)]
+mod boundary_future_tests;
+
+#[cfg(test)]
 mod manifest_recovery_tests;
 
 #[cfg(test)]
@@ -381,18 +384,10 @@ impl Segment<Active> {
         let header_len = u32::from_be_bytes(header_len_buf) as u64;
         let frames_start = 8 + header_len;
 
-        // Determine where frames end: if the segment has a SIDX footer,
-        // the frames stop at string_table_offset. Otherwise, frames extend
-        // to the end of the file.
         let file_len = source.seek(SeekFrom::End(0)).map_err(StoreError::Io)?;
         // segment_id is only used to stamp a CorruptSegment error on a bad SIDX
         // offset; this copy path mirrors corrupt_magic(0) above and has no parsed id.
         let boundary = detect_sidx_boundary(&mut source, file_len, 0)?;
-        let frames_end = boundary.map_or(file_len, |b| b.frames_end);
-        // Only an actual footer whose offset is unauthenticated triggers the
-        // recover-what-was-found copy. With no footer, frames run to EOF and the
-        // strict path applies (validate is a no-op when frames_end == file_len).
-        let untrusted_boundary = boundary.is_some_and(|b| !b.trusted);
 
         // Lower-bound check (TRUSTED boundaries only; mirrors scan/recovery.rs +
         // full_scan.rs): an authenticated SDX3 string_table_offset must not fall
@@ -407,55 +402,71 @@ impl Segment<Active> {
         // garbage and discarded below (the copy walks from `frames_start` bounded
         // by `file_len`), so a too-low untrusted hint must NOT error — it recovers
         // all CRC-valid frames instead.
-        if !untrusted_boundary && frames_end < frames_start {
+        if let Some(boundary) = boundary {
+            if boundary.trusted && boundary.frames_end < frames_start {
+                return Err(StoreError::corrupt_segment_with_detail(
+                    0,
+                    format!(
+                        "SIDX string_table_offset {} is below the frame region start \
+                         {frames_start} (8 + header_len {header_len}) during compaction copy",
+                        boundary.frames_end
+                    ),
+                ));
+            }
+        }
+
+        let copy_end = match boundary {
+            Some(boundary) if boundary.trusted => boundary.frames_end,
+            Some(boundary) => {
+                // Recognized but untrusted SIDX footer: preserve the strict
+                // sealed-source posture and require the untrusted manifest to
+                // corroborate a non-empty recovered prefix.
+                resolve_untrusted_frames_end(
+                    &mut source,
+                    frames_start,
+                    file_len,
+                    0,
+                    Some(boundary.frames_end),
+                    true,
+                )?
+                .frames_end
+            }
+            None => {
+                // No recognized footer: still validate the tail by walking
+                // CRC-valid frames bounded by file_len. A genuine no-footer
+                // segment walks to EOF; a non-SIDX garbage tail stops before the
+                // tail instead of being parsed as frame bytes.
+                let resolved = resolve_untrusted_frames_end(
+                    &mut source,
+                    frames_start,
+                    file_len,
+                    0,
+                    None,
+                    false,
+                )?;
+                if resolved.frames_end < file_len {
+                    return Err(StoreError::corrupt_segment_with_detail(
+                        0,
+                        format!(
+                            "no recognized SIDX footer: CRC-valid frames end at {} before EOF \
+                             {file_len}; strict compaction copy refuses to recover a partial prefix",
+                            resolved.frames_end
+                        ),
+                    ));
+                }
+                resolved.frames_end
+            }
+        };
+
+        if copy_end < frames_start {
             return Err(StoreError::corrupt_segment_with_detail(
                 0,
                 format!(
-                    "SIDX string_table_offset {frames_end} is below the frame region start \
+                    "resolved frame-region end {copy_end} is below the frame region start \
                      {frames_start} (8 + header_len {header_len}) during compaction copy"
                 ),
             ));
         }
-
-        // Determine the true copy boundary based on the offset's provenance.
-        //
-        // TRUSTED (CRC-valid SDX3 footer): the offset is authoritative; copy up to
-        // it. A truncating offset cannot occur here — the offset is byte-for-byte
-        // authenticated by the footer CRC.
-        //
-        // UNTRUSTED (CRC-failed SDX3, legacy SDX2, or forged trailer): the offset
-        // is GARBAGE. It might point too LOW (truncating real frames), MID-FRAME
-        // (inside a later CRC-valid frame), or too HIGH (into the corrupt footer);
-        // any of those, if trusted as the copy boundary, would either drop
-        // CRC-valid frames or splice corrupt footer bytes into the merged segment.
-        // So the hint is discarded entirely and recovery routes through the
-        // SIDX-manifest path (`resolve_untrusted_frames_end`): it walks the
-        // CRC-valid frames bounded only by `file_len` (truncation-proof, still
-        // FailClosed on mid-stream corruption), AND corroborates the
-        // CRC-independent SIDX entry table against the recovered frames. If a
-        // corroborated entry attests to a committed frame at/after the recovered
-        // prefix end that the source is missing (torn last committed frame under a
-        // corrupt footer — round-7), the copy FailCloses instead of silently
-        // merging a segment that dropped a committed event. Compaction copy of a
-        // sealed source is strict (`fallback_fail_closed = true`): with no
-        // corroborated manifest it recovers an EMPTY prefix but REFUSES a non-empty
-        // recovered prefix as an unprovable tail (an untrusted footer with no
-        // manifest signal cannot rule out a torn/truncated further committed frame).
-        // A benign corrupt footer over intact frames still recovers — its entries
-        // corroborate the recovered frames (case b).
-        let copy_end = if untrusted_boundary {
-            resolve_untrusted_frames_end(
-                &mut source,
-                frames_start,
-                file_len,
-                0,
-                Some(frames_end),
-                true,
-            )?
-            .frames_end
-        } else {
-            frames_end
-        };
 
         source
             .seek(SeekFrom::Start(frames_start))
@@ -552,7 +563,10 @@ pub(crate) struct SidxBoundary {
 ///
 /// If so, return the [`SidxBoundary`]: the byte offset where the string table
 /// starts (= end of frames) plus whether that offset is authenticated by the
-/// SDX3 footer CRC. If not, return `None` (frames extend to EOF).
+/// SDX3 footer CRC. If not, return `None` (frames extend to EOF). A SIDX-family
+/// future version (for example `SDX4`) refuses with
+/// [`StoreError::SidxFutureVersion`] instead of falling through to `None`, so
+/// callers never scan through an unknown footer layout as frame bytes.
 ///
 /// The trailer geometry (offset/count/magic) is read identically for SDX2 and
 /// SDX3, so the *boundary* is detected for both — but only a CRC-valid SDX3
@@ -585,11 +599,20 @@ pub(crate) fn detect_sidx_boundary<R: Read + Seek>(
     // only `SIDX_MAGIC` (SDX3) and reject an un-CRC'd SDX2 footer as `Ok(None)`,
     // forcing the CRC-verified frame-scan rebuild. The trailer geometry
     // (offset/count/magic) is byte-identical across SDX2/SDX3, so the
-    // `string_table_offset` field is read the same way for both.
+    // `string_table_offset` field is read the same way for both. A newer
+    // `SDXn` is a versioned format refusal, not generic corruption or no-footer.
     let magic = &trailer[12..16];
     if magic != crate::store::segment::sidx::SIDX_MAGIC
         && magic != crate::store::segment::sidx::SIDX_MAGIC_LEGACY_SDX2
     {
+        if let Some(found) = sidx_magic_version(magic) {
+            if found > crate::store::segment::sidx::SIDX_VERSION {
+                return Err(StoreError::SidxFutureVersion {
+                    found,
+                    supported: crate::store::segment::sidx::SIDX_VERSION,
+                });
+            }
+        }
         return Ok(None);
     }
     // string_table_offset at bytes 0..8
@@ -644,6 +667,14 @@ pub(crate) fn detect_sidx_boundary<R: Read + Seek>(
         frames_end: string_table_offset,
         trusted,
     }))
+}
+
+fn sidx_magic_version(magic: &[u8]) -> Option<u16> {
+    if magic.len() == 4 && &magic[..3] == b"SDX" && magic[3].is_ascii_digit() {
+        Some(u16::from(magic[3] - b'0'))
+    } else {
+        None
+    }
 }
 
 /// Attempt to decode a single CRC-valid frame starting at byte `at` in `source`,

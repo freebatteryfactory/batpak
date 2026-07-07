@@ -10,8 +10,10 @@
 //! projection query, receipt emit) when one is bound, and falls through to the
 //! typed fail-closed defaults when it is not.
 
+use batpak::coordinate::Coordinate;
 use batpak::event::EventKind;
-use syncbat::effect_backend::{EffectBackend, EffectError};
+use batpak::store::AppendReceipt;
+use syncbat::effect_backend::{EffectBackend, EffectError, TypedEffectEvent};
 
 /// Performs the host control identified by an operation's declared control-id.
 ///
@@ -96,6 +98,16 @@ impl EffectBackend for NoInnerBackend {
             "event appends are not supported without an inner effect backend",
         ))
     }
+
+    fn append_typed_event<'event>(
+        &mut self,
+        _coordinate: &Coordinate,
+        _event: TypedEffectEvent<'event>,
+    ) -> Result<AppendReceipt, EffectError> {
+        Err(EffectError::new(
+            "typed event appends are not supported without an inner effect backend",
+        ))
+    }
 }
 
 impl EffectBackend for HostControlEffectBackend {
@@ -103,6 +115,17 @@ impl EffectBackend for HostControlEffectBackend {
         match self.inner.as_deref_mut() {
             Some(inner) => inner.append_event(kind, payload),
             None => NoInnerBackend.append_event(kind, payload),
+        }
+    }
+
+    fn append_typed_event<'event>(
+        &mut self,
+        coordinate: &Coordinate,
+        event: TypedEffectEvent<'event>,
+    ) -> Result<AppendReceipt, EffectError> {
+        match self.inner.as_deref_mut() {
+            Some(inner) => inner.append_typed_event(coordinate, event),
+            None => NoInnerBackend.append_typed_event(coordinate, event),
         }
     }
 

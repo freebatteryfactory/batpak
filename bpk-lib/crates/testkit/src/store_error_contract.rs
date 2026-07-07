@@ -106,6 +106,7 @@ pub fn classify(error: &StoreError) -> HandlingClass {
         | StoreError::HiddenRangesFutureVersion { .. }
         | StoreError::ForkEvidenceFutureVersion { .. }
         | StoreError::ImportProvenanceFutureVersion { .. }
+        | StoreError::SidxFutureVersion { .. }
         | StoreError::HiddenRangesCorrupt { .. }
         | StoreError::CursorCheckpointCorrupt { .. }
         | StoreError::CursorCheckpointRegionMismatch { .. }
@@ -855,6 +856,21 @@ pub fn fail_closed_operational_cases() -> Vec<Case> {
             display_needles: &[
                 "import provenance extension is version 9",
                 "understands at most version 1",
+                "upgrade the reader",
+            ],
+        },
+        Case {
+            name: "sidx_future_version",
+            error: StoreError::SidxFutureVersion {
+                found: 4,
+                supported: 3,
+            },
+            class: HandlingClass::FailClosedOperational,
+            source_needle: None,
+            display_needles: &[
+                "SIDX footer on disk is version 4",
+                "understands at most version 3",
+                "unknown footer layout",
                 "upgrade the reader",
             ],
         },
