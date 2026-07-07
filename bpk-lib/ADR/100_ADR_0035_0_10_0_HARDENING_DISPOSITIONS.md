@@ -88,6 +88,24 @@ serde)`). A local-only identifier can no longer accidentally acquire a wire
 representation, and compile-fail coverage pins the two-argument form to
 no-serde.
 
+### 5. Segment-scan recovery contract — fail closed on non-tail corruption
+
+_Addendum, 2026-07-07. Records a release contract already implemented in code and pinned by tests; landed after ADR acceptance during the 0.10.0 end-CI drive._
+
+A segment whose interior contains a corrupted frame followed by any CRC-valid frame, including a valid `SYSTEM_CLOSE_COMPLETED`, must refuse to open. Scan and recovery must not truncate to the valid prefix.
+
+**Invariant.** Corruption is mid-stream, not tail, when a CRC-valid frame still exists after the poisoned position. The scan/recovery path routes undecodable or impossible frames through `resolve_untrusted_frames_end`, making non-tail classification fail closed by construction. Tail corruption remains governed by the existing tail-recovery rules. The `MAX_FRAME_PAYLOAD` boundedness guard is unchanged: pathological lengths stop the walk before allocation rather than driving an unbounded read.
+
+**Rationale.** Recovering the prefix of a segment that has a cleanly written later frame silently truncates committed data and reports it as a successful open. That is a data-loss-as-recovery failure mode. A typed refusal is safer than a quiet partial recovery. This applies the SIDX guard's canonical-refusal posture from disposition 2 to the frame stream.
+
+**Witness.** Commit `4a34a8c0` aligns the three pre-#25 scan tests with this contract, each verified as property-preserving or property-strengthening:
+
+- `corruption_inside_committed_batch_fails_closed` now surfaces `CorruptSegment` with "mid-stream corruption" instead of the narrower `CrcMismatch`; the pinned property remains "never leak the valid prefix."
+- `pathological_frame_length_is_bounded_not_panicking` flips recover → fail closed because a valid `SYSTEM_CLOSE_COMPLETED` follows the poison; the old path silently truncated a cleanly closed segment.
+- `non_tail_pathological_frame_length_fails_closed_on_reopen` still refuses as `CorruptFrame`; the reason string changed to the uniform region-bounds path, while the `MAX_FRAME_PAYLOAD` cap remains pinned by scan tests.
+
+**Watch item, not a promise.** A recover-with-loud-warning policy toggle may be explored after 0.10.0 only if a real operator use case appears. It is not the default, not a release blocker, and not planned work. Fail-closed is the 0.10.0 release contract.
+
 ## Consequences
 
 - The three wire-in forks remove standing two-truths / latent-trap / hollow-seam
@@ -101,6 +119,10 @@ no-serde.
   write path, not two with divergent safety.
 - `define_entity_id!` serde is now a deliberate, reviewable choice at each id
   definition site.
+- Segment-scan recovery fails closed on non-tail corruption: a cleanly closed
+  segment with a poisoned interior frame refuses to open rather than reporting a
+  truncated-prefix recovery as success — the frame-stream analogue of the SIDX
+  guard's canonical refusal.
 
 ## Alternatives considered
 
