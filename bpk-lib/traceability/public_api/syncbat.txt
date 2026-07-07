@@ -300,7 +300,7 @@ pub syncbat::operation_name::OperationNameError::TooLong::len: usize
 pub syncbat::operation_name::OperationNameError::TooLong::max: usize
 impl core::error::Error for syncbat::operation_name::OperationNameError
 impl core::fmt::Display for syncbat::operation_name::OperationNameError
-pub fn syncbat::operation_name::OperationNameError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn syncbat::operation_name::OperationNameError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct syncbat::operation_name::OperationName(_)
 impl syncbat::operation_name::OperationName
 pub const syncbat::operation_name::OperationName::MAX_BYTES: usize
@@ -1066,7 +1066,7 @@ pub syncbat::OperationNameError::TooLong::len: usize
 pub syncbat::OperationNameError::TooLong::max: usize
 impl core::error::Error for syncbat::operation_name::OperationNameError
 impl core::fmt::Display for syncbat::operation_name::OperationNameError
-pub fn syncbat::operation_name::OperationNameError::fmt(&self, __formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn syncbat::operation_name::OperationNameError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum syncbat::OperationStatusLifecycle
 pub syncbat::OperationStatusLifecycle::Completed
 pub syncbat::OperationStatusLifecycle::Denied

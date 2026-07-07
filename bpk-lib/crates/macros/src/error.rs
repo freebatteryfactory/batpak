@@ -87,7 +87,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     Ok(quote! {
         impl #impl_generics ::core::fmt::Display for #ident #ty_generics #where_clause {
-            fn fmt(&self, __formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 match self {
                     #(#display_arms)*
                 }
@@ -166,7 +166,7 @@ impl VariantModel {
                     }
                 });
                 quote! {
-                    Self::#vident { #(#pats),* } => ::core::write!(__formatter, #lit),
+                    Self::#vident { #(#pats),* } => ::core::write!(f, #lit),
                 }
             }
             Fields::Unnamed(unnamed) => {
@@ -179,11 +179,11 @@ impl VariantModel {
                     }
                 });
                 quote! {
-                    Self::#vident( #(#pats),* ) => ::core::write!(__formatter, #lit),
+                    Self::#vident( #(#pats),* ) => ::core::write!(f, #lit),
                 }
             }
             Fields::Unit => quote! {
-                Self::#vident => ::core::write!(__formatter, #lit),
+                Self::#vident => ::core::write!(f, #lit),
             },
         }
     }
