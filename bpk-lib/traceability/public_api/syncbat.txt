@@ -963,6 +963,7 @@ impl<T> syncbat::subscription_runtime::ProjectionProjector for syncbat::TypedPro
 pub fn syncbat::TypedProjectionProjector<T>::open(&self, store: syncbat::SubscriptionStore, route: syncbat::subscription_runtime::ProjectionRouteBinding, resume_cursor: core::option::Option<&[u8]>, client_window: u32, control_rx: flume::Receiver<syncbat::SessionControl>, config: syncbat::SubscriptionRuntimeConfig) -> core::result::Result<alloc::boxed::Box<dyn syncbat::SubscriptionSession>, syncbat::SubscriptionRuntimeError>
 pub const syncbat::subscription_runtime::CURSOR_V1_LEN: usize
 pub const syncbat::subscription_runtime::ENTITY_STREAM_CURSOR_V1_LEN: usize
+pub const syncbat::subscription_runtime::MAX_SUBSCRIPTION_ID_BYTES: usize
 pub const syncbat::subscription_runtime::OPERATION_STATUS_CURSOR_V1_LEN: usize
 pub const syncbat::subscription_runtime::PROJECTION_CURSOR_V1_LEN: usize
 pub const syncbat::subscription_runtime::RECEIPT_STREAM_CURSOR_V1_LEN: usize
@@ -1879,6 +1880,7 @@ pub const syncbat::CURSOR_V1_LEN: usize
 pub const syncbat::ENTITY_STREAM_CURSOR_V1_LEN: usize
 pub const syncbat::MAX_DESCRIPTOR_REF_BYTES: usize
 pub const syncbat::MAX_OPERATION_NAME_BYTES: usize
+pub const syncbat::MAX_SUBSCRIPTION_ID_BYTES: usize
 pub const syncbat::OPERATION_STATUS_CURSOR_V1_LEN: usize
 pub const syncbat::PROJECTION_CURSOR_V1_LEN: usize
 pub const syncbat::RECEIPT_STREAM_CURSOR_V1_LEN: usize
