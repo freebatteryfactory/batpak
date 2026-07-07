@@ -133,14 +133,22 @@ pub fn syncbat::effect_backend::EffectError::new(message: impl core::convert::In
 impl core::error::Error for syncbat::effect_backend::EffectError
 impl core::fmt::Display for syncbat::effect_backend::EffectError
 pub fn syncbat::effect_backend::EffectError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct syncbat::effect_backend::TypedEffectEvent<'event>
+impl<'event> syncbat::effect_backend::TypedEffectEvent<'event>
+pub const fn syncbat::effect_backend::TypedEffectEvent<'event>::kind(&self) -> batpak::event::kind::EventKind
+pub fn syncbat::effect_backend::TypedEffectEvent<'event>::new<T: batpak::event::payload::EventPayload>(payload: &'event T) -> core::result::Result<Self, syncbat::effect_backend::EffectError>
+pub fn syncbat::effect_backend::TypedEffectEvent<'event>::payload_bytes(&self) -> &[u8]
+pub const fn syncbat::effect_backend::TypedEffectEvent<'event>::payload_version(&self) -> u16
 pub trait syncbat::effect_backend::EffectBackend
 pub fn syncbat::effect_backend::EffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn syncbat::effect_backend::EffectBackend::append_typed_event<'event>(&mut self, _coordinate: &batpak::coordinate::Coordinate, _event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn syncbat::effect_backend::EffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::effect_backend::EffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::effect_backend::EffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::effect_backend::EffectBackend::use_host_control(&mut self, control: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 impl syncbat::effect_backend::EffectBackend for syncbat::store_effect::StoreEffectBackend
 pub fn syncbat::store_effect::StoreEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn syncbat::store_effect::StoreEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
@@ -569,6 +577,7 @@ impl syncbat::store_effect::StoreEffectBackend
 pub fn syncbat::store_effect::StoreEffectBackend::new(store: alloc::sync::Arc<batpak::store::Store<batpak::store::Open>>, coordinate: batpak::coordinate::Coordinate) -> Self
 impl syncbat::effect_backend::EffectBackend for syncbat::store_effect::StoreEffectBackend
 pub fn syncbat::store_effect::StoreEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn syncbat::store_effect::StoreEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
@@ -1823,6 +1832,7 @@ impl syncbat::store_effect::StoreEffectBackend
 pub fn syncbat::store_effect::StoreEffectBackend::new(store: alloc::sync::Arc<batpak::store::Store<batpak::store::Open>>, coordinate: batpak::coordinate::Coordinate) -> Self
 impl syncbat::effect_backend::EffectBackend for syncbat::store_effect::StoreEffectBackend
 pub fn syncbat::store_effect::StoreEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn syncbat::store_effect::StoreEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
@@ -1871,6 +1881,12 @@ pub fn syncbat::SubscriptionRuntimeConfig::default() -> Self
 pub struct syncbat::SubscriptionStore
 impl syncbat::SubscriptionStore
 pub fn syncbat::SubscriptionStore::new(store: alloc::sync::Arc<batpak::store::Store<batpak::store::Open>>) -> Self
+pub struct syncbat::TypedEffectEvent<'event>
+impl<'event> syncbat::effect_backend::TypedEffectEvent<'event>
+pub const fn syncbat::effect_backend::TypedEffectEvent<'event>::kind(&self) -> batpak::event::kind::EventKind
+pub fn syncbat::effect_backend::TypedEffectEvent<'event>::new<T: batpak::event::payload::EventPayload>(payload: &'event T) -> core::result::Result<Self, syncbat::effect_backend::EffectError>
+pub fn syncbat::effect_backend::TypedEffectEvent<'event>::payload_bytes(&self) -> &[u8]
+pub const fn syncbat::effect_backend::TypedEffectEvent<'event>::payload_version(&self) -> u16
 pub struct syncbat::TypedProjectionProjector<T>(_)
 impl<T> syncbat::TypedProjectionProjector<T>
 pub fn syncbat::TypedProjectionProjector<T>::new() -> Self
@@ -1903,12 +1919,14 @@ impl<F> syncbat::core::CoreFactory for F where F: core::ops::function::FnMut() -
 pub fn F::open_core(&mut self) -> syncbat::core::Core
 pub trait syncbat::EffectBackend
 pub fn syncbat::EffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn syncbat::EffectBackend::append_typed_event<'event>(&mut self, _coordinate: &batpak::coordinate::Coordinate, _event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn syncbat::EffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::EffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::EffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::EffectBackend::use_host_control(&mut self, control: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 impl syncbat::effect_backend::EffectBackend for syncbat::store_effect::StoreEffectBackend
 pub fn syncbat::store_effect::StoreEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn syncbat::store_effect::StoreEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn syncbat::store_effect::StoreEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>

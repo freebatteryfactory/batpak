@@ -191,6 +191,7 @@ impl hostbat::host_control_backend::HostControlEffectBackend
 pub fn hostbat::host_control_backend::HostControlEffectBackend::new(inner: core::option::Option<alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>>, controller: alloc::boxed::Box<dyn hostbat::host_control_backend::HostController>) -> Self
 impl syncbat::effect_backend::EffectBackend for hostbat::host_control_backend::HostControlEffectBackend
 pub fn hostbat::host_control_backend::HostControlEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn hostbat::host_control_backend::HostControlEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::host_control_backend::HostControlEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::host_control_backend::HostControlEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
@@ -390,6 +391,7 @@ impl hostbat::validating_effect_backend::ValidatingEffectBackend
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::new(inner: alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>, bindings: alloc::collections::btree::map::BTreeMap<u16, alloc::string::String>, registry: hostbat::schema::SchemaRegistry) -> Self
 impl syncbat::effect_backend::EffectBackend for hostbat::validating_effect_backend::ValidatingEffectBackend
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
@@ -617,6 +619,7 @@ impl hostbat::host_control_backend::HostControlEffectBackend
 pub fn hostbat::host_control_backend::HostControlEffectBackend::new(inner: core::option::Option<alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>>, controller: alloc::boxed::Box<dyn hostbat::host_control_backend::HostController>) -> Self
 impl syncbat::effect_backend::EffectBackend for hostbat::host_control_backend::HostControlEffectBackend
 pub fn hostbat::host_control_backend::HostControlEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::host_control_backend::HostControlEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn hostbat::host_control_backend::HostControlEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::host_control_backend::HostControlEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::host_control_backend::HostControlEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
@@ -755,6 +758,7 @@ impl hostbat::validating_effect_backend::ValidatingEffectBackend
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::new(inner: alloc::boxed::Box<dyn syncbat::effect_backend::EffectBackend>, bindings: alloc::collections::btree::map::BTreeMap<u16, alloc::string::String>, registry: hostbat::schema::SchemaRegistry) -> Self
 impl syncbat::effect_backend::EffectBackend for hostbat::validating_effect_backend::ValidatingEffectBackend
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::append_event(&mut self, kind: batpak::event::kind::EventKind, payload: &[u8]) -> core::result::Result<(), syncbat::effect_backend::EffectError>
+pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::append_typed_event<'event>(&mut self, coordinate: &batpak::coordinate::Coordinate, event: syncbat::effect_backend::TypedEffectEvent<'event>) -> core::result::Result<batpak::store::append::AppendReceipt, syncbat::effect_backend::EffectError>
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::emit_receipt(&mut self, receipt_kind: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::query_projection(&mut self, projection_id: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>
 pub fn hostbat::validating_effect_backend::ValidatingEffectBackend::read_event(&mut self, event_category: &str) -> core::result::Result<(), syncbat::effect_backend::EffectError>

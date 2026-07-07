@@ -1355,6 +1355,9 @@ pub batpak::prelude::StoreError::SequenceMismatch::actual: u32
 pub batpak::prelude::StoreError::SequenceMismatch::entity: alloc::string::String
 pub batpak::prelude::StoreError::SequenceMismatch::expected: u32
 pub batpak::prelude::StoreError::Serialization(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub batpak::prelude::StoreError::SidxFutureVersion
+pub batpak::prelude::StoreError::SidxFutureVersion::found: u16
+pub batpak::prelude::StoreError::SidxFutureVersion::supported: u16
 pub batpak::prelude::StoreError::StoreLocked
 pub batpak::prelude::StoreError::StoreLocked::mode: batpak::store::StoreLockMode
 pub batpak::prelude::StoreError::StoreLocked::path: std::path::PathBuf
@@ -3145,6 +3148,9 @@ pub batpak::store::StoreError::SequenceMismatch::actual: u32
 pub batpak::store::StoreError::SequenceMismatch::entity: alloc::string::String
 pub batpak::store::StoreError::SequenceMismatch::expected: u32
 pub batpak::store::StoreError::Serialization(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub batpak::store::StoreError::SidxFutureVersion
+pub batpak::store::StoreError::SidxFutureVersion::found: u16
+pub batpak::store::StoreError::SidxFutureVersion::supported: u16
 pub batpak::store::StoreError::StoreLocked
 pub batpak::store::StoreError::StoreLocked::mode: batpak::store::StoreLockMode
 pub batpak::store::StoreError::StoreLocked::path: std::path::PathBuf
