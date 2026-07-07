@@ -28,7 +28,7 @@ pub(super) struct ReplayContext {
     /// Wall-clock µs-since-epoch captured at plan build. Used as the
     /// prefetch-hint predicted timestamp so backends can warm the right
     /// row; NOT used as the `cached_at_us` stamp written into the real
-    /// cache row. The honest put-time stamp is taken inside
+    /// cache row. The actual put-time stamp is taken inside
     /// `store_projection_value` right before `ProjectionCache::put`
     /// (see G6). Survives across process restarts via the cache format;
     /// not monotonic on its own.

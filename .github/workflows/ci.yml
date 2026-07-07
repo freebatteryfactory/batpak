@@ -95,6 +95,14 @@ jobs:
   ci-fast-linux:
     name: CI fast (ubuntu-devcontainer)
     runs-on: ubuntu-latest
+    # Docs-only escape hatch: a PR that changes ONLY root markdown/docs (nothing
+    # under bpk-lib/, .devcontainer/, or ci.yml) reports rust=false from the
+    # fail-closed `rust-changed` detector, so this full compile lane is skipped
+    # rather than paying a devcontainer build for a prose edit. Keyed on the
+    # rust flag ONLY — never a label — so it can never be used to re-bury a gate
+    # on a Rust-touching PR (the meta-gate watches for label-gated `if:` reburial).
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -109,6 +117,34 @@ jobs:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'
+
+  rustdoc-gate:
+    # PR-time rustdoc gate: builds the workspace rustdoc with `-D warnings` so a
+    # broken intra-doc link or malformed `///` fails CI BEFORE merge. The full
+    # `docs` job (rustdoc + site) runs only on `main`, and `preflight`
+    # (verify-linux) runs the same build only behind a heavy-CI label — neither
+    # catches doc breakage on a normal PR. This job runs on every Rust-changed
+    # PR, label-free, mirroring the family's `doc_deny_warnings`
+    # (`cargo doc --workspace --no-deps` under `RUSTDOCFLAGS=-D warnings`). It is
+    # gated on rust==true only, so a docs-only PR skips it (no Rust changed).
+    name: Rustdoc link gate (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: rustdoc-gate
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Build workspace rustdoc with denied warnings
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps'
 
   public-api-bless:
     # Bless capability (manual only): regenerate the checked-in public-api

@@ -1,6 +1,14 @@
 //! Parity tests for `#[derive(EventSourced)]` (Dispatch Chapter T3).
 //! Harness pattern: Equivalence Harness (behavioural parity lane).
 //!
+//! PROVES: `#[derive(EventSourced)]` produces a projection behaviourally
+//! identical to a hand-written impl across `project` / `project_if_changed` /
+//! `watch_projection`, across the `JsonValueInput` and `RawMsgpackInput` lanes,
+//! with `cache_version` isolated from any bound payload's `type_id`.
+//! CATCHES: derive-vs-hand-written divergence in any projection method or input
+//! lane, or `cache_version` bleeding into a bound payload's `EventPayload::KIND`.
+//! SEEDED: deterministic tempdir stores over fixed canonical event streams; no randomness.
+//!
 //! The derive must produce a projection that is behaviourally identical to
 //! a careful hand-written impl. This file pins that equivalence:
 //!

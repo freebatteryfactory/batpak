@@ -7,22 +7,21 @@
 //! grammar into a single typed constructor and surfaces malformed
 //! filenames via `tracing::warn!` so corruption on disk is never invisible.
 //!
-//! Construction is restricted to [`SegmentId::new`] (for ids assigned by
-//! the writer) and [`SegmentId::from_filename`] / [`SegmentId::from_stem`]
-//! (for ids read back from disk). All call sites that need the raw `u64`
-//! call [`SegmentId::as_u64`].
+//! Construction is restricted to [`SegmentId::from_filename`] and
+//! [`SegmentId::from_stem`] (parsing the filename grammar in exactly one
+//! place). All call sites that need the raw `u64` call [`SegmentId::as_u64`].
 
 use std::path::Path;
 
 /// Typed segment file id. Wraps a `u64` parsed from the filename stem.
 ///
-/// Construct only via [`SegmentId::from_filename`], [`SegmentId::from_stem`],
-/// or [`SegmentId::new`] so the filename grammar lives in exactly one place.
+/// Construct only via [`SegmentId::from_filename`] or [`SegmentId::from_stem`]
+/// so the filename grammar lives in exactly one place.
 ///
 /// `pub(crate)` because it is internal infrastructure — the public
 /// `Store::*` surface still talks about segment ids as raw `u64`. Callers
 /// at the boundary between disk and the public API convert via
-/// [`SegmentId::as_u64`] / [`SegmentId::new`].
+/// [`SegmentId::as_u64`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct SegmentId(u64);
 

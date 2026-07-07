@@ -3,7 +3,7 @@ use crate::store::{Clock, HlcPoint};
 /// Outcome returned by the internal `project_inner` pipeline.
 ///
 /// Bundles the projected state with the generation at which the state was
-/// materialized. The generation is honest — it is:
+/// materialized. The generation is exact — it is:
 ///   * `slot.generation` on a group-local cache hit,
 ///   * `plan.generation` (sampled before replay started) on a replay path, or
 ///   * the probed entity generation on the empty/no-replay-plan path.
@@ -216,7 +216,7 @@ mod returned_generation_pins {
         assert_eq!(
             (generation, state),
             (42, Some(11)),
-            "PROPERTY: into_parts carries the same honest generation with the state"
+            "PROPERTY: into_parts carries the same exact generation with the state"
         );
 
         let empty = ProjectionOutcome::<u32>::empty(

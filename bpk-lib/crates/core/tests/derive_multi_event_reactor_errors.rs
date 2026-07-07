@@ -1,6 +1,13 @@
 //! Compile-fail coverage for the `#[derive(MultiEventReactor)]` attribute contract.
 //! Harness pattern: Fault-Injection Harness (compile-fail lane).
 //!
+//! PROVES: every `tests/ui/mer_*` compile-fail fixture that violates the
+//! `#[derive(MultiEventReactor)]` contract fails to compile with a span-pointed,
+//! wording-pinned error.
+//! CATCHES: a derive that silently accepts an illegal `MultiEventReactor` target
+//! (e.g. a unit struct), or a regression in error span/wording.
+//! SEEDED: n/a — trybuild compile-fail corpus with deterministic `.stderr` goldens.
+//!
 //! Each fixture in `tests/ui/mer_*.rs` violates a specific contract rule and
 //! must fail to compile with a span-pointed error. The `.stderr` files pin
 //! the exact error wording so regressions in message clarity or span quality

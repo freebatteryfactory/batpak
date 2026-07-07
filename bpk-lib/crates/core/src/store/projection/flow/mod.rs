@@ -111,7 +111,7 @@ fn group_local_projection_freshness(
             // `slot.watermark == replay.watermark` — a slot with a lower
             // watermark can legitimately happen if the replay plan advanced,
             // but treating it as fresh would return a state that omits newer
-            // events. Equality here is the honest invariant.
+            // events. Equality here is the correct invariant.
             //
             // The age-based branch (`age_us < max_stale_ms * 1000`) is
             // omitted because the group-local slot stores only wall-clock
@@ -213,7 +213,7 @@ where
         // `project_if_changed` returns a generation token that callers often
         // persist as a watermark. Serving a MaybeStale cache row here would
         // let stale state travel with a newer generation and silently consume
-        // a later relevant append. Keep this path generation-honest by
+        // a later relevant append. Keep this path generation-exact by
         // normalising to `Consistent`.
         Freshness::MaybeStale { .. } => &consistent_freshness,
     };
@@ -225,7 +225,7 @@ where
     // change-detection probe, not the generation at which the returned state
     // was materialized. A cache-hit path may return state stamped at an
     // earlier generation; a replay path stamps at `plan.generation` sampled
-    // before replay started. Returning the honest value here prevents
+    // before replay started. Returning the exact value here prevents
     // `ProjectionWatcher` from "consuming" a relevant append while the caller
     // is still holding stale state. See F5.
     let outcome = project_inner::<T, T::Input, State>(store, entity, effective_freshness, None)?;
@@ -295,7 +295,7 @@ where
     // is the generation at which the returned state was actually materialized:
     //   * Cache hit  → slot.generation (the generation stamped on that cache row)
     //   * Any replay path → plan.generation (sampled at plan-build, BEFORE the
-    //     replay stream executed — this is the honest upper bound of what the
+    //     replay stream executed — this is the correct upper bound of what the
     //     returned state saw)
     //
     // See F5: `ProjectionWatcher` persists the returned value as its
@@ -555,7 +555,7 @@ where
     I: ReplayInput<Payload = <T::Input as ProjectionInput>::Payload>,
 {
     // `plan.generation` was sampled at plan-build, BEFORE the replay stream
-    // executed. That is the honest upper bound for what the returned state
+    // executed. That is the correct upper bound for what the returned state
     // reflects — returning a fresher `entity_generation` here would risk
     // silently "consuming" a later append in the watcher bump path (F5).
     let plan_generation = execution.replay.plan.generation;

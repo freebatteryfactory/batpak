@@ -1,5 +1,14 @@
 //! Replay and checkpoint consistency proofs.
 //! Harness pattern: Equivalence Harness (live vs reopen lane).
+//!
+//! PROVES: a cold-start replay reconstructs the same projection as the live
+//! store, an authoritative reconstruction survives sidecar (index/checkpoint)
+//! deletion, and a snapshot-checkpoint matches the source projection — across
+//! property-generated append streams.
+//! CATCHES: a reopen/replay path that diverges from the live projection, depends
+//! on a deletable sidecar for correctness, or a checkpoint that disagrees with a
+//! full replay.
+//! SEEDED: proptest-generated append specs over deterministic tempdir stores.
 
 use batpak::store::{ReadOnly, Store, StoreConfig, StoreState};
 use batpak_testkit::prelude::*;

@@ -62,7 +62,7 @@ placement, runtime integration, network boundaries, and application authority.
 | Core journal | `batpak` | Append-only store, HLC frontier, receipts, replay, projections |
 | Runtime dispatch | `syncbat` | Operation descriptors, handler registration, runtime receipts |
 | Network terminal | `netbat` | NETBAT/1 frames, bounded request/response |
-| Host contract | `hostbat` | Client manifest, H-interface fingerprints, subscription descriptors |
+| Host contract | `hostbat` | Host composition manifest, H-interface fingerprints, subscription descriptors |
 | Boundary supervisor | `bvisor` | Confined workload execution over a fail-closed boundary contract (Linux landlock/seccomp/cgroups, Wasm/WASI) |
 
 See [04_BATTERIES.md](04_BATTERIES.md) for the full battery map and
@@ -87,8 +87,11 @@ cargo test -p netbat
 
 The ten reference NETBAT terminals — `bank.commit`, `event.query`, `event.get`,
 `receipt.verify`, `event.walk`, `system.heartbeat`, and the four `evidence.*` ops — are documented
-in [05_TERMINALS.md](05_TERMINALS.md). The Rust `hostbat` crate projects the live
-host contract through `ClientManifest`.
+in [05_TERMINALS.md](05_TERMINALS.md). The Rust `hostbat` crate derives the live
+host contract from its registered parts as a `HostCompositionManifest` (per-module
+`HostModuleManifest`s folded into one host fingerprint). The
+`hostbat_supervised_jobs` witness under `bpk-lib/crates/batpak-examples/src/bin/`
+declares and drives that surface end to end.
 
 ## First Shape
 
@@ -223,9 +226,11 @@ Judge the evidence, not the version number:
 - Property-based tests over hash-chain integrity and canonical encoding.
 - Chaos testing with fault injection, including disk-fault integration.
 - Mutation testing on critical seams, so the tests are themselves tested.
-- 103 named invariants traced to 150 concrete artifacts, enforced by an
-  integrity gate that fails CI on orphaned or stale claims —
-  see [03_INVARIANTS.md](03_INVARIANTS.md) and [12_CONFORMANCE.md](12_CONFORMANCE.md).
+- 103 named invariants traced to 150 concrete artifacts — the `docs-catalog`
+  integrity gate re-validates these counts against `traceability/invariants.yaml`
+  and `traceability/artifacts.yaml` on every run and fails CI on any orphaned or
+  stale claim, so this headline cannot silently rot; see
+  [03_INVARIANTS.md](03_INVARIANTS.md) and [12_CONFORMANCE.md](12_CONFORMANCE.md).
 
 All of it runs from one command surface: `just verify`.
 

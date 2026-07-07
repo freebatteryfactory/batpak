@@ -174,7 +174,7 @@ merge gate and NOT a regression — diff-scoped coverage on all recent changes i
 **Measured:** all-features shards **84–95%**; no-default shards **72–94%**.
 **323 distinct survivor sites, all in `core`.** The provisional 75% floor was
 set before any measurement ("PROVISIONAL pending first cloud") — now there is
-data. The honest program, cheapest-first (each step shrinks the number before
+data. The measured program, cheapest-first (each step shrinks the number before
 any curing):
 
 - [ ] **1. Exclude cfg-phantoms** — payload-encryption / dangerous-test-hooks
@@ -185,8 +185,8 @@ any curing):
   counting allocator (~34 survivors) are the *tooling*, not the product;
   exempt or separately-track them.
 - [ ] **3. Recalibrate the floor** to the measured reality (per-shard or a
-  single honest value), replacing the 75% guess. Steps 1–3 turn "2 red shards"
-  green *by making the gate honest*, not by papering over.
+  single measured value), replacing the 75% guess. Steps 1–3 turn "2 red shards"
+  green *by grounding the gate in the measured floor*, not by papering over.
 - [ ] **4. Burn down genuine gaps** (~100–150 after 1–2: `open`, `segment`,
   `sidx/footer`, `signing`, `hidden_ranges`, `index/visibility`; ~70 trivial
   Display/getter fabrications) on a budgeted schedule — never per-PR. Full

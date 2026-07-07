@@ -40,83 +40,7 @@ struct HeaderDebt {
     target: &'static str,
 }
 
-const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[
-    HeaderDebt {
-        path: "tests/chaos.rs",
-        reason: "legacy chaos entrypoint predates module-header doctrine",
-        target: "add header when chaos module is next touched",
-    },
-    HeaderDebt {
-        path: "tests/chaos/dm_flakey.rs",
-        reason: "privileged dm-flakey helper predates module-header doctrine",
-        target: "split helper/header during next chaos hardening pass",
-    },
-    HeaderDebt {
-        path: "tests/chaos/scenarios/batch_commit_written.rs",
-        reason: "chaos scenario has prose header but not canonical fields",
-        target: "normalize scenario headers during harness cleanup",
-    },
-    HeaderDebt {
-        path: "tests/chaos/scenarios/single_append_written.rs",
-        reason: "chaos scenario has prose header but not canonical fields",
-        target: "normalize scenario headers during harness cleanup",
-    },
-    HeaderDebt {
-        path: "tests/chaos/scenarios/smoke.rs",
-        reason: "minimal chaos smoke predates module-header doctrine",
-        target: "add header when smoke scenario changes",
-    },
-    HeaderDebt {
-        path: "tests/cold_start_recovery.rs",
-        reason: "legacy cold-start recovery suite predates module-header doctrine",
-        target: "add header when recovery matrix changes",
-    },
-    HeaderDebt {
-        path: "tests/derive_event_sourced_errors.rs",
-        reason: "trybuild wrapper predates module-header doctrine",
-        target: "normalize compile-fail wrapper headers together",
-    },
-    HeaderDebt {
-        path: "tests/derive_event_sourced_generic.rs",
-        reason: "derive generic parity suite predates module-header doctrine",
-        target: "add header with next derive-surface edit",
-    },
-    HeaderDebt {
-        path: "tests/derive_event_sourced_parity.rs",
-        reason: "derive parity suite predates module-header doctrine",
-        target: "add header with next derive-surface edit",
-    },
-    HeaderDebt {
-        path: "tests/derive_eventpayload_errors.rs",
-        reason: "trybuild wrapper predates module-header doctrine",
-        target: "normalize compile-fail wrapper headers together",
-    },
-    HeaderDebt {
-        path: "tests/derive_multi_event_reactor_errors.rs",
-        reason: "trybuild wrapper predates module-header doctrine",
-        target: "normalize compile-fail wrapper headers together",
-    },
-    HeaderDebt {
-        path: "tests/deterministic_concurrency.rs",
-        reason: "concurrency suite predates module-header doctrine",
-        target: "add header when schedule matrix changes",
-    },
-    HeaderDebt {
-        path: "tests/index_filter_composition.rs",
-        reason: "oracle suite predates module-header doctrine",
-        target: "add header when query oracle changes",
-    },
-    HeaderDebt {
-        path: "tests/replay_consistency.rs",
-        reason: "replay parity suite predates module-header doctrine",
-        target: "add header when replay matrix changes",
-    },
-    HeaderDebt {
-        path: "tests/store_advanced.rs",
-        reason: "legacy omnibus suite has partial header only",
-        target: "split by seam during harness cleanup",
-    },
-];
+const HEADER_DEBT_ALLOWLIST: &[HeaderDebt] = &[];
 
 #[derive(Clone, Default)]
 struct LedgerEntry {
@@ -1234,13 +1158,19 @@ mod tests {
     }
 
     #[test]
-    fn header_allowlist_validates_and_exposes_every_entry() {
-        // Pins `header_allowlist`: collapsing its body to an empty map would
-        // silently disarm the allowlist (stale entries undetected, debt-bearing
-        // harnesses forced to fail). Every static entry must round-trip.
+    fn header_allowlist_is_empty_and_still_validates() {
+        // HEADER_DEBT_ALLOWLIST has been driven to ZERO: every doctrine-bearing
+        // harness now carries a canonical PROVES/CATCHES/SEEDED header, so no
+        // grandfathered debt remains to exempt. `header_allowlist` must still
+        // validate (any malformed re-addition would fail `validate_debt_allowlist`)
+        // and round-trip every static entry into the map — vacuously, while empty.
         let allowlist = header_allowlist().expect("header allowlist validates");
         assert_eq!(allowlist.len(), HEADER_DEBT_ALLOWLIST.len());
-        assert!(!allowlist.is_empty());
+        assert!(
+            allowlist.is_empty(),
+            "HEADER_DEBT_ALLOWLIST must stay at zero — give a suite a truthful canonical \
+             header, never re-grandfather it back onto the allowlist"
+        );
         for debt in HEADER_DEBT_ALLOWLIST {
             assert!(allowlist.contains_key(debt.path), "missing {}", debt.path);
         }

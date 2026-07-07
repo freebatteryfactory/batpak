@@ -15,8 +15,9 @@
 //! [`DiagnosticRustType`] is **informational only**: it records which Rust type
 //! currently materializes a schema for human navigation. It is deliberately
 //! excluded from every digest, so renaming or deleting it changes no identity —
-//! this is what replaces the `refbat::*` rust-type-path-as-identity model that
-//! broke when those types were deleted.
+//! this is what replaces the earlier rust-type-path-as-identity model (the
+//! now-removed `refbat` crate keyed wire identity on Rust type paths), which
+//! broke the moment such a type was renamed or deleted.
 
 use std::collections::BTreeMap;
 
@@ -174,7 +175,7 @@ impl GoldenVector {
 /// An *informational-only* Rust type path recording which type currently
 /// materializes a schema. It is **never** folded into any digest: renaming or
 /// removing it changes no identity. This is the non-load-bearing replacement for
-/// the `refbat::*` rust-type-path-as-identity model.
+/// the earlier rust-type-path-as-identity model (removed with the `refbat` crate).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DiagnosticRustType(String);
 

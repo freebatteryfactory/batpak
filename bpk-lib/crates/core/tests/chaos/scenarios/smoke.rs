@@ -1,3 +1,10 @@
+//! PROVES: the dm-flakey wrapper round-trips — a created device formats and
+//! mounts ext4, `flip_to_error()` takes effect, and a post-flip write FAILS.
+//! CATCHES: a dm-flakey helper that silently no-ops the error flip (writes still
+//! succeeding after the flip), which would make every chaos scenario vacuous.
+//! SEEDED: n/a — single deterministic device round-trip; requires
+//! `BATPAK_RUN_CHAOS=1` and root, else it skips loudly on stderr.
+
 use crate::chaos::dm_flakey::FlakeyDevice;
 use std::io::Write as _;
 

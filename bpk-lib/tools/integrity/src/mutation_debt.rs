@@ -5,7 +5,7 @@
 //! the file claimed "a structural check consumes this file" but NONE existed — a
 //! false claim that left the debt ledger un-enforced. This is that consumer.
 //!
-//! SPLIT OF AUTHORITY (honest scoping):
+//! SPLIT OF AUTHORITY (precise scoping):
 //! - LOCAL (here, every `structural-check`): SCHEMA validation — every entry is
 //!   well-formed (all fields present and non-empty, `first_seen` is an ISO date,
 //!   `file` points at a real tracked source file, `line` is positive). A malformed
@@ -123,7 +123,7 @@ fn validate_entries(
             ),
         )?;
         // Anti-rot: a recorded mutant whose file no longer exists is stale debt
-        // masking a moved/deleted seam — fail so the ledger stays honest.
+        // masking a moved/deleted seam — fail so the ledger stays accurate.
         ensure(
             repo_root.join(&entry.file).is_file(),
             format!(

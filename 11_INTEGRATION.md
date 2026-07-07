@@ -95,11 +95,17 @@ Use circuits and terminals to connect batteries. Do not hide ownership by lettin
 
 **Calibration pulse:** `cargo test -p netbat` exercises NETBAT/1 wire goldens,
 stream runtime sessions, and bounded request/response paths against `syncbat`.
-`cargo test -p hostbat` proves the `ClientManifest` projection, schema golden
-vectors, and subscription descriptor wiring stay aligned with the H-interface.
+`cargo test -p hostbat` proves the derived host-composition manifest
+(`HostCompositionManifest`, folded from per-module `HostModuleManifest`s), schema
+golden vectors, and subscription descriptor wiring stay aligned with the
+H-interface. The `hostbat_supervised_jobs` and `netbat_route_introspection`
+witnesses under `bpk-lib/crates/batpak-examples/src/bin/` drive those surfaces as
+runnable programs.
 
 **Living loop:** use `event.query` + `event.get` replay from a persistent store
-in your embedder or the workspace examples under `bpk-lib/crates/batpak-examples/src/bin/`.
+in your embedder or the workspace examples under `bpk-lib/crates/batpak-examples/src/bin/`
+(e.g. `syncbat_register_catalog` rebuilds an operation register from durable rows
+after a restart).
 Seed app-owned events, rebuild a rendered view from commit-order query pages,
 restart on the same store, and prove substrate replay without relying on commit
 acks alone.

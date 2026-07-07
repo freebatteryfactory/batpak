@@ -1,6 +1,13 @@
 //! Generic-projection coverage for `#[derive(EventSourced)]`.
 //! Harness pattern: Equivalence Harness (parity lane).
 //!
+//! PROVES: `#[derive(EventSourced)]` on a generic `Foo<T>` compiles, and the
+//! concrete `Foo<u64>` replays through the store to the same accumulated state a
+//! non-generic equivalent would.
+//! CATCHES: a derive whose handler-signature pins cannot name the struct's type
+//! parameters — which would fail to compile on any generic `EventSourced` projection.
+//! SEEDED: deterministic tempdir store, fixed event stream; no randomness.
+//!
 //! The derive's handler-signature pins live inside a generic `impl` so they can
 //! reference `Self` with the struct's type parameters. A module-scope
 //! `const _: fn(&mut Foo<T>, &E)` could not name `T` without reintroducing it,

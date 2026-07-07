@@ -44,7 +44,7 @@ The factory uses tiered verification so humans, agents, and CI all speak the sam
 | Tier | Human face | Policy face (xtask) | Blocks merge? | Meaning |
 | --- | --- | --- | --- | --- |
 | Inspect | `just inspect` | structural, boundary, architecture IR, ast-grep | Optional/path-based | Fast shape checks before expensive proof. |
-| Host contract | `cargo test -p hostbat` | hostbat tests | No | `ClientManifest` projection, schema golden vectors, subscription descriptors. |
+| Host contract | `cargo test -p hostbat` | hostbat tests | No | Derived host-composition manifest, schema golden vectors, subscription descriptors. |
 | NETBAT wire | `cargo test -p netbat` | netbat tests | No | NETBAT/1 goldens, stream runtime sessions, bounded request/response paths. |
 | Factory ledger | `just ledger-list`, `just ledger-run -- …`, `just ledger-run-gate …` | `factory-ledger` | No | Opt-in local proof trail: command events plus optional named gate completions under `bpk-lib/target/factory-ledger/store/`. Gates are proof markers, not CI enforcement. |
 | Context packet | `just context` | `context` | No | Opt-in portable context handoff artifact under `bpk-lib/target/context/latest.{json,md}`; captures git state, stack hints, ledger tail, boundary reminders. |
@@ -115,7 +115,7 @@ feels special; tighten the existing ones instead.
 
 ## Terminal Manifest
 
-The reference host manifest (`hostbat::ClientManifest`) must expose the ten reference NETBAT operations — the six
+The reference NETBAT terminal profile must expose the ten reference NETBAT operations — the six
 core ops plus the four domain-neutral `evidence.*` ops:
 
 - `system.heartbeat`

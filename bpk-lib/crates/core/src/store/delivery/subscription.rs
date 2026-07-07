@@ -47,9 +47,8 @@ impl Subscription {
     /// F8: region-preserving receiver for async / deadline-driven
     /// consumers. Returns a `flume::Receiver<Notification>` whose
     /// contents are pre-filtered at the writer push point — no
-    /// out-of-region notification is ever placed into the channel. Use
-    /// this in preference to the raw [`Subscription::receiver`] shim:
-    /// `sub.filtered_receiver().recv_async().await`.
+    /// out-of-region notification is ever placed into the channel. Drive
+    /// it with `sub.filtered_receiver().recv_async().await`.
     ///
     /// The returned receiver is borrowed (`&Receiver<_>`); the
     /// subscription owns the channel lifetime. The underlying channel

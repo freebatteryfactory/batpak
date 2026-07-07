@@ -1,5 +1,13 @@
 //! dm-flakey batch proofs for `INV-FRONTIER-DURABLE-COVERS-RECOVERED`.
 //!
+//! PROVES: INV-FRONTIER-DURABLE-COVERS-RECOVERED for BATCH append over a real
+//! Linux dm-flakey failure boundary — on recovery `durable_hlc` covers every
+//! event the OS and filesystem preserved and stays monotonic across the crash.
+//! CATCHES: a batch-commit recovery that exposes an event the durable frontier
+//! does not cover, or a durable frontier that regresses after a device failure.
+//! SEEDED: real dm-flakey boundary, fixed sync cadence, no in-process RNG;
+//! requires `BATPAK_RUN_CHAOS=1` and root.
+//!
 //! These scenarios are the batch analog of `single_append_written.rs`.
 //! They use a real Linux device-mapper failure boundary and assert Meaning-2
 //! durable frontier semantics: on recovery, `durable_hlc` covers whatever

@@ -1,6 +1,14 @@
 //! Compile-fail coverage for the `#[derive(EventPayload)]` parser contract.
 //! Harness pattern: Fault-Injection Harness (compile-fail lane).
 //!
+//! PROVES: every `tests/ui/ep_*` compile-fail fixture that violates the
+//! `#[derive(EventPayload)]` attribute contract (ADR-0010) fails to compile with
+//! a span-pointed, wording-pinned error.
+//! CATCHES: a parser that silently accepts a malformed `#[batpak(...)]` attribute
+//! (missing/unknown/duplicate key, non-struct target, out-of-range
+//! category/type_id, generic target), or a regression in error span/wording.
+//! SEEDED: n/a — trybuild compile-fail corpus with deterministic `.stderr` goldens.
+//!
 //! Every fixture in `tests/ui/ep_*.rs` is a stand-alone crate that should
 //! fail to compile because of a specific violation of the pinned attribute
 //! contract (ADR-0010). The `.stderr` files next to them pin the exact

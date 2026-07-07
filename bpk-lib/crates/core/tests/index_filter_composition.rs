@@ -1,5 +1,13 @@
 //! Index filter composition across overlays.
 //!
+//! PROVES: INV-INDEX-FILTER-COMPOSES — for every overlay topology and every
+//! combination of `Region` predicates (entity prefix, scope, kind filter, clock
+//! range), the index returns exactly the set a linear ground-truth scan returns,
+//! including the cursor-paged path.
+//! CATCHES: a filter that composes wrong inside an overlay (B1), or a
+//! `KindFilter::Any` that ignores `limit` during collection (B4).
+//! SEEDED: one fixed PRNG seed, one shuffled corpus; deterministic.
+//!
 //! [INV-INDEX-FILTER-COMPOSES] For every supported overlay topology and every
 //! combination of `Region` predicates (entity prefix, scope, kind filter,
 //! clock range), the index returns exactly the same set of events as a

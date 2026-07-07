@@ -66,7 +66,7 @@ pub(crate) fn run(strict: bool) -> Result<()> {
         ".gitattributes must normalize line endings",
     )?;
 
-    // Filesystem fsync probe — gives users an honest expectation of durable
+    // Filesystem fsync probe — gives users an accurate expectation of durable
     // throughput before they wonder why their numbers vary across machines.
     // Skipped in non-strict mode to keep CI fast; only the strict path runs it.
     if strict {

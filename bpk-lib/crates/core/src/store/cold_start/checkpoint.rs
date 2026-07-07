@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! [MAGIC: b"FBATCK"]   — 6 bytes, identifies the file type
-//! [version: u16 LE]    — v2/v3/v4/v5 fallback or v6 current
+//! [version: u16 LE]    — v5 fallback or v6 current (pre-0.10.0 v2/v3/v4 are rejected)
 //! [crc32: u32 LE]      — CRC32 of the msgpack body that follows
 //! [msgpack body]        — versioned checkpoint body serialised via rmp_serde
 //! ```

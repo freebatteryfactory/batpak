@@ -3,6 +3,11 @@
 //! PROVES: INV-CONCURRENCY-SCHEDULE-PROOF — bounded loom exploration of the
 //! idempotency, CAS, restart-budget, single-compactor, and batch-visibility
 //! schedules; any falsified invariant fails the model.
+//! CATCHES: an interleaving that double-commits an idempotent append, lets two
+//! writers claim one CAS sequence, exceeds the restart budget, admits a second
+//! concurrent compactor, or exposes a partial batch prefix.
+//! SEEDED: loom schedule exploration under a bounded `preemption_bound` —
+//! deterministic, no wall-clock or RNG.
 
 use loom::sync::{Arc, Mutex};
 use loom::thread;

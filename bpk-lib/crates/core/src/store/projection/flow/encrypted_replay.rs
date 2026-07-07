@@ -15,7 +15,7 @@
 //!
 //! An event whose payload key has been crypto-shredded has NO recoverable
 //! plaintext, so the fold cannot apply it. We SKIP it — the projected state is
-//! honestly aware it may be incomplete post-erasure — rather than misdecode
+//! explicitly marked as possibly INCOMPLETE post-erasure — rather than misdecode
 //! ciphertext or panic. The skip is OBSERVABLE (a `tracing::warn`), never a
 //! silent state corruption. Skipping (not erroring) is the right default because
 //! erasure inherently means the plaintext is gone: the replay watermark still

@@ -1,4 +1,9 @@
-//! PROVES: INV-CHAOS-LINUX-ONLY.
+//! PROVES: INV-CHAOS-LINUX-ONLY — the privileged dm-flakey device helper (a real
+//! Linux device-mapper `error` target over a loopback-backed ext4 mount) builds
+//! only on Linux and is the fault-injection boundary the chaos scenarios drive.
+//! CATCHES: the helper compiling off-Linux, or a teardown leak that leaves loop
+//! or device-mapper devices mounted after a scenario.
+//! SEEDED: n/a — privileged device helper; determinism comes from the scenario drivers.
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};

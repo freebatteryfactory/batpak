@@ -15,9 +15,10 @@
 //!      implementation. T4b's single-kind reactor and T6's multi-kind
 //!      reactor are both expressed as specific `ReactorDispatcher` impls.
 //!
-//!   3. **T4b's adapter.** `SingleKindDispatcher<T, R>` wraps a
-//!      `TypedReactive<T>` reactor and implements `ReactorDispatcher`.
-//!      T6 will add a parallel `MultiKindDispatcher<R>` adapter alongside.
+//!   3. **The adapters.** `SingleKindDispatcher<T, R>` (T4b) wraps a
+//!      `TypedReactive<T>` reactor and `MultiKindDispatcher<Input, R>` (T6)
+//!      wraps a multi-kind reactor; both implement `ReactorDispatcher` and ride
+//!      the same runner.
 //!
 //! **Decode-failure contract (unified across T4b and T6).**
 //!

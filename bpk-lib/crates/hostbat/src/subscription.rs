@@ -16,7 +16,9 @@ use crate::schema::SchemaRole;
 /// Maximum bytes accepted for a [`ProjectionId`].
 const MAX_PROJECTION_ID_BYTES: usize = 128;
 
-/// Wire transport required to serve declared subscriptions (not yet implemented).
+/// Wire transport required to serve declared subscriptions. Implemented by
+/// `netbat`'s NETBAT/2-streaming stream transport; hostbat descriptors stay
+/// declaration-only and the host runtime continues to serve calls on NETBAT/1.
 pub const SUBSCRIPTION_WIRE_REQUIRES: &str = "NETBAT/2-streaming";
 
 /// Globally unique subscription name within a host composition, e.g. `orders.open.v1`.

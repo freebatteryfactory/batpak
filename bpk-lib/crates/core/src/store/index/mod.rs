@@ -98,8 +98,8 @@ pub(crate) struct StoreIndex {
     /// Total event count.
     len: AtomicUsize,
     /// String interner for compact index keys and checkpoint serialization.
-    /// Entity and scope strings are interned on insert; IDs are used by
-    /// checkpoint and (future) InternId-based IndexEntry fields.
+    /// Entity and scope strings are interned on insert; the IDs back checkpoint
+    /// serialization and `IndexEntry`'s interned `entity_id` / `scope_id` fields.
     pub(crate) interner: Arc<StringInterner>,
     /// F6 / FREEZE-4 compact swap-point lock. Writers (compact) take the
     /// write guard for the single critical section that swaps fresh
@@ -167,8 +167,9 @@ impl StoreIndex {
     fn insert_inner(&self, entry: IndexEntry) {
         let lane = entry.dag_lane;
 
-        // Intern entity and scope strings. IDs stored in IndexEntry for
-        // compact checkpoint serialization and future InternId-only index.
+        // Intern entity and scope strings. The interned IDs are stored in
+        // IndexEntry (`entity_id` / `scope_id`) for compact checkpoint
+        // serialization and interned index maps.
         debug_assert!(self
             .interner
             .intern(entry.coord.entity())

@@ -9,10 +9,9 @@
 //! * [`subscription`](crate::store::delivery::subscription) — push-based, lossy fanout with a region filter
 //!   applied at the writer push point (F8). Use
 //!   [`Subscription::filtered_receiver`](crate::store::delivery::subscription::Subscription::filtered_receiver) for async /
-//!   deadline-driven consumers; the raw
-//!   [`Subscription::receiver`](crate::store::delivery::subscription::Subscription::receiver) accessor is retained under
-//!   `#[doc(hidden)]` for back-compat and has identical semantics
-//!   post-F8.
+//!   deadline-driven consumers — every notification is pre-filtered to the
+//!   subscription's region at the writer push point, so the channel never
+//!   carries an out-of-region item.
 
 /// Shared delivery selector for typed reactor runners.
 pub mod canal;

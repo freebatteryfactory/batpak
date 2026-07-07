@@ -1,5 +1,14 @@
 //! dm-flakey proofs for `INV-FRONTIER-DURABLE-COVERS-RECOVERED`.
 //!
+//! PROVES: INV-FRONTIER-DURABLE-COVERS-RECOVERED for single append over a real
+//! Linux dm-flakey boundary — the recovered durable frontier covers every
+//! recovered event and stays monotonic; under cadence=1 a device failure poisons
+//! the writer FAIL-CLOSED (subsequent commands surface the poison, fsyncgate).
+//! CATCHES: a post-failure durable frontier that lies (covers un-recovered
+//! events, regresses, or keeps accepting appends after an fsync error at cadence=1).
+//! SEEDED: real dm-flakey boundary, fixed cadences, no in-process RNG; requires
+//! `BATPAK_RUN_CHAOS=1` and root.
+//!
 //! These tests use a real Linux device-mapper failure boundary instead of the
 //! in-process `FaultInjector` panic seam. They prove that batpak's recovered
 //! durable frontier covers every event recovered from the segment log, that the

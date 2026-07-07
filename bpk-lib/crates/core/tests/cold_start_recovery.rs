@@ -1,6 +1,15 @@
 //! Cold-start recovery artifacts.
 //! Harness pattern: Fault-Injection Harness (artifact recovery lane).
 //!
+//! PROVES: INV-COLD-START-ARTIFACTS — a clean close writes the expected on-disk
+//! artifacts (segment + SIDX footer + the preferred fast-start artifact) and
+//! reopening from them yields the same visible events; a mid-frame segment
+//! truncation does not crash reopen; a forced rotation then unclean reopen still
+//! sees every segment entry.
+//! CATCHES: a reopen that loses events, writes the wrong fast-start artifact set,
+//! or panics on a surgically truncated segment.
+//! SEEDED: deterministic tempdir fixtures; no randomness.
+//!
 //! [INV-COLD-START-ARTIFACTS] A clean close writes the expected on-disk
 //! artifacts (segment + SIDX footer + the preferred fast-start artifact),
 //! and reopening the store from those artifacts yields the same visible

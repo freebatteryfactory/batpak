@@ -106,14 +106,15 @@ impl BackendProfileHash {
 }
 
 /// Canonical content hash of an [`crate::contract::admission::AdmissionProgram`]
-/// (`H_A`).
+/// (`H_A`) — the digest of the bounded, validated admission circuit.
 ///
-/// The admission decision is a bounded validated circuit; its digest is bound
-/// into a [`BoundaryPlan`](crate::contract::plan::BoundaryPlan) so the *exact
-/// decision program* — not just its inputs —
-/// is part of plan identity. Two plans that admit the same boundary by a different
-/// circuit are different plans. A branded type, never interchangeable with a plan,
-/// report, or profile hash.
+/// The imperative admission path is authoritative; the circuit runs as a SHADOW
+/// checked against it. `H_A` is NOT yet bound into
+/// [`BoundaryPlan`](crate::contract::plan::BoundaryPlan) identity: binding it —
+/// promoting the circuit to authority so the *exact decision program*, not just
+/// its inputs, becomes part of plan identity — is a promotion step gated on the
+/// shadow being proven equivalent to the reference. Until then this is a branded
+/// content hash, never interchangeable with a plan, report, or profile hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct AdmissionProgramHash(pub Digest32);
 

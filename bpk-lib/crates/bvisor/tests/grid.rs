@@ -11,12 +11,12 @@
 //! reopening a real store and classifying independently.
 //!
 //! Allow-free: every assertion is `Result`-returning or `assert!(cond, ..)`;
-//! there is NO `#![allow(..)]` of any kind (unlike `recovery_oracle.rs`, whose
-//! `#![allow(clippy::panic, unwrap_used)]` is deliberately NOT copied here).
+//! there is NO `#![allow(..)]` of any kind, in line with the repo-wide
+//! zero-allow discipline.
 //!
 //! RED fixture (`--cfg gauntlet_red_fixture`): flips the expectation to "lie
 //! uncaught", which is FALSE for a biting oracle, so the red half FAILS —
-//! mirroring `recovery_oracle.rs:98-109`. Registered as the blocking
+//! mirroring `recovery_oracle.rs`'s ProductionFlip RED fixture. Registered as the blocking
 //! ProductionFlip gate `bvisor-grid` in `gate_registry.rs`; its red half is
 //! proven by the `gauntlet-red-fixtures-bite` lane (`cargo xtask
 //! prove-gates-bite`), which builds it under the cfg and asserts it FAILS.
@@ -62,7 +62,7 @@ fn grid_is_deterministic() -> Result<(), String> {
     Ok(())
 }
 
-/// ProductionFlip RED branch (mirrors `recovery_oracle.rs:98-109`): under
+/// ProductionFlip RED branch (mirrors `recovery_oracle.rs`'s ProductionFlip RED fixture): under
 /// `--cfg gauntlet_red_fixture` it asserts the (illegal) "lie uncaught" outcome —
 /// that the oracle does NOT catch the spawn-despite-deny lie. A biting oracle
 /// ALWAYS catches it, so this assertion is false and the red half FAILS, proving
