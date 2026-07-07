@@ -4305,6 +4305,7 @@ pub fn batpak::store::StagedFile::write_all(&mut self, buf: &[u8]) -> std::io::e
 pub trait batpak::store::StoreDirLockGuard: core::marker::Send + core::marker::Sync
 pub trait batpak::store::StoreFile: core::marker::Send + core::marker::Sync
 pub fn batpak::store::StoreFile::as_std_file(&self) -> core::option::Option<&std::fs::File>
+pub fn batpak::store::StoreFile::is_empty(&self) -> std::io::error::Result<bool>
 pub fn batpak::store::StoreFile::len(&self) -> std::io::error::Result<u64>
 pub fn batpak::store::StoreFile::read_at(&mut self, offset: u64, buf: &mut [u8]) -> std::io::error::Result<usize>
 pub fn batpak::store::StoreFile::read_exact_at(&mut self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), batpak::store::PositionedReadError>
