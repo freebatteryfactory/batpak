@@ -108,6 +108,16 @@ jobs:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'
+      # Bless helper: publish the freshly generated public-api baselines so a
+      # drift can be adopted verbatim (download + commit) instead of hand-edited.
+      # `target/` is gitignored, so this cannot defeat the gate. Runs on failure too.
+      - name: Upload generated public-api baselines (bless helper)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-api-generated
+          path: bpk-lib/target/public-api/
+          if-no-files-found: ignore
 
   meta-gate:
     # Agent-safety meta-gate (P1-4, "raccoon with commit access"): blocks a diff
