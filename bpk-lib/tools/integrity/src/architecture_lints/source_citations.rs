@@ -25,12 +25,12 @@ fn root_source_citation_docs(repo_root: &Path) -> Result<Vec<PathBuf>> {
             docs.push(path);
         }
     }
-    let archive = root.join("archive/decisions");
-    if archive.exists() {
+    let adr_dir = root.join("bpk-lib/ADR");
+    if adr_dir.exists() {
         for entry in
-            fs::read_dir(&archive).with_context(|| format!("read {}", archive.display()))?
+            fs::read_dir(&adr_dir).with_context(|| format!("read {}", adr_dir.display()))?
         {
-            let entry = entry.with_context(|| format!("read entry under {}", archive.display()))?;
+            let entry = entry.with_context(|| format!("read entry under {}", adr_dir.display()))?;
             let path = entry.path();
             if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
                 docs.push(path);

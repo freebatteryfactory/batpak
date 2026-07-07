@@ -43,5 +43,5 @@ your intent — nobody is required to read all of them.
 - [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md),
   [ROADMAP.md](ROADMAP.md), [SUPPORT.md](SUPPORT.md).
 - Machine law lives in `bpk-lib/traceability/` and `bpk-lib/tools/integrity/`;
-  historical decisions in `archive/decisions/`. These root docs describe the
+  decision records in `bpk-lib/ADR/`. These root docs describe the
   current system; they are not a decision archive.

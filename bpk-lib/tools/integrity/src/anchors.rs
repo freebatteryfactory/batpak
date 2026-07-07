@@ -74,7 +74,7 @@ pub(crate) fn extract_anchors(body: &str) -> Vec<JustifiesAnchor> {
             "benches/",
             "tools/",
             "fixtures/",
-            "archive/decisions/",
+            "bpk-lib/ADR/",
             "cookbook/",
             "traceability/",
         ]

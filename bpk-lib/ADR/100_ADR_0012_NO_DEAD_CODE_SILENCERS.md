@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-`#[allow(dead_code)]` and its variants (`#[expect(dead_code)]`, `#[allow(unused)]`, and `cfg_attr`-wrapped forms of each) normalized across many agent-authored changes as the short-circuit answer to an unused-code warning. Each individual site looked reasonable; the accumulated pattern obscured a real signal. When the compiler reports dead code, the honest response is one of three concrete edits:
+`#[allow(dead_code)]` and its variants (`#[expect(dead_code)]`, `#[allow(unused)]`, and `cfg_attr`-wrapped forms of each) normalized across many agent-authored changes as the short-circuit answer to an unused-code warning. Each individual site looked reasonable; the accumulated pattern obscured a real signal. When the compiler reports dead code, the correct response is one of three concrete edits:
 
 - Test-only code → move it behind `#[cfg(test)]` so non-test builds never compile it.
 - Truly unused code → delete it.

@@ -41,12 +41,12 @@ label. It is not part of the default per-PR matrix.
   filesystem boundary rather than the kernel block path the store actually
   depends on.
 - LD_PRELOAD write shim: simple and dependency-light, but too high-level to
-  model page-cache and block-device failure semantics honestly.
+  model page-cache and block-device failure semantics faithfully.
 
 ## Consequences
 The chaos proof is Linux-specific. That is acceptable because the durability
 claim is kernel and filesystem specific; a cross-platform fake would be less
-honest than a Linux-only hard proof.
+faithful than a Linux-only hard proof.
 
 The initial scaffold proves only that the harness can create, mount, flip, and
 tear down a failing device. Batpak-specific torn-tail scenarios remain separate

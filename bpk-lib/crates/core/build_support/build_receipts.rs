@@ -221,7 +221,7 @@ pub(crate) fn emit_build_rerun_lines(
         "02_MODEL.md",
         "03_INVARIANTS.md",
         "12_CONFORMANCE.md",
-        "archive/decisions/100_ADR_0001_SYNC_ONLY_STORE.md",
+        "bpk-lib/ADR/100_ADR_0001_SYNC_ONLY_STORE.md",
     ] {
         emit_rerun_for_path(&project_root.join(rel));
     }

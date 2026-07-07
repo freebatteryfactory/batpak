@@ -80,7 +80,7 @@ No current environment is both canonical and timing-stable.
 - `README.md` is the primary repo entrypoint and should stay enough for orientation
 - `01_FACTORY.md`, `02_MODEL.md`, and `03_INVARIANTS.md` are the primary ontology surface
 - `12_CONFORMANCE.md` is the command and proof contract
-- Historical decisions live under `archive/decisions/` and are not the public reading path.
+- Decision records live under `bpk-lib/ADR/` and are not the public reading path.
 
 Before release-oriented changes, run:
 

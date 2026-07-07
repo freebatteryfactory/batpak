@@ -30,7 +30,7 @@ unavailable states explicitly.
 - `checkpoint_ref`
 - deterministic sorted `findings`
 
-### 2) honesty contract
+### 2) fidelity contract
 
 v1 reports strongest truthful state from existing substrate facts:
 

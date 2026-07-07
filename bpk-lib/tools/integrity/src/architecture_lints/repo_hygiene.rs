@@ -254,10 +254,7 @@ fn check_for_stale_references(repo_root: &Path, tracked_files: &[PathBuf]) -> Re
         "for the 6 operations",
     ];
     let allow = [
-        repo_root
-            .parent()
-            .unwrap_or(repo_root)
-            .join("archive/decisions/100_ADR_0003_CACHE_SAFETY_ASSUMPTIONS.md"),
+        repo_root.join("ADR/100_ADR_0003_CACHE_SAFETY_ASSUMPTIONS.md"),
         repo_root.join("CHANGELOG.md"),
         repo_root.join("AGENTS.md"),
         repo_root.join("crates/core/build.rs"),

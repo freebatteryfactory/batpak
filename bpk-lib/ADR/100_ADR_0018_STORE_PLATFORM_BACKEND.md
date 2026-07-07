@@ -11,7 +11,7 @@ places: symlink leaf rejection, same-directory temp-file persistence,
 parent-directory fsync, store-lock opening, segment creation and sync, canonical
 clock helpers, and file-backed mmap. Those operations are narrow store-internal
 machine contact, not generic business logic. They give the store the target
-facts it needs for honest persistence and replay decisions.
+facts it needs for accurate persistence and replay decisions.
 
 Leaving those calls scattered makes it harder to see which code is observing
 the target and which code is deciding store semantics.

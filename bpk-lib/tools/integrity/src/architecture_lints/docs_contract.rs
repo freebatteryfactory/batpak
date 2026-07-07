@@ -14,16 +14,108 @@ pub(super) fn check(repo_root: &Path) -> Result<()> {
     check_terminal_manifest_doc_parity(repo_root)?;
     check_changelog_migration_contract(repo_root)?;
     check_retired_terms(repo_root)?;
+    check_adr_docs_are_gated(repo_root)?;
     check_scoped_xtask_in_extended_docs(repo_root)?;
     Ok(())
 }
 
+/// The ADR corpus (`bpk-lib/ADR/`) is a LIVE, gated doc surface. It was relocated
+/// out of the frozen `archive/` (#27) precisely because integrity gates actively
+/// cite it — `source_citations`, `anchors`, and `tooling_contract` in this crate,
+/// plus the core build receipts — so an unlinkable, un-gated ADR that silently
+/// rots is a real hazard. This gate holds the ADRs to two rules a frozen archive
+/// was exempt from:
+///
+/// 1. **No banned euphemism `honest`.** Decision prose must use precise status
+///    vocabulary (accurate / faithful / fidelity / PROVEN / FAIL-CLOSED), never
+///    the nerf-euphemism. Only the lowercase prose word is matched, so CamelCase
+///    mechanism identifiers (e.g. `HonestDiskCrash`) are left alone by construction.
+/// 2. **Every intra-repo markdown link resolves.** A cross-reference to a moved,
+///    renamed, or deleted ADR / root doc is a dangling link and fails closed.
+///
+/// Retired-crate terms (e.g. `refbat`) inside an ADR are dated HISTORICAL CONTEXT
+/// and stay exempt — that concern is `check_retired_terms`, whose live-doc set
+/// deliberately excludes this surface.
+fn check_adr_docs_are_gated(repo_root: &Path) -> Result<()> {
+    let adr_root = project_root(repo_root).join("bpk-lib/ADR");
+    for path in markdown_files_in(&adr_root) {
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let rel = relative(repo_root, &path);
+        ensure(
+            !content.contains("honest"),
+            format!(
+                "ADR {rel} uses the banned euphemism `honest`; decision prose must use precise \
+                 status vocabulary (accurate / faithful / fidelity / PROVEN / FAIL-CLOSED). A \
+                 CamelCase mechanism name like `HonestDiskCrash` is exempt — reword the prose word."
+            ),
+        )?;
+        for link in adr_intra_repo_links(&content) {
+            let target = adr_link_target(&path, &link);
+            ensure(
+                target.exists(),
+                format!(
+                    "ADR {rel} has a dangling intra-doc link `{link}` (resolves to `{}`, which does \
+                     not exist); point it at the current file or remove the dead link",
+                    target.display()
+                ),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Local, non-URL, non-anchor markdown link destinations in `content` — the path
+/// part before any `#fragment`. External (`http`/`https`/`mailto`) links and
+/// pure in-page anchors carry no on-disk target and are skipped.
+fn adr_intra_repo_links(content: &str) -> Vec<String> {
+    let parser = Parser::new_ext(content, Options::all());
+    let mut links = Vec::new();
+    for event in parser {
+        if let Event::Start(Tag::Link { dest_url, .. }) = event {
+            let raw = dest_url.as_ref();
+            if raw.starts_with("http://")
+                || raw.starts_with("https://")
+                || raw.starts_with("mailto:")
+            {
+                continue;
+            }
+            let Some(path_part) = raw.split('#').next() else {
+                continue;
+            };
+            let path_part = path_part.trim();
+            if !path_part.is_empty() {
+                links.push(path_part.to_string());
+            }
+        }
+    }
+    links
+}
+
+/// Resolve an intra-repo markdown link against the linking document's directory,
+/// collapsing `.`/`..` components to an absolute path so existence is checkable.
+fn adr_link_target(source_doc: &Path, link: &str) -> PathBuf {
+    let base = source_doc.parent().unwrap_or(Path::new(""));
+    let mut normalized = PathBuf::new();
+    for component in base.join(link).components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
 /// Terms for crates/concepts that no longer exist. They are legitimate in
-/// release history (CHANGELOG) and frozen planning notes (archive/), but in a
-/// LIVE doc they mislead readers into looking for something retired. This is the
-/// same anti-rot pattern as the unprefixed-`FACTORY.md` ban — a banned string in
-/// a defined live-doc surface. (`refbat` retired in favor of `hostbat` +
-/// netbat reference host.)
+/// release history (CHANGELOG), dated decision records (`bpk-lib/ADR/`, where an
+/// ADR states a decision as-of its date), and frozen planning notes (archive/),
+/// but in a LIVE reading-path doc they mislead readers into looking for something
+/// retired. This is the same anti-rot pattern as the unprefixed-`FACTORY.md` ban —
+/// a banned string in a defined live-doc surface. (`refbat` retired in favor of
+/// `hostbat` + netbat reference host.)
 const RETIRED_DOC_TERMS: &[&str] = &["refbat"];
 
 fn check_retired_terms(repo_root: &Path) -> Result<()> {
@@ -37,7 +129,8 @@ fn check_retired_terms(repo_root: &Path) -> Result<()> {
                 !content.contains(term),
                 format!(
                     "live doc {rel} references retired `{term}`. Use the reference host / \
-                     `hostbat` naming. (Release history in CHANGELOG.md and archive/ are exempt.)"
+                     `hostbat` naming. (Release history in CHANGELOG.md, dated ADRs in \
+                     bpk-lib/ADR/, and archive/ are exempt as history.)"
                 ),
             )?;
         }
@@ -79,7 +172,9 @@ fn check_scoped_xtask_in_extended_docs(repo_root: &Path) -> Result<()> {
 
 /// The live-doc surface for retired-term scanning: the factory docs, root
 /// community docs, cookbook recipes, and the published crate READMEs. Excludes
-/// CHANGELOG.md (release history) and archive/ (frozen).
+/// CHANGELOG.md (release history), the `bpk-lib/ADR/` decision records (dated
+/// history — gated separately by `check_adr_docs_are_gated` for links + `honest`,
+/// but NOT for retired terms), and archive/ (frozen).
 fn live_doc_set(repo_root: &Path) -> Vec<PathBuf> {
     let doc_root = project_root(repo_root);
     let mut docs: Vec<PathBuf> = [
@@ -198,12 +293,14 @@ fn check_live_docs_do_not_link_archives(repo_root: &Path) -> Result<()> {
     for path in files {
         let rel = relative(doc_root, &path);
         for link in markdown_links(doc_root, &path)? {
+            // `bpk-lib/ADR/` is now a LIVE, gated surface (#27), so live docs MAY
+            // link to a decision record. Only the genuinely frozen `archive/`
+            // (legacy-docs) and the retired `docs/` tree stay off-limits. The four
+            // portable-context factory docs keep the stricter no-ADR-lineage rule
+            // in `check_portable_context_links`.
             ensure(
-                !link.starts_with("docs/")
-                    && !link.starts_with("archive/")
-                    && !link.contains("100_ADR_")
-                    && link != "099_DECISION_INDEX.md",
-                format!("live doc {rel} links archive material as if it were live: {link}"),
+                !link.starts_with("docs/") && !link.starts_with("archive/"),
+                format!("live doc {rel} links frozen archive material as if it were live: {link}"),
             )?;
         }
     }

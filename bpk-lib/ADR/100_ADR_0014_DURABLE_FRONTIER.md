@@ -4,7 +4,7 @@
 Accepted (shipped in 0.7.0).
 
 ## Context
-Phase 0 needed an honest way to describe where the store is in the commit
+Phase 0 needed an accurate way to describe where the store is in the commit
 pipeline without changing read semantics, default sync configuration, receipt
 types, segment format, or fanout guarantees.
 
@@ -73,7 +73,7 @@ Panic behavior is tested with test-local `FaultInjector` implementations. The
 production fault API does not gain a `Panic` action.
 
 ## Consequences
-The store has a public, narrow, honest frontier surface for operators and for
+The store has a public, narrow, faithful frontier surface for operators and for
 the durability-gating API accepted in ADR-0016. Those gates build on
 `durable_hlc` without renaming placeholder fields. Default read semantics remain
 an explicit policy choice: visible state may still exceed durable state when the

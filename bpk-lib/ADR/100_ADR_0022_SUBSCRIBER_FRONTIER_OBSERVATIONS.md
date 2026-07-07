@@ -32,7 +32,7 @@ deterministic identity (`generated_at_unix_ms`, `batpak_version`, `diagnostics`)
 following ADR-0019.
 Findings are deterministic and sorted in structural order.
 
-### 2) Precision and honesty model
+### 2) Precision and fidelity model
 
 This surface is observation-first:
 

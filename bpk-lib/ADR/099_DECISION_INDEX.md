@@ -1,6 +1,6 @@
 # Decision Index
 
-Architecture Decision Records live in `archive/decisions/`. They are historical
+Architecture Decision Records live in `bpk-lib/ADR/`. They are historical
 decision material, not the public reading path. All current ADRs are accepted;
 shipped notes identify the first release where a decision became part of the
 public or repository contract when that release is known.
@@ -55,3 +55,5 @@ Root layer docs:
 | ADR-0031 | 0.7.6 Release Proof Posture | Accepted; 0.7.6 correction cut |
 | ADR-0032 | SIDX SDX3 Integrity Footer | Accepted; 0.8.3 audit-remediation cut |
 | ADR-0033 | 0.8.3 Hardening Posture | Accepted; 0.8.3 audit-remediation cut |
+| ADR-0034 | StoreFs Handle Abstraction | Accepted; 0.10.0 pre-1.0 breaking window |
+| ADR-0035 | 0.10.0 Hardening Dispositions | Accepted |

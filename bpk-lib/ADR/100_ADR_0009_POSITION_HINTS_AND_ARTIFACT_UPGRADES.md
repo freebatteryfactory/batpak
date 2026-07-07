@@ -58,7 +58,7 @@ truth, but the compatibility posture is explicit:
 
 ## Consequences
 
-- append callers gain a narrow, honest branch-placement hook without taking
+- append callers gain a narrow, faithful branch-placement hook without taking
   ownership of commit-time clocks or sequence allocation
 - reopen paths remain consistent: the same committed event position survives
   regardless of which cold-start artifact wins

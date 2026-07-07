@@ -9,7 +9,7 @@
 ## Docs / Traceability
 - [ ] Public API changes update README, factory docs, or examples as appropriate
 - [ ] New public items, invariants, flows, or artifacts update `bpk-lib/traceability/`
-- [ ] Decision history stays in `archive/decisions/`; live root docs stay factory-current
+- [ ] Decision records live in `bpk-lib/ADR/`; live root docs stay factory-current
 - [ ] CHANGELOG `[Unreleased]` is updated when user-visible behavior changes
 
 ## CI / branch protection

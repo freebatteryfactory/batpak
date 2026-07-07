@@ -22,7 +22,7 @@ Examples include:
 Deferring every correction to a later minor line would make the version number
 cleaner but would also preserve accidental public contracts longer than the
 project needs.
-For this repository, maintainability and an honest pre-1.0 shape matter more
+For this repository, maintainability and an accurate pre-1.0 shape matter more
 than preserving a patch-compatible fiction for unused APIs.
 
 ## Decision

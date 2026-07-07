@@ -53,7 +53,7 @@ fn adr_search_dirs(repo_root: &Path) -> Vec<PathBuf> {
     let project_root = repo_root.parent().unwrap_or(repo_root);
     vec![
         project_root.to_path_buf(),
-        project_root.join("archive/decisions"),
+        project_root.join("bpk-lib/ADR"),
     ]
 }
 

@@ -23,7 +23,7 @@ runtime code paths around sync cadence, segment scan/recovery, and writer
 orchestration.
 
 This ADR exists so the performance story is source-anchored and substrate-owner
-honest instead of being reconstructed later from chat logs.
+accurate instead of being reconstructed later from chat logs.
 
 ## Measurement setup
 

@@ -30,7 +30,7 @@ a deprecated wrapper for one minor cut and drops the report.
 - `destination_path_digest`
 - deterministic sorted `findings`
 
-### 2) honesty contract
+### 2) fidelity contract
 
 v1 reports strongest truthful state from existing substrate facts:
 

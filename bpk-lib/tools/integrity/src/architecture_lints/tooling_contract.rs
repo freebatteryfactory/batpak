@@ -45,7 +45,7 @@ fn check_project_layout_contract(repo_root: &Path) -> Result<()> {
         "11_INTEGRATION.md",
         "12_CONFORMANCE.md",
         "CONTRIBUTING.md",
-        "archive/decisions/099_DECISION_INDEX.md",
+        "bpk-lib/ADR/099_DECISION_INDEX.md",
         "bpk-lib/traceability/testing_ledger.yaml",
         "cookbook",
         "bpk-lib/Cargo.toml",
@@ -153,7 +153,7 @@ fn check_root_markdown_allowlist(project_root: &Path) -> Result<()> {
         "09_REPLAY.md",
         // Living 0.9.0->1.0.0 stabilization roadmap — owner-curated, re-audited
         // on every knocked line item. Canonical by owner decision (2026-07-02);
-        // planning DEBT still belongs under archive/legacy-docs, not here.
+        // planning DEBT belongs in bpk-lib/traceability or a bpk-lib/ADR record, not here.
         "ROADMAP.md",
         "SUPPORT.md",
         "05_TERMINALS.md",
@@ -173,7 +173,7 @@ fn check_root_markdown_allowlist(project_root: &Path) -> Result<()> {
         ensure(
             allowed.contains(name),
             format!(
-                "root markdown `{name}` is not canonical; move planning/debt docs under archive/legacy-docs or machine truth under bpk-lib/traceability"
+                "root markdown `{name}` is not canonical; make it a numbered doc, machine truth under bpk-lib/traceability, or a decision record under bpk-lib/ADR"
             ),
         )?;
     }

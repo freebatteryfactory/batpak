@@ -118,7 +118,7 @@ but are about *different* `async`es:
 - `README.md`: primary repo entrypoint
 - `01_FACTORY.md`, `02_MODEL.md`, `03_INVARIANTS.md`, `04_BATTERIES.md`, `05_TERMINALS.md`, `06_EVENTS.md`, `07_RECEIPTS.md`, `08_CIRCUITS.md`, `09_REPLAY.md`, `10_PROJECTIONS.md`, `11_INTEGRATION.md`, `12_CONFORMANCE.md`: canonical factory reading surface
 - `cookbook/README.md`, `cookbook/200_*.md`: recipe library indexed by `cookbook/README.md`
-- `archive/decisions/099_DECISION_INDEX.md`, `archive/decisions/100_ADR_*.md`: historical decisions; not the public reading path
+- `bpk-lib/ADR/099_DECISION_INDEX.md`, `bpk-lib/ADR/100_ADR_*.md`: decision records; not the public reading path
 - `bpk-lib/traceability/`: requirements, invariants, flows, artifacts
 
 ## Root Altitudes
