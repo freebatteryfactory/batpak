@@ -8,7 +8,7 @@
 //! production module stays within the absolute file-size cap.
 
 use super::runtime_fault::{
-    runtime_failure_code, INTERNAL_ERROR_CODE, MALFORMED_STREAM_FRAME_CODE,
+    map_runtime_error, runtime_failure_code, INTERNAL_ERROR_CODE, MALFORMED_STREAM_FRAME_CODE,
 };
 use super::*;
 use std::io::Cursor;
@@ -318,5 +318,81 @@ fn runtime_failure_code_maps_each_class() {
     assert_eq!(
         runtime_failure_code(&SubscriptionRuntimeError::AckInvalid { reason: "x" }),
         MALFORMED_STREAM_FRAME_CODE
+    );
+}
+
+#[test]
+fn map_runtime_error_maps_each_variant() {
+    // KILLS an arm-collapse in map_runtime_error (the open-failure reason mapper):
+    // every SubscriptionRuntimeError a session poll can surface maps to its own
+    // MalformedStreamFrame reason. The `reason`-forwarding arms pass a distinct
+    // token through (so collapsing one into another is observable); the
+    // constant-reason arms assert their exact literal.
+    fn reason(error: SubscriptionRuntimeError) -> &'static str {
+        match map_runtime_error(&error) {
+            crate::error::NetbatError::MalformedStreamFrame { reason } => reason,
+            other => panic!("expected MalformedStreamFrame, got {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        reason(SubscriptionRuntimeError::Store(batpak::store::StoreError::WriterCrashed)),
+        "store error during stream poll"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::InvalidSubscriptionId {
+            reason: "invalid-id-token"
+        }),
+        "invalid-id-token"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::DuplicateSubscription {
+            id: "dup".to_owned()
+        }),
+        "duplicate subscription route"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::InvalidRoute {
+            reason: "invalid-route-token"
+        }),
+        "invalid-route-token"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::InvalidConfig {
+            reason: "invalid-config-token"
+        }),
+        "invalid-config-token"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::UnknownSubscription {
+            id: "missing".to_owned()
+        }),
+        "unknown subscription"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::CursorInvalid {
+            reason: "cursor-invalid-token"
+        }),
+        "cursor-invalid-token"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::CursorMismatch {
+            reason: "cursor-mismatch-token"
+        }),
+        "cursor-mismatch-token"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::EnvelopeEncoding("x".to_owned())),
+        "envelope encoding failed"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::Worker("x".to_owned())),
+        "subscription worker failed"
+    );
+    assert_eq!(
+        reason(SubscriptionRuntimeError::AckInvalid {
+            reason: "ack-invalid-token"
+        }),
+        "ack-invalid-token"
     );
 }

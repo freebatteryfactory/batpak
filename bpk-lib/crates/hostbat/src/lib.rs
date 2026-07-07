@@ -45,6 +45,9 @@ mod append_validation_tests;
 #[cfg(test)]
 mod host_status_capability_tests;
 
+#[cfg(test)]
+mod validating_effect_backend_tests;
+
 pub mod builder;
 pub mod composition;
 pub mod descriptor;
