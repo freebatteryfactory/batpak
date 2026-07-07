@@ -20,6 +20,7 @@ on:
           - loom
           - chaos
           - heavy
+          - bless
       run_full_mutation_matrix:
         description: >-
           COST GUARD. The 24-shard whole-repo mutation matrix (16-vCPU x ~5h/shard)
@@ -108,16 +109,40 @@ jobs:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'
-      # Bless helper: publish the freshly generated public-api baselines so a
-      # drift can be adopted verbatim (download + commit) instead of hand-edited.
-      # `target/` is gitignored, so this cannot defeat the gate. Runs on failure too.
-      - name: Upload generated public-api baselines (bless helper)
+
+  public-api-bless:
+    # Bless capability (manual only): regenerate the checked-in public-api
+    # baselines and upload them so a drift can be adopted verbatim (download +
+    # commit) instead of hand-edited. `cargo xtask public-api --bless-baseline`
+    # writes the baselines IN PLACE to bpk-lib/traceability/public_api/*.txt,
+    # which is bind-mounted from the runner workspace (unlike target/, which is
+    # container-local and produces nothing to upload). Guarded to
+    # `proof == 'bless'` so it never runs on PRs/fast runs and can never defeat
+    # the check-baseline gate on the normal path.
+    name: Bless public-api baselines (manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.proof == 'bless'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: public-api-bless
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Regenerate public-api baselines in place
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask public-api --bless-baseline'
+      - name: Upload regenerated public-api baselines
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: public-api-generated
-          path: bpk-lib/target/public-api/
-          if-no-files-found: ignore
+          name: public-api-baselines
+          path: bpk-lib/traceability/public_api/
+          if-no-files-found: warn
 
   meta-gate:
     # Agent-safety meta-gate (P1-4, "raccoon with commit access"): blocks a diff

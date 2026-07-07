@@ -69,16 +69,16 @@ pub(crate) const KEYSET_MAGIC: &[u8; 6] = b"FBATKS";
 /// v1: initial single-file crypto-shred keyset.
 pub(crate) const KEYSET_VERSION: u16 = 1;
 
-/// Header length: magic(6) + version(2) + crc(4).
-const HEADER_LEN: usize = 6 + 2 + 4;
-
-// Stable on-disk discriminants for the scope granularity. Kept explicit (not the
-// in-memory enum ordinal) so the wire byte never silently tracks a source-order
-// change, and so an unknown byte can fail closed on load.
-const DISC_PER_ENTITY: u8 = 1;
-const DISC_PER_CATEGORY: u8 = 2;
-const DISC_PER_TYPE_ID: u8 = 3;
-const DISC_PER_EVENT: u8 = 4;
+// Stable on-disk discriminants for the scope granularity. Single-sourced from
+// the canonical per-granularity scope bytes in the parent module (the first byte
+// of every in-memory `KeyScope`) so the keyset-header granularity tag and the
+// scope-key prefix can never disagree. Both are explicit (not the enum ordinal),
+// so the wire byte never silently tracks a source-order change, and an unknown
+// byte still fails closed on load via `granularity_from_disc`.
+const DISC_PER_ENTITY: u8 = super::SCOPE_DISC_PER_ENTITY;
+const DISC_PER_CATEGORY: u8 = super::SCOPE_DISC_PER_CATEGORY;
+const DISC_PER_TYPE_ID: u8 = super::SCOPE_DISC_PER_TYPE_ID;
+const DISC_PER_EVENT: u8 = super::SCOPE_DISC_PER_EVENT;
 
 fn granularity_to_disc(granularity: KeyScopeGranularity) -> u8 {
     match granularity {
@@ -217,10 +217,14 @@ impl KeyStore {
         }
 
         let crc = crc32fast::hash(&body);
-        let mut image = Zeroizing::new(Vec::with_capacity(HEADER_LEN + body.len()));
-        image.extend_from_slice(KEYSET_MAGIC);
-        image.extend_from_slice(&KEYSET_VERSION.to_le_bytes());
-        image.extend_from_slice(&crc.to_le_bytes());
+        let mut image = Zeroizing::new(Vec::with_capacity(
+            crate::store::wire_header::HEADER_LEN + body.len(),
+        ));
+        image.extend_from_slice(&crate::store::wire_header::encode(
+            KEYSET_MAGIC,
+            KEYSET_VERSION,
+            crc,
+        ));
         image.extend_from_slice(&body);
         Ok(image)
     }
@@ -299,21 +303,24 @@ impl KeyStore {
 
 /// Validate the header and return the body slice, or a typed corruption error.
 fn validate_header_and_body(raw: &[u8]) -> Result<&[u8], StoreError> {
-    if raw.len() < HEADER_LEN {
-        return Err(corrupt(format!("file too short: {} bytes", raw.len())));
-    }
-    if &raw[..6] != KEYSET_MAGIC.as_ref() {
-        return Err(corrupt("wrong magic bytes".to_owned()));
-    }
-    let version = u16::from_le_bytes([raw[6], raw[7]]);
+    let prefix = match crate::store::wire_header::parse(raw, KEYSET_MAGIC) {
+        Ok(prefix) => prefix,
+        Err(crate::store::wire_header::PrefixError::TooShort { len }) => {
+            return Err(corrupt(format!("file too short: {len} bytes")));
+        }
+        Err(crate::store::wire_header::PrefixError::BadMagic) => {
+            return Err(corrupt("wrong magic bytes".to_owned()));
+        }
+    };
+    let version = prefix.version;
     if version != KEYSET_VERSION {
         return Err(corrupt(format!(
             "unsupported keyset version {version}; this binary reads and writes version \
              {KEYSET_VERSION}"
         )));
     }
-    let stored_crc = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
-    let body = &raw[HEADER_LEN..];
+    let stored_crc = prefix.stored_crc;
+    let body = prefix.body;
     let computed_crc = crc32fast::hash(body);
     if stored_crc != computed_crc {
         return Err(corrupt(format!(

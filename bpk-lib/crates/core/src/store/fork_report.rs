@@ -330,10 +330,12 @@ pub fn encode_fork_evidence_wire(body: &ForkReportBody) -> Result<Vec<u8>, Store
     let body_bytes = crate::encoding::to_bytes(body)
         .map_err(|error| StoreError::Serialization(Box::new(error)))?;
     let crc = crc32fast::hash(&body_bytes);
-    let mut bytes = Vec::with_capacity(12 + body_bytes.len());
-    bytes.extend_from_slice(FORK_EVIDENCE_WIRE_MAGIC);
-    bytes.extend_from_slice(&body.schema_version.to_le_bytes());
-    bytes.extend_from_slice(&crc.to_le_bytes());
+    let mut bytes = Vec::with_capacity(crate::store::wire_header::HEADER_LEN + body_bytes.len());
+    bytes.extend_from_slice(&crate::store::wire_header::encode(
+        FORK_EVIDENCE_WIRE_MAGIC,
+        body.schema_version,
+        crc,
+    ));
     bytes.extend_from_slice(&body_bytes);
     Ok(bytes)
 }
@@ -345,28 +347,17 @@ pub fn encode_fork_evidence_wire(body: &ForkReportBody) -> Result<Vec<u8>, Store
 /// version exceeds [`FORK_EVIDENCE_REPORT_SCHEMA_VERSION`], or a configuration /
 /// serialization error for corrupt framing.
 pub fn decode_fork_evidence_wire(bytes: &[u8]) -> Result<ForkReportBody, StoreError> {
-    if bytes.len() < 12 || bytes.get(..6) != Some(FORK_EVIDENCE_WIRE_MAGIC) {
-        return Err(StoreError::Configuration(
-            "fork evidence wire framing is invalid".into(),
-        ));
-    }
-    let found = u16::from_le_bytes(
-        bytes[6..8]
-            .try_into()
-            .map_err(|_| StoreError::Configuration("fork evidence version slice".into()))?,
-    );
+    let prefix = crate::store::wire_header::parse(bytes, FORK_EVIDENCE_WIRE_MAGIC)
+        .map_err(|_| StoreError::Configuration("fork evidence wire framing is invalid".into()))?;
+    let found = prefix.version;
     if found > FORK_EVIDENCE_REPORT_SCHEMA_VERSION {
         return Err(StoreError::ForkEvidenceFutureVersion {
             found,
             supported: FORK_EVIDENCE_REPORT_SCHEMA_VERSION,
         });
     }
-    let expected_crc = u32::from_le_bytes(
-        bytes[8..12]
-            .try_into()
-            .map_err(|_| StoreError::Configuration("fork evidence crc slice".into()))?,
-    );
-    let body_bytes = &bytes[12..];
+    let expected_crc = prefix.stored_crc;
+    let body_bytes = prefix.body;
     if crc32fast::hash(body_bytes) != expected_crc {
         return Err(StoreError::Configuration(
             "fork evidence wire crc mismatch".into(),

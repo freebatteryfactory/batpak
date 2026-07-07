@@ -19,8 +19,6 @@ pub const CHECKPOINT_VERSION: u16 = 6;
 /// Final checkpoint filename inside the data directory.
 pub(crate) const CHECKPOINT_FILENAME: &str = "index.ckpt";
 
-const HEADER_LEN: usize = 6 + 2 + 4;
-
 /// Checkpoint format v6: v5 plus receipt-extension maps in entries.
 #[derive(Serialize, Deserialize)]
 pub(super) struct CheckpointDataV6 {
@@ -72,30 +70,32 @@ pub(super) fn read_checkpoint_file(
         }
     };
 
-    if raw.len() < HEADER_LEN {
-        tracing::warn!(
-            target: "batpak::checkpoint",
-            path = %path.display(),
-            len = raw.len(),
-            "checkpoint file too short to contain a valid header"
-        );
-        return FileLoad::Invalid {
-            reason: format!("checkpoint file too short: {} bytes", raw.len()),
-        };
-    }
+    let (version, stored_crc, body) = match crate::store::wire_header::parse(&raw, CHECKPOINT_MAGIC)
+    {
+        Ok(prefix) => (prefix.version, prefix.stored_crc, prefix.body.to_vec()),
+        Err(crate::store::wire_header::PrefixError::TooShort { len }) => {
+            tracing::warn!(
+                target: "batpak::checkpoint",
+                path = %path.display(),
+                len,
+                "checkpoint file too short to contain a valid header"
+            );
+            return FileLoad::Invalid {
+                reason: format!("checkpoint file too short: {len} bytes"),
+            };
+        }
+        Err(crate::store::wire_header::PrefixError::BadMagic) => {
+            tracing::warn!(
+                target: "batpak::checkpoint",
+                path = %path.display(),
+                "checkpoint file has wrong magic bytes — ignoring"
+            );
+            return FileLoad::Invalid {
+                reason: "wrong magic bytes".to_owned(),
+            };
+        }
+    };
 
-    if &raw[..6] != CHECKPOINT_MAGIC.as_ref() {
-        tracing::warn!(
-            target: "batpak::checkpoint",
-            path = %path.display(),
-            "checkpoint file has wrong magic bytes — ignoring"
-        );
-        return FileLoad::Invalid {
-            reason: "wrong magic bytes".to_owned(),
-        };
-    }
-
-    let version = u16::from_le_bytes([raw[6], raw[7]]);
     // A future (newer-than-supported) checkpoint is a CANONICAL TYPED REFUSAL,
     // never a silent rebuild-from-scan: a future writer may have written a
     // snapshot this reader cannot interpret. The version field lives OUTSIDE the
@@ -117,8 +117,6 @@ pub(super) fn read_checkpoint_file(
             supported: CHECKPOINT_VERSION,
         };
     }
-    let stored_crc = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
-    let body = raw[HEADER_LEN..].to_vec();
     let computed_crc = crc32fast::hash(&body);
     if stored_crc != computed_crc {
         tracing::warn!(
@@ -200,9 +198,11 @@ pub(super) fn write_checkpoint_file(
         |file| {
             let mut w = BufWriter::new(file);
 
-            w.write_all(CHECKPOINT_MAGIC)?;
-            w.write_all(&CHECKPOINT_VERSION.to_le_bytes())?;
-            w.write_all(&crc.to_le_bytes())?;
+            w.write_all(&crate::store::wire_header::encode(
+                CHECKPOINT_MAGIC,
+                CHECKPOINT_VERSION,
+                crc,
+            ))?;
             w.write_all(body)?;
             w.flush()?;
             Ok(())

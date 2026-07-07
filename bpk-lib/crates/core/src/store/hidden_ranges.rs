@@ -115,11 +115,12 @@ pub(crate) fn write_cancelled_ranges(
     let crc = crc32fast::hash(&body);
 
     let mut tmp = fs.named_temp_in(data_dir).map_err(StoreError::Io)?;
-    tmp.write_all(VISIBILITY_RANGES_MAGIC)
-        .map_err(StoreError::Io)?;
-    tmp.write_all(&VISIBILITY_RANGES_VERSION.to_le_bytes())
-        .map_err(StoreError::Io)?;
-    tmp.write_all(&crc.to_le_bytes()).map_err(StoreError::Io)?;
+    tmp.write_all(&crate::store::wire_header::encode(
+        VISIBILITY_RANGES_MAGIC,
+        VISIBILITY_RANGES_VERSION,
+        crc,
+    ))
+    .map_err(StoreError::Io)?;
     tmp.write_all(&body).map_err(StoreError::Io)?;
     tmp.sync_all().map_err(StoreError::Io)?;
     let admission = crate::store::platform::sync::admit_current_parent_dir_sync()?;
@@ -159,22 +160,23 @@ pub(crate) fn load_cancelled_ranges(
         }
     };
 
-    const HEADER_LEN: usize = 6 + 2 + 4;
-    if raw.len() < HEADER_LEN {
-        return Err(corrupt_ranges(
-            &path,
-            HiddenRangesCorruption::TooShort {
-                actual: raw.len(),
-                required: HEADER_LEN,
-            },
-        ));
-    }
+    let prefix = match crate::store::wire_header::parse(&raw, VISIBILITY_RANGES_MAGIC) {
+        Ok(prefix) => prefix,
+        Err(crate::store::wire_header::PrefixError::TooShort { len }) => {
+            return Err(corrupt_ranges(
+                &path,
+                HiddenRangesCorruption::TooShort {
+                    actual: len,
+                    required: crate::store::wire_header::HEADER_LEN,
+                },
+            ));
+        }
+        Err(crate::store::wire_header::PrefixError::BadMagic) => {
+            return Err(corrupt_ranges(&path, HiddenRangesCorruption::BadMagic));
+        }
+    };
 
-    if &raw[..6] != VISIBILITY_RANGES_MAGIC {
-        return Err(corrupt_ranges(&path, HiddenRangesCorruption::BadMagic));
-    }
-
-    let version = u16::from_le_bytes([raw[6], raw[7]]);
+    let version = prefix.version;
     // A future (newer-than-supported) artifact is a DISTINCT canonical refusal,
     // not remediable corruption: a future writer may have recorded cancelled
     // ranges in a layout this reader cannot interpret, so treating it as
@@ -209,8 +211,8 @@ pub(crate) fn load_cancelled_ranges(
         ));
     }
 
-    let stored_crc = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
-    let body = &raw[HEADER_LEN..];
+    let stored_crc = prefix.stored_crc;
+    let body = prefix.body;
     let actual_crc = crc32fast::hash(body);
     if stored_crc != actual_crc {
         return Err(corrupt_ranges(

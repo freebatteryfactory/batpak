@@ -11,7 +11,10 @@ use crate::operation_status_sink::operation_status_entity;
 use super::error::SubscriptionRuntimeError;
 use super::projector::{ProjectionProjector, ProjectionRouteBinding};
 
-const MAX_SUBSCRIPTION_ID_BYTES: usize = 128;
+/// Maximum bytes accepted for a subscription id under the subscription-id
+/// grammar. This is the single source the boundary crates (`hostbat`, `netbat`)
+/// share so their id caps can never disagree with the runtime registry's.
+pub const MAX_SUBSCRIPTION_ID_BYTES: usize = 128;
 
 /// Binding fields needed to open an operation-status subscription session.
 #[derive(Clone, Debug)]

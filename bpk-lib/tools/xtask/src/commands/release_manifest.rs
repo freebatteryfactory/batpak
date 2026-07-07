@@ -156,6 +156,11 @@ fn render_manifest(manifest: &ReleaseManifest) -> String {
 }
 
 fn version_pin_table(root: &Path) -> Result<Vec<VersionPinRow>> {
+    // The family versions in lockstep off `[workspace.package] version`; each
+    // `crates/*` member inherits it via `version.workspace = true`. Resolve the
+    // workspace value once and fall back to it when a member does not pin a
+    // literal `package.version`.
+    let workspace_version = workspace_package_version(root)?;
     let mut rows = Vec::new();
     for package in crate::publish::RELEASE_CHAIN {
         let manifest = manifest_for_package(root, package)?;
@@ -167,10 +172,11 @@ fn version_pin_table(root: &Path) -> Result<Vec<VersionPinRow>> {
             .get("package")
             .and_then(|package| package.get("version"))
             .and_then(toml::Value::as_str)
-            .with_context(|| format!("{} missing package.version", manifest.display()))?;
+            .map(str::to_owned)
+            .unwrap_or_else(|| workspace_version.clone());
         rows.push(VersionPinRow {
             package: (*package).to_owned(),
-            version: version.to_owned(),
+            version,
             manifest: manifest
                 .strip_prefix(root)
                 .unwrap_or(&manifest)
@@ -181,14 +187,26 @@ fn version_pin_table(root: &Path) -> Result<Vec<VersionPinRow>> {
     Ok(rows)
 }
 
+/// Read `[workspace.package] version` from the workspace manifest — the single
+/// family-version source every `crates/*` member inherits via
+/// `version.workspace = true`.
+fn workspace_package_version(root: &Path) -> Result<String> {
+    let manifest = root.join("Cargo.toml");
+    let text =
+        fs::read_to_string(&manifest).with_context(|| format!("read {}", manifest.display()))?;
+    let parsed: toml::Value =
+        toml::from_str(&text).with_context(|| format!("parse {}", manifest.display()))?;
+    parsed
+        .get("workspace")
+        .and_then(|workspace| workspace.get("package"))
+        .and_then(|package| package.get("version"))
+        .and_then(toml::Value::as_str)
+        .map(str::to_owned)
+        .with_context(|| format!("{} missing [workspace.package] version", manifest.display()))
+}
+
 fn manifest_for_package(root: &Path, package: &str) -> Result<PathBuf> {
-    let dir = match package {
-        "batpak" => "core",
-        "batpak-macros-support" => "macros-support",
-        "batpak-macros" => "macros",
-        "batpak-bench-support" => "bench-support",
-        other => other,
-    };
+    let dir = crate::publish::package_dir(package).unwrap_or(package);
     let manifest = root.join("crates").join(dir).join("Cargo.toml");
     if manifest.exists() {
         Ok(manifest)

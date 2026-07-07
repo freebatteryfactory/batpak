@@ -8,12 +8,10 @@
 use batpak::coordinate::Coordinate;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
+use syncbat::MAX_SUBSCRIPTION_ID_BYTES;
 
 use crate::error::HostError;
 use crate::schema::SchemaRole;
-
-/// Maximum bytes accepted for a [`SubscriptionId`].
-const MAX_SUBSCRIPTION_ID_BYTES: usize = 128;
 
 /// Maximum bytes accepted for a [`ProjectionId`].
 const MAX_PROJECTION_ID_BYTES: usize = 128;

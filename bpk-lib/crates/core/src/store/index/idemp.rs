@@ -52,9 +52,6 @@ pub const IDEMP_VERSION: u16 = 1;
 /// Final filename inside the data directory.
 pub(crate) const IDEMP_FILENAME: &str = "index.idemp";
 
-/// Header length: magic(6) + version(2) + crc(4).
-const HEADER_LEN: usize = 6 + 2 + 4;
-
 /// Default window guarantee: keep idempotency keys for the most recent
 /// `DEFAULT_KEEP_SEQUENCES` committed global sequences. Generous on purpose —
 /// it must comfortably outlive a realistic event-retention window so a retry
@@ -510,10 +507,12 @@ impl IdempotencyStore {
             &final_path,
             "idempotency-store",
             |file| {
-                file.write_all(IDEMP_MAGIC).map_err(StoreError::Io)?;
-                file.write_all(&IDEMP_VERSION.to_le_bytes())
-                    .map_err(StoreError::Io)?;
-                file.write_all(&crc.to_le_bytes()).map_err(StoreError::Io)?;
+                file.write_all(&crate::store::wire_header::encode(
+                    IDEMP_MAGIC,
+                    IDEMP_VERSION,
+                    crc,
+                ))
+                .map_err(StoreError::Io)?;
                 file.write_all(&body).map_err(StoreError::Io)?;
                 Ok(())
             },
@@ -574,30 +573,32 @@ pub(crate) fn read_idemp_file(
         }
     };
 
-    if raw.len() < HEADER_LEN {
-        tracing::warn!(
-            target: "batpak::idemp",
-            path = %path.display(),
-            len = raw.len(),
-            "idempotency store file too short for a valid header — ignoring"
-        );
-        return Ok(IdempLoad::Invalid {
-            reason: format!("file too short: {} bytes", raw.len()),
-        });
-    }
+    let prefix = match crate::store::wire_header::parse(&raw, IDEMP_MAGIC) {
+        Ok(prefix) => prefix,
+        Err(crate::store::wire_header::PrefixError::TooShort { len }) => {
+            tracing::warn!(
+                target: "batpak::idemp",
+                path = %path.display(),
+                len,
+                "idempotency store file too short for a valid header — ignoring"
+            );
+            return Ok(IdempLoad::Invalid {
+                reason: format!("file too short: {len} bytes"),
+            });
+        }
+        Err(crate::store::wire_header::PrefixError::BadMagic) => {
+            tracing::warn!(
+                target: "batpak::idemp",
+                path = %path.display(),
+                "idempotency store file has wrong magic bytes — ignoring"
+            );
+            return Ok(IdempLoad::Invalid {
+                reason: "wrong magic bytes".to_owned(),
+            });
+        }
+    };
 
-    if &raw[..6] != IDEMP_MAGIC.as_ref() {
-        tracing::warn!(
-            target: "batpak::idemp",
-            path = %path.display(),
-            "idempotency store file has wrong magic bytes — ignoring"
-        );
-        return Ok(IdempLoad::Invalid {
-            reason: "wrong magic bytes".to_owned(),
-        });
-    }
-
-    let version = u16::from_le_bytes([raw[6], raw[7]]);
+    let version = prefix.version;
     if version > IDEMP_VERSION {
         // FutureVersion: hard error, mirror the schema-evolution stance.
         return Err(StoreError::IdempotencyFutureVersion {
@@ -621,8 +622,8 @@ pub(crate) fn read_idemp_file(
         });
     }
 
-    let stored_crc = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
-    let body = &raw[HEADER_LEN..];
+    let stored_crc = prefix.stored_crc;
+    let body = prefix.body;
     let computed_crc = crc32fast::hash(body);
     if stored_crc != computed_crc {
         tracing::warn!(

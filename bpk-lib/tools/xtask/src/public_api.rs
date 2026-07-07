@@ -238,10 +238,7 @@ fn normalize_public_api_snapshot(text: &str) -> Cow<'_, str> {
 }
 
 fn crate_dir(package: &str) -> &str {
-    match package {
-        "batpak" => "core",
-        other => other,
-    }
+    crate::publish::package_dir(package).unwrap_or(package)
 }
 
 fn cargo_public_api_is_available() -> bool {

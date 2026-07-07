@@ -245,21 +245,17 @@ impl SidxEntry {
 
         let mut pos = 0usize;
 
+        // Both `get_le!` and `get_hash!` delegate the bounds-checked,
+        // cursor-advancing read to the single `store::byte_cursor::take` helper;
+        // the local macros stay only for the field-decode ergonomics.
         macro_rules! get_le {
             ($t:ty, $n:expr) => {{
-                let arr: [u8; $n] = buf[pos..pos + $n]
-                    .try_into()
-                    .expect("slice length matches const");
-                pos += $n;
-                <$t>::from_le_bytes(arr)
+                <$t>::from_le_bytes(crate::store::byte_cursor::take::<{ $n }>(buf, &mut pos))
             }};
         }
         macro_rules! get_hash {
             () => {{
-                let mut h = [0u8; 32];
-                h.copy_from_slice(&buf[pos..pos + 32]);
-                pos += 32;
-                h
+                crate::store::byte_cursor::take::<32>(buf, &mut pos)
             }};
         }
 

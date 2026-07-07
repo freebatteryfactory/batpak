@@ -228,13 +228,11 @@ pub(crate) fn write_mmap_index_with_reserved_kind_fallbacks(
         |file| {
             let mut writer = BufWriter::new(&mut *file);
             writer
-                .write_all(format::MMAP_INDEX_MAGIC)
-                .map_err(StoreError::Io)?;
-            writer
-                .write_all(&format::MMAP_INDEX_VERSION.to_le_bytes())
-                .map_err(StoreError::Io)?;
-            writer
-                .write_all(&crc.to_le_bytes())
+                .write_all(&crate::store::wire_header::encode(
+                    format::MMAP_INDEX_MAGIC,
+                    format::MMAP_INDEX_VERSION,
+                    crc,
+                ))
                 .map_err(StoreError::Io)?;
             writer.write_all(&header_tail).map_err(StoreError::Io)?;
             writer.write_all(&interner_bytes).map_err(StoreError::Io)?;

@@ -8,6 +8,8 @@
 //! Packet B is encode/decode only — no TCP streaming service, no async API, and
 //! no subscription serving claim.
 
+use syncbat::MAX_SUBSCRIPTION_ID_BYTES;
+
 use super::error::NetbatError;
 use super::hex::{decode_hex, encode_hex_into};
 use super::limits::{
@@ -15,8 +17,6 @@ use super::limits::{
     SUB_ERR_VERB, SUB_EVENT_VERB, SUB_WATERMARK_VERB,
 };
 
-/// Maximum bytes accepted for a [`SubscriptionToken`] (matches hostbat grammar).
-const MAX_SUBSCRIPTION_ID_BYTES: usize = 128;
 /// Maximum bytes accepted for a payload schema ref token.
 const MAX_PAYLOAD_SCHEMA_REF_BYTES: usize = 256;
 /// Maximum bytes accepted for a stream reason/code token.

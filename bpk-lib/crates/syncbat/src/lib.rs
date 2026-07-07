@@ -159,10 +159,10 @@ pub use subscription_runtime::{
     SessionEventDelivery, SessionPoll, SessionWatermarkDelivery, SubscriptionId,
     SubscriptionRegistry, SubscriptionRoute, SubscriptionRuntimeConfig, SubscriptionRuntimeError,
     SubscriptionSession, SubscriptionSessionFactory, SubscriptionStore, TypedProjectionProjector,
-    CURSOR_V1_LEN, ENTITY_STREAM_CURSOR_V1_LEN, OPERATION_STATUS_CURSOR_V1_LEN,
-    PROJECTION_CURSOR_V1_LEN, RECEIPT_STREAM_CURSOR_V1_LEN, SOURCE_KIND_ENTITY_STREAM,
-    SOURCE_KIND_EVENT_CATEGORY, SOURCE_KIND_OPERATION_STATUS, SOURCE_KIND_PROJECTION,
-    SOURCE_KIND_RECEIPT_STREAM,
+    CURSOR_V1_LEN, ENTITY_STREAM_CURSOR_V1_LEN, MAX_SUBSCRIPTION_ID_BYTES,
+    OPERATION_STATUS_CURSOR_V1_LEN, PROJECTION_CURSOR_V1_LEN, RECEIPT_STREAM_CURSOR_V1_LEN,
+    SOURCE_KIND_ENTITY_STREAM, SOURCE_KIND_EVENT_CATEGORY, SOURCE_KIND_OPERATION_STATUS,
+    SOURCE_KIND_PROJECTION, SOURCE_KIND_RECEIPT_STREAM,
 };
 
 /// Receipt-extension namespace owned by the syncbat runtime layer.

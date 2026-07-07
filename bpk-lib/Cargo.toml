@@ -23,6 +23,13 @@ exclude = [
 default-members = ["crates/core"]
 resolver = "2"
 
+# The batpak family releases in LOCKSTEP: one workspace version bumps every
+# family crate. Each `crates/*` member inherits this via `version.workspace =
+# true`; the `no_hardcoded_family_version_pins` gate keeps them from silently
+# re-pinning a divergent literal. (tools/* keep their own independent versions.)
+[workspace.package]
+version = "0.10.0"
+
 [workspace.lints.clippy]
 dbg_macro = "deny"
 todo = "deny"

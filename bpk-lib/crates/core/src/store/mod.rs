@@ -1,6 +1,7 @@
 mod ancestry;
 mod append;
 pub mod backup_envelope;
+pub(crate) mod byte_cursor;
 mod chain_walk;
 /// Cold-start recovery reports and artifact readers.
 pub mod cold_start;
@@ -75,6 +76,7 @@ mod subscriber_frontier;
 #[cfg(feature = "dangerous-test-hooks")]
 mod test_support;
 mod watch_api;
+pub(crate) mod wire_header;
 pub(crate) mod write;
 mod write_api;
 

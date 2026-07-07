@@ -41,7 +41,7 @@ pub use projector::{ProjectionProjector, ProjectionRouteBinding};
 pub use receipt_stream::ReceiptStreamSession;
 pub use registry::{
     EntityStreamRouteBinding, OperationStatusRouteBinding, ReceiptStreamRouteBinding,
-    SubscriptionId, SubscriptionRegistry, SubscriptionRoute,
+    SubscriptionId, SubscriptionRegistry, SubscriptionRoute, MAX_SUBSCRIPTION_ID_BYTES,
 };
 pub use session::{
     cursor_invalid_error, cursor_mismatch_error, unknown_subscription_error, RuntimeCursor,

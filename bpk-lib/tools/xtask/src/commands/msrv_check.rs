@@ -73,16 +73,12 @@ pub(crate) fn msrv_check() -> Result<()> {
 }
 
 /// Map a published-crate name (e.g. `"batpak"`) to the directory under
-/// `bpk-lib/crates/` (e.g. `"core"` for batpak).
+/// `bpk-lib/crates/` (e.g. `"core"` for batpak), via the single
+/// [`crate::publish::package_dir`] oracle. A name outside the known family
+/// fails closed so an MSRV pass can never be vacuous.
 fn crate_dir_for(package: &str) -> Result<&'static str> {
-    match package {
-        "batpak" => Ok("core"),
-        "syncbat" => Ok("syncbat"),
-        "netbat" => Ok("netbat"),
-        "hostbat" => Ok("hostbat"),
-        "bvisor" => Ok("bvisor"),
-        other => bail!("msrv-check: unknown publish crate {other}"),
-    }
+    crate::publish::package_dir(package)
+        .ok_or_else(|| anyhow!("msrv-check: unknown publish crate {package}"))
 }
 
 /// Parse `rust-version = "X.Y"` out of a Cargo manifest. Returns

@@ -11,7 +11,10 @@ pub(super) const MMAP_INDEX_MAGIC: &[u8; 6] = b"FBATIX";
 pub const MMAP_INDEX_VERSION: u16 = 5;
 pub(crate) const MMAP_INDEX_FILENAME: &str = "index.fbati";
 
-pub(super) const PREFIX_LEN: usize = 6 + 2 + 4;
+/// The shared 12-byte `magic(6) | version(2 le) | crc(4 le)` prefix, tied to the
+/// single [`crate::store::wire_header`] source. The mmap index shares only this
+/// prefix; its structured, version-variable header tail below is bespoke.
+pub(super) const PREFIX_LEN: usize = crate::store::wire_header::HEADER_LEN;
 const HEADER_TAIL_LEN_V1: usize = 8 + 8 + 8 + 4 + 8 + 8;
 const HEADER_TAIL_LEN_V2: usize = HEADER_TAIL_LEN_V1 + 8;
 const HEADER_TAIL_LEN_V3: usize = HEADER_TAIL_LEN_V2 + 8;
@@ -220,23 +223,17 @@ impl MmapIndexEntry {
             return Err(StoreError::ser_msg("mmap entry buffer has wrong size"));
         }
         let mut pos = 0usize;
+        // Both `get_le!` and `get_hash!` delegate the bounds-checked,
+        // cursor-advancing read to the single `store::byte_cursor::take` helper;
+        // the local macros stay only for the field-decode ergonomics.
         macro_rules! get_le {
             ($t:ty, $n:expr) => {{
-                let start = pos;
-                let end = pos + $n;
-                let arr: [u8; $n] = buf[start..end]
-                    .try_into()
-                    .expect("slice length matches const");
-                pos += $n;
-                <$t>::from_le_bytes(arr)
+                <$t>::from_le_bytes(crate::store::byte_cursor::take::<{ $n }>(buf, &mut pos))
             }};
         }
         macro_rules! get_hash {
             () => {{
-                let mut h = [0u8; 32];
-                h.copy_from_slice(&buf[pos..pos + 32]);
-                pos += 32;
-                h
+                crate::store::byte_cursor::take::<32>(buf, &mut pos)
             }};
         }
 

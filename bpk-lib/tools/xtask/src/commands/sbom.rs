@@ -195,8 +195,13 @@ fn collect_cyclonedx_output(crate_dir: &Path, crate_name: &str) -> Result<PathBu
 }
 
 /// Resolve the manifest directory for a crate name within the workspace.
+///
+/// Resolve the directory through the single [`crate::publish::package_dir`]
+/// oracle first (so `batpak` maps to `crates/core` without a scan), then fall
+/// back to a shallow `crates/` walk in case a crate ever gets renested.
 fn locate_crate_dir(repo_root: &Path, crate_name: &str) -> Result<PathBuf> {
-    let direct = repo_root.join("crates").join(crate_name);
+    let mapped = crate::publish::package_dir(crate_name).unwrap_or(crate_name);
+    let direct = repo_root.join("crates").join(mapped);
     if direct.join("Cargo.toml").exists() {
         return Ok(direct);
     }

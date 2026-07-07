@@ -3,7 +3,8 @@
 //! Every `*_semver_checklist.yaml` in `traceability/public_api/` records a
 //! `current_version`. The batpak family versions in lockstep (one workspace
 //! release line), so each `current_version` MUST equal the workspace family
-//! version (`bpk-lib/crates/core/Cargo.toml`'s `package.version`).
+//! version (`bpk-lib/Cargo.toml`'s `[workspace.package] version`, which every
+//! `crates/*` member inherits via `version.workspace = true`).
 //!
 //! This replaces the previous ast-grep caliper, which was PROVABLY VACUOUS: it
 //! matched `kind: plain_scalar` (whose node text is the VALUE only, e.g.
@@ -24,8 +25,9 @@ use std::path::Path;
 const CHECKLIST_DIR_REL: &str = "traceability/public_api";
 
 /// The workspace family-version source of truth (relative to the workspace-dir
-/// `repo_root`).
-const FAMILY_VERSION_MANIFEST_REL: &str = "crates/core/Cargo.toml";
+/// `repo_root`): the `[workspace.package] version` that every `crates/*` member
+/// inherits via `version.workspace = true`.
+const FAMILY_VERSION_MANIFEST_REL: &str = "Cargo.toml";
 
 /// The subset of a semver checklist this gate reads.
 #[derive(Debug, Deserialize)]
@@ -77,10 +79,11 @@ fn checklist_drift(rel: &str, current_version: &str, workspace_version: &str) ->
     })
 }
 
-/// Read `package.version` from the core manifest by text scan (integrity carries
-/// no TOML parser). The package version is the sole top-level `version = "…"`
-/// line; dependency versions are inline tables (`dep = {{ version = "…" }}`) or
-/// indented, never a bare `version = "…"` at column zero.
+/// Read `[workspace.package] version` from the workspace manifest by text scan
+/// (integrity carries no TOML parser). The workspace version is the sole
+/// top-level `version = "…"` line; dependency versions are inline tables
+/// (`dep = {{ version = "…" }}`) or indented, never a bare `version = "…"` at
+/// column zero.
 fn read_family_version(repo_root: &Path) -> Result<String> {
     let manifest = repo_root.join(FAMILY_VERSION_MANIFEST_REL);
     let text = std::fs::read_to_string(&manifest)

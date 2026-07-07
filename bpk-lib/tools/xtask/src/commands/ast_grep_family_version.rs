@@ -57,17 +57,20 @@ rule:
 }
 
 fn read_family_version(root: &std::path::Path) -> Result<String> {
-    let manifest = root.join("bpk-lib/crates/core/Cargo.toml");
+    // The family versions in lockstep off `[workspace.package] version`; every
+    // `crates/*` member inherits it via `version.workspace = true`.
+    let manifest = root.join("bpk-lib/Cargo.toml");
     let text = std::fs::read_to_string(&manifest)
         .with_context(|| format!("read {}", manifest.display()))?;
     let parsed: toml::Value =
         toml::from_str(&text).with_context(|| format!("parse {}", manifest.display()))?;
     parsed
-        .get("package")
+        .get("workspace")
+        .and_then(|workspace| workspace.get("package"))
         .and_then(|package| package.get("version"))
         .and_then(toml::Value::as_str)
         .map(str::to_owned)
-        .with_context(|| format!("{} missing package.version", manifest.display()))
+        .with_context(|| format!("{} missing [workspace.package] version", manifest.display()))
 }
 
 fn stale_patch_versions(current: &str) -> Result<Vec<String>> {
