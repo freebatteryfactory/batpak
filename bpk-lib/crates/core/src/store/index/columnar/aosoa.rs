@@ -6,39 +6,39 @@ use std::sync::Arc;
 
 /// A tile that holds up to `N` events of the **same** kind.
 ///
-/// `repr(C, align(64))` aligns the tile *struct header* (the fat-pointer fields)
-/// to a 64-byte cache-line boundary. The inner `Vec`s allocate their backing
-/// arrays on the heap separately, so kinds data is **not** cache-local to the
-/// struct itself. The current scan is scalar and dereferences through the Vec
-/// heap pointer on every access.
+/// `repr(C, align(64))` aligns the tile to a 64-byte cache-line boundary. The
+/// `kinds` column is an **inline** fixed-width `[EventKind; N]` array embedded
+/// directly in the tile, so the kind values sit contiguously with no heap hop —
+/// this is the locality the AoSoA64 layout exists to provide, and the shape a
+/// future SIMD kind-scan needs. Live slots are `kinds[0..len]`; the trailing
+/// `kinds[len..N]` slots hold [`EventKind::UNINIT`] padding and are never read
+/// by the scan (it consults only `kinds[0]` of a non-empty tile and masks
+/// entries by `len`).
 ///
-/// For a real SIMD specialization, `kinds` would need to be an inline array
-/// (e.g. `[u16; N]`) so the kind values sit contiguously without a heap hop.
-/// The current `Vec<u16>` layout is the shape chosen for the scalar scan;
-/// any SIMD specialization is a distinct chapter that would redesign this
-/// type's internal storage.
-///
-/// ### Why `Vec` instead of `[T; N]`?
+/// ### Why is `entries` still a `Vec`?
 ///
 /// Const-generic arrays of non-`Copy` types (e.g. `[Arc<IndexEntry>; N]`)
-/// require `T: Default`, which `Arc<IndexEntry>` does not implement. Using
-/// `Vec` with a reserved capacity of `N` avoids heap reallocation during a
-/// tile's lifetime while keeping the code straightforward.
+/// require `T: Default`, which `Arc<IndexEntry>` does not implement. `entries`
+/// therefore stays a `Vec` pre-reserved to `N` (no reallocation over the tile's
+/// lifetime). `EventKind` **is** `Copy` and has the `UNINIT` sentinel, so the
+/// kind column — the hot one for kind/category queries — is the inline array.
 #[repr(C, align(64))]
 pub(crate) struct Tile<const N: usize> {
-    /// Event kinds stored in this tile; all entries have the same kind.
-    pub kinds: Vec<EventKind>,
-    /// Full index entries parallel to `kinds`.
+    /// Event kinds stored in this tile; live slots `kinds[0..len]` all share the
+    /// same kind. Slots `[len..N]` hold [`EventKind::UNINIT`] padding.
+    pub kinds: [EventKind; N],
+    /// Full index entries parallel to `kinds[0..len]`.
     pub entries: Vec<Arc<IndexEntry>>,
     /// Number of valid elements currently stored in the tile.
     pub len: usize,
 }
 
 impl<const N: usize> Tile<N> {
-    /// Create an empty tile pre-allocated to capacity `N`.
+    /// Create an empty tile: the inline kind column is padded to `N` with the
+    /// [`EventKind::UNINIT`] sentinel, and `entries` is pre-reserved to `N`.
     pub(crate) fn new() -> Self {
         Self {
-            kinds: Vec::with_capacity(N),
+            kinds: [EventKind::UNINIT; N],
             entries: Vec::with_capacity(N),
             len: 0,
         }
@@ -50,10 +50,12 @@ impl<const N: usize> Tile<N> {
         self.len >= N
     }
 
-    /// Append an entry. Panics (debug only) if the tile is already full.
+    /// Append an entry. Panics (debug only) if the tile is already full; the
+    /// `open_tiles` bookkeeping in [`AoSoAInner`] guarantees a tile is never
+    /// pushed past `N`, so the inline `kinds[self.len]` write is always in range.
     pub(crate) fn push(&mut self, kind: EventKind, entry: Arc<IndexEntry>) {
         debug_assert!(!self.is_full(), "Tile<{N}>::push called on a full tile");
-        self.kinds.push(kind);
+        self.kinds[self.len] = kind;
         self.entries.push(entry);
         self.len += 1;
     }

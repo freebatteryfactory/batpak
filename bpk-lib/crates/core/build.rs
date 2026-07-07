@@ -634,11 +634,16 @@ fn check_no_banned_patterns() -> Result<(), String> {
                 if trimmed.starts_with("//") || trimmed.starts_with("///") {
                     continue;
                 }
-                // Match .sync() but not .sync_with_mode() and not self.sync() (Store::sync)
+                // Match .sync() but not .sync_with_mode() and not self.sync() (Store::sync).
+                // `.cache.sync()` is the `ProjectionCache::sync` trait method (the rebuildable
+                // projection-cache flush wired into `Store::sync`/`close`), NOT the segment
+                // durability sync Bug 9 was about — it has no `sync.mode` and must stay a plain
+                // trait call, so it is a legitimate exception.
                 if trimmed.contains(".sync()")
                     && !trimmed.contains("sync_with_mode")
                     && !trimmed.contains("self.sync()")
                     && !trimmed.contains("force_sync()")
+                    && !trimmed.contains(".cache.sync()")
                 {
                     return Err(fail(&format!(
                         "BANNED PATTERN in {path_str}:{}: bare `.sync()` call.\n\

@@ -12,14 +12,20 @@
 use crate::backend::linux::launch::AuthorityFd;
 use crate::backend::linux::protocol::{
     DescriptorKind, DescriptorRole, DescriptorShape, DescriptorSlotV1, LinuxLaunchBodyV1,
-    LinuxLaunchPlanV1, LoweringWireEntryV1, LoweringWireV1, NetworkNsRequest, SeccompRequest,
-    TargetSpecV1, UserNsRequest,
+    LinuxLaunchPlanV1, LoweringWireV1, NetworkNsRequest, SeccompRequest, TargetSpecV1,
+    UserNsRequest,
 };
-use crate::contract::capability::{FsAccess, PathSet};
+use crate::contract::capability::{EvidenceSet, FsAccess, PathSet, SupportVerdict};
 use crate::contract::ids::{
     AdmissionProgramHash, AttemptId, BackendProfileHash, BoundaryPlanHash, Digest32,
 };
-use crate::contract::plan::BoundaryPlan;
+use crate::contract::lowering::compile_schedule;
+use crate::contract::plan::{BoundaryPlan, BoundaryRequirement};
+use crate::contract::primitive::{
+    LoweringPhase, PrimitiveDecl, PrimitiveId, PrimitiveVersion, Privilege,
+};
+use crate::contract::report::BoundaryReportBody;
+use crate::contract::support::{BackendProfile, RequirementKind};
 use std::os::fd::{OwnedFd, RawFd};
 
 /// System paths a confined workload needs READ+EXECUTE to run at all (the loader,
@@ -49,12 +55,8 @@ const ID_LANDLOCK_APPLY: &str = "linux.landlock.apply.v1";
 const ID_SECCOMP_APPLY: &str = "linux.seccomp.apply.v1";
 /// The launch primitive (marks the `fexecve` step). Always scheduled.
 const ID_EXEC: &str = "linux.exec.v1";
-/// `LoweringPhase::FdHygiene.code()` — the scrub action's wire phase.
-const PHASE_CODE_SCRUB: u8 = 3;
-/// `LoweringPhase::PolicyInstall.code()` — the landlock-apply / seccomp-apply wire phase.
-const PHASE_CODE_CONFINE: u8 = 4;
-/// `LoweringPhase::Launch.code()` — the exec action's wire phase.
-const PHASE_CODE_EXEC: u8 = 5;
+/// The declaration revision every launcher action carries (all ids end in `.v1`).
+const SCHEDULE_PRIMITIVE_VERSION: u32 = 1;
 
 // ── Descriptor-table slot fd numbers (slot_index == the fd the launcher reads) ──
 // The launcher reads each authority handle at the fd number equal to its slot
@@ -202,20 +204,17 @@ pub(super) fn prepare_launch(inputs: LaunchInputs<'_>) -> Result<Prepared, Strin
     // is byte-for-byte unchanged). Both flags fold into ONE denylist the launcher compiles.
     let seccomp_request = seccomp_request(deny_new_tasks, deny_network);
 
-    // 3. The lowering schedule the launcher SERVES: scrub (mandatory) + landlock-apply
-    //    (only when confining) + seccomp-apply (only when a denylist is engaged) + exec.
-    //    Mirrors the launcher's served ids/phase codes exactly, else the launcher refuses
-    //    MissingPrimitive. (If the BoundaryPlan later carries a real lowering schedule we
-    //    project it; today the confinement model is exactly this minimal schedule.)
-    let mut entries = vec![entry(ID_AMBIENT_SCRUB, PHASE_CODE_SCRUB)];
-    if confined {
-        entries.push(entry(ID_LANDLOCK_APPLY, PHASE_CODE_CONFINE));
-    }
-    if seccomp_request.is_some() {
-        entries.push(entry(ID_SECCOMP_APPLY, PHASE_CODE_CONFINE));
-    }
-    entries.push(entry(ID_EXEC, PHASE_CODE_EXEC));
-    let lowering = LoweringWireV1 { entries };
+    // 3. The lowering schedule the launcher SERVES, compiled through the ONE validated
+    //    compiler `compile_schedule` (`K:(S,P,D)→L`) and PROJECTED onto the wire via
+    //    `LoweringWireV1::from_schedule` — never hand-assembled. This is the single
+    //    source of truth: the wire is a projection of a real, phase-ordered,
+    //    conflict-checked, canonical `LoweringSchedule`, not a parallel restatement.
+    //    Actions: scrub (mandatory) + landlock-apply (only when confining) +
+    //    seccomp-apply (only when a denylist is engaged) + exec. Their distinct phases
+    //    (`FdHygiene` < `PolicyInstall` < `Launch`) yield exactly the canonical order the
+    //    launcher's frozen ids/phase-codes expect, else the launcher refuses
+    //    MissingPrimitive. (The admission-side H_L/attempt reconciliation is #75.)
+    let lowering = compile_lowering(confined, seccomp_request.is_some())?;
 
     let body = build_body(BuildBody {
         plan,
@@ -234,6 +233,102 @@ pub(super) fn prepare_launch(inputs: LaunchInputs<'_>) -> Result<Prepared, Strin
         write_roots,
         confined,
     })
+}
+
+/// Compile the launcher lowering schedule through the ONE validated compiler and
+/// project it onto the wire. `confined` schedules the landlock-apply action;
+/// `seccomp` schedules the seccomp-apply action. Scrub and exec are always present.
+///
+/// The action decls are SCHEDULE-only (see [`LauncherActionDecl`]); routing them
+/// through [`compile_schedule`] means the wire's per-entry `decl_digest`/`param_digest`
+/// are the REAL compiled digests, and the launcher binds the whole projection via
+/// `h_l = blake3(canonical(lowering))` (computed identically on both sides).
+fn compile_lowering(confined: bool, seccomp: bool) -> Result<LoweringWireV1, String> {
+    let scrub = LauncherActionDecl::new(ID_AMBIENT_SCRUB, LoweringPhase::FdHygiene);
+    let landlock = LauncherActionDecl::new(ID_LANDLOCK_APPLY, LoweringPhase::PolicyInstall);
+    let seccomp_apply = LauncherActionDecl::new(ID_SECCOMP_APPLY, LoweringPhase::PolicyInstall);
+    let exec = LauncherActionDecl::new(ID_EXEC, LoweringPhase::Launch);
+
+    let mut decls: Vec<&dyn PrimitiveDecl> = vec![&scrub];
+    if confined {
+        decls.push(&landlock);
+    }
+    if seccomp {
+        decls.push(&seccomp_apply);
+    }
+    decls.push(&exec);
+
+    let schedule = compile_schedule(&decls)
+        .map_err(|e| format!("cannot compile the lowering schedule: {e}"))?;
+    Ok(LoweringWireV1::from_schedule(&schedule))
+}
+
+/// A schedule-only [`PrimitiveDecl`] for one Linux launcher action (scrub / landlock-
+/// apply / seccomp-apply / exec).
+///
+/// The Linux confinement schedule is compiled through the ONE validated compiler
+/// [`compile_schedule`] rather than hand-assembled, so the launcher wire is a
+/// PROJECTION of a real, phase-ordered, conflict-checked [`crate::contract::lowering::LoweringSchedule`]
+/// — there is no second, parallel schedule source of truth.
+///
+/// These decls carry only the SCHEDULE-relevant facts (id, version, phase). They
+/// deliberately `covers()` NOTHING: support classification for the Linux backend lives
+/// in the family `support_matrix()` + admission path, not here (the primitive-adapter
+/// support-classification integration is the #75 track-A membrane). Because `covers()`
+/// is empty, [`crate::contract::primitive::classify_via_primitives`] never reaches
+/// `classify`, so its fail-closed `unsupported()` result is inert-by-construction —
+/// never a live verdict, only a required-method stub.
+struct LauncherActionDecl {
+    id: PrimitiveId,
+    phase: LoweringPhase,
+}
+
+impl LauncherActionDecl {
+    fn new(id: &str, phase: LoweringPhase) -> Self {
+        Self {
+            id: PrimitiveId::new(id),
+            phase,
+        }
+    }
+}
+
+impl PrimitiveDecl for LauncherActionDecl {
+    fn id(&self) -> PrimitiveId {
+        self.id.clone()
+    }
+
+    fn version(&self) -> PrimitiveVersion {
+        PrimitiveVersion::new(SCHEDULE_PRIMITIVE_VERSION)
+    }
+
+    fn covers(&self) -> &[RequirementKind] {
+        &[]
+    }
+
+    fn classify(&self, _req: &BoundaryRequirement, _profile: &BackendProfile) -> SupportVerdict {
+        // Inert by construction: `covers()` is empty, so `classify_via_primitives`
+        // never calls this. Support classification stays with `support_matrix()` /
+        // the admission path (#75). The fail-closed bottom is the safe stub.
+        SupportVerdict::unsupported()
+    }
+
+    fn phase(&self) -> LoweringPhase {
+        self.phase
+    }
+
+    fn prerequisites(&self) -> &[PrimitiveId] {
+        &[]
+    }
+
+    fn conflicts(&self) -> &[PrimitiveId] {
+        &[]
+    }
+
+    fn required_privileges(&self) -> &[Privilege] {
+        &[]
+    }
+
+    fn witness(&self, _observed: &BoundaryReportBody, _out: &mut EvidenceSet) {}
 }
 
 /// Compose the OPT-IN [`SeccompRequest`] from the lowering flags: `deny_new_tasks`
@@ -302,21 +397,6 @@ fn cgroup_slot() -> DescriptorSlotV1 {
             kind: DescriptorKind::Directory,
             writable: false,
         },
-    }
-}
-
-/// One projected lowering entry. The param/decl digests are zeroed: the REAL
-/// schedule binding (param/decl-addressed entries + the authoritative `H_L`) is the
-/// track-A reconciliation in #75; today the launcher binds only
-/// `h_l == blake3(canonical(lowering))`, so the zeroed digests are honest for this
-/// minimal confinement schedule and the launcher's served-id check is what matters.
-fn entry(id: &str, phase_code: u8) -> LoweringWireEntryV1 {
-    LoweringWireEntryV1 {
-        id: id.to_owned(),
-        version: 1,
-        phase_code,
-        param_digest: [0u8; 32],
-        decl_digest: [0u8; 32],
     }
 }
 
@@ -418,4 +498,69 @@ fn derive_id(plan_id: BoundaryPlanHash, domain: &[u8]) -> Digest32 {
 /// fail-closed — never a silent wrong slot).
 fn slot_u32(fd: RawFd) -> u32 {
     u32::try_from(fd).unwrap_or(u32::MAX)
+}
+
+#[cfg(test)]
+mod schedule_wire_tests {
+    use super::{compile_lowering, ID_AMBIENT_SCRUB, ID_EXEC, ID_LANDLOCK_APPLY, ID_SECCOMP_APPLY};
+
+    // The frozen wire phase codes the launcher's `classify_schedule` matches against
+    // (`LoweringPhase::{FdHygiene, PolicyInstall, Launch}.code()`).
+    const PHASE_SCRUB: u8 = 3;
+    const PHASE_CONFINE: u8 = 4;
+    const PHASE_EXEC: u8 = 5;
+
+    #[test]
+    fn compiled_wire_matches_the_launcher_served_shape() {
+        // Confined + seccomp: the ONE validated compiler must emit the launcher's
+        // canonical served order — scrub (FdHygiene) → landlock → seccomp
+        // (PolicyInstall, id-tiebroken) → exec (Launch).
+        let wire = compile_lowering(true, true).expect("schedule compiles");
+        let shape: Vec<(&str, u8)> = wire
+            .entries
+            .iter()
+            .map(|e| (e.id.as_str(), e.phase_code))
+            .collect();
+        assert_eq!(
+            shape,
+            vec![
+                (ID_AMBIENT_SCRUB, PHASE_SCRUB),
+                (ID_LANDLOCK_APPLY, PHASE_CONFINE),
+                (ID_SECCOMP_APPLY, PHASE_CONFINE),
+                (ID_EXEC, PHASE_EXEC),
+            ],
+            "PROPERTY: the compiled+projected wire IS the launcher's canonical served shape"
+        );
+    }
+
+    #[test]
+    fn unconfined_schedule_is_scrub_then_exec_only() {
+        let wire = compile_lowering(false, false).expect("schedule compiles");
+        let ids: Vec<&str> = wire.entries.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![ID_AMBIENT_SCRUB, ID_EXEC],
+            "PROPERTY: a no-confinement plan schedules only the mandatory scrub + exec"
+        );
+    }
+
+    #[test]
+    fn projected_entries_carry_real_compiled_digests_not_zero_sentinels() {
+        // The point of routing through `compile_schedule`: the wire's per-entry digests
+        // are the REAL compiled decl/param digests, not the old hand-built zero
+        // sentinels. This is the observable difference that proves the two-truths is
+        // gone (the launcher binds the whole projection via `h_l`, so non-zero digests
+        // are self-consistent across host + launcher).
+        let wire = compile_lowering(true, true).expect("schedule compiles");
+        for entry in &wire.entries {
+            assert_ne!(
+                entry.decl_digest, [0u8; 32],
+                "PROPERTY: decl_digest is the real compiled digest, never a zero sentinel"
+            );
+            assert_ne!(
+                entry.param_digest, [0u8; 32],
+                "PROPERTY: param_digest is the real compiled (empty-param) digest, never zero"
+            );
+        }
+    }
 }

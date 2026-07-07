@@ -54,6 +54,10 @@ pub const BOUNDARY_RECEIPT_NAMESPACE: &str = "bvisor";
 const SPEC_SCHEMA_REF: &str = "bvisor.boundary.spec.v1";
 const REPORT_SCHEMA_REF: &str = "bvisor.boundary.report.v1";
 const REPORT_RECEIPT_KIND: &str = "bvisor.boundary.report.v1";
+/// Local receipt-drawer key under which the handler records the durable 0xE report's
+/// global sequence — the persist `AppendReceipt` surfaced honestly rather than dropped
+/// (see the effect-backend seam granularity-gap note in `BoundaryRunHandler::handle`).
+const REPORT_RECEIPT_SEQUENCE_EXTENSION: &str = "bvisor.boundary.report.sequence";
 
 /// Shared admission/execution context: the backends to plan against, the chosen
 /// backend, and the store the sealed 0xE report is persisted into.
@@ -149,7 +153,7 @@ struct BoundaryRunHandler {
 }
 
 impl Handler for BoundaryRunHandler {
-    fn handle(&mut self, input: &[u8], _cx: &mut Ctx<'_>) -> HandlerResult {
+    fn handle(&mut self, input: &[u8], cx: &mut Ctx<'_>) -> HandlerResult {
         let spec = decode_spec(input).map_err(HandlerError::invalid_input)?;
         let plan = self
             .cx
@@ -161,14 +165,42 @@ impl Handler for BoundaryRunHandler {
 
         // PERSIST: the host appends the sealed report as one durable 0xE event;
         // replay reconstructs the boundary's terminal evidence from it.
+        //
+        // GRANULARITY GAP (effect-backend seam, tracked): this persist goes DIRECTLY
+        // through the coordinate-addressed, typed `Store::append_typed` rather than the
+        // runtime's `syncbat::EffectBackend` seam, and that is DELIBERATE, not laziness:
+        //   * the seam is `append_event(kind, payload: &[u8])` — trait-object-safe and
+        //     representation-erased. Its store-backed impl wraps `payload` as an opaque
+        //     msgpack `bin` (`StoreEffectBackend`'s `RawPayload`), whereas `append_typed`
+        //     stores the `BoundaryReportEvent` as its typed body under `T::PAYLOAD_VERSION`.
+        //     The recovery contract (`contract::recovery`) DECODES persisted 0xE events
+        //     back into a typed `BoundaryReportEvent`, so routing through the seam would
+        //     change the durable representation and break that typed readback — a real
+        //     regression, not a wire.
+        //   * the seam carries no coordinate and returns `()`, not the `AppendReceipt` this
+        //     durable append yields.
+        // Closing the gap needs a coordinate-carrying, verbatim-body, receipt-returning
+        // seam variant (a batpak-core append surface + `EffectBackend` growth) — the
+        // Track-A host seam, deliberately NOT forced here. Until then bvisor keeps the
+        // direct typed append and RECORDS the receipt below rather than discarding it.
         let event = BoundaryReportEvent {
             report: report.clone(),
         };
-        let _receipt = self
+        let receipt = self
             .cx
             .store
             .append_typed(&self.cx.coordinate, &event)
             .map_err(|error| HandlerError::failed(format!("persist boundary report: {error}")))?;
+
+        // Record the persist receipt into the invocation's receipt drawer instead of
+        // dropping it: the durable 0xE report's global sequence is honest evidence that
+        // the seal reached the log. A LOCAL extension stays in the receipt envelope body
+        // (no batpak-side promotion), so it surfaces the receipt without contorting the
+        // representation the seam gap precludes routing through.
+        cx.attach_local_extension(
+            REPORT_RECEIPT_SEQUENCE_EXTENSION,
+            receipt.global_sequence.to_le_bytes().to_vec(),
+        );
 
         encode_report(&report).map_err(HandlerError::failed)
     }

@@ -205,6 +205,23 @@ impl EventKind {
     /// [`SYSTEM_HEARTBEAT_REQUEST`](Self::SYSTEM_HEARTBEAT_REQUEST) for
     /// the substrate-vs-fixture placement rationale.
     pub const SYSTEM_HEARTBEAT_ACK: Self = Self::custom(0xF, 0xA02);
+
+    /// Internal padding sentinel for fixed-width inline tile storage.
+    ///
+    /// The AoSoA tiled index (`store/index/columnar/aosoa.rs`) stores kinds in a
+    /// fixed-width inline `[EventKind; N]` array so the kind column sits
+    /// contiguously inside the cache-line-aligned tile with no heap hop — the
+    /// locality the AoSoA64 layout exists to provide. Slots beyond a tile's live
+    /// `len` (`[len..N]`) are filled with this sentinel.
+    ///
+    /// It can never collide with a real stored kind: category `0x0` is reserved
+    /// and rejected by both [`custom`](Self::custom) and
+    /// [`try_custom`](Self::try_custom), and `0x0000` is not a defined `SYSTEM_*`
+    /// constant, so no appended event ever carries it. It is purely in-memory
+    /// padding — never persisted, signed, or decoded — and the tile scan only
+    /// reads live slots (`kinds[0]` of a non-empty tile; entries masked by
+    /// `len`), so a sentinel is never compared against a query target.
+    pub(crate) const UNINIT: Self = Self(0x0000);
 }
 
 impl fmt::Display for EventKind {

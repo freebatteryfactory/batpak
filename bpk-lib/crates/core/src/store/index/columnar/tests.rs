@@ -205,6 +205,41 @@ fn aosoa64_full_tile_boundary_opens_a_second_tile() {
     assert_eq!(idx.query_hits_by_kind(KIND_A).len(), 65);
 }
 
+// ── Inline `[EventKind; N]` tile column round-trip ─────────────────────────────
+//
+// The AoSoA tile stores its kind column inline (`kinds: [EventKind; N]`) rather
+// than as a heap `Vec`, so the values are cache-local to the aligned tile. This
+// pins that layout: live slots carry the stored kind, and every unfilled trailing
+// slot is the `EventKind::UNINIT` padding sentinel.
+#[test]
+fn aosoa64_inline_kinds_array_roundtrips_with_uninit_padding() {
+    let idx = ColumnarIndex::new_aosoa64();
+    for i in 0u64..10 {
+        idx.insert(&make_entry(KIND_A, i, "e1", "s1"));
+    }
+
+    idx.with_tile64(0, |t| {
+        assert_eq!(t.len, 10, "10 entries land in a single 64-wide tile");
+        for slot in &t.kinds[..t.len] {
+            assert_eq!(
+                *slot, KIND_A,
+                "PROPERTY: live inline slots carry the stored kind"
+            );
+        }
+        for slot in &t.kinds[t.len..] {
+            assert_eq!(
+                *slot,
+                EventKind::UNINIT,
+                "PROPERTY: unfilled inline slots hold the UNINIT padding sentinel"
+            );
+        }
+    })
+    .expect("should be AoSoA64");
+
+    // The inline layout is still fully queryable end-to-end.
+    assert_eq!(idx.query_hits_by_kind(KIND_A).len(), 10);
+}
+
 // --- SoAoS ---
 
 #[test]

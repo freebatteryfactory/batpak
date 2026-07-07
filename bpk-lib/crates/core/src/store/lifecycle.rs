@@ -106,7 +106,14 @@ pub(crate) fn sync(store: &Store<Open>) -> Result<(), StoreError> {
         .send(crate::store::write::writer::WriterCommand::Sync { respond: tx })
         .map_err(|_| StoreError::WriterCrashed)?;
     store.writer_handle()?.pump();
-    crate::store::recv_writer_reply(&rx)
+    crate::store::recv_writer_reply(&rx)?;
+    // Flush the projection cache AFTER the durable segment sync. The cache is a
+    // derivative of the segment log, so it must never advance ahead of it. For
+    // rebuildable backends (`NoCache`, `NativeCache`) this is a no-op; a durable
+    // custom `ProjectionCache` whose `put` buffers writes relies on this call to
+    // persist them — without it, `sync()` on the store was a latent durability
+    // trap that never reached the cache.
+    store.cache.sync()
 }
 
 pub(crate) fn close(mut store: Store<Open>) -> Result<Closed, StoreError> {
@@ -154,6 +161,12 @@ pub(crate) fn close(mut store: Store<Open>) -> Result<Closed, StoreError> {
 
     write_cold_start_artifacts_on_close(&store)?;
 
+    // Flush the projection cache as the final durability step of close, after the
+    // writer has shut down and the segment log + idempotency index are on disk.
+    // A durable custom `ProjectionCache` relies on this to persist any buffered
+    // writes before the handle is dropped; rebuildable backends no-op here.
+    store.cache.sync()?;
+
     store.should_shutdown_on_drop = false;
     Ok(Closed)
 }
@@ -197,5 +210,83 @@ pub(crate) fn diagnostics<State: crate::store::StoreState>(
             store.runtime.clock(),
             store.config.fs().as_ref(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod cache_sync_lifecycle_tests {
+    use crate::store::projection::{CacheCapabilities, CacheMeta, ProjectionCache};
+    use crate::store::{Store, StoreConfig, StoreError};
+    use std::error::Error;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// A projection cache whose only job is to record how many times `sync()`
+    /// was invoked, so a test can prove `Store::sync`/`Store::close` route
+    /// through the projection cache's flush path.
+    struct SyncCountingCache {
+        syncs: Arc<AtomicUsize>,
+    }
+
+    impl ProjectionCache for SyncCountingCache {
+        fn capabilities(&self) -> CacheCapabilities {
+            CacheCapabilities::none()
+        }
+
+        fn get(&self, _key: &[u8]) -> Result<Option<(Vec<u8>, CacheMeta)>, StoreError> {
+            Ok(None)
+        }
+
+        fn put(&self, _key: &[u8], _value: &[u8], _meta: CacheMeta) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        fn delete_prefix(&self, _prefix: &[u8]) -> Result<u64, StoreError> {
+            Ok(0)
+        }
+
+        fn sync(&self) -> Result<(), StoreError> {
+            self.syncs.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn store_sync_and_close_flush_the_projection_cache() -> Result<(), Box<dyn Error>> {
+        let dir = tempfile::tempdir()?;
+        let syncs = Arc::new(AtomicUsize::new(0));
+        let cache = Box::new(SyncCountingCache {
+            syncs: Arc::clone(&syncs),
+        });
+
+        let store = Store::open_with_cache(StoreConfig::new(dir.path()), cache)?;
+
+        // `open_with_cache` runs an internal `lifecycle::sync`, so the cache has
+        // already been flushed at least once by the time open returns — the wire
+        // is live from the first tick.
+        let after_open = syncs.load(Ordering::SeqCst);
+        assert!(
+            after_open >= 1,
+            "PROPERTY: opening a store flushes the projection cache via lifecycle::sync"
+        );
+
+        // UFCS call of the public `Store::sync` API (the `store/` bare-`.sync()` build.rs
+        // guard targets internal segment syncs that must use `sync_with_mode`; this is the
+        // public lifecycle entry point under test, invoked in `::` form to stay clear of it).
+        Store::sync(&store)?;
+        let after_sync = syncs.load(Ordering::SeqCst);
+        assert!(
+            after_sync > after_open,
+            "PROPERTY: Store::sync flushes the projection cache (was {after_open}, now {after_sync})"
+        );
+
+        store.close()?;
+        let after_close = syncs.load(Ordering::SeqCst);
+        assert!(
+            after_close > after_sync,
+            "PROPERTY: Store::close flushes the projection cache (was {after_sync}, now {after_close})"
+        );
+
+        Ok(())
     }
 }

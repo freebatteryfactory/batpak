@@ -12,30 +12,20 @@ use flume::{Receiver, Sender, TrySendError};
 use parking_lot::Mutex;
 
 /// Generic push-based notification fanout via bounded flume channels.
+///
+/// Each subscriber is stored alongside the [`Region`] that defined it at
+/// `subscribe` time. [`broadcast`](Self::broadcast) tests the predicate BEFORE
+/// pushing onto the subscriber's channel, so a raw receiver handed out here only
+/// ever sees in-region items. For [`Notification`] subscribers (F8) that closes
+/// the drift where `Subscription::recv()` filtered on the consume side while
+/// `Subscription::receiver()` exposed the unfiltered channel — async consumers
+/// could otherwise observe unrelated events.
 pub(crate) struct FanoutList<T: Clone + RegionFanoutItem> {
     senders: Mutex<Vec<FanoutSender<T>>>,
 }
 
 struct FanoutSender<T: Clone> {
     tx: Sender<T>,
-    region: Region,
-}
-
-/// F8: region-filtered fanout for [`Notification`] subscribers.
-///
-/// Each subscriber is stored alongside the [`Region`] that defined it at
-/// `subscribe` time. The broadcast path tests the predicate BEFORE pushing
-/// onto the subscriber's channel, so a raw receiver handed out here only
-/// ever sees in-region notifications. That closes the drift where
-/// `Subscription::recv()` filtered on the consume side while
-/// `Subscription::receiver()` exposed the unfiltered channel — async
-/// consumers could observe unrelated events.
-pub(crate) struct FilteredSubscriberList {
-    senders: Mutex<Vec<FilteredSender>>,
-}
-
-struct FilteredSender {
-    tx: Sender<Notification>,
     region: Region,
 }
 
@@ -47,13 +37,20 @@ pub(crate) struct CommittedEventEnvelope {
     pub stored: StoredEvent<serde_json::Value>,
 }
 
-/// Subscriber-facing list for push-based notifications. F8 replaces the
-/// raw `FanoutList<Notification>` so per-subscriber region filtering is
-/// applied at the writer push point rather than the consumer side.
-pub(crate) type SubscriberList = FilteredSubscriberList;
+/// Subscriber-facing list for push-based notifications. Per-subscriber region
+/// filtering is applied at the writer push point (F8) rather than the consumer
+/// side — see [`FanoutList`]. `SubscriberList` and `ReactorSubscriberList` are
+/// the same `FanoutList` machinery specialized to their item type; they differ
+/// only in the item and the trace label.
+pub(crate) type SubscriberList = FanoutList<Notification>;
 pub(crate) type ReactorSubscriberList = FanoutList<CommittedEventEnvelope>;
 
 pub(crate) trait RegionFanoutItem {
+    /// Short label naming this fanout kind in the broadcast trace line
+    /// (e.g. `"subscription"` vs `"reactor"`), so the two lists remain
+    /// distinguishable in `batpak::fanout` traces after consolidation.
+    const FANOUT_LABEL: &'static str;
+
     fn matches_region(&self, region: &Region) -> bool;
 }
 
@@ -86,7 +83,17 @@ pub(crate) fn notification_matches_region(region: &Region, value: &Notification)
     )
 }
 
+impl RegionFanoutItem for Notification {
+    const FANOUT_LABEL: &'static str = "subscription";
+
+    fn matches_region(&self, region: &Region) -> bool {
+        notification_matches_region(region, self)
+    }
+}
+
 impl RegionFanoutItem for CommittedEventEnvelope {
+    const FANOUT_LABEL: &'static str = "reactor";
+
     fn matches_region(&self, region: &Region) -> bool {
         notification_matches_region(region, &self.notification)
     }
@@ -142,69 +149,15 @@ impl<T: Clone + RegionFanoutItem> FanoutList<T> {
             subscribers_before,
             subscribers_after = guard.len(),
             pruned = subscribers_before.saturating_sub(guard.len()),
-            "reactor fanout try_send pass",
-        );
-    }
-}
-
-impl FilteredSubscriberList {
-    pub(crate) fn new() -> Self {
-        Self {
-            senders: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// Subscribe with a [`Region`] filter applied at the writer push point.
-    /// Returns the receiver half of a bounded channel that only ever sees
-    /// notifications whose `(entity, scope, kind)` match the region.
-    ///
-    /// F8: this is the preferred subscribe path. Region filtering runs at
-    /// the broadcast-push site so the raw receiver only ever contains
-    /// in-region notifications; async consumers that poll the receiver
-    /// directly cannot observe unrelated events.
-    pub(crate) fn subscribe_with_region(
-        &self,
-        capacity: usize,
-        region: Region,
-    ) -> Receiver<Notification> {
-        let (tx, rx) = flume::bounded(capacity);
-        self.senders.lock().push(FilteredSender { tx, region });
-        rx
-    }
-
-    /// F8: apply the per-subscriber region filter before `try_send`. A
-    /// non-matching notification is not pushed at all; the subscriber
-    /// stays in the list (it is NOT considered "Full"). Matching
-    /// notifications follow the same `Full`/`Disconnected`-prune rule as
-    /// the raw `FanoutList::broadcast`.
-    pub(crate) fn broadcast(&self, value: &Notification) {
-        let mut guard = self.senders.lock();
-        let subscribers_before = guard.len();
-        guard.retain(|sub| {
-            match notification_matches_region(&sub.region, value) {
-                // Out of region: no push, but prune a dropped receiver so quiet-
-                // region subscribers don't leak senders forever (audit R4).
-                false => !sub.tx.is_disconnected(),
-                true => match sub.tx.try_send(value.clone()) {
-                    Ok(()) => true,
-                    Err(TrySendError::Full(_)) => false,
-                    Err(TrySendError::Disconnected(_)) => false,
-                },
-            }
-        });
-        tracing::trace!(
-            target: "batpak::fanout",
-            subscribers_before,
-            subscribers_after = guard.len(),
-            pruned = subscribers_before.saturating_sub(guard.len()),
-            "subscription fanout try_send pass",
+            "{} fanout try_send pass",
+            T::FANOUT_LABEL,
         );
     }
 }
 
 #[cfg(test)]
 mod fanout_subscriber_tests {
-    use super::{CommittedEventEnvelope, FanoutList, FilteredSubscriberList, Notification};
+    use super::{CommittedEventEnvelope, FanoutList, Notification, SubscriberList};
     use crate::coordinate::{Coordinate, DagPosition, Region};
     use crate::event::EventKind;
 
@@ -243,7 +196,7 @@ mod fanout_subscriber_tests {
         // retained forever, even after its receiver was dropped — an unbounded
         // sender leak plus O(dead) work on every commit. Now an out-of-region
         // broadcast still prunes a disconnected sender.
-        let list = FilteredSubscriberList::new();
+        let list = SubscriberList::new();
         let rx = list.subscribe_with_region(4, Region::scope("alpha"));
         assert_eq!(list.senders.lock().len(), 1);
 
@@ -262,7 +215,7 @@ mod fanout_subscriber_tests {
     fn live_out_of_region_subscriber_is_retained() {
         // Dual direction: a still-connected subscriber must NOT be pruned just
         // because a broadcast was out of its region.
-        let list = FilteredSubscriberList::new();
+        let list = SubscriberList::new();
         let _rx = list.subscribe_with_region(4, Region::scope("alpha"));
 
         list.broadcast(&notification("beta")); // out of region, receiver alive
