@@ -258,9 +258,10 @@ fn rejects_versioned_frame_with_missing_fields() {
 
 #[test]
 fn decodes_crlf_and_bare_cr_line_endings() {
-    let crlf =
-        nb::decode_line(b"CALL ping 6f6b\r\n", &nb::Limits::default()).expect("crlf decodes");
-    let cr = nb::decode_line(b"CALL ping 6f6b\r", &nb::Limits::default()).expect("cr decodes");
+    let crlf = nb::decode_line(b"NETBAT/1 CALL ping 6f6b\r\n", &nb::Limits::default())
+        .expect("crlf decodes");
+    let cr =
+        nb::decode_line(b"NETBAT/1 CALL ping 6f6b\r", &nb::Limits::default()).expect("cr decodes");
 
     assert_eq!(crlf.input(), b"ok");
     assert_eq!(cr.input(), b"ok");
@@ -326,7 +327,7 @@ fn serve_stream_writes_stable_success_response() {
 #[test]
 fn unknown_operation_maps_to_stable_error_response() {
     let mut core = core_with_ping();
-    let mut stream = Cursor::new(b"CALL missing 00\n".to_vec());
+    let mut stream = Cursor::new(b"NETBAT/1 CALL missing 00\n".to_vec());
 
     let err = nb::serve_stream(&mut stream, &mut core, &nb::Limits::default())
         .expect_err("expected unknown operation");
@@ -406,9 +407,9 @@ fn rejects_input_body_too_large() {
 
 #[test]
 fn rejects_malformed_hex_and_token_count() {
-    let hex_err = nb::decode_line(b"CALL ping nope\n", &nb::Limits::default())
+    let hex_err = nb::decode_line(b"NETBAT/1 CALL ping nope\n", &nb::Limits::default())
         .expect_err("expected malformed hex");
-    let token_err = nb::decode_line(b"CALL ping 00 extra\n", &nb::Limits::default())
+    let token_err = nb::decode_line(b"NETBAT/1 CALL ping 00 extra\n", &nb::Limits::default())
         .expect_err("expected malformed token count");
 
     assert_eq!(
@@ -427,15 +428,15 @@ fn rejects_malformed_hex_and_token_count() {
 
 #[test]
 fn rejects_odd_hex_unsupported_verb_missing_fields_and_whitespace_operation() {
-    let odd = nb::decode_line(b"CALL ping 0\n", &nb::Limits::default())
+    let odd = nb::decode_line(b"NETBAT/1 CALL ping 0\n", &nb::Limits::default())
         .expect_err("expected odd hex rejection");
-    let verb = nb::decode_line(b"POST ping 00\n", &nb::Limits::default())
+    let verb = nb::decode_line(b"NETBAT/1 POST ping 00\n", &nb::Limits::default())
         .expect_err("expected unsupported verb rejection");
-    let missing = nb::decode_line(b"CALL ping\n", &nb::Limits::default())
+    let missing = nb::decode_line(b"NETBAT/1 CALL ping\n", &nb::Limits::default())
         .expect_err("expected missing input rejection");
-    let whitespace = nb::decode_line(b"CALL ping\tname 00\n", &nb::Limits::default())
+    let whitespace = nb::decode_line(b"NETBAT/1 CALL ping\tname 00\n", &nb::Limits::default())
         .expect_err("expected whitespace operation rejection");
-    let dot_segment = nb::decode_line(b"CALL ping..name 00\n", &nb::Limits::default())
+    let dot_segment = nb::decode_line(b"NETBAT/1 CALL ping..name 00\n", &nb::Limits::default())
         .expect_err("expected dot-segment operation rejection");
 
     assert_eq!(
@@ -477,7 +478,7 @@ fn rejects_empty_line_and_non_utf8_operation() {
         &nb::Limits::default(),
     )
     .expect_err("expected empty-line rejection");
-    let non_utf8 = nb::decode_line(b"CALL \xff 00\n", &nb::Limits::default())
+    let non_utf8 = nb::decode_line(b"NETBAT/1 CALL \xff 00\n", &nb::Limits::default())
         .expect_err("expected non-utf8 operation rejection");
 
     assert_eq!(
@@ -497,7 +498,7 @@ fn rejects_empty_line_and_non_utf8_operation() {
 #[test]
 fn partial_read_followed_by_eof_is_a_complete_frame() {
     let mut core = core_with_ping();
-    let mut stream = Cursor::new(b"CALL ping 6f6b".to_vec());
+    let mut stream = Cursor::new(b"NETBAT/1 CALL ping 6f6b".to_vec());
 
     let response =
         nb::serve_stream(&mut stream, &mut core, &nb::Limits::default()).expect("served");
@@ -547,7 +548,7 @@ fn serve_stream_writes_stable_error_for_line_read_failures() {
 #[test]
 fn serve_stream_retries_interrupted_reads() {
     let mut core = core_with_ping();
-    let mut stream = InterruptedThenData::new(b"CALL ping 6f6b\n".to_vec());
+    let mut stream = InterruptedThenData::new(b"NETBAT/1 CALL ping 6f6b\n".to_vec());
 
     let response =
         nb::serve_stream(&mut stream, &mut core, &nb::Limits::default()).expect("served");

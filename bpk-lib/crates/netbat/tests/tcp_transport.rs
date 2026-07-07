@@ -146,7 +146,7 @@ fn tcp_listener_enforces_request_limit_per_connection() {
 
     let mut stream = connect_client(addr);
     stream
-        .write_all(b"CALL ping 6f6e65\nCALL ping 74776f\n")
+        .write_all(b"NETBAT/1 CALL ping 6f6e65\nNETBAT/1 CALL ping 74776f\n")
         .expect("write requests");
     let mut reader = BufReader::new(stream);
     let mut first = String::new();
