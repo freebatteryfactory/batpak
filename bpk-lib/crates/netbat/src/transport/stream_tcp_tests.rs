@@ -324,73 +324,78 @@ fn runtime_failure_code_maps_each_class() {
 #[test]
 fn map_runtime_error_maps_each_variant() {
     // KILLS an arm-collapse in map_runtime_error (the open-failure reason mapper):
-    // every SubscriptionRuntimeError a session poll can surface maps to its own
-    // MalformedStreamFrame reason. The `reason`-forwarding arms pass a distinct
-    // token through (so collapsing one into another is observable); the
-    // constant-reason arms assert their exact literal.
-    fn reason(error: SubscriptionRuntimeError) -> &'static str {
-        match map_runtime_error(&error) {
-            crate::error::NetbatError::MalformedStreamFrame { reason } => reason,
-            other => panic!("expected MalformedStreamFrame, got {other:?}"),
-        }
+    // each mapped SubscriptionRuntimeError maps to its own MalformedStreamFrame
+    // reason. The `reason`-forwarding arms pass a distinct token through (so
+    // collapsing one into another is observable); the constant-reason arms assert
+    // their exact literal. The `Store` arm is omitted for the same reason
+    // `runtime_failure_code_maps_each_class` omits it: netbat deliberately takes
+    // no core dependency, so a test here cannot name `batpak::store::StoreError`
+    // to construct that variant. The other ten variants are covered.
+    fn reason(error: &SubscriptionRuntimeError) -> &'static str {
+        // map_runtime_error maps every variant to MalformedStreamFrame; a refutable
+        // let-else (no wildcard match arm, no panic!) keeps clippy's restriction
+        // lints satisfied while still failing loudly via the sentinel below if that
+        // ever stops holding.
+        let crate::transport::error::NetbatError::MalformedStreamFrame { reason } =
+            map_runtime_error(error)
+        else {
+            return "UNEXPECTED: map_runtime_error did not return MalformedStreamFrame";
+        };
+        reason
     }
 
     assert_eq!(
-        reason(SubscriptionRuntimeError::Store(batpak::store::StoreError::WriterCrashed)),
-        "store error during stream poll"
-    );
-    assert_eq!(
-        reason(SubscriptionRuntimeError::InvalidSubscriptionId {
+        reason(&SubscriptionRuntimeError::InvalidSubscriptionId {
             reason: "invalid-id-token"
         }),
         "invalid-id-token"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::DuplicateSubscription {
+        reason(&SubscriptionRuntimeError::DuplicateSubscription {
             id: "dup".to_owned()
         }),
         "duplicate subscription route"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::InvalidRoute {
+        reason(&SubscriptionRuntimeError::InvalidRoute {
             reason: "invalid-route-token"
         }),
         "invalid-route-token"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::InvalidConfig {
+        reason(&SubscriptionRuntimeError::InvalidConfig {
             reason: "invalid-config-token"
         }),
         "invalid-config-token"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::UnknownSubscription {
+        reason(&SubscriptionRuntimeError::UnknownSubscription {
             id: "missing".to_owned()
         }),
         "unknown subscription"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::CursorInvalid {
+        reason(&SubscriptionRuntimeError::CursorInvalid {
             reason: "cursor-invalid-token"
         }),
         "cursor-invalid-token"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::CursorMismatch {
+        reason(&SubscriptionRuntimeError::CursorMismatch {
             reason: "cursor-mismatch-token"
         }),
         "cursor-mismatch-token"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::EnvelopeEncoding("x".to_owned())),
+        reason(&SubscriptionRuntimeError::EnvelopeEncoding("x".to_owned())),
         "envelope encoding failed"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::Worker("x".to_owned())),
+        reason(&SubscriptionRuntimeError::Worker("x".to_owned())),
         "subscription worker failed"
     );
     assert_eq!(
-        reason(SubscriptionRuntimeError::AckInvalid {
+        reason(&SubscriptionRuntimeError::AckInvalid {
             reason: "ack-invalid-token"
         }),
         "ack-invalid-token"
