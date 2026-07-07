@@ -12,6 +12,13 @@ path = "src/lib.rs"
 
 [dependencies]
 batpak = { path = "../core", version = "0.10.0" }
+# Runtime-layer family crates the parked-capability witnesses exercise through
+# their PUBLIC API: syncbat (durable op-register), hostbat (supervised jobs +
+# declared subscriptions), netbat (route introspection). The `outcome` saga
+# algebra lives in `batpak` core, so no extra dependency is needed for it.
+syncbat = { path = "../syncbat", version = "0.10.0" }
+hostbat = { path = "../hostbat", version = "0.10.0" }
+netbat = { path = "../netbat", version = "0.10.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = ">=3.24, <3.25"

@@ -806,6 +806,10 @@
     - crates/batpak-examples/src/bin/typed_reactor.rs
     - crates/batpak-examples/src/bin/typed_reactor_multi.rs
     - crates/batpak-examples/src/bin/idempotent_pass.rs
+    - crates/batpak-examples/src/bin/syncbat_register_catalog.rs
+    - crates/batpak-examples/src/bin/outcome_saga.rs
+    - crates/batpak-examples/src/bin/hostbat_supervised_jobs.rs
+    - crates/batpak-examples/src/bin/netbat_route_introspection.rs
 - id: ART-MACROS
   kind: source
   paths:

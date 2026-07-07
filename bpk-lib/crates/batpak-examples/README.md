@@ -46,3 +46,13 @@ Build all demos: `cargo build -p batpak-examples --bins`.
 - `import_events.rs` - re-apply events from a source store with import provenance. Run: `cargo run -p batpak-examples --bin import_events`.
 - `lane_branch.rs` - append on independent DAG lanes for the same entity. Run: `cargo run -p batpak-examples --bin lane_branch`.
 - `idempotent_pass.rs` - re-runnable durable idempotent append pass. Run: `cargo run -p batpak-examples --bin idempotent_pass`.
+
+## Family Runtime Witnesses
+
+Demos that exercise the family runtime crates (`syncbat`, `hostbat`, `netbat`)
+and the `outcome` saga algebra through their public APIs.
+
+- `syncbat_register_catalog.rs` - durable operation-register catalog: persist operations, restart, and rebuild the register from the store. Run: `cargo run -p batpak-examples --bin syncbat_register_catalog`.
+- `outcome_saga.rs` - a suspend/resume saga over the `outcome` algebra (Pending / WaitCondition / Compensation / zip / join_all). Run: `cargo run -p batpak-examples --bin outcome_saga`.
+- `hostbat_supervised_jobs.rs` - declare a host subscription and declare + spawn a supervised job that runs to completion. Run: `cargo run -p batpak-examples --bin hostbat_supervised_jobs`.
+- `netbat_route_introspection.rs` - describe a Core's routes and inspect mounted operations without opening a TCP server. Run: `cargo run -p batpak-examples --bin netbat_route_introspection`.

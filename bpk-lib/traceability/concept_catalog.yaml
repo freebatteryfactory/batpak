@@ -99,3 +99,17 @@ concepts:
   - concept_id: lane-branch
     canonical_example: crates/batpak-examples/src/bin/lane_branch.rs
     summary: append on independent DAG lanes for the same entity
+
+  # --- Family runtime witnesses (syncbat / outcome / hostbat / netbat). ---
+  - concept_id: syncbat-register-catalog-rebuild
+    canonical_example: crates/batpak-examples/src/bin/syncbat_register_catalog.rs
+    summary: durable operation-register catalog rebuilt from the store across a restart
+  - concept_id: outcome-saga-suspend-resume
+    canonical_example: crates/batpak-examples/src/bin/outcome_saga.rs
+    summary: outcome saga algebra suspending on a wait condition and resuming to a terminal
+  - concept_id: hostbat-subscription-supervised-job
+    canonical_example: crates/batpak-examples/src/bin/hostbat_supervised_jobs.rs
+    summary: host declares a subscription and spawns a supervised job that runs to completion
+  - concept_id: netbat-route-introspection
+    canonical_example: crates/batpak-examples/src/bin/netbat_route_introspection.rs
+    summary: describe a Core's routes and inspect mounted operations without serving

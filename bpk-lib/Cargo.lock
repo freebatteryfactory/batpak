@@ -204,9 +204,12 @@ name = "batpak-examples"
 version = "0.10.0"
 dependencies = [
  "batpak",
+ "hostbat",
+ "netbat",
  "rmp-serde",
  "serde",
  "serde_json",
+ "syncbat",
  "tempfile",
 ]
 
