@@ -132,6 +132,10 @@ fn check_project_layout_contract(repo_root: &Path) -> Result<()> {
 fn check_root_markdown_allowlist(project_root: &Path) -> Result<()> {
     let allowed: BTreeSet<&str> = [
         "AGENTS.md",
+        // Claude Code's auto-loaded entrypoint: a thin `@AGENTS.md` import so the
+        // shared, tool-agnostic agent doctrine loads for Claude exactly as it does
+        // for tools that read AGENTS.md directly. Not a second source of truth.
+        "CLAUDE.md",
         "04_BATTERIES.md",
         "CHANGELOG.md",
         "08_CIRCUITS.md",

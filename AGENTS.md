@@ -293,4 +293,21 @@ panics at runtime, isn't `clippy::panic`, and the non-constant condition dodges
 `assertions_on_constants`. Exception: do **not** use it near `Instant::now()`/`Duration`
 (trips the wall-clock flake detector GAUNT-FLAKE-7) — use `unreachable!()` there.
 
+**No catch-all arm over an enum — `clippy::wildcard_enum_match_arm` is denied
+repo-wide (production and tests).** A `_ =>` OR a *named* `other =>` catch-all in a
+`match` over an enum trips it ("would also match future-added variants"). Enumerate
+the remaining variants (`A | B | C => …`), or — when you only care about one
+variant — use a refutable `let else` / `if let` instead of a `match`:
+
+```rust
+let SomeEnum::Wanted { field } = value else {
+    // a sentinel &str a later assert rejects, or Err(…) — never panic!/unreachable!
+    return "UNEXPECTED: <what invariant broke>";
+};
+```
+
+Do **not** reach for `_ => panic!(…)` to extract one variant in a test — it trips
+BOTH this lint and `clippy::panic`. This bites `std::path::Component` and
+error-enum matches especially.
+
 **Keep visitor structs at module level for testability.** A `serde::Visitor` (or similar helper) defined inside a function body is unreachable from `bpk-lib/crates/core/tests/` and invisible to mutation testing — mutations inside it go undetected. The `U128Visitor`, `OptU128Visitor`, and `VecU128Visitor` in `bpk-lib/crates/core/src/wire.rs` are already lifted to `pub(super) struct` at module level for exactly this reason; keep any new visitor module-level too. The slight verbosity is worth the coverage gain.
