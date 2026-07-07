@@ -190,7 +190,7 @@ mod tests {
         fs::create_dir_all(repo.join("crates/core"))?;
         fs::write(
             &manifest,
-            "[dependencies]\nbatpak = { path = \"../../crates/core\", features = [\"blake3\"] }\n",
+            "[dependencies]\nbatpak = { path = \"../../crates/core\", features = [] }\n",
         )?;
 
         rewrite_manifest_for_smoke(&repo, &manifest)?;

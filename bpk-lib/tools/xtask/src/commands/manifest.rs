@@ -1,5 +1,5 @@
 const BATPAK_DEPENDENCY_PREFIX: &str = "batpak = { path = ";
-const BATPAK_FEATURES: &[&str] = &["blake3"];
+const BATPAK_FEATURES: &[&str] = &[];
 
 pub(super) fn batpak_path_dependency_line(path: &str) -> String {
     let features = BATPAK_FEATURES
@@ -40,7 +40,7 @@ mod tests {
     fn batpak_path_dependency_line_carries_feature_policy() {
         assert_eq!(
             batpak_path_dependency_line("../crates/core"),
-            "batpak = { path = \"../crates/core\", features = [\"blake3\"] }"
+            "batpak = { path = \"../crates/core\", features = [] }"
         );
     }
 
@@ -52,7 +52,7 @@ mod tests {
 
         assert_eq!(
             updated,
-            "[dependencies]\nbatpak = { path = \"../repo/crates/core\", features = [\"blake3\"] }\nserde = \"1\""
+            "[dependencies]\nbatpak = { path = \"../repo/crates/core\", features = [] }\nserde = \"1\""
         );
     }
 
@@ -60,7 +60,7 @@ mod tests {
     fn batpak_path_dependency_line_escapes_toml_strings() {
         assert_eq!(
             batpak_path_dependency_line("repo\\\"core\""),
-            "batpak = { path = \"repo\\\\\\\"core\\\"\", features = [\"blake3\"] }"
+            "batpak = { path = \"repo\\\\\\\"core\\\"\", features = [] }"
         );
     }
 }
