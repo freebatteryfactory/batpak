@@ -560,7 +560,7 @@ pub enum StoreError {
         /// Non-secret label of the selector variant supplied (never key material).
         selector: &'static str,
     },
-    /// A [`Store::snapshot`](crate::store::Store::snapshot) or
+    /// A [`Store::snapshot_with_evidence`](crate::store::Store::snapshot_with_evidence) or
     /// [`Store::fork`](crate::store::Store::fork) of a store with payload
     /// encryption active was REFUSED because the keyset is not portable. Copying
     /// the encrypted segments WITHOUT the keys yields a silently-unrestorable
