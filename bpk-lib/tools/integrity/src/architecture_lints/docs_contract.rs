@@ -103,7 +103,9 @@ fn adr_link_target(source_doc: &Path, link: &str) -> PathBuf {
             Component::ParentDir => {
                 normalized.pop();
             }
-            other => normalized.push(other.as_os_str()),
+            other @ (Component::Prefix(_) | Component::RootDir | Component::Normal(_)) => {
+                normalized.push(other.as_os_str());
+            }
         }
     }
     normalized
