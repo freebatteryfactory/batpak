@@ -7,6 +7,9 @@
 //! Linked from `stream_tcp.rs` via `#[cfg(test)] #[path] mod tests;` so the
 //! production module stays within the absolute file-size cap.
 
+use super::runtime_fault::{
+    runtime_failure_code, INTERNAL_ERROR_CODE, MALFORMED_STREAM_FRAME_CODE,
+};
 use super::*;
 use std::io::Cursor;
 use syncbat::SessionEventDelivery;
@@ -197,5 +200,123 @@ fn read_control_loop_reports_disconnect_on_broken_pipe() {
     assert!(
         matches!(got.first(), Some(SessionControl::Disconnected)),
         "expected Disconnected on broken pipe, got {got:?}"
+    );
+}
+
+/// Class of runtime poll failure the mock session raises.
+#[derive(Clone, Copy)]
+enum FailKind {
+    /// A server-internal fault (a worker/store/envelope failure).
+    Internal,
+    /// A client/protocol fault (an invalid route).
+    Protocol,
+}
+
+/// A session whose first `poll` fails with the chosen runtime error class, so
+/// the delivery loop's `Err` arm is exercised deterministically.
+struct FailingSession(FailKind);
+
+impl SubscriptionSession for FailingSession {
+    fn poll(
+        &mut self,
+        _timeout: std::time::Duration,
+    ) -> Result<SessionPoll, SubscriptionRuntimeError> {
+        Err(match self.0 {
+            FailKind::Internal => SubscriptionRuntimeError::Worker("boom".to_owned()),
+            FailKind::Protocol => SubscriptionRuntimeError::InvalidRoute {
+                reason: "bad route",
+            },
+        })
+    }
+}
+
+fn sub_err_code(frame: &StreamFrame) -> Option<&str> {
+    if let StreamFrame::SubErr(err) = frame {
+        Some(err.code.as_str())
+    } else {
+        None
+    }
+}
+
+fn drive_runtime_failure(kind: FailKind) -> (TcpSubscriptionServeStats, StreamFrame) {
+    let mut session = FailingSession(kind);
+    let mut out: Vec<u8> = Vec::new();
+    let mut stats = TcpSubscriptionServeStats::default();
+    let limits = Limits::default();
+    let id = token();
+    let result = run_subscription_loop(&mut out, &mut session, &id, &limits, &mut stats);
+    assert!(
+        result.is_ok(),
+        "a post-subscribe runtime poll failure must be contained (Ok), not escalated"
+    );
+    let frame =
+        decode_stream_line(&out, &limits).expect("a SUB_ERR frame must be written before teardown");
+    (stats, frame)
+}
+
+#[test]
+fn runtime_poll_failure_emits_sub_err_counts_runtime_failure_and_distinguishes_classes() {
+    // H3: a post-subscribe runtime poll failure must emit a terminal SUB_ERR to
+    // the peer BEFORE teardown (never a bare close) and increment
+    // `runtime_failures` (was never incremented; the failure escaped and was
+    // miscounted as a failed_subscription). H2: a server-internal fault and a
+    // client/protocol fault must carry DISTINCT wire codes so the peer can tell
+    // "the server failed" from "your request was bad".
+    let (internal_stats, internal_frame) = drive_runtime_failure(FailKind::Internal);
+    let (client_stats, client_frame) = drive_runtime_failure(FailKind::Protocol);
+
+    assert_eq!(
+        internal_stats.runtime_failures, 1,
+        "an internal poll failure must count in runtime_failures"
+    );
+    assert_eq!(
+        internal_stats.failed_subscriptions, 0,
+        "a post-subscribe runtime failure must NOT be miscounted as a failed_subscription"
+    );
+    assert_eq!(
+        client_stats.runtime_failures, 1,
+        "a client poll failure must also count in runtime_failures"
+    );
+
+    let internal_code = sub_err_code(&internal_frame).expect("internal failure must emit SUB_ERR");
+    let client_code = sub_err_code(&client_frame).expect("client failure must emit SUB_ERR");
+    assert_eq!(
+        internal_code, INTERNAL_ERROR_CODE,
+        "a server-internal fault must carry the internal_error wire code"
+    );
+    assert_eq!(
+        client_code, MALFORMED_STREAM_FRAME_CODE,
+        "a client/protocol fault must carry the malformed_stream_frame wire code"
+    );
+    assert_ne!(
+        internal_code, client_code,
+        "H2: internal and client failure classes must NOT collapse to one wire code"
+    );
+}
+
+#[test]
+fn runtime_failure_code_maps_each_class() {
+    // KILLS an arm-collapse in runtime_failure_code: the three server-internal
+    // variants map to internal_error; cursor faults keep their specific codes;
+    // the remaining client/protocol faults map to malformed_stream_frame.
+    assert_eq!(
+        runtime_failure_code(&SubscriptionRuntimeError::Worker("x".to_owned())),
+        INTERNAL_ERROR_CODE
+    );
+    assert_eq!(
+        runtime_failure_code(&SubscriptionRuntimeError::EnvelopeEncoding("x".to_owned())),
+        INTERNAL_ERROR_CODE
+    );
+    assert_eq!(
+        runtime_failure_code(&SubscriptionRuntimeError::CursorInvalid { reason: "x" }),
+        CURSOR_INVALID_CODE
+    );
+    assert_eq!(
+        runtime_failure_code(&SubscriptionRuntimeError::CursorMismatch { reason: "x" }),
+        CURSOR_MISMATCH_CODE
+    );
+    assert_eq!(
+        runtime_failure_code(&SubscriptionRuntimeError::AckInvalid { reason: "x" }),
+        MALFORMED_STREAM_FRAME_CODE
     );
 }

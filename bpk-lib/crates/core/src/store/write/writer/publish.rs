@@ -94,6 +94,68 @@ pub(super) struct CommitFrameView<'a> {
     pub(super) emit_envelope: bool,
 }
 
+/// A reactor requested an envelope but the committed payload could not be
+/// decoded into its plaintext form (most notably an encrypted append, whose
+/// committed frame bytes are ciphertext under `payload-encryption`).
+///
+/// Surfaced by [`reactor_envelope`] as `Err(_)` — and logged LOUDLY by the
+/// caller (mirroring `reactor_delivery::warn_shredded_reactor_delivery`) —
+/// rather than swallowed to a bare `None`: the previous `.ok()` collapsed "no
+/// reactor asked" and "the plaintext could not be built" into the same silent
+/// absence, hiding a starved reactor behind a dropped `Result::Err`.
+struct ReactorEnvelopeUnavailable;
+
+/// Derive the in-process reactor [`CommittedEventEnvelope`] for a committed
+/// event from its staged facts. The envelope carries the DECODED plaintext so an
+/// in-process reactor ([`crate::store::Store::react_loop`]) is served without a
+/// disk re-read.
+///
+/// Returns `Ok(None)` when no reactor subscriber wants an envelope, `Ok(Some(_))`
+/// when the plaintext envelope was built, or `Err(ReactorEnvelopeUnavailable)`
+/// when a reactor wanted one but the committed payload could not be decoded into
+/// the plaintext envelope form. Pure over its inputs so the three outcomes are
+/// unit-tested directly.
+fn reactor_envelope(
+    staged: &StagedCommittedEvent,
+    notification: &Notification,
+    frame: CommitFrameView<'_>,
+) -> Result<Option<CommittedEventEnvelope>, ReactorEnvelopeUnavailable> {
+    if !frame.emit_envelope {
+        return Ok(None);
+    }
+    match staged.stored_event(frame.payload_bytes, frame.flags) {
+        Ok(stored) => Ok(Some(CommittedEventEnvelope {
+            notification: notification.clone(),
+            stored,
+        })),
+        // The committed payload did not decode into a plaintext envelope. This
+        // is expected for an encrypted append (the committed bytes are
+        // ciphertext); it is a genuine fault for a non-canonical plaintext
+        // payload. Either way the reactor cannot be served this event, so the
+        // outcome is surfaced (and logged by the caller), never dropped.
+        Err(_error) => Err(ReactorEnvelopeUnavailable),
+    }
+}
+
+/// Emit the observable, structured warn for a committed event whose plaintext
+/// reactor envelope could not be built. LOUD (this warn), never silent —
+/// mirrors `reactor_delivery::warn_shredded_reactor_delivery`.
+fn warn_reactor_envelope_unavailable(
+    coord: &crate::coordinate::Coordinate,
+    event_id: crate::id::EventId,
+) {
+    use crate::id::EntityIdType;
+    tracing::warn!(
+        target: "batpak::fanout",
+        flow = "reactor",
+        entity = coord.entity(),
+        event_id = event_id.as_u128(),
+        "reactor envelope unavailable: the committed payload could not be decoded into a \
+         plaintext reactor envelope (an encrypted or non-canonical payload); the in-process \
+         reactor is not served this event"
+    );
+}
+
 impl BatchCommitArtifacts {
     pub(super) fn with_capacity(len: usize) -> Self {
         Self {
@@ -169,16 +231,12 @@ impl WriterCore {
             correlation_id: staged.meta.correlation_id,
             causation_id: staged.meta.causation_id.unwrap_or(0),
         };
-        let envelope = if frame.emit_envelope {
-            staged
-                .stored_event(frame.payload_bytes, frame.flags)
-                .map(|stored| CommittedEventEnvelope {
-                    notification: notification.clone(),
-                    stored,
-                })
-                .ok()
-        } else {
-            None
+        let envelope = match reactor_envelope(staged, &notification, frame) {
+            Ok(envelope) => envelope,
+            Err(ReactorEnvelopeUnavailable) => {
+                warn_reactor_envelope_unavailable(&coord, notification.event_id);
+                None
+            }
         };
         CommitArtifacts {
             index_entry,
@@ -326,9 +384,17 @@ impl WriterCore {
 
 #[cfg(test)]
 mod tests {
-    use super::{broadcast_all, lane_publish_points_from_notifications, Notification};
+    use super::{
+        broadcast_all, lane_publish_points_from_notifications, reactor_envelope, CommitFrameView,
+        Notification, ReactorEnvelopeUnavailable,
+    };
     use crate::coordinate::{Coordinate, DagPosition};
-    use crate::event::EventKind;
+    use crate::event::{EventKind, HashChain};
+    use crate::store::write::staging::{
+        StagedCommitMeta, StagedCommitTiming, StagedCommittedEvent,
+    };
+    use crate::store::{EncodedBytes, ExtensionKey};
+    use std::collections::BTreeMap;
 
     fn notification_for(lane: u32, sequence: u64, wall_ms: u64) -> Notification {
         Notification {
@@ -381,6 +447,88 @@ mod tests {
 
         assert_eq!(point.publish_up_to, 10);
         assert_eq!(point.frontier_point.wall_ms, 222);
+    }
+
+    fn staged_event() -> StagedCommittedEvent {
+        StagedCommittedEvent::new(
+            Coordinate::new("entity:react", "scope:react").expect("valid coordinate"),
+            StagedCommitMeta::new(0xABCD, 1, None, EventKind::DATA, 7),
+            StagedCommitTiming::new(1, 2, 3, 4, 5),
+            HashChain {
+                prev_hash: [0u8; 32],
+                event_hash: [0u8; 32],
+            },
+        )
+    }
+
+    #[test]
+    fn reactor_envelope_not_requested_when_no_subscribers() {
+        // emit_envelope=false must short-circuit to NotRequested WITHOUT touching
+        // the payload: even an undecodable payload yields NotRequested, proving
+        // the envelope is only built when a reactor actually wants one.
+        let staged = staged_event();
+        let notification = notification_for(0, 1, 10);
+        let ext: BTreeMap<ExtensionKey, EncodedBytes> = BTreeMap::new();
+        let undecodable = [0xc1u8, 0xc1, 0xc1];
+        let frame = CommitFrameView {
+            payload_bytes: &undecodable,
+            flags: 0,
+            receipt_extensions: &ext,
+            emit_envelope: false,
+        };
+        assert!(
+            matches!(reactor_envelope(&staged, &notification, frame), Ok(None)),
+            "no reactor subscriber must yield Ok(None)"
+        );
+    }
+
+    #[test]
+    fn reactor_envelope_available_for_decodable_payload() {
+        // A reactor is subscribed and the committed payload decodes: the plaintext
+        // envelope is built.
+        let staged = staged_event();
+        let notification = notification_for(0, 1, 10);
+        let ext: BTreeMap<ExtensionKey, EncodedBytes> = BTreeMap::new();
+        let payload =
+            crate::encoding::to_bytes(&serde_json::json!({"k": 1})).expect("encode payload");
+        let frame = CommitFrameView {
+            payload_bytes: &payload,
+            flags: 0,
+            receipt_extensions: &ext,
+            emit_envelope: true,
+        };
+        assert!(
+            matches!(reactor_envelope(&staged, &notification, frame), Ok(Some(_))),
+            "a decodable payload with a reactor subscribed must build an envelope"
+        );
+    }
+
+    #[test]
+    fn reactor_envelope_unavailable_is_surfaced_not_swallowed() {
+        // REGRESSION (C3): the previous `.ok()` collapsed a `stored_event` decode
+        // FAILURE and "no reactor asked" into the same silent `None`. With a
+        // reactor subscribed (emit_envelope=true) but an undecodable committed
+        // payload — as an encrypted append's ciphertext frame bytes are — the
+        // outcome must be the distinct, observable Unavailable, NOT NotRequested
+        // and NOT a swallowed Available.
+        let staged = staged_event();
+        let notification = notification_for(0, 1, 10);
+        let ext: BTreeMap<ExtensionKey, EncodedBytes> = BTreeMap::new();
+        let undecodable = [0xc1u8, 0xc1, 0xc1];
+        let frame = CommitFrameView {
+            payload_bytes: &undecodable,
+            flags: 0,
+            receipt_extensions: &ext,
+            emit_envelope: true,
+        };
+        assert!(
+            matches!(
+                reactor_envelope(&staged, &notification, frame),
+                Err(ReactorEnvelopeUnavailable)
+            ),
+            "an undecodable payload with a reactor subscribed must surface \
+             ReactorEnvelopeUnavailable, not silently drop to Ok(None)"
+        );
     }
 
     #[test]

@@ -17,6 +17,12 @@ pub mod stream_code {
     pub const CLIENT_CANCELLED: &str = "client_cancelled";
     /// A persisted syncbat receipt event failed canonical decode.
     pub const RECEIPT_DECODE_FAILED: &str = "receipt_decode_failed";
+    /// A server-internal fault ended the stream (the store-backed watcher bridge
+    /// failed or disconnected). Distinct from the client/protocol codes above so
+    /// a peer can tell "the server failed" from "your request was bad" — routing
+    /// an internal fault through a cursor/protocol code would misreport a
+    /// server-side failure as a client error.
+    pub const INTERNAL: &str = "internal_error";
 }
 
 /// Error returned by the subscription runtime engine.

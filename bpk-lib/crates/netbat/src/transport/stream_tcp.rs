@@ -174,7 +174,13 @@ pub fn serve_subscription_stream(
     // runs on EVERY exit path, return or unwind.
     let _stop_reader_on_exit = StopReaderOnExit(stop_control_reader);
     stats.served_subscriptions += 1;
-    run_subscription_loop(&mut writer, session.as_mut(), limits)?;
+    run_subscription_loop(
+        &mut writer,
+        session.as_mut(),
+        &subscribe.subscription_id,
+        limits,
+        &mut stats,
+    )?;
     Ok(stats)
 }
 
@@ -469,7 +475,9 @@ fn open_session_for_subscribe<W: Write>(
 fn run_subscription_loop(
     writer: &mut impl Write,
     session: &mut dyn SubscriptionSession,
+    subscription_id: &SubscriptionToken,
     limits: &Limits,
+    stats: &mut TcpSubscriptionServeStats,
 ) -> Result<(), NetbatError> {
     loop {
         match session.poll(SUBSCRIPTION_POLL_INTERVAL) {
@@ -482,7 +490,15 @@ fn run_subscription_loop(
             Ok(SessionPoll::Blocked) => {}
             Ok(SessionPoll::Ended) => return Ok(()),
             Err(error) => {
-                return Err(map_runtime_error(&error));
+                // H3: surface a coded terminal SUB_ERR to the peer BEFORE tearing
+                // the connection down (was a bare socket close), and account the
+                // fault in `runtime_failures` (was never incremented — the poll
+                // failure escaped as a listener/worker error, miscounted as a
+                // `failed_subscription`). H2: the code distinguishes a
+                // server-internal fault from a client/protocol fault.
+                write_runtime_failure(writer, subscription_id, &error, limits)?;
+                stats.runtime_failures += 1;
+                return Ok(());
             }
         }
     }
@@ -853,25 +869,12 @@ fn merge_stats(total: &mut TcpSubscriptionServeStats, connection: TcpSubscriptio
     }
 }
 
-fn map_runtime_error(error: &SubscriptionRuntimeError) -> NetbatError {
-    NetbatError::MalformedStreamFrame {
-        reason: match error {
-            SubscriptionRuntimeError::Store(_) => "store error during stream poll",
-            SubscriptionRuntimeError::InvalidSubscriptionId { reason } => reason,
-            SubscriptionRuntimeError::DuplicateSubscription { .. } => {
-                "duplicate subscription route"
-            }
-            SubscriptionRuntimeError::InvalidRoute { reason }
-            | SubscriptionRuntimeError::InvalidConfig { reason } => reason,
-            SubscriptionRuntimeError::UnknownSubscription { .. } => "unknown subscription",
-            SubscriptionRuntimeError::CursorInvalid { reason } => reason,
-            SubscriptionRuntimeError::CursorMismatch { reason } => reason,
-            SubscriptionRuntimeError::EnvelopeEncoding(_) => "envelope encoding failed",
-            SubscriptionRuntimeError::Worker(_) => "subscription worker failed",
-            SubscriptionRuntimeError::AckInvalid { reason } => reason,
-        },
-    }
-}
+/// Runtime-fault mapping (a session-poll error mapped to a wire code / SUB_ERR
+/// frame). `#[path]`-split to keep this module within the file-size cap; the
+/// plaintext and TLS delivery loops share it.
+#[path = "stream_tcp_runtime_fault.rs"]
+mod runtime_fault;
+use runtime_fault::{map_runtime_error, write_runtime_failure};
 
 /// Single-threaded TLS subscription session: the rustls stream cannot be
 /// thread-split, so control reads and delivery writes are multiplexed on one

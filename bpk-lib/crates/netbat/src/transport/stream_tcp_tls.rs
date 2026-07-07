@@ -34,8 +34,8 @@ use super::super::stream_frame::SubscriptionToken;
 use super::super::tcp::read_line;
 use super::super::tls::{TlsServerConfig, TlsStream};
 use super::{
-    classify_control_line, decode_subscribe_request, map_runtime_error, open_session_for_subscribe,
-    terminal_delivery, write_delivery, TcpSubscriptionServeStats, TcpSubscriptionServerConfig,
+    classify_control_line, decode_subscribe_request, open_session_for_subscribe, terminal_delivery,
+    write_delivery, write_runtime_failure, TcpSubscriptionServeStats, TcpSubscriptionServerConfig,
     SUBSCRIPTION_POLL_INTERVAL,
 };
 
@@ -119,6 +119,7 @@ pub(super) fn serve_tls_subscription_connection(
         &control_tx,
         limits,
         &subscribe.subscription_id,
+        &mut stats,
     )?;
     Ok(stats)
 }
@@ -152,6 +153,7 @@ fn run_tls_subscription_loop(
     control_tx: &flume::Sender<SessionControl>,
     limits: &Limits,
     subscription_id: &SubscriptionToken,
+    stats: &mut TcpSubscriptionServeStats,
 ) -> Result<(), NetbatError> {
     let mut accumulator = ControlAccumulator::new();
     // Set once the client control stream is finished (peer gone, or a terminal
@@ -195,7 +197,15 @@ fn run_tls_subscription_loop(
             }
             Ok(SessionPoll::Blocked) => {}
             Ok(SessionPoll::Ended) => return Ok(()),
-            Err(error) => return Err(map_runtime_error(&error)),
+            Err(error) => {
+                // H3/H2 (same fix as the plaintext `run_subscription_loop`):
+                // emit a coded terminal SUB_ERR BEFORE teardown and account the
+                // fault in `runtime_failures`, instead of tearing the session
+                // down with a bare close under a collapsed wire code.
+                write_runtime_failure(tls, subscription_id, &error, limits)?;
+                stats.runtime_failures += 1;
+                return Ok(());
+            }
         }
     }
 }

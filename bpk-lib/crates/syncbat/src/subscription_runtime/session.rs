@@ -295,6 +295,29 @@ pub fn cursor_mismatch_terminal(
     })
 }
 
+/// Build an internal-failure terminal error frame for an active session.
+///
+/// A server-side fault ended the stream — the store-backed watcher bridge
+/// failed or disconnected. It carries [`stream_code::INTERNAL`], distinct from
+/// the client/protocol codes, so a peer can tell "the server failed" from "your
+/// request was bad"; routing it through a cursor code would misreport a
+/// server-side failure as a client cursor error.
+#[must_use]
+pub fn internal_failure_error(
+    subscription_id: &str,
+    message: Vec<u8>,
+    last_delivered_cursor: Option<RuntimeCursor>,
+    last_acked_cursor: Option<RuntimeCursor>,
+) -> SessionDelivery {
+    SessionDelivery::Error(SessionError {
+        subscription_id: Some(subscription_id.to_owned()),
+        code: stream_code::INTERNAL,
+        last_delivered_cursor,
+        last_acked_cursor,
+        message,
+    })
+}
+
 /// Compute bounded delivery queue capacity from client and route limits.
 #[must_use]
 pub fn queue_capacity(
@@ -331,4 +354,35 @@ pub fn validate_open_limits(
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::error::stream_code;
+    use super::{internal_failure_error, SessionDelivery};
+
+    #[test]
+    fn internal_failure_error_uses_distinct_internal_code() {
+        // REGRESSION (H2): a server-internal fault — the store-backed watcher
+        // bridge erroring or disconnecting — must terminate the stream with the
+        // DISTINCT `internal_error` code, never the client `cursor_invalid` code,
+        // or a server-side failure is misreported to the peer as "your request
+        // was bad". Both the projection and operation-status stream runtimes
+        // route their internal-failure poll arms through this builder, so pinning
+        // it pins both routes.
+        let terminal = internal_failure_error(
+            "orders.open.v1",
+            b"watcher bridge disconnected".to_vec(),
+            None,
+            None,
+        );
+        assert!(
+            matches!(&terminal, SessionDelivery::Error(error) if error.code == stream_code::INTERNAL),
+            "an internal bridge fault must carry the distinct internal_error code"
+        );
+        assert!(
+            matches!(&terminal, SessionDelivery::Error(error) if error.code != stream_code::CURSOR_INVALID),
+            "an internal fault must NOT be misreported as a client cursor error"
+        );
+    }
 }

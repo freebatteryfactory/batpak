@@ -17,10 +17,10 @@ use super::operation_status_stream::OperationStatusStreamSession;
 use super::projector::{ProjectionProjector, ProjectionRouteBinding};
 use super::registry::{SubscriptionRegistry, SubscriptionRoute};
 use super::session::{
-    ack_invalid_error, client_cancel_end, cursor_mismatch_terminal, malformed_control_error,
-    queue_capacity, slow_consumer_error, validate_open_limits, RuntimeCursor, SessionControl,
-    SessionDelivery, SessionError, SessionEventDelivery, SessionPoll, SessionWatermarkDelivery,
-    SubscriptionSession, SubscriptionSessionFactory, SubscriptionStore,
+    ack_invalid_error, client_cancel_end, cursor_mismatch_terminal, internal_failure_error,
+    malformed_control_error, queue_capacity, slow_consumer_error, validate_open_limits,
+    RuntimeCursor, SessionControl, SessionDelivery, SessionEventDelivery, SessionPoll,
+    SessionWatermarkDelivery, SubscriptionSession, SubscriptionSessionFactory, SubscriptionStore,
 };
 
 enum SessionPhase {
@@ -163,28 +163,32 @@ where
                 Ok(SessionPoll::Blocked)
             }
             Ok(Err(error)) => {
+                // The store-backed watcher bridge returned an error: a
+                // server-internal fault, not a client cursor error. Route it to
+                // the distinct INTERNAL code so it is not misreported as
+                // `cursor_invalid` (a "your request was bad" code).
                 self.phase = SessionPhase::Ended;
-                let message = error.to_string();
-                let terminal = SessionDelivery::Error(SessionError {
-                    subscription_id: Some(self.subscription_id.clone()),
-                    code: super::error::stream_code::CURSOR_INVALID,
-                    last_delivered_cursor: self.last_delivered_cursor.clone(),
-                    last_acked_cursor: self.last_acked_cursor.clone(),
-                    message: message.into_bytes(),
-                });
+                let terminal = internal_failure_error(
+                    &self.subscription_id,
+                    error.to_string().into_bytes(),
+                    self.last_delivered_cursor.clone(),
+                    self.last_acked_cursor.clone(),
+                );
                 self.terminal = Some(terminal.clone());
                 Ok(SessionPoll::Delivery(terminal))
             }
             Err(RecvTimeoutError::Timeout) => Ok(SessionPoll::Blocked),
             Err(RecvTimeoutError::Disconnected) => {
+                // The watcher bridge thread is gone: a server-internal fault, so
+                // it carries the distinct INTERNAL code rather than a client
+                // cursor error.
                 self.phase = SessionPhase::Ended;
-                let terminal = SessionDelivery::Error(SessionError {
-                    subscription_id: Some(self.subscription_id.clone()),
-                    code: super::error::stream_code::CURSOR_INVALID,
-                    last_delivered_cursor: self.last_delivered_cursor.clone(),
-                    last_acked_cursor: self.last_acked_cursor.clone(),
-                    message: b"projection watcher bridge disconnected".to_vec(),
-                });
+                let terminal = internal_failure_error(
+                    &self.subscription_id,
+                    b"projection watcher bridge disconnected".to_vec(),
+                    self.last_delivered_cursor.clone(),
+                    self.last_acked_cursor.clone(),
+                );
                 self.terminal = Some(terminal.clone());
                 Ok(SessionPoll::Delivery(terminal))
             }
