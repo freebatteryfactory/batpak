@@ -426,7 +426,7 @@ impl CitationWaivers {
 
     /// True when some waiver whose name matches `invariant` (exact, or the
     /// per-artifact `<invariant>:<path>` form) is present AND carries a witness.
-    /// A matching but witnessless waiver fails closed via [`contains`] (which
+    /// A matching but witnessless waiver fails closed via `contains` (which
     /// bails when the witness is absent), so a name-only match can never launder
     /// a witnessless citation.
     fn waives_invariant_with_witness(&self, invariant: &str) -> Result<bool> {

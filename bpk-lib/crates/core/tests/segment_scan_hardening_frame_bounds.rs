@@ -146,36 +146,26 @@ fn pathological_frame_length_is_bounded_not_panicking() {
     bytes[poison_frame_offset..poison_frame_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
     std::fs::write(&seg, &bytes).expect("write poisoned segment");
 
-    // Reopen must not panic or error. The scan stops at the poisoned frame.
-    let store = Store::open(config(&dir)).expect("reopen with poisoned frame");
-    let entries: Vec<_> = store
-        .query(&Region::all())
-        .into_iter()
-        .filter(|entry| {
-            !matches!(
-                entry.event_kind(),
-                EventKind::SYSTEM_OPEN_COMPLETED | EventKind::SYSTEM_CLOSE_COMPLETED
-            )
-        })
-        .collect();
-
-    assert!(
-        !entries.is_empty(),
-        "PROPERTY: pre-corruption frames must survive a pathological frame-length poison; got 0 entries"
+    // #25 unified recovery taxonomy: a CRC-valid SYSTEM_CLOSE_COMPLETED frame
+    // follows the poisoned frame before EOF, so this is mid-stream corruption,
+    // NOT a torn tail. Recovering the prefix would SILENTLY TRUNCATE the
+    // committed close frame (data loss), so reopen must fail closed. The
+    // pathological u32::MAX length is still handled in BOUNDED fashion — the
+    // untrusted-frame walk stops at the frame before allocating — so reopen
+    // returns an error rather than panicking or driving an unbounded read.
+    let err = Store::open(config(&dir)).map(|_| ()).expect_err(
+        "PROPERTY: a pathological frame length with a CRC-valid frame after it must fail \
+         closed, not silently truncate to the prefix",
     );
     assert!(
-        entries.len() < 4,
-        "PROPERTY: poisoning the second frame's length must prevent it and later frames from surfacing; \
-         got {} entries (max 3 expected if only the first frame survives)",
-        entries.len()
+        matches!(
+            err,
+            StoreError::CorruptSegment { ref detail, .. }
+            if detail.contains("mid-stream corruption")
+        ),
+        "PROPERTY: a non-tail pathological frame length must fail closed as bounded mid-stream \
+         corruption (no panic, no unbounded read); got {err:?}"
     );
-
-    // The store remains usable.
-    let coord = Coordinate::new("entity:scan", "scope:test").expect("valid coord");
-    let _ = store
-        .append(&coord, KIND, &serde_json::json!({"post_poison": true}))
-        .expect("append after corrupt reopen");
-    store.close().expect("close");
 }
 
 #[test]
@@ -209,13 +199,19 @@ fn non_tail_pathological_frame_length_fails_closed_on_reopen() {
         .map(|_| ())
         .expect_err("PROPERTY: non-tail impossible frame length must fail closed during reopen");
 
+    // #25 strict non-tail path: the impossible length stops the untrusted-frame
+    // walk before allocation (the MAX_FRAME_PAYLOAD cap still fires inside the
+    // walk), and because the resolved region ends short of the file under the
+    // FailClosed policy, the leftover is refused as CorruptFrame. The reason is
+    // the uniform region-bounds message; the MAX_FRAME_PAYLOAD cap itself is
+    // pinned directly by scan::tests.
     assert!(
         matches!(
             err,
             StoreError::CorruptFrame { ref reason, .. }
-            if reason.contains("exceeds MAX_FRAME_PAYLOAD")
+            if reason.contains("extends past the frame region")
         ),
-        "PROPERTY: non-tail impossible frame length must surface as CorruptFrame; got {err:?}"
+        "PROPERTY: non-tail impossible frame length must fail closed as CorruptFrame; got {err:?}"
     );
 }
 

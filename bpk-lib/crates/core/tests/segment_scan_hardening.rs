@@ -413,8 +413,19 @@ fn corruption_inside_committed_batch_fails_closed() {
     let err = Store::open(config(&dir))
         .map(|_| ())
         .expect_err("PROPERTY: corrupted committed batch payload must fail closed");
+    // #25 unified recovery taxonomy: the corrupted item is followed by a
+    // CRC-valid frame (the COMMIT marker) before EOF, so the untrusted-footer
+    // recovery classifies it as mid-stream corruption and REFUSES to truncate to
+    // the valid prefix — exactly the "discard the whole batch, never leak the
+    // prefix" property this test pins, now surfaced as a fail-closed
+    // CorruptSegment rather than the narrower CrcMismatch.
     assert!(
-        matches!(err, StoreError::CrcMismatch { .. }),
-        "PROPERTY: corrupted committed batch payload must surface as CRC mismatch; got {err:?}"
+        matches!(
+            err,
+            StoreError::CorruptSegment { ref detail, .. }
+            if detail.contains("mid-stream corruption")
+        ),
+        "PROPERTY: corrupted committed batch payload must fail closed as mid-stream corruption \
+         (refusing to leak the valid prefix); got {err:?}"
     );
 }
