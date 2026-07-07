@@ -315,6 +315,7 @@ name = "bvisor"
 version = "0.10.0"
 dependencies = [
  "batpak",
+ "batpak-macros",
  "hostbat",
  "landlock",
  "libc",

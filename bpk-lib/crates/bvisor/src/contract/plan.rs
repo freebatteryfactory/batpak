@@ -7,6 +7,7 @@ use crate::contract::capability::{Capability, Enforcement, EvidenceClaim, Eviden
 use crate::contract::host_control::HostControl;
 use crate::contract::ids::{BackendId, BoundaryPlanHash};
 use crate::contract::support::BackendProfileSnapshot;
+use batpak_macros::Error;
 use serde::{Deserialize, Serialize};
 
 /// Schema version for [`BoundaryPlan`] bodies.
@@ -127,10 +128,11 @@ pub struct BoundaryPlan {
 
 /// Why a boundary could not be planned. The planner fails closed: any
 /// unsupported REQUIRED requirement aborts admission rather than degrading.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum PlanError {
     /// A required requirement classified as [`Enforcement::Unsupported`].
+    #[error("backend {backend} cannot enforce required requirement {requirement:?}")]
     Unsupported {
         /// The requirement the backend cannot honor.
         requirement: BoundaryRequirement,
@@ -138,6 +140,7 @@ pub enum PlanError {
         backend: BackendId,
     },
     /// The backend cannot run this workload shape at all.
+    #[error("backend {backend} cannot run workload {workload:?}")]
     WorkloadIncompatible {
         /// The backend.
         backend: BackendId,
@@ -145,6 +148,7 @@ pub enum PlanError {
         workload: Workload,
     },
     /// The machine lacks a primitive a required requirement depends on.
+    #[error("backend {backend} machine profile insufficient: {detail}")]
     ProfileInsufficient {
         /// The backend.
         backend: BackendId,
@@ -152,11 +156,13 @@ pub enum PlanError {
         detail: String,
     },
     /// The requested budgets are invalid.
+    #[error("invalid budget: {detail}")]
     BudgetInvalid {
         /// Human-readable detail.
         detail: String,
     },
     /// The required evidence cannot be produced by this backend.
+    #[error("backend {backend} cannot satisfy required evidence: {detail}")]
     EvidenceUnsatisfiable {
         /// The backend.
         backend: BackendId,
@@ -168,6 +174,7 @@ pub enum PlanError {
     /// it (capacity / guarantee / evidence). Names the FIRST failing dimension and
     /// reason in canonical order. The all-`Unsupported` Inert floor refuses every
     /// budgeted spec here; capable backends admit.
+    #[error("backend {backend} budget membrane refused dimension {dimension:?}: {failure:?}")]
     BudgetRefused {
         /// The backend whose profile was adjudicated against.
         backend: BackendId,
@@ -177,6 +184,7 @@ pub enum PlanError {
         failure: BudgetFailure,
     },
     /// The named backend is not registered.
+    #[error("unknown backend {backend}")]
     UnknownBackend {
         /// The unknown backend id.
         backend: BackendId,
@@ -185,6 +193,7 @@ pub enum PlanError {
     /// with a duplicate name, a reserved-byte name, or a NUL-bearing value). The
     /// planner fails closed BEFORE any classification/execution — a malformed policy
     /// never reaches lowering, so the workload never runs.
+    #[error("invalid capability policy: {detail}")]
     InvalidPolicy {
         /// Human-readable detail (the policy validation error).
         detail: String,
@@ -193,51 +202,9 @@ pub enum PlanError {
     /// reference — a fail-closed gauntlet finding. No plan is produced and no
     /// backend effect occurs. Should never arise from correct code; if it does,
     /// the circuit and the reference have drifted and the build must stop.
+    #[error("admission shadow divergence (fail-closed): {detail}")]
     ShadowDivergence {
         /// The typed divergence rendered for the operator.
         detail: String,
     },
 }
-
-impl std::fmt::Display for PlanError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unsupported {
-                requirement,
-                backend,
-            } => write!(
-                f,
-                "backend {backend} cannot enforce required requirement {requirement:?}"
-            ),
-            Self::WorkloadIncompatible { backend, workload } => {
-                write!(f, "backend {backend} cannot run workload {workload:?}")
-            }
-            Self::ProfileInsufficient { backend, detail } => {
-                write!(
-                    f,
-                    "backend {backend} machine profile insufficient: {detail}"
-                )
-            }
-            Self::BudgetInvalid { detail } => write!(f, "invalid budget: {detail}"),
-            Self::EvidenceUnsatisfiable { backend, detail } => write!(
-                f,
-                "backend {backend} cannot satisfy required evidence: {detail}"
-            ),
-            Self::BudgetRefused {
-                backend,
-                dimension,
-                failure,
-            } => write!(
-                f,
-                "backend {backend} budget membrane refused dimension {dimension:?}: {failure:?}"
-            ),
-            Self::UnknownBackend { backend } => write!(f, "unknown backend {backend}"),
-            Self::InvalidPolicy { detail } => write!(f, "invalid capability policy: {detail}"),
-            Self::ShadowDivergence { detail } => {
-                write!(f, "admission shadow divergence (fail-closed): {detail}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for PlanError {}

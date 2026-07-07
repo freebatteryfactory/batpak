@@ -36,6 +36,7 @@ use super::schedule::{
     reference_schedule_admission, PrimitiveDeclInputs, ScheduleInputs, ScheduleOutcome,
     ScheduleRefusal, ScheduleSlotInputs,
 };
+use batpak_macros::Error;
 
 /// The fixed shape + derived lane widths a compiled schedule circuit reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -541,10 +542,11 @@ pub(crate) fn encode_schedule(inputs: &ScheduleInputs, shape: &ScheduleShape) ->
 }
 
 /// A typed schedule-membrane shadow disagreement — a hard gauntlet finding.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ScheduleDivergence {
     /// The two paths produced different outcomes.
+    #[error("schedule divergence: reference {reference:?} != circuit {circuit:?}")]
     OutcomeMismatch {
         /// The authoritative imperative outcome.
         reference: ScheduleOutcome,
@@ -552,6 +554,7 @@ pub enum ScheduleDivergence {
         circuit: ScheduleOutcome,
     },
     /// The shadow circuit failed to compile/evaluate where the reference did not.
+    #[error("schedule divergence: circuit failed ({reason}) where reference was {reference:?}")]
     CircuitError {
         /// The authoritative imperative outcome.
         reference: ScheduleOutcome,
@@ -559,23 +562,6 @@ pub enum ScheduleDivergence {
         reason: &'static str,
     },
 }
-
-impl std::fmt::Display for ScheduleDivergence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::OutcomeMismatch { reference, circuit } => write!(
-                f,
-                "schedule divergence: reference {reference:?} != circuit {circuit:?}"
-            ),
-            Self::CircuitError { reference, reason } => write!(
-                f,
-                "schedule divergence: circuit failed ({reason}) where reference was {reference:?}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ScheduleDivergence {}
 
 /// The shadow circuit's schedule decision: compile for the derived shape, evaluate the
 /// encoded lanes, and map the refusal code back to a [`ScheduleOutcome`].

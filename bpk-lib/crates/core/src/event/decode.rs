@@ -28,33 +28,18 @@
 
 use crate::event::upcast::{self, UpcastError};
 use crate::event::{Event, EventKind, EventPayload};
+use batpak_macros::Error;
 
 /// Source of a payload decode failure, retaining the lane-specific error chain.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum DecodeSource {
     /// Decode via `serde_json::from_value` failed.
-    Json(serde_json::Error),
+    #[error("json decode: {0}")]
+    Json(#[source] serde_json::Error),
     /// Decode via the canonical MessagePack decoder failed.
-    Msgpack(rmp_serde::decode::Error),
-}
-
-impl std::fmt::Display for DecodeSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Json(e) => write!(f, "json decode: {e}"),
-            Self::Msgpack(e) => write!(f, "msgpack decode: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for DecodeSource {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Json(e) => Some(e),
-            Self::Msgpack(e) => Some(e),
-        }
-    }
+    #[error("msgpack decode: {0}")]
+    Msgpack(#[source] rmp_serde::decode::Error),
 }
 
 /// Error returned by [`DecodeTyped::decode_typed`] (and by
@@ -66,13 +51,14 @@ impl std::error::Error for DecodeSource {
 ///
 /// `#[non_exhaustive]` since 0.10.0 (ROADMAP §2): adding a decode failure
 /// mode is an extension, not a semver break; match with a wildcard arm.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum TypedDecodeError {
     /// The event's kind did not match the target type's `KIND`.
     ///
     /// Emitted by [`DecodeTyped::decode_typed`] only. `route_typed` returns
     /// `Ok(None)` in this case.
+    #[error("kind mismatch: expected {expected:?}, got {got:?}")]
     KindMismatch {
         /// The `KIND` the caller asserted.
         expected: EventKind,
@@ -81,16 +67,22 @@ pub enum TypedDecodeError {
     },
     /// The kind matched but the payload could not be deserialized into the
     /// target type. The lane-specific error is chained via [`DecodeSource`].
+    #[error("decode failed for kind {kind:?}: {source}")]
     DecodeFailure {
         /// The matched kind.
         kind: EventKind,
         /// The underlying lane-specific decode error.
+        #[source]
         source: DecodeSource,
     },
     /// The stored `payload_version` is *newer* than the decoder's current
     /// [`EventPayload::PAYLOAD_VERSION`]. There is no downcaster — a reader can
     /// never reconstruct a struct shape it predates — so this is a hard error
     /// everywhere, including replay and cold-start scan.
+    #[error(
+        "future payload version for kind {kind:?}: stored frame is version {stored} but \
+         this decoder understands at most version {current}; upgrade the reader"
+    )]
     FutureVersion {
         /// The matched kind.
         kind: EventKind,
@@ -103,47 +95,14 @@ pub enum TypedDecodeError {
     /// chain failed to lift the payload to the current shape.
     ///
     /// [`Upcast`]: crate::event::Upcast
+    #[error("upcast failed for kind {kind:?}: {source}")]
     Upcast {
         /// The matched kind.
         kind: EventKind,
         /// The underlying upcast-chain error.
+        #[source]
         source: UpcastError,
     },
-}
-
-impl std::fmt::Display for TypedDecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::KindMismatch { expected, got } => {
-                write!(f, "kind mismatch: expected {expected:?}, got {got:?}")
-            }
-            Self::DecodeFailure { kind, source } => {
-                write!(f, "decode failed for kind {kind:?}: {source}")
-            }
-            Self::FutureVersion {
-                kind,
-                stored,
-                current,
-            } => write!(
-                f,
-                "future payload version for kind {kind:?}: stored frame is version {stored} but \
-                 this decoder understands at most version {current}; upgrade the reader"
-            ),
-            Self::Upcast { kind, source } => {
-                write!(f, "upcast failed for kind {kind:?}: {source}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TypedDecodeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::KindMismatch { .. } | Self::FutureVersion { .. } => None,
-            Self::DecodeFailure { source, .. } => Some(source),
-            Self::Upcast { source, .. } => Some(source),
-        }
-    }
 }
 
 /// Typed decode/route seam.

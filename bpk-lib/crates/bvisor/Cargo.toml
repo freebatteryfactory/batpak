@@ -72,6 +72,10 @@ backend-macos = []
 # seals report bodies.
 # The contract itself stays OS-free and writes no BatPak.
 batpak = { path = "../core", version = "0.10.0" }
+# The batpak family's one proc-macro crate. Used directly (as syncbat does) for
+# the `Error` / `AllVariants` derives that back the contract error enums and
+# `RequirementKind::ALL`; never re-exported.
+batpak-macros = { path = "../macros", version = "0.10.0" }
 serde = { version = "1", features = ["derive"] }
 # Named in report/plan seal signatures: batpak's canonical encoder returns
 # `rmp_serde::encode::Error`, mirrored here exactly as core's *ReportBody does.

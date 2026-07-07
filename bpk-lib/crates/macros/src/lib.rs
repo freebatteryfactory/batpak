@@ -4,6 +4,8 @@
 //! to their own `Cargo.toml` — the derives are already in scope via
 //! `use batpak::EventPayload;` or `use batpak::EventSourced;`.
 
+mod all_variants;
+mod error;
 mod event_payload;
 mod operation;
 
@@ -22,6 +24,33 @@ use syn::{
 pub fn derive_event_payload(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match event_payload::expand(&input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Derives `core::fmt::Display` + `std::error::Error` for an error enum from a
+/// per-variant `#[error("...")]` format literal — a thiserror-lite.
+///
+/// Every variant needs exactly one `#[error("literal {field}")]`. A field
+/// annotated `#[source]` becomes `Error::source()`; `#[from]` additionally
+/// generates `impl From`. Enums only; see `crates/macros/src/error.rs` for the
+/// full contract (byte-identical rendering, explicit source wiring).
+#[proc_macro_derive(Error, attributes(error, source, from))]
+pub fn derive_error(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match error::expand(&input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Derives a `pub const ALL: [Self; N]` slice listing every variant of a
+/// fieldless enum, in declaration order. See `crates/macros/src/all_variants.rs`.
+#[proc_macro_derive(AllVariants)]
+pub fn derive_all_variants(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match all_variants::expand(&input) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }

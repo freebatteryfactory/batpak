@@ -23,6 +23,7 @@
 //! each impl supplies a `(KIND, FROM_VERSION)` key and a pure value migration.
 
 use crate::event::{EventKind, EventPayload};
+use batpak_macros::Error;
 use serde::de::DeserializeOwned;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -49,10 +50,14 @@ pub trait Upcast {
 }
 
 /// Error raised while upcasting a stored payload to the current version.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum UpcastError {
     /// No registered step exists for a `(kind, from_version)` hop the chain
     /// needs to reach the current version — there is a gap in the migration set.
+    #[error(
+        "no registered upcast step for kind {kind:?} from version {from_version} \
+         (need to reach version {to_version}); register an Upcast for this hop"
+    )]
     MissingStep {
         /// The kind being upcast.
         kind: EventKind,
@@ -64,6 +69,7 @@ pub enum UpcastError {
     /// Two registrations claim the same `(kind, from_version)` hop. Ambiguous
     /// migrations are a programming error, surfaced rather than silently
     /// resolved.
+    #[error("duplicate upcast step registered for kind {kind:?} from version {from_version}")]
     DuplicateStep {
         /// The kind with the duplicated hop.
         kind: EventKind,
@@ -71,54 +77,19 @@ pub enum UpcastError {
         from_version: u16,
     },
     /// A registered step's value transform failed (shape mismatch, etc.).
+    #[error("upcast step for kind {kind:?} from version {from_version} failed: {source}")]
     Step {
         /// The kind being upcast.
         kind: EventKind,
         /// The hop that failed.
         from_version: u16,
         /// The underlying step error.
+        #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
     /// Encoding/decoding the value between rmpv and the lane representation failed.
+    #[error("upcast value codec error: {0}")]
     ValueCodec(String),
-}
-
-impl std::fmt::Display for UpcastError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingStep {
-                kind,
-                from_version,
-                to_version,
-            } => write!(
-                f,
-                "no registered upcast step for kind {kind:?} from version {from_version} \
-                 (need to reach version {to_version}); register an Upcast for this hop"
-            ),
-            Self::DuplicateStep { kind, from_version } => write!(
-                f,
-                "duplicate upcast step registered for kind {kind:?} from version {from_version}"
-            ),
-            Self::Step {
-                kind,
-                from_version,
-                source,
-            } => write!(
-                f,
-                "upcast step for kind {kind:?} from version {from_version} failed: {source}"
-            ),
-            Self::ValueCodec(msg) => write!(f, "upcast value codec error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for UpcastError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Step { source, .. } => Some(source.as_ref()),
-            Self::MissingStep { .. } | Self::DuplicateStep { .. } | Self::ValueCodec(_) => None,
-        }
-    }
 }
 
 /// Register an [`Upcast`] implementation so the decode seam can find it.

@@ -3,6 +3,7 @@ pub mod position;
 pub use position::DagPosition;
 
 use crate::event::EventKind;
+use batpak_macros::Error;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
@@ -49,14 +50,17 @@ impl<'de> Deserialize<'de> for Coordinate {
 }
 
 /// Errors returned when constructing a [`Coordinate`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum CoordinateError {
     /// The entity string was empty.
+    #[error("entity cannot be empty")]
     EmptyEntity,
     /// The scope string was empty.
+    #[error("scope cannot be empty")]
     EmptyScope,
     /// The entity string exceeded the maximum supported length.
+    #[error("entity length {len} exceeds maximum {max}")]
     EntityTooLong {
         /// Actual entity string length.
         len: usize,
@@ -64,6 +68,7 @@ pub enum CoordinateError {
         max: usize,
     },
     /// The scope string exceeded the maximum supported length.
+    #[error("scope length {len} exceeds maximum {max}")]
     ScopeTooLong {
         /// Actual scope string length.
         len: usize,
@@ -71,20 +76,25 @@ pub enum CoordinateError {
         max: usize,
     },
     /// A coordinate component contained a NUL byte (`'\0'`).
+    #[error("coordinate component contains a NUL byte")]
     NulByte,
     /// A coordinate component contained a forbidden ASCII control character.
+    #[error("coordinate component contains a forbidden ASCII control character")]
     ControlChar,
     /// A coordinate component contained a path-traversal substring (`..` or `/`).
+    #[error("coordinate component contains a forbidden path-traversal substring (`..` or `/`)")]
     PathTraversal,
     /// A coordinate component contained a checkpoint identity separator (`|` or `=`).
+    #[error("coordinate component contains a forbidden identity-separator character (`|` or `=`)")]
     ForbiddenSeparator,
 }
 
 /// Errors returned when constructing a region filter component.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum RegionFilterError {
     /// A clock range whose start exceeds its end.
+    #[error("clock range start {start} exceeds end {end}")]
     InvertedClockRange {
         /// Inclusive lower bound supplied by the caller.
         start: u32,
@@ -92,28 +102,12 @@ pub enum RegionFilterError {
         end: u32,
     },
     /// An event category outside the valid 4-bit range (`0..16`).
+    #[error("event category {category} is out of range (must be < 16)")]
     CategoryOutOfRange {
         /// Out-of-range category supplied by the caller.
         category: u8,
     },
 }
-
-impl fmt::Display for RegionFilterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvertedClockRange { start, end } => {
-                write!(f, "clock range start {start} exceeds end {end}")
-            }
-            Self::CategoryOutOfRange { category } => {
-                write!(
-                    f,
-                    "event category {category} is out of range (must be < 16)"
-                )
-            }
-        }
-    }
-}
-impl std::error::Error for RegionFilterError {}
 
 /// Inclusive per-entity clock range used as a region filter.
 ///
@@ -318,35 +312,6 @@ impl fmt::Display for Coordinate {
         write!(f, "{}@{}", self.entity, self.scope)
     }
 }
-
-impl fmt::Display for CoordinateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EmptyEntity => write!(f, "entity cannot be empty"),
-            Self::EmptyScope => write!(f, "scope cannot be empty"),
-            Self::EntityTooLong { len, max } => {
-                write!(f, "entity length {len} exceeds maximum {max}")
-            }
-            Self::ScopeTooLong { len, max } => {
-                write!(f, "scope length {len} exceeds maximum {max}")
-            }
-            Self::NulByte => write!(f, "coordinate component contains a NUL byte"),
-            Self::ControlChar => write!(
-                f,
-                "coordinate component contains a forbidden ASCII control character"
-            ),
-            Self::PathTraversal => write!(
-                f,
-                "coordinate component contains a forbidden path-traversal substring (`..` or `/`)"
-            ),
-            Self::ForbiddenSeparator => write!(
-                f,
-                "coordinate component contains a forbidden identity-separator character (`|` or `=`)"
-            ),
-        }
-    }
-}
-impl std::error::Error for CoordinateError {}
 
 /// Region builder with method chaining.
 impl Region {

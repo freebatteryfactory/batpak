@@ -116,6 +116,22 @@ macro_rules! define_entity_id {
                     .map_err(|e| format!("invalid {}: {e}", $entity))
             }
         }
+
+        // Raw `u128` traffic is the documented wire-serde boundary seam (see the
+        // module-level comment on the canonical id types). Both directions are
+        // fully qualified so downstream `define_entity_id!` callers need neither
+        // `EntityIdType` in scope nor a `uuid` dependency.
+        impl ::core::convert::From<u128> for $name {
+            fn from(id: u128) -> Self {
+                <Self as $crate::id::EntityIdType>::new(id)
+            }
+        }
+
+        impl ::core::convert::From<$name> for u128 {
+            fn from(id: $name) -> Self {
+                <$name as $crate::id::EntityIdType>::as_u128(&id)
+            }
+        }
     };
 }
 
@@ -128,54 +144,6 @@ define_entity_id!(EventId, "event");
 define_entity_id!(CorrelationId, "correlation");
 define_entity_id!(CausationId, "causation");
 define_entity_id!(IdempotencyKey, "idempotency");
-
-impl From<u128> for EventId {
-    fn from(id: u128) -> Self {
-        <Self as EntityIdType>::new(id)
-    }
-}
-
-impl From<EventId> for u128 {
-    fn from(id: EventId) -> Self {
-        id.as_u128()
-    }
-}
-
-impl From<u128> for CorrelationId {
-    fn from(id: u128) -> Self {
-        <Self as EntityIdType>::new(id)
-    }
-}
-
-impl From<CorrelationId> for u128 {
-    fn from(id: CorrelationId) -> Self {
-        id.as_u128()
-    }
-}
-
-impl From<u128> for CausationId {
-    fn from(id: u128) -> Self {
-        <Self as EntityIdType>::new(id)
-    }
-}
-
-impl From<CausationId> for u128 {
-    fn from(id: CausationId) -> Self {
-        id.as_u128()
-    }
-}
-
-impl From<u128> for IdempotencyKey {
-    fn from(id: u128) -> Self {
-        <Self as EntityIdType>::new(id)
-    }
-}
-
-impl From<IdempotencyKey> for u128 {
-    fn from(id: IdempotencyKey) -> Self {
-        id.as_u128()
-    }
-}
 
 impl IdempotencyKey {
     /// Derive a deterministic idempotency key from an OPERATION IDENTITY: a

@@ -16,6 +16,7 @@ use crate::contract::capability::{Capability, SupportVerdict};
 use crate::contract::host_control::HostControl;
 use crate::contract::ids::BackendId;
 use crate::contract::plan::BoundaryRequirement;
+use batpak_macros::AllVariants;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -103,7 +104,9 @@ impl SupportMatrix {
 /// them. `Environment` carries a single policy variant (`Exact`), so it is one key
 /// (the per-entry name/value/source detail rides the canonical-policy PAYLOAD, not
 /// the variant-level key).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, AllVariants,
+)]
 #[non_exhaustive]
 pub enum RequirementKind {
     /// [`Capability::Filesystem`].
@@ -143,30 +146,6 @@ pub enum RequirementKind {
 }
 
 impl RequirementKind {
-    /// Every requirement key, in declaration order. Exhaustive by construction (a
-    /// new variant that is not added here fails the `all_is_exhaustive` test), so a
-    /// gate that must scan EVERY kind (e.g. the qualification coupling gate) can
-    /// enumerate them without a runtime registry.
-    pub const ALL: [Self; 17] = [
-        Self::Filesystem,
-        Self::NetworkDenyAll,
-        Self::NetworkAllowList,
-        Self::ChildSpawnDenyNewTasks,
-        Self::ChildSpawnAllowThreads,
-        Self::ChildSpawnAllowDescendants,
-        Self::Environment,
-        Self::InheritedFdsNone,
-        Self::InheritedFdsOnly,
-        Self::LaunchWorkload,
-        Self::CaptureStreams,
-        Self::TempRoot,
-        Self::ExposePath,
-        Self::CommitArtifact,
-        Self::DiscardArtifact,
-        Self::Kill,
-        Self::ListOutputs,
-    ];
-
     /// Derive the classification key from a concrete requirement.
     #[must_use]
     pub fn of(req: &BoundaryRequirement) -> Self {

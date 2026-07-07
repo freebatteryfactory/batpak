@@ -19,6 +19,7 @@
 use std::sync::Arc;
 
 use crate::operation::MAX_OPERATION_NAME_BYTES;
+use batpak_macros::Error;
 
 /// Stable operation name. Validated once at construction; downstream
 /// code never re-parses the grammar.
@@ -30,12 +31,14 @@ pub struct OperationName(Arc<str>);
 /// `#[non_exhaustive]` so post-1.0 we can add finer-grained variants
 /// (e.g. distinguishing high-bit-set from control-byte rejections)
 /// without breaking downstream exhaustive `match` arms.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
 #[non_exhaustive]
 pub enum OperationNameError {
     /// Operation name was empty.
+    #[error("operation name is empty")]
     Empty,
     /// Operation name exceeded the type-level byte bound.
+    #[error("operation name is {len} bytes (max {max})")]
     TooLong {
         /// Observed byte length of the rejected input.
         len: usize,
@@ -43,36 +46,18 @@ pub enum OperationNameError {
         max: usize,
     },
     /// Operation name started or ended with `.`.
+    #[error("operation name must not start or end with '.'")]
     LeadingOrTrailingDot,
     /// Operation name contained the substring `..`.
+    #[error("operation name must not contain '..'")]
     ConsecutiveDots,
     /// Operation name contained a byte outside the ASCII grammar.
+    #[error("operation name contains illegal byte 0x{byte:02x} (allowed: [A-Za-z0-9._-])")]
     IllegalCharacter {
         /// First illegal byte encountered.
         byte: u8,
     },
 }
-
-impl std::fmt::Display for OperationNameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty => f.write_str("operation name is empty"),
-            Self::TooLong { len, max } => {
-                write!(f, "operation name is {len} bytes (max {max})")
-            }
-            Self::LeadingOrTrailingDot => {
-                f.write_str("operation name must not start or end with '.'")
-            }
-            Self::ConsecutiveDots => f.write_str("operation name must not contain '..'"),
-            Self::IllegalCharacter { byte } => write!(
-                f,
-                "operation name contains illegal byte 0x{byte:02x} (allowed: [A-Za-z0-9._-])"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for OperationNameError {}
 
 impl OperationName {
     /// Maximum bytes accepted for an operation name.

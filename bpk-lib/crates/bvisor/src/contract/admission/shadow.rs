@@ -25,6 +25,7 @@ use super::schedule::{schedule_refusal, ScheduleInputs};
 use super::schedule_circuit::{
     compile_schedule_membrane, encode_schedule, shape_of as schedule_shape_of,
 };
+use batpak_macros::Error;
 
 /// Lane width (bits) of the evidence / conflict / budget / hash lanes in the shadow
 /// encoding. Enforcement is the 2-bit code the circuit uses internally.
@@ -125,12 +126,13 @@ pub enum AdmissionOutcome {
 }
 
 /// A typed shadow disagreement — a hard gauntlet finding, never silently ignored.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum AdmissionDivergence {
     /// The two paths produced different outcomes. (Boxed: the outcomes carry the full
     /// per-membrane trace + detail selectors, so the unboxed error variant would dwarf
     /// the `Ok` outcome — `clippy::result_large_err`.)
+    #[error("admission divergence: reference {reference:?} != circuit {circuit:?}")]
     OutcomeMismatch {
         /// The authoritative imperative outcome.
         reference: Box<AdmissionOutcome>,
@@ -138,6 +140,7 @@ pub enum AdmissionDivergence {
         circuit: Box<AdmissionOutcome>,
     },
     /// The shadow circuit failed to compile or evaluate where the reference did not.
+    #[error("admission divergence: circuit failed ({reason}) where reference was {reference:?}")]
     CircuitError {
         /// The authoritative imperative outcome.
         reference: Box<AdmissionOutcome>,
@@ -145,23 +148,6 @@ pub enum AdmissionDivergence {
         reason: &'static str,
     },
 }
-
-impl std::fmt::Display for AdmissionDivergence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::OutcomeMismatch { reference, circuit } => write!(
-                f,
-                "admission divergence: reference {reference:?} != circuit {circuit:?}"
-            ),
-            Self::CircuitError { reference, reason } => write!(
-                f,
-                "admission divergence: circuit failed ({reason}) where reference was {reference:?}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for AdmissionDivergence {}
 
 /// Mask a value to its lane's low `bits`, matching what the circuit's lanes see, so
 /// the reference and the circuit agree even on out-of-range inputs.
