@@ -16,6 +16,19 @@ Two composing principles:
   types become free, new crates auto-derive across coverage/MSRV/public-API/release/docs, format
   changes are one-place.
 
+**Deferred-bless rule (added 2026-07-06, sprint-branch model).** Generated baselines
+(public-api `*.txt`) are machine-blessed ONCE at the end, never hand-edited per block —
+hand-editing a 4.5k-line baseline is what cost Block-2 a public-api CI round. So:
+1. SoT infra (Block 3) builds a **bless-and-upload** `workflow_dispatch` path first
+   (`cargo xtask public-api --bless-baseline` → upload baselines as an artifact).
+2. From macros (Block 4) on, do NOT touch baselines by hand; let public-api drift red.
+   Intermediate CI checkpoints verify compile+tests only — a public-api-only-red is expected,
+   distinguished from a real failure by reading which sub-step failed.
+3. After wire-in (Block 6), run the bless once, commit the regenerated baselines, and review
+   the whole public-API delta vs pre-sprint (stronger than per-block spot-checks). Pay the
+   baseline tax 1×, not 4×. This is decoupled from block structure — blocks stay separate for
+   bisect isolation (Block-2 proved big unbisectable blocks take MORE peel-rounds).
+
 Override: pull functional bugs (C3, H2/H3) up to right after deletions if you want the real
 defects fixed sooner — the only compounding cost is H2/H3's new `stream_code` variant being
 hand-rolled instead of derived (trivial). Recommendation: keep the oracle first regardless.
