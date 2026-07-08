@@ -106,6 +106,35 @@ can be derived from source, derive it and delete both the list and its guard.
   pinning them; add a live Store append→get round-trip through the V1→V2
   upcast chain (today proven only at the decode seam against a golden).
 
+## 2b. Perf investigations — 0.10.0 bench-soak findings (2026-07-07)
+
+Surfaced by a full local Criterion soak of the neutral surface on weak hardware
+(i5-1035G1, 15 W, thermal-limited). Absolutes are a floor; the ratios/shapes are
+the signal. The cloud `perf.yml` reference baseline is the apples-to-apples
+comparison and should be captured alongside these. None are 0.10.0 blockers.
+
+- [ ] **`projection_run` 20× layout cliff.** `evidence/projection_run` on the
+  same operation: `entity-local` ≈ 46 µs and `all` ≈ 42 µs, but `aos` ≈ 857 µs,
+  `scan` ≈ 847 µs, `tiled` ≈ 902 µs — a ~20× gap. `read_walk/query_with_report`
+  is uniform (~600 µs) across the *same* layouts, so this is projection-path
+  specific. Investigate whether `aos`/`scan`/`tiled` do redundant work in the
+  projection run path or `entity-local`/`all` hit a short-circuit — likely a
+  large free win for the slow layouts. (`benches/evidence_reports.rs`,
+  `src/store/projection/`, `src/store/index/columnar/`.)
+- [ ] **Frontier wake superlinear at 512 spread waiters.**
+  `frontier_waiter_wake_all` scales fine to 128, then `spread-targets/512` =
+  ~626 ms (durable) / ~378 ms (visible) vs `same-target/512` = ~53 ms — a ~12×
+  cliff when many waiters are spread across many distinct targets. Fine for
+  realistic fan-out; a wall for 500+ waiters on distinct targets. Confirm the
+  wake set isn't doing an O(waiters × targets) sweep. (`benches/frontier_waiters.rs`,
+  `src/store/write/` frontier/waiter wake path.)
+- [ ] **Non-monotonic 100k cold-start dip.** `cold_start/reopen_open_only`
+  per-event throughput: ~220 K/s @10k, **~67 K/s @100k**, ~222 K/s @1M — the
+  100k corpus is per-event slower than *both* neighbors, breaking an otherwise
+  clean linear curve. Confirm it's a corpus-gen artifact vs. a real
+  segment-count / cache threshold. (`benches/cold_start.rs`,
+  `src/store/cold_start/`.)
+
 ## 3. 1.0.0 track — API stabilization & ergonomics
 
 **Principle: keep every feature and guarantee; simplify the surface, not the
