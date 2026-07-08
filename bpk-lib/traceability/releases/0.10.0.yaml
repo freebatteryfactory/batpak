@@ -192,7 +192,7 @@ rows:
 
   - id: CUT-PUBLISH-TAG-0100
     title: Chain publish + tag after owner sign-off
-    status: INCOMPLETE
+    status: PROVEN
     # Deliberately NOT terminal_required: the publish/tag ceremony runs AFTER
     # `just seal` (seal is its precondition, not its consequence), so a
     # terminal-required row here would block the very ceremony it describes.
@@ -205,6 +205,10 @@ rows:
     notes: >-
       Owner ceremony: `just seal` then `just ship dry` / `just ship real`
       publish the RELEASE_CHAIN crates at 0.10.0 and tag the release. Not part
-      of the 0.10.0 window PR.
+      of the 0.10.0 window PR. COMPLETED 2026-07-07: all 8 RELEASE_CHAIN crates
+      (batpak-macros-support, batpak-macros, batpak-bench-support, batpak,
+      syncbat, netbat, hostbat, bvisor) published to crates.io at 0.10.0 from
+      commit 1323735f; annotated tag v0.10.0 pushed. Release-readiness dry-run
+      green (release.yml run 28910960684).
     proof_commands:
       - just seal
