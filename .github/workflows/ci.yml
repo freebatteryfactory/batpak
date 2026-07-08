@@ -457,10 +457,10 @@ jobs:
           '
 
       # P1-3b anti-vacuous gate: the packaged-consumer build runs batpak's
-      # build.rs with the repo invariant surface ABSENT. The three surface-
-      # dependent build-time lints must then record SKIPPED_PACKAGED receipts,
-      # NOT a (vacuous) PASS. This distinguishes "ran and passed" from "did not
-      # run". consumer-smoke builds into bpk-lib/target/consumer-smoke-build, so
+      # build.rs with the repo invariant surface ABSENT. Packaged-sensitive
+      # build-time lints must then record SKIPPED_PACKAGED receipts, NOT a
+      # (vacuous) PASS. This distinguishes "ran and passed" from "did not run".
+      # consumer-smoke builds into bpk-lib/target/consumer-smoke-build, so
       # build.rs writes receipts to
       # bpk-lib/target/consumer-smoke-build/debug/gauntlet-receipts/<slug>.json.
       - name: Assert packaged build-time lints SKIPPED (not vacuously PASSED)
@@ -468,7 +468,7 @@ jobs:
           set -euo pipefail
           dir="bpk-lib/target/consumer-smoke-build/debug/gauntlet-receipts"
           fail=0
-          for slug in no-dead-code-silencers allow-justifications pub-items-have-tests; do
+          for slug in no-async-runtime no-dead-code-silencers allow-justifications pub-items-have-tests; do
             f="$dir/$slug.json"
             if [ ! -f "$f" ]; then
               echo "::error::missing packaged receipt $f — the packaged build-time lint did not record its skip (silent vacuous pass)"
@@ -485,7 +485,7 @@ jobs:
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
-          echo "All three build-time lints recorded explicit SKIPPED_PACKAGED receipts."
+          echo "All packaged-sensitive build-time lints recorded explicit SKIPPED_PACKAGED receipts."
 
   mutants-smoke:
     name: Mutation smoke (${{ matrix.seam }})

@@ -47,16 +47,7 @@ pub(crate) struct LintCounts {
 pub(crate) fn run_surface_lint(available: bool, slug: &str, lint: fn() -> LintCounts) {
     let started = iso8601_now();
     if !available {
-        println!("cargo:warning={slug} skipped: repo invariant surface absent (packaged crate)");
-        write_gauntlet_receipt(&GauntletReceipt {
-            gate: slug.to_string(),
-            inputs_hash: String::new(),
-            files_examined: 0,
-            assertions_run: 0,
-            started,
-            ended: iso8601_now(),
-            verdict: "SKIPPED_PACKAGED".to_string(),
-        });
+        record_packaged_skip(slug, started);
         return;
     }
     let counts = lint();
@@ -68,6 +59,37 @@ pub(crate) fn run_surface_lint(available: bool, slug: &str, lint: fn() -> LintCo
         started,
         ended: iso8601_now(),
         verdict: "PASS".to_string(),
+    });
+}
+
+/// Run one packaged-sensitive fail-closed check. In a real workspace, the check
+/// runs exactly as before and its `Err` terminates build.rs through `?`. In a
+/// packaged crate, where the repo invariant surface is absent, record an
+/// explicit skip receipt instead of forcing checks that depend on unpublished
+/// workspace resolution to pass or fail vacuously.
+pub(crate) fn run_packaged_sensitive_check(
+    available: bool,
+    slug: &str,
+    check: fn() -> Result<(), String>,
+) -> Result<(), String> {
+    let started = iso8601_now();
+    if !available {
+        record_packaged_skip(slug, started);
+        return Ok(());
+    }
+    check()
+}
+
+fn record_packaged_skip(slug: &str, started: String) {
+    println!("cargo:warning={slug} skipped: repo invariant surface absent (packaged crate)");
+    write_gauntlet_receipt(&GauntletReceipt {
+        gate: slug.to_string(),
+        inputs_hash: String::new(),
+        files_examined: 0,
+        assertions_run: 0,
+        started,
+        ended: iso8601_now(),
+        verdict: "SKIPPED_PACKAGED".to_string(),
     });
 }
 

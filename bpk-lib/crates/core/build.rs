@@ -84,15 +84,15 @@ fn main() -> Result<(), String> {
 
     emit_rerun_lines(repo_invariants_available);
 
-    check_no_tokio_in_deps()?;
+    let avail = repo_invariants_available;
+    shared_checks::run_packaged_sensitive_check(avail, "no-async-runtime", check_no_tokio_in_deps)?;
     check_no_banned_patterns()?;
     check_store_config_field_usage()?;
-    // The three surface-dependent lints are the vacuous-pass risk: in a packaged
-    // crate the repo invariant surface is absent. Rather than skip them
-    // silently, `run_surface_lint` emits a `cargo:warning=` AND writes an
-    // auditable SKIPPED_PACKAGED receipt; on a real workspace run each writes a
-    // PASS receipt with its real counts. See P1-3b.
-    let avail = repo_invariants_available;
+    // In a packaged crate the repo invariant surface is absent. Rather than
+    // skip surface-dependent lints silently, `run_surface_lint` emits a
+    // `cargo:warning=` AND writes an auditable SKIPPED_PACKAGED receipt; on a
+    // real workspace run each writes a PASS receipt with its real counts. See
+    // P1-3b.
     shared_checks::run_surface_lint(
         avail,
         "no-dead-code-silencers",
@@ -554,8 +554,9 @@ fn check_allow_justifications_inner() -> Result<shared_checks::LintCounts, Strin
 ///
 /// `fail(..)` is called for its auditable `cargo:warning` SIDE EFFECT only; the
 /// returned `Err` is what stops the build. If `cargo metadata` itself cannot be
-/// resolved (e.g. a packaged crate with no workspace), the scan FAILS CLOSED
-/// with the error rather than passing silently.
+/// resolved in a real workspace, the scan FAILS CLOSED with the error rather
+/// than passing silently. Packaged standalone crates skip this workspace-only
+/// proof through an auditable SKIPPED_PACKAGED receipt before this check runs.
 fn check_no_tokio_in_deps() -> Result<(), String> {
     let manifest_dir = core_root();
     let hits = shared_checks::scan_workspace_for_runtimes(

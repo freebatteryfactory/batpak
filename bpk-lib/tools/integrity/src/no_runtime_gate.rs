@@ -211,14 +211,26 @@ mod tests {
         if !build_rs.contains("return Err(fail(&format!(") {
             failures.push("build.rs must `return Err(fail(..))` on a runtime hit".into());
         }
-        // The fn that holds the sentinel is `?`-propagated from main (fail-fast).
-        if !build_rs.contains("check_no_tokio_in_deps()?;") {
-            failures.push("build.rs main must `?`-propagate check_no_tokio_in_deps".into());
+        // The fn that holds the sentinel is `?`-propagated from main in a real
+        // workspace, while packaged crates use the auditable SKIPPED_PACKAGED
+        // path shared by the surface-dependent lints.
+        if !build_rs.contains("run_packaged_sensitive_check(")
+            || !build_rs.contains("check_no_tokio_in_deps)?;")
+        {
+            failures.push(
+                "build.rs main must `?`-propagate check_no_tokio_in_deps through the packaged-sensitive helper"
+                    .into(),
+            );
         }
         // A failed metadata scan fails CLOSED (map_err on the scan Result), not a
-        // silent pass.
+        // silent pass, when the real workspace surface is present.
         if !build_rs.contains("could not be proven") {
             failures.push("build.rs must fail closed when the scan itself fails".into());
+        }
+        if !build_rs.contains("\"no-async-runtime\"") {
+            failures.push(
+                "build.rs must emit an auditable packaged skip receipt for no-async-runtime".into(),
+            );
         }
         assert!(failures.is_empty(), "{failures:?}");
     }
