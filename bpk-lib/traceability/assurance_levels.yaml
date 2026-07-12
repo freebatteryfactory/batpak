@@ -40,6 +40,8 @@
   rationale: "segment scan + corruption handling decides what recovered reality is"
   globs:
     - crates/core/src/store/segment/scan/**/*.rs
+    - crates/core/src/store/segment/recovery_manifest.rs
+    - crates/core/src/store/segment/sidx/footer.rs
 
 - level: L4
   seam: frontier-wait-durable

@@ -163,6 +163,28 @@
     the black-box slow-path corruption shapes currently called out in this
     ledger are covered.
 
+- title: Untrusted SIDX manifest cannot escalate into recovery authority
+  section: Fault-Injection Harness
+  pattern: Fault-Injection Harness
+  status: unmeasured
+  invariants:
+    - INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION
+  locations:
+    - bpk-lib/crates/core/src/store/segment/manifest_decision_tests.rs
+    - bpk-lib/crates/core/src/store/segment/manifest_recovery_tests.rs
+    - bpk-lib/crates/core/tests/segment_scan_hardening_frame_bounds.rs
+  commands:
+    - cargo test -p batpak --lib store::segment::manifest
+    - cargo test --test segment_scan_hardening_frame_bounds
+  coverage_delta: unmeasured
+  mutation_delta: >
+    recovery_manifest.rs and sidx/footer.rs joined the segment-scan critical
+    seam (GAUNT-SIDX-NO-SELF-AUTH, #192); the seam catch-rate threshold applies.
+  blind_spots: >
+    the forged-table fuzz target mutates the entry table semantically; scenarios
+    that also forge frame bytes to carry matching CRCs are exercised only at the
+    decision layer (the walk treats any CRC-valid frame as recovered).
+
 - title: Durable frontier observations stay honest under writer faults
   section: Fault-Injection Harness
   pattern: Fault-Injection Harness

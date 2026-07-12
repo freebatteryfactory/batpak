@@ -77,6 +77,10 @@ fn check_doc_hidden_public_surface(repo_root: &Path, source_cache: &mut SourceCa
         "crates/core/src/__fuzz.rs::__fuzz_mmap_index_load",
         "crates/core/src/__fuzz.rs::__fuzz_sidx_footer",
         "crates/core/src/__fuzz.rs::__fuzz_sidx_boundary",
+        // GAUNT-SIDX-NO-SELF-AUTH (#192): semantic entry-table mutation
+        // property harness (no-authority-escalation law; same reviewed
+        // feature-gated __fuzz escape-hatch as the decode wrappers above).
+        "crates/core/src/__fuzz.rs::__fuzz_sidx_manifest",
         // GAUNT-SIM-2c: the `#[cfg(feature = "dangerous-test-hooks")]`
         // `#[doc(hidden)] pub mod __sim` exposes the seeded deterministic
         // simulation driver (run_seeded_workload / replay_seed) to the

@@ -126,3 +126,12 @@ path = "fuzz_targets/sidx_boundary.rs"
 test = false
 doc = false
 bench = false
+
+# GAUNT-SIDX-NO-SELF-AUTH (#192) — semantic entry-table mutation property target
+# (no-authority-escalation law; asserts live in the __fuzz shim).
+[[bin]]
+name = "sidx_manifest"
+path = "fuzz_targets/sidx_manifest.rs"
+test = false
+doc = false
+bench = false

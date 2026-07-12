@@ -10,6 +10,8 @@ mod boundary_tests;
 mod boundary_future_tests;
 
 #[cfg(test)]
+mod manifest_decision_tests;
+#[cfg(test)]
 mod manifest_recovery_tests;
 
 #[cfg(test)]
@@ -17,12 +19,10 @@ mod mod_tests;
 
 pub(crate) use id::SegmentId;
 pub(crate) use recovery_manifest::resolve_untrusted_frames_end;
-// Corroboration internals are surfaced to the inline manifest-recovery test
+// Decision internals are surfaced to the inline manifest-recovery test
 // island only; production code reaches them through `resolve_untrusted_frames_end`.
 #[cfg(test)]
-pub(crate) use recovery_manifest::{
-    corroborate_untrusted_entries, RecoveredFrame, RecoveredFrameMap, UntrustedRecovery,
-};
+pub(crate) use recovery_manifest::{decide_untrusted_recovery, UntrustedRecovery};
 
 use crate::event::Event;
 use crate::store::{EncodedBytes, ExtensionKey, StoreError};
@@ -419,8 +419,9 @@ impl Segment<Active> {
             Some(boundary) if boundary.trusted => boundary.frames_end,
             Some(boundary) => {
                 // Recognized but untrusted SIDX footer: preserve the strict
-                // sealed-source posture and require the untrusted manifest to
-                // corroborate a non-empty recovered prefix.
+                // sealed-source posture — any non-empty recovered prefix under
+                // an untrusted footer is refused (the table is suspicion input
+                // only, never an authority; #192).
                 resolve_untrusted_frames_end(
                     &mut source,
                     frames_start,
@@ -818,13 +819,14 @@ pub(super) fn crc_valid_frame_exists_after<R: Read + Seek>(
 /// non-decodable position (mid-stream corruption).
 ///
 /// This is the prefix-only primitive: it returns just the recovery stop offset P.
-/// The production untrusted path uses [`crc_valid_frames_end_with_map`] (which
-/// additionally builds the recovered-frame map `R` for SIDX-manifest
-/// corroboration); this thin wrapper preserves the original signature for the
-/// round-5/6 unit tests that pin the mid-stream-corruption / torn-tail behavior
-/// directly, and is the single source of truth for that walk.
+/// The production untrusted path uses [`crc_valid_frames_end_counting`] (which
+/// additionally counts recovered frames so the posture decision can tell an
+/// empty prefix from a non-empty one; #192); this thin wrapper preserves the
+/// original signature for the round-5/6 unit tests that pin the
+/// mid-stream-corruption / torn-tail behavior directly, and is the single
+/// source of truth for that walk.
 //
-// Production code reaches the walk via `crc_valid_frames_end_with_map`; this
+// Production code reaches the walk via `crc_valid_frames_end_counting`; this
 // prefix-only wrapper is exercised only by the boundary unit tests, so it is
 // gated `#[cfg(test)]` (no dead code in the production lib).
 #[cfg(test)]
@@ -834,7 +836,7 @@ pub(crate) fn crc_valid_frames_end<R: Read + Seek>(
     file_len: u64,
     segment_id: u64,
 ) -> Result<u64, StoreError> {
-    let (stop, _recovered) = recovery_manifest::crc_valid_frames_end_with_map(
+    let (stop, _recovered_frame_count) = recovery_manifest::crc_valid_frames_end_counting(
         source,
         frames_start,
         file_len,

@@ -154,7 +154,7 @@ pub(super) fn read_layout<R: Read + Seek>(
 }
 
 /// Parse the SIDX entry table from a footer WITHOUT requiring the footer CRC to
-/// pass — the "cake-and-eat-it" untrusted entry-table read.
+/// pass — the untrusted entry-table read.
 ///
 /// This is the manifest-recovery counterpart to [`read_layout`]: it reads the
 /// fixed 16-byte trailer geometry (`string_table_offset` + `entry_count`),
@@ -166,12 +166,16 @@ pub(super) fn read_layout<R: Read + Seek>(
 /// CRC-failed SDX3 footer, a legacy un-CRC'd SDX2 footer, or a partially-forged
 /// trailer.
 ///
-/// EVERY entry returned is an UNTRUSTED HYPOTHESIS. The caller MUST corroborate
-/// each entry against the independently CRC-verified recovered-frame set before
-/// trusting any of its fields (see `segment::corroborate_untrusted_entries`). A
-/// forger can fabricate arbitrary entry bytes, but cannot match a real frame's
-/// content-addressed `event_hash` (blake3) — so corroboration, not this parse, is
-/// the trust boundary.
+/// EVERY entry returned is an UNTRUSTED HYPOTHESIS, and there is NO parse- or
+/// hash-level step that can upgrade one (GAUNT-SIDX-NO-SELF-AUTH, #192): BLAKE3
+/// is public and unkeyed, so a forger who can read or edit the segment can copy
+/// a real frame's stored `event_hash` — a matching hash proves nothing about
+/// sibling rows, `entry_count`, order, or the footer boundary. The caller
+/// (`segment::recovery_manifest`) therefore consumes these rows ONLY as
+/// suspicion geometry (offsets claimed at/after the recovered prefix end),
+/// routed through the scan tail posture; no row is ever treated as an authority
+/// over recovery. Nothing short of a keyed MAC, digital signature, or
+/// independently trusted root over the COMPLETE table may change that.
 ///
 /// On ANY geometry/parse failure (absurd `entry_count`, `entry_count × ENTRY_SIZE`
 /// overflow, an entries block that runs before the start of the file, a
@@ -232,11 +236,12 @@ pub(super) fn read_entries_unauthenticated<R: Read + Seek>(
         return Ok(Vec::new());
     }
 
-    // Decode the entries block in place. We do NOT need the string table for
-    // corroboration — only (frame_offset, frame_length, event_hash) — so we skip
-    // straight to entries_start and read the raw fixed-size records. entity_idx /
-    // scope_idx string-table bounds are NOT validated here (corroboration ignores
-    // them; only frames that match a recovered frame's content hash are trusted).
+    // Decode the entries block in place. The recovery decision consumes only the
+    // claimed geometry (frame_offset, frame_length) as suspicion input — so we
+    // skip straight to entries_start and read the raw fixed-size records.
+    // entity_idx / scope_idx string-table bounds are NOT validated here: every
+    // field is an untrusted hypothesis either way, and no field is ever trusted
+    // (#192 — rows are suspicion, never authority).
     reader
         .seek(SeekFrom::Start(entries_start))
         .map_err(StoreError::Io)?;
@@ -246,9 +251,9 @@ pub(super) fn read_entries_unauthenticated<R: Read + Seek>(
     let mut buf = [0u8; ENTRY_SIZE];
     for _ in 0..entry_count {
         if let Err(e) = reader.read_exact(&mut buf) {
-            // A torn/short entries block → no trustworthy manifest. Return zero
-            // entries so the caller falls back, rather than a partial table that
-            // could falsely corroborate. A real non-EOF IO error still propagates.
+            // A torn/short entries block → no usable manifest geometry. Return
+            // zero entries so the caller falls back, rather than a partial table
+            // feeding partial suspicion. A real non-EOF IO error still propagates.
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
                 return Ok(Vec::new());
             }

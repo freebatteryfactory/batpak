@@ -21,6 +21,7 @@ recipe below should stay backed by a compiling example, template, or test.
 - [`200_STATE_TRANSITION.md`](200_STATE_TRANSITION.md) - generic state transition evidence.
 - [`200_RESERVATION_LEDGER.md`](200_RESERVATION_LEDGER.md) - abstract reservation ledgers.
 - [`200_PLATFORM_EVIDENCE.md`](200_PLATFORM_EVIDENCE.md) - platform profile probes.
+- [`200_SEALED_SEGMENT_REFUSAL.md`](200_SEALED_SEGMENT_REFUSAL.md) - operator runbook for a refused sealed segment.
 - [`200_ANTI_PATTERNS.md`](200_ANTI_PATTERNS.md) - wrong moves and replacements.
 
 ## Factory Checks

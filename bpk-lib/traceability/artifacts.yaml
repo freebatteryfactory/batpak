@@ -642,6 +642,17 @@
   kind: source
   paths:
     - crates/core/src/store/segment/sidx.rs
+- id: ART-STORE-UNTRUSTED-RECOVERY
+  kind: source
+  paths:
+    - crates/core/src/store/segment/recovery_manifest.rs
+    - crates/core/src/store/segment/sidx/footer.rs
+- id: ART-STORE-UNTRUSTED-RECOVERY-TESTS
+  kind: tests
+  paths:
+    - crates/core/src/store/segment/manifest_decision_tests.rs
+    - crates/core/src/store/segment/manifest_recovery_tests.rs
+    - crates/core/tests/segment_scan_hardening_frame_bounds.rs
 - id: ART-STORE-CHECKPOINT
   kind: source
   paths:

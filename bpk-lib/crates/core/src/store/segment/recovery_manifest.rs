@@ -1,123 +1,95 @@
-//! Untrusted-footer recovery via the SIDX entry table as a self-authenticating
-//! manifest — the round-7 "cake-and-eat-it" resolution.
+//! Untrusted-footer recovery: the SIDX entry table as an UNTRUSTED SUSPICION
+//! SIGNAL — never an authority (GAUNT-SIDX-NO-SELF-AUTH, #192).
 //!
 //! For an UNTRUSTED footer boundary (CRC-failed SDX3, legacy un-CRC'd SDX2, or a
 //! forged trailer) the trailer `string_table_offset` is unauthenticated and must
 //! never bound recovery. Plain CRC-valid-frame recovery (see
 //! [`super::crc_valid_frames_end`]) recovers the prefix and fails closed on
 //! mid-stream corruption, but it CANNOT distinguish a torn/corrupt LAST committed
-//! frame (followed by the footer) from "intact frames + footer" — so it silently
-//! drops a committed event, ignoring a caller's `FailClosed` posture. This module
-//! closes that gap by corroborating the CRC-independent SIDX entry table against
-//! the independently CRC-verified recovered frames:
+//! frame (followed by the footer) from "intact frames + footer". This module
+//! routes that ambiguity through the caller's tail posture, treating every
+//! untrusted claim about the tail — the footer's own claimed frame end AND any
+//! SIDX row naming a frame at/after the recovered prefix end — as SUSPICION:
 //!
-//! 1. parse the entry table WITHOUT requiring the footer CRC (every entry is an
-//!    UNTRUSTED HYPOTHESIS);
-//! 2. recover the CRC-valid prefix and build the recovered-frame map `R`;
-//! 3. corroborate each entry against `R` by (offset, length, content event_hash);
-//! 4. decide: a corroborated manifest attesting to a committed frame missing from
-//!    the recovered stream FAILS CLOSED (real data loss, any policy); a
-//!    corroborated manifest over intact frames RECOVERS; an
-//!    uncorroborated/unparseable manifest HONORS the caller's tail posture — the
-//!    default permissive posture recovers the CRC-valid prefix (never a false
-//!    fail-closed that would brick a benign corrupt-footer store), while the
-//!    strict `FailClosed` posture refuses a NON-EMPTY prefix as an unprovable
-//!    tail (truncation of a further committed frame cannot be ruled out under an
-//!    untrusted footer with no manifest signal).
+//! 1. parse the entry table WITHOUT requiring the footer CRC (every row is an
+//!    UNTRUSTED HYPOTHESIS, useful only as geometry/hint input);
+//! 2. recover the CRC-valid prefix `[frames_start .. P)`;
+//! 3. decide by posture: the default permissive posture recovers the prefix
+//!    (recording truncation evidence when an untrusted claim reaches past `P`);
+//!    the strict `FailClosed` posture refuses ANY non-empty prefix under an
+//!    untrusted footer — truncation of a further committed frame can never be
+//!    ruled out from unauthenticated bytes, no matter what the table says.
 //!
-//! Load-bearing assumptions (validated against the writer):
-//! - A corroborated entry anchors the WHOLE table to this segment: a forger
-//!   cannot match a real frame's content-addressed blake3 `event_hash`, so once
-//!   one entry corroborates, `entry_count` and the append-ordered entries are
-//!   trustworthy enough to assert "frame N should exist."
-//! - SIDX entries cover ONLY committed frames; batch BEGIN/COMMIT markers are real
-//!   frames but NOT SIDX entries, and entries are recorded post-COMMIT. So we
-//!   match entries↔frames by (offset, length, event_hash), never assume
-//!   contiguity, and only assert a missing-frame for a committed (SIDX-recorded)
-//!   frame — leaving the scan loops' BatchRecoveryState discard logic untouched.
+//! THE SAFE LAW (the doctrine correction this module was rewritten for):
+//! a row corroborated against independently verified frame bytes proves only
+//! THAT row's relationship to THAT frame. It does not authenticate any other
+//! row, the row count, the order, the footer boundary, or claims about
+//! nonexistent trailing frames. BLAKE3 is public and unkeyed: a party able to
+//! read or edit the segment can copy a real frame's stored `event_hash`, so a
+//! matching row is NOT a signature over its siblings. No future optimization
+//! may weaken this without a keyed MAC, digital signature, or independently
+//! trusted root covering the COMPLETE table. The retired design ("one
+//! corroborated row anchors the whole table") let a forged sibling row refuse
+//! recovery of an intact store (false loss) and let a truncated-but-agreeing
+//! table recover under the STRICT posture while a committed frame was torn
+//! (false safety) — both are the same escalation of one row-level match into
+//! table-level authority. Because no row-level match can contribute to the
+//! decision, this module performs NO hash corroboration at all: rows are
+//! consulted only for the offsets they claim (suspicion geometry), and the
+//! per-frame hash-extraction walk the retired design ran was deleted with it.
+//!
+//! SIDX entries cover ONLY committed frames; batch BEGIN/COMMIT markers are real
+//! frames but NOT SIDX entries. Rows are matched by offset only for the
+//! at/after-`P` suspicion test; contiguity is never assumed, and the scan
+//! loops' BatchRecoveryState discard logic is untouched.
 
-use super::{crc_valid_frame_exists_after, frame_decode, sidx, try_decode_frame_at, StoreError};
-use serde::Deserialize;
-use std::collections::BTreeMap;
-use std::io::{Read, Seek, SeekFrom};
-
-/// Minimal view of a frame's serialized `FramePayload` used during untrusted
-/// recovery to extract the content-addressed `event_hash` for corroboration.
-///
-/// We deserialize ONLY the `event.hash_chain` field (everything else is
-/// `IgnoredAny`) so the corroboration walk stays cheap. The `event_hash` here is
-/// the blake3 of the event content (`event.hash_chain.event_hash`) — the SAME
-/// value the writer records into each [`sidx::SidxEntry`]. A forger cannot match
-/// it for a real frame, which is what makes a corroborated entry trustworthy
-/// despite the failed footer CRC.
-#[derive(Deserialize)]
-struct CorroborationFramePayload {
-    event: CorroborationEvent,
-}
-
-#[derive(Deserialize)]
-struct CorroborationEvent {
-    #[serde(rename = "header")]
-    _header: serde::de::IgnoredAny,
-    #[serde(rename = "payload")]
-    _payload: serde::de::IgnoredAny,
-    hash_chain: Option<crate::event::HashChain>,
-}
-
-/// One recovered, CRC-verified frame keyed by its byte offset: its on-disk
-/// `frame_length` and its content-addressed `event_hash` (blake3 of the event
-/// content). This is the trusted side of corroboration — these bytes decoded
-/// cleanly under their own per-frame CRC, so the `event_hash` here is genuine.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct RecoveredFrame {
-    pub(crate) frame_length: u32,
-    pub(crate) event_hash: Option<[u8; 32]>,
-}
-
-/// The map `R` from offset → recovered frame, built during the CRC-valid walk.
-pub(crate) type RecoveredFrameMap = BTreeMap<u64, RecoveredFrame>;
+use super::{crc_valid_frame_exists_after, sidx, try_decode_frame_at, StoreError};
+use std::io::{Read, Seek};
 
 /// The outcome of the untrusted-footer recovery decision.
 ///
 /// `RecoverPrefix(end)` recovers the CRC-valid frame region `[frames_start ..
 /// end)`; `RecoverPrefixWithTruncationEvidence` recovers the same prefix but
-/// records footer-cross-checked truncation evidence for the caller. The three
+/// records untrusted-claim truncation evidence for the caller. The two
 /// fail-closed reasons surface the SAME [`StoreError::CorruptSegment`] refusal
 /// but carry DISTINCT detail strings (see [`resolve_untrusted_frames_end`]):
-/// - `FailClosedCorroboratedLoss` — a CORROBORATED manifest attests to a
-///   committed frame the recovered stream is missing (proven data loss);
 /// - `FailClosedUnprovableTail` — the strict tail posture refusing a non-empty
-///   recovered prefix under an untrusted footer with no corroborating manifest
-///   (fail-closed on ABSENCE of a corroborating signal);
+///   recovered prefix under an untrusted footer with no positive suspicion
+///   signal (fail-closed on ABSENCE of proof that the tail is complete);
 /// - `FailClosedEvidenceOfTruncation` — the strict tail posture refusing a
-///   prefix that ends strictly BEFORE the untrusted footer's own claimed frame
-///   end (fail-closed on POSITIVE-if-untrusted truncation evidence).
+///   prefix when an UNTRUSTED claim (the footer's own claimed frame end, or a
+///   SIDX row naming a frame at/after the prefix end) reaches strictly past
+///   the recovered prefix (fail-closed on POSITIVE-if-untrusted evidence).
+///
+/// There is deliberately NO "proven loss" outcome: under an untrusted footer
+/// no unauthenticated table row can PROVE a committed frame existed (#192 —
+/// the retired `FailClosedCorroboratedLoss` variant claimed exactly that).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum UntrustedRecovery {
     /// Recover the CRC-valid prefix that ends at this offset.
     RecoverPrefix(u64),
-    /// A CORROBORATED manifest attests to a committed frame the recovered stream
-    /// is missing — proven data loss — so fail closed REGARDLESS of tail policy.
-    FailClosedCorroboratedLoss,
     /// STRICT (`FailClosed`) posture refusing an UNPROVABLE tail: a non-empty
-    /// CRC-valid prefix was recovered beneath an untrusted footer with NO
-    /// corroborating manifest entry, so a torn/truncated further committed frame
-    /// cannot be ruled out. Only returned when the caller passed
-    /// `fallback_fail_closed` (opted into the strict tail posture); the default
-    /// permissive posture recovers the prefix instead.
+    /// CRC-valid prefix was recovered beneath an untrusted footer, and nothing
+    /// can rule out a torn/truncated further committed frame. Only returned
+    /// when the caller passed `fallback_fail_closed` (opted into the strict
+    /// tail posture); the default permissive posture recovers the prefix
+    /// instead.
     FailClosedUnprovableTail,
     /// Permissive (`RecoverTornTail`) recover of the CRC-valid prefix ending at
-    /// `end`, WITH positive truncation evidence: the untrusted footer's own claimed
-    /// frame end `footer_claimed_end` lies strictly PAST `end`, so a torn/corrupt
-    /// region sits between the recovered frames and the footer. The default posture
-    /// recovers the prefix while recording the evidence for the caller.
+    /// `end`, WITH positive truncation evidence: an UNTRUSTED claim — the
+    /// footer's own claimed frame end, or a SIDX row naming a committed frame
+    /// at/after the prefix end — reaches strictly PAST `end`, so a torn/corrupt
+    /// region may sit between the recovered frames and the footer. The default
+    /// posture recovers the prefix while recording the evidence for the caller.
+    /// `footer_claimed_end` carries the furthest such claimed end regardless of
+    /// which untrusted source made the claim; it is DIAGNOSTIC, never authority.
     RecoverPrefixWithTruncationEvidence { end: u64, footer_claimed_end: u64 },
-    /// STRICT posture refusing a tail with POSITIVE truncation evidence: the
-    /// CRC-valid prefix ends strictly BEFORE the untrusted footer's claimed frame
-    /// end, so a torn/corrupt region sits between them. Distinct from
-    /// `FailClosedUnprovableTail`, which refuses a clean prefix-ends-at-footer tail
-    /// on mere ABSENCE of a corroborating manifest. Fail-closed-on-SUSPICION: the
-    /// footer is untrusted, so a forged `footer_claimed_end` could trip it.
+    /// STRICT posture refusing a tail with POSITIVE truncation evidence: an
+    /// untrusted claim (footer claimed end, or a SIDX row at/after the prefix
+    /// end) reaches strictly PAST the recovered prefix. Distinct from
+    /// `FailClosedUnprovableTail`, which refuses on mere ABSENCE of any signal.
+    /// Fail-closed-on-SUSPICION: the sources are untrusted, so a forged claim
+    /// can trip it — under strict posture that is the correct direction.
     FailClosedEvidenceOfTruncation { footer_claimed_end: u64 },
 }
 
@@ -142,65 +114,48 @@ pub(crate) struct ResolvedFramesEnd {
     pub(crate) truncation_evidence: Option<TruncationEvidence>,
 }
 
-/// Walk the CRC-valid frames from `frames_start`, building the recovered-frame
-/// map `R` AND applying the same mid-stream-corruption fail-closed rule as
-/// [`crc_valid_frames_end`]. Returns `(stop_offset, R)` where `stop_offset` (P)
-/// is the first non-decodable position (the recovered prefix end) and `R` maps
-/// each recovered frame's offset to its `(frame_length, event_hash)`.
+/// Walk the CRC-valid frames from `frames_start`, counting recovered frames AND
+/// applying the same mid-stream-corruption fail-closed rule as
+/// [`crc_valid_frames_end`]. Returns `(stop_offset, recovered_frame_count)`
+/// where `stop_offset` (P) is the first non-decodable position (the recovered
+/// prefix end).
 ///
-/// This is the trusted, CRC-verified half of the "cake-and-eat-it" untrusted
-/// recovery: every entry in `R` comes from a frame whose own CRC passed, so its
-/// `event_hash` is genuine and can corroborate (or refute) an untrusted SIDX
-/// entry. Mid-stream corruption (a CRC-valid frame after P) still fails closed
-/// here exactly as `crc_valid_frames_end` does — the manifest path is layered ON
-/// TOP of that guard, never replacing it.
+/// The count exists solely so the decision can distinguish "an EMPTY recovered
+/// prefix" (nothing to lose → recover under any posture) from a non-empty one.
+/// The retired design additionally re-read every frame here to extract its
+/// content `event_hash` for table corroboration; that walk was deleted with the
+/// corroboration authority it fed (#192) — frame bytes are decoded once, under
+/// their own CRC, and nothing else.
 ///
 /// # Errors
 /// Returns [`StoreError::Io`] on seek/read failure, or
 /// [`StoreError::CorruptSegment`] on mid-stream corruption (same contract as
 /// [`crc_valid_frames_end`]).
-pub(super) fn crc_valid_frames_end_with_map<R: Read + Seek>(
+pub(crate) fn crc_valid_frames_end_counting<R: Read + Seek>(
     source: &mut R,
     frames_start: u64,
     file_len: u64,
     segment_id: u64,
-) -> Result<(u64, RecoveredFrameMap), StoreError> {
+) -> Result<(u64, u64), StoreError> {
     let mut cursor = frames_start;
-    let mut recovered: RecoveredFrameMap = BTreeMap::new();
+    let mut recovered_frame_count: u64 = 0;
 
     loop {
         if cursor >= file_len {
-            return Ok((file_len, recovered));
+            return Ok((file_len, recovered_frame_count));
         }
         match try_decode_frame_at(source, cursor, file_len)? {
             Some(frame_size) => {
-                // Re-read the frame bytes to extract its content `event_hash`. The
-                // frame already CRC-validated in try_decode_frame_at, so this only
-                // deserializes the (small) header/hash_chain prefix. A frame whose
-                // hash_chain is absent or whose payload cannot be deserialized still
-                // counts as a recovered frame (length known) but carries no
-                // event_hash, so it can never corroborate an entry — a conservative,
-                // safe default.
-                let event_hash = read_frame_event_hash(source, cursor, frame_size);
-                let frame_length = u32::try_from(frame_size).ok();
-                if let Some(frame_length) = frame_length {
-                    recovered.insert(
-                        cursor,
-                        RecoveredFrame {
-                            frame_length,
-                            event_hash,
-                        },
-                    );
-                }
+                recovered_frame_count = recovered_frame_count.saturating_add(1);
                 cursor = match cursor.checked_add(frame_size) {
                     Some(next) => next,
-                    None => return Ok((cursor, recovered)),
+                    None => return Ok((cursor, recovered_frame_count)),
                 };
             }
             None => {
                 let resync_from = match cursor.checked_add(1) {
                     Some(next) => next,
-                    None => return Ok((cursor, recovered)),
+                    None => return Ok((cursor, recovered_frame_count)),
                 };
                 if crc_valid_frame_exists_after(source, resync_from, file_len)? {
                     return Err(StoreError::corrupt_segment_with_detail(
@@ -212,198 +167,143 @@ pub(super) fn crc_valid_frames_end_with_map<R: Read + Seek>(
                         ),
                     ));
                 }
-                return Ok((cursor, recovered));
+                return Ok((cursor, recovered_frame_count));
             }
         }
     }
 }
 
-/// Extract the content `event_hash` from the CRC-valid frame of size `frame_size`
-/// that begins at `at`. Returns `None` if the frame cannot be re-read or its
-/// `FramePayload`/`hash_chain` cannot be deserialized — a frame with no usable
-/// hash simply cannot corroborate an entry. Never errors: a corroboration miss is
-/// always safe (it degrades to fall-back), so any failure here is `None`.
-fn read_frame_event_hash<R: Read + Seek>(
-    source: &mut R,
-    at: u64,
-    frame_size: u64,
-) -> Option<[u8; 32]> {
-    let total = usize::try_from(frame_size).ok()?;
-    // This guard rejects frames too small to hold the 8-byte [len][crc] header as
-    // a CHEAP pre-check: it short-circuits BEFORE the seek+read below. The
-    // `< 8` -> `== 8` mutant is return-value equivalent (every `total <= 8` still
-    // yields `None`: a sub-header buffer fails `frame_decode`, and a bare 8-byte
-    // header decodes to an empty payload that won't deserialize) — but it is NOT
-    // unobservable: for an undersized frame the mutant falls through and CONSUMES
-    // the source. `undersized_frame_rejected_without_consuming_the_source` pins
-    // the no-I/O short-circuit, killing the `== 8` mutant.
-    if total < 8 {
-        return None;
-    }
-    if source.seek(SeekFrom::Start(at)).is_err() {
-        return None;
-    }
-    let mut frame = vec![0u8; total];
-    if source.read_exact(&mut frame).is_err() {
-        return None;
-    }
-    // frame_decode strips the 8-byte [len][crc] header and re-verifies the CRC.
-    let (msgpack, _consumed) = frame_decode(&frame).ok()?;
-    let payload: CorroborationFramePayload = crate::encoding::from_bytes(msgpack).ok()?;
-    payload.event.hash_chain.map(|chain| chain.event_hash)
-}
-
-/// Corroborate untrusted SIDX entries against the CRC-verified recovered frames
-/// `R`, then decide whether to recover the prefix or fail closed.
+/// Decide the untrusted-footer recovery outcome from the recovered-prefix shape
+/// and the untrusted claims about the tail — the footer's own claimed frame end
+/// and the SIDX rows. Rows are SUSPICION, never authority (#192).
 ///
-/// CONTRACT (load-bearing assumptions, validated against the writer):
+/// THE SAFE LAW: a row corroborated against independently verified frame bytes
+/// proves only that row's relationship to that frame. It does not authenticate
+/// any other row, `entry_count`, order, the footer boundary, or claims about
+/// nonexistent trailing frames. BLAKE3 is public and unkeyed — a party able to
+/// read or edit the segment can copy a real frame's stored `event_hash` — so a
+/// matching row must never deputize its siblings. No future optimization may
+/// weaken this without a keyed MAC, digital signature, or independently
+/// trusted root covering the COMPLETE table.
 ///
-/// 1. A corroborated entry ANCHORS the entire entry table to THIS segment. An
-///    entry is corroborated iff there is a recovered frame at `entry.frame_offset`
-///    whose `frame_length` AND content `event_hash` (blake3) match the entry. The
-///    `event_hash` is content-addressed and CRC-guarded by default: the value
-///    matched here is the one STORED in the frame (re-read under the per-frame
-///    CRC), not one re-derived from the payload on this path, so a forger cannot
-///    ACCIDENTALLY fabricate an entry matching a real frame's blake3. A deliberate
-///    rewrite of both the payload and its stored hash is caught only by the full
-///    recompute ([`ChainVerification::Recompute`](crate::store::ChainVerification)
-///    / [`Store::verify_chain`](crate::store::Store::verify_chain)), never by CRC
-///    alone. So once >= 1 entry corroborates,
-///    the append-ordered entries and `entry_count` are trustworthy enough to assert
-///    "a committed frame at offset X should exist."
-///
-/// 2. SIDX entries cover ONLY committed frames. Batch BEGIN/COMMIT markers are real
-///    frames but are NOT SIDX entries, and entries are recorded post-COMMIT. So we
-///    match entries↔frames by (offset, length, event_hash), NEVER assume frame
-///    contiguity, and only assert a missing-frame for a committed (SIDX-recorded)
-///    frame. This does not touch the cross-segment batch discard logic in the scan
-///    loops — it only chooses where the CRC-valid frame region ends.
+/// Consequently row hashes contribute NOTHING to this decision (the function
+/// never reads them): every decision-relevant row (one naming a frame at/after
+/// `recovery_stop`) is unverifiable by construction (the CRC walk ended at the
+/// stop, so no verified frame exists there to check against), and rows before
+/// the stop can vouch only for themselves. The retired design escalated one
+/// row-level match into table authority, producing BOTH failure duals:
+/// - false LOSS: a forged sibling row "proved" a committed frame was missing,
+///   refusing recovery of an intact store under any posture (DoS);
+/// - false SAFETY: a truncated-but-corroborating table "agreed the region was
+///   complete", recovering under the STRICT posture while a torn committed
+///   frame was silently dropped — the exact loss strict posture pays to
+///   prevent.
 ///
 /// DECISION (only ever invoked on the UNTRUSTED footer path):
-///
-/// - (a) FAIL CLOSED iff at least one entry corroborates (the manifest is
-///   anchored to this segment) AND some anchored entry references a committed
-///   frame at an offset at or after P (the recovery stop) that is NOT in `R`. The
-///   manifest attests to a trailing committed frame the stream is missing — the
-///   torn-last-frame-under-corrupt-footer case. Honored REGARDLESS of tail
-///   policy: a corroborated manifest proving missing committed data is real data
-///   loss.
-/// - (b) RECOVER the prefix iff at least one entry corroborates and every entry
-///   the anchored manifest references either maps to a recovered frame or lies
-///   strictly before P (manifest agrees the recovered region is complete).
-/// - (c) HONOR THE TAIL POSTURE iff ZERO entries corroborate (unparseable table
-///   or no trustworthy signal). There is no manifest PROOF a committed frame is
-///   missing, so the outcome is the caller's `fallback_fail_closed` posture:
-///   - permissive (default `RecoverTornTail` → `false`): recover the CRC-valid
-///     prefix. Never a false fail-closed — a benign corrupt-footer store whose
-///     frames are intact must still open (this is what keeps the DEFAULT path
-///     unchanged).
-///   - strict (`FailClosed` → `true`) with a NON-EMPTY recovered prefix: refuse
-///     as `FailClosedUnprovableTail`. Under an untrusted (unauthenticated) footer
-///     with no corroborating manifest, a torn/truncated further committed frame
-///     cannot be ruled out, so a store that opted into the strict posture must not
-///     silently accept an unprovable tail. An EMPTY prefix has no data to lose and
-///     always recovers (nothing), so it never fails closed.
-///
-/// The round-7 corroborated-loss trigger (case a) is independent of policy and
-/// fires regardless.
-pub(crate) fn corroborate_untrusted_entries(
+/// - An EMPTY recovered prefix has nothing to lose: recover (any posture).
+/// - Suspicion := the bounded footer claimed-end reaches strictly past the
+///   stop, OR any row names a committed frame at/after the stop (its claimed
+///   end `frame_offset + frame_length` is reported as diagnostic evidence; the
+///   value is untrusted either way and never changes the decision direction).
+/// - permissive (default `RecoverTornTail` → `false`): recover the CRC-valid
+///   prefix — with recorded truncation evidence when suspicion exists. Never a
+///   false fail-closed: a benign corrupt-footer store whose frames are intact
+///   must still open.
+/// - strict (`FailClosed` → `true`): refuse ANY non-empty prefix — as
+///   `FailClosedEvidenceOfTruncation` when suspicion is positive, else as
+///   `FailClosedUnprovableTail`. Unauthenticated bytes can never PROVE the
+///   tail complete, so under strict posture "manifest agreement" is not a
+///   recovery ticket.
+pub(crate) fn decide_untrusted_recovery(
     entries: &[sidx::SidxEntry],
-    recovered: &RecoveredFrameMap,
+    recovered_frame_count: u64,
     recovery_stop: u64,
     footer_claimed_frames_end: Option<u64>,
     fallback_fail_closed: bool,
 ) -> UntrustedRecovery {
-    // An entry is CORROBORATED when a recovered frame sits at its offset with a
-    // matching length AND a matching content event_hash. The event_hash match is
-    // the anchor: content-addressed and CRC-guarded here (a full blake3 recompute
-    // happens only under ChainVerification::Recompute / Store::verify_chain).
-    let is_corroborated = |entry: &sidx::SidxEntry| -> bool {
-        match recovered.get(&entry.frame_offset) {
-            Some(frame) => {
-                frame.frame_length == entry.frame_length
-                    && frame.event_hash == Some(entry.event_hash)
-            }
-            None => false,
-        }
+    // An EMPTY recovered prefix has no data to lose and recovers regardless of
+    // posture (unchanged from the retired design).
+    if recovered_frame_count == 0 {
+        return UntrustedRecovery::RecoverPrefix(recovery_stop);
+    }
+
+    // Suspicion signals — both untrusted, both positive-if-true, both merely
+    // DIAGNOSTIC in value:
+    // 1. the footer's own claimed frame end past the stop (bounded by the
+    //    caller against the file length so a garbage offset cannot manufacture
+    //    "positive evidence" — see resolve_untrusted_frames_end);
+    // 2. any SIDX row naming a committed frame at/after the stop. The row is
+    //    an untrusted hypothesis; whether its stored hash happens to match a
+    //    recovered frame elsewhere grants it NO extra weight (the safe law).
+    let manifest_claimed_end = entries
+        .iter()
+        .filter(|entry| entry.frame_offset >= recovery_stop)
+        .map(|entry| {
+            entry
+                .frame_offset
+                .saturating_add(u64::from(entry.frame_length))
+        })
+        .max();
+    let footer_claim = footer_claimed_frames_end.filter(|&claimed| recovery_stop < claimed);
+    let suspicion = match (footer_claim, manifest_claimed_end) {
+        (Some(footer), Some(manifest)) => Some(footer.max(manifest)),
+        (Some(footer), None) => Some(footer),
+        (None, Some(manifest)) => Some(manifest),
+        (None, None) => None,
     };
 
-    let any_corroborated = entries.iter().any(is_corroborated);
-    if !any_corroborated {
-        // (c) No corroborating manifest signal. Cross-check the untrusted footer's
-        // OWN claimed frame end against where the CRC-valid walk actually stopped: a
-        // footer claiming frames PAST `recovery_stop` means a torn/corrupt region
-        // sits between the recovered frames and the footer (positive, if untrusted,
-        // truncation evidence). An EMPTY recovered prefix has nothing to lose and
-        // recovers regardless of posture (unchanged).
-        let torn_gap = footer_claimed_frames_end.filter(|&claimed| recovery_stop < claimed);
-        if recovered.is_empty() {
-            return UntrustedRecovery::RecoverPrefix(recovery_stop);
-        }
-        if fallback_fail_closed {
-            return match torn_gap {
-                Some(claimed) => UntrustedRecovery::FailClosedEvidenceOfTruncation {
-                    footer_claimed_end: claimed,
-                },
-                None => UntrustedRecovery::FailClosedUnprovableTail,
-            };
-        }
-        return match torn_gap {
-            Some(claimed) => UntrustedRecovery::RecoverPrefixWithTruncationEvidence {
-                end: recovery_stop,
+    if fallback_fail_closed {
+        // STRICT: refuse any non-empty prefix under an untrusted footer. The
+        // two refusals differ only in their diagnostic detail (positive
+        // suspicion vs absence of any signal) — both are refusals.
+        return match suspicion {
+            Some(claimed) => UntrustedRecovery::FailClosedEvidenceOfTruncation {
                 footer_claimed_end: claimed,
             },
-            None => UntrustedRecovery::RecoverPrefix(recovery_stop),
+            None => UntrustedRecovery::FailClosedUnprovableTail,
         };
     }
-
-    // (a) The manifest is anchored. Any entry that names a COMMITTED frame at or
-    // past the recovery stop P which is NOT present in R proves the recovered
-    // stream dropped a committed frame (torn last frame under a corrupt footer).
-    // Match by (offset, length, event_hash); contiguity is never assumed.
-    for entry in entries {
-        if entry.frame_offset >= recovery_stop {
-            // The manifest claims a committed frame at/after P. It is present in R
-            // only if a recovered frame at that offset matches length + content
-            // hash. (R never holds offsets >= P — the walk stopped at P — so this is
-            // always "missing", but we keep the explicit corroboration check so the
-            // intent is self-documenting and robust to future map changes.)
-            let present = recovered.get(&entry.frame_offset).is_some_and(|frame| {
-                frame.frame_length == entry.frame_length
-                    && frame.event_hash == Some(entry.event_hash)
-            });
-            if !present {
-                return UntrustedRecovery::FailClosedCorroboratedLoss;
-            }
-        }
+    // PERMISSIVE (the default): recover the prefix; record the suspicion as
+    // truncation evidence for the caller when it exists.
+    match suspicion {
+        Some(claimed) => UntrustedRecovery::RecoverPrefixWithTruncationEvidence {
+            end: recovery_stop,
+            footer_claimed_end: claimed,
+        },
+        None => UntrustedRecovery::RecoverPrefix(recovery_stop),
     }
-
-    // (b) Every committed frame the anchored manifest names is either present in R
-    // or strictly before P. The manifest agrees the recovered region is complete.
-    UntrustedRecovery::RecoverPrefix(recovery_stop)
 }
 
-/// Resolve the frame-region end for an UNTRUSTED footer boundary using the SIDX
-/// entry table as a self-authenticating manifest (the "cake-and-eat-it" path).
+/// Resolve the frame-region end for an UNTRUSTED footer boundary, treating the
+/// SIDX entry table as an untrusted suspicion signal — never an authority
+/// (#192; see the module doctrine).
 ///
 /// This is the single entry point the three scan/compaction sites call instead of
 /// bare [`crc_valid_frames_end`]. It:
-///   1. walks the CRC-valid frames (recovering the prefix + building `R`, and
-///      still failing closed on mid-stream corruption — unchanged round-5/6
-///      behavior);
+///   1. walks the CRC-valid frames (recovering the prefix, and still failing
+///      closed on mid-stream corruption — unchanged round-5/6 behavior);
 ///   2. parses the untrusted entry table (zero entries on any parse failure);
-///   3. corroborates entries against `R` and decides (case a/b/c above).
+///   3. decides by tail posture, with untrusted claims past the prefix end
+///      (footer claimed-end, SIDX rows) routed as suspicion.
 ///
 /// `fallback_fail_closed` is the caller's [`scan::FrameScanTailPolicy`] reduced to
-/// a bool (FailClosed → true), which case (c) now HONORS: a strict caller refuses
-/// a non-empty recovered prefix under an untrusted footer with no corroboration
-/// (an unprovable tail), while the default permissive caller recovers the prefix.
-/// It is passed as a bool to keep this module decoupled from the scan layer.
+/// a bool (FailClosed → true): a strict caller refuses ANY non-empty recovered
+/// prefix under an untrusted footer (with a suspicion-specific detail when an
+/// untrusted claim reaches past the prefix), while the default permissive caller
+/// recovers the prefix (recording the suspicion as truncation evidence). It is
+/// passed as a bool to keep this module decoupled from the scan layer.
+///
+/// The strict-refusal detail strings deliberately carry the full operator
+/// evidence set (#192 ruling): the segment id AND canonical filename, the last
+/// independently verified frame boundary, the fact that nothing decodes past
+/// it, the untrusted claim (when one exists), the posture used, the explicit
+/// statement that no authenticated evidence proves the missing region empty,
+/// and remediation guidance that never suggests deleting the segment in place.
 ///
 /// # Errors
 /// Returns [`StoreError::Io`] on read failure, or [`StoreError::CorruptSegment`]
-/// for mid-stream corruption (from the walk), a corroborated missing committed
-/// frame (case a), or a strict refusal of an unprovable non-empty tail (case c).
+/// for mid-stream corruption (from the walk) or a strict-posture refusal of a
+/// non-empty tail (unprovable, or with positive untrusted suspicion).
 pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
     source: &mut R,
     frames_start: u64,
@@ -416,10 +316,10 @@ pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
     // entries on any parse failure → pure fall-back.
     let entries = sidx::read_entries_unauthenticated(source, segment_id)?;
 
-    // Step 2/4b: recover the CRC-valid prefix + build R. This is the mid-stream
+    // Step 2/4b: recover the CRC-valid prefix. This is the mid-stream
     // corruption guard; it errors before we ever consult the manifest.
-    let (recovery_stop, recovered) =
-        crc_valid_frames_end_with_map(source, frames_start, file_len, segment_id)?;
+    let (recovery_stop, recovered_frame_count) =
+        crc_valid_frames_end_counting(source, frames_start, file_len, segment_id)?;
 
     // An untrusted footer's claimed frame end is plausible truncation evidence only
     // if it leaves room for the footer trailer after it. A forged/out-of-bounds
@@ -431,10 +331,10 @@ pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
     let bounded_footer_claim = footer_claimed_frames_end
         .filter(|&claimed| claimed <= file_len.saturating_sub(TRAILER_LEN));
 
-    // Step 3/4: corroborate + decide.
-    match corroborate_untrusted_entries(
+    // Step 3/4: decide by posture.
+    match decide_untrusted_recovery(
         &entries,
-        &recovered,
+        recovered_frame_count,
         recovery_stop,
         bounded_footer_claim,
         fallback_fail_closed,
@@ -443,36 +343,31 @@ pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
             frames_end: end,
             truncation_evidence: None,
         }),
-        UntrustedRecovery::RecoverPrefixWithTruncationEvidence { end, footer_claimed_end } => {
-            Ok(ResolvedFramesEnd {
-                frames_end: end,
-                truncation_evidence: Some(TruncationEvidence {
-                    recovered_prefix_end: end,
-                    footer_claimed_frames_end: footer_claimed_end,
-                }),
-            })
-        }
-        UntrustedRecovery::FailClosedCorroboratedLoss => {
-            Err(StoreError::corrupt_segment_with_detail(
-                segment_id,
-                format!(
-                    "untrusted-footer recovery: a corroborated SIDX manifest entry attests to a \
-                     committed frame at/after the recovered prefix end {recovery_stop} that is \
-                     missing from the CRC-valid frame stream (file_len {file_len}); a torn/corrupt \
-                     last committed frame under a corrupt footer would silently drop a committed \
-                     event — refusing to recover"
-                ),
-            ))
-        }
+        UntrustedRecovery::RecoverPrefixWithTruncationEvidence {
+            end,
+            footer_claimed_end,
+        } => Ok(ResolvedFramesEnd {
+            frames_end: end,
+            truncation_evidence: Some(TruncationEvidence {
+                recovered_prefix_end: end,
+                footer_claimed_frames_end: footer_claimed_end,
+            }),
+        }),
         UntrustedRecovery::FailClosedUnprovableTail => {
             Err(StoreError::corrupt_segment_with_detail(
                 segment_id,
                 format!(
                     "untrusted-footer recovery: strict FailClosed posture refuses an unprovable \
-                     tail — a non-empty CRC-valid prefix ending at {recovery_stop} was recovered \
-                     beneath an untrusted footer (file_len {file_len}) with NO corroborating SIDX \
-                     manifest entry, so a torn/truncated further committed frame cannot be ruled \
-                     out; the default RecoverTornTail posture would instead recover this prefix"
+                     tail in segment file {segment_id:06}.fbat — a non-empty CRC-valid prefix ends \
+                     at byte {recovery_stop} (the last independently verified frame boundary; no \
+                     CRC-valid frame decodes past it) beneath an untrusted footer (file_len \
+                     {file_len}), and no untrusted claim reaches past that boundary either; \
+                     unauthenticated bytes cannot prove the region past the boundary held no \
+                     committed frame, so recovery refuses rather than guess; remediation: restore \
+                     this segment from a backup, or inspect a COPY of the store directory offline \
+                     — do not delete or edit the segment in place; the permissive RecoverTornTail \
+                     posture (granted only to the newest segment at cold start) would recover \
+                     this prefix"
                 ),
             ))
         }
@@ -480,65 +375,19 @@ pub(crate) fn resolve_untrusted_frames_end<R: Read + Seek>(
             Err(StoreError::corrupt_segment_with_detail(
                 segment_id,
                 format!(
-                    "untrusted-footer recovery: strict FailClosed posture refuses a tail with POSITIVE \
-                     truncation evidence — CRC-valid frames end at {recovery_stop} but the untrusted \
-                     footer claims frames extend to {footer_claimed_end} (file_len {file_len}); the \
-                     {gap}-byte region between is neither CRC-valid frames nor footer, so a committed \
-                     frame was torn/dropped; the default RecoverTornTail posture would recover the \
-                     prefix and record the evidence",
-                    gap = footer_claimed_end - recovery_stop
+                    "untrusted-footer recovery: strict FailClosed posture refuses a tail with \
+                     POSITIVE truncation evidence in segment file {segment_id:06}.fbat — CRC-valid \
+                     frames end at byte {recovery_stop} (the last independently verified frame \
+                     boundary; no CRC-valid frame decodes past it) but an untrusted claim (the \
+                     footer trailer or a SIDX manifest row; unauthenticated either way) says \
+                     frames extend to {footer_claimed_end} (file_len {file_len}); a committed \
+                     frame may have been torn or dropped in the {gap}-byte gap and no \
+                     authenticated evidence proves that region empty; remediation: restore this \
+                     segment from a backup, or inspect a COPY of the store directory offline — do \
+                     not delete or edit the segment in place",
+                    gap = footer_claimed_end.saturating_sub(recovery_stop)
                 ),
             ))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::read_frame_event_hash;
-    use std::io::{Cursor, Seek, SeekFrom};
-
-    #[test]
-    fn undersized_frame_rejected_without_consuming_the_source() {
-        // A frame smaller than the 8-byte [len][crc] header can never decode, so
-        // the `< 8` guard rejects it as a cheap pre-check — without seeking or
-        // reading. We park the cursor at a known offset; the guard must leave it
-        // there. The `< 8` -> `== 8` mutant falls through for a 4-byte frame,
-        // seeks to `at`, and reads the buffer — moving the cursor (while still
-        // returning None). Pinning the parked position kills that mutant.
-        let mut source = Cursor::new(vec![0u8; 64]);
-        source
-            .seek(SeekFrom::Start(41))
-            .expect("park the cursor before the call");
-        let hash = read_frame_event_hash(&mut source, 0, 4);
-        assert_eq!(hash, None, "an undersized frame yields no event hash");
-        assert_eq!(
-            source.position(),
-            41,
-            "the size guard must reject an undersized frame without consuming the source"
-        );
-    }
-
-    #[test]
-    fn exactly_header_sized_frame_is_read_not_pre_rejected() {
-        // The cheap pre-check rejects ONLY frames strictly smaller than the
-        // 8-byte [len][crc] header. A frame of EXACTLY 8 bytes passes the
-        // guard and reaches the I/O path: it decodes to an empty payload
-        // (len = 0, crc32("") = 0) whose deserialize fails, so the hash is
-        // still None — but the source HAS been consumed (seek to `at`, then
-        // an 8-byte read leaves the cursor at 8). The `< 8` -> `<= 8` mutant
-        // short-circuits at total == 8 and leaves the cursor parked at 41;
-        // pinning the post-read position convicts it.
-        let mut source = Cursor::new(vec![0u8; 64]);
-        source
-            .seek(SeekFrom::Start(41))
-            .expect("park the cursor before the call");
-        let hash = read_frame_event_hash(&mut source, 0, 8);
-        assert_eq!(hash, None, "a bare 8-byte header carries no event hash");
-        assert_eq!(
-            source.position(),
-            8,
-            "an exactly-header-sized frame must be seeked-to and read, not pre-rejected"
-        );
     }
 }

@@ -386,20 +386,18 @@ fn crc_valid_frames_end_recovers_all_frames_for_adversarial_untrusted_offsets() 
 fn append_frames_from_segment_fails_closed_for_untrusted_too_low_offset_no_corroboration() {
     // Merge-compaction copy path: a sealed source segment whose SIDX trailer has a
     // forged (unauthenticated) string_table_offset pointing BELOW the frame region
-    // (offset 0) AND which carries ZERO entries, so the manifest cannot corroborate
-    // the recovered frame. The forged offset breaks footer CRC authentication, so
-    // the boundary is UNTRUSTED and the offset is (correctly) discarded — but with
-    // the round-7 durability feature completed, the compaction copy is STRICT
-    // (`fallback_fail_closed = true`) and a NON-EMPTY recovered prefix under an
-    // untrusted footer with no corroboration is an unprovable tail: a torn/truncated
-    // further committed frame cannot be ruled out, so the copy REFUSES rather than
-    // merging a source it cannot prove complete.
+    // (offset 0) AND which carries ZERO entries. The forged offset breaks footer
+    // CRC authentication, so the boundary is UNTRUSTED and the offset is
+    // (correctly) discarded — and the compaction copy is STRICT
+    // (`fallback_fail_closed = true`): a NON-EMPTY recovered prefix under an
+    // untrusted footer is an unprovable tail (a torn/truncated further committed
+    // frame cannot be ruled out), so the copy REFUSES rather than merging a
+    // source it cannot prove complete.
     //
-    // (Before the FailClosed flag had teeth this recovered-what-was-found; that old
-    // expectation predates the completed feature. In production a real sealed source
-    // carries a full SIDX entry table that corroborates its frames and still
-    // recovers via case b — only a bare/garbage footer with no entry table, as
-    // synthesized here, reaches this strict refusal.)
+    // (Under the retired law a "corroborating" entry table could vouch the
+    // source complete and recover here even under strict — that table-authority
+    // path was removed by GAUNT-SIDX-NO-SELF-AUTH (#192): compaction now refuses
+    // EVERY non-empty prefix under an untrusted footer, entry table or not.)
     use std::io::Write as _;
 
     let dir = TempDir::new().expect("tmpdir");
@@ -458,11 +456,12 @@ fn append_frames_from_segment_fails_closed_for_untrusted_out_of_bounds_offset_no
     // ZERO entries. The forged offset breaks footer CRC authentication -> UNTRUSTED,
     // and it stays FULLY INERT (never used to bound the copy — that round-6 property
     // is preserved). But the compaction copy is STRICT (`fallback_fail_closed =
-    // true`), so with a NON-EMPTY recovered prefix and no corroborating manifest the
-    // copy REFUSES the unprovable tail rather than merging a source it cannot prove
-    // complete. (This supersedes the round-6 "always recover-what-was-found"
-    // expectation now that the FailClosed flag has teeth; a real sealed source with
-    // a full entry table still recovers via corroboration, case b.)
+    // true`), so with a NON-EMPTY recovered prefix the copy REFUSES the unprovable
+    // tail rather than merging a source it cannot prove complete. (This supersedes
+    // the round-6 "always recover-what-was-found" expectation; and under
+    // GAUNT-SIDX-NO-SELF-AUTH (#192) no entry table can vouch the source complete
+    // either — strict compaction refuses every non-empty prefix under an
+    // untrusted footer.)
     use std::io::Write as _;
 
     let dir = TempDir::new().expect("tmpdir");

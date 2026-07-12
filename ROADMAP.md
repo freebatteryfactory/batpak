@@ -31,7 +31,11 @@ guards; the items below are the measured remainder.
   Strict splits `FailClosedUnprovableTail` (P==boundary, absence-only) from
   `FailClosedEvidenceOfTruncation` (P<boundary); permissive returns
   `ResolvedFramesEnd { truncation_evidence }` and emits a structured warning
-  instead of silently recovering. See `recovery_manifest.rs`.
+  instead of silently recovering. See `recovery_manifest.rs`. NB: the decision
+  core was subsequently rewritten by GAUNT-SIDX-NO-SELF-AUTH (#192 / ADR-0036)
+  — corroboration no longer grants any authority (`FailClosedCorroboratedLoss`
+  retired; strict refuses every non-empty prefix under an untrusted footer);
+  the truncation-evidence split above survives as the suspicion diagnostics.
 - [ ] **`StoreError` contract mirror gap** — 11 variants (all 0.9.0-era) are in
   neither `testkit::store_error_contract::classify()` nor
   `one_of_every_variant()`: `ProjectionStateContractUnspecified`,

@@ -579,15 +579,15 @@ fn scan_segment_fails_closed_for_an_untrusted_low_offset_footer_with_no_corrobor
     let dir = TempDir::new().expect("tmpdir");
     let (path, _frames_start) = segment_with_frames(&dir, 3, &[serde_json::json!({"v": "one"})]);
     // A legacy SDX2 footer (never CRC-authenticated → UNTRUSTED) whose offset (0)
-    // is below the frame region AND which carries ZERO entries (count = 0), so the
-    // manifest cannot corroborate the recovered frame. `scan_segment` is the
-    // compaction full read of SEALED segments and passes `fallback_fail_closed =
-    // true` (strict). With the completed feature, a NON-EMPTY recovered prefix under
-    // an untrusted footer with no corroboration is an unprovable tail and must be
-    // REFUSED — the untrusted offset that would bound the frame region is exactly
-    // what we do not trust, so a torn/truncated further committed frame cannot be
-    // ruled out. (Before the feature was completed the strict flag was ignored here
-    // and this silently recovered the prefix — the round-7 gap.)
+    // is below the frame region AND which carries ZERO entries (count = 0).
+    // `scan_segment` is the compaction full read of SEALED segments and passes
+    // `fallback_fail_closed = true` (strict). A NON-EMPTY recovered prefix under
+    // an untrusted footer is an unprovable tail and must be REFUSED — the
+    // untrusted offset that would bound the frame region is exactly what we do
+    // not trust, so a torn/truncated further committed frame cannot be ruled
+    // out; no entry table could vouch otherwise (rows are suspicion, never
+    // authority — #192). (Before the strict flag had teeth this silently
+    // recovered the prefix — the round-7 gap.)
     append_raw_trailer(
         &path,
         0,
