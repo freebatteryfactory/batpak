@@ -129,6 +129,7 @@ witnesses:
   - { id: INV-IMPORT-CRASH-IDEMPOTENT, witnessed: true }
   - { id: INV-IMPORT-NO-RUNAWAY, witnessed: true }
   - { id: INV-INDEX-FILTER-COMPOSES, witnessed: true }
+  - { id: INV-INJECTED-CLOCK-OWNS-TIMEKEEPING, witnessed: true }
   - { id: INV-INVARIANT-WITNESS-TEST, witnessed: true }
   - { id: INV-JOURNAL-SINGLE-LIVE-OWNER, witnessed: true }
   - { id: INV-JOURNAL-WRITER-SERIALIZES-COMMITS, witnessed: true }

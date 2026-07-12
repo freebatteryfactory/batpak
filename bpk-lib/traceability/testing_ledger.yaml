@@ -163,6 +163,24 @@
     the black-box slow-path corruption shapes currently called out in this
     ledger are covered.
 
+- title: Injected clock owns all store timekeeping (no ambient anchor access)
+  section: Fault-Injection Harness
+  pattern: Fault-Injection Harness
+  status: unmeasured
+  invariants:
+    - INV-INJECTED-CLOCK-OWNS-TIMEKEEPING
+  locations:
+    - bpk-lib/crates/core/tests/clock_injection_isolation.rs
+  commands:
+    - cargo test -p batpak --features dangerous-test-hooks --test clock_injection_isolation
+  coverage_delta: unmeasured
+  mutation_delta: unmeasured
+  blind_spots: >
+    the oracle is the dangerous-test-hooks ambient-anchor tripwire at native
+    runtime (RED-proven against the eager-anchor code); an actual
+    wasm32/workerd runtime smoke needs a wasm test harness the release
+    surface does not host yet (the wasm-surface lane stays check-only).
+
 - title: Untrusted SIDX manifest cannot escalate into recovery authority
   section: Fault-Injection Harness
   pattern: Fault-Injection Harness

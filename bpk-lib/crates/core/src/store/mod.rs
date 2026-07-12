@@ -135,6 +135,12 @@ pub use import::{
     ImportSelector, SourceNamespace, IMPORT_PROVENANCE_SCHEMA_VERSION,
 };
 pub use index::IndexEntry;
+#[cfg(feature = "dangerous-test-hooks")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "dangerous-test-hooks"))
+)]
+pub use platform::clock::ambient_anchor_tripwire::ForbidAmbientAnchorGuard;
 // Live on-disk / in-memory format version constants, promoted to `pub` (LD2)
 // so the cross-version compat matrix derives its supported-version table from
 // the single source of truth instead of hardcoding the numbers.

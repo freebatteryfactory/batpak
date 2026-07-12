@@ -134,6 +134,12 @@
     - ART-STORE-CONFIG
     - ART-STORE-PLATFORM
     - ART-STORE-RUNTIME-CONTRACTS
+- id: INV-INJECTED-CLOCK-OWNS-TIMEKEEPING
+  statement: A store driven by a fully injected Clock performs no ambient SystemTime/Instant access anywhere in its lifecycle (open, append, sync, close) — the process-wide monotonic anchor is captured lazily on first monotonic READ of the default SystemClock (or the with_clock_fn adapter), never at clock construction, so the ambient path is unreachable when every reading comes from the injected seam. This is the native-runtime guarantee that a wasm32/workerd embedding (where ambient time traps) can open a store with an injected Clock (#182).
+  witness_test: crates/core/tests/clock_injection_isolation.rs::full_store_lifecycle_with_injected_clock_never_touches_ambient_anchor
+  artifacts:
+    - ART-STORE-PLATFORM
+    - ART-STORE-CONFIG
 - id: INV-PLATFORM-EVIDENCE-NOT-MEANING
   statement: store::platform may perform target-sensitive machine-contact operations and emit descriptive evidence/profile records, but it must not define batpak durability, replay, visibility, or admission semantics. Store, cold-start, segment, and frontier logic own those guarantees; configured profile mismatch is a hard open-time admission failure.
   witness_test: crates/core/tests/platform_backend.rs::platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle

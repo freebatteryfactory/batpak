@@ -470,10 +470,23 @@ impl WatermarkState {
         WatermarkAdvanceHandle::new(Self::for_bootstrap(point, clock))
     }
 
+    // Built field-by-field, NOT via `..Self::default()`: the spread would
+    // construct (and immediately discard) `Default`'s `SystemClock` on every
+    // writer spawn — the exact eager-ambient-clock shape #182 removed (benign
+    // now that the anchor is lazy, but pointless work and a re-trap if clock
+    // construction ever grows state again).
     pub(crate) fn new(clock: Arc<dyn Clock>) -> Self {
         Self {
+            accepted_hlc: HlcPoint::ORIGIN,
+            written_hlc: HlcPoint::ORIGIN,
+            durable_hlc: HlcPoint::ORIGIN,
+            visible_hlc: HlcPoint::ORIGIN,
+            applied_hlc: HlcPoint::ORIGIN,
+            emitted_hlc: HlcPoint::ORIGIN,
+            lanes: BTreeMap::new(),
+            pending_write_start_mono_ns: None,
+            poisoned: false,
             clock,
-            ..Self::default()
         }
     }
 
