@@ -41,15 +41,26 @@ print_stdout = "deny"
 print_stderr = "deny"
 cast_possible_truncation = "deny"
 cast_sign_loss = "deny"
-wildcard_enum_match_arm = "warn"
+# The five lints below were `warn` until the #178 posture ratchet. Their
+# blocking-ness lived only in CI's `-D warnings` invocation; a bare local
+# `cargo clippy` would have silently accepted a regression. All were 0-count
+# when promoted, so the deny is zero-cost — and AGENTS.md already described
+# `wildcard_enum_match_arm` as denied repo-wide, so the manifest now agrees.
+wildcard_enum_match_arm = "deny"
 assertions_on_constants = "deny"
 disallowed_methods = "deny"
-large_enum_variant = "warn"
-clone_on_ref_ptr = "warn"
-needless_pass_by_value = "warn"
+large_enum_variant = "deny"
+clone_on_ref_ptr = "deny"
+needless_pass_by_value = "deny"
+# Deliberate wholesale allow: the `store::store_*` / `writer::writer_*` naming
+# convention is intentional vocabulary here, and the lint has no per-path
+# tuning — silencing it in the table is noise suppression, not laxity.
 module_name_repetitions = "allow"
+# Deliberate wholesale allow: `#[must_use]` on every Result-adjacent public fn
+# would be pure churn (Result is already must_use); revisit as a one-shot
+# pre-1.0 harvest if the public API grows unused-return foot-guns.
 must_use_candidate = "allow"
-missing_errors_doc = "warn"
+missing_errors_doc = "deny"
 
 [workspace.lints.rust]
 deprecated = "deny"

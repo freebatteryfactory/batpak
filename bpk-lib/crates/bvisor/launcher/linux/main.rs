@@ -7,7 +7,7 @@
 //! The COORDINATOR (this `main.rs`, fully SAFE) validates the host-supplied
 //! [`LinuxLaunchPlanV1`](bvisor::linux::protocol::LinuxLaunchPlanV1), decides
 //! whether the launch may proceed, and — only if it
-//! may — creates ONE child via raw `clone3` (in the [`sys`] basement), placing it INTO
+//! may — creates ONE child via raw `clone3` (in the `sys` basement), placing it INTO
 //! the prepared cgroup leaf at birth when a `CgroupDir` slot is present
 //! (`CLONE_INTO_CGROUP`). The CHILD, in its async-signal-safe window, scrubs ambient
 //! authority (closes the non-allowlisted fds), applies the parent-built landlock ruleset
@@ -60,7 +60,7 @@
 //!
 //! ## Safety posture
 //! This file is SAFE Rust (the 4a runtime-shape gate FAILS the build on any `unsafe`
-//! outside the basement). All `unsafe` lives in [`sys`] (`launcher/linux/sys.rs`),
+//! outside the basement). All `unsafe` lives in `sys` (`launcher/linux/sys.rs`),
 //! each block ledger-anchored. No thread is ever created (the single-thread gate
 //! bans `thread::spawn`/`.spawn()`); no async, no tokio, no network.
 
