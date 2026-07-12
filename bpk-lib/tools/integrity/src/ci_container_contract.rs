@@ -38,23 +38,32 @@ const CI_FAST_LANES: &[&str] = &["check", "lint", "test", "contracts", "coverage
 
 fn check_ci_workflow(ci: &str) -> Result<()> {
     for lane in CI_FAST_LANES {
+        let job_key = format!("ci-fast-{lane}");
+        // Scope every requirement to THIS lane's job block: a global
+        // `ci.contains(...)` would stay green if one lane dropped its
+        // setup-devcontainer step while a sibling job still had one.
+        let block = crate::ci_parity::workflow_job_block(ci, &job_key).with_context(|| {
+            format!(
+                "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): ci.yml must declare the \
+                 `{job_key}:` lane job"
+            )
+        })?;
         ensure(
-            ci.contains(&format!("ci-fast-{lane}:"))
-                && ci.contains(&format!(
+            block.contains("uses: ./.github/actions/setup-devcontainer")
+                && block.contains(&format!(
                     "run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane {lane}'"
                 )),
             format!(
-                "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): ci-fast-{lane} must run \
-                 `cargo xtask ci-fast --lane {lane}` through scripts/run-in-devcontainer.sh"
+                "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): ci-fast-{lane} must build \
+                 the checked-in devcontainer action and run `cargo xtask ci-fast --lane {lane}` \
+                 through scripts/run-in-devcontainer.sh"
             ),
         )?;
     }
     ensure(
-        ci.contains("ci-fast-linux:")
-            && ci.contains("name: CI fast (ubuntu-devcontainer)")
-            && ci.contains("uses: ./.github/actions/setup-devcontainer"),
+        ci.contains("ci-fast-linux:") && ci.contains("name: CI fast (ubuntu-devcontainer)"),
         "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): the ci-fast-linux summary job \
-         must exist and the lane jobs must build the checked-in devcontainer action",
+         must exist",
     )?;
     ensure(
         ci.contains("verify-linux:")
@@ -107,15 +116,19 @@ jobs:
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane check'
   ci-fast-lint:
     steps:
+      - uses: ./.github/actions/setup-devcontainer
       - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane lint'
   ci-fast-test:
     steps:
+      - uses: ./.github/actions/setup-devcontainer
       - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test'
   ci-fast-contracts:
     steps:
+      - uses: ./.github/actions/setup-devcontainer
       - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane contracts'
   ci-fast-coverage:
     steps:
+      - uses: ./.github/actions/setup-devcontainer
       - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane coverage'
   ci-fast-linux:
     name: CI fast (ubuntu-devcontainer)
@@ -178,5 +191,22 @@ fn dockerfile(repo_root: &Path) -> PathBuf {
         check_ci_workflow(GREEN_CI).expect("ci workflow runs through devcontainer");
         check_setup_action(GREEN_ACTION).expect("setup action builds checked-in Dockerfile");
         check_xtask_devcontainer(GREEN_XTASK).expect("xtask uses checked-in Dockerfile");
+    }
+
+    #[test]
+    fn canonical_container_contract_rejects_lane_missing_setup_action() {
+        // Per-lane scoping: ONE lane dropping its setup-devcontainer step must
+        // red the contract even though every sibling lane still has the step
+        // (a global contains() would stay green).
+        let red = GREEN_CI.replace(
+            "  ci-fast-lint:\n    steps:\n      - uses: ./.github/actions/setup-devcontainer\n",
+            "  ci-fast-lint:\n    steps:\n",
+        );
+        let err = check_ci_workflow(&red)
+            .expect_err("a lane without the setup-devcontainer step must be rejected");
+        assert!(
+            err.to_string().contains("ci-fast-lint"),
+            "unexpected error: {err:#}"
+        );
     }
 }

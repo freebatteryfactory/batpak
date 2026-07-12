@@ -657,11 +657,15 @@ fn assert_ci_fast_fanout_jobs(ci_yml: &str) -> Result<()> {
                  `needs.rust-changed.outputs.rust == 'true'` so it runs on every Rust-touching PR"
             ),
         )?;
+        // Reject the label-gating IDIOM (`github.event.pull_request.labels`),
+        // not the bare word "labels" — a comment or action input mentioning
+        // labels must not red a lane that is still rust-changed-gated only.
         ensure(
-            !block.contains("labels"),
+            !block.contains("github.event.pull_request.labels"),
             format!(
-                "ci-parity: ci.yml job `{job_key}` must never be label-gated — the ci-fast \
-                 lanes are the DEFAULT PR path (P1-1)"
+                "ci-parity: ci.yml job `{job_key}` must never be label-gated (no \
+                 `github.event.pull_request.labels` condition) — the ci-fast lanes are the \
+                 DEFAULT PR path (P1-1)"
             ),
         )?;
     }
@@ -690,7 +694,7 @@ fn assert_ci_fast_fanout_jobs(ci_yml: &str) -> Result<()> {
 /// up to (excluding) the next two-space-indented `key:` line. String-level like
 /// the rest of this detector — no YAML parser — so failure messages stay
 /// legible and the dependency surface stays minimal.
-fn workflow_job_block(workflow: &str, job_key: &str) -> Result<String> {
+pub(crate) fn workflow_job_block(workflow: &str, job_key: &str) -> Result<String> {
     let header = format!("  {job_key}:");
     let next_job_re =
         Regex::new(r"^  [a-z][a-z0-9-]*:\s*$").context("compile workflow job-boundary regex")?;
@@ -1192,6 +1196,19 @@ fn ci_fast_coverage() -> Result<()> {
             err.to_string().contains("ci-fast-test"),
             "unexpected error: {err:#}"
         );
+    }
+
+    #[test]
+    fn ci_parity_fanout_accepts_harmless_labels_mention_in_lane_comment() {
+        // The label-gate rejection matches the gating idiom, not the bare word:
+        // a lane comment that merely says "labels" must not red the fan-out
+        // parity check while the job stays rust-changed-gated only.
+        let commented = green_ci_yml().replace(
+            "  ci-fast-test:\n    if: needs.rust-changed.outputs.rust == 'true'\n",
+            "  ci-fast-test:\n    # never gate this lane on PR labels\n    if: needs.rust-changed.outputs.rust == 'true'\n",
+        );
+        assert_ci_fast_fanout_jobs(&commented)
+            .expect("a comment mentioning labels must not trip the label-gate rejection");
     }
 
     #[test]
