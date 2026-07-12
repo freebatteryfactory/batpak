@@ -50,6 +50,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least-privilege pin for every job's GITHUB_TOKEN. The repo setting already
+# defaults to read-only (`default_workflow_permissions: read`); this makes the
+# posture explicit IN the workflow so a future settings drift cannot silently
+# widen it. Jobs that genuinely need more (the docs Pages deploy) declare
+# their own job-level block, which overrides this one.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
@@ -71,7 +79,7 @@ jobs:
   # expensive to let it starve PR feedback without an operator explicitly
   # asking for the `heavy` proof profile.
   #
-  # Push runs on main repeat exactly the always-on PR set (the five ci-fast
+  # Push runs on main repeat exactly the always-on PR set (the six ci-fast
   # lanes, rustdoc, meta-gate, wasm, fuzz replay/smoke, gauntlet bite) — no
   # heavy surfaces. The label-gated jobs stay label/profile-gated: a push
   # event has no PR label context, so those conditions are simply false.
@@ -109,7 +117,7 @@ jobs:
           fi
 
   # ── CI fast fan-out ────────────────────────────────────────────────────────
-  # The fast bundle used to be ONE serial job (~36 min measured); it is now five
+  # The fast bundle used to be ONE serial job (~36 min measured); it is now six
   # parallel lane jobs plus the `ci-fast-linux` summary below. Each lane runs
   # `cargo xtask ci-fast --lane <name>` — the same code path as the local serial
   # `cargo xtask ci-fast`, with one lane per runner. Hosted OSS runners make the
@@ -181,11 +189,35 @@ jobs:
           shared-key: ci-fast-test
           workspaces: bpk-lib
       - uses: ./.github/actions/setup-devcontainer
-      - name: nextest, doctests, family tests
+      - name: Workspace nextest
         env:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test'
+
+  ci-fast-test-docs:
+    # Split from ci-fast-test: warm-cache measurement (PR #221) put the nextest
+    # lane at 22m44s — the fan-out critical path — with ~4 min of doctest +
+    # family-crate tail. On its own runner this tail overlaps nextest instead of
+    # serializing after it, bounding PR wall-clock near the coverage floor.
+    name: CI fast — doctests + family tests (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: ci-fast-test-docs
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Doctests, family tests
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test-docs'
 
   ci-fast-contracts:
     name: CI fast — machine law + contract gates (ubuntu-devcontainer)
@@ -242,7 +274,7 @@ jobs:
           retention-days: 14
 
   ci-fast-linux:
-    # Fan-in summary for the five ci-fast lanes. Keeps the historic job id so
+    # Fan-in summary for the six ci-fast lanes. Keeps the historic job id so
     # (a) branch protection's required check stays `ci-fast-linux` and (b) every
     # downstream `needs: [ci-fast-linux, ...]` edge keeps working unchanged.
     # `if: always()` so it runs even when lanes fail or are skipped; the step
@@ -256,6 +288,7 @@ jobs:
         ci-fast-check,
         ci-fast-lint,
         ci-fast-test,
+        ci-fast-test-docs,
         ci-fast-contracts,
         ci-fast-coverage,
       ]
@@ -269,6 +302,7 @@ jobs:
           LANE_CHECK: ${{ needs.ci-fast-check.result }}
           LANE_LINT: ${{ needs.ci-fast-lint.result }}
           LANE_TEST: ${{ needs.ci-fast-test.result }}
+          LANE_TEST_DOCS: ${{ needs.ci-fast-test-docs.result }}
           LANE_CONTRACTS: ${{ needs.ci-fast-contracts.result }}
           LANE_COVERAGE: ${{ needs.ci-fast-coverage.result }}
         run: |
@@ -282,7 +316,7 @@ jobs:
             exit 1
           fi
           fail=0
-          for lane in CHECK LINT TEST CONTRACTS COVERAGE; do
+          for lane in CHECK LINT TEST TEST_DOCS CONTRACTS COVERAGE; do
             var="LANE_${lane}"
             result="${!var}"
             echo "lane ${lane}: ${result}"
