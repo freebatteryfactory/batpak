@@ -50,6 +50,15 @@ rustls = { version = "0.23", optional = true, default-features = false, features
 criterion = { version = "0.8", features = ["html_reports"] }
 proptest = "1"
 
+# Windows-only test support: the TLS drain-budget test must stage a ~1.4 MiB
+# flood in kernel socket buffers. Winsock's loopback defaults (~64-256 KiB)
+# are far below that, and std exposes no buffer-size setters, so the test
+# pins SO_SNDBUF/SO_RCVBUF via socket2 on Windows only. Linux deliberately
+# stays on kernel autotuning: an explicit setsockopt there disables
+# autotuning and clamps to net.core.rmem_max, SHRINKING the staged flood.
+[target.'cfg(windows)'.dev-dependencies]
+socket2 = "0.6"
+
 [[bench]]
 name = "boundary"
 harness = false
