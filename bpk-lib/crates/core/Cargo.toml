@@ -2,7 +2,7 @@
 name = "batpak"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.97"
 license = "MIT OR Apache-2.0"
 description = "Embedded, sync-first event store: append-only hash-chained journal, typed events, verifiable receipts, deterministic replay, projections. No async runtime."
 repository = "https://github.com/freebatteryfactory/batpak"

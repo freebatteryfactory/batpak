@@ -1,4 +1,4 @@
-FROM rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2
+FROM rust:1.97-bookworm@sha256:7d0723df719e7f213b69dc7c8c595985c3f4b060cfbee4f7bc0e347a86fe3b6a
 
 ARG DEBIAN_FRONTEND=noninteractive
 # Host-matched UID/GID so files created inside the container appear owned
@@ -45,7 +45,7 @@ RUN cargo binstall --no-confirm cargo-llvm-cov@0.8.5 || cargo install --locked c
 # nightly. Install a minimal dated nightly toolchain alongside the pinned
 # stable so `cargo xtask public-api --strict` can auto-fall-back to
 # rustdoc-json generation without forcing the rest of the build off the
-# canonical 1.92 stable channel.
+# canonical 1.97 stable channel.
 RUN rustup toolchain install nightly-2025-12-11 --profile minimal --no-self-update
 RUN cargo binstall --no-confirm cargo-public-api@0.51.0 || cargo install --locked cargo-public-api@0.51.0
 RUN cargo binstall --no-confirm cargo-semver-checks@0.48.0 || cargo install --locked cargo-semver-checks@0.48.0

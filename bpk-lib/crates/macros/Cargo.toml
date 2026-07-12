@@ -2,7 +2,7 @@
 name = "batpak-macros"
 version.workspace = true
 edition = "2021"
-rust-version = "1.92"
+rust-version = "1.97"
 license = "MIT OR Apache-2.0"
 description = "Procedural macros for the batpak event-sourcing store."
 repository = "https://github.com/freebatteryfactory/batpak"

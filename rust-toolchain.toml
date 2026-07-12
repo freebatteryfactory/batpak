@@ -1,5 +1,5 @@
 [toolchain]
-channel = "1.92.0"
+channel = "1.97.0"
 components = ["rustfmt", "clippy"]
 # wasm32-unknown-unknown backs the check-only embedding lane
 # (`cargo xtask wasm-surface`, issue #164); local and CI resolve identically.
