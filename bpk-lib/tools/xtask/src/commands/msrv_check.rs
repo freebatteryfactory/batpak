@@ -37,8 +37,11 @@ use crate::util::{repo_root, run};
 /// Verify each release-chain crate compiles under its declared
 /// `rust-version`.
 pub(crate) fn msrv_check() -> Result<()> {
-    let root = repo_root()?;
-    let bpk_lib = root.join("bpk-lib");
+    // repo_root() resolves the Cargo WORKSPACE root (bpk-lib/ itself — the
+    // repository root carries no Cargo.toml), so it is already the directory
+    // that contains crates/. Joining another "bpk-lib" here double-pathed to
+    // bpk-lib/bpk-lib/ and made the gate unrunnable from the canonical cwd.
+    let bpk_lib = repo_root()?;
     let mut by_msrv: BTreeMap<String, Vec<&'static str>> = BTreeMap::new();
     for package in RELEASE_CHAIN {
         let manifest = bpk_lib
