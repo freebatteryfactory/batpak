@@ -576,9 +576,10 @@ fn extract_ci_fast_family_bodies(xtask_sources: &str) -> Result<Vec<String>> {
 /// the default PR path, and that the serial dispatch still runs every fan-out
 /// lane. Each gate marker must appear in at least one `ci_fast*` body; a gate
 /// re-buried into `ci()`/`preflight` appears in none and fails. Additionally,
-/// at least one body (the serial dispatch) must call every `ci_fast_<lane>()`
-/// so a bare `cargo xtask ci-fast` keeps covering the full lane set locally.
-/// See [`CI_FAST_REQUIRED_GATE_MARKERS`] and [`CI_FAST_LANES`].
+/// the no-lane serial path (the `args.lane else` block) must call every
+/// `ci_fast_<lane>()` so a bare `cargo xtask ci-fast` keeps covering the full
+/// lane set locally. See [`CI_FAST_REQUIRED_GATE_MARKERS`] and
+/// [`CI_FAST_LANES`].
 fn assert_ci_fast_keeps_default_path_gates(xtask_sources: &str) -> Result<()> {
     let bodies = extract_ci_fast_family_bodies(xtask_sources)?;
     for (gate, marker) in CI_FAST_REQUIRED_GATE_MARKERS {
@@ -593,17 +594,31 @@ fn assert_ci_fast_keeps_default_path_gates(xtask_sources: &str) -> Result<()> {
             );
         }
     }
+    // Scope the serial-completeness proof to the NO-LANE path (the
+    // `let Some(lane) = args.lane else { … }` block), not the whole dispatch
+    // body: the single-lane `match` arms also spell every `ci_fast_<lane>()`
+    // call, so a whole-body scan would stay green even after the bare
+    // `cargo xtask ci-fast` path silently dropped a lane.
     let serial_dispatch_complete = bodies.iter().any(|body| {
+        let Some(else_start) = body.find("args.lane else {") else {
+            return false;
+        };
+        let after_else = &body[else_start..];
+        let Some(else_end) = after_else.find("};") else {
+            return false;
+        };
+        let serial_block = &after_else[..else_end];
         CI_FAST_LANES
             .iter()
-            .all(|lane| body.contains(&format!("ci_fast_{lane}()")))
+            .all(|lane| serial_block.contains(&format!("ci_fast_{lane}()")))
     });
     ensure(
         serial_dispatch_complete,
-        "ci-parity: no `ci_fast` body calls every `ci_fast_<lane>()` lane function. The \
-         serial dispatch must keep running ALL lanes (check, lint, test, contracts, \
-         coverage) so a bare `cargo xtask ci-fast` covers the same gate set as the CI \
-         fan-out. Restore the missing lane call in tools/xtask/src/commands/ci.rs.",
+        "ci-parity: the no-lane serial path of `ci_fast()` (the `args.lane else` block) \
+         does not call every `ci_fast_<lane>()` lane function. The serial dispatch must \
+         keep running ALL lanes (check, lint, test, contracts, coverage) so a bare \
+         `cargo xtask ci-fast` covers the same gate set as the CI fan-out. Restore the \
+         missing lane call in tools/xtask/src/commands/ci.rs.",
     )?;
     Ok(())
 }
@@ -1130,16 +1145,16 @@ fn ci_fast_coverage() -> Result<()> {
 
     #[test]
     fn ci_parity_rejects_serial_dispatch_dropping_a_lane() {
-        // The serial `ci_fast()` must keep calling every lane so the local
-        // one-command bundle covers the same gates as the CI fan-out. Dropping
-        // the contracts lane call from the dispatch (while the lane fn and the
-        // ci.yml job still exist) must bail.
+        // The no-lane serial path of `ci_fast()` must keep calling every lane
+        // so the local one-command bundle covers the same gates as the CI
+        // fan-out. Dropping the contracts call from the `args.lane else` block
+        // ONLY — the single-lane `match` arm still spells the call — must bail:
+        // the check scopes to the serial block, so the match arms cannot
+        // satisfy it (the hole a whole-body scan would miss).
         let dropped = GREEN_CI_FAST_SOURCE.replace("        ci_fast_contracts()?;\n", "");
-        // The match arm still names the lane, so also strip it there to model a
-        // true serial-dispatch hole.
-        let dropped = dropped.replace(
-            "        CiFastLane::Contracts => ci_fast_contracts(),\n",
-            "        CiFastLane::Contracts => Ok(()),\n",
+        assert!(
+            dropped.contains("CiFastLane::Contracts => ci_fast_contracts(),"),
+            "fixture must keep the match arm so the test proves serial-block scoping"
         );
         let err = assert_ci_fast_keeps_default_path_gates(&dropped)
             .expect_err("serial dispatch missing a lane call must fail");
