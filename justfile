@@ -26,9 +26,11 @@ traceability:
 structural:
     cd bpk-lib; cargo xtask structural
 
+# `structural` already runs the full detector suite (layout, boundary,
+# stale-paths are discoverability aliases over the same check), so inspect
+# runs it once — not once per alias.
 inspect:
     cd bpk-lib; cargo xtask structural
-    cd bpk-lib; cargo xtask boundary
     cd bpk-lib; cargo xtask architecture-ir
     cd bpk-lib; cargo xtask architecture-ir --check
     cd bpk-lib; cargo xtask ast-grep
@@ -138,9 +140,10 @@ ship-real:
 pre-commit:
     cd bpk-lib; cargo xtask pre-commit
 
-# Report-only coverage. The same `cargo xtask cover` now also runs per-PR in CI
-# as the non-blocking `coverage-baseline` job (advisory observation). The hard
-# coverage floor (80) is `cover-check` below, which runs in preflight/verify-linux.
+# Report-only coverage. In CI the blocking threshold-80 floor runs as the
+# `ci-fast-coverage` lane (`cargo xtask ci-fast --lane coverage`), which also
+# uploads the same run's report bundle — one instrumented build serves both.
+# `cover-check` below is the local equivalent of that blocking floor.
 cover:
     cd bpk-lib; cargo xtask cover
 

@@ -81,9 +81,12 @@ pub(crate) fn check(repo_root: &Path) -> Result<()> {
         .context("read tools/xtask/src/main.rs")?;
     let xtask_sources = xtask_source_text(repo_root)?;
     // Anti-rebury (P1-1): the L2+ contract gates must stay on the default PR
-    // path inside `ci_fast()`. This blocks silently moving them back into the
-    // label-gated `ci()`/`preflight()` lanes.
+    // path inside the `ci_fast` lane family. This blocks silently moving them
+    // back into the label-gated `ci()`/`preflight()` lanes.
     assert_ci_fast_keeps_default_path_gates(&xtask_sources)?;
+    // Fan-out parity: every ci-fast lane must exist as an always-on ci.yml job
+    // and fan back into the `ci-fast-linux` summary (the required check).
+    assert_ci_fast_fanout_jobs(&ci_yml)?;
     let dockerfile = fs::read_to_string(project_root.join(".devcontainer/Dockerfile"))
         .context("read .devcontainer/Dockerfile")?;
     let workflows = [
@@ -494,12 +497,13 @@ fn assert_workflow_just_recipes_map_to_xtask(
     Ok(())
 }
 
-/// The exact xtask call substrings that MUST appear inside the body of
-/// `ci_fast()` so the L2+ contract gates stay on the default PR path. Each is a
+/// The exact xtask call substrings that MUST appear inside the `ci_fast`
+/// function family (the serial dispatch plus its `ci_fast_<lane>` lane
+/// functions) so the L2+ contract gates stay on the default PR path. Each is a
 /// distinctive marker of the corresponding gate invocation (P1-1). If a future
 /// edit re-buries a gate (moves it back into the label-gated `ci()`/`preflight`
-/// lanes, or drops it entirely), the marker disappears from the `ci_fast` body
-/// and this gate fails — preventing silent re-burial.
+/// lanes, or drops it entirely), the marker disappears from every `ci_fast*`
+/// body and this gate fails — preventing silent re-burial.
 const CI_FAST_REQUIRED_GATE_MARKERS: &[(&str, &str)] = &[
     ("template compile", "templates()?"),
     ("coverage floor", "coverage::cover(CoverArgs"),
@@ -514,46 +518,53 @@ const CI_FAST_REQUIRED_GATE_MARKERS: &[(&str, &str)] = &[
     ("doctor --strict", "integrity(\"doctor\", [\"--strict\"])"),
 ];
 
-/// Extract the body of EVERY `fn ci_fast() -> Result<()>` in the concatenated
-/// xtask source surface. There are legitimately two: the real implementation in
-/// `commands/ci.rs` and a one-line delegator (`ci::ci_fast()`) in `commands.rs`
-/// that `main.rs` dispatches through. Each body is the text between the
-/// function's opening `{` and the next top-level `}` (a line that is exactly
-/// `}`), which is how rustfmt closes a free function in this tree. Returning all
-/// bodies lets the anti-rebury assertion accept the gates living in the real
-/// impl while ignoring the delegator — and still catch true re-burial, because a
-/// gate moved out of the real `ci_fast` into `ci()`/`preflight` appears in NO
-/// `ci_fast` body.
-fn extract_ci_fast_bodies(xtask_sources: &str) -> Result<Vec<String>> {
-    let signature = "fn ci_fast() -> Result<()> {";
+/// The named fan-out lanes of `ci-fast`. Kept in lockstep with
+/// `CiFastLane` in tools/xtask/src/main.rs and with the `ci-fast-<lane>` jobs
+/// in `.github/workflows/ci.yml`: every lane must exist as an always-on
+/// (rust-changed-gated, never label-gated) ci.yml job AND stay wired into the
+/// serial `ci_fast()` dispatch, so the local one-command bundle and the CI
+/// fan-out enforce the same gate set.
+const CI_FAST_LANES: &[&str] = &["check", "lint", "test", "contracts", "coverage"];
+
+/// Extract the body of EVERY function in the `ci_fast` family — any
+/// `fn ci_fast…(` definition — in the concatenated xtask source surface. That
+/// covers the serial dispatch (`fn ci_fast(args: CiFastArgs)`), the one-line
+/// delegator in `commands.rs`, and the `fn ci_fast_<lane>()` lane functions the
+/// gates actually live in. Each body is the text between the function's
+/// signature line (ending in `{`) and the next top-level `}` (a line that is
+/// exactly `}`), which is how rustfmt closes a free function in this tree.
+/// Scoping to the family — and nothing else — is what lets the anti-rebury
+/// assertion catch true re-burial: a gate moved out into `ci()`/`preflight`
+/// appears in NO `ci_fast*` body.
+fn extract_ci_fast_family_bodies(xtask_sources: &str) -> Result<Vec<String>> {
     let mut bodies = Vec::new();
-    let mut search_from = 0usize;
-    while let Some(rel) = xtask_sources[search_from..].find(signature) {
-        let start = search_from + rel;
-        let after_sig = &xtask_sources[start + signature.len()..];
+    let mut lines = xtask_sources.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.contains("fn ci_fast") || !line.trim_end().ends_with('{') {
+            continue;
+        }
         let mut body = String::new();
         let mut closed = false;
-        for line in after_sig.lines() {
-            if line == "}" {
+        for body_line in lines.by_ref() {
+            if body_line == "}" {
                 closed = true;
                 break;
             }
-            body.push_str(line);
+            body.push_str(body_line);
             body.push('\n');
         }
         if !closed {
             bail!(
-                "ci-parity: found `fn ci_fast()` but could not locate its closing `}}` at \
-                 column 0 in the xtask source surface; the anti-rebury check cannot scope to \
-                 its body."
+                "ci-parity: found a `fn ci_fast…` signature but could not locate its closing \
+                 `}}` at column 0 in the xtask source surface; the anti-rebury check cannot \
+                 scope to its body."
             );
         }
         bodies.push(body);
-        search_from = start + signature.len();
     }
     if bodies.is_empty() {
         bail!(
-            "ci-parity: could not find `fn ci_fast() -> Result<()> {{` in the xtask source \
+            "ci-parity: could not find any `fn ci_fast…` definition in the xtask source \
              surface (tools/xtask/src/). The default-path fast lane must exist so its L2+ \
              gates can be verified."
         );
@@ -561,25 +572,130 @@ fn extract_ci_fast_bodies(xtask_sources: &str) -> Result<Vec<String>> {
     Ok(bodies)
 }
 
-/// Assert that `ci_fast()` still invokes every L2+ contract gate on the default
-/// PR path. Each marker must appear in at least one `ci_fast` body (the real
-/// impl); a gate re-buried into `ci()`/`preflight` appears in none and fails.
-/// See [`CI_FAST_REQUIRED_GATE_MARKERS`].
+/// Assert that the `ci_fast` family still invokes every L2+ contract gate on
+/// the default PR path, and that the serial dispatch still runs every fan-out
+/// lane. Each gate marker must appear in at least one `ci_fast*` body; a gate
+/// re-buried into `ci()`/`preflight` appears in none and fails. Additionally,
+/// at least one body (the serial dispatch) must call every `ci_fast_<lane>()`
+/// so a bare `cargo xtask ci-fast` keeps covering the full lane set locally.
+/// See [`CI_FAST_REQUIRED_GATE_MARKERS`] and [`CI_FAST_LANES`].
 fn assert_ci_fast_keeps_default_path_gates(xtask_sources: &str) -> Result<()> {
-    let bodies = extract_ci_fast_bodies(xtask_sources)?;
+    let bodies = extract_ci_fast_family_bodies(xtask_sources)?;
     for (gate, marker) in CI_FAST_REQUIRED_GATE_MARKERS {
         if !bodies.iter().any(|body| body.contains(marker)) {
             bail!(
-                "ci-parity: `ci_fast()` no longer invokes the {gate} gate (expected to find \
-                 `{marker}` in its body). The L2+ contract gates must run on the DEFAULT PR \
-                 path (P1-1); do not re-bury them in the label-gated `ci()`/`preflight` lanes. \
-                 If you are intentionally relocating the gate, update \
-                 CI_FAST_REQUIRED_GATE_MARKERS in tools/integrity/src/ci_parity.rs and the \
-                 meta-gate/gate_registry accordingly."
+                "ci-parity: the `ci_fast` lane family no longer invokes the {gate} gate \
+                 (expected to find `{marker}` in a `ci_fast*` body). The L2+ contract gates \
+                 must run on the DEFAULT PR path (P1-1); do not re-bury them in the \
+                 label-gated `ci()`/`preflight` lanes. If you are intentionally relocating \
+                 the gate, update CI_FAST_REQUIRED_GATE_MARKERS in \
+                 tools/integrity/src/ci_parity.rs and the meta-gate/gate_registry accordingly."
             );
         }
     }
+    let serial_dispatch_complete = bodies.iter().any(|body| {
+        CI_FAST_LANES
+            .iter()
+            .all(|lane| body.contains(&format!("ci_fast_{lane}()")))
+    });
+    ensure(
+        serial_dispatch_complete,
+        "ci-parity: no `ci_fast` body calls every `ci_fast_<lane>()` lane function. The \
+         serial dispatch must keep running ALL lanes (check, lint, test, contracts, \
+         coverage) so a bare `cargo xtask ci-fast` covers the same gate set as the CI \
+         fan-out. Restore the missing lane call in tools/xtask/src/commands/ci.rs.",
+    )?;
     Ok(())
+}
+
+/// Assert that `.github/workflows/ci.yml` fans the fast bundle out into one
+/// always-on job per [`CI_FAST_LANES`] lane and fans them back into the
+/// `ci-fast-linux` summary job. Each lane job must run
+/// `cargo xtask ci-fast --lane <lane>` through the devcontainer wrapper, be
+/// gated on the rust-changed detector ONLY (never a label — the meta-gate
+/// watches for label-gated reburial), and appear in the summary's `needs` so a
+/// failed lane fails the single required check.
+fn assert_ci_fast_fanout_jobs(ci_yml: &str) -> Result<()> {
+    for lane in CI_FAST_LANES {
+        let job_key = format!("ci-fast-{lane}");
+        let block = workflow_job_block(ci_yml, &job_key).with_context(|| {
+            format!(
+                "ci-parity: `.github/workflows/ci.yml` must declare an always-on `{job_key}:` \
+                 fan-out job (one per ci-fast lane); see CI_FAST_LANES in \
+                 tools/integrity/src/ci_parity.rs"
+            )
+        })?;
+        let run_line = format!(
+            "run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane {lane}'"
+        );
+        ensure(
+            block.contains(&run_line),
+            format!(
+                "ci-parity: ci.yml job `{job_key}` must run `{run_line}` (the lane must go \
+                 through the checked-in devcontainer wrapper)"
+            ),
+        )?;
+        ensure(
+            block.contains("if: needs.rust-changed.outputs.rust == 'true'"),
+            format!(
+                "ci-parity: ci.yml job `{job_key}` must be gated on \
+                 `needs.rust-changed.outputs.rust == 'true'` so it runs on every Rust-touching PR"
+            ),
+        )?;
+        ensure(
+            !block.contains("labels"),
+            format!(
+                "ci-parity: ci.yml job `{job_key}` must never be label-gated — the ci-fast \
+                 lanes are the DEFAULT PR path (P1-1)"
+            ),
+        )?;
+    }
+    let summary = workflow_job_block(ci_yml, "ci-fast-linux").context(
+        "ci-parity: `.github/workflows/ci.yml` must keep the `ci-fast-linux:` fan-in summary \
+         job (the single required check downstream `needs:` edges point at)",
+    )?;
+    for lane in CI_FAST_LANES {
+        ensure(
+            summary.contains(&format!("ci-fast-{lane}")),
+            format!(
+                "ci-parity: the `ci-fast-linux` summary job must `needs:` the `ci-fast-{lane}` \
+                 lane job so a failed lane fails the required check"
+            ),
+        )?;
+    }
+    ensure(
+        summary.contains("if: always()"),
+        "ci-parity: the `ci-fast-linux` summary job must run with `if: always()` so it \
+         reports a verdict even when a lane fails or is skipped",
+    )?;
+    Ok(())
+}
+
+/// Slice the block of one top-level ci.yml job: the lines after `  <job_key>:`
+/// up to (excluding) the next two-space-indented `key:` line. String-level like
+/// the rest of this detector — no YAML parser — so failure messages stay
+/// legible and the dependency surface stays minimal.
+fn workflow_job_block(workflow: &str, job_key: &str) -> Result<String> {
+    let header = format!("  {job_key}:");
+    let next_job_re =
+        Regex::new(r"^  [a-z][a-z0-9-]*:\s*$").context("compile workflow job-boundary regex")?;
+    let mut block = String::new();
+    let mut collecting = false;
+    for line in workflow.lines() {
+        if collecting {
+            if next_job_re.is_match(line) {
+                break;
+            }
+            block.push_str(line);
+            block.push('\n');
+        } else if line.trim_end() == header {
+            collecting = true;
+        }
+    }
+    if !collecting {
+        bail!("ci-parity: could not find job `{job_key}:` in the workflow");
+    }
+    Ok(block)
 }
 
 fn xtask_source_text(repo_root: &Path) -> Result<String> {
@@ -620,20 +736,52 @@ mod tests {
     /// to the same version used by the green workflow + Dockerfile.
     const GREEN_XTASK_MAIN: &str = r#"
 enum XtaskCommand {
-    CiFast,
+    CiFast(CiFastArgs),
     Preflight,
     Mutants,
     Setup,
     Release(ReleaseArgs),
 }
 
-pub(crate) fn ci_fast() -> Result<()> {
+pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
+    let Some(lane) = args.lane else {
+        ci_fast_check()?;
+        ci_fast_lint()?;
+        ci_fast_test()?;
+        ci_fast_contracts()?;
+        return ci_fast_coverage();
+    };
+    match lane {
+        CiFastLane::Check => ci_fast_check(),
+        CiFastLane::Lint => ci_fast_lint(),
+        CiFastLane::Test => ci_fast_test(),
+        CiFastLane::Contracts => ci_fast_contracts(),
+        CiFastLane::Coverage => ci_fast_coverage(),
+    }
+}
+
+fn ci_fast_check() -> Result<()> {
+    cargo(["fmt", "--check"])
+}
+
+fn ci_fast_lint() -> Result<()> {
+    run_workspace_clippy()
+}
+
+fn ci_fast_test() -> Result<()> {
+    run_nextest_ci(["--workspace", "--all-features"])
+}
+
+fn ci_fast_contracts() -> Result<()> {
     templates()?;
-    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })?;
     crate::public_api::public_api(PublicApiArgs { strict: true, check_baseline: true, bless_baseline: false })?;
     super::package_leak_scan(PackageLeakScanArgs { allow_dirty: false, strict_language: true })?;
     integrity("doctor", ["--strict"])?;
     integrity("gauntlet-receipts-present", [])
+}
+
+fn ci_fast_coverage() -> Result<()> {
+    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })
 }
 
 fn install_tools() {
@@ -652,9 +800,27 @@ fn install_tools() {
         let mut yml = String::new();
         yml.push_str("name: ci\n");
         yml.push_str("jobs:\n");
+        for lane in super::CI_FAST_LANES {
+            yml.push_str(&format!("  ci-fast-{lane}:\n"));
+            yml.push_str("    if: needs.rust-changed.outputs.rust == 'true'\n");
+            yml.push_str("    steps:\n");
+            yml.push_str(&format!(
+                "      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane {lane}'\n"
+            ));
+        }
+        yml.push_str("  ci-fast-linux:\n");
+        yml.push_str("    needs:\n");
+        yml.push_str("      [\n");
+        yml.push_str("        rust-changed,\n");
+        for lane in super::CI_FAST_LANES {
+            yml.push_str(&format!("        ci-fast-{lane},\n"));
+        }
+        yml.push_str("      ]\n");
+        yml.push_str("    if: always()\n");
+        yml.push_str("    steps:\n");
+        yml.push_str("      - run: echo summary\n");
         yml.push_str("  fast:\n");
         yml.push_str("    steps:\n");
-        yml.push_str("      - run: cargo xtask ci-fast\n");
         yml.push_str("      - run: cargo xtask preflight\n");
         yml.push_str("      - uses: taiki-e/install-action@v2\n");
         yml.push_str("        with:\n");
@@ -845,35 +1011,67 @@ fn install_tools() {
         assert!(err.to_string().contains("surface"), "unexpected: {err:#}");
     }
 
-    /// A synthetic `ci_fast()` body that invokes every required L2+ gate, used
-    /// as the green floor for the anti-rebury self-test below.
+    /// A synthetic `ci_fast` lane family that invokes every required L2+ gate
+    /// and dispatches every lane, used as the green floor for the anti-rebury
+    /// self-tests below.
     const GREEN_CI_FAST_SOURCE: &str = r#"
-pub(crate) fn ci_fast() -> Result<()> {
-    cargo(["fmt", "--check"])?;
+pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
+    let Some(lane) = args.lane else {
+        ci_fast_check()?;
+        ci_fast_lint()?;
+        ci_fast_test()?;
+        ci_fast_contracts()?;
+        return ci_fast_coverage();
+    };
+    match lane {
+        CiFastLane::Check => ci_fast_check(),
+        CiFastLane::Lint => ci_fast_lint(),
+        CiFastLane::Test => ci_fast_test(),
+        CiFastLane::Contracts => ci_fast_contracts(),
+        CiFastLane::Coverage => ci_fast_coverage(),
+    }
+}
+
+fn ci_fast_check() -> Result<()> {
+    cargo(["fmt", "--check"])
+}
+
+fn ci_fast_lint() -> Result<()> {
+    run_workspace_clippy()
+}
+
+fn ci_fast_test() -> Result<()> {
+    run_nextest_ci(["--workspace", "--all-features"])
+}
+
+fn ci_fast_contracts() -> Result<()> {
     templates()?;
-    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })?;
     crate::public_api::public_api(PublicApiArgs { strict: true, check_baseline: true, bless_baseline: false })?;
     super::package_leak_scan(PackageLeakScanArgs { allow_dirty: false, strict_language: true })?;
     integrity("doctor", ["--strict"])?;
     integrity("gauntlet-receipts-present", [])
 }
+
+fn ci_fast_coverage() -> Result<()> {
+    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })
+}
 "#;
 
     #[test]
     fn ci_parity_rejects_ci_fast_missing_coverage_gate() {
-        // Anti-rebury (P1-1): the green ci_fast body containing every gate
+        // Anti-rebury (P1-1): the green ci_fast family containing every gate
         // passes; removing the coverage call (re-burying the coverage floor)
         // must make the anti-rebury assertion bail. Anti-vacuous: both the
         // green AND the planted-violation case are asserted.
         assert_ci_fast_keeps_default_path_gates(GREEN_CI_FAST_SOURCE)
-            .expect("green ci_fast with all gates must pass anti-rebury");
+            .expect("green ci_fast family with all gates must pass anti-rebury");
 
         let reburied = GREEN_CI_FAST_SOURCE.replace(
-            "    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })?;\n",
-            "",
+            "    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })\n",
+            "    Ok(())\n",
         );
         let err = assert_ci_fast_keeps_default_path_gates(&reburied)
-            .expect_err("ci_fast missing the coverage gate must fail anti-rebury");
+            .expect_err("ci_fast family missing the coverage gate must fail anti-rebury");
         assert!(
             err.to_string().contains("coverage floor"),
             "unexpected error: {err:#}"
@@ -886,7 +1084,7 @@ pub(crate) fn ci_fast() -> Result<()> {
         // the heavier consumer-smoke lane.
         let reburied = GREEN_CI_FAST_SOURCE.replace("    templates()?;\n", "");
         let err = assert_ci_fast_keeps_default_path_gates(&reburied)
-            .expect_err("ci_fast missing the template gate must fail anti-rebury");
+            .expect_err("ci_fast family missing the template gate must fail anti-rebury");
         assert!(
             err.to_string().contains("template compile"),
             "unexpected error: {err:#}"
@@ -896,13 +1094,13 @@ pub(crate) fn ci_fast() -> Result<()> {
     #[test]
     fn ci_parity_rejects_ci_fast_missing_public_api_gate() {
         // Companion to the coverage case: dropping the public-api baseline call
-        // from ci_fast must also trip the anti-rebury assertion.
+        // from the contracts lane must also trip the anti-rebury assertion.
         let reburied = GREEN_CI_FAST_SOURCE.replace(
             "    crate::public_api::public_api(PublicApiArgs { strict: true, check_baseline: true, bless_baseline: false })?;\n",
             "",
         );
         let err = assert_ci_fast_keeps_default_path_gates(&reburied)
-            .expect_err("ci_fast missing the public-api gate must fail anti-rebury");
+            .expect_err("ci_fast family missing the public-api gate must fail anti-rebury");
         assert!(
             err.to_string().contains("public-api baseline"),
             "unexpected error: {err:#}"
@@ -910,22 +1108,86 @@ pub(crate) fn ci_fast() -> Result<()> {
     }
 
     #[test]
-    fn ci_parity_anti_rebury_reads_only_the_ci_fast_body() {
+    fn ci_parity_anti_rebury_reads_only_the_ci_fast_family() {
         // A gate present elsewhere (e.g. still called inside `ci()`) must NOT
-        // satisfy the assertion: the scope is the ci_fast body only. Strip the
-        // coverage call from ci_fast but leave a decoy call after the closing
-        // brace; the assertion must still bail.
+        // satisfy the assertion: the scope is the ci_fast lane family only.
+        // Strip the coverage call from its lane but leave a decoy call in a
+        // non-family function; the assertion must still bail.
         let reburied = GREEN_CI_FAST_SOURCE.replace(
-            "    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })?;\n",
-            "",
+            "    coverage::cover(CoverArgs { ci: true, json: false, threshold: Some(80) })\n",
+            "    Ok(())\n",
         );
         let with_decoy = format!(
             "{reburied}\npub(crate) fn ci() -> Result<()> {{\n    coverage::cover(CoverArgs {{ ci: true, json: false, threshold: Some(80) }})?;\n    Ok(())\n}}\n"
         );
         let err = assert_ci_fast_keeps_default_path_gates(&with_decoy)
-            .expect_err("coverage call outside ci_fast must not satisfy anti-rebury");
+            .expect_err("coverage call outside the ci_fast family must not satisfy anti-rebury");
         assert!(
             err.to_string().contains("coverage floor"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn ci_parity_rejects_serial_dispatch_dropping_a_lane() {
+        // The serial `ci_fast()` must keep calling every lane so the local
+        // one-command bundle covers the same gates as the CI fan-out. Dropping
+        // the contracts lane call from the dispatch (while the lane fn and the
+        // ci.yml job still exist) must bail.
+        let dropped = GREEN_CI_FAST_SOURCE.replace("        ci_fast_contracts()?;\n", "");
+        // The match arm still names the lane, so also strip it there to model a
+        // true serial-dispatch hole.
+        let dropped = dropped.replace(
+            "        CiFastLane::Contracts => ci_fast_contracts(),\n",
+            "        CiFastLane::Contracts => Ok(()),\n",
+        );
+        let err = assert_ci_fast_keeps_default_path_gates(&dropped)
+            .expect_err("serial dispatch missing a lane call must fail");
+        assert!(
+            err.to_string().contains("ci_fast_<lane>()"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn ci_parity_fanout_rejects_missing_lane_job() {
+        // Green fan-out passes; deleting one lane job from ci.yml must bail.
+        let green = green_ci_yml();
+        assert_ci_fast_fanout_jobs(&green).expect("green fan-out must pass");
+        let planted = green.replace("  ci-fast-coverage:\n", "  ci-fast-coverage-renamed:\n");
+        let err = assert_ci_fast_fanout_jobs(&planted)
+            .expect_err("missing lane job must fail fan-out parity");
+        assert!(
+            err.to_string().contains("ci-fast-coverage"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn ci_parity_fanout_rejects_label_gated_lane_job() {
+        // A lane job gaining a label-gate condition is a reburial of the
+        // default PR path and must bail.
+        let planted = green_ci_yml().replace(
+            "  ci-fast-test:\n    if: needs.rust-changed.outputs.rust == 'true'\n",
+            "  ci-fast-test:\n    if: contains(github.event.pull_request.labels.*.name, 'run-heavy-ci')\n",
+        );
+        let err = assert_ci_fast_fanout_jobs(&planted)
+            .expect_err("label-gated lane job must fail fan-out parity");
+        assert!(
+            err.to_string().contains("ci-fast-test"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn ci_parity_fanout_rejects_summary_missing_a_lane_need() {
+        // The summary must fan in every lane; dropping one from its needs list
+        // must bail.
+        let planted = green_ci_yml().replace("        ci-fast-lint,\n", "");
+        let err = assert_ci_fast_fanout_jobs(&planted)
+            .expect_err("summary missing a lane need must fail fan-out parity");
+        assert!(
+            err.to_string().contains("ci-fast-lint"),
             "unexpected error: {err:#}"
         );
     }

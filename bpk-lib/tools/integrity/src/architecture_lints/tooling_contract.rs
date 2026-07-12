@@ -911,12 +911,16 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
         !coverage_content.contains("cleanup_export_dir"),
         "xtask coverage must retain artifacts instead of deleting them eagerly",
     )?;
+    // The coverage floor is enforced inside `ci()` (the ci-fast coverage lane),
+    // so preflight must NOT re-run a second instrumented `coverage::cover` —
+    // one in-container execution path, one instrumented build.
     ensure(
         preflight_content.contains("std::env::var_os(\"DEVCONTAINER\")")
             && preflight_content.contains("crate::commands::ci()?")
-            && preflight_content.contains("coverage::cover(CoverArgs")
+            && !preflight_content.contains("coverage::cover(CoverArgs")
             && preflight_content.contains("crate::docs::docs(DocsArgs { open: false })"),
-        "xtask preflight must collapse the proof chain into one in-container execution path",
+        "xtask preflight must collapse the proof chain into one in-container execution path \
+         without duplicating the instrumented coverage run that ci_fast's coverage lane owns",
     )?;
     ensure(
         preflight_content.contains("run_in_devcontainer(&[\"cargo\", \"xtask\", \"preflight\"])"),
