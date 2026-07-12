@@ -33,7 +33,7 @@ body:
     attributes:
       label: Rust version
       description: Paste `rustc -V`.
-      placeholder: rustc 1.92.0 (...)
+      placeholder: rustc 1.97.0 (...)
     validations:
       required: true
   - type: textarea

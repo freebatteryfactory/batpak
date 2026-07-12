@@ -294,7 +294,7 @@ pub(crate) fn aspirational_pub_fn_subjects(
 fn overclaim_production_roots(repo_root: &Path) -> Result<Vec<PathBuf>> {
     match production_rust_roots(repo_root) {
         Ok(roots) => Ok(roots),
-        Err(err) if !repo_root.join("Cargo.toml").exists() => {
+        Err(_) if !repo_root.join("Cargo.toml").exists() => {
             Ok(synthetic_fixture_production_roots(repo_root))
         }
         Err(err) => Err(err),

@@ -1,6 +1,5 @@
 use crate::store::stats::ParentDirSyncEvidence;
 use crate::store::{StoreError, SyncMode};
-use std::fs::File;
 use std::path::Path;
 
 /// Persist `named_temp` as `final_path` with parent-directory fsync.
@@ -48,7 +47,7 @@ fn sync_parent_dir_io(path: &Path) -> std::io::Result<()> {
             // POSIX-idiomatic way to flush the directory entry for the
             // renamed-in file. Without this, a crash after the rename
             // returns can leave the rename itself undone on disk.
-            let dir = File::open(parent)?;
+            let dir = std::fs::File::open(parent)?;
             dir.sync_all()?;
         }
     }
@@ -77,7 +76,7 @@ pub(crate) fn sync_store_file_with_mode(
 /// Test-only escape for flushing REAL bytes to disk outside the fault layer
 /// (the crash-model tests need the OS to have the tail before truncation).
 #[cfg(test)]
-pub(crate) fn sync_file_all_io(file: &File) -> std::io::Result<()> {
+pub(crate) fn sync_file_all_io(file: &std::fs::File) -> std::io::Result<()> {
     file.sync_all()
 }
 
@@ -121,7 +120,7 @@ mod tests {
 
     #[test]
     fn sync_store_file_with_mode_surfaces_platform_sync_errors() -> Result<(), Box<dyn Error>> {
-        let file = File::open("/dev/null")?;
+        let file = std::fs::File::open("/dev/null")?;
         let mut handle = crate::store::platform::fs::RealStoreFile::new(file);
 
         assert!(
