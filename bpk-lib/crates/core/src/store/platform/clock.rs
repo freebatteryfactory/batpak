@@ -101,8 +101,57 @@ pub(crate) struct MonotonicAnchor {
     anchor_boot_ns: u64,
 }
 
+/// Test-only tripwire proving ambient-anchor ABSTINENCE (#182).
+///
+/// A store opened with a fully injected [`Clock`] must never touch the ambient
+/// monotonic anchor (`SystemTime::now` / `Instant::now`) — on wasm32 under
+/// `workerd` that path traps during open. The reliable oracle is ACCESS, not
+/// `OnceLock` initialization state (which is process-global and depends on what
+/// ran earlier in the test process): while a [`ForbidAmbientAnchorGuard`] is
+/// installed, ANY [`MonotonicAnchor::get`] call fails the test. Compiled only
+/// under `dangerous-test-hooks`, the same gate as the fault-injection surface.
+#[cfg(feature = "dangerous-test-hooks")]
+pub(crate) mod ambient_anchor_tripwire {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static FORBIDDEN: AtomicBool = AtomicBool::new(false);
+
+    /// Called by [`super::MonotonicAnchor::get`] on every access.
+    pub(crate) fn assert_ambient_anchor_allowed() {
+        assert!(
+            !FORBIDDEN.load(Ordering::SeqCst),
+            "#182: the ambient monotonic anchor was accessed while a \
+             ForbidAmbientAnchorGuard is installed — a store driven by a fully \
+             injected Clock must own ALL of its timekeeping (this path traps on \
+             wasm32 under workerd)"
+        );
+    }
+
+    /// RAII scope during which any ambient-anchor access fails the test.
+    ///
+    /// Process-global (the anchor is process-global); keep exactly one test per
+    /// integration binary that installs it, so no sibling test races the scope.
+    pub struct ForbidAmbientAnchorGuard(());
+
+    impl ForbidAmbientAnchorGuard {
+        /// Forbid ambient-anchor access until the guard drops.
+        pub fn install() -> Self {
+            FORBIDDEN.store(true, Ordering::SeqCst);
+            Self(())
+        }
+    }
+
+    impl Drop for ForbidAmbientAnchorGuard {
+        fn drop(&mut self) {
+            FORBIDDEN.store(false, Ordering::SeqCst);
+        }
+    }
+}
+
 impl MonotonicAnchor {
     fn get() -> &'static Self {
+        #[cfg(feature = "dangerous-test-hooks")]
+        ambient_anchor_tripwire::assert_ambient_anchor_allowed();
         static ANCHOR: OnceLock<MonotonicAnchor> = OnceLock::new();
         ANCHOR.get_or_init(|| {
             // The boot marker is the wall-clock time at anchor creation, encoded
@@ -133,23 +182,23 @@ impl MonotonicAnchor {
 ///
 /// Saturates to `i64::MAX` if the process has been alive for more than
 /// ~292 years.
-#[derive(Clone)]
-pub struct SystemClock {
-    anchor: &'static MonotonicAnchor,
-}
+///
+/// The ambient anchor is captured LAZILY, on the first monotonic read — never
+/// at construction (#182). Constructing a `SystemClock` is therefore free of
+/// ambient `SystemTime`/`Instant` access, which matters twice: a discarded
+/// construction (e.g. a `..Default::default()` struct spread) cannot trap a
+/// wasm32 embedding, and a store driven by a fully injected [`Clock`] never
+/// reaches the ambient path at all. Native semantics are unchanged — the
+/// anchor is process-wide and first-use-initialized either way.
+#[derive(Clone, Default)]
+pub struct SystemClock;
 
 impl SystemClock {
-    /// Create a production clock backed by system wall time and process-local monotonic time.
+    /// Create a production clock backed by system wall time and process-local
+    /// monotonic time. Construction performs NO ambient clock access (#182);
+    /// the process-wide monotonic anchor initializes on first use.
     pub fn new() -> Self {
-        Self {
-            anchor: MonotonicAnchor::get(),
-        }
-    }
-}
-
-impl Default for SystemClock {
-    fn default() -> Self {
-        Self::new()
+        Self
     }
 }
 
@@ -163,25 +212,26 @@ impl Clock for SystemClock {
     }
 
     fn now_mono_ns(&self) -> i64 {
-        self.anchor.now_mono_ns()
+        MonotonicAnchor::get().now_mono_ns()
     }
 
     fn process_boot_ns(&self) -> u64 {
-        self.anchor.anchor_boot_ns
+        MonotonicAnchor::get().anchor_boot_ns
     }
 }
 
+/// Adapter for [`clock_from_fn`]: the closure scripts the WALL clock only; the
+/// monotonic side reads the shared ambient anchor — lazily, on first read
+/// (#182), never at construction. A `with_clock_fn` store that also needs
+/// wasm32-safe monotonic reads should inject a full [`Clock`] via `with_clock`
+/// instead.
 struct FnClock {
     inner: Arc<dyn Fn() -> i64 + Send + Sync>,
-    anchor: &'static MonotonicAnchor,
 }
 
 impl FnClock {
     fn new(inner: Arc<dyn Fn() -> i64 + Send + Sync>) -> Self {
-        Self {
-            inner,
-            anchor: MonotonicAnchor::get(),
-        }
+        Self { inner }
     }
 }
 
@@ -195,11 +245,11 @@ impl Clock for FnClock {
     }
 
     fn now_mono_ns(&self) -> i64 {
-        self.anchor.now_mono_ns()
+        MonotonicAnchor::get().now_mono_ns()
     }
 
     fn process_boot_ns(&self) -> u64 {
-        self.anchor.anchor_boot_ns
+        MonotonicAnchor::get().anchor_boot_ns
     }
 }
 
