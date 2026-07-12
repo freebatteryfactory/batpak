@@ -167,6 +167,7 @@ witnesses:
   - { id: INV-STORE-ERROR-TAXONOMY, witnessed: true }
   - { id: INV-STORE-ISOMORPHISM-LAWS, witnessed: true }
   - { id: INV-STORE-LIFECYCLE-HONESTY, witnessed: true }
+  - { id: INV-STORE-LINEAGE-IDENTITY, witnessed: true }
   - { id: INV-STORE-SYNC-ONLY, witnessed: true }
   - { id: INV-SUBSCRIPTION-STATE-MACHINE, witnessed: true }
   - { id: INV-SUBSTRATE-TRAVERSAL-DOMAIN-NEUTRAL, witnessed: true }

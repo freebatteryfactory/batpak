@@ -140,6 +140,12 @@
   artifacts:
     - ART-STORE-PLATFORM
     - ART-STORE-CONFIG
+- id: INV-STORE-LINEAGE-IDENTITY
+  statement: Store::identity() returns the store's LINEAGE identity, minted exactly once at the first writable open of a directory and persisted in the store.meta sidecar; it is copied by snapshot and by fork, stable across path moves and reopen, and distinguishes unrelated lineages while deliberately NOT detecting rewind or sibling-fork divergence (external derived state must bind identity PLUS a history anchor). store.meta failure is never absence — corruption and future versions refuse with typed variants, and once a post-migration witness exists (an idempotency sidecar declaring format v2+) a missing store.meta refuses rather than reminting (the never-remint law); read-only opens never mint.
+  witness_test: crates/core/tests/store_identity.rs::post_migration_witness_makes_missing_meta_refuse_never_remint
+  artifacts:
+    - ART-STORE-META
+    - ART-STORE-META-TESTS
 - id: INV-PLATFORM-EVIDENCE-NOT-MEANING
   statement: store::platform may perform target-sensitive machine-contact operations and emit descriptive evidence/profile records, but it must not define batpak durability, replay, visibility, or admission semantics. Store, cold-start, segment, and frontier logic own those guarantees; configured profile mismatch is a hard open-time admission failure.
   witness_test: crates/core/tests/platform_backend.rs::platform_profile_match_allows_open_and_mismatch_fails_before_lifecycle

@@ -37,6 +37,12 @@ pub(crate) enum StoreFileKind {
     /// touches the public snapshot/fork report wire formats — is Stage C work,
     /// landed with the encryption wiring and its schema bump.
     Keyset,
+    /// The store lineage-metadata sidecar (`store.meta`, #205): the lineage
+    /// identity plus the expected durable idempotency-authority anchor. A
+    /// correctness authority — snapshot and fork must carry it (both copy the
+    /// idempotency authority it binds), and cleanup must never mistake it for
+    /// scratch.
+    StoreMeta,
     Other,
 }
 
@@ -74,6 +80,7 @@ impl StoreFileKind {
             }
             Some(CURSOR_DIRECTORY) => Self::CursorDirectory,
             Some(KEYSET_FILENAME) => Self::Keyset,
+            Some(crate::store::store_meta::STORE_META_FILENAME) => Self::StoreMeta,
             _ => Self::Other,
         }
     }
@@ -90,6 +97,7 @@ impl StoreFileKind {
             | Self::CompactSource
             | Self::CursorDirectory
             | Self::Keyset
+            | Self::StoreMeta
             | Self::Other => None,
         }
     }
@@ -109,6 +117,11 @@ impl StoreFileKind {
         // keys-excluded copy whose keyset is managed out-of-band. Restoring such
         // a copy without its keyset reports `StoreError::KeysetMissing`, never a
         // Shredded lookalike.
+        // store.meta is COPIED by snapshot too, but through an explicit
+        // unreported copy step in `lifecycle_snapshot` — routing it through
+        // this list would push it into the public snapshot-report vocabulary
+        // (`SnapshotFileKind`), which is a wire-schema change (the same
+        // Stage-C boundary as the keyset note above). See #205.
         matches!(
             self,
             Self::Segment(_)
@@ -129,6 +142,7 @@ impl StoreFileKind {
                 | Self::IdempotencyStore
                 | Self::PendingCompactionMarker
                 | Self::CompactSource
+                | Self::StoreMeta
         )
     }
 
@@ -140,9 +154,13 @@ impl StoreFileKind {
             Self::Segment(segment_id) if segment_id.as_u64() == active_segment_id => {
                 ForkStrategy::DeepCopyAlways
             }
-            Self::VisibilityRanges | Self::IdempotencyStore | Self::PendingCompactionMarker => {
-                ForkStrategy::DeepCopyAlways
-            }
+            // store.meta rides with the idempotency authority: a fork mints NO
+            // new lineage identity (owner ruling, #205) — it copies the file,
+            // because the copied authority image is bound to that lineage.
+            Self::VisibilityRanges
+            | Self::IdempotencyStore
+            | Self::PendingCompactionMarker
+            | Self::StoreMeta => ForkStrategy::DeepCopyAlways,
             Self::Checkpoint | Self::MmapIndex => ForkStrategy::CacheRegenerable,
             // Keyset EXCLUDED from fork for the same D24 reason it is excluded
             // from snapshot: keys must never travel with their ciphertext (a
@@ -169,6 +187,7 @@ impl StoreFileKind {
                 | Self::PendingCompactionMarker
                 | Self::CompactSource
                 | Self::CursorDirectory
+                | Self::StoreMeta
         )
     }
 }

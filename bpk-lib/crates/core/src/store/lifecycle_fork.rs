@@ -155,6 +155,10 @@ fn record_deep_copied_presence(acc: &mut ForkAccumulator, source_kind: &StoreFil
         StoreFileKind::IdempotencyStore => acc.copied_idempotency_store_present = true,
         // Keyset is `ForkStrategy::Exclude` in Stage B, so it is never deep-copied
         // and never reaches this presence recorder; it stays in the no-op group.
+        // store.meta IS deep-copied (#205: the fork keeps the lineage identity
+        // its copied idempotency authority is bound to) but deliberately
+        // UNREPORTED — a first-class presence field on the fork report is a
+        // wire-schema change (the Stage-C boundary above).
         StoreFileKind::Segment(_)
         | StoreFileKind::MalformedSegment(_)
         | StoreFileKind::Checkpoint
@@ -162,6 +166,7 @@ fn record_deep_copied_presence(acc: &mut ForkAccumulator, source_kind: &StoreFil
         | StoreFileKind::CompactSource
         | StoreFileKind::CursorDirectory
         | StoreFileKind::Keyset
+        | StoreFileKind::StoreMeta
         | StoreFileKind::Other => {}
     }
 }

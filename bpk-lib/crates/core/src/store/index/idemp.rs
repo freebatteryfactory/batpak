@@ -527,6 +527,44 @@ impl IdempotencyStore {
     }
 }
 
+/// Post-migration witness probe for `store.meta`'s never-remint law (#205):
+/// what a header-only peek of the on-disk idempotency sidecar revealed.
+pub(crate) enum IdempVersionWitness {
+    /// No sidecar on disk.
+    Absent,
+    /// Header parsed; the declared format version. A v2+ image proves the
+    /// store was already migrated (v2 images carry the lineage id), so an
+    /// absent `store.meta` must refuse instead of reminting.
+    Version(u16),
+    /// Bytes exist but the header cannot be read or parsed — the witness is
+    /// undecidable; [`read_idemp_file`] owns that failure at its own stage.
+    Unreadable,
+}
+
+/// Peek the on-disk idempotency sidecar's declared format version WITHOUT
+/// loading or validating the body (no CRC/decode work). Never errors: this is
+/// a witness probe only, and every degenerate shape maps to a witness state.
+pub(crate) fn peek_idemp_version(
+    data_dir: &Path,
+    fs: &dyn crate::store::platform::fs::StoreFs,
+) -> IdempVersionWitness {
+    let path = data_dir.join(IDEMP_FILENAME);
+    let raw = match fs.read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return IdempVersionWitness::Absent;
+        }
+        Err(_read_failed) => return IdempVersionWitness::Unreadable,
+    };
+    match crate::store::wire_header::parse(&raw, IDEMP_MAGIC) {
+        Ok(prefix) => IdempVersionWitness::Version(prefix.version),
+        Err(
+            crate::store::wire_header::PrefixError::TooShort { .. }
+            | crate::store::wire_header::PrefixError::BadMagic,
+        ) => IdempVersionWitness::Unreadable,
+    }
+}
+
 /// Result of attempting to read `index.idemp` from disk.
 pub(crate) enum IdempLoad {
     /// File present and valid; the decoded entries.

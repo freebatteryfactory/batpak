@@ -549,6 +549,7 @@ pub(crate) fn find_latest_segment_id(
             | StoreFileKind::CompactSource
             | StoreFileKind::CursorDirectory
             | StoreFileKind::Keyset
+            | StoreFileKind::StoreMeta
             | StoreFileKind::Other => {}
         }
     }
