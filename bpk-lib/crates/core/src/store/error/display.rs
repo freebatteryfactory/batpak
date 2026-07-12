@@ -15,6 +15,36 @@ use crate::id::EntityIdType;
 const WRITER_CRASHED_MSG: &str =
     "writer thread crashed or was poisoned by a failed durability sync";
 
+/// Shared render for path-carrying on-disk future-version refusals
+/// (hidden-ranges metadata, store metadata): same canonical "upgrade the
+/// reader" shape, parameterized by the artifact subject and what a future
+/// writer may have recorded. Split out of `fmt_future_version` to keep that
+/// match within its function-size budget (split-don't-bump).
+fn fmt_plain_future_version(
+    f: &mut std::fmt::Formatter<'_>,
+    subject: &str,
+    found: u16,
+    supported: u16,
+) -> std::fmt::Result {
+    write!(
+        f,
+        "{subject} is version {found} but this binary understands at most version {supported}; \
+         upgrade the reader"
+    )
+}
+
+fn fmt_pathful_future_version(
+    f: &mut std::fmt::Formatter<'_>,
+    (subject, recorded): (&str, &str),
+    (path, found, supported): (&std::path::Path, u16, u16),
+) -> std::fmt::Result {
+    write!(
+        f,
+        "{subject} at {} is version {found} but this binary understands at most version          {supported}; refusing to open (a future writer may have {recorded} this reader cannot          interpret); upgrade the reader",
+        path.display()
+    )
+}
+
 impl StoreError {
     /// Shared `Display` body for the on-disk future-version refusals. Each format
     /// renders the same "on disk is version N but this binary understands at most
@@ -23,11 +53,9 @@ impl StoreError {
     /// not grow that function past its complexity ratchet.
     fn fmt_future_version(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IdempotencyFutureVersion { stored, current } => write!(
-                f,
-                "durable idempotency store on disk is version {stored} but this binary understands \
-                 at most version {current}; upgrade the reader"
-            ),
+            Self::IdempotencyFutureVersion { stored, current } => {
+                fmt_plain_future_version(f, "durable idempotency store on disk", *stored, *current)
+            }
             Self::MmapFutureVersion { found, supported } => write!(
                 f,
                 "mmap index on disk is version {found} but this binary understands at most version \
@@ -44,23 +72,26 @@ impl StoreError {
                 path,
                 found,
                 supported,
-            } => write!(
+            } => fmt_pathful_future_version(
                 f,
-                "hidden-ranges metadata at {} is version {found} but this binary understands at \
-                 most version {supported}; refusing to open (a future writer may have recorded \
-                 cancelled ranges this reader cannot interpret); upgrade the reader",
-                path.display()
+                ("hidden-ranges metadata", "recorded cancelled ranges"),
+                (path, *found, *supported),
             ),
-            Self::ForkEvidenceFutureVersion { found, supported } => write!(
+            Self::StoreMetadataFutureVersion {
+                path,
+                found,
+                supported,
+            } => fmt_pathful_future_version(
                 f,
-                "fork evidence report is version {found} but this binary understands at most \
-                 version {supported}; upgrade the reader"
+                ("store metadata", "recorded lineage/authority expectations"),
+                (path, *found, *supported),
             ),
-            Self::ImportProvenanceFutureVersion { found, supported } => write!(
-                f,
-                "import provenance extension is version {found} but this binary understands at \
-                 most version {supported}; upgrade the reader"
-            ),
+            Self::ForkEvidenceFutureVersion { found, supported } => {
+                fmt_plain_future_version(f, "fork evidence report", *found, *supported)
+            }
+            Self::ImportProvenanceFutureVersion { found, supported } => {
+                fmt_plain_future_version(f, "import provenance extension", *found, *supported)
+            }
             Self::SidxFutureVersion { found, supported } => write!(
                 f,
                 "SIDX footer on disk is version {found} but this binary understands at most \
@@ -117,6 +148,8 @@ impl StoreError {
             | Self::CoordinatePathTraversal
             | Self::CoordinateControlChar
             | Self::HiddenRangesCorrupt { .. }
+            | Self::StoreMetadataCorrupt { .. }
+            | Self::StoreMetadataMissing { .. }
             | Self::BatchItemTooLarge { .. }
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
@@ -217,6 +250,7 @@ impl StoreError {
             | Self::MmapFutureVersion { .. }
             | Self::CheckpointFutureVersion { .. }
             | Self::HiddenRangesFutureVersion { .. }
+            | Self::StoreMetadataFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
             | Self::SidxFutureVersion { .. }
@@ -229,6 +263,8 @@ impl StoreError {
             | Self::AncestryCorrupt { .. }
             | Self::RangeMalformed { .. }
             | Self::HiddenRangesCorrupt { .. }
+            | Self::StoreMetadataCorrupt { .. }
+            | Self::StoreMetadataMissing { .. }
             | Self::BatchItemTooLarge { .. }
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
@@ -549,6 +585,7 @@ impl std::fmt::Display for StoreError {
             | Self::MmapFutureVersion { .. }
             | Self::CheckpointFutureVersion { .. }
             | Self::HiddenRangesFutureVersion { .. }
+            | Self::StoreMetadataFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
             | Self::SidxFutureVersion { .. } => self.fmt_future_version(f),
@@ -600,6 +637,16 @@ impl std::fmt::Display for StoreError {
             | Self::CoordinateNulByte
             | Self::CoordinatePathTraversal
             | Self::CoordinateControlChar => self.fmt_coordinate_violation(f),
+            Self::StoreMetadataCorrupt { path, kind } => write!(
+                f,
+                "store metadata at {} is unreadable ({kind}); failing closed: store.meta carries                  the store's lineage identity and durable-authority expectations, so damage is                  never treated as absence — restore the file from a backup or a healthy replica                  of the store directory (do not delete it; a remint would reset the identity)",
+                path.display()
+            ),
+            Self::StoreMetadataMissing { path } => write!(
+                f,
+                "store metadata {} is missing although the idempotency sidecar proves this store                  was already migrated (format v2+); refusing to remint the lineage identity —                  restore store.meta from a backup or a healthy replica of the store directory",
+                path.display()
+            ),
             Self::HiddenRangesCorrupt { path, kind } => write!(
                 f,
                 "hidden-ranges metadata at {} is corrupt: {kind}",

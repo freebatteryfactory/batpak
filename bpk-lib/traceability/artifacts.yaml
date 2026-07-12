@@ -642,6 +642,15 @@
   kind: source
   paths:
     - crates/core/src/store/segment/sidx.rs
+- id: ART-STORE-META
+  kind: source
+  paths:
+    - crates/core/src/store/store_meta.rs
+    - crates/core/src/store/error/store_meta.rs
+- id: ART-STORE-META-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/store_identity.rs
 - id: ART-STORE-UNTRUSTED-RECOVERY
   kind: source
   paths:

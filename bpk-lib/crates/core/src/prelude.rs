@@ -17,7 +17,7 @@ pub use crate::event::{
     ProjectionStateContract, RawMsgpackInput, ReplayLane, StateExtent, StateExtentCost,
     StoredEvent, TypedDecodeError,
 };
-pub use crate::id::EventId;
+pub use crate::id::{EventId, StoreIdentity};
 pub use crate::store::{
     verify_receipt_claim, AppendOptions, AppendReceipt, Closed, Freshness, Open, ReadOnly,
     ReceiptClaim, ReceiptVerification, ReceiptVerificationError, ReceiptVerifyingKeys, Store,

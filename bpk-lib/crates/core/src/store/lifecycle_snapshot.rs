@@ -85,6 +85,20 @@ pub(crate) fn snapshot(
             acc.record(file_kind, &source_kind);
         }
     }
+    // #205: store.meta rides with the idempotency authority it binds — a
+    // snapshot must carry the lineage identity or the restored copy would
+    // remint and orphan the copied authority image. Copied EXPLICITLY and
+    // UNREPORTED: making it a first-class report authority touches the public
+    // snapshot-report wire vocabulary (Stage-C boundary, like the keyset).
+    {
+        let meta_source = store
+            .config
+            .data_dir
+            .join(crate::store::store_meta::STORE_META_FILENAME);
+        let meta_dest = dest.join(crate::store::store_meta::STORE_META_FILENAME);
+        fs.reject_symlink_leaf(&meta_dest, "snapshot entry")?;
+        fs.copy(&meta_source, &meta_dest).map_err(StoreError::Io)?;
+    }
     snapshot_fence.cancel()?;
     findings.push(SnapshotFinding::FenceTokenCancelled);
     findings.push(SnapshotFinding::CopyByteHashUnavailable {
@@ -126,6 +140,7 @@ fn snapshot_source_file_kind(file_kind: &StoreFileKind) -> Option<SnapshotFileKi
         | StoreFileKind::CompactSource
         | StoreFileKind::CursorDirectory
         | StoreFileKind::Keyset
+        | StoreFileKind::StoreMeta
         | StoreFileKind::Other => None,
     }
 }

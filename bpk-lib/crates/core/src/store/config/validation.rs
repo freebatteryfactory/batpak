@@ -25,6 +25,12 @@ pub(crate) struct ValidatedStoreConfig {
     pub(crate) key_store:
         Option<std::sync::Arc<parking_lot::Mutex<crate::store::keyscope::KeyStore>>>,
     clock: Arc<dyn Clock>,
+    /// The store's lineage identity (#205), set once during `open` after
+    /// `store.meta` resolution. A `OnceLock` (not a field on `Store`) so the
+    /// runtime context every store/writer path already carries can answer
+    /// `Store::identity()` without widening the `Store` struct. Stays empty
+    /// only for a read-only open of an unmigrated legacy directory.
+    pub(crate) identity: std::sync::OnceLock<crate::id::StoreIdentity>,
 }
 
 impl StoreConfig {
@@ -122,6 +128,10 @@ impl StoreConfig {
                     .clone()
                     .unwrap_or_else(|| Arc::new(SystemClock::new())),
             )),
+            // Populated during `open` once `store.meta` is resolved (minted,
+            // loaded, or — read-only over an unmigrated legacy directory —
+            // absent); `validated()` runs before any disk access.
+            identity: std::sync::OnceLock::new(),
         })
     }
 }

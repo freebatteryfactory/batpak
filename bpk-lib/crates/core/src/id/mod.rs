@@ -160,6 +160,13 @@ define_entity_id!(EventId, "event", serde);
 define_entity_id!(CorrelationId, "correlation", serde);
 define_entity_id!(CausationId, "causation", serde);
 define_entity_id!(IdempotencyKey, "idempotency", serde);
+// The store's LINEAGE identity (#205): minted once at first writable open,
+// persisted in `store.meta`, copied by snapshot AND fork, stable across path
+// moves and reopen. It distinguishes unrelated store lineages; it does NOT by
+// itself detect rewind or sibling-fork divergence — external derived state
+// must bind to the identity PLUS a history anchor (frontier sequence + the
+// event id at that sequence). See `Store::identity`.
+define_entity_id!(StoreIdentity, "store-lineage", serde);
 
 impl IdempotencyKey {
     /// Derive a deterministic idempotency key from an OPERATION IDENTITY: a

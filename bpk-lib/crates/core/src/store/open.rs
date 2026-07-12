@@ -107,6 +107,23 @@ fn open_components(
                 config.fs().as_ref(),
             )?;
     }
+    // Resolve the store's lineage metadata UNDER the store lock (#205): load
+    // `store.meta`, or perform the one-time writable-open migration (minting
+    // the lineage id from the injected clock seam — no ambient time, #182), or
+    // refuse when a post-migration witness proves the file should exist
+    // (never-remint). Read-only opens of unmigrated legacy directories proceed
+    // without an identity; `Store::identity()` surfaces that as a typed error.
+    let resolved_meta = crate::store::store_meta::resolve_on_open(
+        &config.data_dir,
+        config.fs().as_ref(),
+        || crate::id::generate_v7_id_with_clock(runtime.clock()),
+        matches!(lock_mode, StoreLockMode::Mutable),
+    )?;
+    if let Some(meta) = resolved_meta {
+        let _already_set = runtime
+            .identity
+            .set(crate::id::StoreIdentity::from(meta.lineage));
+    }
     let config = Arc::new(config);
     let index = Arc::new(StoreIndex::with_config(&config.index));
     let reader = Arc::new(Reader::new(

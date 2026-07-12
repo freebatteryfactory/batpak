@@ -163,6 +163,24 @@
     the black-box slow-path corruption shapes currently called out in this
     ledger are covered.
 
+- title: Store lineage identity is minted once and never silently remints
+  section: Fault-Injection Harness
+  pattern: Fault-Injection Harness
+  status: unmeasured
+  invariants:
+    - INV-STORE-LINEAGE-IDENTITY
+  locations:
+    - bpk-lib/crates/core/tests/store_identity.rs
+  commands:
+    - cargo test -p batpak --test store_identity
+  coverage_delta: unmeasured
+  mutation_delta: unmeasured
+  blind_spots: >
+    the post-migration witness is exercised via a header-level forged v2
+    idempotency sidecar; full v2 image semantics (compound anchor
+    verification) land with the idempotency-authority work and extend this
+    suite there.
+
 - title: Injected clock owns all store timekeeping (no ambient anchor access)
   section: Fault-Injection Harness
   pattern: Fault-Injection Harness

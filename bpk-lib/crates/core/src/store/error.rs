@@ -10,10 +10,12 @@ mod display;
 mod hidden_ranges;
 mod invariant;
 mod platform;
+mod store_meta;
 
 pub use hidden_ranges::HiddenRangesCorruption;
 pub use invariant::StoreInvariant;
 pub use platform::{ProfileInvalidKind, StoreLockMode};
+pub use store_meta::StoreMetaCorruption;
 
 /// StoreError: every error the store can produce.
 #[derive(Debug)]
@@ -380,6 +382,40 @@ pub enum StoreError {
         /// Typed corruption reason.
         kind: HiddenRangesCorruption,
     },
+    /// The store lineage-metadata sidecar (`store.meta`) is present but cannot
+    /// be admitted. Open must fail closed: `store.meta` carries the store's
+    /// lineage identity (and, once keyed idempotency traffic exists, the
+    /// expected durable-authority anchor), so treating a damaged file as
+    /// absent would silently remint the identity out from under every
+    /// externally anchored consumer. The caller must restore the file from a
+    /// backup or a healthy replica of the store directory.
+    StoreMetadataCorrupt {
+        /// Path of the unreadable metadata file.
+        path: PathBuf,
+        /// Typed corruption reason.
+        kind: StoreMetaCorruption,
+    },
+    /// `store.meta` is ABSENT although a post-migration witness (an
+    /// idempotency sidecar in format v2+) proves this store was already
+    /// migrated. Reminting would reset the lineage identity, so open refuses
+    /// (the never-remint law, #205). Restore `store.meta` from a backup or a
+    /// healthy replica of the store directory.
+    StoreMetadataMissing {
+        /// Expected path of the missing metadata file.
+        path: PathBuf,
+    },
+    /// `store.meta` declares a format version strictly newer than this binary
+    /// understands. Mirrors [`Self::MmapFutureVersion`]: a future writer may
+    /// have recorded lineage/authority expectations in a layout this reader
+    /// cannot interpret. Upgrade the reader.
+    StoreMetadataFutureVersion {
+        /// Path of the future-version metadata file.
+        path: PathBuf,
+        /// Version stamped on the on-disk file.
+        found: u16,
+        /// The maximum version this binary understands.
+        supported: u16,
+    },
     /// A batch item's serialized payload plus encoded receipt-extension bytes
     /// exceeded `single_append_max_bytes`.
     ///
@@ -607,6 +643,7 @@ impl std::error::Error for StoreError {
             Self::CacheFailed(e) => Some(e.as_ref()),
             Self::PlatformProfileInvalid { kind, .. } => kind.source(),
             Self::HiddenRangesCorrupt { kind, .. } => kind.source(),
+            Self::StoreMetadataCorrupt { kind, .. } => kind.source(),
             Self::StoreLocked { .. }
             | Self::CrcMismatch { .. }
             | Self::CorruptSegment { .. }
@@ -630,6 +667,8 @@ impl std::error::Error for StoreError {
             | Self::MmapFutureVersion { .. }
             | Self::CheckpointFutureVersion { .. }
             | Self::HiddenRangesFutureVersion { .. }
+            | Self::StoreMetadataMissing { .. }
+            | Self::StoreMetadataFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
             | Self::SidxFutureVersion { .. }

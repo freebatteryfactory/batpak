@@ -111,6 +111,7 @@ pub(crate) fn latest_segment_watermark(
             | StoreFileKind::CompactSource
             | StoreFileKind::CursorDirectory
             | StoreFileKind::Keyset
+            | StoreFileKind::StoreMeta
             | StoreFileKind::Other => continue,
         };
         if max

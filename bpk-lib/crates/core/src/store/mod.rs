@@ -71,6 +71,7 @@ pub(crate) mod sim;
 mod snapshot_report;
 /// Runtime statistics and diagnostic snapshots.
 pub mod stats;
+pub(crate) mod store_meta;
 mod store_resource_report;
 mod subscriber_frontier;
 #[cfg(feature = "dangerous-test-hooks")]
@@ -114,6 +115,7 @@ pub use delivery::observation::{
 pub use delivery::subscription::Subscription;
 pub use error::{
     HiddenRangesCorruption, ProfileInvalidKind, StoreError, StoreInvariant, StoreLockMode,
+    StoreMetaCorruption,
 };
 #[cfg(feature = "dangerous-test-hooks")]
 #[cfg_attr(
@@ -168,6 +170,7 @@ pub use keyscope::{
 #[cfg(any(feature = "alloc-count", feature = "fault-alloc"))]
 pub use platform::alloc;
 pub use platform::clock::{Clock, SystemClock};
+pub use store_meta::STORE_META_VERSION;
 // StoreFs promoted from `pub(crate)` for 0.10.0 (issue #164, following the
 // Spawn seam's §12 precedent) so embeddings can supply their own reviewed
 // filesystem backend through `StoreConfig::with_fs`. The companion vocabulary

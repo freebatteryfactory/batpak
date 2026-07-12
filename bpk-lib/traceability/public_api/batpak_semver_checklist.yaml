@@ -266,6 +266,18 @@ entries:
     note: Gate/reactor traits remain public from owning modules; 0.8.0 removes them from the beginner import path.
 
 public_api_baseline_additions:
+  - item: Store::identity
+    disposition: intentional_public
+    witness: crates/core/tests/store_identity.rs
+  - item: id::StoreIdentity (+ prelude re-export)
+    disposition: intentional_public
+    witness: crates/core/tests/store_identity.rs
+  - item: store::STORE_META_VERSION
+    disposition: intentional_public
+    witness: crates/core/tests/store_identity.rs
+  - item: store::StoreMetaCorruption (+ StoreError::StoreMetadataCorrupt/Missing/FutureVersion)
+    disposition: intentional_public
+    witness: crates/core/tests/store_identity.rs
   - item: Store::query_entries_after
     disposition: intentional_public
     witness: crates/core/tests/read_api_pagination.rs
