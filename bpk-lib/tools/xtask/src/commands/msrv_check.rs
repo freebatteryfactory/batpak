@@ -54,8 +54,7 @@ pub(crate) fn msrv_check() -> Result<()> {
     }
 
     for (msrv, packages) in &by_msrv {
-        ensure_toolchain_installed(msrv)?;
-        let toolchain = format!("+{msrv}");
+        let toolchain = format!("+{}", resolve_installed_toolchain(msrv)?);
         for package in packages {
             for feature_args in [&["--no-default-features"][..], &["--all-features"][..]] {
                 let mut cmd = Command::new("cargo");
@@ -115,21 +114,42 @@ fn read_rust_version(manifest: &Path) -> Result<String> {
     )
 }
 
-/// Verify that `rustup` reports the requested toolchain as installed.
-/// Fails with an install hint when missing.
-fn ensure_toolchain_installed(msrv: &str) -> Result<()> {
+/// Resolve a declared MSRV (possibly two-component, e.g. `"1.97"`) to an
+/// INSTALLED rustup toolchain name (e.g. `"1.97.0-x86_64-pc-windows-gnu"`).
+///
+/// Passing the raw two-component MSRV to `cargo +1.97` does NOT match an
+/// installed `1.97.0`: rustup treats it as a distinct channel and
+/// auto-installs a duplicate toolchain (observed locally) or fails in an
+/// offline container. Resolving to the installed name keeps the gate
+/// deterministic — no network, no surprise second toolchain — and fails
+/// closed with an install hint when nothing matches.
+fn resolve_installed_toolchain(msrv: &str) -> Result<String> {
     let output = Command::new("rustup")
         .args(["toolchain", "list"])
         .output()
         .with_context(|| "invoke rustup toolchain list")?;
     let listing = String::from_utf8_lossy(&output.stdout);
-    if listing.lines().any(|line| line.starts_with(msrv)) {
-        return Ok(());
-    }
-    bail!(
-        "rustup toolchain {msrv} is not installed.\n\
-         Install with: rustup toolchain install {msrv} --profile minimal"
-    )
+    match_installed_toolchain(&listing, msrv).map(str::to_owned).ok_or_else(|| {
+        anyhow!(
+            "no installed rustup toolchain satisfies MSRV {msrv}.\n\
+             Install with: rustup toolchain install {msrv} --profile minimal"
+        )
+    })
+}
+
+/// Pure matcher over `rustup toolchain list` output: an installed toolchain
+/// satisfies `msrv` when its name IS the msrv, or continues it at a version
+/// boundary (`1.97.0-…` or `1.97-…` satisfy `1.97`; `1.97…` must NOT be
+/// satisfied by `1.9`).
+fn match_installed_toolchain<'a>(listing: &'a str, msrv: &str) -> Option<&'a str> {
+    let patch_prefix = format!("{msrv}.");
+    let triple_prefix = format!("{msrv}-");
+    listing
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .find(|name| {
+            *name == msrv || name.starts_with(&patch_prefix) || name.starts_with(&triple_prefix)
+        })
 }
 
 #[cfg(test)]
@@ -166,6 +186,38 @@ mod tests {
         .expect("write tmp manifest");
         let parsed = read_rust_version(tmp.path()).expect("parse");
         assert_eq!(parsed, "1.97");
+    }
+
+    /// `cargo +<two-component-msrv>` does not match an installed patch
+    /// release — rustup auto-installs a duplicate channel toolchain (or fails
+    /// offline). The matcher must resolve the DECLARED msrv to the INSTALLED
+    /// name, and never let a shorter version prefix match a longer one.
+    #[test]
+    fn installed_toolchain_matcher_resolves_msrv_at_version_boundaries() {
+        let listing = "stable-x86_64-pc-windows-gnu (default)\n\
+                       1.92.0-x86_64-pc-windows-gnu\n\
+                       1.97.0-x86_64-pc-windows-gnu (active)\n";
+        assert_eq!(
+            match_installed_toolchain(listing, "1.97").expect("1.97 resolves to installed patch"),
+            "1.97.0-x86_64-pc-windows-gnu"
+        );
+        assert_eq!(
+            match_installed_toolchain(listing, "1.97.0").expect("exact patch resolves"),
+            "1.97.0-x86_64-pc-windows-gnu"
+        );
+        assert!(
+            match_installed_toolchain(listing, "1.9").is_none(),
+            "1.9 must NOT be satisfied by 1.92/1.97 — not a version boundary"
+        );
+        assert!(
+            match_installed_toolchain(listing, "1.98").is_none(),
+            "missing msrv resolves to nothing (gate fails closed with install hint)"
+        );
+        let channel_alias = "1.97-x86_64-pc-windows-gnu\n";
+        assert_eq!(
+            match_installed_toolchain(channel_alias, "1.97").expect("channel alias resolves"),
+            "1.97-x86_64-pc-windows-gnu"
+        );
     }
 
     #[test]
