@@ -219,6 +219,12 @@ fn normalize_public_api_snapshot(text: &str) -> Cow<'_, str> {
     for (from, to) in [
         ("\r\n", "\n"),
         ("std::net::tcp::", "std::net::"),
+        // io_error_in_core moved std::io::Error's canonical rustdoc path to
+        // core::io::error::* on newer nightlies; fold it back onto the std
+        // spelling FIRST so the std::io::error rules below apply to both
+        // old- and new-nightly snapshots identically.
+        ("core::io::error::", "std::io::error::"),
+        ("core::io::write::Write", "std::io::Write"),
         ("std::io::error::ErrorKind", "std::io::ErrorKind"),
         ("std::io::error::Error", "std::io::Error"),
         (
@@ -233,6 +239,17 @@ fn normalize_public_api_snapshot(text: &str) -> Cow<'_, str> {
         if normalized.contains(from) {
             normalized = Cow::Owned(normalized.replace(from, to));
         }
+    }
+    // cargo-public-api sorts its RENDERED lines, and rendering differs across
+    // nightlies (io_error_in_core moved std::io::Error's canonical path, which
+    // moves the line's sort position). Re-sort after normalization so the
+    // baseline comparison is order-invariant across rustdoc nightlies.
+    let mut lines: Vec<&str> = normalized.lines().collect();
+    if !lines.is_sorted() {
+        lines.sort_unstable();
+        let mut sorted = lines.join("\n");
+        sorted.push('\n');
+        return Cow::Owned(sorted);
     }
     normalized
 }
@@ -305,11 +322,33 @@ mod tests {
         );
         let expected = concat!(
             "impl core::convert::From<std::io::Error> for netbat::NetbatError\n",
-            "pub netbat::NetbatError::Io::kind: std::io::ErrorKind\n",
             "pub fn netbat::Server::routes(&self) -> impl core::iter::Iterator<Item = &netbat::Route>\n",
             "pub fn netbat::inspect_core_operations<I, S>(core: &syncbat::core::Core, operation_names: I) -> netbat::CoreHealth where I: core::iter::IntoIterator<Item = S>, S: core::convert::AsRef<str>\n",
+            "pub netbat::NetbatError::Io::kind: std::io::ErrorKind\n",
         );
         assert_eq!(normalize_public_api_snapshot(input), expected);
+    }
+
+    /// io_error_in_core: newer nightlies render std::io::Error as
+    /// core::io::error::Error AND move the line's sort position. The
+    /// normalizer must fold the spelling back onto std::io AND re-sort, so
+    /// old-nightly and new-nightly snapshots normalize byte-identically.
+    #[test]
+    fn normalize_public_api_snapshot_is_nightly_invariant_for_core_io_error() {
+        let new_nightly = concat!(
+            "impl core::convert::From<core::io::error::Error> for batpak::prelude::StoreError\n",
+            "impl core::convert::From<rmp_serde::encode::Error> for batpak::prelude::StoreError\n",
+            "pub batpak::prelude::StoreError::Io(core::io::error::Error)\n",
+        );
+        let old_nightly = concat!(
+            "impl core::convert::From<rmp_serde::encode::Error> for batpak::prelude::StoreError\n",
+            "impl core::convert::From<std::io::Error> for batpak::prelude::StoreError\n",
+            "pub batpak::prelude::StoreError::Io(std::io::Error)\n",
+        );
+        assert_eq!(
+            normalize_public_api_snapshot(new_nightly),
+            normalize_public_api_snapshot(old_nightly)
+        );
     }
 
     #[test]
