@@ -30,7 +30,8 @@ fn resolve_full_scan_frames_end<R: Read + Seek>(
         Some(boundary) if boundary.trusted => boundary.frames_end,
         Some(boundary) => {
             // Recognized but untrusted SIDX footer: preserve strict compaction-read
-            // recovery, requiring manifest corroboration for a non-empty recovered prefix.
+            // recovery — any non-empty recovered prefix under an untrusted footer
+            // is refused (the table is suspicion input only, never an authority; #192).
             segment::resolve_untrusted_frames_end(
                 file,
                 cursor,

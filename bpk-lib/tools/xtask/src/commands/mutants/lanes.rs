@@ -48,8 +48,14 @@ pub(super) const PROJECTION_FUSION_MUTANT_FILES: &[&str] = &[
     "crates/core/src/store/projection/flow/mod.rs",
     "crates/core/src/store/read_api.rs",
 ];
-pub(super) const SEGMENT_SCAN_MUTANT_FILES: &[&str] =
-    &["crates/core/src/store/segment/scan/**/*.rs"];
+pub(super) const SEGMENT_SCAN_MUTANT_FILES: &[&str] = &[
+    "crates/core/src/store/segment/scan/**/*.rs",
+    // The untrusted-footer recovery decision + the SIDX footer parse feeding it
+    // (GAUNT-SIDX-NO-SELF-AUTH, #192): what recovered reality is when the footer
+    // cannot be trusted is decided here, so it belongs to the same critical seam.
+    "crates/core/src/store/segment/recovery_manifest.rs",
+    "crates/core/src/store/segment/sidx/footer.rs",
+];
 pub(super) const HASH_CHAIN_REPLAY_MUTANT_FILES: &[&str] = &[
     "crates/core/src/store/ancestry/by_hash.rs",
     "crates/core/src/store/cold_start/rebuild.rs",

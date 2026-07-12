@@ -123,6 +123,16 @@ pub(crate) const CRITICAL_SEAM_MUTANT_GLOBS: &[(&str, &str)] = &[
     ),
     // segment-scan (SEGMENT_SCAN_MUTANT_FILES)
     ("segment-scan", "crates/core/src/store/segment/scan/**/*.rs"),
+    // GAUNT-SIDX-NO-SELF-AUTH (#192): the untrusted-footer recovery decision
+    // + the SIDX footer parse feeding it joined the seam.
+    (
+        "segment-scan",
+        "crates/core/src/store/segment/recovery_manifest.rs",
+    ),
+    (
+        "segment-scan",
+        "crates/core/src/store/segment/sidx/footer.rs",
+    ),
     // hash-chain-replay (HASH_CHAIN_REPLAY_MUTANT_FILES)
     (
         "hash-chain-replay",

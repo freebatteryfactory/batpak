@@ -40,6 +40,10 @@
   dst_coverage: false
   globs:
     - crates/core/src/store/segment/scan/**/*.rs
+    # GAUNT-SIDX-NO-SELF-AUTH (#192): the untrusted-footer recovery decision
+    # + the SIDX footer parse feeding it joined the seam.
+    - crates/core/src/store/segment/recovery_manifest.rs
+    - crates/core/src/store/segment/sidx/footer.rs
 
 - slug: hash-chain-replay
   assurance_level: L4

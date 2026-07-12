@@ -177,5 +177,6 @@ witnesses:
   - { id: INV-TRACEABILITY-COMPLETE, witnessed: true }
   - { id: INV-TYPELEVEL-COMBINATOR-LAWS, witnessed: true }
   - { id: INV-TYPESTATE-OPEN-HAS-WRITER, witnessed: true }
+  - { id: INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION, witnessed: true }
   - { id: INV-WIRE-ROUNDTRIP-TOTALITY, witnessed: true }
   - { id: INV-WORKSPACE-DAG-ACYCLIC, witnessed: true }

@@ -452,6 +452,13 @@
     - ART-DX-DOCS
     - ART-RELEASE-HISTORY
   witness_test: crates/core/tests/dag_position_hint.rs::lane_depth_survives_store_reopen_via_checkpoint
+- id: INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION
+  statement: Under an untrusted segment footer (CRC-failed SDX3, legacy SDX2, or a forged trailer) no SIDX entry-table row can escalate into authority over recovery — a row corroborated against independently verified frame bytes proves only that row's relationship to that frame, never sibling rows, entry_count, order, or the footer boundary (BLAKE3 is public and unkeyed, so stored hashes are copyable). Rows and the footer's claimed frame end are consumed only as suspicion geometry routed through the scan tail posture; the permissive posture recovers the CRC-valid prefix (recording truncation evidence when an untrusted claim reaches past it) and the strict posture refuses every non-empty prefix. Weakening this requires a keyed MAC, digital signature, or independently trusted root over the complete table.
+  witness_test: crates/core/src/store/segment/manifest_decision_tests.rs::forged_sibling_row_must_not_prove_loss_one_corroborated_row_authenticates_only_itself
+  artifacts:
+    - ART-STORE-UNTRUSTED-RECOVERY
+    - ART-STORE-UNTRUSTED-RECOVERY-TESTS
+    - ART-STORE-SCAN
 - id: INV-SIDX-TIMESTAMP-US-APPROXIMATION
   statement: SIDX-accelerated cold start reconstructs timestamp_us from persisted wall_ms to the nearest millisecond; this best-effort value is suitable for age/display APIs but is not a sub-millisecond ordering contract.
   witness_test: crates/core/src/store/cold_start/row_tests.rs::cold_start_row_to_event_header_preserves_lane_depth_and_ids

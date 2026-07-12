@@ -2,9 +2,13 @@
 //! frame-length and footer-boundary pathologies — a u32::MAX frame header on
 //! the tail stops the scan while preserving earlier frames, the same length in
 //! a NON-tail segment fails closed, a mid-frame truncation never fabricates
-//! entries, an SDX3 magic mismatch falls back to the frame scan, and a legacy
-//! pre-0.8.3 SDX2 footer (tail and non-tail) still recovers every event via
-//! the boundary-aware frame-scan fallback.
+//! entries, an SDX3 magic mismatch falls back to the frame scan, a legacy
+//! pre-0.8.3 SDX2 TAIL footer still recovers every event via the
+//! boundary-aware frame-scan fallback, and a NON-tail SDX2 footer refuses the
+//! strict cold-start posture with the full operator evidence set.
+//! PROVES: INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION (the un-CRC'd SDX2
+//! table cannot vouch its own frame region complete — GAUNT-SIDX-NO-SELF-AUTH,
+//! #192 / ADR-0036).
 //! CATCHES: a scan that allocates against a bogus frame length, panics on a
 //! torn frame, over-runs into footer bytes when the SIDX magic is unrecognized,
 //! or treats committed-history corruption as a recoverable crash tail.
@@ -314,15 +318,26 @@ fn legacy_sdx2_tail_segment_recovers_all_events_via_frame_scan() {
 }
 
 #[test]
-fn legacy_sdx2_non_tail_segment_recovers_all_events_via_frame_scan() {
-    // The dangerous case the P1 actually bricked: a NON-TAIL (historical) SDX2
-    // segment frame-scans under the fail-closed tail policy. Before the boundary
-    // fix, `detect_sidx_boundary` matched only SDX3, returned None for SDX2, set
-    // frames_end = file_len, and the scan over-ran into the SDX2 string-table
-    // bytes — whose first msgpack byte reads as an oversized frame length,
-    // surfacing CorruptFrame and FAILING the entire store reopen. Recognizing
-    // the SDX2 magic as a boundary marker makes frames_end land exactly at the
-    // end of the frame region, so every committed event is recovered.
+fn legacy_sdx2_non_tail_segment_refuses_open_under_strict_cold_start(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // GAUNT-SIDX-NO-SELF-AUTH (#192): a NON-TAIL (historical) SDX2 segment now
+    // REFUSES cold start under the strict sealed-segment posture. The SDX2
+    // footer carries no CRC, so nothing about it — including its entry table
+    // "agreeing" the frame region is complete — is authenticated: a forger who
+    // tears the last committed frame can rewrite the un-CRC'd table to match,
+    // and the retired law (one corroborated row anchors the table, case (b))
+    // would have recovered that silent loss even under strict. The safe law
+    // refuses instead, with the full operator evidence set. The supported paths
+    // for a healthy pre-0.8.3 store: open it under batpak <= 0.10.0 and run
+    // compaction there (which re-seals history under the CRC'd SDX3 footer)
+    // before upgrading, or restore from a backup. The TAIL segment keeps its
+    // permissive torn-tail grant — see
+    // `legacy_sdx2_tail_segment_recovers_all_events_via_frame_scan`.
+    //
+    // (History: before SDX2 was recognized as a boundary at all, this scenario
+    // bricked with a misleading over-run CorruptFrame; it then auto-opened via
+    // the forgeable table-authority path; it now refuses with a typed,
+    // actionable CorruptSegment.)
     let dir = TempDir::new().expect("temp dir");
     let store =
         Store::open(config(&dir).with_segment_max_bytes(512)).expect("open store for rotation");
@@ -347,15 +362,29 @@ fn legacy_sdx2_non_tail_segment_recovers_all_events_via_frame_scan() {
     // Downgrade the FIRST (oldest, non-tail) sealed segment to the SDX2 format.
     downgrade_sidx_magic_to_sdx2(&segments[0]);
 
-    let store = Store::open(config(&dir).with_segment_max_bytes(512))
-        .expect("reopen must succeed: a non-tail SDX2 segment must not brick cold start");
-    let entries = user_entries(&store);
+    let err = match Store::open(config(&dir).with_segment_max_bytes(512)) {
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY (#192): a non-tail SDX2 segment must refuse strict cold start — its \
+                 un-CRC'd footer cannot prove the frame region complete — but the store opened",
+            )
+            .into())
+        }
+        Err(e) => e,
+    };
+    let StoreError::CorruptSegment { segment_id, detail } = err else {
+        return Err(std::io::Error::other(format!("wrong variant: {err:?}")).into());
+    };
     assert_eq!(
-        entries.len(),
-        40,
-        "PROPERTY: every event across all segments must survive when an older \
-         segment is in the legacy SDX2 format; got {} (expected 40)",
-        entries.len()
+        segment_id, 1,
+        "the refusal must name the downgraded (oldest) sealed segment"
     );
-    store.close().expect("close");
+    assert!(
+        detail.contains("unprovable tail")
+            && detail.contains("000001.fbat")
+            && detail.contains("do not delete or edit the segment in place"),
+        "the refusal must carry the operator evidence set (unprovable-tail classification, the \
+         canonical segment filename, and no-delete-in-place remediation guidance); got: {detail}"
+    );
+    Ok(())
 }
