@@ -1,18 +1,24 @@
-//! `xtask msrv-check` — verify the publish crates compile under their
-//! declared `rust-version` MSRV.
+//! `xtask msrv-check` — verify the full crates.io release train
+//! compiles under its declared `rust-version` MSRV.
 //!
 //! Without this gate, `rust-version` in `Cargo.toml` is purely
 //! declarative — a `let-else` from a newer toolchain slips through
 //! until a downstream crates.io consumer trips over it.
 //!
+//! The checked set is `RELEASE_CHAIN` (every crate published to
+//! crates.io, including the `batpak-macros*`/`batpak-bench-support`
+//! support crates), NOT the smaller `PUBLISH_CRATES` headline family —
+//! a support crate left declaratively pinned but unqualified is
+//! exactly the split-brain this gate exists to prevent (#183).
+//!
 //! The command:
-//!   1. Reads each publish-crate `Cargo.toml` and parses
+//!   1. Reads each release-chain `Cargo.toml` and parses
 //!      `package.rust-version`.
 //!   2. For every unique declared MSRV, ensures the toolchain is
 //!      installed via `rustup toolchain list`.
 //!   3. Runs `cargo +<msrv> check -p <crate> --no-default-features`
 //!      and `cargo +<msrv> check -p <crate> --all-features` for each
-//!      publish crate.
+//!      release-chain crate.
 //!
 //! If the toolchain is missing, the command fails with an install
 //! hint rather than auto-installing — consulting clients run release
@@ -25,16 +31,16 @@ use std::process::Command;
 
 use anyhow::{anyhow, bail, Context, Result};
 
-use crate::publish::PUBLISH_CRATES;
+use crate::publish::RELEASE_CHAIN;
 use crate::util::{repo_root, run};
 
-/// Verify each publish crate compiles under its declared
+/// Verify each release-chain crate compiles under its declared
 /// `rust-version`.
 pub(crate) fn msrv_check() -> Result<()> {
     let root = repo_root()?;
     let bpk_lib = root.join("bpk-lib");
     let mut by_msrv: BTreeMap<String, Vec<&'static str>> = BTreeMap::new();
-    for package in PUBLISH_CRATES {
+    for package in RELEASE_CHAIN {
         let manifest = bpk_lib
             .join("crates")
             .join(crate_dir_for(package)?)
@@ -68,17 +74,17 @@ pub(crate) fn msrv_check() -> Result<()> {
             }
         }
     }
-    outln!("xtask msrv-check: all publish crates compile under their declared rust-version");
+    outln!("xtask msrv-check: all release-chain crates compile under their declared rust-version");
     Ok(())
 }
 
-/// Map a published-crate name (e.g. `"batpak"`) to the directory under
+/// Map a release-chain crate name (e.g. `"batpak"`) to the directory under
 /// `bpk-lib/crates/` (e.g. `"core"` for batpak), via the single
 /// [`crate::publish::package_dir`] oracle. A name outside the known family
 /// fails closed so an MSRV pass can never be vacuous.
 fn crate_dir_for(package: &str) -> Result<&'static str> {
     crate::publish::package_dir(package)
-        .ok_or_else(|| anyhow!("msrv-check: unknown publish crate {package}"))
+        .ok_or_else(|| anyhow!("msrv-check: unknown release-chain crate {package}"))
 }
 
 /// Parse `rust-version = "X.Y"` out of a Cargo manifest. Returns
@@ -167,27 +173,42 @@ mod tests {
         let err = crate_dir_for("other").expect_err("unknown crate fails");
         assert!(err
             .to_string()
-            .contains("msrv-check: unknown publish crate other"));
+            .contains("msrv-check: unknown release-chain crate other"));
     }
 
-    /// PARITY: the MSRV gate iterates `PUBLISH_CRATES` and calls `crate_dir_for`
+    /// PARITY: the MSRV gate iterates `RELEASE_CHAIN` and calls `crate_dir_for`
     /// on each; a crate `crate_dir_for` cannot resolve bails BEFORE it is checked,
-    /// making its MSRV pass vacuous. The checked-crate set must equal the publish
-    /// family exactly — every publish crate resolves, and nothing else does.
+    /// making its MSRV pass vacuous. The checked-crate set must equal the full
+    /// crates.io release train exactly — every chain crate resolves, and nothing
+    /// else does.
     #[test]
-    fn checked_crate_set_matches_the_publish_family() {
-        for package in PUBLISH_CRATES {
+    fn checked_crate_set_matches_the_release_chain() {
+        for package in RELEASE_CHAIN {
             assert!(
                 crate_dir_for(package).is_ok(),
-                "crate_dir_for({package}) must resolve — the MSRV gate iterates PUBLISH_CRATES \
+                "crate_dir_for({package}) must resolve — the MSRV gate iterates RELEASE_CHAIN \
                  and bails before checking any crate it cannot map (vacuous MSRV pass)"
             );
         }
-        // The mapping accepts EXACTLY the publish family — a non-member is rejected,
+        // The mapping accepts EXACTLY the release chain — a non-member is rejected,
         // so the parity is an equality, not just a superset.
         assert!(
             crate_dir_for("definitely-not-a-publish-crate").is_err(),
-            "crate_dir_for must reject a non-publish crate"
+            "crate_dir_for must reject a crate outside the release chain"
         );
+    }
+
+    /// The headline publish family must stay a subset of the release chain —
+    /// widening the gate to RELEASE_CHAIN (#183) can never silently drop a
+    /// crate that previously carried MSRV qualification.
+    #[test]
+    fn publish_family_is_a_subset_of_the_checked_release_chain() {
+        for package in crate::publish::PUBLISH_CRATES {
+            assert!(
+                RELEASE_CHAIN.contains(package),
+                "{package} is in PUBLISH_CRATES but missing from RELEASE_CHAIN — \
+                 the MSRV gate would lose coverage it previously had"
+            );
+        }
     }
 }
