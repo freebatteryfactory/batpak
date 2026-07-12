@@ -309,8 +309,11 @@ jobs:
     # (verify-linux) runs the same build only behind a heavy-CI label — neither
     # catches doc breakage on a normal PR. This job runs on every Rust-changed
     # PR, label-free, mirroring the family's `doc_deny_warnings`
-    # (`cargo doc --workspace --no-deps` under `RUSTDOCFLAGS=-D warnings`). It is
-    # gated on rust==true only, so a docs-only PR skips it (no Rust changed).
+    # (`cargo doc --workspace --all-features --no-deps` under
+    # `RUSTDOCFLAGS=-D warnings`). `--all-features` is load-bearing (#178): the
+    # 0.10.0 release-blocking stale intra-doc link hid behind the
+    # `payload-encryption` feature and the default-features build never compiled
+    # it. Gated on rust==true only, so a docs-only PR skips it (no Rust changed).
     name: Rustdoc link gate (ubuntu-devcontainer)
     runs-on: ubuntu-latest
     needs: [rust-changed]
@@ -328,7 +331,7 @@ jobs:
         env:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: bash ./scripts/run-in-devcontainer.sh 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps'
+        run: bash ./scripts/run-in-devcontainer.sh 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps'
 
   public-api-bless:
     # Bless capability (manual only): regenerate the checked-in public-api

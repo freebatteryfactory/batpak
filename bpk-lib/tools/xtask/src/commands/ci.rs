@@ -149,11 +149,18 @@ pub(crate) fn wasm_surface() -> Result<()> {
     ])
 }
 
-/// Native Windows surface compatibility: checks, tests, and platform-sensitive fixtures.
+/// Native Windows surface compatibility: checks, clippy, tests, and
+/// platform-sensitive fixtures.
 pub(crate) fn ci_windows_surface() -> Result<()> {
     super::check_version_pins()?;
     cargo(["fmt", "--check"])?;
     run_workspace_and_family_checks()?;
+    // Windows-native clippy (#178): Linux clippy cannot lint code compiled
+    // out by `cfg(windows)`, so this is unique truth, not duplicate heat.
+    // The dependency deny/audit gates stay Linux-only by design — dependency
+    // graphs are host-independent.
+    run_workspace_clippy()?;
+    run_family_clippy()?;
     run_nextest_ci(["--all-features"])?;
     run_kind_collision_composer_fixture()
 }
@@ -224,9 +231,13 @@ fn run_kind_collision_composer_fixture() -> Result<()> {
 ///
 /// Uses `--workspace` (not a hardcoded crate list) so any new crate is doc-lint
 /// gated automatically. `--no-deps` keeps the gate to first-party crates.
+/// `--all-features` is load-bearing (#178 seam 2): the 0.10.0 release-blocking
+/// stale intra-doc link lived behind `#[cfg(feature = "payload-encryption")]`
+/// and hid from the default-features build — only the release `docs()` gate
+/// compiled it. Feature-gated doc breakage must fail HERE, not at release.
 fn doc_deny_warnings() -> Result<()> {
     let mut cmd = std::process::Command::new("cargo");
-    cmd.args(["doc", "--workspace", "--no-deps"])
+    cmd.args(["doc", "--workspace", "--all-features", "--no-deps"])
         .env("RUSTDOCFLAGS", "-D warnings");
     crate::util::run(cmd)
 }
