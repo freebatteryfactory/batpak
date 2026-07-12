@@ -141,11 +141,11 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(
             tmp.path(),
-            "[package]\nname = \"x\"\nversion = \"0\"\nrust-version = \"1.92\"\n",
+            "[package]\nname = \"x\"\nversion = \"0\"\nrust-version = \"1.97\"\n",
         )
         .expect("write tmp manifest");
         let parsed = read_rust_version(tmp.path()).expect("parse");
-        assert_eq!(parsed, "1.92");
+        assert_eq!(parsed, "1.97");
     }
 
     #[test]
@@ -161,11 +161,11 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(
             tmp.path(),
-            "[package]\nname = \"x\"\nrust-version = '1.92'\n",
+            "[package]\nname = \"x\"\nrust-version = '1.97'\n",
         )
         .expect("write tmp manifest");
         let parsed = read_rust_version(tmp.path()).expect("parse");
-        assert_eq!(parsed, "1.92");
+        assert_eq!(parsed, "1.97");
     }
 
     #[test]

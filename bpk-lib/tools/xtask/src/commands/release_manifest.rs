@@ -425,8 +425,8 @@ mod tests {
             staged_summary: "1 file changed".to_owned(),
             worktree_summary: "".to_owned(),
             dirty: false,
-            rustc: "rustc 1.92.0".to_owned(),
-            cargo: "cargo 1.92.0".to_owned(),
+            rustc: "rustc 1.97.0".to_owned(),
+            cargo: "cargo 1.97.0".to_owned(),
             uname: "Linux test".to_owned(),
             version_pins: vec![VersionPinRow {
                 package: "batpak".to_owned(),
