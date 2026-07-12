@@ -129,12 +129,14 @@ fn resolve_installed_toolchain(msrv: &str) -> Result<String> {
         .output()
         .with_context(|| "invoke rustup toolchain list")?;
     let listing = String::from_utf8_lossy(&output.stdout);
-    match_installed_toolchain(&listing, msrv).map(str::to_owned).ok_or_else(|| {
-        anyhow!(
-            "no installed rustup toolchain satisfies MSRV {msrv}.\n\
+    match_installed_toolchain(&listing, msrv)
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            anyhow!(
+                "no installed rustup toolchain satisfies MSRV {msrv}.\n\
              Install with: rustup toolchain install {msrv} --profile minimal"
-        )
-    })
+            )
+        })
 }
 
 /// Pure matcher over `rustup toolchain list` output: an installed toolchain
