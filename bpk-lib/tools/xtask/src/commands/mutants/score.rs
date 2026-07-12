@@ -37,11 +37,7 @@ pub(super) fn mutation_score(output_dir: &Path) -> Result<MutationScore> {
     let unviable = count_mutants_file(output_dir, "unviable.txt")?;
     let scored = caught + missed;
     let executed = scored + timed_out + unviable;
-    let score_pct = if scored == 0 {
-        None
-    } else {
-        Some((caught * 100) / scored)
-    };
+    let score_pct = (caught * 100).checked_div(scored);
     Ok(MutationScore {
         caught,
         missed,

@@ -126,7 +126,7 @@ pub fn find_incomplete_upcast_chains() -> Vec<IncompleteUpcastChain> {
             });
         }
     }
-    out.sort_by(|a, b| a.kind_bits.cmp(&b.kind_bits));
+    out.sort_by_key(|chain| chain.kind_bits);
     out
 }
 

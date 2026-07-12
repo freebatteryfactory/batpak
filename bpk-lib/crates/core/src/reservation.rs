@@ -465,7 +465,7 @@ pub fn simulate_reservation_ledger(
 
     sort_findings(&mut findings);
     let mut entries_sorted: Vec<ReservationEntry> = ledger.into_values().collect();
-    entries_sorted.sort_by(|a, b| a.reservation_id.cmp(&b.reservation_id));
+    entries_sorted.sort_by_key(|entry| entry.reservation_id);
 
     Ok(ReservationLedgerReportBody {
         schema_version: RESERVATION_LEDGER_REPORT_SCHEMA_VERSION,
@@ -519,7 +519,7 @@ pub fn reservation_ledger_report_body_hash(
 ) -> Result<ReservationDigest, rmp_serde::encode::Error> {
     let findings_sorted = sorted_findings(&body.findings_sorted);
     let mut entries_sorted = body.entries_sorted.clone();
-    entries_sorted.sort_by(|a, b| a.reservation_id.cmp(&b.reservation_id));
+    entries_sorted.sort_by_key(|entry| entry.reservation_id);
     let normalized = ReservationLedgerReportBody {
         findings_sorted,
         entries_sorted,

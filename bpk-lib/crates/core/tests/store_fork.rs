@@ -16,6 +16,7 @@ use batpak::store::{
     FORK_EVIDENCE_REPORT_SCHEMA_VERSION,
 };
 use batpak_testkit::prelude::*;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -41,10 +42,12 @@ fn append_blob_events(store: &Store, entity: &str, count: usize) -> TestResult {
     Ok(())
 }
 
+#[cfg(unix)]
 fn segment_path(dir: &Path, segment_id: u64) -> PathBuf {
     dir.join(format!("{segment_id:06}.fbat"))
 }
 
+#[cfg(unix)]
 fn file_bytes(path: &Path) -> TestResult<Vec<u8>> {
     Ok(std::fs::read(path)?)
 }
@@ -57,6 +60,7 @@ fn file_identity(path: &Path) -> TestResult<(u64, u64, u64)> {
     Ok((metadata.dev(), metadata.ino(), metadata.nlink()))
 }
 
+#[cfg(unix)]
 fn append_cancelled_visibility_range(store: &Store, entity: &str) -> TestResult {
     let coord = Coordinate::new(entity, "scope:fork")?;
     let kind = EventKind::custom(0xF, 0x72);

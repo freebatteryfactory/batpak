@@ -255,7 +255,7 @@ fn capture_github_context(
         if !stacked.iter().any(|row| row.number == pr.number) {
             stacked.push(gh_pr_to_row(pr));
         }
-        stacked.sort_by(|left, right| left.number.cmp(&right.number));
+        stacked.sort_by_key(|row| row.number);
     }
     if current.is_none() && stacked.is_empty() {
         return (
@@ -315,7 +315,7 @@ fn try_gh_pr_list(root: &Path) -> Vec<StackedPrRow> {
             state: row.state,
         })
         .collect();
-    stacked.sort_by(|left, right| left.number.cmp(&right.number));
+    stacked.sort_by_key(|row| row.number);
     stacked
 }
 
