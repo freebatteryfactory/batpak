@@ -3,6 +3,15 @@ name: Integrity CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+  # Every merge runs the always-on lane set on main. This is load-bearing for
+  # PR wall-clock, not ceremony: GitHub Actions only shares caches DOWNWARD
+  # from the default branch, so rust-cache/devcontainer layers saved by PR
+  # runs (scoped to refs/pull/N/merge) are invisible to every other PR. The
+  # main run is what seeds the warm cache every PR restores from — without it
+  # each PR compiles every lane cold. It also re-proves main after rebase
+  # merges whose base had drifted from the PR's last green run.
+  push:
+    branches: [main]
   workflow_dispatch:
     # Default manual runs are intentionally cheap. Choose an explicit proof
     # profile when you want to spend hosted CI minutes on deeper evidence.
@@ -61,6 +70,11 @@ jobs:
   # workflow intentionally has no scheduled heavy runs; full mutation is too
   # expensive to let it starve PR feedback without an operator explicitly
   # asking for the `heavy` proof profile.
+  #
+  # Push runs on main repeat exactly the always-on PR set (the five ci-fast
+  # lanes, rustdoc, meta-gate, wasm, fuzz replay/smoke, gauntlet bite) — no
+  # heavy surfaces. The label-gated jobs stay label/profile-gated: a push
+  # event has no PR label context, so those conditions are simply false.
   rust-changed:
     name: Detect Rust-relevant changes
     runs-on: ubuntu-latest
@@ -857,6 +871,7 @@ jobs:
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       (github.event_name == 'pull_request' ||
+       github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'verify' ||
          github.event.inputs.proof == 'chaos' ||
@@ -895,6 +910,7 @@ jobs:
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       (github.event_name == 'pull_request' ||
+       github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'verify' ||
          github.event.inputs.proof == 'chaos' ||
@@ -936,7 +952,8 @@ jobs:
         (github.event.inputs.proof == 'verify' ||
          github.event.inputs.proof == 'chaos' ||
          github.event.inputs.proof == 'heavy')) ||
-       github.event_name == 'pull_request')
+       github.event_name == 'pull_request' ||
+       github.event_name == 'push')
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
