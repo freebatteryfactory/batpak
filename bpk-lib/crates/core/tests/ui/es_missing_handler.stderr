@@ -1,10 +1,10 @@
-error[E0599]: no function or associated item named `does_not_exist` found for struct `State` in the current scope
+error[E0599]: no associated function or constant named `does_not_exist` found for struct `State` in the current scope
   --> tests/ui/es_missing_handler.rs:11:34
    |
 11 | #[batpak(event = Ping, handler = does_not_exist)]
-   |                                  ^^^^^^^^^^^^^^ function or associated item not found in `State`
+   |                                  ^^^^^^^^^^^^^^ associated function or constant not found in `State`
 12 | struct State {}
-   | ------------ function or associated item `does_not_exist` not found for this struct
+   | ------------ associated function or constant `does_not_exist` not found for this struct
 
 error[E0599]: no method named `does_not_exist` found for mutable reference `&mut State` in the current scope
   --> tests/ui/es_missing_handler.rs:11:34

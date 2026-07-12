@@ -9,9 +9,14 @@ help: the trait `ProjectionInput` is not implemented for `NotAMarker`
    |
  5 | struct NotAMarker;
    | ^^^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `ProjectionInput`:
-             JsonValueInput
-             RawMsgpackInput
+help: the following other types implement trait `ProjectionInput`
+  --> src/event/sourcing.rs
+   |
+   | impl ProjectionInput for JsonValueInput {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `JsonValueInput`
+...
+   | impl ProjectionInput for RawMsgpackInput {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RawMsgpackInput`
 note: required by a bound in `batpak::EventSourced::Input`
   --> src/event/sourcing.rs
    |
@@ -29,9 +34,14 @@ help: the trait `ProjectionInput` is not implemented for `NotAMarker`
    |
  5 | struct NotAMarker;
    | ^^^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `ProjectionInput`:
-             JsonValueInput
-             RawMsgpackInput
+help: the following other types implement trait `ProjectionInput`
+  --> src/event/sourcing.rs
+   |
+   | impl ProjectionInput for JsonValueInput {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `JsonValueInput`
+...
+   | impl ProjectionInput for RawMsgpackInput {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RawMsgpackInput`
    = note: this error originates in the derive macro `EventSourced` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotAMarker: ProjectionInput` is not satisfied
@@ -45,9 +55,14 @@ help: the trait `ProjectionInput` is not implemented for `NotAMarker`
    |
  5 | struct NotAMarker;
    | ^^^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `ProjectionInput`:
-             JsonValueInput
-             RawMsgpackInput
+help: the following other types implement trait `ProjectionInput`
+  --> src/event/sourcing.rs
+   |
+   | impl ProjectionInput for JsonValueInput {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `JsonValueInput`
+...
+   | impl ProjectionInput for RawMsgpackInput {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RawMsgpackInput`
 note: required by a bound in `__batpak_assert_projection_input`
   --> tests/ui/es_unknown_input.rs:11:57
    |
