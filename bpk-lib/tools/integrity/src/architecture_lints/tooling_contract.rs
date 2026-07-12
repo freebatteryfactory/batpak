@@ -953,7 +953,7 @@ fn check_xtask_surface_contract(repo_root: &Path) -> Result<()> {
     )?;
     ensure(
         dockerfile_content.contains("FROM rust:1.97-bookworm@sha256:")
-            && dockerfile_content.contains("nightly-2025-12-11"),
+            && dockerfile_content.contains("nightly-2026-07-11"),
         "devcontainer base image and rustdoc-json nightly must stay pinned for reproducible supply-chain posture",
     )?;
     ensure(

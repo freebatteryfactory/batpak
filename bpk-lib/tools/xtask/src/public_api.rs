@@ -45,7 +45,10 @@ const PUBLIC_API_PACKAGES: &[PublicApiPackage] = &[
     },
 ];
 
-const PUBLIC_API_RUSTUP_TOOLCHAIN: &str = "nightly-2025-12-11";
+// Must satisfy the workspace `rust-version` floor (cargo rejects the manifest
+// under an older nightly before rustdoc JSON is even generated) — bump this
+// alongside any MSRV/baseline raise. rustc 1.99.0-nightly here.
+const PUBLIC_API_RUSTUP_TOOLCHAIN: &str = "nightly-2026-07-11";
 
 pub(crate) fn public_api(args: PublicApiArgs) -> Result<()> {
     let root = repo_root()?;
@@ -243,10 +246,14 @@ fn normalize_public_api_snapshot(text: &str) -> Cow<'_, str> {
     // cargo-public-api sorts its RENDERED lines, and rendering differs across
     // nightlies (io_error_in_core moved std::io::Error's canonical path, which
     // moves the line's sort position). Re-sort after normalization so the
-    // baseline comparison is order-invariant across rustdoc nightlies.
+    // baseline comparison is order-invariant across rustdoc nightlies, and
+    // dedup so two spellings folded onto one line (or cargo-public-api's own
+    // repeated impl rows) compare equal to a single-line baseline.
     let mut lines: Vec<&str> = normalized.lines().collect();
-    if !lines.is_sorted() {
+    let canonical = lines.is_sorted() && lines.windows(2).all(|pair| pair[0] != pair[1]);
+    if !canonical {
         lines.sort_unstable();
+        lines.dedup();
         let mut sorted = lines.join("\n");
         sorted.push('\n');
         return Cow::Owned(sorted);
@@ -339,15 +346,32 @@ mod tests {
             "impl core::convert::From<core::io::error::Error> for batpak::prelude::StoreError\n",
             "impl core::convert::From<rmp_serde::encode::Error> for batpak::prelude::StoreError\n",
             "pub batpak::prelude::StoreError::Io(core::io::error::Error)\n",
+            "pub fn netbat::serve_subscription_stream(writer: impl core::io::write::Write) -> ()\n",
         );
         let old_nightly = concat!(
             "impl core::convert::From<rmp_serde::encode::Error> for batpak::prelude::StoreError\n",
             "impl core::convert::From<std::io::Error> for batpak::prelude::StoreError\n",
             "pub batpak::prelude::StoreError::Io(std::io::Error)\n",
+            "pub fn netbat::serve_subscription_stream(writer: impl std::io::Write) -> ()\n",
         );
         assert_eq!(
             normalize_public_api_snapshot(new_nightly),
             normalize_public_api_snapshot(old_nightly)
+        );
+    }
+
+    /// A snapshot that carries BOTH the core::io and std::io spellings of one
+    /// item folds onto one line after normalization; without dedup the
+    /// duplicate survives the sort and drifts against a single-line baseline.
+    #[test]
+    fn normalize_public_api_snapshot_dedups_lines_folded_by_normalization() {
+        let mixed = concat!(
+            "pub batpak::prelude::StoreError::Io(core::io::error::Error)\n",
+            "pub batpak::prelude::StoreError::Io(std::io::Error)\n",
+        );
+        assert_eq!(
+            normalize_public_api_snapshot(mixed),
+            "pub batpak::prelude::StoreError::Io(std::io::Error)\n"
         );
     }
 
