@@ -343,6 +343,24 @@ fn reset_peer_drains_to_peer_gone() {
 /// remainder stays peekable on the socket.
 fn flooded_tls_pair() -> (TlsStream, StreamOwned<ClientConnection, TcpStream>, usize) {
     let (server, mut client) = tls_pair();
+    // The drain-budget property needs the kernel to stage MORE flood than one
+    // budgeted pass can consume (~1.4 MiB: cap * per-read ceiling + slack).
+    // Winsock's loopback defaults buffer only ~64-256 KiB and grant
+    // SO_SNDBUF/SO_RCVBUF exactly as asked, so on Windows the test pins its
+    // own buffer sizes instead of inheriting host defaults. Linux stays on
+    // kernel autotuning ON PURPOSE: an explicit setsockopt there disables
+    // autotuning and clamps to net.core.rmem_max (commonly ~208 KiB), which
+    // would SHRINK the staged flood on the platform where defaults suffice.
+    #[cfg(windows)]
+    {
+        const FLOOD_BUFFER_BYTES: usize = 2 * 1024 * 1024;
+        socket2::SockRef::from(&client.sock)
+            .set_send_buffer_size(FLOOD_BUFFER_BYTES)
+            .expect("pin client send buffer for the flood");
+        socket2::SockRef::from(&server.sock)
+            .set_recv_buffer_size(FLOOD_BUFFER_BYTES)
+            .expect("pin server recv buffer for the flood");
+    }
     client
         .sock
         .set_nonblocking(true)
