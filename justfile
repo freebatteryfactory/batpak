@@ -140,10 +140,11 @@ ship-real:
 pre-commit:
     cd bpk-lib; cargo xtask pre-commit
 
-# Report-only coverage. In CI the blocking threshold-80 floor runs as the
-# `ci-fast-coverage` lane (`cargo xtask ci-fast --lane coverage`), which also
-# uploads the same run's report bundle — one instrumented build serves both.
-# `cover-check` below is the local equivalent of that blocking floor.
+# `cover` is report-only (no threshold). The blocking threshold-80 floor runs
+# in CI as the `ci-fast-coverage` lane (`cargo xtask ci-fast --lane coverage`),
+# which also uploads the same run's report bundle — one instrumented build
+# serves both. To enforce that same floor locally, use the `cover-check`
+# recipe two entries down.
 cover:
     cd bpk-lib; cargo xtask cover
 
