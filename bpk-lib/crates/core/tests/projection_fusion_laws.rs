@@ -159,22 +159,17 @@ impl FoldAcc {
     }
 }
 
-thread_local! {
-    /// Counts how many times the fused reference traverses (reads) the stream.
-    static FUSED_STREAM_READS: Cell<u64> = const { Cell::new(0) };
-}
-
-fn reset_fused_stream_reads() {
-    FUSED_STREAM_READS.with(|c| c.set(0));
-}
-
-fn fused_stream_reads() -> u64 {
-    FUSED_STREAM_READS.with(Cell::get)
-}
-
-/// Single-pass banana-split fuser for two folds. Walks the stream ONCE.
-fn fold_fused2(left: FoldShape, right: FoldShape, stream: &[GenEvent]) -> (i64, i64) {
-    FUSED_STREAM_READS.with(|c| c.set(c.get() + 1));
+/// Single-pass banana-split fuser for two folds. Walks the stream ONCE,
+/// recording each traversal in the caller-owned `reads` counter (explicit
+/// instead of ambient thread-local state so the count a test asserts on can
+/// never see a sibling test's traversals).
+fn fold_fused2(
+    left: FoldShape,
+    right: FoldShape,
+    stream: &[GenEvent],
+    reads: &Cell<u64>,
+) -> (i64, i64) {
+    reads.set(reads.get() + 1);
     let mut l = FoldAcc::new(left);
     let mut r = FoldAcc::new(right);
     for (idx, event) in stream.iter().enumerate() {
@@ -185,8 +180,14 @@ fn fold_fused2(left: FoldShape, right: FoldShape, stream: &[GenEvent]) -> (i64, 
 }
 
 /// Single-pass banana-split fuser for three folds.
-fn fold_fused3(a: FoldShape, b: FoldShape, c: FoldShape, stream: &[GenEvent]) -> (i64, i64, i64) {
-    FUSED_STREAM_READS.with(|cnt| cnt.set(cnt.get() + 1));
+fn fold_fused3(
+    a: FoldShape,
+    b: FoldShape,
+    c: FoldShape,
+    stream: &[GenEvent],
+    reads: &Cell<u64>,
+) -> (i64, i64, i64) {
+    reads.set(reads.get() + 1);
     let mut fa = FoldAcc::new(a);
     let mut fb = FoldAcc::new(b);
     let mut fc = FoldAcc::new(c);
@@ -208,8 +209,8 @@ proptest! {
         right in arb_fold(),
         stream in arb_event_stream(24),
     ) {
-        reset_fused_stream_reads();
-        let fused = fold_fused2(left, right, &stream);
+        let reads = Cell::new(0);
+        let fused = fold_fused2(left, right, &stream, &reads);
         let separate = (left.fold(&stream), right.fold(&stream));
         prop_assert_eq!(fused, separate,
             "BANANA-SPLIT FUSION VIOLATED (2): fused {:?} != separate {:?} for folds {:?}/{:?}",
@@ -223,11 +224,11 @@ proptest! {
         right in arb_fold(),
         stream in arb_event_stream(24),
     ) {
-        reset_fused_stream_reads();
-        let _ = fold_fused2(left, right, &stream);
-        prop_assert_eq!(fused_stream_reads(), 1,
+        let reads = Cell::new(0);
+        let _ = fold_fused2(left, right, &stream, &reads);
+        prop_assert_eq!(reads.get(), 1,
             "FUSION SHOULD READ THE STREAM EXACTLY ONCE, observed {}",
-            fused_stream_reads());
+            reads.get());
     }
 
     /// 3-fold banana-split generalizes the fixed three-tuple example.
@@ -238,8 +239,8 @@ proptest! {
         c in arb_fold(),
         stream in arb_event_stream(24),
     ) {
-        reset_fused_stream_reads();
-        let fused = fold_fused3(a, b, c, &stream);
+        let reads = Cell::new(0);
+        let fused = fold_fused3(a, b, c, &stream, &reads);
         let separate = (a.fold(&stream), b.fold(&stream), c.fold(&stream));
         prop_assert_eq!(fused, separate,
             "BANANA-SPLIT FUSION VIOLATED (3): fused {:?} != separate {:?}",

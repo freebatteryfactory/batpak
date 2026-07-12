@@ -227,6 +227,7 @@ fn normalize_public_api_snapshot(text: &str) -> Cow<'_, str> {
         // spelling FIRST so the std::io::error rules below apply to both
         // old- and new-nightly snapshots identically.
         ("core::io::error::", "std::io::error::"),
+        ("core::io::read::Read", "std::io::Read"),
         ("core::io::write::Write", "std::io::Write"),
         ("std::io::error::ErrorKind", "std::io::ErrorKind"),
         ("std::io::error::Error", "std::io::Error"),
@@ -347,12 +348,14 @@ mod tests {
             "impl core::convert::From<rmp_serde::encode::Error> for batpak::prelude::StoreError\n",
             "pub batpak::prelude::StoreError::Io(core::io::error::Error)\n",
             "pub fn netbat::serve_subscription_stream(writer: impl core::io::write::Write) -> ()\n",
+            "pub fn netbat::serve_stream(reader: impl core::io::read::Read + core::io::write::Write) -> ()\n",
         );
         let old_nightly = concat!(
             "impl core::convert::From<rmp_serde::encode::Error> for batpak::prelude::StoreError\n",
             "impl core::convert::From<std::io::Error> for batpak::prelude::StoreError\n",
             "pub batpak::prelude::StoreError::Io(std::io::Error)\n",
             "pub fn netbat::serve_subscription_stream(writer: impl std::io::Write) -> ()\n",
+            "pub fn netbat::serve_stream(reader: impl std::io::Read + std::io::Write) -> ()\n",
         );
         assert_eq!(
             normalize_public_api_snapshot(new_nightly),
