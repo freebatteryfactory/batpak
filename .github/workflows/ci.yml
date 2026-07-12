@@ -250,6 +250,7 @@ jobs:
       - name: Aggregate lane results
         shell: bash
         env:
+          DETECT_RESULT: ${{ needs.rust-changed.result }}
           RUST_CHANGED: ${{ needs.rust-changed.outputs.rust }}
           LANE_CHECK: ${{ needs.ci-fast-check.result }}
           LANE_LINT: ${{ needs.ci-fast-lint.result }}
@@ -258,21 +259,29 @@ jobs:
           LANE_COVERAGE: ${{ needs.ci-fast-coverage.result }}
         run: |
           set -euo pipefail
+          # FAIL CLOSED: the docs-only escape hatch is legitimate ONLY when the
+          # rust-changed detector itself succeeded and explicitly said "false".
+          # If the detector failed/was cancelled before writing a verdict, the
+          # lanes were skipped for the WRONG reason and this summary must red.
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "::error::rust-changed detector finished with result '${DETECT_RESULT}' — no verdict, failing closed"
+            exit 1
+          fi
           fail=0
           for lane in CHECK LINT TEST CONTRACTS COVERAGE; do
             var="LANE_${lane}"
             result="${!var}"
             echo "lane ${lane}: ${result}"
-            if [ "$RUST_CHANGED" = "true" ]; then
-              if [ "$result" != "success" ]; then
-                echo "::error::ci-fast lane ${lane} finished with result '${result}' on a Rust-touching PR"
+            if [ "$RUST_CHANGED" = "false" ]; then
+              # Docs-only PR (explicit detector verdict): lanes are expected to
+              # be skipped; anything that ran must still have succeeded.
+              if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+                echo "::error::ci-fast lane ${lane} finished with result '${result}'"
                 fail=1
               fi
             else
-              # Docs-only PR: lanes are expected to be skipped; anything that
-              # ran must still have succeeded.
-              if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
-                echo "::error::ci-fast lane ${lane} finished with result '${result}'"
+              if [ "$result" != "success" ]; then
+                echo "::error::ci-fast lane ${lane} finished with result '${result}' on a Rust-touching PR"
                 fail=1
               fi
             fi
