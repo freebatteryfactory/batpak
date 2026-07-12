@@ -46,7 +46,7 @@ RUN cargo binstall --no-confirm cargo-llvm-cov@0.8.5 || cargo install --locked c
 # stable so `cargo xtask public-api --strict` can auto-fall-back to
 # rustdoc-json generation without forcing the rest of the build off the
 # canonical 1.97 stable channel.
-RUN rustup toolchain install nightly-2025-12-11 --profile minimal --no-self-update
+RUN rustup toolchain install nightly-2026-07-11 --profile minimal --no-self-update
 RUN cargo binstall --no-confirm cargo-public-api@0.51.0 || cargo install --locked cargo-public-api@0.51.0
 RUN cargo binstall --no-confirm cargo-semver-checks@0.48.0 || cargo install --locked cargo-semver-checks@0.48.0
 RUN cargo binstall --no-confirm cargo-machete@0.9.2 || cargo install --locked cargo-machete@0.9.2
