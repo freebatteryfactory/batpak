@@ -98,7 +98,7 @@ fn parse_toolchain_channel(toml: &str) -> Result<String> {
 }
 
 fn parse_rustc_version(output: &str) -> Option<String> {
-    // Expected shape: "rustc 1.92.0 (abcdef0 2026-04-17)".
+    // Expected shape: "rustc 1.97.0 (abcdef0 2026-04-17)".
     let mut iter = output.split_whitespace();
     let _ = iter.next()?;
     let version = iter.next()?;
@@ -106,7 +106,7 @@ fn parse_rustc_version(output: &str) -> Option<String> {
 }
 
 fn channels_match(pinned: &str, active: &str) -> bool {
-    // Treat "1.92" as matching any "1.92.x" and "1.92.0" as requiring exact.
+    // Treat "1.97" as matching any "1.97.x" and "1.97.0" as requiring exact.
     // Likewise "stable"/"beta"/"nightly" match their own name as a prefix of
     // the active version (rustc never reports those literal strings, so this
     // branch is informational).
@@ -135,10 +135,10 @@ mod tests {
 
     #[test]
     fn parse_channel_from_toolchain_toml() {
-        let toml = "[toolchain]\nchannel = \"1.92.0\"\nprofile = \"minimal\"\n";
+        let toml = "[toolchain]\nchannel = \"1.97.0\"\nprofile = \"minimal\"\n";
         // justifies: INV-TEST-PANIC-AS-ASSERTION; test-only in tools/xtask/src/preflight.rs; panic on setup failure is the test's signal of broken fixtures
         let channel = parse_toolchain_channel(toml).expect("channel present in fixture");
-        assert_eq!(channel, "1.92.0");
+        assert_eq!(channel, "1.97.0");
     }
 
     #[test]
@@ -146,16 +146,16 @@ mod tests {
         let toml = r#"
             [toolchain]
             profile = "minimal"
-            channel = "1.92.0" # canonical pin
+            channel = "1.97.0" # canonical pin
             components = ["rustfmt", "clippy"]
         "#;
         let channel = parse_toolchain_channel(toml).expect("channel present in fixture");
-        assert_eq!(channel, "1.92.0");
+        assert_eq!(channel, "1.97.0");
     }
 
     #[test]
     fn parse_channel_requires_toolchain_table_and_string_channel() {
-        let missing_table = "channel = \"1.92.0\"\n";
+        let missing_table = "channel = \"1.97.0\"\n";
         let wrong_type = "[toolchain]\nchannel = 192\n";
 
         assert!(
@@ -171,17 +171,17 @@ mod tests {
     #[test]
     fn parse_rustc_version_from_output() {
         // justifies: INV-TEST-PANIC-AS-ASSERTION; test-only in tools/xtask/src/preflight.rs; panic on setup failure is the test's signal of broken fixtures
-        let version = parse_rustc_version("rustc 1.92.0 (abcdef0 2026-04-17)")
+        let version = parse_rustc_version("rustc 1.97.0 (abcdef0 2026-04-17)")
             .expect("version present in fixture");
-        assert_eq!(version, "1.92.0");
+        assert_eq!(version, "1.97.0");
     }
 
     #[test]
     fn channels_match_exact_and_prefix() {
-        assert!(channels_match("1.92.0", "1.92.0"));
-        assert!(channels_match("1.92", "1.92.0"));
-        assert!(!channels_match("1.92.1", "1.92.0"));
-        assert!(!channels_match("1.91", "1.92.0"));
+        assert!(channels_match("1.97.0", "1.97.0"));
+        assert!(channels_match("1.97", "1.97.0"));
+        assert!(!channels_match("1.97.1", "1.97.0"));
+        assert!(!channels_match("1.91", "1.97.0"));
     }
 
     #[test]
@@ -192,7 +192,7 @@ mod tests {
         fs::create_dir(&workspace)?;
         fs::write(
             project.join("rust-toolchain.toml"),
-            "[toolchain]\nchannel = \"1.92.0\"\n",
+            "[toolchain]\nchannel = \"1.97.0\"\n",
         )?;
         fs::write(
             workspace.join("rust-toolchain.toml"),
@@ -214,7 +214,7 @@ mod tests {
         fs::create_dir(&workspace)?;
         fs::write(
             project.join("rust-toolchain.toml"),
-            "[toolchain]\nchannel = \"1.92.0\"\n",
+            "[toolchain]\nchannel = \"1.97.0\"\n",
         )?;
 
         assert_eq!(
