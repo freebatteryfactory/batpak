@@ -50,6 +50,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least-privilege pin for every job's GITHUB_TOKEN. The repo setting already
+# defaults to read-only (`default_workflow_permissions: read`); this makes the
+# posture explicit IN the workflow so a future settings drift cannot silently
+# widen it. Jobs that genuinely need more (the docs Pages deploy) declare
+# their own job-level block, which overrides this one.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
