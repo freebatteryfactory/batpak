@@ -524,7 +524,14 @@ const CI_FAST_REQUIRED_GATE_MARKERS: &[(&str, &str)] = &[
 /// (rust-changed-gated, never label-gated) ci.yml job AND stay wired into the
 /// serial `ci_fast()` dispatch, so the local one-command bundle and the CI
 /// fan-out enforce the same gate set.
-const CI_FAST_LANES: &[&str] = &["check", "lint", "test", "contracts", "coverage"];
+const CI_FAST_LANES: &[&str] = &[
+    "check",
+    "lint",
+    "test",
+    "test-docs",
+    "contracts",
+    "coverage",
+];
 
 /// Extract the body of EVERY function in the `ci_fast` family — any
 /// `fn ci_fast…(` definition — in the concatenated xtask source surface. That
@@ -608,17 +615,19 @@ fn assert_ci_fast_keeps_default_path_gates(xtask_sources: &str) -> Result<()> {
             return false;
         };
         let serial_block = &after_else[..else_end];
+        // Lane NAMES are kebab-case (CLI/job vocabulary); the lane FUNCTIONS
+        // are snake_case Rust identifiers ("test-docs" -> ci_fast_test_docs).
         CI_FAST_LANES
             .iter()
-            .all(|lane| serial_block.contains(&format!("ci_fast_{lane}()")))
+            .all(|lane| serial_block.contains(&format!("ci_fast_{}()", lane.replace('-', "_"))))
     });
     ensure(
         serial_dispatch_complete,
         "ci-parity: the no-lane serial path of `ci_fast()` (the `args.lane else` block) \
          does not call every `ci_fast_<lane>()` lane function. The serial dispatch must \
-         keep running ALL lanes (check, lint, test, contracts, coverage) so a bare \
-         `cargo xtask ci-fast` covers the same gate set as the CI fan-out. Restore the \
-         missing lane call in tools/xtask/src/commands/ci.rs.",
+         keep running ALL lanes (check, lint, test, test-docs, contracts, coverage) so a \
+         bare `cargo xtask ci-fast` covers the same gate set as the CI fan-out. Restore \
+         the missing lane call in tools/xtask/src/commands/ci.rs.",
     )?;
     Ok(())
 }
@@ -767,6 +776,7 @@ pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
         ci_fast_check()?;
         ci_fast_lint()?;
         ci_fast_test()?;
+        ci_fast_test_docs()?;
         ci_fast_contracts()?;
         return ci_fast_coverage();
     };
@@ -774,6 +784,7 @@ pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
         CiFastLane::Check => ci_fast_check(),
         CiFastLane::Lint => ci_fast_lint(),
         CiFastLane::Test => ci_fast_test(),
+        CiFastLane::TestDocs => ci_fast_test_docs(),
         CiFastLane::Contracts => ci_fast_contracts(),
         CiFastLane::Coverage => ci_fast_coverage(),
     }
@@ -789,6 +800,10 @@ fn ci_fast_lint() -> Result<()> {
 
 fn ci_fast_test() -> Result<()> {
     run_nextest_ci(["--workspace", "--all-features"])
+}
+
+fn ci_fast_test_docs() -> Result<()> {
+    cargo(["test", "--doc", "--all-features"])
 }
 
 fn ci_fast_contracts() -> Result<()> {
@@ -1039,6 +1054,7 @@ pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
         ci_fast_check()?;
         ci_fast_lint()?;
         ci_fast_test()?;
+        ci_fast_test_docs()?;
         ci_fast_contracts()?;
         return ci_fast_coverage();
     };
@@ -1046,6 +1062,7 @@ pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
         CiFastLane::Check => ci_fast_check(),
         CiFastLane::Lint => ci_fast_lint(),
         CiFastLane::Test => ci_fast_test(),
+        CiFastLane::TestDocs => ci_fast_test_docs(),
         CiFastLane::Contracts => ci_fast_contracts(),
         CiFastLane::Coverage => ci_fast_coverage(),
     }
@@ -1061,6 +1078,10 @@ fn ci_fast_lint() -> Result<()> {
 
 fn ci_fast_test() -> Result<()> {
     run_nextest_ci(["--workspace", "--all-features"])
+}
+
+fn ci_fast_test_docs() -> Result<()> {
+    cargo(["test", "--doc", "--all-features"])
 }
 
 fn ci_fast_contracts() -> Result<()> {
@@ -1162,6 +1183,26 @@ fn ci_fast_coverage() -> Result<()> {
         );
         let err = assert_ci_fast_keeps_default_path_gates(&dropped)
             .expect_err("serial dispatch missing a lane call must fail");
+        assert!(
+            err.to_string().contains("ci_fast_<lane>()"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn ci_parity_rejects_serial_dispatch_dropping_the_hyphenated_lane() {
+        // The "test-docs" lane name is kebab-case but its function is
+        // snake_case (`ci_fast_test_docs`); the serial-completeness proof maps
+        // between the two. Green passing above only shows the mapping resolves —
+        // this proves it BITES: dropping the snake_case call for the hyphenated
+        // lane from the serial block must fail.
+        let dropped = GREEN_CI_FAST_SOURCE.replace("        ci_fast_test_docs()?;\n", "");
+        assert!(
+            dropped.contains("CiFastLane::TestDocs => ci_fast_test_docs(),"),
+            "fixture must keep the match arm so scoping is exercised"
+        );
+        let err = assert_ci_fast_keeps_default_path_gates(&dropped)
+            .expect_err("serial dispatch missing the test-docs lane call must fail");
         assert!(
             err.to_string().contains("ci_fast_<lane>()"),
             "unexpected error: {err:#}"

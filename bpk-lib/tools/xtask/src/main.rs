@@ -247,8 +247,10 @@ pub(crate) enum CiFastLane {
     Check,
     /// Clippy with denied warnings (workspace + family crates).
     Lint,
-    /// nextest, doctests, and per-family-crate tests.
+    /// Workspace nextest (the single heaviest test surface).
     Test,
+    /// Doctests and per-family-crate test suites.
+    TestDocs,
     /// Machine law + L2+ contract gates (templates, traceability, structural,
     /// public-api baseline, package-leak-scan, doctor --strict, receipts).
     Contracts,

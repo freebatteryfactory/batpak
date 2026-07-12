@@ -34,7 +34,14 @@ pub(crate) fn check(repo_root: &Path) -> Result<BTreeSet<PathBuf>> {
 /// ci_parity.rs and `CiFastLane` in tools/xtask/src/main.rs: each lane job must
 /// run its `cargo xtask ci-fast --lane <lane>` through the checked-in
 /// devcontainer wrapper, and the `ci-fast-linux` summary fans them back in.
-const CI_FAST_LANES: &[&str] = &["check", "lint", "test", "contracts", "coverage"];
+const CI_FAST_LANES: &[&str] = &[
+    "check",
+    "lint",
+    "test",
+    "test-docs",
+    "contracts",
+    "coverage",
+];
 
 fn check_ci_workflow(ci: &str) -> Result<()> {
     for lane in CI_FAST_LANES {
@@ -122,6 +129,10 @@ jobs:
     steps:
       - uses: ./.github/actions/setup-devcontainer
       - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test'
+  ci-fast-test-docs:
+    steps:
+      - uses: ./.github/actions/setup-devcontainer
+      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test-docs'
   ci-fast-contracts:
     steps:
       - uses: ./.github/actions/setup-devcontainer

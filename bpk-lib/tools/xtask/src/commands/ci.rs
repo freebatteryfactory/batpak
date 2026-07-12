@@ -20,6 +20,7 @@ pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
         ci_fast_check()?;
         ci_fast_lint()?;
         ci_fast_test()?;
+        ci_fast_test_docs()?;
         ci_fast_contracts()?;
         return ci_fast_coverage();
     };
@@ -27,6 +28,7 @@ pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
         CiFastLane::Check => ci_fast_check(),
         CiFastLane::Lint => ci_fast_lint(),
         CiFastLane::Test => ci_fast_test(),
+        CiFastLane::TestDocs => ci_fast_test_docs(),
         CiFastLane::Contracts => ci_fast_contracts(),
         CiFastLane::Coverage => ci_fast_coverage(),
     }
@@ -46,14 +48,22 @@ fn ci_fast_lint() -> Result<()> {
     run_family_clippy()
 }
 
-/// Lane: nextest, doctests, and per-family-crate test suites.
+/// Lane: the workspace nextest surface — deliberately ALONE in this lane.
 fn ci_fast_test() -> Result<()> {
     // `--workspace` is mandatory here for the same reason as the clippy gate:
     // without it nextest runs only `default-members` (crates/core), leaving
     // tools/integrity and the macro crates outside the test net. That
     // hole let a stale integrity self-test fixture rot undetected until a
     // workspace-wide run surfaced it.
-    run_nextest_ci(["--workspace", "--all-features"])?;
+    run_nextest_ci(["--workspace", "--all-features"])
+}
+
+/// Lane: doctests and per-family-crate test suites, split out of the nextest
+/// lane. Warm-cache measurement (PR #221's run) put the nextest lane at
+/// 22m44s — the fan-out critical path — with ~4 min of that being this tail;
+/// splitting lets nextest and the doctest/family surfaces run on parallel
+/// runners, dropping PR wall-clock to roughly the coverage lane's floor.
+fn ci_fast_test_docs() -> Result<()> {
     cargo(["test", "--doc", "--all-features"])?;
     run_family_tests()
 }
