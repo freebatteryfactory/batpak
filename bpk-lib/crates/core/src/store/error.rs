@@ -7,12 +7,15 @@ use crate::store::stats::{HlcPoint, WatermarkKind};
 use std::path::PathBuf;
 
 mod display;
+mod display_authority;
 mod hidden_ranges;
+mod idemp_authority;
 mod invariant;
 mod platform;
 mod store_meta;
 
 pub use hidden_ranges::HiddenRangesCorruption;
+pub use idemp_authority::{IdempAuthorityCorruption, IdempAuthorityForeignKind};
 pub use invariant::StoreInvariant;
 pub use platform::{ProfileInvalidKind, StoreLockMode};
 pub use store_meta::StoreMetaCorruption;
@@ -194,6 +197,47 @@ pub enum StoreError {
         stored: u16,
         /// The maximum version this binary understands.
         current: u16,
+    },
+    /// The durable idempotency authority (`index.idemp`) is present but cannot
+    /// be admitted. Cold start must fail closed (GAUNT-IDEMPOTENCY-AUTHORITY,
+    /// #189): after retention compaction evicts an event's frames, the sidecar
+    /// is the ONLY remaining proof that a keyed retry is not a new command —
+    /// treating damaged authority bytes as an empty set would let an
+    /// acknowledged retry commit a second event. Restore the file from a
+    /// backup or a healthy replica of the store directory.
+    IdempotencyAuthorityCorrupt {
+        /// Path of the unreadable sidecar.
+        path: PathBuf,
+        /// Typed corruption reason.
+        kind: IdempAuthorityCorruption,
+    },
+    /// The durable idempotency authority is ABSENT although this store's
+    /// `store.meta` records a durable-authority expectation — a keyed append
+    /// became part of the durable contract, so an empty map is authority LOSS,
+    /// not a fresh store. Restore `index.idemp` from a backup or a healthy
+    /// replica of the store directory.
+    IdempotencyAuthorityMissing {
+        /// Expected path of the missing sidecar.
+        path: PathBuf,
+    },
+    /// The durable idempotency authority is structurally valid but STALE: its
+    /// covered frontier is behind the expectation recorded in `store.meta`, so
+    /// keys committed after the image was written would silently vanish from
+    /// the dedup contract. Restore a current image from a backup or a healthy
+    /// replica.
+    IdempotencyAuthorityStale {
+        /// Covered global sequence stamped on the on-disk image (0 for a
+        /// legacy v1 image, which carries no anchor).
+        image_covered: u64,
+        /// Covered global sequence this store's metadata expects.
+        expected_covered: u64,
+    },
+    /// The durable idempotency authority belongs to a DIFFERENT history than
+    /// this store's — a foreign lineage, or a diverged sibling fork's image at
+    /// the same covered sequence. Never acceptable regardless of frontier.
+    IdempotencyAuthorityForeign {
+        /// Typed reason the image is foreign.
+        kind: IdempAuthorityForeignKind,
     },
     /// The on-disk mmap index (`index.fbati`) declares a format version strictly
     /// newer than this binary understands. Unlike a corrupt or older artifact —
@@ -644,6 +688,7 @@ impl std::error::Error for StoreError {
             Self::PlatformProfileInvalid { kind, .. } => kind.source(),
             Self::HiddenRangesCorrupt { kind, .. } => kind.source(),
             Self::StoreMetadataCorrupt { kind, .. } => kind.source(),
+            Self::IdempotencyAuthorityCorrupt { kind, .. } => kind.source(),
             Self::StoreLocked { .. }
             | Self::CrcMismatch { .. }
             | Self::CorruptSegment { .. }
@@ -669,6 +714,9 @@ impl std::error::Error for StoreError {
             | Self::HiddenRangesFutureVersion { .. }
             | Self::StoreMetadataMissing { .. }
             | Self::StoreMetadataFutureVersion { .. }
+            | Self::IdempotencyAuthorityMissing { .. }
+            | Self::IdempotencyAuthorityStale { .. }
+            | Self::IdempotencyAuthorityForeign { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
             | Self::SidxFutureVersion { .. }

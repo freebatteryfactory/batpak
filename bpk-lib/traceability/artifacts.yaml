@@ -847,6 +847,8 @@
     - crates/core/tests/idempotency_window_priority.rs
     - crates/core/tests/idempotency_for_operation.rs
     - crates/core/tests/idempotency_corruption_recovery.rs
+    - crates/core/tests/idempotency_authority_fail_closed.rs
+    - crates/core/tests/idempotency_authority_compaction.rs
 - id: ART-COMPAT-MATRIX
   kind: tests
   paths:

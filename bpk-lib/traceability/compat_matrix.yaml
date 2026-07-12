@@ -88,10 +88,11 @@ rows:
     fixture_path: index.ckpt
 
   # ── idempotency-index (index.idemp) ──────────────────────────────────────
-  # Backward: own-version durable idempotency sidecar restores on open.
+  # Self-row: the live v2 AUTHORITY image (lineage + compound history anchor +
+  # entries; GAUNT-IDEMPOTENCY-AUTHORITY, #189) restores on open.
   - format: idempotency-index
-    writer_version: 1
-    reader_version: 1
+    writer_version: 2
+    reader_version: 2
     feature_bits: 0
     expected_outcome: OpensOK
     fixture_path: index.idemp
@@ -99,8 +100,8 @@ rows:
   # never reconstruct a durable-dedup format it predates (silently degrading to
   # empty would lose cross-compaction dedup correctness).
   - format: idempotency-index
-    writer_version: 2
-    reader_version: 1
+    writer_version: 3
+    reader_version: 2
     feature_bits: 0
     expected_outcome: CanonicalRefusal:IdempotencyFutureVersion
     fixture_path: index.idemp

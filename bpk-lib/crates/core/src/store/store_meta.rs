@@ -232,6 +232,54 @@ pub(crate) fn resolve_on_open(
     }
 }
 
+/// Flush the durable idempotency authority AND advance the recorded
+/// expectation, as one protocol (GAUNT-IDEMPOTENCY-AUTHORITY, #189). Runs only
+/// from quiesced paths (close, compaction tail, snapshot, fork) of a WRITABLE
+/// store, whose `store.meta` was minted/loaded at open.
+///
+/// Protocol (order is load-bearing):
+/// 1. compute the next expectation = the MONOTONIC max (by covered sequence)
+///    of the currently recorded expectation and the live index tip anchor —
+///    the expectation never moves backward, even if retention emptied the
+///    live index;
+/// 2. flush the v2 image stamped with the lineage + that anchor;
+/// 3. persist the expectation into `store.meta`.
+///
+/// A crash between 2 and 3 leaves an image whose anchor is AT OR PAST the
+/// recorded expectation — the admission rule accepts that superset state, so
+/// every crash point yields a legal old-or-new pair.
+pub(crate) fn flush_idempotency_authority(
+    index: &crate::store::index::StoreIndex,
+    data_dir: &Path,
+    fs: &dyn StoreFs,
+) -> Result<(), StoreError> {
+    let mut meta = load_store_meta(data_dir, fs)?.ok_or_else(|| {
+        // A writable store minted store.meta at open; its absence here means
+        // it vanished mid-session — refuse rather than remint (#205).
+        StoreError::StoreMetadataMissing {
+            path: data_dir.join(STORE_META_FILENAME),
+        }
+    })?;
+    let tip = index.tip_history_anchor();
+    let next = match (meta.idemp_authority, tip) {
+        (Some(recorded), Some(live)) => {
+            if live.covered_global_sequence >= recorded.covered_global_sequence {
+                Some(live)
+            } else {
+                Some(recorded)
+            }
+        }
+        (Some(recorded), None) => Some(recorded),
+        (None, live) => live,
+    };
+    index.idemp.flush(data_dir, fs, meta.lineage, next)?;
+    if meta.idemp_authority != next {
+        meta.idemp_authority = next;
+        write_store_meta(data_dir, &meta, fs)?;
+    }
+    Ok(())
+}
+
 fn corrupt_meta(path: &Path, kind: StoreMetaCorruption) -> StoreError {
     tracing::warn!(
         target: "batpak::store_meta",

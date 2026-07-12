@@ -518,6 +518,7 @@ fn open_index_skips_fast_paths_when_pending_compaction_marker_exists() {
         ColdStartPolicy::new(true, false),
         &crate::store::SystemClock::new(),
         NO_FAULT_INJECTOR,
+        None,
     )
     .expect("open index with pending compaction");
 

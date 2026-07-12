@@ -6,6 +6,10 @@
 //! main `Display::fmt` match so adding a per-format refusal does not grow that
 //! function past its complexity ratchet.
 
+use super::display_authority::{
+    fmt_idemp_authority_corrupt, fmt_idemp_authority_foreign, fmt_idemp_authority_missing,
+    fmt_idemp_authority_stale, fmt_store_metadata_corrupt, fmt_store_metadata_missing,
+};
 use super::{StoreError, StoreLockMode};
 use crate::id::EntityIdType;
 
@@ -33,6 +37,19 @@ fn fmt_plain_future_version(
     )
 }
 
+fn fmt_rebuild_refusing_future_version(
+    f: &mut std::fmt::Formatter<'_>,
+    (subject, wrote): (&str, &str),
+    (found, supported): (u16, u16),
+) -> std::fmt::Result {
+    write!(
+        f,
+        "{subject} is version {found} but this binary understands at most version {supported}; \
+         refusing to rebuild from scan (a future writer may have {wrote} this reader cannot \
+         interpret); upgrade the reader"
+    )
+}
+
 fn fmt_pathful_future_version(
     f: &mut std::fmt::Formatter<'_>,
     (subject, recorded): (&str, &str),
@@ -40,12 +57,106 @@ fn fmt_pathful_future_version(
 ) -> std::fmt::Result {
     write!(
         f,
-        "{subject} at {} is version {found} but this binary understands at most version          {supported}; refusing to open (a future writer may have {recorded} this reader cannot          interpret); upgrade the reader",
+        "{subject} at {} is version {found} but this binary understands at most version \
+         {supported}; refusing to open (a future writer may have {recorded} this reader cannot \
+         interpret); upgrade the reader",
         path.display()
     )
 }
 
 impl StoreError {
+    /// Grouped render for the authority-sidecar refusals (durable idempotency
+    /// authority + store metadata), delegated from one `Display::fmt` arm so
+    /// that match stays within its complexity ratchet pin.
+    fn fmt_authority_refusal(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IdempotencyAuthorityCorrupt { path, kind } => {
+                fmt_idemp_authority_corrupt(f, path, kind)
+            }
+            Self::IdempotencyAuthorityMissing { path } => fmt_idemp_authority_missing(f, path),
+            Self::IdempotencyAuthorityStale {
+                image_covered,
+                expected_covered,
+            } => fmt_idemp_authority_stale(f, *image_covered, *expected_covered),
+            Self::IdempotencyAuthorityForeign { kind } => fmt_idemp_authority_foreign(f, kind),
+            Self::StoreMetadataCorrupt { path, kind } => fmt_store_metadata_corrupt(f, path, kind),
+            Self::StoreMetadataMissing { path } => fmt_store_metadata_missing(f, path),
+            // Non-authority variants, listed explicitly (never wildcarded) so a
+            // new variant trips a compile error; unreachable from the grouped arm.
+            Self::Io(_)
+            | Self::StoreLocked { .. }
+            | Self::Coordinate(_)
+            | Self::CheckpointId(_)
+            | Self::Serialization(_)
+            | Self::CrcMismatch { .. }
+            | Self::CorruptSegment { .. }
+            | Self::NotFound(_)
+            | Self::SequenceMismatch { .. }
+            | Self::WriterCrashed
+            | Self::WaitTimeout { .. }
+            | Self::CacheFailed(_)
+            | Self::ProjectionStateContractUnspecified { .. }
+            | Self::ProjectionStateExtentUnavailable { .. }
+            | Self::ProjectionStateBoundExceeded { .. }
+            | Self::SequenceGateViolation { .. }
+            | Self::Configuration(_)
+            | Self::PlatformProfileInvalid { .. }
+            | Self::PlatformProfileMismatch { .. }
+            | Self::PlatformAdmissionFailed { .. }
+            | Self::EventPayloadRegistry(_)
+            | Self::UpcastChainIncomplete(_)
+            | Self::IdempotencyRequired
+            | Self::VisibilityFenceActive
+            | Self::VisibilityFenceNotActive
+            | Self::VisibilityFenceCancelled
+            | Self::BatchFailed { .. }
+            | Self::BatchSyncFailed { .. }
+            | Self::IdempotencyPartialBatch { .. }
+            | Self::IdempotencyOverflowFailClosed { .. }
+            | Self::InvalidPayloadVersion { .. }
+            | Self::CorruptFrame { .. }
+            | Self::SegmentTooManyEntries { .. }
+            | Self::InternerExhausted { .. }
+            | Self::DataDirMalformed { .. }
+            | Self::AncestryCorrupt { .. }
+            | Self::RangeMalformed { .. }
+            | Self::InvalidCoordinate { .. }
+            | Self::ReservedKind { .. }
+            | Self::InvalidCausation { .. }
+            | Self::InvalidCommitMetadata { .. }
+            | Self::CoordinateNulByte
+            | Self::CoordinatePathTraversal
+            | Self::CoordinateControlChar
+            | Self::HiddenRangesCorrupt { .. }
+            | Self::BatchItemTooLarge { .. }
+            | Self::EntityClockOverflow { .. }
+            | Self::InvalidClock { .. }
+            | Self::CheckpointWriteFailed { .. }
+            | Self::CursorCheckpointCorrupt { .. }
+            | Self::CursorCheckpointRegionMismatch { .. }
+            | Self::InvariantViolation { .. }
+            | Self::ChainVerificationFailed { .. }
+            | Self::IdempotencyFutureVersion { .. }
+            | Self::MmapFutureVersion { .. }
+            | Self::CheckpointFutureVersion { .. }
+            | Self::HiddenRangesFutureVersion { .. }
+            | Self::StoreMetadataFutureVersion { .. }
+            | Self::ForkEvidenceFutureVersion { .. }
+            | Self::ImportProvenanceFutureVersion { .. }
+            | Self::SidxFutureVersion { .. } => Ok(()),
+            #[cfg(feature = "payload-encryption")]
+            Self::KeysetCorrupt { .. }
+            | Self::PayloadSealFailed { .. }
+            | Self::PayloadShredded { .. }
+            | Self::PayloadDecryptFailed { .. }
+            | Self::ShredSelectorMismatch { .. }
+            | Self::KeysetNotPortable { .. }
+            | Self::KeysetMissing { .. } => Ok(()),
+            #[cfg(feature = "dangerous-test-hooks")]
+            Self::FaultInjected(_) => Ok(()),
+        }
+    }
+
     /// Shared `Display` body for the on-disk future-version refusals. Each format
     /// renders the same "on disk is version N but this binary understands at most
     /// version M; upgrade the reader" shape with a format-specific subject. Kept
@@ -56,18 +167,18 @@ impl StoreError {
             Self::IdempotencyFutureVersion { stored, current } => {
                 fmt_plain_future_version(f, "durable idempotency store on disk", *stored, *current)
             }
-            Self::MmapFutureVersion { found, supported } => write!(
+            Self::MmapFutureVersion { found, supported } => fmt_rebuild_refusing_future_version(
                 f,
-                "mmap index on disk is version {found} but this binary understands at most version \
-                 {supported}; refusing to rebuild from scan (a future writer may have written data \
-                 this reader cannot interpret); upgrade the reader"
+                ("mmap index on disk", "written data"),
+                (*found, *supported),
             ),
-            Self::CheckpointFutureVersion { found, supported } => write!(
-                f,
-                "checkpoint on disk is version {found} but this binary understands at most version \
-                 {supported}; refusing to rebuild from scan (a future writer may have written a \
-                 snapshot this reader cannot interpret); upgrade the reader"
-            ),
+            Self::CheckpointFutureVersion { found, supported } => {
+                fmt_rebuild_refusing_future_version(
+                    f,
+                    ("checkpoint on disk", "written a snapshot"),
+                    (*found, *supported),
+                )
+            }
             Self::HiddenRangesFutureVersion {
                 path,
                 found,
@@ -98,11 +209,8 @@ impl StoreError {
                  version {supported}; refusing to scan through an unknown footer layout; upgrade \
                  the reader"
             ),
-            // Reached only from the four future-version arms of `Display::fmt`.
-            // The remaining variants are listed explicitly (not wildcarded) so a
-            // newly-added variant trips a compile error here, and return the
-            // empty render they can never actually produce on this path.
-            // justifies: INV-ONDISK-FORWARD-COMPAT-CANONICAL
+            // Non-future variants, never wildcarded (a new variant must trip a
+            // compile error). justifies: INV-ONDISK-FORWARD-COMPAT-CANONICAL
             Self::Io(_)
             | Self::StoreLocked { .. }
             | Self::Coordinate(_)
@@ -150,6 +258,10 @@ impl StoreError {
             | Self::HiddenRangesCorrupt { .. }
             | Self::StoreMetadataCorrupt { .. }
             | Self::StoreMetadataMissing { .. }
+            | Self::IdempotencyAuthorityCorrupt { .. }
+            | Self::IdempotencyAuthorityMissing { .. }
+            | Self::IdempotencyAuthorityStale { .. }
+            | Self::IdempotencyAuthorityForeign { .. }
             | Self::BatchItemTooLarge { .. }
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
@@ -265,6 +377,10 @@ impl StoreError {
             | Self::HiddenRangesCorrupt { .. }
             | Self::StoreMetadataCorrupt { .. }
             | Self::StoreMetadataMissing { .. }
+            | Self::IdempotencyAuthorityCorrupt { .. }
+            | Self::IdempotencyAuthorityMissing { .. }
+            | Self::IdempotencyAuthorityStale { .. }
+            | Self::IdempotencyAuthorityForeign { .. }
             | Self::BatchItemTooLarge { .. }
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
@@ -637,16 +753,14 @@ impl std::fmt::Display for StoreError {
             | Self::CoordinateNulByte
             | Self::CoordinatePathTraversal
             | Self::CoordinateControlChar => self.fmt_coordinate_violation(f),
-            Self::StoreMetadataCorrupt { path, kind } => write!(
-                f,
-                "store metadata at {} is unreadable ({kind}); failing closed: store.meta carries                  the store's lineage identity and durable-authority expectations, so damage is                  never treated as absence — restore the file from a backup or a healthy replica                  of the store directory (do not delete it; a remint would reset the identity)",
-                path.display()
-            ),
-            Self::StoreMetadataMissing { path } => write!(
-                f,
-                "store metadata {} is missing although the idempotency sidecar proves this store                  was already migrated (format v2+); refusing to remint the lineage identity —                  restore store.meta from a backup or a healthy replica of the store directory",
-                path.display()
-            ),
+            // Authority-sidecar refusals share one render group, delegated so
+            // this match stays within its complexity ratchet.
+            Self::IdempotencyAuthorityCorrupt { .. }
+            | Self::IdempotencyAuthorityMissing { .. }
+            | Self::IdempotencyAuthorityStale { .. }
+            | Self::IdempotencyAuthorityForeign { .. }
+            | Self::StoreMetadataCorrupt { .. }
+            | Self::StoreMetadataMissing { .. } => self.fmt_authority_refusal(f),
             Self::HiddenRangesCorrupt { path, kind } => write!(
                 f,
                 "hidden-ranges metadata at {} is corrupt: {kind}",

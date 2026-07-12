@@ -24,8 +24,12 @@ commit is within `keep_sequences` of the frontier is never evicted by the
 `max_keys` soft cap. A within-window retry is always a no-op regardless of load.
 
 Wrong tempting move: treating `for_operation` as a content hash (it certifies
-the OPERATION, not the payload), or assuming dedup only survives the event
-retention window (the durable `index.idemp` sidecar outlives event eviction).
+the OPERATION, not the payload), assuming dedup only survives the event
+retention window (the durable `index.idemp` sidecar outlives event eviction),
+or hand-editing/deleting `index.idemp` to "reset" a store — the sidecar is an
+AUTHORITY and the store fails closed on a corrupt, missing-while-expected,
+stale, or foreign image rather than double-appending acknowledged retries
+(restore it from a backup or a healthy replica instead).
 
 Test command: `cargo test -p batpak --test idempotency_durable_store --test idempotency_window_priority --all-features`.
 

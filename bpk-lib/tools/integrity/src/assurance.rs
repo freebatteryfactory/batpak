@@ -218,6 +218,19 @@ pub(crate) const CRITICAL_SEAM_MUTANT_GLOBS: &[(&str, &str)] = &[
         "crates/core/src/store/file_classification.rs",
     ),
     ("fork-isolation", "crates/core/src/store/fork_report.rs"),
+    // idempotency-authority (IDEMP_AUTHORITY_MUTANT_FILES)
+    (
+        "idempotency-authority",
+        "crates/core/src/store/index/idemp.rs",
+    ),
+    (
+        "idempotency-authority",
+        "crates/core/src/store/store_meta.rs",
+    ),
+    (
+        "idempotency-authority",
+        "crates/core/src/store/lifecycle_compact.rs",
+    ),
     // import-reapply (IMPORT_MUTANT_FILES)
     ("import-reapply", "crates/core/src/store/import.rs"),
 ];
