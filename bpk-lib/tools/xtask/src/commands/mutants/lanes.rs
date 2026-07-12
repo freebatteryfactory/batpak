@@ -48,6 +48,14 @@ pub(super) const PROJECTION_FUSION_MUTANT_FILES: &[&str] = &[
     "crates/core/src/store/projection/flow/mod.rs",
     "crates/core/src/store/read_api.rs",
 ];
+pub(super) const IDEMP_AUTHORITY_MUTANT_FILES: &[&str] = &[
+    // GAUNT-IDEMPOTENCY-AUTHORITY (#189): the durable idempotency authority
+    // image (format, fail-closed admission, lineage/anchor binding), the
+    // store.meta expectation protocol, and the compaction commit ordering.
+    "crates/core/src/store/index/idemp.rs",
+    "crates/core/src/store/store_meta.rs",
+    "crates/core/src/store/lifecycle_compact.rs",
+];
 pub(super) const SEGMENT_SCAN_MUTANT_FILES: &[&str] = &[
     "crates/core/src/store/segment/scan/**/*.rs",
     // The untrusted-footer recovery decision + the SIDX footer parse feeding it
@@ -871,6 +879,14 @@ pub(super) fn critical_mutation_seams() -> &'static [CriticalMutationSeam] {
             surface: MutantSurface::AllFeatures,
             package: None,
             paths: FORK_MUTANT_FILES,
+        },
+        CriticalMutationSeam {
+            slug: "idempotency-authority",
+            label: "durable idempotency authority",
+            description: "fail-closed admission of index.idemp (corrupt/missing/stale/foreign), the store.meta lineage + compound-anchor expectation protocol, and the compaction old-or-new commit ordering",
+            surface: MutantSurface::AllFeatures,
+            package: None,
+            paths: IDEMP_AUTHORITY_MUTANT_FILES,
         },
         CriticalMutationSeam {
             slug: "import-reapply",

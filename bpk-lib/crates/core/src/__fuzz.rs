@@ -152,6 +152,49 @@ pub fn __fuzz_projection_state(bytes: &[u8]) -> bool {
 /// collapsed to `Result<bool, StoreError>` (`bool` = "ranges present"). Returns
 /// the I/O error as a `StoreError::Io` if the temp write itself fails (it should
 /// not, but the wrapper never panics).
+/// `load_idempotency_authority(dir, fs, lineage, expectation)` (index/idemp.rs).
+///
+/// GAUNT-IDEMPOTENCY-AUTHORITY (#189): writes `data` to `<tmp>/index.idemp`
+/// (the real `IDEMP_FILENAME`) inside a throwaway `TempDir`, then drives the
+/// real fail-closed authority loader TWICE — once with no expectation (the
+/// fresh/legacy admission path) and once with a fixed lineage + compound
+/// anchor expectation (the bound admission path: lineage, staleness, and
+/// history-anchor divergence checks all reachable). Every outcome must be a
+/// typed `Ok`/`StoreError`, never a panic. The success value is collapsed to
+/// the number of admitted entries.
+#[doc(hidden)]
+pub fn __fuzz_idemp_image(data: &[u8]) -> Result<usize, StoreError> {
+    let dir = tempfile::tempdir().map_err(StoreError::Io)?;
+    let path = dir.path().join(crate::store::index::idemp::IDEMP_FILENAME);
+    std::fs::write(&path, data).map_err(StoreError::Io)?;
+
+    let unbound = crate::store::index::idemp::load_idempotency_authority(
+        dir.path(),
+        &crate::store::RealFs,
+        None,
+        None,
+    );
+    let expectation = crate::store::store_meta::IdempAuthorityAnchor {
+        covered_global_sequence: 7,
+        event_id_at: 7,
+        chain_commitment: [7; 32],
+    };
+    let bound = crate::store::index::idemp::load_idempotency_authority(
+        dir.path(),
+        &crate::store::RealFs,
+        Some(0xF00D),
+        Some(&expectation),
+    );
+    let count = |load: Result<crate::store::index::idemp::IdempLoad, StoreError>| match load {
+        Ok(crate::store::index::idemp::IdempLoad::Loaded(entries)) => Ok(entries.len()),
+        Ok(crate::store::index::idemp::IdempLoad::Missing) => Ok(0),
+        Err(error) => Err(error),
+    };
+    let unbound_count = count(unbound).unwrap_or(0);
+    let bound_count = count(bound).unwrap_or(0);
+    Ok(unbound_count.max(bound_count))
+}
+
 #[doc(hidden)]
 pub fn __fuzz_hidden_ranges(data: &[u8]) -> Result<bool, StoreError> {
     let dir = tempfile::tempdir().map_err(StoreError::Io)?;

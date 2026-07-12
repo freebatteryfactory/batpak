@@ -140,7 +140,17 @@ fn run_post_fsync_crash_oracle(batch_n: u32) -> (RecoveredState, bool) {
         | Err(StoreError::CorruptSegment { .. })
         | Err(StoreError::CorruptFrame { .. })
         | Err(StoreError::CrcMismatch { .. })
-        | Err(StoreError::DataDirMalformed { .. }) => {
+        | Err(StoreError::DataDirMalformed { .. })
+        // GAUNT-IDEMPOTENCY-AUTHORITY (#189): fail-closed admission of the
+        // durable idempotency authority + store.meta expectation are typed
+        // canonical refusals when the bombardment hits those sidecars.
+        | Err(StoreError::IdempotencyAuthorityCorrupt { .. })
+        | Err(StoreError::IdempotencyAuthorityMissing { .. })
+        | Err(StoreError::IdempotencyAuthorityStale { .. })
+        | Err(StoreError::IdempotencyAuthorityForeign { .. })
+        | Err(StoreError::StoreMetadataCorrupt { .. })
+        | Err(StoreError::StoreMetadataMissing { .. })
+        | Err(StoreError::StoreMetadataFutureVersion { .. }) => {
             return (RecoveredState::CanonicalRefusal, false);
         }
         Err(other) => unreachable!(

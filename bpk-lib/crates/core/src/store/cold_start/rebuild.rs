@@ -288,6 +288,7 @@ pub(crate) fn open_index(
     policy: ColdStartPolicy,
     clock: &dyn crate::store::Clock,
     fault_injector: FaultInjectorRef<'_>,
+    store_meta: Option<&crate::store::store_meta::StoreMetaData>,
 ) -> Result<OpenIndexOutcome, StoreError> {
     let t0 = clock.now_mono_ns();
     let planner = RestorePlanner {
@@ -311,23 +312,29 @@ pub(crate) fn open_index(
     index.restore_sorted_entries_with_routing(plan.entries, plan.allocator_hint, &plan.routing)?;
     let phase_restore_index_us = elapsed_us(clock, t_restore);
 
-    // Restore the durable idempotency store UNCONDITIONALLY and early. It is an
-    // AUTHORITY: it is NEVER reconstructed from a segment scan (segments may
-    // have evicted the events) and the index rebuild above must NOT overwrite
-    // it. A missing/corrupt file degrades to empty (logged loudly); a
-    // future-version file is a hard error. justifies: INV-IDEMPOTENCY-DURABLE-WINDOW
-    match crate::store::index::idemp::read_idemp_file(data_dir, reader.fs())? {
-        crate::store::index::idemp::IdempLoad::Loaded(entries) => {
-            index.idemp.restore(entries);
-        }
-        crate::store::index::idemp::IdempLoad::Missing => {}
-        crate::store::index::idemp::IdempLoad::Invalid { reason } => {
-            tracing::warn!(
-                target: "batpak::idemp",
-                reason = %reason,
-                "durable idempotency store unreadable on open; continuing with empty durable \
-                 dedup history (store remains correct, loses cross-compaction dedup memory)"
-            );
+    // Restore the durable idempotency AUTHORITY unconditionally and early. It
+    // is NEVER reconstructed from a segment scan (segments may have evicted
+    // the events) and the index rebuild above must NOT overwrite it. Damage is
+    // never absence (GAUNT-IDEMPOTENCY-AUTHORITY, #189): a corrupt, missing-
+    // while-expected, stale, or foreign image is a typed open refusal — the
+    // retired downgrade-to-empty turned an acknowledged retry into a second
+    // append once retention had evicted the original frames.
+    // justifies: INV-IDEMPOTENCY-DURABLE-WINDOW
+    {
+        let (lineage, expectation) = match store_meta {
+            Some(meta) => (Some(meta.lineage), meta.idemp_authority.as_ref()),
+            None => (None, None),
+        };
+        match crate::store::index::idemp::load_idempotency_authority(
+            data_dir,
+            reader.fs(),
+            lineage,
+            expectation,
+        )? {
+            crate::store::index::idemp::IdempLoad::Loaded(entries) => {
+                index.idemp.restore(entries);
+            }
+            crate::store::index::idemp::IdempLoad::Missing => {}
         }
     }
 

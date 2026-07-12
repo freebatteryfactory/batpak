@@ -163,6 +163,32 @@
     the black-box slow-path corruption shapes currently called out in this
     ledger are covered.
 
+- title: Durable idempotency authority fails closed and compacts atomically
+  section: Fault-Injection Harness
+  pattern: Fault-Injection Harness
+  status: unmeasured
+  invariants:
+    - INV-IDEMPOTENCY-DURABLE-WINDOW
+    - INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION
+  locations:
+    - bpk-lib/crates/core/tests/idempotency_authority_fail_closed.rs
+    - bpk-lib/crates/core/tests/idempotency_authority_compaction.rs
+    - bpk-lib/crates/core/tests/idempotency_corruption_recovery.rs
+  commands:
+    - cargo test -p batpak --test idempotency_authority_fail_closed
+    - cargo test -p batpak --test idempotency_authority_compaction
+    - cargo test -p batpak --test idempotency_corruption_recovery
+  coverage_delta: unmeasured
+  mutation_delta: >
+    index/idemp.rs, store_meta.rs, and lifecycle_compact.rs form the new
+    idempotency-authority critical seam (GAUNT-IDEMPOTENCY-AUTHORITY, #189);
+    the seam catch-rate threshold applies.
+  blind_spots: >
+    the compaction fault boundary is exercised through a delegating StoreFs
+    that fails the image publish; OS-level crash schedules across every
+    individual sync remain the seeded SimFs composer's territory and cover the
+    close-time flush, not yet a mid-compaction kill.
+
 - title: Store lineage identity is minted once and never silently remints
   section: Fault-Injection Harness
   pattern: Fault-Injection Harness

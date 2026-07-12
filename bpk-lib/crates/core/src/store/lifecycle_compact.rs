@@ -117,6 +117,38 @@ pub(crate) fn compact(
 
     store.index.replace_contents_from_fresh(fresh_index)?;
 
+    // GAUNT-IDEMPOTENCY-AUTHORITY (#189), law 3 — compaction plus authority
+    // persistence is ONE recoverable commit. Order is load-bearing:
+    //   1. apply the in-memory idempotency eviction against the fresh index;
+    //   2. durably flush the NEW authority image (+ its expectation);
+    //   3. only then delete the source segments (the last reconstructible
+    //      fallback for evicted events' keys via `by_id`);
+    //   4. only then clear the pending-compaction marker.
+    // A crash after 2 leaves old sources + a NEW image: marker recovery rolls
+    // the segment set back, and the image is a legal superset (its anchor is
+    // at-or-past the recorded expectation). A crash before 2 leaves old
+    // sources + the OLD image. There is NO window in which the sources are
+    // gone while the image on disk omits their keys — the retired ordering
+    // (delete, clear marker, THEN flush) had exactly that window.
+    let frontier = store.index.global_sequence();
+    store.index.mark_idemp_evicted_against_live();
+    let eviction = store.index.idemp.evict(frontier);
+    tracing::debug!(
+        target: "batpak::idemp",
+        flow = "compact",
+        frontier,
+        aged_out = eviction.aged_out,
+        cap_trimmed = eviction.cap_trimmed_out_of_window,
+        within_window_exceeds_cap = eviction.within_window_exceeds_cap,
+        remaining = eviction.remaining,
+        "applied window-priority idempotency eviction after compaction"
+    );
+    crate::store::store_meta::flush_idempotency_authority(
+        &store.index,
+        &store.config.data_dir,
+        fs.as_ref(),
+    )?;
+
     let mut bytes_reclaimed = 0_u64;
     let mut segments_removed = 0_usize;
     for (_, path) in &sealed {
@@ -135,25 +167,6 @@ pub(crate) fn compact(
         &store.config.data_dir,
         fs.as_ref(),
     )?;
-
-    let frontier = store.index.global_sequence();
-    store.index.mark_idemp_evicted_against_live();
-    let eviction = store.index.idemp.evict(frontier);
-    tracing::debug!(
-        target: "batpak::idemp",
-        flow = "compact",
-        frontier,
-        aged_out = eviction.aged_out,
-        cap_trimmed = eviction.cap_trimmed_out_of_window,
-        within_window_exceeds_cap = eviction.within_window_exceeds_cap,
-        remaining = eviction.remaining,
-        "applied window-priority idempotency eviction after compaction"
-    );
-
-    store
-        .index
-        .idemp
-        .flush(&store.config.data_dir, fs.as_ref())?;
 
     if let Err(e) = write_cold_start_artifacts_on_close(store) {
         tracing::warn!("post-compaction cold-start artifact write failed: {e}");

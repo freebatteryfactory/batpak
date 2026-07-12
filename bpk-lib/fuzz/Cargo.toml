@@ -135,3 +135,12 @@ path = "fuzz_targets/sidx_manifest.rs"
 test = false
 doc = false
 bench = false
+
+# GAUNT-IDEMPOTENCY-AUTHORITY (#189) — durable idempotency authority image
+# decoder (header/version/CRC/body + lineage/anchor admission).
+[[bin]]
+name = "idemp_image"
+path = "fuzz_targets/idemp_image.rs"
+test = false
+doc = false
+bench = false

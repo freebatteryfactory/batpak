@@ -256,9 +256,11 @@ fn legacy_v1_directory_without_witness_migrates_and_is_stable_thereafter() {
     seed_one_event(&store);
     let pre_delete = store.identity().expect("first mint");
     store.close().expect("close");
-    // Erase the metadata: with only a v1-era sidecar on disk there is no
-    // post-migration witness, so this reads as a legacy directory.
+    // Erase the metadata AND the (v2, post-migration-witness) idempotency
+    // sidecar: what remains is a pre-store.meta, pre-durable-idempotency
+    // legacy directory shape with no witness, so migration may mint.
     std::fs::remove_file(meta_path(dir.path())).expect("remove store.meta");
+    std::fs::remove_file(dir.path().join("index.idemp")).expect("remove idemp sidecar");
 
     let migrated = open(dir.path());
     let minted = migrated
@@ -288,6 +290,10 @@ fn read_only_open_of_unmigrated_legacy_dir_mints_nothing() -> Result<(), Box<dyn
     seed_one_event(&store);
     store.close().expect("close");
     std::fs::remove_file(meta_path(dir.path()))?;
+    // Remove the v2 sidecar too: with it present the post-migration witness
+    // (correctly) refuses the open outright instead of exercising the
+    // read-only no-mint path under test here.
+    std::fs::remove_file(dir.path().join("index.idemp"))?;
 
     let read_only = Store::open_read_only(StoreConfig::new(dir.path()))
         .expect("read-only open of a legacy directory must still work");

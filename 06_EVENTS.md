@@ -68,7 +68,7 @@ A wire version tag only helps frames written after it lands; pre-versioning fram
 
 ### Durable idempotency
 
-`AppendOptions::with_idempotency(key)` makes the key the event id; a duplicate keyed append returns the original receipt as a no-op. This dedup is durable beyond an event's retention window: a dedicated sidecar `index.idemp` (magic `FBATID`, versioned, crc32fast CRC, written atomically — same posture as the checkpoint) records the minimal tuple needed to reconstruct the original receipt and survives `Retention` compaction, cold-start, and snapshot independent of event eviction. The sidecar is restored unconditionally and early on open and is never rebuilt from a segment scan (segments may have evicted the events). A corrupt or missing sidecar degrades to empty (logged loudly, never crashing); a stored version newer than the reader is a hard error, mirroring the `FutureVersion` stance above.
+`AppendOptions::with_idempotency(key)` makes the key the event id; a duplicate keyed append returns the original receipt as a no-op. This dedup is durable beyond an event's retention window: a dedicated sidecar `index.idemp` (magic `FBATID`, versioned, crc32fast CRC, written atomically — same posture as the checkpoint) records the minimal tuple needed to reconstruct the original receipt and survives `Retention` compaction, cold-start, and snapshot independent of event eviction. The sidecar is restored unconditionally and early on open and is never rebuilt from a segment scan (segments may have evicted the events). It is an AUTHORITY, and damage is never absence: a corrupt sidecar, a sidecar missing while `store.meta` records a durable-authority expectation, a CRC-valid but stale image (covered frontier behind the expectation), and a foreign image (another lineage, or a diverged sibling fork at the same covered sequence — caught by the compound history anchor) are each a distinct typed open refusal; a stored version newer than the reader is a hard error, mirroring the `FutureVersion` stance above. The v2 image binds the entries to the store's lineage identity and history tip, and compaction publishes the new image durably BEFORE deleting the source segments it supersedes, so no crash boundary can leave compacted-away frames behind an older image.
 
 Growth is bounded by `IdempotencyRetention` (config `with_idempotency_retention`). The default `Hybrid { keep_sequences, max_keys }` is window-priority: the window is the inviolable correctness guarantee — a key whose original commit is within `keep_sequences` of the frontier is never evicted by the `max_keys` soft cap, which may only ever trim out-of-window keys. If within-window keys alone exceed `max_keys` (a key-rate spike) the window wins: the store temporarily exceeds the cap (bounded by rate × window) with a loud diagnostic, and `OverflowPolicy` (default `Warn`) decides escalation. Net: a within-window keyed retry is always a no-op regardless of load.
 
@@ -83,8 +83,9 @@ it.
 
 Fork is filesystem-level sharing with Rust-like aliasing discipline: sealed
 segments are immutable and may be reflinked or hardlinked; the active segment,
-durable idempotency sidecar, visibility ranges, and pending compaction marker
-are copied. Regenerable cold-start caches are excluded by default. Symlink leaf
+durable idempotency sidecar, visibility ranges, pending compaction marker, and
+`store.meta` (the lineage identity the copied idempotency authority is bound
+to) are copied. Regenerable cold-start caches are excluded by default. Symlink leaf
 destinations are rejected.
 
 `Store::import_events(source, selector, options)` re-applies visible source

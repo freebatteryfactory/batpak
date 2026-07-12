@@ -56,10 +56,11 @@ pub(crate) fn snapshot(
     let snapshot_fence = store.begin_visibility_fence()?;
     let fence_token = snapshot_fence.token();
     sync(store)?;
-    store
-        .index
-        .idemp
-        .flush(&store.config.data_dir, fs.as_ref())?;
+    crate::store::store_meta::flush_idempotency_authority(
+        &store.index,
+        &store.config.data_dir,
+        fs.as_ref(),
+    )?;
     let (source_watermark_segment_id, source_watermark_offset) =
         latest_segment_watermark(&store.config.data_dir, fs.as_ref())?;
     fs.reject_symlink_leaf(dest, "snapshot destination")?;

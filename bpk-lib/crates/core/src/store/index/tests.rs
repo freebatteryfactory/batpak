@@ -533,29 +533,56 @@ fn r4_any_fast_path_clock_range_keeps_the_in_range_band_and_drops_below_min() {
 }
 
 #[test]
-fn read_idemp_file_distinguishes_missing_from_unreadable() {
-    use crate::store::index::idemp::{read_idemp_file, IdempLoad, IDEMP_FILENAME};
+fn idemp_authority_load_distinguishes_missing_from_unreadable() {
+    use crate::store::index::idemp::{load_idempotency_authority, IdempLoad, IDEMP_FILENAME};
 
-    // Absent file — the first-open case — MUST load as Missing, never as
-    // Invalid: Missing is silent, Invalid is logged loudly as data-shaped
-    // damage. The NotFound guard's `==` -> `!=` mutant swaps both outcomes.
+    // Absent file with NO expectation — the first-open case — MUST load as
+    // Missing, never as an error. The NotFound guard mutant swaps outcomes.
     let dir = tempfile::TempDir::new().expect("create temp data dir");
-    let missing = read_idemp_file(dir.path(), &crate::store::platform::fs::RealFs)
-        .expect("an absent idemp file is not an error");
+    let missing =
+        load_idempotency_authority(dir.path(), &crate::store::platform::fs::RealFs, None, None)
+            .expect("an absent idemp file with no expectation is not an error");
     assert!(
         matches!(missing, IdempLoad::Missing),
-        "an absent index.idemp is Missing (first open), never Invalid"
+        "an absent index.idemp with no expectation is Missing (first open)"
+    );
+
+    // Absent file WITH an expectation is authority LOSS, not a fresh store
+    // (#189): the expectation-check removal mutant collapses this to Missing.
+    let expected = crate::store::store_meta::IdempAuthorityAnchor {
+        covered_global_sequence: 3,
+        event_id_at: 3,
+        chain_commitment: [3; 32],
+    };
+    let lost = load_idempotency_authority(
+        dir.path(),
+        &crate::store::platform::fs::RealFs,
+        Some(1),
+        Some(&expected),
+    );
+    assert!(
+        matches!(
+            lost,
+            Err(crate::store::StoreError::IdempotencyAuthorityMissing { .. })
+        ),
+        "an absent index.idemp with a recorded expectation refuses as authority loss"
     );
 
     // Present-but-unreadable — a directory squatting on the filename makes the
-    // read fail with a NON-NotFound error — MUST degrade to Invalid carrying
-    // the read error, never be misreported as the silent Missing.
+    // read fail with a NON-NotFound error — MUST fail closed as CORRUPTION
+    // carrying the read error, never be misreported as the silent Missing.
     std::fs::create_dir(dir.path().join(IDEMP_FILENAME))
         .expect("squat a directory on the idemp filename");
-    let unreadable = read_idemp_file(dir.path(), &crate::store::platform::fs::RealFs)
-        .expect("an unreadable idemp file degrades, not errors");
+    let unreadable =
+        load_idempotency_authority(dir.path(), &crate::store::platform::fs::RealFs, None, None);
     assert!(
-        matches!(&unreadable, IdempLoad::Invalid { reason } if reason.starts_with("read failed")),
-        "an unreadable index.idemp is Invalid with the read error as its reason"
+        matches!(
+            unreadable,
+            Err(crate::store::StoreError::IdempotencyAuthorityCorrupt {
+                kind: crate::store::IdempAuthorityCorruption::ReadFailed(_),
+                ..
+            })
+        ),
+        "an unreadable index.idemp fails closed with the read error as its typed reason"
     );
 }

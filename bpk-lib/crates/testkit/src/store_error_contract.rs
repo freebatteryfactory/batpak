@@ -108,6 +108,13 @@ pub fn classify(error: &StoreError) -> HandlingClass {
         | StoreError::ImportProvenanceFutureVersion { .. }
         | StoreError::SidxFutureVersion { .. }
         | StoreError::HiddenRangesCorrupt { .. }
+        | StoreError::StoreMetadataCorrupt { .. }
+        | StoreError::StoreMetadataMissing { .. }
+        | StoreError::StoreMetadataFutureVersion { .. }
+        | StoreError::IdempotencyAuthorityCorrupt { .. }
+        | StoreError::IdempotencyAuthorityMissing { .. }
+        | StoreError::IdempotencyAuthorityStale { .. }
+        | StoreError::IdempotencyAuthorityForeign { .. }
         | StoreError::CursorCheckpointCorrupt { .. }
         | StoreError::CursorCheckpointRegionMismatch { .. }
         | StoreError::InvariantViolation { .. } => HandlingClass::FailClosedOperational,

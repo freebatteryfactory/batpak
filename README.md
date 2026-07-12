@@ -226,7 +226,7 @@ Judge the evidence, not the version number:
 - Property-based tests over hash-chain integrity and canonical encoding.
 - Chaos testing with fault injection, including disk-fault integration.
 - Mutation testing on critical seams, so the tests are themselves tested.
-- 106 named invariants traced to 154 concrete artifacts — the `docs-catalog`
+- 107 named invariants traced to 154 concrete artifacts — the `docs-catalog`
   integrity gate re-validates these counts against `traceability/invariants.yaml`
   and `traceability/artifacts.yaml` on every run and fails CI on any orphaned or
   stale claim, so this headline cannot silently rot; see

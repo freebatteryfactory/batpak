@@ -386,6 +386,17 @@ pub(crate) fn is_canonical_refusal(error: &crate::store::StoreError) -> bool {
             | StoreError::MmapFutureVersion { .. }
             | StoreError::IdempotencyFutureVersion { .. }
             | StoreError::SidxFutureVersion { .. }
+            // GAUNT-IDEMPOTENCY-AUTHORITY (#189): fail-closed admission of the
+            // durable idempotency authority and its store.meta expectation are
+            // typed recovery refusals — a torn authority write surfacing one of
+            // these is the fail-closed contract working, not an untyped crash.
+            | StoreError::IdempotencyAuthorityCorrupt { .. }
+            | StoreError::IdempotencyAuthorityMissing { .. }
+            | StoreError::IdempotencyAuthorityStale { .. }
+            | StoreError::IdempotencyAuthorityForeign { .. }
+            | StoreError::StoreMetadataCorrupt { .. }
+            | StoreError::StoreMetadataMissing { .. }
+            | StoreError::StoreMetadataFutureVersion { .. }
     )
 }
 

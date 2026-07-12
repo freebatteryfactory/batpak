@@ -154,10 +154,11 @@ pub(crate) fn close(mut store: Store<Open>) -> Result<Closed, StoreError> {
     }
     store.state.0.join()?;
 
-    store
-        .index
-        .idemp
-        .flush(&store.config.data_dir, store.config.fs().as_ref())?;
+    crate::store::store_meta::flush_idempotency_authority(
+        &store.index,
+        &store.config.data_dir,
+        store.config.fs().as_ref(),
+    )?;
 
     write_cold_start_artifacts_on_close(&store)?;
 

@@ -114,8 +114,8 @@ pub use delivery::observation::{
 };
 pub use delivery::subscription::Subscription;
 pub use error::{
-    HiddenRangesCorruption, ProfileInvalidKind, StoreError, StoreInvariant, StoreLockMode,
-    StoreMetaCorruption,
+    HiddenRangesCorruption, IdempAuthorityCorruption, IdempAuthorityForeignKind,
+    ProfileInvalidKind, StoreError, StoreInvariant, StoreLockMode, StoreMetaCorruption,
 };
 #[cfg(feature = "dangerous-test-hooks")]
 #[cfg_attr(

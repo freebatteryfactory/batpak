@@ -130,6 +130,14 @@
     - crates/core/src/store/file_classification.rs
     - crates/core/src/store/fork_report.rs
 
+- slug: idempotency-authority
+  assurance_level: L4
+  dst_coverage: false
+  globs:
+    - crates/core/src/store/index/idemp.rs
+    - crates/core/src/store/store_meta.rs
+    - crates/core/src/store/lifecycle_compact.rs
+
 - slug: import-reapply
   assurance_level: L4
   dst_coverage: true

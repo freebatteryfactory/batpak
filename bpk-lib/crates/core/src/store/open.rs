@@ -119,7 +119,7 @@ fn open_components(
         || crate::id::generate_v7_id_with_clock(runtime.clock()),
         matches!(lock_mode, StoreLockMode::Mutable),
     )?;
-    if let Some(meta) = resolved_meta {
+    if let Some(meta) = resolved_meta.as_ref() {
         let _already_set = runtime
             .identity
             .set(crate::id::StoreIdentity::from(meta.lineage));
@@ -148,6 +148,7 @@ fn open_components(
         runtime.cold_start,
         runtime.clock(),
         cold_start_fault_injector,
+        resolved_meta.as_ref(),
     )?;
 
     // Tell the reader which segment is active (for mmap dispatch).

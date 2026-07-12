@@ -36,6 +36,14 @@
     - crates/core/src/store/write/control/**/*.rs
 
 - level: L4
+  seam: idempotency-authority
+  rationale: "the durable idempotency authority is the only remaining proof a keyed retry is not a new command once retention evicts the frames"
+  globs:
+    - crates/core/src/store/index/idemp.rs
+    - crates/core/src/store/store_meta.rs
+    - crates/core/src/store/lifecycle_compact.rs
+
+- level: L4
   seam: segment-scan
   rationale: "segment scan + corruption handling decides what recovered reality is"
   globs:

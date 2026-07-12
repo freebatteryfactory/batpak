@@ -1,6 +1,7 @@
 pub(crate) mod columnar;
 mod entry;
 pub(crate) mod idemp;
+pub(crate) mod idemp_image;
 pub(crate) mod interner;
 mod projection_bridge;
 mod query;
@@ -422,6 +423,27 @@ impl StoreIndex {
             .map(|entry| crate::store::stats::HlcPoint {
                 wall_ms: entry.value().wall_ms,
                 global_sequence,
+            })
+    }
+
+    /// The compound history anchor at the CURRENT tip: the highest committed
+    /// global sequence in the live index plus the event id and content-hash
+    /// commitment at it. `None` on an empty index. Feeds the durable
+    /// idempotency-authority binding (#189) from the quiesced flush paths —
+    /// the O(n) sweep matches the flush's own snapshot cost.
+    pub(crate) fn tip_history_anchor(
+        &self,
+    ) -> Option<crate::store::store_meta::IdempAuthorityAnchor> {
+        self.by_id
+            .iter()
+            .max_by_key(|r| r.value().global_sequence)
+            .map(|r| {
+                let entry = r.value();
+                crate::store::store_meta::IdempAuthorityAnchor {
+                    covered_global_sequence: entry.global_sequence,
+                    event_id_at: entry.event_id,
+                    chain_commitment: entry.hash_chain.event_hash,
+                }
             })
     }
 
