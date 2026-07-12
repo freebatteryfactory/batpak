@@ -23,12 +23,14 @@ on:
           - bless
       run_full_mutation_matrix:
         description: >-
-          COST GUARD. The 24-shard whole-repo mutation matrix (16-vCPU x ~5h/shard)
-          is the single most expensive job in this repo — a release-candidate /
-          scheduled #49-baseline tool, never routine. `proof=heavy` runs every
-          validation lane EXCEPT this matrix; to also run the matrix you must
-          explicitly set this to `yes`. Default `no` makes casual triggering
-          impossible.
+          COST GUARD. The 24-shard whole-repo mutation matrix is the single
+          heaviest surface in this repo — a release-candidate / scheduled
+          #49-baseline tool, never routine. On free hosted runners (4 vCPU) a
+          shard likely exceeds the 6-hour job cap; re-sharding for hosted
+          runners is owned by the Muterprater arm (#211). `proof=heavy` runs
+          every validation lane EXCEPT this matrix; to also run the matrix you
+          must explicitly set this to `yes`. Default `no` makes casual
+          triggering impossible.
         required: false
         default: "no"
         type: choice
@@ -92,15 +94,28 @@ jobs:
             echo "rust=false" >> "$GITHUB_OUTPUT"
           fi
 
-  ci-fast-linux:
-    name: CI fast (ubuntu-devcontainer)
+  # ── CI fast fan-out ────────────────────────────────────────────────────────
+  # The fast bundle used to be ONE serial job (~36 min measured); it is now five
+  # parallel lane jobs plus the `ci-fast-linux` summary below. Each lane runs
+  # `cargo xtask ci-fast --lane <name>` — the same code path as the local serial
+  # `cargo xtask ci-fast`, with one lane per runner. Hosted OSS runners make the
+  # extra total compute free; wall-clock is bounded by the slowest lane instead
+  # of the sum. Lane placement is enforced: the anti-rebury assertion in
+  # tools/integrity/src/ci_parity.rs requires every lane to exist here as an
+  # always-on (rust-changed-gated, never label-gated) job AND to stay wired into
+  # the serial `ci_fast()` dispatch, and INV-CANONICAL-CONTAINER-CI requires
+  # each lane to run through the checked-in devcontainer.
+  #
+  # Docs-only escape hatch (applies to every lane): a PR that changes ONLY root
+  # markdown/docs (nothing under bpk-lib/, .devcontainer/, or ci.yml) reports
+  # rust=false from the fail-closed `rust-changed` detector, so the compile
+  # lanes are skipped rather than paying a devcontainer build for a prose edit.
+  # Keyed on the rust flag ONLY — never a label — so it can never be used to
+  # re-bury a gate on a Rust-touching PR (the meta-gate watches for label-gated
+  # `if:` reburial).
+  ci-fast-check:
+    name: CI fast — check + deny (ubuntu-devcontainer)
     runs-on: ubuntu-latest
-    # Docs-only escape hatch: a PR that changes ONLY root markdown/docs (nothing
-    # under bpk-lib/, .devcontainer/, or ci.yml) reports rust=false from the
-    # fail-closed `rust-changed` detector, so this full compile lane is skipped
-    # rather than paying a devcontainer build for a prose edit. Keyed on the
-    # rust flag ONLY — never a label — so it can never be used to re-bury a gate
-    # on a Rust-touching PR (the meta-gate watches for label-gated `if:` reburial).
     needs: [rust-changed]
     if: needs.rust-changed.outputs.rust == 'true'
     steps:
@@ -109,14 +124,160 @@ jobs:
           persist-credentials: false
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          shared-key: ci-fast
+          shared-key: ci-fast-check
           workspaces: bpk-lib
       - uses: ./.github/actions/setup-devcontainer
-      - name: Fast PR signal
+      - name: Version pins, format, checks, dependency gates
         env:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane check'
+
+  ci-fast-lint:
+    name: CI fast — clippy (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: ci-fast-lint
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Clippy with denied warnings (workspace + family)
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane lint'
+
+  ci-fast-test:
+    name: CI fast — tests (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: ci-fast-test
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: nextest, doctests, family tests
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test'
+
+  ci-fast-contracts:
+    name: CI fast — machine law + contract gates (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: ci-fast-contracts
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Templates, traceability, structural, public-api, leak-scan, doctor, receipts
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane contracts'
+
+  ci-fast-coverage:
+    # The single instrumented llvm-cov run is BOTH the blocking threshold-80
+    # floor and the per-PR coverage report: the lane enforces the floor and the
+    # artifact upload below publishes the same run's report bundle. This retires
+    # the old `coverage-baseline` job, which re-ran the entire instrumented
+    # build a second time (~16 min serial after ci-fast) for a report-only copy
+    # of the numbers this lane already produces.
+    name: CI fast — coverage floor (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs: [rust-changed]
+    if: needs.rust-changed.outputs.rust == 'true'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: ci-fast-coverage
+          workspaces: bpk-lib
+      - uses: ./.github/actions/setup-devcontainer
+      - name: Coverage floor (blocking)
+        env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane coverage'
+      - name: Upload coverage report artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: bpk-lib/target/xtask-cover/last-run/
+          if-no-files-found: warn
+          retention-days: 14
+
+  ci-fast-linux:
+    # Fan-in summary for the five ci-fast lanes. Keeps the historic job id so
+    # (a) branch protection's required check stays `ci-fast-linux` and (b) every
+    # downstream `needs: [ci-fast-linux, ...]` edge keeps working unchanged.
+    # `if: always()` so it runs even when lanes fail or are skipped; the step
+    # then FAILS unless every lane succeeded (or every lane was skipped because
+    # rust-changed reported rust=false — the docs-only escape hatch).
+    name: CI fast (ubuntu-devcontainer)
+    runs-on: ubuntu-latest
+    needs:
+      [
+        rust-changed,
+        ci-fast-check,
+        ci-fast-lint,
+        ci-fast-test,
+        ci-fast-contracts,
+        ci-fast-coverage,
+      ]
+    if: always()
+    steps:
+      - name: Aggregate lane results
+        shell: bash
+        env:
+          RUST_CHANGED: ${{ needs.rust-changed.outputs.rust }}
+          LANE_CHECK: ${{ needs.ci-fast-check.result }}
+          LANE_LINT: ${{ needs.ci-fast-lint.result }}
+          LANE_TEST: ${{ needs.ci-fast-test.result }}
+          LANE_CONTRACTS: ${{ needs.ci-fast-contracts.result }}
+          LANE_COVERAGE: ${{ needs.ci-fast-coverage.result }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for lane in CHECK LINT TEST CONTRACTS COVERAGE; do
+            var="LANE_${lane}"
+            result="${!var}"
+            echo "lane ${lane}: ${result}"
+            if [ "$RUST_CHANGED" = "true" ]; then
+              if [ "$result" != "success" ]; then
+                echo "::error::ci-fast lane ${lane} finished with result '${result}' on a Rust-touching PR"
+                fail=1
+              fi
+            else
+              # Docs-only PR: lanes are expected to be skipped; anything that
+              # ran must still have succeeded.
+              if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+                echo "::error::ci-fast lane ${lane} finished with result '${result}'"
+                fail=1
+              fi
+            fi
+          done
+          exit "$fail"
 
   rustdoc-gate:
     # PR-time rustdoc gate: builds the workspace rustdoc with `-D warnings` so a
@@ -213,46 +374,11 @@ jobs:
           GAUNTLET_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask meta-gate --base "${GAUNTLET_PR_BASE_SHA:-origin/main}"'
 
-  coverage-baseline:
-    # Always-on, NON-BLOCKING coverage observation for every Rust-touching PR.
-    #
-    # The hard threshold-80 coverage gate now lives on the DEFAULT PR path
-    # inside `cargo xtask ci-fast` (ci-fast-linux job) — see commands/ci.rs,
-    # which calls `coverage::cover` with the shared COVERAGE_FLOOR_PCT. This
-    # job is intentionally advisory: it runs `cargo xtask cover` WITHOUT `--ci`,
-    # so it only reports + uploads artifacts — it never gates a merge.
-    # `continue-on-error: true` guarantees a cover-internal hiccup at the
-    # baseline stage cannot block a PR. Ratcheting the default-PR floor upward
-    # is a deferred follow-up; data must precede the ratchet.
-    name: Coverage baseline (advisory)
-    runs-on: ubuntu-latest
-    needs: [ci-fast-linux, rust-changed]
-    if: needs.rust-changed.outputs.rust == 'true'
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: coverage-baseline
-          workspaces: bpk-lib
-      - uses: ./.github/actions/setup-devcontainer
-      - name: Coverage baseline (report-only)
-        env:
-          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
-          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask cover'
-      - name: Upload coverage baseline artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-baseline
-          path: bpk-lib/target/xtask-cover/last-run/
-          if-no-files-found: warn
-          retention-days: 14
-
   verify-linux:
+    # No `needs:` edge on the fast lanes: this deep bundle re-runs the whole
+    # fast surface itself (preflight → ci → ci-fast), consumes none of the lane
+    # jobs' artifacts, and is label/profile-gated — serializing it behind the
+    # fast fan-out only added wall-clock on heavy runs.
     name: Verify (ubuntu-devcontainer)
     runs-on: ubuntu-latest
     if: >-
@@ -263,7 +389,6 @@ jobs:
       (github.event_name == 'pull_request' &&
         (contains(github.event.pull_request.labels.*.name, 'run-heavy-ci') ||
          contains(github.event.pull_request.labels.*.name, 'run-loom')))
-    needs: [ci-fast-linux]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -337,7 +462,10 @@ jobs:
 
   feature-isolation:
     runs-on: ubuntu-latest
-    needs: [ci-fast-linux, verify-linux, rust-changed]
+    # Artifact-independent (own cache, own compile); gated by label/profile +
+    # rust-changed only so it starts at t=0 on heavy runs instead of queuing
+    # behind the fast lanes and verify.
+    needs: [rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       ((github.event_name == 'workflow_dispatch' &&
@@ -375,7 +503,8 @@ jobs:
     # heavy lane. Runs outside the devcontainer so it can install the solvers directly.
     name: QF_BV admission equivalence (pinned z3 + cvc5)
     runs-on: ubuntu-latest
-    needs: [ci-fast-linux, verify-linux, rust-changed]
+    # Artifact-independent of the fast lanes; see feature-isolation.
+    needs: [rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       ((github.event_name == 'workflow_dispatch' &&
@@ -430,7 +559,7 @@ jobs:
   smoke-consumers:
     name: Smoke (quickstart, packaged consumer, template)
     runs-on: ubuntu-latest
-    needs: [verify-linux]
+    # Artifact-independent onboarding smoke; label/profile-gated, no needs edge.
     if: >-
       (github.event_name == 'workflow_dispatch' &&
         (github.event.inputs.proof == 'verify' ||
@@ -490,12 +619,13 @@ jobs:
   mutants-smoke:
     name: Mutation smoke (${{ matrix.seam }})
     runs-on: ubuntu-latest
-    # COST GUARD (2026-07-02): the 21-seam smoke matrix ran on EVERY Rust PR at
-    # 16-vCPU each (~$8-10/PR) — the routine bill driver. Now OPT-IN: add the
-    # `run-mutants` PR label to run it, or dispatch `proof=mutants`/`heavy`.
-    # It is still `--in-diff` (only your changed lines) and still fast; it just
-    # no longer fires behind your back on every push. Mutation coverage of a PR
-    # is one label away — deliberate, not automatic.
+    # OPT-IN (2026-07-02, re-annotated 2026-07-12 for free hosted runners): the
+    # seam smoke matrix stays label-gated — the cost is now wall-clock and
+    # runner-concurrency (free-plan cap: 20 concurrent jobs), not dollars. Add
+    # the `run-mutants` PR label to run it, or dispatch `proof=mutants`/`heavy`.
+    # It is still `--in-diff` (only your changed lines); it simply does not
+    # fire behind your back on every push. Mutation coverage of a PR is one
+    # label away — deliberate, not automatic.
     if: >-
       ((github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'run-mutants')) ||
@@ -503,7 +633,7 @@ jobs:
         (github.event.inputs.proof == 'mutants' ||
          github.event.inputs.proof == 'heavy'))) &&
       needs.rust-changed.outputs.rust == 'true'
-    needs: [ci-fast-linux, rust-changed]
+    needs: [rust-changed]
     strategy:
       fail-fast: false
       matrix:
@@ -573,11 +703,11 @@ jobs:
   mutants-smoke-repo-wide:
     name: Mutation smoke (repo-wide ratchet)
     runs-on: ubuntu-latest
-    # COST GUARD (2026-07-02): OPT-IN, same `run-mutants` label as the smoke
-    # matrix above. Runs only the single repo-wide shard 0/48
-    # (REPO_WIDE_SMOKE_SHARD, lanes.rs) — but at 16-vCPU for ~60min it added
-    # ~$2/PR on autopilot. The heavy full 0/12..11/12 matrix (mutants-full)
-    # stays behind the explicit `run_full_mutation_matrix` opt-in.
+    # OPT-IN, same `run-mutants` label as the smoke matrix above. Runs only the
+    # single repo-wide shard 0/48 (REPO_WIDE_SMOKE_SHARD, lanes.rs); on free
+    # 4-vCPU hosted runners expect it to take several hours of wall-clock. The
+    # heavy full 0/12..11/12 matrix (mutants-full) stays behind the explicit
+    # `run_full_mutation_matrix` opt-in.
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       ((github.event_name == 'workflow_dispatch' &&
@@ -585,7 +715,7 @@ jobs:
          github.event.inputs.proof == 'heavy')) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'run-mutants')))
-    needs: [ci-fast-linux, rust-changed]
+    needs: [rust-changed]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -611,7 +741,7 @@ jobs:
       (github.event_name == 'pull_request' &&
         (contains(github.event.pull_request.labels.*.name, 'run-heavy-ci') ||
          contains(github.event.pull_request.labels.*.name, 'run-loom')))
-    needs: [ci-fast-linux, verify-linux]
+    # Artifact-independent of the fast lanes and verify; label/profile-gated.
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -628,10 +758,12 @@ jobs:
 
   mutants-full:
     runs-on: ubuntu-latest
-    # COST GUARD (2026-07-02): the 24-shard whole-repo matrix is 16-vCPU x ~5h x
-    # 24 = ~1900 vCPU-hours per run — the whale on the Blacksmith bill. It no
-    # longer rides `proof=heavy` alone; it needs the explicit opt-in flag too, so
-    # `heavy` gives you every validation lane without the whale unless you mean it.
+    # COST GUARD: the 24-shard whole-repo matrix is the heaviest surface in the
+    # repo (~5h/shard measured on 16-vCPU runners; on today's free 4-vCPU hosted
+    # runners a shard likely exceeds the 6-hour job cap — hosted re-sharding is
+    # owned by the Muterprater arm, #211). It does not ride `proof=heavy` alone;
+    # it needs the explicit opt-in flag too, so `heavy` gives you every
+    # validation lane without the whale unless you mean it.
     # Deliberate run: gh workflow run ci.yml -f proof=heavy -f run_full_mutation_matrix=yes
     if: >-
       github.event_name == 'workflow_dispatch' &&
@@ -712,7 +844,7 @@ jobs:
     # regression fixture or dispatcher wiring, so the gate can't be hollowed out.
     name: Fuzz replay (committed corpus)
     runs-on: ubuntu-latest
-    needs: [ci-fast-linux, rust-changed]
+    needs: [rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       (github.event_name == 'pull_request' ||
@@ -750,7 +882,7 @@ jobs:
     # fuzz-replay gate above.
     name: Gauntlet — prove the gates bite
     runs-on: ubuntu-latest
-    needs: [ci-fast-linux, rust-changed]
+    needs: [rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       (github.event_name == 'pull_request' ||
@@ -788,7 +920,7 @@ jobs:
     # native nightly toolchain instead of the 1.97.0 devcontainer lane.
     name: Fuzz smoke (frame_decode)
     runs-on: ubuntu-latest
-    needs: [ci-fast-linux, rust-changed]
+    needs: [rust-changed]
     if: >-
       needs.rust-changed.outputs.rust == 'true' &&
       ((github.event_name == 'workflow_dispatch' &&

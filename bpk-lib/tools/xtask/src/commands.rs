@@ -214,8 +214,8 @@ pub(crate) fn ci() -> Result<()> {
     ci::ci()
 }
 
-pub(crate) fn ci_fast() -> Result<()> {
-    ci::ci_fast()
+pub(crate) fn ci_fast(args: crate::CiFastArgs) -> Result<()> {
+    ci::ci_fast(args)
 }
 
 pub(crate) fn meta_gate(args: &crate::MetaGateArgs) -> Result<()> {

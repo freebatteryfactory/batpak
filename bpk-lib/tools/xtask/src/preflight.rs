@@ -1,7 +1,6 @@
-use crate::coverage;
 use crate::devcontainer::run_in_devcontainer;
 use crate::util::{project_root, repo_root};
-use crate::{CoverArgs, DocsArgs};
+use crate::DocsArgs;
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,16 +22,12 @@ pub(crate) fn preflight() -> Result<()> {
 
 fn preflight_inner() -> Result<()> {
     assert_rustc_matches_toolchain_pin()?;
-    crate::commands::ci()?;
     // The coverage floor is enforced on the default PR path inside `ci_fast`
-    // (see commands/ci.rs). `ci()` already runs `ci_fast()`, so the floor has
-    // already been checked by the time we get here; this call re-runs coverage
-    // for the full preflight artifact bundle and shares the single-source floor.
-    coverage::cover(CoverArgs {
-        ci: true,
-        json: false,
-        threshold: Some(coverage::COVERAGE_FLOOR_PCT),
-    })?;
+    // (see commands/ci.rs): `ci()` runs the coverage lane with the shared
+    // single-source floor and leaves the full report bundle under
+    // `target/xtask-cover/last-run/`, so preflight does NOT re-run the
+    // instrumented build a second time.
+    crate::commands::ci()?;
     crate::docs::docs(DocsArgs { open: false })
 }
 

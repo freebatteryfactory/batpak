@@ -125,7 +125,7 @@ enum XtaskCommand {
     /// Thin shell around `batpak-integrity meta-gate-check`.
     MetaGate(MetaGateArgs),
     /// Early PR signal: format, clippy, checks, tests, dependency gates, machine law.
-    CiFast,
+    CiFast(CiFastArgs),
     /// Native Windows surface compatibility lane.
     CiWindowsSurface,
     /// Check-only wasm32-unknown-unknown embedding surface (issue #164).
@@ -236,6 +236,31 @@ pub(crate) struct ClippyArgs {
 pub(crate) enum BenchSurface {
     Neutral,
     Native,
+}
+
+/// One fan-out lane of the `ci-fast` bundle. CI runs each lane as its own
+/// parallel job (`cargo xtask ci-fast --lane <name>`); a bare `ci-fast` runs
+/// every lane serially so the local command surface is unchanged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum CiFastLane {
+    /// Version pins, format, workspace/family checks, dependency gates.
+    Check,
+    /// Clippy with denied warnings (workspace + family crates).
+    Lint,
+    /// nextest, doctests, and per-family-crate tests.
+    Test,
+    /// Machine law + L2+ contract gates (templates, traceability, structural,
+    /// public-api baseline, package-leak-scan, doctor --strict, receipts).
+    Contracts,
+    /// Blocking coverage floor (single instrumented llvm-cov run).
+    Coverage,
+}
+
+#[derive(Args, Clone, Copy)]
+pub(crate) struct CiFastArgs {
+    /// Run a single fan-out lane; omit to run the full serial bundle.
+    #[arg(long, value_enum)]
+    pub(crate) lane: Option<CiFastLane>,
 }
 
 #[derive(Args, Clone)]
@@ -659,7 +684,7 @@ fn main() -> Result<()> {
         XtaskCommand::PerfGates => commands::perf_gates(),
         XtaskCommand::DevcontainerExec(args) => devcontainer::devcontainer_exec(&args),
         XtaskCommand::MetaGate(args) => commands::meta_gate(&args),
-        XtaskCommand::CiFast => commands::ci_fast(),
+        XtaskCommand::CiFast(args) => commands::ci_fast(args),
         XtaskCommand::CiWindowsSurface => commands::ci_windows_surface(),
         XtaskCommand::WasmSurface => commands::wasm_surface(),
         XtaskCommand::Ci => commands::ci(),

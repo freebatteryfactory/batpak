@@ -30,14 +30,31 @@ pub(crate) fn check(repo_root: &Path) -> Result<BTreeSet<PathBuf>> {
     Ok(inputs)
 }
 
+/// The ci-fast fan-out lanes. Kept in lockstep with `CI_FAST_LANES` in
+/// ci_parity.rs and `CiFastLane` in tools/xtask/src/main.rs: each lane job must
+/// run its `cargo xtask ci-fast --lane <lane>` through the checked-in
+/// devcontainer wrapper, and the `ci-fast-linux` summary fans them back in.
+const CI_FAST_LANES: &[&str] = &["check", "lint", "test", "contracts", "coverage"];
+
 fn check_ci_workflow(ci: &str) -> Result<()> {
+    for lane in CI_FAST_LANES {
+        ensure(
+            ci.contains(&format!("ci-fast-{lane}:"))
+                && ci.contains(&format!(
+                    "run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane {lane}'"
+                )),
+            format!(
+                "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): ci-fast-{lane} must run \
+                 `cargo xtask ci-fast --lane {lane}` through scripts/run-in-devcontainer.sh"
+            ),
+        )?;
+    }
     ensure(
         ci.contains("ci-fast-linux:")
             && ci.contains("name: CI fast (ubuntu-devcontainer)")
-            && ci.contains("uses: ./.github/actions/setup-devcontainer")
-            && ci.contains("run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'"),
-        "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): ci-fast-linux must build the \
-         checked-in devcontainer action and run `cargo xtask ci-fast` through scripts/run-in-devcontainer.sh",
+            && ci.contains("uses: ./.github/actions/setup-devcontainer"),
+        "canonical-container-ci (INV-CANONICAL-CONTAINER-CI): the ci-fast-linux summary job \
+         must exist and the lane jobs must build the checked-in devcontainer action",
     )?;
     ensure(
         ci.contains("verify-linux:")
@@ -81,15 +98,29 @@ mod tests {
 
     const GREEN_CI: &str = r#"
 jobs:
+  ci-fast-check:
+    steps:
+      - uses: ./.github/actions/setup-devcontainer
+      - env:
+          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
+          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
+        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane check'
+  ci-fast-lint:
+    steps:
+      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane lint'
+  ci-fast-test:
+    steps:
+      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test'
+  ci-fast-contracts:
+    steps:
+      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane contracts'
+  ci-fast-coverage:
+    steps:
+      - run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane coverage'
   ci-fast-linux:
     name: CI fast (ubuntu-devcontainer)
     steps:
-      - uses: ./.github/actions/setup-devcontainer
-      - name: Fast PR signal
-        env:
-          BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
-          BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
-        run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'
+      - run: echo summary
   verify-linux:
     name: Verify (ubuntu-devcontainer)
     steps:
@@ -125,8 +156,8 @@ fn dockerfile(repo_root: &Path) -> PathBuf {
     #[test]
     fn canonical_container_contract_rejects_host_cargo_fast_lane() {
         let red = GREEN_CI.replace(
-            "run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast'",
-            "working-directory: bpk-lib\n        run: cargo xtask ci-fast",
+            "run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask ci-fast --lane test'",
+            "working-directory: bpk-lib\n        run: cargo xtask ci-fast --lane test",
         );
         assert!(
             check_ci_workflow(&red).is_err(),

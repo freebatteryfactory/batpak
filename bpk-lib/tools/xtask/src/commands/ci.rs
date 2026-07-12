@@ -3,17 +3,51 @@ use crate::bench;
 use crate::coverage;
 use crate::publish::FAMILY_CRATES;
 use crate::util::{cargo, cargo_target_dir_arg};
-use crate::{BenchSurface, CoverArgs, PackageLeakScanArgs, PublicApiArgs};
+use crate::{BenchSurface, CiFastArgs, CiFastLane, CoverArgs, PackageLeakScanArgs, PublicApiArgs};
 use anyhow::Result;
 
 /// Early PR signal: format, clippy, checks, tests, dependency gates, machine law.
-pub(crate) fn ci_fast() -> Result<()> {
+///
+/// With no `--lane`, runs every lane serially (the local one-command bundle).
+/// With `--lane <name>`, runs exactly one fan-out lane — this is how CI splits
+/// the fast bundle into parallel jobs (one lane per runner) while `ci-fast`
+/// stays a single reproducible command on a developer machine. The anti-rebury
+/// assertion in tools/integrity/src/ci_parity.rs pins every lane into this
+/// serial dispatch AND into an always-on ci.yml lane job, so fan-out can never
+/// silently drop a gate from the default PR path.
+pub(crate) fn ci_fast(args: CiFastArgs) -> Result<()> {
+    let Some(lane) = args.lane else {
+        ci_fast_check()?;
+        ci_fast_lint()?;
+        ci_fast_test()?;
+        ci_fast_contracts()?;
+        return ci_fast_coverage();
+    };
+    match lane {
+        CiFastLane::Check => ci_fast_check(),
+        CiFastLane::Lint => ci_fast_lint(),
+        CiFastLane::Test => ci_fast_test(),
+        CiFastLane::Contracts => ci_fast_contracts(),
+        CiFastLane::Coverage => ci_fast_coverage(),
+    }
+}
+
+/// Lane: version pins, format, workspace/family checks, dependency gates.
+fn ci_fast_check() -> Result<()> {
     super::check_version_pins()?;
     cargo(["fmt", "--check"])?;
-    run_workspace_clippy()?;
-    run_family_clippy()?;
     run_workspace_and_family_checks()?;
-    deny_split()?;
+    deny_split()
+}
+
+/// Lane: clippy with denied warnings across the workspace and family crates.
+fn ci_fast_lint() -> Result<()> {
+    run_workspace_clippy()?;
+    run_family_clippy()
+}
+
+/// Lane: nextest, doctests, and per-family-crate test suites.
+fn ci_fast_test() -> Result<()> {
     // `--workspace` is mandatory here for the same reason as the clippy gate:
     // without it nextest runs only `default-members` (crates/core), leaving
     // tools/integrity and the macro crates outside the test net. That
@@ -21,24 +55,23 @@ pub(crate) fn ci_fast() -> Result<()> {
     // workspace-wide run surfaced it.
     run_nextest_ci(["--workspace", "--all-features"])?;
     cargo(["test", "--doc", "--all-features"])?;
-    run_family_tests()?;
+    run_family_tests()
+}
+
+/// Lane: machine law and the L2+ contract gates (P1-1).
+///
+/// These used to live only in `ci()`/`preflight()` behind the label-gated
+/// verify-linux job, which meant a public-api drift or sub-floor coverage
+/// shipped without any label. They now run in `ci-fast` (the always-on default
+/// lane) so EVERY Rust-touching PR enforces them. The devcontainer ships the
+/// required tools, so each gate is invoked STRICT here (cargo-public-api
+/// availability is still handled gracefully inside `public_api`, mirroring its
+/// existing strict/advisory split). Re-burying any of these is blocked by the
+/// anti-rebury assertion in tools/integrity/src/ci_parity.rs.
+fn ci_fast_contracts() -> Result<()> {
     templates()?;
     integrity("traceability-check", [])?;
     integrity("structural-check", [])?;
-    // L2+ contract gates on the DEFAULT PR path (P1-1). These used to live only
-    // in `ci()`/`preflight()` behind the label-gated verify-linux job, which
-    // meant a public-api drift or sub-floor coverage shipped without any label.
-    // They now run in `ci-fast` (the always-on default lane) so EVERY
-    // Rust-touching PR enforces them. The devcontainer ships the required tools,
-    // so each gate is invoked STRICT here (cargo-public-api availability is
-    // still handled gracefully inside `public_api`, mirroring its existing
-    // strict/advisory split). Re-burying any of these is blocked by the
-    // anti-rebury assertion in tools/integrity/src/ci_parity.rs.
-    coverage::cover(CoverArgs {
-        ci: true,
-        json: false,
-        threshold: Some(coverage::COVERAGE_FLOOR_PCT),
-    })?;
     crate::public_api::public_api(PublicApiArgs {
         strict: true,
         check_baseline: true,
@@ -55,19 +88,34 @@ pub(crate) fn ci_fast() -> Result<()> {
     integrity("gauntlet-receipts-present", [])
 }
 
+/// Lane: the blocking coverage floor. The single instrumented llvm-cov run both
+/// enforces `COVERAGE_FLOOR_PCT` and leaves the report artifacts under
+/// `target/xtask-cover/last-run/` — CI uploads those from this same lane, so
+/// the old separate advisory `coverage-baseline` job (a second full
+/// instrumented recompile per PR) is retired.
+fn ci_fast_coverage() -> Result<()> {
+    coverage::cover(CoverArgs {
+        ci: true,
+        json: false,
+        threshold: Some(coverage::COVERAGE_FLOOR_PCT),
+    })
+}
+
 /// Full merge bundle: fast lane plus release-oriented and compile-heavy gates.
 ///
 /// The L2+ contract gates (coverage floor, public-api baseline,
 /// package-leak-scan, doctor --strict) now live in `ci_fast()` so they run on
 /// the default PR path; this bundle keeps only the genuinely compile-heavy /
-/// release-oriented extras on top of the fast lane.
+/// release-oriented extras on top of the fast lane. `ci_fast` already ends by
+/// running `structural-check` inside the contracts lane, so this bundle does
+/// not re-run it.
 pub(crate) fn ci() -> Result<()> {
-    ci_fast()?;
+    ci_fast(CiFastArgs { lane: None })?;
     doc_deny_warnings()?;
     bench::bench_compile(BenchSurface::Neutral)?;
     bench::bench_compile(BenchSurface::Native)?;
     unused_deps_advisory();
-    integrity("structural-check", [])
+    Ok(())
 }
 
 /// Check-only wasm32-unknown-unknown embedding surface (issue #164): core and
