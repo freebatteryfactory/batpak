@@ -73,6 +73,25 @@ struct FactoryGateCompleted {
     summary: String,
 }
 
+/// Machine proof receipt for a named gate run (`factory.proof.receipt`).
+#[derive(Clone, Debug, Serialize, Deserialize, EventPayload)]
+#[batpak(category = 0x02, type_id = 0x005)]
+struct FactoryProofReceipt {
+    run_id_hex: String,
+    gate: String,
+    command: String,
+    features: Vec<String>,
+    binaries: Vec<String>,
+    executed_tests: u64,
+    skipped_tests: u64,
+    corpus_hash: String,
+    regression_hash: String,
+    commit_sha: String,
+    branch: String,
+    verdict: String,
+    completed_ms: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LedgerGateRow {
     pub(crate) gate: String,
@@ -399,6 +418,37 @@ fn append_gate_completed(
     Ok(())
 }
 
+/// Record a proof receipt to the factory ledger ONLY when the store already
+/// exists (opt-in preserved). Returns `Ok(false)` when no ledger store is present.
+pub(crate) fn append_proof_receipt_if_ledger_exists(
+    receipt: &crate::commands::fuzz_replay::ProofReceipt,
+) -> Result<bool> {
+    let Some(mut store) = open_existing_ledger_store()? else {
+        return Ok(false);
+    };
+    let coord = ledger_coordinate().context("ledger coordinate")?;
+    let payload = FactoryProofReceipt {
+        run_id_hex: format_run_id_hex(generate_run_id(&receipt.gate)),
+        gate: receipt.gate.clone(),
+        command: receipt.command.clone(),
+        features: receipt.features.clone(),
+        binaries: receipt.binaries.clone(),
+        executed_tests: u64::try_from(receipt.executed_tests).unwrap_or(u64::MAX),
+        skipped_tests: u64::try_from(receipt.skipped_tests).unwrap_or(u64::MAX),
+        corpus_hash: receipt.corpus_hash.clone(),
+        regression_hash: receipt.regression_hash.clone(),
+        commit_sha: receipt.commit_sha.clone(),
+        branch: receipt.branch.clone(),
+        verdict: receipt.verdict.clone(),
+        completed_ms: now_ms(),
+    };
+    let _ = store
+        .append_typed(&coord, &payload)
+        .context("append factory.proof.receipt")?;
+    store.close().context("close factory ledger store")?;
+    Ok(true)
+}
+
 fn gate_to_row(gate: FactoryGateCompleted) -> LedgerGateRow {
     LedgerGateRow {
         gate: gate.gate,
@@ -508,6 +558,22 @@ pub(crate) fn collect_list_lines(store: &Store, limit: usize) -> Result<Vec<Stri
             .context("decode FactoryGateCompleted")?
         {
             lines.push(format_gate_line(seq, &gate));
+            continue;
+        }
+        if let Some(proof) = stored
+            .event
+            .route_typed::<FactoryProofReceipt>()
+            .context("decode FactoryProofReceipt")?
+        {
+            lines.push(format!(
+                "run_id={} seq={seq} proof gate={} executed={} skipped={} features={:?} head={}",
+                proof.run_id_hex,
+                proof.gate,
+                proof.executed_tests,
+                proof.skipped_tests,
+                proof.features,
+                proof.commit_sha
+            ));
         }
     }
     Ok(lines)
@@ -969,5 +1035,37 @@ mod tests {
         assert_eq!(gates.len(), 2);
         assert_eq!(gates[0].gate, "gate2");
         assert_eq!(gates[1].gate, "gate1");
+    }
+
+    #[test]
+    fn proof_receipt_roundtrip_lists_counts_and_features() {
+        let (_dir, mut store) = temp_store();
+        let coord = ledger_coordinate().expect("coord");
+        let payload = FactoryProofReceipt {
+            run_id_hex: "0123456789abcdef0123456789abcdef".to_owned(),
+            gate: "fuzz-replay".to_owned(),
+            command: "cargo nextest run --no-tests=fail".to_owned(),
+            features: vec!["dangerous-test-hooks".to_owned()],
+            binaries: vec!["fuzz_replay".to_owned(), "fuzz_replay_semantics".to_owned()],
+            executed_tests: 12,
+            skipped_tests: 0,
+            corpus_hash: "a".repeat(64),
+            regression_hash: "b".repeat(64),
+            commit_sha: "c".repeat(40),
+            branch: "factory/test".to_owned(),
+            verdict: "PASS".to_owned(),
+            completed_ms: 7,
+        };
+        let _ = store
+            .append_typed(&coord, &payload)
+            .expect("append proof receipt");
+        let lines = collect_list_lines(&store, 10).expect("list");
+        store.close().expect("close");
+        let proof_line = lines
+            .iter()
+            .find(|line| line.contains("proof gate=fuzz-replay"))
+            .expect("proof line");
+        assert!(proof_line.contains("executed=12"));
+        assert!(proof_line.contains("dangerous-test-hooks"));
     }
 }

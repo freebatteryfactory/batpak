@@ -255,6 +255,17 @@ pub(crate) struct EvictionReport {
     pub(crate) remaining: u64,
 }
 
+/// Outcome of a live-wins restore merge (#188). Mirrors [`EvictionReport`]:
+/// pure diagnostics, never changes an already-durable answer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RestoreMergeOutcome {
+    /// Keys inserted because they were ABSENT from the present map.
+    pub(crate) inserted: u64,
+    /// Keys skipped because the present (live) map already held them — the live
+    /// entry wins and is never overwritten.
+    pub(crate) preserved_live: u64,
+}
+
 /// Durable idempotency key → receipt-reconstruction store.
 ///
 /// Lives on [`crate::store::index::StoreIndex`] so it is reachable both at
@@ -281,6 +292,22 @@ impl IdempotencyStore {
     /// Number of durable keys currently held.
     pub(crate) fn len(&self) -> usize {
         self.map.len()
+    }
+
+    /// Deep-copy shadow for the compaction publication protocol: the durable
+    /// image must be evicted against the FRESH (staged-view) index and flushed
+    /// BEFORE the commit rename, while the live map keeps serving appends. Same
+    /// retention config, cloned entries, no shared state.
+    pub(crate) fn shadow_clone(&self) -> Self {
+        let map = DashMap::new();
+        for row in self.map.iter() {
+            map.insert(*row.key(), row.value().clone());
+        }
+        Self {
+            map,
+            retention: self.retention,
+            overflow: self.overflow,
+        }
     }
 
     /// Look up a key. Returns the reconstruction tuple on hit. This is the
@@ -398,10 +425,51 @@ impl IdempotencyStore {
         }
     }
 
+    /// Merge restored entries under live-wins semantics (#188): insert only keys
+    /// ABSENT from the present map; never overwrite, never delete. Called only
+    /// from the offline restore ceremony (`Store::restore_idempotency_authority`),
+    /// which holds the store-dir lock on a CLOSED directory, so no concurrent
+    /// keyed admission can observe a half-merged map.
+    pub(crate) fn merge_restored(&self, entries: Vec<IdempEntry>) -> RestoreMergeOutcome {
+        let mut outcome = RestoreMergeOutcome::default();
+        for entry in entries {
+            if self.map.contains_key(&entry.key) {
+                outcome.preserved_live = outcome.preserved_live.saturating_add(1);
+            } else {
+                self.map.insert(entry.key, entry);
+                outcome.inserted = outcome.inserted.saturating_add(1);
+            }
+        }
+        outcome
+    }
+
     /// Snapshot all entries for persistence. Iteration is not linearizable but
     /// flushes always run from a quiesced path (close / compaction tail).
     pub(crate) fn snapshot(&self) -> Vec<IdempEntry> {
         self.map.iter().map(|r| r.value().clone()).collect()
+    }
+
+    /// The durable-authority obligation anchor: the highest-recorded entry
+    /// whose kind is a USER kind (#189 availability scoping — system lifecycle
+    /// one-shots like `SYSTEM_CLOSE_COMPLETED` never create a fail-closed
+    /// authority obligation). `None` when the map holds no user-keyed entries,
+    /// in which case no authority image is written or required. O(map size) —
+    /// the durable map, never the full event index.
+    pub(crate) fn user_obligation_anchor(
+        &self,
+    ) -> Option<crate::store::store_meta::IdempAuthorityAnchor> {
+        self.map
+            .iter()
+            .filter(|r| !r.value().kind.is_reserved())
+            .max_by_key(|r| r.value().recorded_global_sequence)
+            .map(|r| {
+                let entry = r.value();
+                crate::store::store_meta::IdempAuthorityAnchor {
+                    covered_global_sequence: entry.recorded_global_sequence,
+                    event_id_at: entry.event_id,
+                    chain_commitment: entry.content_hash,
+                }
+            })
     }
 
     /// THE window-priority hybrid eviction rule. See module docs and
@@ -510,11 +578,13 @@ impl IdempotencyStore {
         fs: &dyn StoreFs,
         lineage: u128,
         anchor: Option<crate::store::store_meta::IdempAuthorityAnchor>,
+        image_id: u128,
     ) -> Result<(), StoreError> {
         let entries = self.snapshot();
         let count = entries.len();
         let image = IdempImageV2 {
             lineage,
+            image_id,
             anchor,
             entries,
         };
@@ -550,9 +620,9 @@ impl IdempotencyStore {
 // The on-disk image format + fail-closed admission live in the sibling
 // `idemp_image` module (split to keep this file within the size cap); the
 // stable crate-internal paths re-export from here.
-pub(super) use super::idemp_image::IdempImageV2;
 pub(crate) use super::idemp_image::{
-    load_idempotency_authority, peek_idemp_version, IdempLoad, IdempVersionWitness,
+    load_idempotency_authority, parse_idemp_image, peek_idemp_version, IdempImageParse,
+    IdempImageParseError, IdempImageV2, IdempLoad, IdempVersionWitness,
 };
 
 #[cfg(test)]

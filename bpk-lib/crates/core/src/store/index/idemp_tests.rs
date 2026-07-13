@@ -198,6 +198,7 @@ fn flush_then_load_roundtrips_with_binding() {
     store.record(entry(7, 7));
     store.record(entry(8, 8));
     let lineage = 0xF00D_u128;
+    let image_id = 0xA11CE_u128;
     let anchor = crate::store::store_meta::IdempAuthorityAnchor {
         covered_global_sequence: 8,
         event_id_at: 8,
@@ -209,23 +210,43 @@ fn flush_then_load_roundtrips_with_binding() {
             &crate::store::platform::fs::RealFs,
             lineage,
             Some(anchor),
+            image_id,
         )
         .expect("flush idempotency store to disk");
-    // Matching lineage + expectation admits the image.
+    // The FINALIZED authorization token admits the image.
+    let finalized = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: Some(image_id),
+        pending_image_id: None,
+        anchor,
+    };
     let loaded = load_idempotency_authority(
         dir.path(),
         &crate::store::platform::fs::RealFs,
         Some(lineage),
-        Some(&anchor),
+        Some(&finalized),
     )
     .expect("read back the flushed idempotency image");
     assert!(matches!(&loaded, IdempLoad::Loaded(e) if e.len() == 2));
-    // A foreign lineage is refused even with a matching anchor (#189).
+    // The PENDING token also admits — the publish-before-finalize crash window.
+    let pending = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: Some(0x01D),
+        pending_image_id: Some(image_id),
+        anchor,
+    };
+    let via_pending = load_idempotency_authority(
+        dir.path(),
+        &crate::store::platform::fs::RealFs,
+        Some(lineage),
+        Some(&pending),
+    )
+    .expect("a pending-token image is the legal publish crash window");
+    assert!(matches!(&via_pending, IdempLoad::Loaded(e) if e.len() == 2));
+    // A foreign lineage is refused even with the authorized token (#189).
     let foreign = load_idempotency_authority(
         dir.path(),
         &crate::store::platform::fs::RealFs,
         Some(lineage + 1),
-        Some(&anchor),
+        Some(&finalized),
     );
     assert!(
         matches!(
@@ -236,17 +257,22 @@ fn flush_then_load_roundtrips_with_binding() {
         ),
         "a lineage mismatch must refuse the image"
     );
-    // An expectation ahead of the image is refused as stale.
-    let ahead = crate::store::store_meta::IdempAuthorityAnchor {
-        covered_global_sequence: 9,
-        event_id_at: 9,
-        chain_commitment: [9; 32],
+    // An UNAUTHORIZED token behind the recorded anchor classifies as stale
+    // (an old self image restored from backup).
+    let unknown_token_behind = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: Some(0xDEAD),
+        pending_image_id: None,
+        anchor: crate::store::store_meta::IdempAuthorityAnchor {
+            covered_global_sequence: 9,
+            event_id_at: 9,
+            chain_commitment: [9; 32],
+        },
     };
     let stale = load_idempotency_authority(
         dir.path(),
         &crate::store::platform::fs::RealFs,
         Some(lineage),
-        Some(&ahead),
+        Some(&unknown_token_behind),
     );
     assert!(
         matches!(
@@ -256,7 +282,30 @@ fn flush_then_load_roundtrips_with_binding() {
                 expected_covered: 9,
             })
         ),
-        "an image behind the expectation must refuse as stale"
+        "an unauthorized image behind the recorded anchor refuses as stale"
+    );
+    // An UNAUTHORIZED token at the SAME anchor is a sibling transplant —
+    // frontier arithmetic and anchor equality must never admit it (#189, the
+    // farther-ahead/anchor-identical sibling hole).
+    let unknown_token_equal_anchor = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: Some(0xDEAD),
+        pending_image_id: None,
+        anchor,
+    };
+    let transplant = load_idempotency_authority(
+        dir.path(),
+        &crate::store::platform::fs::RealFs,
+        Some(lineage),
+        Some(&unknown_token_equal_anchor),
+    );
+    assert!(
+        matches!(
+            transplant,
+            Err(StoreError::IdempotencyAuthorityForeign {
+                kind: crate::store::IdempAuthorityForeignKind::HistoryAnchor,
+            })
+        ),
+        "an unauthorized anchor-identical image refuses as a sibling transplant"
     );
 }
 

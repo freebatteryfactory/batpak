@@ -9,8 +9,9 @@ use batpak_testkit::store_error_contract as store_error_support;
 use batpak::coordinate::{Coordinate, CoordinateError};
 use batpak::event::{EventPayloadKindCollision, EventPayloadRegistryError};
 use batpak::store::{
-    CheckpointIdError, HiddenRangesCorruption, HlcPoint, ProfileInvalidKind, StoreError,
-    StoreInvariant, StoreLockMode, WatermarkKind,
+    CheckpointIdError, CompactionRecoveryRefusal, HiddenRangesCorruption, HlcPoint,
+    IdempotencyRestoreRefusal, ProfileInvalidKind, StoreError, StoreInvariant, StoreLockMode,
+    WatermarkKind,
 };
 use std::io;
 use std::path::PathBuf;
@@ -27,7 +28,8 @@ use store_error_support::*;
 /// is `#[non_exhaustive]`, so a wildcard arm is required and full compile-time
 /// enforcement is not reachable from this downstream test crate; the residual
 /// gap is exactly "a variant added in `bpk-lib/crates/core` itself but in no
-/// other place" — see the module note on `classify` for the matching argument.
+/// other place" — see the note on `StoreError::handling_class` for the matching
+/// argument.
 fn one_of_every_variant() -> Vec<StoreError> {
     let representatives = vec![
         StoreError::Io(io::Error::new(io::ErrorKind::TimedOut, "io")),
@@ -215,6 +217,13 @@ fn one_of_every_variant() -> Vec<StoreError> {
                 },
             },
         },
+        StoreError::CompactionRecoveryRefused {
+            marker_path: PathBuf::from("p"),
+            kind: CompactionRecoveryRefusal::SourceMissing { segment_id: 3 },
+        },
+        StoreError::IdempotencyRestoreRefused {
+            reason: IdempotencyRestoreRefusal::UnauthorizedGeneration { image_covered: 4 },
+        },
         #[cfg(feature = "dangerous-test-hooks")]
         StoreError::FaultInjected("f".into()),
     ];
@@ -278,7 +287,9 @@ fn one_of_every_variant() -> Vec<StoreError> {
             | StoreError::CheckpointWriteFailed { .. }
             | StoreError::CursorCheckpointCorrupt { .. }
             | StoreError::CursorCheckpointRegionMismatch { .. }
-            | StoreError::InvariantViolation { .. } => {}
+            | StoreError::InvariantViolation { .. }
+            | StoreError::CompactionRecoveryRefused { .. }
+            | StoreError::IdempotencyRestoreRefused { .. } => {}
             #[cfg(feature = "dangerous-test-hooks")]
             StoreError::FaultInjected(_) => {}
             // `StoreError` is `#[non_exhaustive]`: a wildcard is mandatory and a
@@ -333,7 +344,7 @@ fn coordinate_and_io_conversion_preserve_store_error_routing() {
             "COORDINATE ROUTING DRIFT: {coordinate_error:?} should route to {expected_store_error:?}, got {actual:?}"
         );
         assert_eq!(
-            classify(&actual),
+            actual.handling_class(),
             HandlingClass::Domain,
             "COORDINATE ROUTING CLASS DRIFT: {:?} should stay a domain rejection",
             actual
@@ -360,7 +371,7 @@ fn coordinate_and_io_conversion_preserve_store_error_routing() {
         "COORDINATE ROUTING DRIFT: non-hardening coordinate errors should preserve the original payload"
     );
     assert_eq!(
-        classify(&StoreError::Coordinate(inner)),
+        StoreError::Coordinate(inner).handling_class(),
         HandlingClass::Domain,
         "COORDINATE ROUTING CLASS DRIFT: wrapped coordinate validation must stay a domain rejection"
     );
@@ -389,8 +400,9 @@ fn coordinate_and_io_conversion_preserve_store_error_routing() {
 /// `StoreError` is `#[non_exhaustive]`, so this cannot be made fully
 /// compile-time-exhaustive from a downstream test crate (a wildcard arm is
 /// mandatory in every `match` over it). The residual gap is "a variant added in
-/// `bpk-lib/crates/core` itself and added nowhere else"; `classify`'s panicking
-/// wildcard is the matching runtime backstop for that case.
+/// `bpk-lib/crates/core` itself and added nowhere else"; the published
+/// `StoreError::handling_class()` carries no wildcard arm in the defining crate,
+/// so such a variant is compile-forced into a handling class there.
 #[test]
 fn every_store_error_variant_has_a_contract_case() {
     let table = contract_table();

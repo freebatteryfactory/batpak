@@ -1,85 +1,50 @@
-//! GAUNT-IDEMPOTENCY-AUTHORITY (#189), compaction half: compaction plus
-//! authority persistence is ONE recoverable commit.
+//! GAUNT-IDEMPOTENCY-AUTHORITY (#189/#177), compaction half: compaction plus
+//! authority persistence is ONE token-bound, crash-recoverable commit.
 //!
-//! PROVES: INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION — the new authority
-//! image is durably published BEFORE any source segment is deleted, a failed
-//! image publish fails the compaction instead of being ignored, and every
-//! fault boundary yields a legal old-or-new state in which a keyed retry can
-//! never double-append (the state-machine walk Fresh -> Keyed -> Compacting ->
-//! AuthorityCommitted -> SourcesRetired, driven at its authority boundary).
-//! CATCHES: ignoring the sidecar flush failure, deleting source frames before
-//! the image is durable, and clearing destructive state ahead of authority
-//! durability.
-//! SEEDED: real stores with tiny segments; a delegating `StoreFs` that fails
-//! exactly the `index.idemp` publish, arming/disarming deterministically.
+//! PROVES: INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION and (CONSUMES plan-06)
+//! INV-COMPACTION-NAMESPACE-COMMIT — a failed authority-image publish aborts the
+//! compaction in its PRE-COMMIT phase (rolling the disk back before any source
+//! frame is destroyed and never swapping the live index), and a store that dies
+//! without a clean close reopens into exactly the OLD complete generation (fault
+//! before the commit) or exactly the NEW complete generation (fault after it) —
+//! never a mixed state — with every keyed retry returning its ORIGINAL receipt.
+//! The oracle is an event-census state machine (`classify_generation`), not byte
+//! equality: the staged-name namespace choreography relocates source bytes, so a
+//! filename/byte oracle would false-fail; content is the only honest witness.
+//! CATCHES: deleting a source before the authority image is durable, admitting an
+//! authority image not bound to the recovered generation (undead events), a keyed
+//! retry double-appending after recovery, and clean-close "healing" masking a
+//! crash-recovery bug.
+//! SEEDED: `MANIFEST_V1` keyed workload on real `RealFs` stores; a delegating
+//! `StoreFs` that fails exactly the `index.idemp` atomic publish once while armed;
+//! recovery driven by `drop(store)` (crash), never `close()`.
 //!
-//! Split from `idempotency_authority_fail_closed.rs` (admission half) to keep
-//! each doctrine-bearing harness within the absolute size cap.
+//! Split from `idempotency_authority_fail_closed.rs` (admission half); the shared
+//! crash workload/oracle lives in `compaction_crash/mod.rs`. The 9-boundary
+//! namespace walk lives in `compaction_crash_windows.rs`.
 
-use batpak::coordinate::{Coordinate, Region};
-use batpak::event::EventKind;
-use batpak::id::{EntityIdType, IdempotencyKey};
+#[path = "compaction_crash/mod.rs"]
+mod harness;
+
+use batpak::store::segment::CompactionOutcome;
 use batpak::store::{
-    AppendOptions, CompactionConfig, CompactionStrategy, CopyPreference, CowStrategyUsed,
-    DirEntryInfo, FileStat, ParentDirSyncAdmission, RealFs, StagedFile, Store, StoreConfig,
-    StoreDirLockGuard, StoreError, StoreFile, StoreFs,
+    CopyPreference, CowStrategyUsed, DirEntryInfo, FileStat, ParentDirSyncAdmission, RealFs,
+    StagedFile, Store, StoreDirLockGuard, StoreError, StoreFile, StoreFs,
 };
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
 
-const KIND: EventKind = EventKind::custom(0xB, 5);
 const IDEMP_FILENAME: &str = "index.idemp";
 
-fn coord() -> Coordinate {
-    Coordinate::new("entity:authority", "scope:compaction").expect("valid coord")
-}
-
-fn config(dir: &Path) -> StoreConfig {
-    StoreConfig::new(dir)
-        .with_enable_checkpoint(false)
-        .with_enable_mmap_index(false)
-        .with_segment_max_bytes(512)
-        .with_sync_every_n_events(1)
-}
-
-fn append_keyed(store: &Store, key: u128) -> batpak::store::AppendReceipt {
-    let payload_tag = u64::try_from(key & u128::from(u64::MAX)).expect("low 64 bits fit u64");
-    store
-        .append_with_options(
-            &coord(),
-            KIND,
-            &serde_json::json!({ "k": payload_tag }),
-            AppendOptions::new().with_idempotency(IdempotencyKey::from(key)),
-        )
-        .expect("keyed append")
-}
-
-fn key_event_count(store: &Store, key: u128) -> usize {
-    store
-        .query(&Region::all())
-        .into_iter()
-        .filter(|e| e.event_kind() == KIND && e.event_id().as_u128() == key)
-        .count()
-}
-
-/// Retention strategy that evicts EVERY user event of `KIND` (keeps only the
-/// batch/system markers), forcing keyed event frames out of the store.
-fn evict_all_user_events() -> CompactionConfig {
-    CompactionConfig {
-        strategy: CompactionStrategy::Retention(Box::new(|stored| {
-            stored.event.header.event_kind != KIND
-        })),
-        min_segments: 1,
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Fixtures 4/5: a fault at the compaction authority boundary yields only
-// legal old-or-new states. The delegating `StoreFs` fails exactly the
-// `index.idemp` publish; the compaction must surface the failure BEFORE any
-// source segment is deleted, and the store must remain fully recoverable.
+// Delegating `StoreFs` that fails exactly the atomic PUBLISH of `index.idemp`
+// once while armed, forwarding every other operation to `RealFs`. This targets
+// the ERROR path of the authority publish (the pre-commit image write), which is
+// distinct from the crash walk and still required (#189): a failed publish must
+// abort the compaction before any destructive step.
 // ---------------------------------------------------------------------------
 
 /// Delegating [`StoreFs`] that fails the atomic PUBLISH of `index.idemp`
@@ -184,87 +149,148 @@ impl StoreFs for FailIdempPublishFs {
     }
 }
 
-fn sealed_segment_count(dir: &Path) -> usize {
-    std::fs::read_dir(dir)
-        .expect("read store dir")
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "fbat")
-        })
-        .count()
+/// The retention config evicts every `EVICT_KIND` frame, so the NEW generation's
+/// evict-kind census is empty; a recovered non-empty census that is neither the
+/// full OLD set nor empty is a torn/mixed generation the classifier rejects.
+fn new_evict_census() -> BTreeSet<u128> {
+    BTreeSet::new()
 }
 
 #[test]
-fn compaction_idemp_flush_failure_preserves_old_recoverable_state(
+fn compaction_authority_publish_failure_fails_compaction_and_recovers_old_generation(
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // PROPERTY (#189/#177): a failed authority publish fails the compaction BEFORE
+    // any destructive step, and a subsequent CRASH (drop, never close) reopens into
+    // the complete ORIGINAL generation — never a mixed state.
     let dir = TempDir::new().expect("tempdir");
     let arm = Arc::new(AtomicBool::new(false));
     let fs = Arc::new(FailIdempPublishFs {
         inner: RealFs,
         arm: Arc::clone(&arm),
     });
-    let key = 0x7000_0000_0000_0000_0000_0000_0000_0007u128;
 
-    let store = Store::open(config(dir.path()).with_fs(fs)).expect("open");
-    let first = append_keyed(&store, key);
-    for i in 0..8 {
-        let _ = store
-            .append(&coord(), KIND, &serde_json::json!({ "filler": i }))
-            .expect("append filler event");
-    }
-    let segments_before = sealed_segment_count(dir.path());
+    let store = Store::open(harness::config(dir.path()).with_fs(fs)).expect("open on fault fs");
+    let pairs = harness::seed_workload(&store, &harness::MANIFEST_V1);
+    let old = harness::kind_census(&store, harness::EVICT_KIND);
+    let survivors = harness::kind_census(&store, harness::SURVIVOR_KIND);
 
-    // Arm the fault: the compaction's authority-image publish fails, and the
-    // compaction MUST surface it before deleting any source segment.
+    // Arm the fault: the compaction's authority-image publish fails during the
+    // PRE-COMMIT phase. The rollback restores the source set and reports
+    // `CompactionOutcome::Failed` (rollback of a live marker is not an `Err`).
     arm.store(true, Ordering::SeqCst);
-    let err = match store.compact(&evict_all_user_events()) {
-        Ok(_) => {
-            return Err(std::io::Error::other(
-                "PROPERTY (#189): a failed authority publish must fail the compaction — \
-                 ignoring it would let destructive deletion proceed on an unproven image",
-            )
-            .into())
-        }
-        Err(e) => e,
+    let (result, _report) = store
+        .compact(&harness::evict_all_evict_kind())
+        .expect("a pre-commit publish failure rolls the disk back and reports Failed");
+    let CompactionOutcome::Failed { reason } = &result.outcome else {
+        return Err(std::io::Error::other(format!(
+            "PROPERTY (#189/#177): a failed authority publish must abort the compaction as \
+             CompactionOutcome::Failed before any destructive step; got {:?}",
+            result.outcome
+        ))
+        .into());
     };
-    let StoreError::Io(_) = err else {
-        return Err(std::io::Error::other(format!("wrong variant: {err:?}")).into());
-    };
+    assert!(
+        reason.contains("pre-commit phase failed"),
+        "the Failed reason names the pre-commit rollback: {reason}"
+    );
     assert!(
         !arm.load(Ordering::SeqCst),
         "the injected fault actually fired (non-vacuity)"
     );
-    assert_eq!(
-        sealed_segment_count(dir.path()),
-        segments_before,
-        "PROPERTY (#189): no source segment was deleted before the authority image was durable \
-         — old-or-new holds at the flush boundary"
-    );
 
-    // The live store still deduplicates, and a clean close + reopen recovers.
-    let replay = append_keyed(&store, key);
-    assert_eq!(
-        replay.global_sequence, first.global_sequence,
-        "retry on the live store after the failed compaction is still a no-op"
-    );
-    store.close().expect("close");
+    // The live store still deduplicates every keyed lane: the index was never
+    // swapped, so a keyed retry is a no-op returning the original receipt.
+    for (key, receipt) in &pairs {
+        harness::assert_retry_is_original(&store, *key, receipt);
+    }
 
-    let reopened = Store::open(config(dir.path())).expect("reopen after failed compaction");
-    let replay = append_keyed(&reopened, key);
+    // Crash: drop WITHOUT close (no clean-close healing), then reopen on RealFs.
+    drop(store);
+    let reopened =
+        Store::open(harness::config(dir.path())).expect("reopen after failed compaction");
+
+    let recovered = harness::kind_census(&reopened, harness::EVICT_KIND);
+    let generation = harness::classify_generation(&recovered, &old, &new_evict_census())
+        .map_err(std::io::Error::other)?;
+    if generation != harness::RecoveredGeneration::OldComplete {
+        return Err(std::io::Error::other(format!(
+            "PROPERTY (#189/#177): a pre-commit publish failure reopens into the complete OLD \
+             generation, never a mixed state; got {generation:?}"
+        ))
+        .into());
+    }
     assert_eq!(
-        replay.global_sequence, first.global_sequence,
-        "PROPERTY (#189): after recovery the retry still returns the original receipt — \
-         at no boundary could it double-append"
+        harness::kind_census(&reopened, harness::SURVIVOR_KIND),
+        survivors,
+        "the retention-surviving lane is intact across recovery"
     );
+    for (key, receipt) in &pairs {
+        harness::assert_retry_is_original(&reopened, *key, receipt);
+    }
     assert_eq!(
-        key_event_count(&reopened, key),
-        0,
-        "the retention-evicted frame stays evicted across recovery (roll-forward is a legal \
-         new-state outcome) — the retry re-appended NOTHING; the receipt above came from the \
-         durable authority alone"
+        harness::kind_census(&reopened, harness::EVICT_KIND),
+        recovered,
+        "keyed retries after recovery appended NOTHING (no double-append / invented event)"
+    );
+    reopened.close().expect("close reopened");
+    Ok(())
+}
+
+#[test]
+fn committed_compaction_without_clean_close_recovers_new_generation_bound_to_authority(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // PROPERTY (#177): after the commit point the replacement generation and its
+    // published authority are mutually bound — a crash (drop, never close)
+    // immediately after a successful compact reopens into the complete NEW
+    // generation and every keyed retry returns its ORIGINAL receipt from the
+    // durable authority alone.
+    let dir = TempDir::new().expect("tempdir");
+    let store = Store::open(harness::config(dir.path())).expect("open");
+    let pairs = harness::seed_workload(&store, &harness::MANIFEST_V1);
+    let old = harness::kind_census(&store, harness::EVICT_KIND);
+    let survivors = harness::kind_census(&store, harness::SURVIVOR_KIND);
+
+    let (result, _report) = store
+        .compact(&harness::evict_all_evict_kind())
+        .expect("compaction");
+    let CompactionOutcome::Performed = result.outcome else {
+        return Err(std::io::Error::other(format!(
+            "PROPERTY (#177): a clean compaction over the sealed set must report Performed; got {:?}",
+            result.outcome
+        ))
+        .into());
+    };
+
+    // Crash immediately after the commit — drop WITHOUT close.
+    drop(store);
+    let reopened =
+        Store::open(harness::config(dir.path())).expect("reopen after committed compaction");
+
+    let recovered = harness::kind_census(&reopened, harness::EVICT_KIND);
+    let generation = harness::classify_generation(&recovered, &old, &new_evict_census())
+        .map_err(std::io::Error::other)?;
+    if generation != harness::RecoveredGeneration::NewComplete {
+        return Err(std::io::Error::other(format!(
+            "PROPERTY (#177): a committed compaction reopens into the complete NEW generation; \
+             got {generation:?}"
+        ))
+        .into());
+    }
+    assert_eq!(
+        harness::kind_census(&reopened, harness::SURVIVOR_KIND),
+        survivors,
+        "the retention-surviving lane is intact across recovery"
+    );
+    // The evict-kind frames are gone, so every keyed retry that still returns its
+    // ORIGINAL receipt proves the durable authority alone deduplicated it — an
+    // image not bound to this generation would have refused the open.
+    for (key, receipt) in &pairs {
+        harness::assert_retry_is_original(&reopened, *key, receipt);
+    }
+    assert_eq!(
+        harness::kind_census(&reopened, harness::EVICT_KIND),
+        recovered,
+        "keyed retries re-appended NOTHING (durable-authority dedup, no undead event)"
     );
     reopened.close().expect("close reopened");
     Ok(())

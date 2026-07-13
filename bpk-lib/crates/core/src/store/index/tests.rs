@@ -547,12 +547,18 @@ fn idemp_authority_load_distinguishes_missing_from_unreadable() {
         "an absent index.idemp with no expectation is Missing (first open)"
     );
 
-    // Absent file WITH an expectation is authority LOSS, not a fresh store
-    // (#189): the expectation-check removal mutant collapses this to Missing.
-    let expected = crate::store::store_meta::IdempAuthorityAnchor {
+    // Absent file WITH a FINALIZED expectation is authority LOSS, not a fresh
+    // store (#189): the expectation-check removal mutant collapses this to
+    // Missing.
+    let anchor = crate::store::store_meta::IdempAuthorityAnchor {
         covered_global_sequence: 3,
         event_id_at: 3,
         chain_commitment: [3; 32],
+    };
+    let expected = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: Some(0xA11CE),
+        pending_image_id: None,
+        anchor,
     };
     let lost = load_idempotency_authority(
         dir.path(),
@@ -565,7 +571,27 @@ fn idemp_authority_load_distinguishes_missing_from_unreadable() {
             lost,
             Err(crate::store::StoreError::IdempotencyAuthorityMissing { .. })
         ),
-        "an absent index.idemp with a recorded expectation refuses as authority loss"
+        "an absent index.idemp with a finalized expectation refuses as authority loss"
+    );
+
+    // Absent file with a PENDING-ONLY expectation is the first-publication
+    // crash window: nothing was ever finalized, entries are recoverable from
+    // live frames, so the load is legally Missing (fresh) — not a refusal.
+    let first_publication_in_flight = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: None,
+        pending_image_id: Some(0xF1A7),
+        anchor,
+    };
+    let first_crash = load_idempotency_authority(
+        dir.path(),
+        &crate::store::platform::fs::RealFs,
+        Some(1),
+        Some(&first_publication_in_flight),
+    )
+    .expect("a pending-only expectation with no image is the legal first-publish crash window");
+    assert!(
+        matches!(first_crash, IdempLoad::Missing),
+        "pending-only expectation + absent image loads as Missing (fresh)"
     );
 
     // Present-but-unreadable — a directory squatting on the filename makes the

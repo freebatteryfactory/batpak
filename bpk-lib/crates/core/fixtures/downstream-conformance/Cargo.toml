@@ -1,0 +1,17 @@
+[package]
+name = "batpak-storefs-conformance-downstream-fixture"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone workspace so this fixture is NOT pulled into batpak's workspace.
+# Proves an OUT-OF-TREE `StoreFs` backend can consume the published conformance
+# corpus through the crates.io-shaped dependency surface (#179 acceptance): the
+# corpus + factories + ShadowFs vocabulary are reachable via the clean external
+# `conformance-harness` feature alone, without the internal `dangerous-test-hooks`
+# fault/poison levers (contract A12).
+[workspace]
+
+[dependencies]
+batpak = { path = "../..", features = ["conformance-harness"] }
+serde_json = "1"

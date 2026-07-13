@@ -158,6 +158,7 @@ pub(crate) fn close(mut store: Store<Open>) -> Result<Closed, StoreError> {
         &store.index,
         &store.config.data_dir,
         store.config.fs().as_ref(),
+        store.runtime.clock(),
     )?;
 
     write_cold_start_artifacts_on_close(&store)?;

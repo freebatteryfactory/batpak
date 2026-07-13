@@ -301,7 +301,32 @@ impl Segment<Active> {
         created_ns: i64,
         fs: &std::sync::Arc<dyn crate::store::platform::fs::StoreFs>,
     ) -> Result<Self, StoreError> {
-        let path = dir.join(segment_filename(segment_id));
+        Self::create_at_path_with_created_ns_on(
+            &dir.join(segment_filename(segment_id)),
+            segment_id,
+            created_ns,
+            fs,
+        )
+    }
+
+    /// Create a new active segment at an EXPLICIT path (the compaction staged name,
+    /// `NNNNNN.fbat.compact-new`): identical header/sync/parent-sync discipline to
+    /// `create_with_created_ns_on`, but the on-disk name is decoupled from
+    /// `segment_filename(segment_id)` so an incomplete replacement can never occupy
+    /// the final committed name (#177). The header still stamps `segment_id`.
+    ///
+    /// [`StoreFs`]: crate::store::platform::fs::StoreFs
+    ///
+    /// # Errors
+    /// Returns `StoreError::Io` if the segment file cannot be created or the header cannot be written.
+    /// Returns `StoreError::Serialization` if the segment header cannot be serialized.
+    pub(crate) fn create_at_path_with_created_ns_on(
+        path: &std::path::Path,
+        segment_id: u64,
+        created_ns: i64,
+        fs: &std::sync::Arc<dyn crate::store::platform::fs::StoreFs>,
+    ) -> Result<Self, StoreError> {
+        let path = path.to_path_buf();
         let mut file = fs.create_new_file(&path)?;
 
         let header = SegmentHeader {

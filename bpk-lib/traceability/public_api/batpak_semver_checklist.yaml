@@ -5,9 +5,9 @@
 # rules over 0.8.0; additive wire ops are a patch pre-1.0.
 package: batpak
 baseline_version: 0.7.0
-current_version: 0.10.0
+current_version: 0.11.0
 witness: target/semver-public-api/semver-checks.txt
-summary: "15 major semver-check rules are classified in the 0.8.0 witness; prelude narrowing adds intentional enum/function/struct/trait alias removals. All classified intentional_0_8 or path_relocation unless noted. 0.8.1 adds only new public items (additive, patch pre-1.0). 0.8.3 adds the schema-evolution + durable-idempotency surface (event::upcast module, EventPayload::PAYLOAD_VERSION, EventHeader::payload_version, EventKind::is_reserved, TypedDecodeError::{FutureVersion,Upcast}, IdempotencyRetention/OverflowPolicy + config setters, IdempotencyKey::for_operation, new StoreError variants) — additive, patch pre-1.0; netbat/syncbat baselines re-normalized to canonical std/core paths under the current toolchain (no API change). 0.10.0 is the reserved pre-1.0 breaking window: #[non_exhaustive] lands on TypedDecodeError and ReceiptVerificationError (rule enum_marked_non_exhaustive — intentional; downstream exhaustive matches need a wildcard arm once), and the additive surface grows the StoreFs seam family (StoreFs, RealFs, CowStrategyUsed, PositionedReadError, ParentDirSyncAdmission, StoreConfig::with_fs), the store-free receipt verification surface (receipt_verify: verify_receipt_claim, ReceiptClaim, ReceiptVerifyingKeys; SigningKey::{key_id,public_key_bytes}), and the pluggable keyset seam (KeysetBackend, FileKeysetBackend, StoreConfig::with_keyset_backend)."
+summary: "15 major semver-check rules are classified in the 0.8.0 witness; prelude narrowing adds intentional enum/function/struct/trait alias removals. All classified intentional_0_8 or path_relocation unless noted. 0.8.1 adds only new public items (additive, patch pre-1.0). 0.8.3 adds the schema-evolution + durable-idempotency surface (event::upcast module, EventPayload::PAYLOAD_VERSION, EventHeader::payload_version, EventKind::is_reserved, TypedDecodeError::{FutureVersion,Upcast}, IdempotencyRetention/OverflowPolicy + config setters, IdempotencyKey::for_operation, new StoreError variants) — additive, patch pre-1.0; netbat/syncbat baselines re-normalized to canonical std/core paths under the current toolchain (no API change). 0.10.0 is the reserved pre-1.0 breaking window: #[non_exhaustive] lands on TypedDecodeError and ReceiptVerificationError (rule enum_marked_non_exhaustive — intentional; downstream exhaustive matches need a wildcard arm once), and the additive surface grows the StoreFs seam family (StoreFs, RealFs, CowStrategyUsed, PositionedReadError, ParentDirSyncAdmission, StoreConfig::with_fs), the store-free receipt verification surface (receipt_verify: verify_receipt_claim, ReceiptClaim, ReceiptVerifyingKeys; SigningKey::{key_id,public_key_bytes}), and the pluggable keyset seam (KeysetBackend, FileKeysetBackend, StoreConfig::with_keyset_backend). 0.11.0 is the compaction-namespace-commit cut (additive, minor pre-1.0): the public idempotency-authority export/restore seam (Store::export_idempotency_authority, the offline associated fn Store::restore_idempotency_authority, IdempotencyAuthorityExport, StoreError::IdempotencyRestoreRefused + IdempotencyRestoreRefusal), the compaction-recovery refusal surface (StoreError::CompactionRecoveryRefused + CompactionRecoveryRefusal), the published error handling taxonomy (StoreError::handling_class + HandlingClass, #180), non-opening forensics (Store::inspect_recovery_state + RecoveryInspection, #180), the new conformance-harness feature exposing store::conformance + ShadowFs (CrashOp/SimOp/SimOpKind), and the branded CompactionId/AuthorityImageId identity types where they surface in public export/inspection fields. Feature-gated items appear only in the all-features baseline section; the two-door live-adopt restore design was never shipped (one offline door lands instead)."
 
 entries:
   - rule: enum_marked_non_exhaustive
@@ -291,6 +291,78 @@ public_api_baseline_additions:
   - item: Store::verify_append_receipt_wire_detailed
     disposition: intentional_public
     witness: crates/core/tests/substrate_additions.rs
+
+  # ── 0.11.0 compaction-namespace-commit cut (additive, minor pre-1.0) ──
+  # Idempotency-authority export/restore seam (#188).
+  - item: Store::export_idempotency_authority
+    disposition: intentional_public
+    witness: crates/core/tests/idempotency_authority_export_restore.rs
+  - item: Store::restore_idempotency_authority
+    disposition: intentional_public
+    witness: crates/core/tests/idempotency_authority_export_restore.rs
+    note: >-
+      Offline closed-directory associated fn (config + export -> Result), NOT a
+      &self method: acquires the store-dir lock, refuses while a pending compaction
+      marker is unresolved, mints a fresh local AuthorityImageId, republishes through
+      the canonical authority protocol. The two-door live-adopt design and a separate
+      restore_idempotency_authority_offline were never shipped (one offline door).
+  - item: IdempotencyAuthorityExport (+ accessor methods)
+    disposition: intentional_public
+    witness: crates/core/tests/idempotency_authority_export_restore.rs
+    note: One canonical opaque authority image; manual redacted Debug, no embedder-visible tuple schema.
+  - item: StoreError::IdempotencyRestoreRefused + IdempotencyRestoreRefusal
+    disposition: intentional_public
+    witness: crates/core/tests/idempotency_authority_restore_refusals.rs
+    note: >-
+      Additive StoreError variant (StoreError is #[non_exhaustive] — not a break) plus
+      its typed refusal enum; PendingCompactionUnresolved replaces the earlier
+      UnauthorizedGeneration refusal (offline-restore contract, A13).
+
+  # Compaction namespace-commit recovery surface (#177/#195 slice).
+  - item: StoreError::CompactionRecoveryRefused + CompactionRecoveryRefusal
+    disposition: intentional_public
+    witness: crates/core/tests/store_error_contract.rs
+    note: >-
+      Additive StoreError variant (#[non_exhaustive]) + its typed refusal enum; carries
+      the marker_path and the canonical refusal kind (MarkerCorrupt / MarkerFutureVersion /
+      LegacyMarkerUnsupported / PendingTransactionUnresolved / etc.).
+
+  # Published error-handling taxonomy (#180) — moved out of the private testkit classifier.
+  - item: StoreError::handling_class + HandlingClass
+    disposition: intentional_public
+    witness: crates/core/tests/store_error_contract.rs
+    note: >-
+      pub enum HandlingClass + pub fn handling_class(&self) -> HandlingClass; exhaustive,
+      wildcard-free (repo-wide wildcard denial forces an arm on every future variant).
+
+  # Non-opening forensic recovery inspection (#180) — reads marker + store.meta without
+  # constructing Store<Open> or mutating disk.
+  - item: Store::inspect_recovery_state + RecoveryInspection
+    disposition: intentional_public
+    witness: crates/core/tests/recovery_inspection.rs
+    note: Public-safe field types only (hex id strings / paths / enums; no internal tuples).
+
+  # Conformance-harness feature (A12): the clean external StoreFs-conformance surface,
+  # additive and feature-gated (non-default). Appears only in the all-features baseline.
+  - item: conformance-harness feature — store::conformance corpus + factories + ShadowFs (CrashOp/SimOp/SimOpKind)
+    disposition: intentional_public
+    witness: crates/core/tests/store_fs_conformance_corpus.rs
+    note: >-
+      Feature-gated (conformance-harness), non-default; dangerous-test-hooks implies it.
+      ShadowFs is the public namespace-truth crash simulator; SimFs and the __sim
+      namespace matrix stay internal under dangerous-test-hooks (not part of this surface).
+  - item: __sim namespace-recovery matrix exports (dangerous-test-hooks)
+    disposition: intentional_public
+    witness: crates/core/tests/namespace_recovery_matrix.rs
+    note: Feature-gated (dangerous-test-hooks), non-default; test machinery in the all-features baseline only.
+
+  # Branded identity types (A3) — surface only where they appear in public export/inspection fields.
+  - item: store::CompactionId / store::AuthorityImageId (as_u128)
+    disposition: intentional_public
+    witness: crates/core/tests/recovery_inspection.rs
+    note: >-
+      Branded newtypes over u128; no From/Into between brands or with raw u128, never
+      compared across brands. Public only where they surface in export/inspection fields.
 
 public_api_baseline_removals:
   - item: coordinate::namespace_prefix_matches

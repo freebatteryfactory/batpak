@@ -73,18 +73,25 @@ struct SimState {
     /// from the [`CrashOp`] schedule: a read is not an atomic publish, so it
     /// carries its own targeted-Nth counter and its own taxonomy
     /// ([`ReadFaultKind`], D1 = model BOTH a hard I/O error and a short
-    /// read). Test-only: the production build never faults a read.
-    #[cfg(test)]
+    /// read). Available to integration tests (the whole module is already
+    /// feature-gated); the production `Store`-over-`SimFs` path never arms it.
     read_fault: Mutex<ReadFaultSchedule>,
 }
 
-/// Deterministic, fault-injecting filesystem layer.
+/// Deterministic, fault-injecting BYTE-durability filesystem layer (published
+/// under `dangerous-test-hooks`, 0.10.0 reshape).
+///
+/// This is the byte layer: it models torn syncs, torn atomic publishes, and
+/// power-loss tail truncation. [`SimFs::crash`] truncates in place over a
+/// real-file inner and falls back to a seam rewrite for a virtual inner. It
+/// keeps file NAMES durable by design — namespace truth (rename/create/remove
+/// durability) is [`super::shadow_fs::ShadowFs`]'s job, not this layer's.
 ///
 /// State lives behind [`Mutex`]es so the type is legitimately `Send + Sync`
 /// (required by the [`StoreFs`] supertrait) without any `unsafe`; the
 /// simulation drives the store request/response per op, so the locks are
 /// effectively uncontended.
-pub(crate) struct SimFs {
+pub struct SimFs {
     /// The backend the layer interposes. Production default: [`RealFs`].
     inner: Arc<dyn StoreFs>,
     state: Arc<SimState>,
@@ -98,12 +105,18 @@ struct EnospcSchedule {
     seen: u32,
 }
 
-/// A crash-sensitive seam op a SimFs schedule can fault. These are the
+/// A crash-sensitive mutating seam op a fault schedule can tear. These are the
 /// atomic-rename / publish primitives the compaction swap/rollback, the
 /// visibility-range persist, and the cursor-checkpoint persist reach through
-/// the seam — so a seeded schedule can tear them.
+/// the seam, plus the two file-materialization ops the namespace-commit
+/// protocol also targets.
+///
+/// This is the shared op-error currency: both this byte layer ([`SimFs`]) and
+/// the namespace layer ([`super::shadow_fs::ShadowFs`]) arm faults by this
+/// enum. Keep derives exactly as-is (no `Ord`/`serde`); a consumer that needs
+/// an ordering key derives it privately from the variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CrashOp {
+pub enum CrashOp {
     /// [`StoreFs::rename`] — the compaction relocate/rollback swap point.
     Rename,
     /// [`StoreFs::remove_file`] (and the provided `remove_file_if_present`) —
@@ -112,6 +125,12 @@ pub(crate) enum CrashOp {
     /// [`StagedFile::persist`] — the visibility-range, cursor-checkpoint,
     /// cold-start-artifact, and keyset atomic publish point.
     PersistTemp,
+    /// [`StoreFs::create_new_file`] — the exclusive segment/artifact creation
+    /// point (the compaction merged-segment materialization tears here).
+    CreateNew,
+    /// [`StoreFile::write_all`] on a minted segment handle — a torn byte write
+    /// into a freshly created file, before any sync makes it durable.
+    Write,
 }
 
 /// Deterministic atomic-op fault bookkeeping. `target` names the op kind and the
@@ -133,9 +152,8 @@ struct OpFaultSchedule {
 ///     was filled ([`PositionedReadError::ShortRead`]). `bytes_read == 0` is an
 ///     EOF at the frame boundary (reader maps it to `corrupt_eof`); a non-zero
 ///     partial is a torn frame (reader maps it to a corrupt-segment error).
-#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ReadFaultKind {
+pub enum ReadFaultKind {
     /// Inject a hard I/O error on the positioned read.
     Io,
     /// Inject a short read that stops after `bytes_read` bytes.
@@ -151,7 +169,6 @@ pub(crate) enum ReadFaultKind {
 /// Same target ⇒ the same read faults every run. Kept distinct from
 /// [`OpFaultSchedule`] so a read fault and an atomic-op fault can be armed
 /// independently in one run.
-#[cfg(test)]
 #[derive(Default)]
 struct ReadFaultSchedule {
     target: Option<(u32, ReadFaultKind)>,
@@ -235,7 +252,6 @@ impl SimState {
 
     /// Advance the positioned-read counter and return the [`ReadFaultKind`] when
     /// THIS read must fault. A no-op (returns `None`) when no schedule is armed.
-    #[cfg(test)]
     fn read_fault_strikes(&self) -> Option<ReadFaultKind> {
         let mut sched = self
             .read_fault
@@ -266,7 +282,7 @@ impl SimFs {
     /// seeded from `seed`, dropping roughly one in `fsync_drop_one_in` syncs
     /// (`0` ⇒ never drop; the crash boundary is then exactly the bytes not
     /// yet synced).
-    pub(crate) fn new(seed: u64, fsync_drop_one_in: u32) -> Self {
+    pub fn new(seed: u64, fsync_drop_one_in: u32) -> Self {
         Self::layered(seed, fsync_drop_one_in, Arc::new(RealFs))
     }
 
@@ -274,7 +290,7 @@ impl SimFs {
     /// seeded schedules interpose an in-memory or embedder backend exactly as
     /// they do real files. ([`SimFs::crash`]'s truncation still requires a
     /// real-file-backed inner; the fault schedules do not.)
-    pub(crate) fn layered(seed: u64, fsync_drop_one_in: u32, inner: Arc<dyn StoreFs>) -> Self {
+    pub fn layered(seed: u64, fsync_drop_one_in: u32, inner: Arc<dyn StoreFs>) -> Self {
         Self {
             inner,
             state: Arc::new(SimState {
@@ -283,7 +299,6 @@ impl SimFs {
                 fsync_drop_one_in,
                 enospc_on_copy: Mutex::new(EnospcSchedule::default()),
                 op_fault: Mutex::new(OpFaultSchedule::default()),
-                #[cfg(test)]
                 read_fault: Mutex::new(ReadFaultSchedule::default()),
             }),
         }
@@ -292,8 +307,7 @@ impl SimFs {
     /// Arm a deterministic fault on the `fail_at`-th occurrence (1-based) of
     /// crash-sensitive op `op`, consuming `self` (builder form for a `SimFs` not
     /// yet shared). See [`SimFs::arm_fault_on`].
-    #[cfg(test)]
-    pub(crate) fn with_fault_on(self, op: CrashOp, fail_at: u32) -> Self {
+    pub fn with_fault_on(self, op: CrashOp, fail_at: u32) -> Self {
         self.arm_fault_on(op, fail_at);
         self
     }
@@ -308,8 +322,7 @@ impl SimFs {
     /// shared `Arc<SimFs>` FIRST and arm the fault only once the store is open —
     /// the occurrence counter resets here, so the crash-sensitive ops the build
     /// itself performed are not counted toward `fail_at`.
-    #[cfg(test)]
-    pub(crate) fn arm_fault_on(&self, op: CrashOp, fail_at: u32) {
+    pub fn arm_fault_on(&self, op: CrashOp, fail_at: u32) {
         let mut sched = self
             .state
             .op_fault
@@ -322,8 +335,7 @@ impl SimFs {
     /// Arm a deterministic positioned-read fault on the `fail_at`-th (1-based)
     /// [`StoreFile::read_exact_at`], consuming `self` (builder form for a
     /// `SimFs` not yet shared). See [`SimFs::arm_read_fault_on`].
-    #[cfg(test)]
-    pub(crate) fn with_read_fault_on(self, fail_at: u32, kind: ReadFaultKind) -> Self {
+    pub fn with_read_fault_on(self, fail_at: u32, kind: ReadFaultKind) -> Self {
         self.arm_read_fault_on(fail_at, kind);
         self
     }
@@ -337,8 +349,7 @@ impl SimFs {
     /// shared `Arc<SimFs>` FIRST and arm the fault only once the store is open —
     /// the occurrence counter resets here, so any reads the build itself
     /// performed are not counted toward `fail_at`.
-    #[cfg(test)]
-    pub(crate) fn arm_read_fault_on(&self, fail_at: u32, kind: ReadFaultKind) {
+    pub fn arm_read_fault_on(&self, fail_at: u32, kind: ReadFaultKind) {
         let mut sched = self
             .state
             .read_fault
@@ -353,7 +364,7 @@ impl SimFs {
     /// [`io::ErrorKind::StorageFull`]. Used by the offensive `fork_hostile_fs`
     /// fixture to force a disk-full mid-fork and prove the fork does not
     /// publish a partial copy.
-    pub(crate) fn with_enospc_on_copy(self, fail_at: u32) -> Self {
+    pub fn with_enospc_on_copy(self, fail_at: u32) -> Self {
         {
             let mut sched = self
                 .state
@@ -368,8 +379,7 @@ impl SimFs {
 
     /// Durable byte length recorded for `path` (what survives a crash). `0` for
     /// an untracked path. Test-facing witness for the no-loss invariant.
-    #[cfg(test)]
-    pub(crate) fn durable_len(&self, path: &Path) -> u64 {
+    pub fn durable_len(&self, path: &Path) -> u64 {
         self.state
             .durable
             .lock()
@@ -389,7 +399,7 @@ impl SimFs {
     /// adding a no-op trait method would leave a dead production vtable entry.
     /// The truncation reaches the real files through the platform seam, so it
     /// requires a real-file-backed inner.
-    pub(crate) fn crash(&self) {
+    pub fn crash(&self) {
         let durable = self
             .state
             .durable
@@ -466,8 +476,14 @@ struct SimStoreFile {
 
 impl StoreFile for SimStoreFile {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        // Writes are honest; bytes become durable only when an honored sync
-        // advances the recorded durable length.
+        // A faulted byte write tears before any bytes reach the inner handle,
+        // modelling a write that failed mid-append (the merged-segment write
+        // during a compaction materialization). Unarmed, this is inert.
+        if self.state.op_fault_strikes(CrashOp::Write) {
+            return Err(SimState::injected_op_fault(CrashOp::Write));
+        }
+        // Otherwise writes are honest; bytes become durable only when an
+        // honored sync advances the recorded durable length.
         self.inner.write_all(buf)
     }
 
@@ -504,10 +520,8 @@ impl StoreFile for SimStoreFile {
         // A faulted read never touches the inner handle: it returns the
         // injected positioned-read error directly, so the reader's
         // active-frame read surfaces the same StoreError it would on a
-        // genuinely torn read. The fault path is test-only; production
-        // `Store`-over-`SimFs` fixtures compile straight to the honest
-        // delegate.
-        #[cfg(test)]
+        // genuinely torn read. Unarmed, the schedule is inert and the read
+        // compiles straight to the honest delegate.
         if let Some(kind) = self.state.read_fault_strikes() {
             return Err(match kind {
                 ReadFaultKind::Io => PositionedReadError::Io(io::Error::other(
@@ -599,6 +613,12 @@ impl StoreFs for SimFs {
     }
 
     fn create_new_file(&self, path: &Path) -> Result<Box<dyn StoreFile>, StoreError> {
+        // A faulted exclusive creation tears before the inode exists, so no
+        // file is materialized and no durable bookkeeping is registered —
+        // modelling a torn merged-segment creation. Unarmed, this is inert.
+        if self.state.op_fault_strikes(CrashOp::CreateNew) {
+            return Err(StoreError::Io(SimState::injected_op_fault(CrashOp::CreateNew)));
+        }
         let inner = self.inner.create_new_file(path)?;
         // Register the file with durable_len = 0; its bytes become durable
         // only as honored syncs advance the recorded length.
@@ -631,8 +651,10 @@ impl StoreFs for SimFs {
     }
 
     fn sync_parent_dir(&self, _path: &Path) -> Result<(), StoreError> {
-        // The directory entry is modelled as always durable once the file is
-        // created: the crash truncates file CONTENTS, it does not unlink files.
+        // The byte layer keeps names durable BY DESIGN: a crash truncates file
+        // CONTENTS, it never unlinks or re-links directory entries. Namespace
+        // durability (torn renames/creates/removes, torn parent-dir syncs) is
+        // modelled independently by [`super::shadow_fs::ShadowFs`], not here.
         Ok(())
     }
 

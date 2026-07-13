@@ -135,8 +135,19 @@
   dst_coverage: false
   globs:
     - crates/core/src/store/index/idemp.rs
+    - crates/core/src/store/index/idemp_image.rs
     - crates/core/src/store/store_meta.rs
     - crates/core/src/store/lifecycle_compact.rs
+    - crates/core/src/store/lifecycle_snapshot.rs
+    - crates/core/src/store/lifecycle_fork.rs
+    # PR #226: the staged-name namespace commit protocol (marker read/write +
+    # recovery resolution) and the public export/restore admission (#188) joined
+    # the seam — INV-COMPACTION-NAMESPACE-COMMIT + INV-IDEMPOTENCY-AUTHORITY-
+    # EXPORT-RESTORE-FAIL-CLOSED. Mirrored in lanes.rs IDEMP_AUTHORITY_MUTANT_FILES
+    # and assurance_levels.yaml (idempotency-authority L4).
+    - crates/core/src/store/idemp_transfer.rs
+    - crates/core/src/store/cold_start/rebuild/topology.rs
+    - crates/core/src/store/cold_start/rebuild/compaction_recovery.rs
 
 - slug: import-reapply
   assurance_level: L4

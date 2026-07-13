@@ -293,6 +293,9 @@ pub mod __sim {
         import_fault_replay_seed, run_seeded_import_fault_mem_fs_public,
         run_seeded_import_fault_public, ImportFaultOutcomePublic,
     };
+    pub use crate::store::sim::namespace_recovery::{
+        namespace_replay_seed, run_namespace_matrix, NamespaceMatrixCell,
+    };
     pub use crate::store::sim::recovery::{
         recovery_replay_seed, run_seeded_recovery, RecoveryOutcomePublic,
     };

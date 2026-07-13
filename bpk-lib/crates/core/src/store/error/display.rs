@@ -8,7 +8,8 @@
 
 use super::display_authority::{
     fmt_idemp_authority_corrupt, fmt_idemp_authority_foreign, fmt_idemp_authority_missing,
-    fmt_idemp_authority_stale, fmt_store_metadata_corrupt, fmt_store_metadata_missing,
+    fmt_idemp_authority_stale, fmt_idemp_restore_refused, fmt_store_metadata_corrupt,
+    fmt_store_metadata_missing,
 };
 use super::{StoreError, StoreLockMode};
 use crate::id::EntityIdType;
@@ -79,6 +80,7 @@ impl StoreError {
                 expected_covered,
             } => fmt_idemp_authority_stale(f, *image_covered, *expected_covered),
             Self::IdempotencyAuthorityForeign { kind } => fmt_idemp_authority_foreign(f, kind),
+            Self::IdempotencyRestoreRefused { reason } => fmt_idemp_restore_refused(f, reason),
             Self::StoreMetadataCorrupt { path, kind } => fmt_store_metadata_corrupt(f, path, kind),
             Self::StoreMetadataMissing { path } => fmt_store_metadata_missing(f, path),
             // Non-authority variants, listed explicitly (never wildcarded) so a
@@ -143,6 +145,7 @@ impl StoreError {
             | Self::StoreMetadataFutureVersion { .. }
             | Self::ForkEvidenceFutureVersion { .. }
             | Self::ImportProvenanceFutureVersion { .. }
+            | Self::CompactionRecoveryRefused { .. }
             | Self::SidxFutureVersion { .. } => Ok(()),
             #[cfg(feature = "payload-encryption")]
             Self::KeysetCorrupt { .. }
@@ -262,6 +265,8 @@ impl StoreError {
             | Self::IdempotencyAuthorityMissing { .. }
             | Self::IdempotencyAuthorityStale { .. }
             | Self::IdempotencyAuthorityForeign { .. }
+            | Self::IdempotencyRestoreRefused { .. }
+            | Self::CompactionRecoveryRefused { .. }
             | Self::BatchItemTooLarge { .. }
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
@@ -381,6 +386,8 @@ impl StoreError {
             | Self::IdempotencyAuthorityMissing { .. }
             | Self::IdempotencyAuthorityStale { .. }
             | Self::IdempotencyAuthorityForeign { .. }
+            | Self::IdempotencyRestoreRefused { .. }
+            | Self::CompactionRecoveryRefused { .. }
             | Self::BatchItemTooLarge { .. }
             | Self::EntityClockOverflow { .. }
             | Self::InvalidClock { .. }
@@ -759,8 +766,16 @@ impl std::fmt::Display for StoreError {
             | Self::IdempotencyAuthorityMissing { .. }
             | Self::IdempotencyAuthorityStale { .. }
             | Self::IdempotencyAuthorityForeign { .. }
+            | Self::IdempotencyRestoreRefused { .. }
             | Self::StoreMetadataCorrupt { .. }
             | Self::StoreMetadataMissing { .. } => self.fmt_authority_refusal(f),
+            // The reason enum's own `Display` carries the undecidable-state detail
+            // and remediation; this arm frames it with the marker path.
+            Self::CompactionRecoveryRefused { marker_path, kind } => write!(
+                f,
+                "pending compaction at {} cannot be resolved: {kind}",
+                marker_path.display()
+            ),
             Self::HiddenRangesCorrupt { path, kind } => write!(
                 f,
                 "hidden-ranges metadata at {} is corrupt: {kind}",

@@ -1,5 +1,6 @@
 use super::{
-    ForkStrategy, StoreFileKind, COMPACT_SOURCE_EXTENSION, CURSOR_DIRECTORY, KEYSET_FILENAME,
+    ForkStrategy, StoreFileKind, COMPACT_SOURCE_EXTENSION, COMPACT_STAGED_EXTENSION,
+    CURSOR_DIRECTORY, KEYSET_FILENAME,
 };
 use crate::store::segment::SegmentId;
 use std::path::Path;
@@ -250,5 +251,47 @@ fn fork_strategy_partitions_segments_by_active_boundary_and_maps_each_kind() {
         StoreFileKind::Other.fork_strategy(active),
         ForkStrategy::Exclude,
         "a foreign file is excluded from a fork"
+    );
+}
+
+#[test]
+fn compact_staged_is_recognised_and_excluded_from_every_copy_set() {
+    // PROPERTY: an in-flight compaction replacement under its staged name
+    // (`NNNNNN.fbat.compact-new`, #177) classifies as `CompactStaged` and is
+    // never part of a committed generation — it is EXCLUDED from snapshot and
+    // fork copies and carries no segment id, yet it MUST be cleared from
+    // snapshot and fork destinations so a stale staged file cannot survive a
+    // copy. Kills deletion of the `COMPACT_STAGED_EXTENSION` arm in `from_path`
+    // and any polarity flip on the four staged predicates.
+    use crate::store::segment::SEGMENT_EXTENSION;
+
+    // The staged extension is the LAST extension of the canonical staged name.
+    let staged_path = format!("000007.{SEGMENT_EXTENSION}.{COMPACT_STAGED_EXTENSION}");
+    assert_eq!(
+        StoreFileKind::from_path(Path::new(&staged_path)),
+        StoreFileKind::CompactStaged,
+        "the compact-new staged extension must classify as CompactStaged"
+    );
+    assert_eq!(
+        StoreFileKind::CompactStaged.segment_id(),
+        None,
+        "a staged replacement is not a committed segment and carries no id"
+    );
+    assert!(
+        !StoreFileKind::CompactStaged.should_copy_into_snapshot(),
+        "an uncommitted staged replacement must NOT be copied into a snapshot"
+    );
+    assert_eq!(
+        StoreFileKind::CompactStaged.fork_strategy(5),
+        ForkStrategy::Exclude,
+        "an uncommitted staged replacement is excluded from a fork"
+    );
+    assert!(
+        StoreFileKind::CompactStaged.should_clear_from_snapshot_destination(),
+        "a stale staged replacement MUST be cleared from a snapshot destination"
+    );
+    assert!(
+        StoreFileKind::CompactStaged.should_clear_from_fork_destination(),
+        "a stale staged replacement MUST be cleared from a fork destination"
     );
 }

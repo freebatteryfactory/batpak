@@ -89,7 +89,44 @@ pub(crate) fn run(repo_root: &Path, check: bool) -> Result<()> {
 
 pub(crate) fn load_catalog(repo_root: &Path) -> Result<Vec<CatalogInvariant>> {
     let path = repo_root.join("traceability").join("invariants.yaml");
+    check_statement_truncation(&path)?;
     load_yaml(&path).context("invariants")
+}
+
+/// Anti-amputation gate: a PLAIN-scalar `statement:` containing ` #` is
+/// silently truncated at the comment marker by YAML parsing — the catalog then
+/// parses clean while losing contract text (exactly how two #189 statements
+/// lost their authority-sidecar clauses with every gate green). Such
+/// statements must use a block scalar (`statement: >-`) or quotes. Scans the
+/// RAW file because the damage is invisible after parsing.
+fn check_statement_truncation(path: &Path) -> Result<()> {
+    let raw = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    check_statement_truncation_text(&raw)
+        .with_context(|| format!("statement-truncation gate over {}", path.display()))
+}
+
+fn check_statement_truncation_text(raw: &str) -> Result<()> {
+    for (idx, line) in raw.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let Some(value) = trimmed.strip_prefix("statement:") else {
+            continue;
+        };
+        let value = value.trim_start();
+        let block_or_quoted = value.starts_with('>')
+            || value.starts_with('|')
+            || value.starts_with('"')
+            || value.starts_with('\'');
+        if !block_or_quoted && value.contains(" #") {
+            bail!(
+                "invariants.yaml line {}: plain-scalar `statement:` contains ` #` — YAML \
+                 silently truncates the value at the comment marker, amputating machine law \
+                 while the traceability gates stay green. Use a folded block scalar \
+                 (`statement: >-`) or quote the full value.",
+                idx + 1
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Anti-rot gate: the README's "N named invariants traced to M concrete artifacts" line

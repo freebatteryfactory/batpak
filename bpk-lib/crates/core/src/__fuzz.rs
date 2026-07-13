@@ -174,10 +174,14 @@ pub fn __fuzz_idemp_image(data: &[u8]) -> Result<usize, StoreError> {
         None,
         None,
     );
-    let expectation = crate::store::store_meta::IdempAuthorityAnchor {
-        covered_global_sequence: 7,
-        event_id_at: 7,
-        chain_commitment: [7; 32],
+    let expectation = crate::store::store_meta::IdempAuthorityExpectation {
+        current_image_id: Some(0xC0FFEE),
+        pending_image_id: Some(0xF1A7),
+        anchor: crate::store::store_meta::IdempAuthorityAnchor {
+            covered_global_sequence: 7,
+            event_id_at: 7,
+            chain_commitment: [7; 32],
+        },
     };
     let bound = crate::store::index::idemp::load_idempotency_authority(
         dir.path(),
@@ -185,14 +189,45 @@ pub fn __fuzz_idemp_image(data: &[u8]) -> Result<usize, StoreError> {
         Some(0xF00D),
         Some(&expectation),
     );
+
+    // GAUNT-PROOF-OF-PROOF (#197) corruption-is-not-absence teeth: when the
+    // prefix parses at a supported version but the stored CRC disagrees with the
+    // body, EVERY admission path MUST refuse. A degrade-to-empty regression
+    // (the pre-#189 blind admission) would re-admit a corrupt image as blank;
+    // this assert — computed on the raw Results BEFORE `count` consumes them —
+    // turns any such regression into a replay/fuzz crash on the committed
+    // fixture and on the whole idemp corpus.
+    let crc_mismatch = match crate::store::wire_header::parse(
+        data,
+        crate::store::index::idemp::IDEMP_MAGIC,
+    ) {
+        Ok(prefix) => {
+            (1..=crate::store::index::idemp::IDEMP_VERSION).contains(&prefix.version)
+                && crc32fast::hash(prefix.body) != prefix.stored_crc
+        }
+        Err(_) => false,
+    };
+    if crc_mismatch {
+        assert!(
+            unbound.is_err() && bound.is_err(),
+            "corruption-is-not-absence violated: a CRC-mismatched authority image was admitted"
+        );
+    }
+
     let count = |load: Result<crate::store::index::idemp::IdempLoad, StoreError>| match load {
         Ok(crate::store::index::idemp::IdempLoad::Loaded(entries)) => Ok(entries.len()),
         Ok(crate::store::index::idemp::IdempLoad::Missing) => Ok(0),
         Err(error) => Err(error),
     };
-    let unbound_count = count(unbound).unwrap_or(0);
-    let bound_count = count(bound).unwrap_or(0);
-    Ok(unbound_count.max(bound_count))
+    // Preserve both outcome classes: a bound-path refusal alongside an
+    // unbound-path admission is the EXPECTED split for a well-formed but
+    // unauthorized image, while an input every path refuses surfaces its
+    // typed refusal (never collapsed to an empty image).
+    match (count(unbound), count(bound)) {
+        (Ok(unbound_count), Ok(bound_count)) => Ok(unbound_count.max(bound_count)),
+        (Ok(admitted), Err(_)) | (Err(_), Ok(admitted)) => Ok(admitted),
+        (Err(refusal), Err(_)) => Err(refusal),
+    }
 }
 
 #[doc(hidden)]
@@ -314,6 +349,40 @@ pub fn __fuzz_sidx_manifest(script: &[u8]) -> Result<&'static str, StoreError> {
     let claim =
         assemble_untrusted_segment(&mut bytes, &frame_spans, entries, tear, claim_override)?;
     assert_no_authority_escalation(bytes, claim)
+}
+
+/// Raw resolution numbers for the semantic-regression ProductionFlip witnesses
+/// (GAUNT-PROOF-OF-PROOF, #197): same fixture pipeline as
+/// [`__fuzz_sidx_manifest`], but WITHOUT the in-shim law asserts — the caller
+/// asserts. `claim` is what an old self-authenticating core would have trusted.
+#[doc(hidden)]
+pub struct SidxManifestResolution {
+    /// The footer claim handed to `resolve_untrusted_frames_end`.
+    pub claim: Option<u64>,
+    /// Table-blind CRC walk end; `None` when the walk itself refused.
+    pub walk_frames_end: Option<u64>,
+    /// Number of CRC-verified frames the walk counted (0 when it refused).
+    pub walk_count: u64,
+    /// Permissive-posture recovered end; `None` when permissive refused.
+    pub permissive_frames_end: Option<u64>,
+    /// Whether the strict posture refused.
+    pub strict_refused: bool,
+}
+
+/// Non-asserting sibling of [`__fuzz_sidx_manifest`]: build the same untrusted
+/// segment, then RETURN the walk/permissive/strict resolution numbers so a
+/// ProductionFlip witness can assert raw numbers instead of a constant-false
+/// tautology. Shares the single resolution path with the asserting orchestrator.
+#[doc(hidden)]
+pub fn __fuzz_sidx_manifest_resolution(
+    script: &[u8],
+) -> Result<SidxManifestResolution, StoreError> {
+    let mut it = script.iter().copied();
+    let (mut bytes, frame_spans, mut entries) = build_manifest_fixture(&mut it)?;
+    let (tear, claim_override) = apply_manifest_mutation_script(&mut it, &mut entries);
+    let claim =
+        assemble_untrusted_segment(&mut bytes, &frame_spans, entries, tear, claim_override)?;
+    Ok(resolve_manifest_postures(bytes, claim))
 }
 
 /// [`build_manifest_fixture`]'s output: the raw frame bytes, each frame's
@@ -459,13 +528,12 @@ fn assemble_untrusted_segment(
     Ok(Some(claim_override.unwrap_or(footer_start)))
 }
 
-/// Verdict half of [`__fuzz_sidx_manifest`]: run the table-blind CRC walk as
-/// ground truth, run `resolve_untrusted_frames_end` under both postures, and
-/// assert the no-authority-escalation law (see the orchestrator doc).
-fn assert_no_authority_escalation(
-    bytes: Vec<u8>,
-    claim: Option<u64>,
-) -> Result<&'static str, StoreError> {
+/// The ONE resolution path shared by [`__fuzz_sidx_manifest`] (which asserts)
+/// and [`__fuzz_sidx_manifest_resolution`] (which returns the raw numbers): run
+/// the table-blind CRC walk as ground truth and `resolve_untrusted_frames_end`
+/// under both postures, collapsing the outcomes into a [`SidxManifestResolution`]
+/// with no asserts and no panics.
+fn resolve_manifest_postures(bytes: Vec<u8>, claim: Option<u64>) -> SidxManifestResolution {
     use std::io::Cursor;
 
     let file_len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
@@ -486,48 +554,75 @@ fn assert_no_authority_escalation(
         crate::store::segment::resolve_untrusted_frames_end(&mut c, 0, file_len, 7, claim, true)
     };
 
-    let (walk_p, walk_count) = match walk {
-        Ok(ground_truth) => ground_truth,
-        Err(_mid_stream) => {
+    let (walk_frames_end, walk_count) = match walk {
+        Ok((end, count)) => (Some(end), count),
+        Err(_mid_stream) => (None, 0),
+    };
+    let permissive_frames_end = match permissive {
+        Ok(resolved) => Some(resolved.frames_end),
+        Err(_refused) => None,
+    };
+    SidxManifestResolution {
+        claim,
+        walk_frames_end,
+        walk_count,
+        permissive_frames_end,
+        strict_refused: strict.is_err(),
+    }
+}
+
+/// Verdict half of [`__fuzz_sidx_manifest`]: derive the resolution via the single
+/// [`resolve_manifest_postures`] path, then assert the no-authority-escalation law
+/// (see the orchestrator doc).
+fn assert_no_authority_escalation(
+    bytes: Vec<u8>,
+    claim: Option<u64>,
+) -> Result<&'static str, StoreError> {
+    let r = resolve_manifest_postures(bytes, claim);
+
+    let walk_p = match r.walk_frames_end {
+        Some(walk_p) => walk_p,
+        None => {
             // FAIL-CLOSED SYMMETRY: the walk itself refuses (mid-stream shape);
             // no table content may recover past it under either posture.
             assert!(
-                permissive.is_err() && strict.is_err(),
+                r.permissive_frames_end.is_none() && r.strict_refused,
                 "fail-closed symmetry violated: the table-blind walk refused but a posture recovered"
             );
             return Ok("mid-stream-both-refuse");
         }
     };
 
-    match permissive {
-        Ok(resolved) => {
+    match r.permissive_frames_end {
+        Some(permissive_end) => {
             // TABLE-BLINDNESS: recovery lands exactly on the verified prefix end.
             assert_eq!(
-                resolved.frames_end, walk_p,
+                permissive_end, walk_p,
                 "no-authority-escalation violated: permissive recovery diverged from the \
                  table-blind verified prefix end"
             );
-            if walk_count > 0 {
+            if r.walk_count > 0 {
                 // NO FALSE SAFETY: strict refuses every non-empty prefix.
                 assert!(
-                    matches!(strict, Err(StoreError::CorruptSegment { .. })),
+                    r.strict_refused,
                     "no-false-safety violated: strict posture recovered a non-empty prefix \
                      under an untrusted footer"
                 );
                 Ok("permissive-recovered-strict-refused")
             } else {
-                let strict_resolved = strict?;
-                assert_eq!(
-                    strict_resolved.frames_end, walk_p,
-                    "empty-prefix law violated: strict recovery diverged from the walk"
+                // EMPTY-PREFIX: nothing verified, so strict must also recover.
+                assert!(
+                    !r.strict_refused,
+                    "empty-prefix law violated: strict refused an empty verified prefix \
+                     the walk recovered"
                 );
                 Ok("empty-prefix-both-recover")
             }
         }
-        Err(err) => {
+        None => {
             // The walk succeeded, so a permissive refusal is a FALSE LOSS — the
             // exact denial-of-service the safe law forbids.
-            let refusal = format!("{err:?}");
+            let refusal = format!("claim={:?}", r.claim);
             assert!(
                 std::hint::black_box(false),
                 "false-loss violated: permissive posture refused ({refusal}) although the \

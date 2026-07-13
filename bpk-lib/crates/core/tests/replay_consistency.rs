@@ -229,14 +229,21 @@ fn cold_start_replay_matches_live_projection() {
     );
 }
 
-/// INV-EXTERNAL-REPLAY-NO-SIDECAR-TRUTH: the durable sidecars (mmap index,
-/// checkpoint, idempotency index, visibility ranges) are PROJECTIONS — every
-/// bit of authoritative truth is reconstructible from the segment event log
-/// alone via `query` + `get` + payload decode. We prove this by capturing the
-/// live snapshot (built purely through that authoritative path), physically
-/// DELETING every sidecar artifact on disk, then reopening and reconstructing
-/// the same snapshot. If a sidecar held truth that the event log did not, the
-/// post-deletion reconstruction would diverge and this test would fail.
+/// INV-EXTERNAL-REPLAY-NO-SIDECAR-TRUTH: the REGENERABLE sidecars (mmap
+/// index, checkpoint, visibility ranges) are PROJECTIONS — every bit of
+/// authoritative truth is reconstructible from the segment event log alone
+/// via `query` + `get` + payload decode. We prove this by capturing the live
+/// snapshot (built purely through that authoritative path), physically
+/// DELETING every regenerable sidecar artifact on disk, then reopening and
+/// reconstructing the same snapshot. If such a sidecar held truth that the
+/// event log did not, the post-deletion reconstruction would diverge and this
+/// test would fail.
+///
+/// AUTHORITY sidecars are deliberately NOT deleted here: since #189/#205,
+/// `index.idemp` (durable idempotency authority) and `store.meta` (lineage
+/// identity) are fail-closed authorities whose loss is a typed open refusal,
+/// never a silent rebuild — that law is witnessed by
+/// `idempotency_authority_fail_closed.rs` and `store_identity.rs`.
 #[test]
 fn authoritative_reconstruction_survives_sidecar_deletion() {
     // Sidecars enabled so they are actually written to disk, then deleted.
@@ -287,29 +294,32 @@ fn authoritative_reconstruction_survives_sidecar_deletion() {
     );
     store.close().expect("close");
 
-    // Physically remove every sidecar projection from the data directory. After
-    // this, ONLY the segment event log (and its directory structure) remains as
-    // a source of truth.
+    // Physically remove every REGENERABLE sidecar projection from the data
+    // directory. After this, only the segment event log (plus the untouched
+    // fail-closed authority sidecars `index.idemp`/`store.meta`, which carry
+    // no projection truth) remains as a source of reconstruction.
     let data_dir = dir.path();
     let sidecars = [
         "index.fbati",           // mmap index snapshot
         "index.ckpt",            // checkpoint snapshot
-        "index.idemp",           // durable idempotency index
         "visibility_ranges.fbv", // hidden-range projection
     ];
-    let mut deleted = 0usize;
+    let mut deleted_mmap_index = false;
     for name in sidecars {
         let path = data_dir.join(name);
         if path.exists() {
             std::fs::remove_file(&path).expect("remove sidecar artifact");
-            deleted += 1;
+            deleted_mmap_index |= name == "index.fbati";
         }
     }
+    // Vacuity guard: close writes exactly ONE preferred cold-start artifact
+    // (mmap when enabled), an unkeyed store writes no idempotency image
+    // (#189 scoping), and no events were cancelled — so the mmap index is the
+    // one redundant-truth sidecar this flow must have produced and deleted.
     assert!(
-        deleted >= 2,
-        "PROPERTY: the run must have produced and then deleted real sidecar \
-         artifacts (mmap/checkpoint/visibility); otherwise the no-sidecar-truth \
-         claim is vacuous. deleted={deleted}."
+        deleted_mmap_index,
+        "PROPERTY: the run must have produced and then deleted a real mmap \
+         index sidecar; otherwise the no-sidecar-truth claim is vacuous."
     );
     for name in sidecars {
         assert!(

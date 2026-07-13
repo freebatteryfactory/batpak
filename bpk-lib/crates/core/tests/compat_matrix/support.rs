@@ -13,7 +13,7 @@ use batpak::store::{
     encode_import_provenance_wire, fork_report_body_hash, provenance_from_extensions, ForkOptions,
     ImportOptions, ImportSelector, Store, StoreConfig, StoreError, CHECKPOINT_VERSION,
     FORK_EVIDENCE_REPORT_SCHEMA_VERSION, IDEMP_VERSION, IMPORT_PROVENANCE_SCHEMA_VERSION,
-    MMAP_INDEX_VERSION, VISIBILITY_RANGES_VERSION,
+    MMAP_INDEX_VERSION, STORE_META_VERSION, VISIBILITY_RANGES_VERSION,
 };
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -30,12 +30,14 @@ use std::path::{Path, PathBuf};
 /// * `SUPPORTED_VISIBILITY_VERSION` ← `store::hidden_ranges::VISIBILITY_RANGES_VERSION`
 /// * `SUPPORTED_FORK_EVIDENCE_VERSION` ← `store::fork_report::FORK_EVIDENCE_REPORT_SCHEMA_VERSION`
 /// * `SUPPORTED_IMPORT_PROVENANCE_VERSION` ← `store::import::IMPORT_PROVENANCE_SCHEMA_VERSION`
+/// * `SUPPORTED_STORE_META_VERSION` ← `store::store_meta::STORE_META_VERSION` (public export)
 pub const SUPPORTED_MMAP_VERSION: u16 = MMAP_INDEX_VERSION;
 pub const SUPPORTED_CHECKPOINT_VERSION: u16 = CHECKPOINT_VERSION;
 pub const SUPPORTED_IDEMP_VERSION: u16 = IDEMP_VERSION;
 pub const SUPPORTED_VISIBILITY_VERSION: u16 = VISIBILITY_RANGES_VERSION;
 pub const SUPPORTED_FORK_EVIDENCE_VERSION: u16 = FORK_EVIDENCE_REPORT_SCHEMA_VERSION;
 pub const SUPPORTED_IMPORT_PROVENANCE_VERSION: u16 = IMPORT_PROVENANCE_SCHEMA_VERSION;
+pub const SUPPORTED_STORE_META_VERSION: u16 = STORE_META_VERSION;
 
 const MMAP_ARTIFACT: &str = "index.fbati";
 const CHECKPOINT_ARTIFACT: &str = "index.ckpt";
@@ -43,6 +45,7 @@ const IDEMP_ARTIFACT: &str = "index.idemp";
 const VISIBILITY_ARTIFACT: &str = "visibility_ranges.fbv";
 const FORK_EVIDENCE_ARTIFACT: &str = "fork_evidence.fbev";
 const IMPORT_PROVENANCE_ARTIFACT: &str = "import_provenance.fbip";
+const STORE_META_ARTIFACT: &str = "store.meta";
 
 /// Every governed format stamps its version as a little-endian `u16` at bytes
 /// `6..8` (after a 6-byte magic), OUTSIDE the CRC region (CRC at `8..12` covers
@@ -123,7 +126,7 @@ fn config_for(dir: &Path, format: &str) -> StoreConfig {
         // The durable idempotency sidecar + hidden-ranges metadata are loaded
         // UNCONDITIONALLY on open, independent of mmap/checkpoint; keep the
         // config minimal and deterministic.
-        "idempotency-index" | "visibility-ranges" => Some(
+        "idempotency-index" | "visibility-ranges" | "store-meta" => Some(
             base.with_enable_mmap_index(false)
                 .with_enable_checkpoint(false),
         ),
@@ -153,6 +156,42 @@ fn seed_events(dir: &Path, format: &str, count: u32) {
             .expect("append compat seed event");
     }
     store.close().expect("close store to flush compat fixture");
+}
+
+/// `seed_events` plus one USER-KEYED append: only a user idempotency
+/// obligation makes the store publish a durable authority image at close
+/// (#189 availability scoping), which the idempotency-index v2 rows forge.
+fn seed_events_with_user_key(dir: &Path, format: &str, count: u32) {
+    seed_events(dir, format, count);
+    let store = Store::open(config_for(dir, format)).expect("reopen store to seed keyed fixture");
+    let coord =
+        Coordinate::new("entity:compat", "scope:compat-matrix").expect("valid compat coordinate");
+    let _ = store
+        .append_with_options(
+            &coord,
+            EventKind::custom(0xF, 7),
+            &serde_json::json!({ "keyed": true }),
+            batpak::store::AppendOptions::new()
+                .with_idempotency(batpak::id::IdempotencyKey::from(0xC0_FFEE_u128)),
+        )
+        .expect("append keyed compat seed event");
+    store.close().expect("close keyed compat fixture");
+}
+
+/// Write a genuine legacy v1 idempotency image directly:
+/// `FBATID | version=1 (2 le) | crc32(4 le over body) | body` where the body is
+/// the bare msgpack `Vec<IdempEntry>` a v1 writer produced (empty here — the
+/// admission under test is the version + no-expectation migration gate, not
+/// entry semantics).
+fn seed_legacy_v1_idemp(dir: &Path) {
+    let body = rmp_serde::to_vec_named(&Vec::<u8>::new()).expect("encode empty legacy idemp body");
+    let crc = crc32fast::hash(&body);
+    let mut bytes = Vec::with_capacity(12 + body.len());
+    bytes.extend_from_slice(b"FBATID");
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&crc.to_le_bytes());
+    bytes.extend_from_slice(&body);
+    std::fs::write(dir.join(IDEMP_ARTIFACT), &bytes).expect("write legacy v1 idemp artifact");
 }
 
 /// Mirror of the crate-private `hidden_ranges::VisibilityRangesData` body so the
@@ -294,9 +333,26 @@ pub fn forge_artifact_version(dir: &Path, format: &str, writer_version: u16) -> 
             seed_events(dir, format, 4);
             Some((CHECKPOINT_ARTIFACT, SUPPORTED_CHECKPOINT_VERSION))
         }
-        "idempotency-index" => {
+        "idempotency-index" if writer_version == 1 => {
+            // A REAL pre-migration legacy artifact: a v2 body does not
+            // reinterpret as v1 under a header forge, so seed an UNKEYED
+            // store (no user obligations => no image written and no recorded
+            // expectation — exactly the migration state the row pins, #189)
+            // and write a genuine v1 image (bare msgpack entries) beside it.
             seed_events(dir, format, 4);
+            seed_legacy_v1_idemp(dir);
+            Some((IDEMP_ARTIFACT, 1))
+        }
+        "idempotency-index" => {
+            // v2 self/future rows need a real durable obligation: only a
+            // user-keyed event makes the store publish an authority image
+            // (#189 availability scoping).
+            seed_events_with_user_key(dir, format, 4);
             Some((IDEMP_ARTIFACT, SUPPORTED_IDEMP_VERSION))
+        }
+        "store-meta" => {
+            seed_events(dir, format, 4);
+            Some((STORE_META_ARTIFACT, SUPPORTED_STORE_META_VERSION))
         }
         "visibility-ranges" => {
             seed_visibility_ranges(dir);
@@ -387,6 +443,9 @@ pub fn open_outcome(dir: &Path, format: &str) -> Outcome {
         ("visibility-ranges", Err(StoreError::HiddenRangesFutureVersion { .. })) => Ok(
             Outcome::CanonicalRefusal("HiddenRangesFutureVersion".to_string()),
         ),
+        ("store-meta", Err(StoreError::StoreMetadataFutureVersion { .. })) => Ok(
+            Outcome::CanonicalRefusal("StoreMetadataFutureVersion".to_string()),
+        ),
         (format, Err(other)) => Err(format!(
             "PROPERTY: forward-compat for {format:?} must yield OpensOK or its canonical \
              future-version refusal; got an unrelated error {other:?}"
@@ -404,6 +463,7 @@ pub fn live_supported_version(format: &str) -> u16 {
         "visibility-ranges" => Some(SUPPORTED_VISIBILITY_VERSION),
         "fork-evidence" => Some(SUPPORTED_FORK_EVIDENCE_VERSION),
         "import-provenance" => Some(SUPPORTED_IMPORT_PROVENANCE_VERSION),
+        "store-meta" => Some(SUPPORTED_STORE_META_VERSION),
         _ => None,
     };
     version

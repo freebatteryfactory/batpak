@@ -50,11 +50,26 @@ pub(super) const PROJECTION_FUSION_MUTANT_FILES: &[&str] = &[
 ];
 pub(super) const IDEMP_AUTHORITY_MUTANT_FILES: &[&str] = &[
     // GAUNT-IDEMPOTENCY-AUTHORITY (#189): the durable idempotency authority
-    // image (format, fail-closed admission, lineage/anchor binding), the
-    // store.meta expectation protocol, and the compaction commit ordering.
+    // image (format, fail-closed token admission, lineage binding), the
+    // store.meta authorization protocol, the compaction commit ordering, and
+    // the snapshot/fork authority publication call sites.
     "crates/core/src/store/index/idemp.rs",
+    "crates/core/src/store/index/idemp_image.rs",
     "crates/core/src/store/store_meta.rs",
     "crates/core/src/store/lifecycle_compact.rs",
+    "crates/core/src/store/lifecycle_snapshot.rs",
+    "crates/core/src/store/lifecycle_fork.rs",
+    // #188 public export/restore: the offline restore admission door — lineage
+    // + coverage validation, rollback rejection, fresh-generation minting, and
+    // the pending-marker refusal — all live in the closed-directory associated
+    // fn here (the live adopt door was deleted).
+    "crates/core/src/store/idemp_transfer.rs",
+    // Staged-name namespace commit protocol (#192): the marker load/write and
+    // the three-artifact roll-forward/roll-back recovery decision that binds a
+    // final segment name to the published authority commit record — the recovery
+    // direction is decided by the commit record, never by file existence.
+    "crates/core/src/store/cold_start/rebuild/topology.rs",
+    "crates/core/src/store/cold_start/rebuild/compaction_recovery.rs",
 ];
 pub(super) const SEGMENT_SCAN_MUTANT_FILES: &[&str] = &[
     "crates/core/src/store/segment/scan/**/*.rs",
@@ -883,7 +898,7 @@ pub(super) fn critical_mutation_seams() -> &'static [CriticalMutationSeam] {
         CriticalMutationSeam {
             slug: "idempotency-authority",
             label: "durable idempotency authority",
-            description: "fail-closed admission of index.idemp (corrupt/missing/stale/foreign), the store.meta lineage + compound-anchor expectation protocol, and the compaction old-or-new commit ordering",
+            description: "fail-closed admission of index.idemp (corrupt/missing/stale/foreign), the store.meta lineage + compound-anchor expectation protocol, the compaction old-or-new commit ordering, the public export/restore admission (#188), and the staged-name namespace commit protocol",
             surface: MutantSurface::AllFeatures,
             package: None,
             paths: IDEMP_AUTHORITY_MUTANT_FILES,

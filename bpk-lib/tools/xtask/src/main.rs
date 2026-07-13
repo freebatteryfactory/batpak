@@ -109,6 +109,13 @@ enum XtaskCommand {
     Fuzz(FuzzArgs),
     Chaos(ChaosArgs),
     FuzzChaos,
+    /// PR-blocking fuzz-replay gate (GAUNT-FUZZ-1 + GAUNT-PROOF-OF-PROOF #197):
+    /// nextest-list the fuzz_replay + fuzz_replay_semantics binaries under
+    /// dangerous-test-hooks, FAIL if any intended test is missing/ignored
+    /// (feature-gated compile-out false-green), run them with --no-tests=fail,
+    /// and write a proof receipt (command, features, executed/skipped counts,
+    /// corpus + regression identity, commit SHA) under target/proof-receipts/.
+    FuzzReplay,
     /// Run deterministic loom schedule proofs under --cfg loom.
     Loom,
     Stress,
@@ -662,6 +669,7 @@ fn main() -> Result<()> {
             "--ignored",
             "--nocapture",
         ]),
+        XtaskCommand::FuzzReplay => commands::fuzz_replay(),
         XtaskCommand::Loom => commands::loom(),
         XtaskCommand::Stress => {
             commands::fuzz(FuzzArgs { deep: false })?;

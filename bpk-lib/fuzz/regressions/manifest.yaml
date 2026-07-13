@@ -1,0 +1,87 @@
+# fuzz/regressions/manifest.yaml — machine-law index of every committed fuzz
+# regression fixture. Enforced by `fuzz-replay-contract` (structural-check):
+#   * target set == fuzz/Cargo.toml [[bin]] set == fuzz_replay.rs dispatch_table;
+#   * every fixture file listed here exists; every on-disk regression file is
+#     listed here (an unlisted file is ceremonial and fails);
+#   * class: decoder — no-panic regressions; empty files are legal boundary inputs;
+#   * class: semantic — >=1 NON-EMPTY fixture, each with `forbidden` (the behavior
+#     it reproduces) and `red_proof` (a ProductionFlip test proving the fixture
+#     reds the OLD decision core; the file must carry a gauntlet_red_fixture branch
+#     and the test must be registered in tools/integrity/src/gate_registry.rs).
+- target: frame_decode
+  class: decoder
+  fixtures:
+    - file: RED-planted-panic
+      forbidden: "panic in frame_decode (gauntlet_red_fixture-planted crash input)"
+- target: segment_header
+  class: decoder
+  fixtures:
+    - { file: RED-empty,         forbidden: "panic on empty input" }
+    - { file: RED-reserved-byte, forbidden: "panic on reserved header byte" }
+- target: sidx_entry
+  class: decoder
+  fixtures:
+    - { file: RED-empty-entry,           forbidden: "panic on empty entry buffer" }
+    - { file: RED-truncated-by-one-161,  forbidden: "panic on 161-byte (ENTRY_SIZE-1) buffer" }
+- target: checkpoint_data
+  class: decoder
+  fixtures:
+    - { file: RED-empty,       forbidden: "panic on empty body" }
+    - { file: RED-version-max, forbidden: "panic on u16::MAX version" }
+- target: checkpoint_snapshot_v6
+  class: decoder
+  fixtures:
+    - { file: RED-empty,          forbidden: "panic on empty body" }
+    - { file: RED-huge-array-len, forbidden: "unbounded allocation on forged array length" }
+- target: mmap_entry
+  class: decoder
+  fixtures:
+    - { file: RED-empty,       forbidden: "panic on empty buffer" }
+    - { file: RED-version-max, forbidden: "panic on u16::MAX version" }
+- target: cache_meta
+  class: decoder
+  fixtures:
+    - { file: RED-empty,        forbidden: "panic on empty buffer" }
+    - { file: RED-too-short-15, forbidden: "panic on sub-header 15-byte buffer" }
+- target: projection_state
+  class: decoder
+  fixtures:
+    - { file: RED-deep-nesting, forbidden: "stack exhaustion on deep JSON nesting" }
+    - { file: RED-empty,        forbidden: "panic on empty input" }
+- target: hidden_ranges
+  class: decoder
+  fixtures:
+    - { file: RED-empty,           forbidden: "panic on empty file" }
+    - { file: RED-huge-len-prefix, forbidden: "unbounded allocation on forged length prefix" }
+- target: mmap_index_load
+  class: decoder
+  fixtures:
+    - { file: RED-empty,           forbidden: "panic on empty file" }
+    - { file: RED-huge-len-prefix, forbidden: "unbounded allocation on forged length prefix" }
+- target: sidx_footer
+  class: decoder
+  fixtures:
+    - { file: RED-empty,            forbidden: "panic on empty footer" }
+    - { file: RED-huge-entry-count, forbidden: "unbounded allocation on forged entry count" }
+- target: sidx_boundary
+  class: decoder
+  fixtures:
+    - { file: RED-short, forbidden: "panic on sub-magic-length tail" }
+- target: sidx_manifest
+  class: semantic
+  fixtures:
+    - file: RED-torn-tail-claim-escalation
+      forbidden: >-
+        pre-#192 SIDX self-authentication: an untrusted footer claim/table extends
+        permissive recovery past the table-blind CRC-verified prefix (torn tail
+        header claimed as recovered bytes)
+      red_proof: crates/core/tests/fuzz_replay_semantics.rs::sidx_manifest_regression_is_semantically_load_bearing
+- target: idemp_image
+  class: semantic
+  fixtures:
+    - file: RED-crc-mismatch-blind-admission
+      forbidden: >-
+        pre-#189 blind admission: a CRC-mismatched idempotency authority image is
+        admitted as an empty image instead of the typed
+        IdempotencyAuthorityCorrupt refusal (corruption treated as absence)
+      red_proof: crates/core/tests/fuzz_replay_semantics.rs::idemp_image_regression_is_semantically_load_bearing

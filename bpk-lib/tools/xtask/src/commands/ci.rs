@@ -171,7 +171,11 @@ pub(crate) fn ci_windows_surface() -> Result<()> {
     // graphs are host-independent.
     run_workspace_clippy()?;
     run_family_clippy()?;
-    run_nextest_ci(["--all-features"])?;
+    // `--workspace` is mandatory (#224): without it nextest runs only
+    // default-members (crates/core), leaving the family crates and the new
+    // conformance/namespace tests as a Windows blind spot. The complete family
+    // surface must run natively here, not just crates/core.
+    run_nextest_ci(["--workspace", "--all-features"])?;
     run_kind_collision_composer_fixture()
 }
 

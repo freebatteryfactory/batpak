@@ -109,6 +109,7 @@ pub(crate) fn latest_segment_watermark(
             | StoreFileKind::IdempotencyStore
             | StoreFileKind::PendingCompactionMarker
             | StoreFileKind::CompactSource
+            | StoreFileKind::CompactStaged
             | StoreFileKind::CursorDirectory
             | StoreFileKind::Keyset
             | StoreFileKind::StoreMeta

@@ -39,6 +39,19 @@ fn seed_one_event(store: &Store<batpak::store::Open>) {
         .expect("seed append");
 }
 
+/// Seed one USER-KEYED event: only user idempotency obligations make the
+/// store write a v2 `index.idemp` authority image at close (#189 scoping) —
+/// the legacy-simulation fixtures need that witness to exist before erasing
+/// it.
+fn seed_one_keyed_event(store: &Store<batpak::store::Open>) {
+    let coord = Coordinate::new("entity:identity", "scope:test").expect("valid coord");
+    let opts = batpak::store::AppendOptions::new()
+        .with_idempotency(batpak::id::IdempotencyKey::from(0x5EED_u128));
+    let _receipt = store
+        .append_with_options(&coord, KIND, &serde_json::json!({"seed": "keyed"}), opts)
+        .expect("keyed seed append");
+}
+
 fn meta_path(dir: &Path) -> std::path::PathBuf {
     dir.join("store.meta")
 }
@@ -253,7 +266,7 @@ fn legacy_v1_directory_without_witness_migrates_and_is_stable_thereafter() {
     // and every open after the migration returns the same value.
     let dir = TempDir::new().expect("temp dir");
     let store = open(dir.path());
-    seed_one_event(&store);
+    seed_one_keyed_event(&store);
     let pre_delete = store.identity().expect("first mint");
     store.close().expect("close");
     // Erase the metadata AND the (v2, post-migration-witness) idempotency
@@ -287,7 +300,7 @@ fn read_only_open_of_unmigrated_legacy_dir_mints_nothing() -> Result<(), Box<dyn
 {
     let dir = TempDir::new().expect("temp dir");
     let store = open(dir.path());
-    seed_one_event(&store);
+    seed_one_keyed_event(&store);
     store.close().expect("close");
     std::fs::remove_file(meta_path(dir.path()))?;
     // Remove the v2 sidecar too: with it present the post-migration witness

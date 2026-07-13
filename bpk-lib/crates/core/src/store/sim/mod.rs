@@ -1,7 +1,13 @@
 //! Cooperative single-thread seeded simulation runtime (GAUNT-SIM-2c).
 //!
-//! Boundary: this module is compiled out entirely unless the
-//! `dangerous-test-hooks` feature is on. It composes three deterministic
+//! Boundary (contract A12): this module compiles under the
+//! `conformance-harness` feature — the clean external `StoreFs`-proof surface.
+//! `dangerous-test-hooks` implies `conformance-harness`, so the dangerous lane
+//! still sees everything. The namespace-truth backend [`shadow_fs::ShadowFs`]
+//! and the published conformance corpus are the `conformance-harness` surface;
+//! the byte-fault [`fs::SimFs`] layer and the seeded DST
+//! workload/scheduler/recovery machinery (including the `__sim` namespace
+//! matrix) stay behind `dangerous-test-hooks`. It composes three deterministic
 //! backends over the production seams introduced earlier in the gauntlet:
 //!
 //!   * [`clock::SimClock`] implements [`crate::store::platform::clock::Clock`]
@@ -23,6 +29,14 @@
 //! [`invariants`] checks per-step safety properties (hash-chain continuity,
 //! monotonic visible frontier, no-loss-after-crash-recover).
 //!
+//! Two durability axes are modeled independently: BYTE durability by the
+//! [`fs::SimFs`] layer (an honest/lying disk over any inner; directory-entry
+//! names stay durable by design) and NAMESPACE durability by the
+//! self-contained [`shadow_fs::ShadowFs`] backend (directory-entry truth vs.
+//! byte truth, resolved by a tree-swap `crash()`). The namespace-recovery
+//! legality matrix that drives a real `Store` over `ShadowFs` lives in
+//! [`namespace_recovery`].
+//!
 //! Determinism contract: a [`Sim`] constructed from the same seed produces a
 //! byte-identical op-trace. `BATPAK_SEED=N` selects the seed for replay. The
 //! `sim_is_deterministic` integration test (`crates/core/tests/sim.rs`) runs a
@@ -35,27 +49,52 @@
 //! `SimScheduler` for full cooperative scheduling — not required for current
 //! corpus proofs.
 
-#[cfg(test)]
+// The byte-fault DST machinery (fault schedules, cooperative scheduler, seeded
+// workload/recovery oracles, and the namespace matrix) is the internal
+// `dangerous-test-hooks` surface. Only the namespace-truth backend
+// (`shadow_fs`) and the byte-fault filesystem it reuses `CrashOp` from (`fs`)
+// stay on the clean `conformance-harness` surface (contract A12); `fs` gates
+// its own `SimFs` promotion internally.
+#[cfg(all(test, feature = "dangerous-test-hooks"))]
 mod atomic_fault;
+#[cfg(feature = "dangerous-test-hooks")]
 pub mod clock;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod corpus;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod fault_model;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod fork_hostile;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod fork_recovery;
 pub(crate) mod fs;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod import_recovery;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod invariants;
-#[cfg(test)]
+#[cfg(feature = "dangerous-test-hooks")]
+pub(crate) mod namespace_recovery;
+#[cfg(all(test, feature = "dangerous-test-hooks"))]
 mod read_fault;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod recovery;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod recovery_matrix;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod scheduler;
+pub(crate) mod shadow_fs;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) mod workload;
 
+#[cfg(feature = "dangerous-test-hooks")]
 use std::sync::Arc;
 
+#[cfg(feature = "dangerous-test-hooks")]
 pub use clock::SimClock;
+pub use shadow_fs::ShadowFs;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) use fault_model::InMemFaultFs;
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) use scheduler::SimScheduler;
 
 /// Read the replay seed from the `BATPAK_SEED` environment variable.
@@ -63,6 +102,7 @@ pub(crate) use scheduler::SimScheduler;
 /// Returns the parsed seed when the variable is present and parses as a `u64`,
 /// otherwise the supplied `default`. This is the single entry point tests use
 /// so that `BATPAK_SEED=N cargo nextest ...` deterministically replays a run.
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) fn seed_from_env(default: u64) -> u64 {
     match std::env::var("BATPAK_SEED") {
         Ok(raw) => raw.trim().parse::<u64>().unwrap_or(default),
@@ -78,6 +118,7 @@ pub(crate) fn seed_from_env(default: u64) -> u64 {
 /// on a [`crate::store::StoreConfig`] via `with_clock` / `with_spawner` /
 /// `with_fs`. The [`workload`] engine also drives them directly for determinism
 /// proofs; full Store-over-`SimScheduler` wiring is optional follow-on.
+#[cfg(feature = "dangerous-test-hooks")]
 pub(crate) struct Sim {
     /// Seed every backend and the workload PRNG derive from.
     pub(crate) seed: u64,
@@ -90,6 +131,7 @@ pub(crate) struct Sim {
     pub(crate) fs: Arc<InMemFaultFs>,
 }
 
+#[cfg(feature = "dangerous-test-hooks")]
 impl Sim {
     /// Construct a simulation from `seed`. All randomness — scheduler ordering
     /// jitter, fault decisions, and workload op selection — is derived from
@@ -136,17 +178,19 @@ impl Sim {
 /// failure; the in-memory simulation backends do not, so a completed run always
 /// yields `Ok(digest)`. The `Result` is retained for the seed-tagged harness
 /// contract.
+#[cfg(feature = "dangerous-test-hooks")]
 pub fn run_seeded_workload(seed: u64, steps: usize) -> Result<u64, String> {
     Sim::new(seed).run_workload(steps)
 }
 
 /// Test-only re-export of `seed_from_env` for `BATPAK_SEED` replay from
 /// integration tests.
+#[cfg(feature = "dangerous-test-hooks")]
 pub fn replay_seed(default: u64) -> u64 {
     seed_from_env(default)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "dangerous-test-hooks"))]
 mod tests {
     use super::*;
 

@@ -30,6 +30,7 @@ mod chaos_contract;
 mod ci_container_contract;
 mod ci_parity;
 mod complexity;
+mod crash_matrix;
 mod dangerous_hooks_contract;
 mod docs_catalog;
 mod doctor;
@@ -37,6 +38,7 @@ mod dst_corpus;
 mod evidence_audit;
 mod family_version;
 mod fitness_functions;
+mod fuzz_replay_contract;
 mod gate_registry;
 mod glob_coverage;
 mod harness_lints;
@@ -67,6 +69,7 @@ mod triangulation;
 mod typed_waivers;
 mod unsafe_ledger;
 mod wallclock;
+mod zero_warnings;
 
 #[path = "../../shared/shared_checks.rs"]
 mod shared_checks;

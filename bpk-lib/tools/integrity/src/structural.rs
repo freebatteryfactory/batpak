@@ -157,6 +157,36 @@ pub(crate) fn run() -> Result<()> {
     // an advisory skeleton; its seam column is parsed (not mirrored).
     crate::receipts::run_gate("repo-ir-fitness", || crate::repo_ir::check(&repo_root))?;
 
+    // fuzz-replay-contract (GAUNT-PROOF-OF-PROOF #197): feature-independent
+    // structural mirror of the fuzz-replay lockstep + the anti-ceremony law —
+    // [[bin]] == dispatch_table == manifest target set, every committed fixture
+    // listed, and every semantic target keeps a non-empty ProductionFlip-proven
+    // regression. Cannot compile out (unlike the feature-gated test binary).
+    crate::receipts::run_gate("fuzz-replay-contract", || {
+        let inputs = crate::fuzz_replay_contract::check(&repo_root)?;
+        let files = inputs.len().max(1);
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
+
+    // crash-matrix (GAUNT-PROOF-OF-PROOF #197): every declared crash transition of
+    // an L4 crash-coverage invariant has a witness fixture — the crash_matrix.yaml
+    // boundary id set must equal the harness enum's kebab-cased variant set exactly.
+    crate::receipts::run_gate("crash-matrix", || {
+        let inputs = crate::crash_matrix::check(&repo_root)?;
+        let files = inputs.len().max(1);
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
+
+    // zero-warnings-posture (#225, INV-ZERO-WARNINGS): the warnings-free claim is
+    // DERIVED from real facts — workspace manifest lint tables, clippy `-D warnings`
+    // lane invocations, rustdoc `-D warnings`, and the armed zero-allow tripwire —
+    // never a prose-only assertion. A dropped `-D warnings` or a lint downgrade fails.
+    crate::receipts::run_gate("zero-warnings-posture", || {
+        let inputs = crate::zero_warnings::check(&repo_root)?;
+        let files = inputs.len().max(1);
+        Ok(crate::receipts::GateWork::new(files, files, inputs))
+    })?;
+
     // assurance-level-check: receipt over the manifest + the production files it
     // resolves to assurance levels.
     crate::receipts::run_gate("assurance-level-check", || {

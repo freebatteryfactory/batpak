@@ -1,6 +1,7 @@
 use crate::repo_surface::{load_yaml, resolve_repo_or_core_path, rust_files};
 use crate::source_cache::SourceCache;
 use anyhow::{bail, Context, Result};
+use regex::Regex;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -276,6 +277,7 @@ fn check_entries(
                 ),
             )?;
             check_cargo_test_filter_targets_existing_test(repo_root, entry, command, source_cache)?;
+            check_command_features_cover_gated_target(repo_root, entry, command, source_cache)?;
         }
     }
     Ok(())
@@ -306,6 +308,116 @@ fn check_cargo_test_filter_targets_existing_test(
             entry.line
         ),
     )
+}
+
+/// Gate-(e), GAUNT-PROOF-OF-PROOF #197: a ledger command that names a
+/// feature-gated integration test binary must enable that feature (or
+/// `--all-features`), otherwise the command "proves" a binary that compiles to
+/// zero tests — the false-green shape behind the #197 incident. The gated
+/// vocabulary now includes `conformance-harness` (contract A12), so any
+/// `#![cfg(feature = "…")]` guard on the target counts, not just
+/// `dangerous-test-hooks`.
+fn check_command_features_cover_gated_target(
+    repo_root: &Path,
+    entry: &LedgerEntry,
+    command: &str,
+    source_cache: &mut SourceCache,
+) -> Result<()> {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    let Some(target_pos) = parts.iter().position(|part| *part == "--test") else {
+        return Ok(());
+    };
+    let Some(target) = parts.get(target_pos + 1) else {
+        return Ok(());
+    };
+    let target_path = resolve_repo_or_core_path(repo_root, format!("tests/{target}.rs"));
+    if !target_path.exists() {
+        // A missing target is diagnosed by the filter check when a filter is
+        // present; here there may be no filter, so leave that gate to own it.
+        return Ok(());
+    }
+    let content = source_cache
+        .read_to_string(&target_path)
+        .with_context(|| format!("read tests/{target}.rs"))?;
+    let required = required_features_of_target(&content);
+    if required.is_empty() {
+        return Ok(());
+    }
+    if parts.iter().any(|part| *part == "--all-features") {
+        return Ok(());
+    }
+    let enabled = enabled_features_of_command(&parts);
+    let missing: Vec<&String> = required
+        .iter()
+        .filter(|feature| !enabled.contains(*feature))
+        .collect();
+    ensure(
+        missing.is_empty(),
+        format!(
+            "testing_ledger.yaml:{}: command `{command}` names feature-gated test target `{target}` (requires features {required:?}) but does not enable them — the binary compiles to zero tests under this command; add `--features ...` or `--all-features`.",
+            entry.line
+        ),
+    )
+}
+
+/// Collect every `feature = "NAME"` named in the target's inner `#![cfg(...)]`
+/// attributes (all such lines before the first item; doc comments and blank
+/// lines skipped). Non-feature cfgs (`target_os`, …) yield nothing. Every
+/// extracted name is treated as REQUIRED — the strictest reading of
+/// `any(feature = …)`; no live test binary uses that shape today.
+fn required_features_of_target(content: &str) -> BTreeSet<String> {
+    // justifies: INV-LITERAL-REGEX-UNWRAP-SAFE; pattern is a string literal known-safe at compile time in tools/integrity/src/structural.rs; this expect cannot fire in any reachable code path
+    let feature_re = Regex::new(r#"feature\s*=\s*"([^"]+)""#)
+        .expect("internal regex is a compile-time constant and will compile");
+    let mut required = BTreeSet::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("#![") {
+            if rest.starts_with("cfg(") {
+                for capture in feature_re.captures_iter(trimmed) {
+                    if let Some(name) = capture.get(1) {
+                        required.insert(name.as_str().to_owned());
+                    }
+                }
+            }
+            continue;
+        }
+        // First real item reached: inner attributes are all behind us.
+        break;
+    }
+    required
+}
+
+/// The feature set a command enables via `--features a,b` / `--features=a b` /
+/// repeated `--features` flags. `--all-features` is handled by the caller.
+fn enabled_features_of_command(parts: &[&str]) -> BTreeSet<String> {
+    let mut enabled = BTreeSet::new();
+    let mut cursor = 0;
+    while let Some(part) = parts.get(cursor) {
+        if *part == "--features" {
+            if let Some(value) = parts.get(cursor + 1) {
+                insert_feature_values(value, &mut enabled);
+            }
+            cursor += 2;
+            continue;
+        }
+        if let Some(value) = part.strip_prefix("--features=") {
+            insert_feature_values(value, &mut enabled);
+        }
+        cursor += 1;
+    }
+    enabled
+}
+
+fn insert_feature_values(value: &str, enabled: &mut BTreeSet<String>) {
+    for feature in value.split([',', ' ']) {
+        if !feature.is_empty() {
+            enabled.insert(feature.to_owned());
+        }
+    }
 }
 
 fn cargo_test_target_and_filter(command: &str) -> Option<(&str, &str)> {
@@ -1199,6 +1311,102 @@ mod tests {
         fs::write(repo.join(path), at_cap).expect("write at-cap harness");
         let mut fresh_cache = SourceCache::new(&repo);
         check_line_caps(&repo, &files, &mut fresh_cache).expect("at-cap harness accepted");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
+
+    fn write_gated_probe(repo: &Path, feature: &str) {
+        fs::create_dir_all(repo.join("tests")).expect("create tests dir");
+        fs::write(
+            repo.join("tests/gated_probe.rs"),
+            format!("#![cfg(feature = \"{feature}\")]\n#[test]\nfn t() {{}}\n"),
+        )
+        .expect("write gated probe");
+    }
+
+    #[test]
+    fn gated_target_without_features_is_rejected() {
+        // A command that names a feature-gated binary without enabling its
+        // feature "proves" a binary that compiles to zero tests (#197 shape).
+        let repo = temp_repo("gated-no-features");
+        write_gated_probe(&repo, "dangerous-test-hooks");
+        let mut source_cache = SourceCache::new(&repo);
+        let mut entry = complete_entry("tests/gated_probe.rs");
+        entry.commands = vec!["cargo test --test gated_probe".to_owned()];
+
+        let err = check_command_features_cover_gated_target(
+            &repo,
+            &entry,
+            &entry.commands[0],
+            &mut source_cache,
+        )
+        .expect_err("feature-gated target without --features rejected");
+        assert!(err.to_string().contains("zero tests"), "{err:?}");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
+
+    #[test]
+    fn gated_target_with_matching_features_passes() {
+        let repo = temp_repo("gated-matching");
+        // The conformance-harness feature (contract A12) is a gated feature the
+        // superset law must recognize just like dangerous-test-hooks.
+        write_gated_probe(&repo, "conformance-harness");
+        let mut source_cache = SourceCache::new(&repo);
+        let mut entry = complete_entry("tests/gated_probe.rs");
+        entry.commands =
+            vec!["cargo test --test gated_probe --features conformance-harness".to_owned()];
+
+        check_command_features_cover_gated_target(
+            &repo,
+            &entry,
+            &entry.commands[0],
+            &mut source_cache,
+        )
+        .expect("matching feature enables the gated target");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
+
+    #[test]
+    fn gated_target_with_all_features_passes() {
+        let repo = temp_repo("gated-all-features");
+        write_gated_probe(&repo, "dangerous-test-hooks");
+        let mut source_cache = SourceCache::new(&repo);
+        let mut entry = complete_entry("tests/gated_probe.rs");
+        entry.commands = vec!["cargo test --test gated_probe --all-features".to_owned()];
+
+        check_command_features_cover_gated_target(
+            &repo,
+            &entry,
+            &entry.commands[0],
+            &mut source_cache,
+        )
+        .expect("--all-features enables every gated target");
+
+        fs::remove_dir_all(repo).expect("remove temp repo");
+    }
+
+    #[test]
+    fn ungated_target_without_features_passes() {
+        let repo = temp_repo("ungated");
+        fs::create_dir_all(repo.join("tests")).expect("create tests dir");
+        fs::write(
+            repo.join("tests/plain_probe.rs"),
+            "#[test]\nfn t() {}\n",
+        )
+        .expect("write ungated probe");
+        let mut source_cache = SourceCache::new(&repo);
+        let mut entry = complete_entry("tests/plain_probe.rs");
+        entry.commands = vec!["cargo test --test plain_probe".to_owned()];
+
+        check_command_features_cover_gated_target(
+            &repo,
+            &entry,
+            &entry.commands[0],
+            &mut source_cache,
+        )
+        .expect("an ungated target needs no features");
 
         fs::remove_dir_all(repo).expect("remove temp repo");
     }

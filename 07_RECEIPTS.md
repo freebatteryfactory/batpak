@@ -19,7 +19,7 @@ Implemented or active receipt-shaped outcomes include:
 - projection evidence reports
 - snapshot and chain-walk reports
 - receipt verification outcomes
-- release and inspection reports emitted by tooling
+- release and inspection reports emitted by tooling, including proof receipts for test runs (command, features, executed/skipped counts — see 12_CONFORMANCE.md)
 
 Only canonize a receipt category as public when code, tests, and traceability make it real.
 

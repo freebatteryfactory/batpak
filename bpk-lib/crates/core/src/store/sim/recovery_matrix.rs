@@ -35,12 +35,14 @@
 //! `(seed, fault_mode, boundary)` triple recovers the IDENTICAL classification +
 //! digest (determinism).
 //!
-//! Terminal FAIL-CLOSED parent-dir model: `SimFs::sync_parent_dir` is modeled
-//! as always-durable (a crash truncates file CONTENTS, it never unlinks a
-//! created file), so a pure "parent-dir sync dropped" mode is not independently
-//! modeled. The [`Boundary::SegmentRotationCreate`] cell exercises the
-//! new-segment-create + dir-sync window via the injector instead. Witnessed by
-//! `recovery_matrix.rs::sim_parent_dir_sync_fail_closed_model_honest_deferral`.
+//! Parent-dir namespace durability: `SimFs::sync_parent_dir` keeps names
+//! always-durable BY DESIGN (a crash truncates file CONTENTS, it never unlinks a
+//! created file) — that is the byte layer's deliberate scope. Namespace truth is
+//! now INDEPENDENTLY modeled by [`super::shadow_fs::ShadowFs`] and swept by
+//! [`super::namespace_recovery`], so a pure "parent-dir sync dropped" mode has a
+//! real owner. The [`Boundary::SegmentRotationCreate`] cell still exercises the
+//! new-segment-create + dir-sync window via the injector. Witnessed by
+//! `recovery_matrix.rs::namespace_durability_is_owned_by_the_shadow_matrix`.
 
 use super::fs::SimFs;
 use super::recovery::{
@@ -691,7 +693,15 @@ mod tests {
     }
 
     #[test]
-    fn sim_parent_dir_sync_fail_closed_model_honest_deferral() {
+    fn namespace_durability_is_owned_by_the_shadow_matrix() {
+        // The honest-deferral claim is retired: parent-dir namespace truth now
+        // has a real owner (`super::namespace_recovery` over `ShadowFs`). Keep the
+        // old segment-rotation-create pin AND assert the namespace matrix carries
+        // its modes, so neither owner can silently drop its coverage.
+        assert!(
+            super::namespace_recovery::all_namespace_modes().len() >= 4,
+            "PROPERTY: the ShadowFs namespace matrix owns the parent-dir-sync modes"
+        );
         assert!(
             Boundary::ALL.contains(&Boundary::SegmentRotationCreate),
             "PROPERTY: segment-rotation-create boundary exercises the parent-dir-sync window"

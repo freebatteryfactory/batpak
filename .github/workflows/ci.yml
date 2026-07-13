@@ -465,6 +465,14 @@ jobs:
         run: bash ./scripts/run-in-devcontainer.sh 'cargo xtask preflight'
 
   ci-windows:
+    # #224 family lane: `cargo xtask ci-windows-surface` runs the COMPLETE family
+    # surface natively on Windows — a `--workspace --all-features` nextest (or an
+    # equivalently complete set with explicit, documented platform exclusions). The
+    # `--all-features` scope pulls in the `conformance-harness` (and, via its
+    # implication, `dangerous-test-hooks`) feature, so the new StoreFs conformance
+    # corpus and namespace/crash recovery tests run here too — no new Windows blind
+    # spot. Kept as a single `cargo xtask` invocation so the surface can only widen
+    # in one place; the ci.yml side just matches whatever that command selects.
     name: CI Windows surface (native)
     runs-on: windows-latest
     if: >-
@@ -894,14 +902,23 @@ jobs:
 
   fuzz-replay:
     # GAUNT-FUZZ-1 — the PR-BLOCKING fuzz-replay gate (the gateable, deterministic
-    # half). NOT cargo-fuzz: a normal `#[test]` on the standard devcontainer
-    # toolchain that re-runs every committed corpus + regression input through the
-    # real `batpak::__fuzz::*` decode entry points and asserts none panics. Fast
-    # (<1s/file), hardware-independent, no nightly/sanitizer needed — so it rides
-    # the always-on PR lane (gated only by the rust-changed detector), unlike the
-    # nightly cargo-fuzz `fuzz-smoke` below. The `fuzz_replay_covers_every_target`
-    # meta-test inside the same binary reds if any declared fuzz `[[bin]]` loses its
-    # regression fixture or dispatcher wiring, so the gate can't be hollowed out.
+    # half). NOT cargo-fuzz: normal `#[test]`s on the standard devcontainer
+    # toolchain that re-run every committed corpus + regression input through the
+    # real `batpak::__fuzz::*` decode/property entry points and assert none panics
+    # and that the semantic regressions bite. Fast (<1s/file), hardware-independent,
+    # no nightly/sanitizer needed — so it rides the always-on PR lane (gated only by
+    # the rust-changed detector), unlike the nightly cargo-fuzz `fuzz-smoke` below.
+    #
+    # Driven now through `cargo xtask fuzz-replay`, which hardens the gate against
+    # being hollowed out four ways: (i) it nextest-LISTS the selected binaries first
+    # and FAILS if any intended test is missing or `#[ignore]`d — a feature-gated
+    # binary that compiles out can no longer pass green; (ii) it runs with
+    # `--no-tests=fail` so a zero-test selection reds instead of passing vacuously;
+    # (iii) it writes a proof receipt (command, features, executed/skipped counts,
+    # corpus/regression identity, commit SHA) under `target/proof-receipts/`; and
+    # (iv) the same lockstep + anti-ceremony law is enforced FEATURE-INDEPENDENTLY by
+    # `fuzz-replay-contract` inside structural-check, so the dispatch/regression
+    # wiring is proven even on a build that never compiles the fuzz feature.
     name: Fuzz replay (committed corpus)
     runs-on: ubuntu-latest
     needs: [rust-changed]
@@ -922,13 +939,22 @@ jobs:
           shared-key: fuzz-replay
           workspaces: bpk-lib
       - uses: ./.github/actions/setup-devcontainer
-      - name: Replay committed fuzz corpus + regressions (no panic)
+      - name: Fuzz replay + semantic regression receipts
         env:
           BATPAK_DEVCONTAINER_IMAGE: batpak-devcontainer:ci
           BATPAK_DEVCONTAINER_SKIP_BUILD: "1"
         run: >-
           bash ./scripts/run-in-devcontainer.sh
-          'cargo test -p batpak --test fuzz_replay --features dangerous-test-hooks'
+          'cargo xtask fuzz-replay'
+      # Plain step (no `if: always()`): the receipt exists only when the gate above
+      # passed, so uploading it unconditionally would warn on a red run.
+      - name: Upload fuzz-replay proof receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-replay-proof-receipts
+          path: bpk-lib/target/proof-receipts/
+          if-no-files-found: warn
+          retention-days: 14
 
   gauntlet-red-fixtures-bite:
     # GAUNTLET-TQL — "prove the gates bite". The gate registry records each blocking
@@ -1050,7 +1076,8 @@ jobs:
           for target in \
             frame_decode segment_header sidx_entry checkpoint_data \
             checkpoint_snapshot_v6 mmap_entry cache_meta projection_state \
-            hidden_ranges mmap_index_load sidx_footer; do
+            hidden_ranges mmap_index_load sidx_footer \
+            sidx_boundary sidx_manifest idemp_image; do
             echo "::group::fuzz $target"
             cargo +nightly fuzz run "$target" --target x86_64-unknown-linux-gnu -- \
               -max_total_time=900 \

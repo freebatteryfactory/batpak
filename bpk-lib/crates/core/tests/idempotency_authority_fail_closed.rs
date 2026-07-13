@@ -4,14 +4,19 @@
 //! PROVES: INV-IDEMPOTENCY-DURABLE-WINDOW (fail-closed) and
 //! INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION — after retention eviction a
 //! corrupt sidecar can never turn a retry into a second append; a missing
-//! sidecar on a keyed store is authority LOSS, not a fresh store; a CRC-valid
-//! but STALE image is rejected through its coverage frontier; a FOREIGN image
-//! (other lineage, or a diverged sibling fork at the same covered sequence) is
-//! rejected through the compound anchor. (The compaction old-or-new commit
-//! half lives in `idempotency_authority_compaction.rs`.)
+//! sidecar on a keyed store is authority LOSS, not a fresh store; admission is
+//! by the `store.meta`-authorized image-generation TOKEN, so an unauthorized
+//! image is refused whatever its frontier claims — an old self image (stale),
+//! another lineage's image (foreign), a diverged sibling at the same covered
+//! sequence, a FARTHER-AHEAD sibling, and an anchor-colliding sibling
+//! (diverged elsewhere + same final keyed event) are all rejected. (The
+//! compaction old-or-new commit half lives in
+//! `idempotency_authority_compaction.rs`, and the per-boundary crash walk lives
+//! in `compaction_crash_windows.rs` and `workload_crash_during_maintenance.rs`.)
 //! CATCHES: the issue's named admission mutants — Invalid->Missing collapse,
-//! removal of the expectation check, removal of the frontier comparison, and
-//! accepting keyed traffic on unproven authority.
+//! removal of the expectation check, token comparison weakened to frontier
+//! arithmetic (the at-or-past superset hole), and accepting keyed traffic on
+//! unproven authority.
 //! SEEDED: real stores with tiny segments; deterministic key constants; byte
 //! transplants between sibling directories.
 
@@ -287,8 +292,10 @@ fn diverged_sibling_fork_image_is_rejected_via_history_anchor(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Sibling forks SHARE the lineage id (owner ruling, #205), so lineage +
     // numeric frontier alone would admit a transplanted sibling image. The
-    // compound anchor (event id + chain commitment at the covered sequence)
-    // is what catches the divergence.
+    // image-generation token is what refuses it (the sibling's publication was
+    // never authorized by THIS store's metadata); the diagnostic anchor —
+    // equal covered sequence, diverged event id — classifies the refusal as a
+    // HISTORY-ANCHOR transplant rather than a stale self image.
     let a_dir = TempDir::new().expect("tempdir a");
     let f_dir = TempDir::new().expect("fork dir");
 
@@ -299,13 +306,13 @@ fn diverged_sibling_fork_image_is_rejected_via_history_anchor(
         store.close().expect("close");
     }
 
-    // Diverge the siblings, then TOP UP the laggard with filler until both
-    // frontiers are EQUAL, so the transplant below cannot be caught by the
-    // frontier comparison — only the compound anchor can refuse it.
+    // Equalize the sibling frontiers with unkeyed filler FIRST, then diverge
+    // each with its own keyed event at the SAME recorded position: the two
+    // images end anchor-equal in covered sequence, so the transplant below
+    // cannot be caught by frontier comparison — only the unauthorized token,
+    // classified by the diverged event id at that sequence.
     let a = Store::open(config(a_dir.path())).expect("reopen a");
     let f = Store::open(config(f_dir.path())).expect("open fork");
-    let _ = append_keyed(&a, 0x5000_0000_0000_0000_0000_0000_0000_0005u128);
-    let _ = append_keyed(&f, 0x6000_0000_0000_0000_0000_0000_0000_0006u128);
     for _ in 0..64 {
         let (ga, gf) = (a.stats().global_sequence, f.stats().global_sequence);
         if ga == gf {
@@ -316,12 +323,13 @@ fn diverged_sibling_fork_image_is_rejected_via_history_anchor(
             .append(&coord(), KIND, &serde_json::json!({"filler": "top-up"}))
             .expect("top-up filler append");
     }
-    let covered = (a.stats().global_sequence, f.stats().global_sequence);
+    let leveled = (a.stats().global_sequence, f.stats().global_sequence);
     assert_eq!(
-        covered.0, covered.1,
-        "PRECONDITION: both siblings sit at the same covered sequence — the transplant below \
-         must be caught by the anchor, not the frontier"
+        leveled.0, leveled.1,
+        "PRECONDITION: both siblings sit at the same frontier before the divergent keyed appends"
     );
+    let _ = append_keyed(&a, 0x5000_0000_0000_0000_0000_0000_0000_0005u128);
+    let _ = append_keyed(&f, 0x6000_0000_0000_0000_0000_0000_0000_0006u128);
     a.close().expect("close a");
     f.close().expect("close fork");
 
@@ -334,8 +342,8 @@ fn diverged_sibling_fork_image_is_rejected_via_history_anchor(
     let err = match Store::open(config(a_dir.path())) {
         Ok(_) => {
             return Err(std::io::Error::other(
-                "PROPERTY (#189): a diverged sibling fork's image must be rejected via the \
-                 compound history anchor",
+                "PROPERTY (#189): a diverged sibling fork's image must be rejected — its \
+                 publication token was never authorized by this store's metadata",
             )
             .into())
         }
@@ -347,6 +355,140 @@ fn diverged_sibling_fork_image_is_rejected_via_history_anchor(
     assert!(
         matches!(kind, IdempAuthorityForeignKind::HistoryAnchor),
         "a same-frontier sibling transplant is a HISTORY-ANCHOR divergence; got {kind:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn farther_ahead_sibling_image_is_rejected() -> Result<(), Box<dyn std::error::Error>> {
+    // The blind "at-or-past = legal superset" admission hole: a sibling fork
+    // that advanced FARTHER than this store shares the lineage and carries an
+    // anchor past the local expectation, so frontier arithmetic would admit
+    // its transplanted image — returning receipts for operations that only
+    // ever happened in the sibling. The generation token refuses it: the
+    // fork's publication was never authorized by A's metadata.
+    let a_dir = TempDir::new().expect("tempdir a");
+    let f_dir = TempDir::new().expect("fork dir");
+
+    {
+        let store = Store::open(config(a_dir.path())).expect("open");
+        let _ = append_keyed(&store, 0x4000_0000_0000_0000_0000_0000_0000_0004u128);
+        store.fork(f_dir.path()).expect("fork");
+        store.close().expect("close");
+    }
+
+    // Advance ONLY the fork, well past A's frontier.
+    {
+        let f = Store::open(config(f_dir.path())).expect("open fork");
+        let _ = append_keyed(&f, 0x6000_0000_0000_0000_0000_0000_0000_0006u128);
+        let _ = append_keyed(&f, 0x7000_0000_0000_0000_0000_0000_0000_0007u128);
+        for _ in 0..8 {
+            let _ = f
+                .append(&coord(), KIND, &serde_json::json!({"filler": "ahead"}))
+                .expect("advance the fork");
+        }
+        f.close().expect("close fork");
+    }
+
+    // Transplant the farther-ahead sibling image into A.
+    std::fs::copy(
+        f_dir.path().join(IDEMP_FILENAME),
+        a_dir.path().join(IDEMP_FILENAME),
+    )?;
+
+    let err = match Store::open(config(a_dir.path())) {
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY (#189): a farther-ahead sibling image must be rejected — \
+                 at-or-past frontier arithmetic must never admit an unauthorized image",
+            )
+            .into())
+        }
+        Err(e) => e,
+    };
+    let StoreError::IdempotencyAuthorityForeign { kind } = err else {
+        return Err(std::io::Error::other(format!("wrong variant: {err:?}")).into());
+    };
+    assert!(
+        matches!(kind, IdempAuthorityForeignKind::HistoryAnchor),
+        "a farther-ahead sibling transplant classifies as HISTORY-ANCHOR foreign; got {kind:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn diverge_elsewhere_then_append_same_final_keyed_event_rejects_transplant(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Per-entity hash chains are NOT a commitment to full store history: two
+    // siblings can diverge in one entity, then append the SAME final keyed
+    // event (same key → same event id) to another entity at the same
+    // sequence — the anchors collide as far as frontier/event-id comparison
+    // can see. Only the generation token distinguishes the histories.
+    let a_dir = TempDir::new().expect("tempdir a");
+    let f_dir = TempDir::new().expect("fork dir");
+    let elsewhere = Coordinate::new("entity:elsewhere", "scope:fail-closed").expect("valid coord");
+
+    {
+        let store = Store::open(config(a_dir.path())).expect("open");
+        let _ = append_keyed(&store, 0x4000_0000_0000_0000_0000_0000_0000_0004u128);
+        store.fork(f_dir.path()).expect("fork");
+        store.close().expect("close");
+    }
+
+    // Diverge ONLY in another entity (same event count, different payloads).
+    let a = Store::open(config(a_dir.path())).expect("reopen a");
+    let f = Store::open(config(f_dir.path())).expect("open fork");
+    let _ = a
+        .append(&elsewhere, KIND, &serde_json::json!({"branch": "a"}))
+        .expect("diverge a elsewhere");
+    let _ = f
+        .append(&elsewhere, KIND, &serde_json::json!({"branch": "f"}))
+        .expect("diverge fork elsewhere");
+    // Level the frontiers (lifecycle events skew them), then both append the
+    // IDENTICAL final keyed event at the SAME recorded position.
+    for _ in 0..64 {
+        let (ga, gf) = (a.stats().global_sequence, f.stats().global_sequence);
+        if ga == gf {
+            break;
+        }
+        let lagging = if ga < gf { &a } else { &f };
+        let _ = lagging
+            .append(&elsewhere, KIND, &serde_json::json!({"filler": "level"}))
+            .expect("leveling filler append");
+    }
+    let leveled = (a.stats().global_sequence, f.stats().global_sequence);
+    assert_eq!(
+        leveled.0, leveled.1,
+        "PRECONDITION: equal frontiers before the identical final keyed appends"
+    );
+    let same_key = 0x5000_0000_0000_0000_0000_0000_0000_0005u128;
+    let _ = append_keyed(&a, same_key);
+    let _ = append_keyed(&f, same_key);
+    a.close().expect("close a");
+    f.close().expect("close fork");
+
+    // Transplant the fork's image into A.
+    std::fs::copy(
+        f_dir.path().join(IDEMP_FILENAME),
+        a_dir.path().join(IDEMP_FILENAME),
+    )?;
+
+    let err = match Store::open(config(a_dir.path())) {
+        Ok(_) => {
+            return Err(std::io::Error::other(
+                "PROPERTY (#189): an anchor-colliding sibling image (diverged elsewhere, same \
+                 final keyed event) must be rejected by the unauthorized generation token",
+            )
+            .into())
+        }
+        Err(e) => e,
+    };
+    let StoreError::IdempotencyAuthorityForeign { kind } = err else {
+        return Err(std::io::Error::other(format!("wrong variant: {err:?}")).into());
+    };
+    assert!(
+        matches!(kind, IdempAuthorityForeignKind::HistoryAnchor),
+        "an anchor-colliding sibling transplant is still HISTORY-ANCHOR foreign; got {kind:?}"
     );
     Ok(())
 }

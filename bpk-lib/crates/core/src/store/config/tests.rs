@@ -247,12 +247,18 @@ fn validated_process_boot_ns_delegates_to_the_runtime_clock() {
 #[test]
 fn now_mono_ns_advances_beyond_nonzero_sentinel() {
     let clock = SystemClock::new();
+    // #182: the process-wide monotonic anchor initializes LAZILY on the first
+    // read — which may be this very call, in which case it legally reads ~0.
+    // Force the anchor with a first read, then prove a later read advanced.
+    let first = clock.now_mono_ns();
     std::thread::sleep(Duration::from_millis(1));
     let elapsed = clock.now_mono_ns();
 
     assert!(
-        elapsed > 1,
-        "PROPERTY: now_mono_ns must report elapsed nanoseconds from the process anchor, not a fixed sentinel; got {elapsed}"
+        elapsed > first && elapsed > 1,
+        "PROPERTY: now_mono_ns must report elapsed nanoseconds from the process \
+         anchor, advancing across a real sleep and beyond a fixed sentinel; \
+         got first={first} then {elapsed}"
     );
 }
 

@@ -426,27 +426,6 @@ impl StoreIndex {
             })
     }
 
-    /// The compound history anchor at the CURRENT tip: the highest committed
-    /// global sequence in the live index plus the event id and content-hash
-    /// commitment at it. `None` on an empty index. Feeds the durable
-    /// idempotency-authority binding (#189) from the quiesced flush paths —
-    /// the O(n) sweep matches the flush's own snapshot cost.
-    pub(crate) fn tip_history_anchor(
-        &self,
-    ) -> Option<crate::store::store_meta::IdempAuthorityAnchor> {
-        self.by_id
-            .iter()
-            .max_by_key(|r| r.value().global_sequence)
-            .map(|r| {
-                let entry = r.value();
-                crate::store::store_meta::IdempAuthorityAnchor {
-                    covered_global_sequence: entry.global_sequence,
-                    event_id_at: entry.event_id,
-                    chain_commitment: entry.hash_chain.event_hash,
-                }
-            })
-    }
-
     /// Current allocator position (next sequence to be assigned).
     /// Used by checkpoint, rebuild, writer, and stats/diagnostics.
     pub(crate) fn global_sequence(&self) -> u64 {
@@ -494,6 +473,17 @@ impl StoreIndex {
         let _read = self.swap_gate.read();
         self.idemp
             .mark_evicted(|event_id| self.by_id.contains_key(&event_id));
+    }
+
+    /// Mark a SHADOW idempotency map's rows evicted against THIS index's live
+    /// `by_id` set (the compaction fresh-index variant of
+    /// `mark_idemp_evicted_against_live`). The durable authority image is
+    /// evicted against the fresh (staged-view) index and flushed BEFORE the
+    /// commit rename, while the live map keeps serving appends.
+    /// justifies: INV-IDEMPOTENCY-DURABLE-WINDOW
+    pub(crate) fn mark_idemp_shadow_evicted(&self, shadow: &idemp::IdempotencyStore) {
+        let _read = self.swap_gate.read();
+        shadow.mark_evicted(|event_id| self.by_id.contains_key(&event_id));
     }
 
     /// F6 / FREEZE-4 compact swap-point.

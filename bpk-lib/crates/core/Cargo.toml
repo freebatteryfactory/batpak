@@ -25,7 +25,20 @@ rustdoc-args = ["--cfg", "docsrs"]
 # chain integrity, and receipt signing all rely on it unconditionally and there
 # is no degraded mode. It is NOT a cargo feature — there is nothing to toggle.
 default = []
-dangerous-test-hooks = ["dep:fastrand", "batpak-testkit/dangerous-test-hooks"]
+# Clean external conformance surface. Enables `store::conformance` (the
+# StoreFs conformance corpus + backend factories) and `ShadowFs` with its
+# CrashOp/SimOp/SimOpKind vocabulary and crash/replay controls — the parts a
+# downstream backend author needs to prove their `StoreFs` against, without
+# pulling the internal fault/poison hooks. No dependencies of its own.
+conformance-harness = []
+# Internal-only test surface. Implies `conformance-harness`, then adds the
+# dangerous levers on top: the SimFs promotion, the `__sim` namespace matrix,
+# fault-injection hooks, and poison levers. Never a default feature.
+dangerous-test-hooks = [
+    "conformance-harness",
+    "dep:fastrand",
+    "batpak-testkit/dangerous-test-hooks",
+]
 # Test-only global-allocator shims (off by default; never in a normal build).
 # A `#[global_allocator]` is process-wide, so each shim must be installed by a
 # DEDICATED single-test binary. `alloc-count` enables `CountingAlloc` (atomic

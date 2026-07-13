@@ -1,18 +1,20 @@
 //! The handle-abstracted `StoreFs` seam (0.10.0, issues #164/#168).
 //!
-//! PROVES: `StoreConfig::with_fs` is public and functional, and the seam's
-//! backend contract holds over the production backend through ABSTRACT
-//! handles ([`StoreFile`], [`StagedFile`], [`StoreDirLockGuard`]) — no
-//! concrete `std::fs` type appears in any assertion. The contract body is
-//! parameterized over `&dyn StoreFs` so every backend (RealFs here; MemFs in
-//! `store_fs_backend_conformance`) runs the identical corpus.
+//! PROVES (default lane): `StoreConfig::with_fs` is public and functional over
+//! the production `RealFs` backend — a store installed on an explicitly
+//! installed backend appends, reads, and verifies its own receipt through the
+//! abstract handles, and `ParentDirSyncAdmission` is a shareable,
+//! constructor-less proof token.
+//!
+//! The full parameterized backend contract corpus (the body that gates
+//! `RealFs`, `MemFs`, and `ShadowFs`) now lives at `batpak::store::conformance`
+//! (feature-gated), driven by `tests/store_fs_conformance_corpus.rs`. This file
+//! keeps only the default-lane runtime falsifier (#168).
 
 use std::sync::Arc;
 
 use batpak::prelude::*;
 use batpak::store::{ParentDirSyncAdmission, RealFs};
-
-mod common;
 
 #[derive(serde::Serialize, serde::Deserialize, EventPayload)]
 #[batpak(category = 0xF, type_id = 21)]
@@ -38,12 +40,6 @@ fn store_opened_with_installed_real_fs_appends_and_reads() -> Result<(), Box<dyn
 
     store.close()?;
     Ok(())
-}
-
-#[test]
-fn real_fs_upholds_the_documented_backend_contract() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = tempfile::tempdir()?;
-    common::backend_upholds_the_documented_contract(&RealFs, dir.path())
 }
 
 #[test]

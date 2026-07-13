@@ -19,6 +19,7 @@
 #                       visibility-ranges (visibility_ranges.fbv,  VISIBILITY_RANGES_VERSION)
 #                       fork-evidence       (fork_evidence.fbev,     FORK_EVIDENCE_REPORT_SCHEMA_VERSION)
 #                       import-provenance   (import_provenance.fbip,   IMPORT_PROVENANCE_SCHEMA_VERSION)
+#                       store-meta          (store.meta,             STORE_META_VERSION)
 #                     The driver panics on an unknown format so a new format needs
 #                     a row + a forge arm, not a silent skip.
 #   writer_version  — the format version stamped into the forged artifact.
@@ -34,6 +35,7 @@
 #                       CanonicalRefusal:HiddenRangesFutureVersion
 #                       CanonicalRefusal:ForkEvidenceFutureVersion
 #                       CanonicalRefusal:ImportProvenanceFutureVersion
+#                       CanonicalRefusal:StoreMetadataFutureVersion
 #   fixture_path    — relative-to-crate descriptor of the forged artifact. Forged
 #                     on the fly from a seeded store (kept tiny: 4 events / a
 #                     cancelled fence), so the path is the in-temp artifact name,
@@ -45,6 +47,18 @@
 #     apply, AND a future-version segment already fails closed via
 #     `CorruptSegment` with no silent-degrade path (segments are the durable
 #     bottom layer, never rebuilt from elsewhere). No new refusal was needed.
+#   - staged compaction names (`.compact-new` staged replacements, `.compact-src`
+#     retained sources): transient namespace artifacts of the compaction commit
+#     protocol, not versioned open-time formats. Their crash legality
+#     (old-or-new-or-refusal at every publication boundary) is owned by
+#     INV-COMPACTION-NAMESPACE-COMMIT and the deterministic crash-fixture corpus,
+#     not by (writer_version, reader_version) rows.
+#   - compaction.pending marker (canonical versioned binary: magic + u16 version
+#     + CRC32): a transaction artifact present only mid-compaction, absent in a
+#     store at rest, so the seeded-store forge cannot materialize one. Its
+#     MarkerFutureVersion / MarkerCorrupt refusals fire on the RECOVERY path and
+#     are proven by the crash-fixture corpus, not by an open-time
+#     (writer_version, reader_version) row here.
 
 rows:
   # Self-row: a reader opens an artifact written at its own live version. This
@@ -88,10 +102,22 @@ rows:
     fixture_path: index.ckpt
 
   # ── idempotency-index (index.idemp) ──────────────────────────────────────
-  # Self-row: the live v2 AUTHORITY image (lineage + compound history anchor +
-  # entries; GAUNT-IDEMPOTENCY-AUTHORITY, #189) restores on open.
+  # Self-row: the live v2 AUTHORITY image (lineage + generation token +
+  # diagnostic anchor + entries; GAUNT-IDEMPOTENCY-AUTHORITY, #189) restores on
+  # open when its token matches the `store.meta` authorization.
   - format: idempotency-index
     writer_version: 2
+    reader_version: 2
+    feature_bits: 0
+    expected_outcome: OpensOK
+    fixture_path: index.idemp
+  # Backward (legacy migration): a genuine v1 image (bare entries, no binding)
+  # opens on the v2 reader ONLY in the pre-expectation migration state — the
+  # seeded store holds no user idempotency obligations, so `store.meta`
+  # records no authorization and the legacy admission path applies. It
+  # upgrades to v2 at the next flush that has an obligation to publish.
+  - format: idempotency-index
+    writer_version: 1
     reader_version: 2
     feature_bits: 0
     expected_outcome: OpensOK
@@ -105,6 +131,34 @@ rows:
     feature_bits: 0
     expected_outcome: CanonicalRefusal:IdempotencyFutureVersion
     fixture_path: index.idemp
+
+  # ── store-meta (store.meta) ───────────────────────────────────────────────
+  # Self-row: the live v1 lineage-metadata sidecar (#205) loads on open. v1 is
+  # the COMPLETED INITIAL schema, not a migration target: store.meta has never
+  # shipped, so there is no supported earlier reader and no abandoned-draft body
+  # to tolerate. The compaction commit record this cut adds
+  # (last_compaction_commit, required-present in the encoding — value may be
+  # None, but NO `#[serde(default)]` draft compat) grows the v1 body WITHOUT a
+  # version bump precisely because no prior v1 body exists in the wild; a v1 body
+  # missing a required field is CORRUPTION (fail-closed family), never a
+  # tolerated older shape. Hence there is deliberately NO additive
+  # `1->1`-with-missing-fields tolerance row — it would assert a compatibility
+  # the schema does not offer.
+  - format: store-meta
+    writer_version: 1
+    reader_version: 1
+    feature_bits: 0
+    expected_outcome: OpensOK
+    fixture_path: store.meta
+  # Forward: a future-version store.meta is the canonical typed refusal —
+  # metadata is an AUTHORITY sidecar (never reminted, never rebuilt), so an
+  # unreadable-by-this-reader version must never silently degrade.
+  - format: store-meta
+    writer_version: 2
+    reader_version: 1
+    feature_bits: 0
+    expected_outcome: CanonicalRefusal:StoreMetadataFutureVersion
+    fixture_path: store.meta
 
   # ── visibility-ranges (visibility_ranges.fbv) ────────────────────────────
   # Self-row: own-version (live VISIBILITY_RANGES_VERSION = 2) cancelled-ranges

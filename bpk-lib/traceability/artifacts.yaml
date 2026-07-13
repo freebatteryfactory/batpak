@@ -647,6 +647,8 @@
   paths:
     - crates/core/src/store/store_meta.rs
     - crates/core/src/store/error/store_meta.rs
+    - crates/core/src/store/generation_ids.rs
+    - crates/core/src/store/recovery_inspect.rs
 - id: ART-STORE-META-TESTS
   kind: tests
   paths:
@@ -899,3 +901,46 @@
   paths:
     - crates/core/tests/crypto_shred_payload.rs
     - crates/core/tests/keyscope_persist.rs
+- id: ART-COMPACTION-NAMESPACE-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/compaction_crash_windows.rs
+    - crates/core/tests/compaction_crash/mod.rs
+    - crates/core/tests/workload_crash_during_maintenance.rs
+    - crates/core/tests/compaction_work_receipt.rs
+    - crates/core/tests/recovery_inspection.rs
+- id: ART-SIM-NAMESPACE-SOURCE
+  kind: source
+  paths:
+    - crates/core/src/store/sim/shadow_fs.rs
+    - crates/core/src/store/sim/shadow_fs_handles.rs
+    - crates/core/src/store/sim/namespace_recovery.rs
+- id: ART-STOREFS-CONFORMANCE-HARNESS
+  kind: source
+  paths:
+    - crates/core/src/store/conformance/mod.rs
+    - crates/core/src/store/conformance/cases_handles.rs
+    - crates/core/src/store/conformance/cases_publish.rs
+    - crates/core/src/store/conformance/cases_lock_lifecycle.rs
+    - crates/core/src/store/conformance/cases_crash.rs
+- id: ART-IDEMP-EXPORT-RESTORE-TESTS
+  kind: tests
+  paths:
+    - crates/core/tests/idempotency_authority_export_restore.rs
+    - crates/core/tests/idempotency_authority_restore_refusals.rs
+- id: ART-PROOF-RECEIPT-GATE
+  kind: source
+  paths:
+    - tools/integrity/src/fuzz_replay_contract.rs
+    - tools/integrity/src/crash_matrix.rs
+    - tools/integrity/src/structural.rs
+- id: ART-ZERO-WARNINGS-GATE
+  kind: source
+  paths:
+    - tools/integrity/src/zero_warnings.rs
+    - tools/integrity/src/structural.rs
+- id: ART-STOREERROR-HANDLING
+  kind: source
+  paths:
+    - crates/core/src/store/error/handling.rs
+    - crates/core/src/store/error.rs

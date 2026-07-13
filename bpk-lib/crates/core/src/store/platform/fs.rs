@@ -402,8 +402,19 @@ pub use super::handle::{
 /// existing evidence/admission machinery; a virtual handle returns `None`
 /// and every read takes the byte-identical positioned-read fallback instead.
 ///
+/// # Conformance
+///
+/// The executable form of this contract is the `batpak::store::conformance`
+/// corpus (feature `conformance-harness`): a backend author runs
+/// `run_all(&your_factory)` and publishes the machine-readable report. The
+/// crash-family cases require a [`HostileControls`] backend; a backend without
+/// them yields typed qualifications, never silent passes. [`RealFs`], [`MemFs`],
+/// and the namespace-truth `ShadowFs` are gated by the same corpus body in-tree,
+/// so this doc block and the corpus cannot drift apart.
+///
 /// [`MemFs`]: crate::store::MemFs
 /// [`Spawn`]: crate::store::Spawn
+/// [`HostileControls`]: crate::store::conformance::HostileControls
 pub trait StoreFs: Send + Sync {
     /// Collect a directory's entries. Owned counterpart of
     /// [`std::fs::read_dir`] (store directories are small).
@@ -495,6 +506,11 @@ pub trait StoreFs: Send + Sync {
 
     /// Deep file copy for snapshot. Mirrors [`std::fs::copy`].
     ///
+    /// Same-path (`from == to`) must be non-destructive — like
+    /// [`StoreFs::cow_copy_file`], it returns the length (or a typed refusal)
+    /// and leaves the file's bytes intact; corrupting or truncating the source
+    /// is a contract violation (corpus C13).
+    ///
     /// # Errors
     /// The underlying copy failure.
     fn copy(&self, from: &Path, to: &Path) -> io::Result<u64>;
@@ -512,6 +528,10 @@ pub trait StoreFs: Send + Sync {
     /// (relocate the merged source, then restore it on rollback). Routed so a
     /// fault-injecting backend can tear the swap and a crash harness can observe
     /// the half-applied rename.
+    ///
+    /// Same-path (`from == to`) must be non-destructive — a POSIX no-op `Ok`
+    /// leaving the file intact, or a typed refusal; never deletion (corpus
+    /// C14).
     ///
     /// # Errors
     /// The underlying rename failure.

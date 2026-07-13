@@ -547,6 +547,7 @@ pub(crate) fn find_latest_segment_id(
             | StoreFileKind::IdempotencyStore
             | StoreFileKind::PendingCompactionMarker
             | StoreFileKind::CompactSource
+            | StoreFileKind::CompactStaged
             | StoreFileKind::CursorDirectory
             | StoreFileKind::Keyset
             | StoreFileKind::StoreMeta

@@ -9,6 +9,20 @@
 //! file), and asserts NO PANIC. Deterministic, fast (<1s/file), hardware-independent
 //! — it earns blocking authority.
 //!
+//! PROVES: every committed fuzz corpus/regression input replays through the real
+//!   decode/property entry points without panic; every declared [[bin]] stays
+//!   wired (dispatch) and armed (>=1 committed regression fixture).
+//! CATCHES: a fuzz target hollowed out by deleting its regressions or dropping
+//!   its dispatcher; a decode entry point that regresses to panicking.
+//! SEEDED: committed files under fuzz/corpus/ and fuzz/regressions/.
+//!
+//! The lockstep + anti-ceremony law also lives OUTSIDE this feature-gated binary,
+//! so it cannot be silently compiled out: `fuzz-replay-contract` (structural-check;
+//! feature-independent) mirrors the [[bin]] ↔ dispatch_table ↔ fixture ↔
+//! `fuzz/regressions/manifest.yaml` set-equality, and the xtask `fuzz-replay`
+//! command guards against the compile-out / zero-test false-green and writes a proof
+//! receipt. The in-binary meta-test below stays as defense in depth.
+//!
 //! The self-proving half is [`fuzz_replay_covers_every_target`]: it cross-checks the
 //! declared `[[bin]]` set against this file's dispatch table AND the on-disk
 //! regression dirs, so deleting a target's regressions — or adding a `[[bin]]`
@@ -62,6 +76,8 @@ fn dispatch_table() -> Vec<(&'static str, Replay)> {
         ("mmap_index_load", replay_mmap_index_load as Replay),
         ("sidx_footer", replay_sidx_footer as Replay),
         ("sidx_boundary", replay_sidx_boundary as Replay),
+        ("sidx_manifest", replay_sidx_manifest as Replay),
+        ("idemp_image", replay_idemp_image as Replay),
     ]
 }
 
@@ -118,6 +134,14 @@ fn replay_sidx_footer(data: &[u8]) {
 fn replay_sidx_boundary(data: &[u8]) {
     let (segment_id, body) = split_u64_prefix(data);
     let _ = __fuzz::__fuzz_sidx_boundary(body, segment_id);
+}
+
+fn replay_sidx_manifest(data: &[u8]) {
+    let _ = __fuzz::__fuzz_sidx_manifest(data);
+}
+
+fn replay_idemp_image(data: &[u8]) {
+    let _ = __fuzz::__fuzz_idemp_image(data);
 }
 
 /// Split an 8-byte LE `u64` prefix (matches the `sidx_entry` / `sidx_footer`

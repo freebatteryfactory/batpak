@@ -89,6 +89,12 @@ pub(crate) fn sync_file_all_io(file: &std::fs::File) -> std::io::Result<()> {
 /// [`StagedFile::persist`](crate::store::StagedFile::persist)
 /// and must treat it as the authorization to perform the publish — the token
 /// keeps the fail-closed admission decision on the store side of the seam.
+///
+/// Receive-only by design: an external backend only ever RECEIVES this token in
+/// [`StagedFile::persist`](crate::store::StagedFile::persist); there is
+/// deliberately no public constructor, and none is planned — a backend reporting
+/// its own admission posture does so through platform evidence, not by minting
+/// tokens.
 #[derive(Clone, Copy, Debug)]
 pub struct ParentDirSyncAdmission {
     _private: (),

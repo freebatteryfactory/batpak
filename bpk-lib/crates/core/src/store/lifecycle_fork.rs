@@ -46,6 +46,7 @@ pub(crate) fn fork(
         &store.index,
         &store.config.data_dir,
         fs.as_ref(),
+        store.runtime.clock(),
     )?;
     let (source_watermark_segment_id, source_watermark_offset) =
         latest_segment_watermark(&store.config.data_dir, fs.as_ref())?;
@@ -165,6 +166,7 @@ fn record_deep_copied_presence(acc: &mut ForkAccumulator, source_kind: &StoreFil
         | StoreFileKind::Checkpoint
         | StoreFileKind::MmapIndex
         | StoreFileKind::CompactSource
+        | StoreFileKind::CompactStaged
         | StoreFileKind::CursorDirectory
         | StoreFileKind::Keyset
         | StoreFileKind::StoreMeta

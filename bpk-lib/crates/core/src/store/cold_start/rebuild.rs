@@ -41,6 +41,7 @@ const NO_FAULT_INJECTOR: FaultInjectorRef<'static> = {
 #[inline]
 fn disabled_fault_injection_input<T>(_value: T) {}
 
+mod compaction_recovery;
 mod load_status;
 mod report;
 mod topology;
@@ -48,10 +49,12 @@ mod topology;
 pub use load_status::OpenIndexLoadStatus;
 use load_status::SnapshotLoadDiagnostics;
 pub use report::{OpenIndexPath, OpenIndexReport};
+pub(crate) use compaction_recovery::{resolve_pending_compaction, CompactionRecoveryAction};
 pub(crate) use topology::{
-    clear_pending_compaction, write_pending_compaction, COMPACTION_MARKER_FILENAME,
+    clear_pending_compaction, load_pending_compaction, write_pending_compaction,
+    PendingCompactionV2, COMPACTION_MARKER_FILENAME,
 };
-use topology::{load_pending_compaction, segment_paths};
+use topology::segment_paths;
 
 #[derive(Debug, Clone)]
 pub(crate) struct OpenIndexOutcome {
@@ -98,17 +101,22 @@ struct RestorePlanner<'a> {
     policy: ColdStartPolicy,
     clock: &'a dyn crate::store::Clock,
     fault_injector: FaultInjectorRef<'a>,
+    compaction_recovery: CompactionRecoveryAction,
 }
 
 impl<'a> RestorePlanner<'a> {
     fn build(&self) -> Result<RestorePlan, StoreError> {
-        // Pending compaction requires marker-aware segment reconciliation
-        // before stale mmap/checkpoint artifacts can be trusted.
-        let has_pending_compaction =
-            load_pending_compaction(self.data_dir, self.reader.fs())?.is_some();
+        // A physical compaction repair may already have run under the store
+        // lock this open (the marker is gone by the time we plan). The
+        // mmap/checkpoint artifacts still describe the PRE-crash index — they can
+        // carry entries for compacted-away events whose restore would resurrect
+        // them — so a repaired open MUST take the full segment rebuild instead of
+        // trusting a stale snapshot fast path.
+        let recovered_this_open =
+            !matches!(self.compaction_recovery, CompactionRecoveryAction::None);
         let mut snapshot_loads = SnapshotLoadDiagnostics::default();
 
-        if !has_pending_compaction && self.policy.try_mmap_index() {
+        if !recovered_this_open && self.policy.try_mmap_index() {
             #[cfg(feature = "dangerous-test-hooks")]
             crate::store::fault::maybe_inject(
                 crate::store::fault::InjectionPoint::MmapIndexLoad,
@@ -145,7 +153,7 @@ impl<'a> RestorePlanner<'a> {
             }
         }
 
-        if !has_pending_compaction && self.policy.try_checkpoint() {
+        if !recovered_this_open && self.policy.try_checkpoint() {
             #[cfg(feature = "dangerous-test-hooks")]
             crate::store::fault::maybe_inject(
                 crate::store::fault::InjectionPoint::CheckpointDecode,
@@ -289,6 +297,7 @@ pub(crate) fn open_index(
     clock: &dyn crate::store::Clock,
     fault_injector: FaultInjectorRef<'_>,
     store_meta: Option<&crate::store::store_meta::StoreMetaData>,
+    compaction_recovery: CompactionRecoveryAction,
 ) -> Result<OpenIndexOutcome, StoreError> {
     let t0 = clock.now_mono_ns();
     let planner = RestorePlanner {
@@ -297,6 +306,7 @@ pub(crate) fn open_index(
         policy,
         clock,
         fault_injector,
+        compaction_recovery,
     };
     let t_plan = clock.now_mono_ns();
     let plan = planner.build()?;
@@ -670,6 +680,18 @@ fn collect_rebuild_entries(
     fault_injector: FaultInjectorRef<'_>,
 ) -> Result<RebuildResult, StoreError> {
     let entries = segment_paths(data_dir, reader.fs())?;
+    collect_rebuild_entries_from(reader, &entries, fault_injector)
+}
+
+/// Collect rebuild entries from an EXPLICIT ordered `(segment_id, path)` list.
+/// `collect_rebuild_entries` derives the list from a data-dir scan and delegates
+/// here; the staged-view compaction rebuild passes its own list. Body is the
+/// historical `collect_rebuild_entries` from the tail-id derivation down.
+fn collect_rebuild_entries_from(
+    reader: &Reader,
+    entries: &[(u64, std::path::PathBuf)],
+    fault_injector: FaultInjectorRef<'_>,
+) -> Result<RebuildResult, StoreError> {
     let recoverable_tail_segment_id = entries.last().map(|(segment_id, _)| *segment_id);
     let configured_active_segment = reader.active_segment_id();
     let active_segment_id = (configured_active_segment != 0).then_some(configured_active_segment);
@@ -739,7 +761,7 @@ fn collect_rebuild_entries(
     }
 
     let mut batch_state = crate::store::segment::scan::BatchRecoveryState::default();
-    for (segment_id, path) in &entries {
+    for (segment_id, path) in entries {
         if Some(*segment_id) != active_segment_id {
             continue;
         }
@@ -777,21 +799,24 @@ fn collect_rebuild_entries(
     ))
 }
 
-/// Scan all segment files in `data_dir`, rebuild the in-memory index from their contents.
-/// Used by both cold-start (`Store::open_with_cache`) and post-compaction index rebuild.
-/// Handles cross-segment batch recovery using BatchRecoveryState.
-pub(crate) fn rebuild_from_segments(
+/// Rebuild the in-memory index from an EXPLICIT ordered `(segment_id, path)`
+/// list rather than a data-dir scan. The compaction commit protocol builds the
+/// fresh index from a STAGED VIEW (the staged replacement plus the surviving
+/// segments): a data-dir scan cannot be used there because `segment_paths` fails
+/// closed while the pending compaction marker is still live. Handles
+/// cross-segment batch recovery using BatchRecoveryState.
+pub(crate) fn rebuild_from_segment_list(
     index: &StoreIndex,
     reader: &Reader,
-    data_dir: &Path,
+    entries: &[(u64, std::path::PathBuf)],
 ) -> Result<(), StoreError> {
-    let (_, entries, interner_strings, allocator_hint, chunk_count, _) =
-        collect_rebuild_entries(reader, data_dir, NO_FAULT_INJECTOR)?;
+    let (_, index_entries, interner_strings, allocator_hint, chunk_count, _) =
+        collect_rebuild_entries_from(reader, entries, NO_FAULT_INJECTOR)?;
     index
         .interner
         .replace_from_full_snapshot(&interner_strings)?;
-    let routing = RoutingSummary::from_sorted_entries(&entries, chunk_count.max(1));
-    index.restore_sorted_entries_with_routing(entries, allocator_hint, &routing)?;
+    let routing = RoutingSummary::from_sorted_entries(&index_entries, chunk_count.max(1));
+    index.restore_sorted_entries_with_routing(index_entries, allocator_hint, &routing)?;
     Ok(())
 }
 

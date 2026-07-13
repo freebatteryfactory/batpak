@@ -1,0 +1,40 @@
+# crash_matrix.yaml — machine law binding an L4 crash-coverage invariant to a
+# witness fixture per declared crash transition. Enforced by the `crash-matrix`
+# gate (bpk-lib/tools/integrity/src/crash_matrix.rs, run inside structural-check).
+#
+# The gate asserts, for every entry:
+#   * `invariant` exists as an `id:` in traceability/invariants.yaml;
+#   * `harness_enum` = `<repo-rel .rs path>::<EnumName>` — the file exists, the
+#     enum exists, and the kebab-case of its variant idents equals the boundary
+#     `id` set EXACTLY (both directions: a variant with no declared witness fails
+#     "crash coverage claimed without a fixture for transition X"; a boundary id
+#     naming no variant fails "phantom transition");
+#   * every `witness_test` resolves to a real `#[test] fn` in its file;
+#   * no duplicate boundary ids; at least one entry (an empty matrix is vacuous).
+#
+# The nine boundaries are the compaction namespace-commit transaction's crash
+# windows (mandate #177 protocol order): 1-5 recover the OLD generation, 6-9 the
+# NEW generation. The enum is test-harness-owned (never production); the repo-wide
+# `clippy::wildcard_enum_match_arm` denial forces every match over it to be
+# exhaustive, so the enum-set equality here carries the exhaustiveness proof.
+- invariant: INV-COMPACTION-NAMESPACE-COMMIT
+  harness_enum: crates/core/tests/compaction_crash/mod.rs::CompactionCrashBoundary
+  boundaries:
+    - id: marker-durable-no-source-rename
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_1_marker_durable_no_source_rename_recovers_old
+    - id: source-renames-performed
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_2_partial_source_renames_recovers_old
+    - id: partial-replacement-materialization
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_3_partial_replacement_materialization_recovers_old
+    - id: staged-replacement-complete-authority-unpublished
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_4_staged_complete_authority_unpublished_recovers_old
+    - id: authority-published-final-rename-not-durable
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_5_authority_published_final_rename_not_durable_recovers_old
+    - id: final-replacement-durable-sources-not-retired
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_6_final_durable_sources_unretired_recovers_new
+    - id: sources-partially-retired
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_7_sources_partially_retired_recovers_new
+    - id: marker-not-cleared
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_8_marker_uncleared_recovers_new
+    - id: marker-cleared
+      witness_test: crates/core/tests/compaction_crash_windows.rs::crash_window_9_marker_cleared_recovers_new

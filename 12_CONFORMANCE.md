@@ -62,6 +62,8 @@ Windows does not duplicate the canonical Linux devcontainer philosophy lane. It 
 
 Linux `just verify` proves full canonical integrity (`ci` + coverage 80% + docs). Windows `just ci-windows` proves native surface compatibility only; the kind-collision composer fixture lives in xtask, not workflow YAML.
 
+External `StoreFs` backends prove conformance against the published corpus harness (`store::conformance::run_all` under the `conformance-harness` feature); the fault and namespace-truth simulation layer wraps any backend under `dangerous-test-hooks`. See *External StoreFs backend conformance* below.
+
 ## Machine Law
 
 Machine law lives in:
@@ -112,6 +114,47 @@ bad input, or illegal shapes must fail structurally with no phantom success),
 plus the Runtime-And-Boundary and Structural patterns the ledger also tracks.
 One file gets one primary pattern. Do not invent a new pattern because a suite
 feels special; tighten the existing ones instead.
+
+### Proof receipts
+
+A proof claim about a test run is complete only when it records: the exact command, the
+enabled features, the binary, the executed test count, the skipped test count, the corpus
+and regression identities, the commit SHA, and the terminal result. A feature-gated binary
+that compiles out or executes zero intended tests is a FAILURE of the run that selected it,
+not a pass; a "regression" directory of ceremonial empty files proves nothing; an L4
+invariant claiming crash coverage must hold a fixture for every transition it declares.
+The `fuzz-replay` and `crash-matrix` integrity gates enforce this mechanically.
+
+## External StoreFs backend conformance
+
+The `store::conformance` corpus is the executable contract every `StoreFs`
+backend must satisfy. It is `StoreFsConformanceCase::ALL` — 34 cases spanning
+handle lifecycle, publish/rename atomicity, lock lifecycle, and crash boundaries —
+run through one seam.
+
+An external backend author consumes it with a single command shape:
+
+1. Add a dev-dependency on `batpak` with the `conformance-harness` feature
+   (implied by `dangerous-test-hooks`; it is additive, feature-gated, and off by
+   default).
+2. Implement `store::conformance::BackendFactory` — a fresh, isolated backend per
+   case.
+3. Run `store::conformance::run_all(&factory)` and publish the returned
+   `ConformanceReport` (`corpus_version`, `batpak_version`, `backend_name`, and the
+   per-case `outcomes`) as JSON.
+
+The qualification rule is fail-closed: a case a backend cannot honestly run is a
+typed `Qualification`, never a silent pass. A backend "passes" only when no case
+reports a `Failed` verdict; unsupported controls surface as `Qualified` outcomes
+the report names explicitly. The corpus is versioned by `CORPUS_VERSION`, bumped
+whenever an obligation changes, so a published report pins the exact case set the
+backend was measured against.
+
+`RealFs`, `MemFs`, and `ShadowFs` are proven in-tree by this same corpus body — no
+separate backend-specific suite. `ShadowFs` is the namespace-truth crash simulator
+backend authors reach for: it distinguishes the visible namespace from the durable
+one, so a backend can be driven through a simulated power event and checked for the
+two-truths recovery law under the `conformance-harness` surface.
 
 ## Terminal Manifest
 

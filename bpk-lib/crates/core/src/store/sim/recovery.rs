@@ -397,6 +397,12 @@ pub(crate) fn is_canonical_refusal(error: &crate::store::StoreError) -> bool {
             | StoreError::StoreMetadataCorrupt { .. }
             | StoreError::StoreMetadataMissing { .. }
             | StoreError::StoreMetadataFutureVersion { .. }
+            // #177/#195: a pending-compaction transaction that recovery cannot
+            // resolve into exactly the old or the new generation refuses fail-
+            // closed (undecidable namespace state, foreign lineage, corrupt or
+            // future-version marker, read-only open needing repair). The typed
+            // refusal is the namespace-commit contract working, not a crash.
+            | StoreError::CompactionRecoveryRefused { .. }
     )
 }
 

@@ -4,6 +4,7 @@ mod ci;
 mod context;
 mod disk_audit;
 mod factory_ledger;
+mod fuzz_replay;
 mod loom;
 mod manifest;
 mod meta_gate;
@@ -204,6 +205,15 @@ pub(crate) fn platform(args: PlatformArgs) -> Result<()> {
 
 pub(crate) fn fuzz(args: FuzzArgs) -> Result<()> {
     stress::fuzz(args)
+}
+
+/// PR-blocking fuzz-replay gate (GAUNT-FUZZ-1 + GAUNT-PROOF-OF-PROOF #197):
+/// nextest-list the fuzz_replay + fuzz_replay_semantics binaries under
+/// dangerous-test-hooks, fail if any intended test is missing or ignored,
+/// run them with `--no-tests=fail`, and write a proof receipt under
+/// `target/proof-receipts/`.
+pub(crate) fn fuzz_replay() -> Result<()> {
+    fuzz_replay::run()
 }
 
 pub(crate) fn chaos(args: ChaosArgs) -> Result<()> {

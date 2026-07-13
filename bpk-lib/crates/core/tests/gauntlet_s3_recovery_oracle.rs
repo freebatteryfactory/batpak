@@ -150,7 +150,11 @@ fn run_post_fsync_crash_oracle(batch_n: u32) -> (RecoveredState, bool) {
         | Err(StoreError::IdempotencyAuthorityForeign { .. })
         | Err(StoreError::StoreMetadataCorrupt { .. })
         | Err(StoreError::StoreMetadataMissing { .. })
-        | Err(StoreError::StoreMetadataFutureVersion { .. }) => {
+        | Err(StoreError::StoreMetadataFutureVersion { .. })
+        // GAUNT-COMPACTION-NAMESPACE-COMMIT (#177/#195): an unresolved or
+        // undecidable pending-compaction transaction fails open closed with a
+        // typed refusal, same fail-closed family as the store.meta refusals.
+        | Err(StoreError::CompactionRecoveryRefused { .. }) => {
             return (RecoveredState::CanonicalRefusal, false);
         }
         Err(other) => unreachable!(
@@ -202,10 +206,15 @@ fn err_is_fault(err: &StoreError) -> bool {
 fn post_fsync_committed_batch_recovers_committed_or_canonical_refusal() {
     let (state, pre_present) = run_post_fsync_crash_oracle(3);
 
-    assert!(
-        pre_present,
-        "the plainly-committed pre-fault event must never be lost on recovery"
-    );
+    // The pre-fault-history check only applies when the store actually
+    // reopened: a canonical refusal returns no store to inspect (the oracle
+    // reports pre_present = false there by construction, not as data loss).
+    if !matches!(state, RecoveredState::CanonicalRefusal) {
+        assert!(
+            pre_present,
+            "the plainly-committed pre-fault event must never be lost on recovery"
+        );
+    }
 
     // RED fixture: under `--cfg gauntlet_red_fixture`, assert the ILLEGAL
     // outcome (the fsync-confirmed batch rolled back). That assertion is FALSE

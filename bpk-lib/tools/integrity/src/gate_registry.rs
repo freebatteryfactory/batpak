@@ -279,6 +279,53 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
+    // --- Proof-of-proof lockstep gates (GAUNT-PROOF-OF-PROOF #197, blocking,
+    //     qualified). `fuzz-replay-contract` is the feature-INDEPENDENT structural
+    //     mirror of the fuzz [[bin]] ↔ dispatch_table ↔ fixture ↔ manifest lockstep
+    //     plus the anti-ceremony law (a semantic target whose only regression fixture
+    //     is a 0-byte file is rejected). `crash-matrix` binds each declared crash
+    //     transition of an L4 crash-coverage invariant to a witness fixture. Both are
+    //     GateNegativePath: their red fixtures plant a violation and assert
+    //     `check(..)` returns `Err`. ---
+    Gate {
+        slug: "fuzz-replay-contract",
+        red_fixture_test: Some(
+            "tools/integrity/src/fuzz_replay_contract.rs::semantic_target_with_only_empty_ceremonial_fixture_is_rejected",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
+    Gate {
+        slug: "crash-matrix",
+        red_fixture_test: Some(
+            "tools/integrity/src/crash_matrix.rs::declared_boundary_without_witness_fixture_is_rejected",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
+    // --- Semantic fuzz-regression sentinels (blocking, qualified ProductionFlip).
+    //     Each replays a committed, minimized regression fixture through the real
+    //     decision shim and asserts the CURED outcome (SIDX: table-blind recovery,
+    //     no claim escalation; idemp: typed corruption refusal, not blind empty
+    //     admission). Under `gauntlet_red_fixture` each flips to the OLD forbidden
+    //     outcome on the exact committed bytes, so its red half FAILS on the cured
+    //     core — proven by `cargo xtask prove-gates-bite`. ---
+    Gate {
+        slug: "fuzz-sidx-manifest-semantic-regression",
+        red_fixture_test: Some(
+            "crates/core/tests/fuzz_replay_semantics.rs::sidx_manifest_regression_is_semantically_load_bearing",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
+        has_blocking_authority: true,
+    },
+    Gate {
+        slug: "fuzz-idemp-image-semantic-regression",
+        red_fixture_test: Some(
+            "crates/core/tests/fuzz_replay_semantics.rs::idemp_image_regression_is_semantically_load_bearing",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::ProductionFlip),
+        has_blocking_authority: true,
+    },
     // --- Structural source lints (blocking, qualified). Each carries a dedicated
     //     end-to-end RED fixture: a green baseline temp tree plus a planted
     //     violation asserting the full `check(..)` returns `Err`. ---
@@ -652,6 +699,22 @@ pub(crate) const GATES: &[Gate] = &[
         red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
         has_blocking_authority: true,
     },
+    // --- #225 zero-warnings posture gate (blocking, qualified GateNegativePath).
+    //     `zero_warnings::check` mechanically DERIVES the warnings posture from real
+    //     facts — the workspace manifest lint tables (doctrine deny set + justified
+    //     allowlist), every member's `[lints] workspace = true` opt-in, the clippy
+    //     `-D warnings` / rustdoc `-D warnings` lane invocations, and the armed
+    //     zero-allow tripwire — never a prose-only claim. Its red fixture plants a
+    //     doctored manifest that downgrades a doctrine lint (`panic = "warn"`) and
+    //     asserts `check_over(..)` returns `Err`. ---
+    Gate {
+        slug: "zero-warnings-posture",
+        red_fixture_test: Some(
+            "tools/integrity/src/zero_warnings.rs::zero_warnings_rejects_weakened_posture",
+        ),
+        red_fixture_kind: Some(RedFixtureKind::GateNegativePath),
+        has_blocking_authority: true,
+    },
 ];
 
 /// Gates that block a real run today but are recorded as `has_blocking_authority:
@@ -688,6 +751,9 @@ pub(crate) const RECEIPT_REQUIRED_GATES: &[&str] = &[
     "overclaim",
     "release-status",
     "repo-ir-fitness",
+    "fuzz-replay-contract",
+    "crash-matrix",
+    "zero-warnings-posture",
 ];
 
 /// Tokens that signal a [`RedFixtureKind::GateNegativePath`] test body asserts a

@@ -6,16 +6,22 @@ use crate::store::delivery::observation::CheckpointIdError;
 use crate::store::stats::{HlcPoint, WatermarkKind};
 use std::path::PathBuf;
 
+mod compaction_recovery;
 mod display;
 mod display_authority;
+mod handling;
 mod hidden_ranges;
 mod idemp_authority;
+mod idemp_restore;
 mod invariant;
 mod platform;
 mod store_meta;
 
+pub use compaction_recovery::CompactionRecoveryRefusal;
+pub use handling::HandlingClass;
 pub use hidden_ranges::HiddenRangesCorruption;
 pub use idemp_authority::{IdempAuthorityCorruption, IdempAuthorityForeignKind};
+pub use idemp_restore::IdempotencyRestoreRefusal;
 pub use invariant::StoreInvariant;
 pub use platform::{ProfileInvalidKind, StoreLockMode};
 pub use store_meta::StoreMetaCorruption;
@@ -239,6 +245,17 @@ pub enum StoreError {
         /// Typed reason the image is foreign.
         kind: IdempAuthorityForeignKind,
     },
+    /// A caller-supplied idempotency-authority export (#188) was refused at
+    /// restore. The typed reason distinguishes corruption, future format,
+    /// foreign lineage, stale rollback, sibling divergence, entries beyond the
+    /// declared coverage, and an unauthorized image generation. Restore never
+    /// admits by a side door: an image is admitted only when this store's
+    /// metadata authorizes its generation token, or when a fresh generation is
+    /// minted for it through the canonical store.meta flow after corroboration.
+    IdempotencyRestoreRefused {
+        /// Typed refusal reason.
+        reason: IdempotencyRestoreRefusal,
+    },
     /// The on-disk mmap index (`index.fbati`) declares a format version strictly
     /// newer than this binary understands. Unlike a corrupt or older artifact —
     /// which the cold-start flow safely rebuilds from the durable segments — a
@@ -460,6 +477,17 @@ pub enum StoreError {
         /// The maximum version this binary understands.
         supported: u16,
     },
+    /// A pending compaction transaction (`compaction.pending`) could not be
+    /// resolved into exactly the old or the new generation. Open fails closed:
+    /// guessing from file existence is how a partial replacement or a resurrected
+    /// source silently becomes accepted history. The typed reason carries the
+    /// exact undecidable state and remediation.
+    CompactionRecoveryRefused {
+        /// Path of the pending-compaction marker.
+        marker_path: PathBuf,
+        /// Typed refusal reason.
+        kind: CompactionRecoveryRefusal,
+    },
     /// A batch item's serialized payload plus encoded receipt-extension bytes
     /// exceeded `single_append_max_bytes`.
     ///
@@ -558,13 +586,15 @@ pub enum StoreError {
     /// (or future) format version, a decode failure, or a persisted key-scope
     /// granularity that disagrees with the store's configured granularity.
     ///
-    /// This is a HARD, fail-closed refusal — deliberately UNLIKE the durable
-    /// idempotency store, which degrades a corrupt sidecar to "absent". A keyset
-    /// is the sole means of recovering every payload sealed under it, so silently
-    /// starting from an empty key store would crypto-shred live data (every
-    /// scope's key would be re-minted fresh, and no prior ciphertext could ever
-    /// be opened again). Refusing to open preserves the operator's chance to
-    /// restore the real keyset from backup. justifies: INV-KEYSET-FAIL-CLOSED
+    /// This is a HARD, fail-closed refusal — the same posture as the durable
+    /// idempotency AUTHORITY (`IdempotencyAuthorityCorrupt`, #189): both
+    /// sidecars carry state that cannot be rebuilt from segments, so damage is
+    /// never treated as absence. A keyset is the sole means of recovering every
+    /// payload sealed under it, so silently starting from an empty key store
+    /// would crypto-shred live data (every scope's key would be re-minted
+    /// fresh, and no prior ciphertext could ever be opened again). Refusing to
+    /// open preserves the operator's chance to restore the real keyset from
+    /// backup. justifies: INV-KEYSET-FAIL-CLOSED
     #[cfg(feature = "payload-encryption")]
     #[cfg_attr(
         all(docsrs, not(batpak_stable_docs)),
@@ -689,6 +719,7 @@ impl std::error::Error for StoreError {
             Self::HiddenRangesCorrupt { kind, .. } => kind.source(),
             Self::StoreMetadataCorrupt { kind, .. } => kind.source(),
             Self::IdempotencyAuthorityCorrupt { kind, .. } => kind.source(),
+            Self::IdempotencyRestoreRefused { reason } => reason.source(),
             Self::StoreLocked { .. }
             | Self::CrcMismatch { .. }
             | Self::CorruptSegment { .. }
@@ -714,6 +745,7 @@ impl std::error::Error for StoreError {
             | Self::HiddenRangesFutureVersion { .. }
             | Self::StoreMetadataMissing { .. }
             | Self::StoreMetadataFutureVersion { .. }
+            | Self::CompactionRecoveryRefused { .. }
             | Self::IdempotencyAuthorityMissing { .. }
             | Self::IdempotencyAuthorityStale { .. }
             | Self::IdempotencyAuthorityForeign { .. }

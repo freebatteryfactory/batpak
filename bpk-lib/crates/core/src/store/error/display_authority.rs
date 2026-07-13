@@ -85,3 +85,16 @@ pub(super) fn fmt_store_metadata_missing(
         path.display()
     )
 }
+
+pub(super) fn fmt_idemp_restore_refused(
+    f: &mut std::fmt::Formatter<'_>,
+    reason: &super::IdempotencyRestoreRefusal,
+) -> std::fmt::Result {
+    write!(
+        f,
+        "idempotency-authority restore refused ({reason}); the export is admitted only when this \
+         store's metadata authorizes its generation token or a fresh generation can be \
+         corroborated and minted — restore a matching-lineage, current export, or take a new \
+         export from a healthy store"
+    )
+}

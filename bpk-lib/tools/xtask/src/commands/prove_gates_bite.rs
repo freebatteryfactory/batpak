@@ -30,7 +30,12 @@ const RED_CFG: &str = "--cfg gauntlet_red_fixture";
 /// fixture list (whose length is exactly what we are validating), so an exact count
 /// cannot be derived independently at runtime; per the tightening mandate this is
 /// pinned here and any registry drift fails the lane until it is consciously bumped.
-const EXPECTED_FIXTURES: usize = 15;
+///
+/// PR #226 raised the pin 15 -> 18: the two semantic-regression ProductionFlip
+/// gates `fuzz-sidx-manifest-semantic-regression` and
+/// `fuzz-idemp-image-semantic-regression` (fuzz_replay_semantics.rs), plus the
+/// `zero-warnings-posture` gate's ProductionFlip RED (tools/integrity/src/zero_warnings.rs).
+const EXPECTED_FIXTURES: usize = 18;
 
 /// Verify the registry returned EXACTLY [`EXPECTED_FIXTURES`] ProductionFlip
 /// fixtures. A mere floor lets a silently-dropped fixture slip through while the

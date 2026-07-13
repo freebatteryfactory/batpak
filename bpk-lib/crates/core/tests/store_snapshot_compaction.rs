@@ -4,7 +4,7 @@
 //! intentionally rewrites indexed state without leaking superseded artifacts.
 //! CATCHES: superseded sealed segment leaks during snapshot/compaction interplay.
 //! DEFENDS: stale snapshot destination reuse, in-flight compaction races,
-//! pending-compaction marker loss, hidden-range corruption, and pre-swap
+//! pending-compaction marker loss, hidden-range corruption, and pre-commit
 //! rollback drift.
 //! SEEDED: small-segment fixtures via `support/small_store.rs` and bounded append counts.
 
@@ -564,23 +564,36 @@ fn compact_rolls_back_marker_on_pre_swap_rename_failure() {
     let reason = match result.outcome {
         CompactionOutcome::Failed { reason } => reason,
         CompactionOutcome::Performed | CompactionOutcome::Skipped => unreachable!(
-            "expected compaction failure on pre-swap rename blocker, got a non-failure outcome"
+            "expected compaction failure on pre-commit rename blocker, got a non-failure outcome"
         ),
         _ => unreachable!("unexpected non_exhaustive CompactionOutcome variant"),
     };
     assert!(
-        reason.contains("pre-swap phase failed"),
-        "PROPERTY: pre-swap rename failure must surface as a rolled-back compaction failure, got {reason}"
+        reason.contains("pre-commit phase failed"),
+        "PROPERTY: pre-commit source relocation failure must surface as a rolled-back compaction failure, got {reason}"
     );
 
+    // The relocate rename is blocked before it moves the merged-id source, so
+    // `compact_source_path` is never set and rollback leaves the source at its
+    // final name (it was never relocated to `.compact-src`).
+    assert!(
+        dir.path().join(format!("{merged_id:06}.fbat")).exists(),
+        "PROPERTY: a pre-commit rollback that never relocated the merged-id source must leave it at its final name {merged_id:06}.fbat"
+    );
+    // The binary marker (`compaction.pending`) is written before the pre-commit
+    // phase and cleared by rollback; the legacy `.json` name is never produced.
+    assert!(
+        !dir.path().join("compaction.pending").exists(),
+        "PROPERTY: failed pre-commit compaction must clear the binary pending marker during rollback"
+    );
     assert!(
         !dir.path().join("compaction.pending.json").exists(),
-        "PROPERTY: failed pre-swap compaction must clear the pending marker during rollback"
+        "PROPERTY: the rewritten protocol never writes the legacy JSON marker"
     );
     assert_eq!(
         store.stats().event_count,
         13,
-        "PROPERTY: failed pre-swap compaction must leave the live event count unchanged"
+        "PROPERTY: failed pre-commit compaction must leave the live event count unchanged"
     );
 
     store.close().expect("close");

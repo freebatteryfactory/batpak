@@ -1,7 +1,10 @@
-use super::topology::compaction_source_temp_path;
+use super::topology::{compaction_source_temp_path, compaction_staged_path};
 use super::*;
 use crate::prelude::*;
+use crate::store::generation_ids::{AuthorityImageId, CompactionId, StoreLineage};
+use crate::store::platform::fs::{create_new_file, RealFs};
 use crate::store::segment;
+use crate::store::store_meta::{CompactionCommit, StoreMetaData};
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 
@@ -144,6 +147,7 @@ fn build_snapshot_plan_keeps_chunk_count_when_tail_is_empty() {
         policy: ColdStartPolicy::new(false, false),
         clock: &clock,
         fault_injector: NO_FAULT_INJECTOR,
+        compaction_recovery: CompactionRecoveryAction::None,
     };
     // DISCRIMINATING FIXTURE: use ENOUGH entries that a +1 to `chunk_count`
     // produces an observably different routing. With 0 entries the chunk
@@ -214,6 +218,7 @@ fn build_snapshot_plan_rejects_snapshot_entries_without_backing_frames() {
         policy: ColdStartPolicy::new(false, false),
         clock: &clock,
         fault_injector: NO_FAULT_INJECTOR,
+        compaction_recovery: CompactionRecoveryAction::None,
     };
     let (entries, interner_strings) = sample_index_entries(1, 0);
     let routing = RoutingSummary::from_sorted_entries(&entries, 1);
@@ -280,6 +285,7 @@ fn build_snapshot_plan_adds_chunk_when_tail_is_present() {
         policy: ColdStartPolicy::new(false, false),
         clock: &clock,
         fault_injector: NO_FAULT_INJECTOR,
+        compaction_recovery: CompactionRecoveryAction::None,
     };
     let routing = RoutingSummary::from_sorted_entries(&[], 1);
 
@@ -388,81 +394,77 @@ fn entry_from_scan_preserves_nonzero_causation() {
 }
 
 #[test]
-fn segment_paths_ignore_superseded_sources_when_merge_is_present() {
+fn resolve_rolls_forward_then_segment_paths_lists_the_new_generation() {
+    // End-to-end (A16): a COMMITTED transaction — store.meta carries a commit
+    // record whose branded token AND merged id match the live marker — rolls
+    // FORWARD: the staged replacement is renamed to the final name, the sources
+    // and `.compact-src`/`.compact-new` leftovers are retired, and the marker is
+    // cleared. `segment_paths` fails closed while any marker is live, so it can
+    // only list AFTER the repair, and it must then yield exactly the merged
+    // segment plus the untouched segments the transaction never named.
     let dir = TempDir::new().expect("temp dir");
-    let merged_path = dir.path().join(segment::segment_filename(1));
-    let superseded_path = dir.path().join(segment::segment_filename(2));
-    let untouched_path = dir.path().join(segment::segment_filename(3));
-    let temp_source_path = compaction_source_temp_path(dir.path(), 1);
+    let compaction_id = CompactionId::from_u128(0x00c0_ffee);
+    let lineage: u128 = 0x0011_2233;
+    let authority_image_id = AuthorityImageId::from_u128(0x00a0_1dea);
 
-    crate::store::platform::fs::create_new_file(&merged_path).expect("write merged");
-    crate::store::platform::fs::create_new_file(&superseded_path).expect("write superseded");
-    crate::store::platform::fs::create_new_file(&untouched_path).expect("write untouched");
-    crate::store::platform::fs::create_new_file(&temp_source_path).expect("write temp source");
-    write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
-        .expect("write marker");
+    let staged = compaction_staged_path(dir.path(), 7);
+    let src = compaction_source_temp_path(dir.path(), 7);
+    let final_path = dir.path().join(segment::segment_filename(7));
+    let untouched = dir.path().join(segment::segment_filename(9));
+    create_new_file(&staged).expect("stage replacement");
+    create_new_file(&src).expect("relocated merged-id source");
+    create_new_file(&dir.path().join(segment::segment_filename(1))).expect("source 1");
+    create_new_file(&dir.path().join(segment::segment_filename(2))).expect("source 2");
+    create_new_file(&untouched).expect("untouched segment");
 
-    let paths =
-        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
-    let ids: Vec<_> = paths.iter().map(|(segment_id, _)| *segment_id).collect();
+    write_pending_compaction(
+        dir.path(),
+        &PendingCompactionV2 {
+            compaction_id,
+            lineage: StoreLineage::from_u128(lineage),
+            merged_id: 7,
+            source_segment_ids: vec![1, 2, 7],
+            expected_authority_image_id: authority_image_id,
+        },
+        &RealFs,
+    )
+    .expect("write v2 marker");
 
+    let meta = StoreMetaData {
+        lineage,
+        idemp_authority: None,
+        last_compaction_commit: Some(CompactionCommit {
+            compaction_id,
+            authority_image_id,
+            merged_segment_id: 7,
+            source_segment_ids: vec![1, 2, 7],
+        }),
+    };
+
+    let action = resolve_pending_compaction(dir.path(), &RealFs, Some(&meta), true)
+        .expect("committed transaction rolls forward");
     assert_eq!(
-            ids,
-            vec![1, 3],
-            "PROPERTY: when the merged segment is published, cold-start must ignore superseded compacted sources."
-        );
-    assert_eq!(
-        paths[0].1, merged_path,
-        "PROPERTY: cold-start must prefer the published merged segment, not the compact-src temp."
+        action,
+        CompactionRecoveryAction::RolledForward,
+        "PROPERTY: a marker whose token and merged id match the store.meta commit record rolls forward"
     );
-}
-
-#[test]
-fn segment_paths_restore_temp_source_when_merge_not_published() {
-    let dir = TempDir::new().expect("temp dir");
-    let temp_source_path = compaction_source_temp_path(dir.path(), 1);
-    let source_path = dir.path().join(segment::segment_filename(2));
-    let untouched_path = dir.path().join(segment::segment_filename(3));
-
-    crate::store::platform::fs::create_new_file(&temp_source_path).expect("write temp source");
-    crate::store::platform::fs::create_new_file(&source_path).expect("write source");
-    crate::store::platform::fs::create_new_file(&untouched_path).expect("write untouched");
-    write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
-        .expect("write marker");
-
-    let paths =
-        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
-    let ids: Vec<_> = paths.iter().map(|(segment_id, _)| *segment_id).collect();
-
-    assert_eq!(
-            ids,
-            vec![1, 2, 3],
-            "PROPERTY: if compaction crashes before publishing the merged segment, cold-start must reconstruct the pre-compact segment set."
-        );
-    assert_eq!(
-            paths[0].1,
-            temp_source_path,
-            "PROPERTY: cold-start must substitute the compact-src temp for the renamed merged-id source."
-        );
-}
-
-#[test]
-fn segment_paths_reject_missing_sources_even_if_unrelated_segments_exist() {
-    let dir = TempDir::new().expect("temp dir");
-    let unrelated_path = dir.path().join(segment::segment_filename(99));
-
-    crate::store::platform::fs::create_new_file(&unrelated_path).expect("write unrelated segment");
-    write_pending_compaction(dir.path(), 1, &[1, 2], &crate::store::platform::fs::RealFs)
-        .expect("write marker");
-
-    let err = segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect_err(
-        "PROPERTY: pending compaction must fail when a declared source segment is missing",
-    );
-
     assert!(
-            matches!(err, StoreError::DataDirMalformed { .. }),
-            "PROPERTY: unrelated segments must not satisfy the pending-compaction source presence check"
-        );
+        final_path.exists() && !staged.exists() && !src.exists(),
+        "PROPERTY: roll-forward publishes the replacement at the final name and retires the staged/src leftovers"
+    );
+    assert!(
+        !dir.path().join(COMPACTION_MARKER_FILENAME).exists(),
+        "PROPERTY: the marker is cleared last"
+    );
+
+    let entries =
+        segment_paths(dir.path(), &RealFs).expect("segment listing succeeds once the marker is cleared");
+    let ids: Vec<u64> = entries.iter().map(|(segment_id, _)| *segment_id).collect();
+    assert_eq!(
+        ids,
+        vec![7, 9],
+        "PROPERTY: after roll-forward, listing yields the merged segment plus the untouched segment; sources 1 and 2 are retired"
+    );
 }
 
 #[test]
@@ -474,7 +476,13 @@ fn clear_pending_compaction_is_idempotent_when_marker_is_absent() {
 }
 
 #[test]
-fn open_index_skips_fast_paths_when_pending_compaction_marker_exists() {
+fn open_index_forces_full_rebuild_when_a_compaction_was_recovered() {
+    // A physical compaction repair clears the marker BEFORE the index is planned,
+    // but any mmap/checkpoint artifact still describes the PRE-crash index (it can
+    // carry entries for compacted-away events whose restore would resurrect them).
+    // So a `CompactionRecoveryAction` other than `None` must force the full segment
+    // rebuild past the stale fast path — the property the retired marker-presence
+    // probe used to gate, now driven by the explicit recovery parameter (A16).
     let dir = TempDir::new().expect("temp dir");
     let config = crate::store::StoreConfig::new(dir.path())
         .with_enable_checkpoint(true)
@@ -482,8 +490,8 @@ fn open_index_skips_fast_paths_when_pending_compaction_marker_exists() {
         .with_segment_max_bytes(512)
         .with_sync_every_n_events(1);
     let store = crate::store::Store::open(config).expect("open");
-    let coord = crate::coordinate::Coordinate::new("entity:pending-fast-path", "scope:test")
-        .expect("coord");
+    let coord =
+        crate::coordinate::Coordinate::new("entity:recovered-open", "scope:test").expect("coord");
     let kind = crate::event::EventKind::custom(0xE, 1);
     for i in 0..20u32 {
         let _ = store
@@ -492,17 +500,6 @@ fn open_index_skips_fast_paths_when_pending_compaction_marker_exists() {
     }
     store.close().expect("close");
 
-    let existing =
-        segment_paths(dir.path(), &crate::store::platform::fs::RealFs).expect("segment paths");
-    let merged_id = existing.first().expect("segment id").0;
-    write_pending_compaction(
-        dir.path(),
-        merged_id,
-        &[merged_id],
-        &crate::store::platform::fs::RealFs,
-    )
-    .expect("write marker");
-
     let reader = Reader::new(
         dir.path().to_path_buf(),
         4,
@@ -510,23 +507,37 @@ fn open_index_skips_fast_paths_when_pending_compaction_marker_exists() {
             as std::sync::Arc<dyn crate::store::Clock>),
         std::sync::Arc::new(crate::store::platform::fs::RealFs),
     );
-    let index = StoreIndex::new();
-    let report = open_index(
-        &index,
-        &reader,
-        dir.path(),
-        ColdStartPolicy::new(true, false),
-        &crate::store::SystemClock::new(),
-        NO_FAULT_INJECTOR,
-        None,
-    )
-    .expect("open index with pending compaction");
+    let open_with = |index: &StoreIndex, recovery: CompactionRecoveryAction| {
+        open_index(
+            index,
+            &reader,
+            dir.path(),
+            ColdStartPolicy::new(true, false),
+            &crate::store::SystemClock::new(),
+            NO_FAULT_INJECTOR,
+            None,
+            recovery,
+        )
+    };
 
+    // SANITY / non-vacuity: with NO recovery this open, the durable checkpoint is
+    // a trusted fast path — so the rebuild below is a real bypass, not a store
+    // that could only ever rebuild.
+    let baseline = open_with(&StoreIndex::new(), CompactionRecoveryAction::None)
+        .expect("baseline open with no recovery");
+    assert_ne!(
+        baseline.report.path,
+        OpenIndexPath::Rebuild,
+        "SANITY: without a recovery this open, the durable checkpoint is a trusted fast path"
+    );
+
+    let recovered = open_with(&StoreIndex::new(), CompactionRecoveryAction::RolledForward)
+        .expect("open after a compaction was recovered");
     assert_eq!(
-            report.report.path,
-            OpenIndexPath::Rebuild,
-            "PROPERTY: pending compaction must force a marker-aware rebuild instead of trusting checkpoint fast paths."
-        );
+        recovered.report.path,
+        OpenIndexPath::Rebuild,
+        "PROPERTY: a compaction recovered this open must take the full segment rebuild, never a stale checkpoint/mmap fast path"
+    );
 }
 
 #[test]

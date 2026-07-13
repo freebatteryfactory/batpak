@@ -58,3 +58,4 @@ Root layer docs:
 | ADR-0034 | StoreFs Handle Abstraction | Accepted; 0.10.0 pre-1.0 breaking window |
 | ADR-0035 | 0.10.0 Hardening Dispositions | Accepted |
 | ADR-0036 | Untrusted SIDX Manifest Carries No Recovery Authority | Accepted; GAUNT-SIDX-NO-SELF-AUTH (#192) |
+| ADR-0037 | Compaction Publication Is A Namespace Transaction | Accepted; GAUNT-NAMESPACE-DURABILITY (#177) |

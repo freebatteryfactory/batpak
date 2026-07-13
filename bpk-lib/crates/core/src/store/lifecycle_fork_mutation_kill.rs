@@ -5,7 +5,7 @@
 //! CATCHES: each `fork_copy_strategy` match-arm swap (Reflink reported as
 //! Hardlink, etc.) and each `record_deep_copied_presence` arm swap/delete (a
 //! deep-copied visibility-ranges file recorded under the wrong flag, or no flag
-//! at all).
+//! at all; a compaction-staged file must set no authority presence flag).
 //! SEEDED: deterministic — no randomness, no clock, no store.
 
 use super::{fork_copy_strategy, record_deep_copied_presence, ForkAccumulator};
@@ -58,6 +58,14 @@ fn record_deep_copied_presence_sets_exactly_the_matching_presence_flag() {
         presence_after(&segment),
         (false, false, false),
         "a deep-copied segment sets no authority presence flag"
+    );
+    // A compaction-staged replacement (`NNNNNN.fbat.compact-new`) is fork-excluded
+    // and never a committed-generation artifact: were it ever deep-copied it must
+    // set no authority presence flag, staying in the recorder's no-op group.
+    assert_eq!(
+        presence_after(&StoreFileKind::CompactStaged),
+        (false, false, false),
+        "a deep-copied compaction-staged file sets no authority presence flag"
     );
 }
 

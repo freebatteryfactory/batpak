@@ -124,6 +124,17 @@ fn open_components(
             .identity
             .set(crate::id::StoreIdentity::from(meta.lineage));
     }
+    // Resolve any pending compaction transaction (#177/#195) UNDER the store lock,
+    // BEFORE the index restore plan: the direction (old vs new generation) is decided
+    // by the store.meta commit record, and a writable open completes it physically.
+    // A read-only open with a pending marker refuses (typed) — path-substitution
+    // recovery cannot produce a readable store (DiskPos resolves ids to final names).
+    let compaction_recovery = cold_start::rebuild::resolve_pending_compaction(
+        &config.data_dir,
+        config.fs().as_ref(),
+        resolved_meta.as_ref(),
+        matches!(lock_mode, StoreLockMode::Mutable),
+    )?;
     let config = Arc::new(config);
     let index = Arc::new(StoreIndex::with_config(&config.index));
     let reader = Arc::new(Reader::new(
@@ -149,6 +160,7 @@ fn open_components(
         runtime.clock(),
         cold_start_fault_injector,
         resolved_meta.as_ref(),
+        compaction_recovery,
     )?;
 
     // Tell the reader which segment is active (for mmap dispatch).

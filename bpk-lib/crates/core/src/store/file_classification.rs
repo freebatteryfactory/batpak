@@ -7,6 +7,7 @@ use crate::store::segment::{id::SegmentNameError, SegmentId, SEGMENT_EXTENSION};
 use std::path::Path;
 
 pub(crate) const COMPACT_SOURCE_EXTENSION: &str = "compact-src";
+pub(crate) const COMPACT_STAGED_EXTENSION: &str = "compact-new";
 pub(crate) const CURSOR_DIRECTORY: &str = "cursors";
 
 /// Filename of the durable crypto-shred keyset (opt-in `payload-encryption`).
@@ -30,6 +31,11 @@ pub(crate) enum StoreFileKind {
     IdempotencyStore,
     PendingCompactionMarker,
     CompactSource,
+    /// An in-flight compaction replacement under its staged name
+    /// (`NNNNNN.fbat.compact-new`). Never part of the committed generation:
+    /// recovery either renames it to the final name (committed) or deletes it
+    /// (rolled back). Excluded from every copy set; cleared from destinations.
+    CompactStaged,
     CursorDirectory,
     /// The durable crypto-shred keyset (`keyset.fbatk`). Recognised so scans and
     /// cleanup never mistake it for a segment. Stage B classifies it (and reads
@@ -70,6 +76,13 @@ impl StoreFileKind {
             return Self::CompactSource;
         }
 
+        if path
+            .extension()
+            .is_some_and(|ext| ext == COMPACT_STAGED_EXTENSION)
+        {
+            return Self::CompactStaged;
+        }
+
         match path.file_name().and_then(|name| name.to_str()) {
             Some(crate::store::hidden_ranges::VISIBILITY_RANGES_FILENAME) => Self::VisibilityRanges,
             Some(crate::store::cold_start::checkpoint::CHECKPOINT_FILENAME) => Self::Checkpoint,
@@ -95,6 +108,7 @@ impl StoreFileKind {
             | Self::IdempotencyStore
             | Self::PendingCompactionMarker
             | Self::CompactSource
+            | Self::CompactStaged
             | Self::CursorDirectory
             | Self::Keyset
             | Self::StoreMeta
@@ -142,6 +156,7 @@ impl StoreFileKind {
                 | Self::IdempotencyStore
                 | Self::PendingCompactionMarker
                 | Self::CompactSource
+                | Self::CompactStaged
                 | Self::StoreMeta
         )
     }
@@ -169,6 +184,7 @@ impl StoreFileKind {
             Self::Segment(_)
             | Self::MalformedSegment(_)
             | Self::CompactSource
+            | Self::CompactStaged
             | Self::CursorDirectory
             | Self::Keyset
             | Self::Other => ForkStrategy::Exclude,
@@ -186,6 +202,7 @@ impl StoreFileKind {
                 | Self::IdempotencyStore
                 | Self::PendingCompactionMarker
                 | Self::CompactSource
+                | Self::CompactStaged
                 | Self::CursorDirectory
                 | Self::StoreMeta
         )

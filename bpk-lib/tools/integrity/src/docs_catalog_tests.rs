@@ -224,3 +224,27 @@ fn cookbook_citation_to_a_missing_file_is_rejected() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn plain_scalar_statement_with_comment_marker_is_rejected() {
+    // RED: an unquoted statement containing ` #189` parses "clean" while YAML
+    // amputates everything from the comment marker on — the gate must catch
+    // the raw shape before parsing can hide it.
+    let bad = "- id: INV-X\n  statement: damage is never absence (GAUNT, #189) - more law text\n";
+    let err = check_statement_truncation_text(bad)
+        .expect_err("a plain-scalar statement with ` #` must be rejected");
+    assert!(
+        err.to_string().contains("truncates"),
+        "error must explain the truncation hazard, got: {err}"
+    );
+
+    // GREEN: folded/quoted statements carry ` #` safely; a plain scalar with a
+    // hash NOT preceded by whitespace (e.g. `(#182)`) is not a comment either.
+    let good = concat!(
+        "- id: INV-A\n  statement: >-\n    full text with #189 preserved\n",
+        "- id: INV-B\n  statement: \"quoted text with #189 preserved\"\n",
+        "- id: INV-C\n  statement: lazily on first read (#182), never at construction\n",
+    );
+    check_statement_truncation_text(good)
+        .expect("block-scalar, quoted, and non-comment-hash statements pass");
+}

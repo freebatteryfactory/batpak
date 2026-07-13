@@ -37,11 +37,17 @@
 
 - level: L4
   seam: idempotency-authority
-  rationale: "the durable idempotency authority is the only remaining proof a keyed retry is not a new command once retention evicts the frames"
+  rationale: "the durable idempotency authority is the only remaining proof a keyed retry is not a new command once retention evicts the frames; the same seam now covers the public export/restore admission door (#188) and the staged-name namespace commit protocol whose recovery decision binds a final segment name to the published authority commit record, never to file existence (#192)"
   globs:
     - crates/core/src/store/index/idemp.rs
+    - crates/core/src/store/index/idemp_image.rs
     - crates/core/src/store/store_meta.rs
     - crates/core/src/store/lifecycle_compact.rs
+    - crates/core/src/store/lifecycle_snapshot.rs
+    - crates/core/src/store/lifecycle_fork.rs
+    - crates/core/src/store/idemp_transfer.rs
+    - crates/core/src/store/cold_start/rebuild/topology.rs
+    - crates/core/src/store/cold_start/rebuild/compaction_recovery.rs
 
 - level: L4
   seam: segment-scan

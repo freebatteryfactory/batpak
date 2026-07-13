@@ -170,13 +170,14 @@
   invariants:
     - INV-IDEMPOTENCY-DURABLE-WINDOW
     - INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION
+    - INV-COMPACTION-NAMESPACE-COMMIT
   locations:
     - bpk-lib/crates/core/tests/idempotency_authority_fail_closed.rs
     - bpk-lib/crates/core/tests/idempotency_authority_compaction.rs
     - bpk-lib/crates/core/tests/idempotency_corruption_recovery.rs
   commands:
     - cargo test -p batpak --test idempotency_authority_fail_closed
-    - cargo test -p batpak --test idempotency_authority_compaction
+    - cargo test -p batpak --features dangerous-test-hooks --test idempotency_authority_compaction
     - cargo test -p batpak --test idempotency_corruption_recovery
   coverage_delta: unmeasured
   mutation_delta: >
@@ -184,10 +185,12 @@
     idempotency-authority critical seam (GAUNT-IDEMPOTENCY-AUTHORITY, #189);
     the seam catch-rate threshold applies.
   blind_spots: >
-    the compaction fault boundary is exercised through a delegating StoreFs
-    that fails the image publish; OS-level crash schedules across every
-    individual sync remain the seeded SimFs composer's territory and cover the
-    close-time flush, not yet a mid-compaction kill.
+    mid-compaction crash schedules at every publication boundary are now covered
+    by the deterministic ShadowFs crash-window corpus
+    (compaction_crash_windows.rs) and the crash-during-maintenance workload
+    (workload_crash_during_maintenance.rs); the delegating-StoreFs
+    image-publish-failure path in idempotency_authority_compaction.rs remains the
+    in-process fail-closed witness for a pre-commit authority write.
 
 - title: Store lineage identity is minted once and never silently remints
   section: Fault-Injection Harness
@@ -1131,3 +1134,192 @@
     checks onto the IR (item 6.3), the YAML-authored fitness registry (item 3.4),
     and the syn symbol/call/type columns remain DEFERRED (repo-IR breadth backlog;
     live seam truth is traceability/seam_registry.yaml).
+
+- title: Compaction namespace crash corpus reopens old, new, or a typed refusal at every boundary
+  section: State-Machine Harness
+  pattern: State-Machine Harness
+  status: unmeasured
+  invariants:
+    - INV-COMPACTION-NAMESPACE-COMMIT
+    - INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION
+  locations:
+    - bpk-lib/crates/core/tests/compaction_crash/mod.rs
+    - bpk-lib/crates/core/tests/compaction_crash_windows.rs
+    - bpk-lib/crates/core/tests/idempotency_authority_compaction.rs
+    - bpk-lib/crates/core/src/store/cold_start/rebuild/topology_crash_window_tests.rs
+  commands:
+    - cargo test -p batpak --features dangerous-test-hooks --test compaction_crash_windows
+    - cargo test -p batpak --features dangerous-test-hooks --test idempotency_authority_compaction
+    - cargo test -p batpak --features dangerous-test-hooks store::cold_start::rebuild::topology::crash_window_tests
+  coverage_delta: >
+    exercises lifecycle_compact.rs, cold_start/rebuild/topology.rs, and
+    compaction_recovery.rs across the nine declared publication boundaries; exact
+    JSON delta not recorded.
+  mutation_delta: >
+    lifecycle_compact.rs, topology.rs, and store_meta.rs ride the
+    idempotency-authority critical seam; the ShadowFs namespace-simulation layer is
+    test machinery deliberately excluded from the mutation surface.
+  blind_spots: >
+    the sim namespace model is test machinery outside the mutation seams; the
+    deterministic crash corpus, not a mutation score, is its proof. Each of the
+    nine boundaries carries both a unit (window_N_*) and an integration
+    (crash_window_N_*) fixture, and no clean close() heals an injected-crash
+    fixture.
+
+- title: StoreFs conformance corpus proves native, memory, and simulation backends against one contract
+  section: Equivalence Harness
+  pattern: Equivalence Harness
+  status: unmeasured
+  invariants:
+    - INV-STOREFS-CONFORMANCE-REUSABLE
+    - INV-SIMFS-NAMESPACE-TRUTH
+  locations:
+    - bpk-lib/crates/core/src/store/conformance/mod.rs
+    - bpk-lib/crates/core/tests/store_fs_conformance_corpus.rs
+    - bpk-lib/crates/core/tests/namespace_recovery_matrix.rs
+    - bpk-lib/crates/core/tests/store_fs_backend_conformance.rs
+    - bpk-lib/crates/core/tests/store_fs_public_seam.rs
+    - bpk-lib/crates/core/fixtures/downstream-conformance/tests/run_corpus.rs
+  commands:
+    - cargo test -p batpak --features conformance-harness --test store_fs_conformance_corpus
+    - cargo test -p batpak --features dangerous-test-hooks --test namespace_recovery_matrix
+    - cargo test -p batpak --test store_fs_backend_conformance
+    - cargo test -p batpak --test store_fs_public_seam
+    - cargo test --manifest-path bpk-lib/crates/core/fixtures/downstream-conformance/Cargo.toml
+  coverage_delta: >
+    the same corpus (create-new exclusivity, short-read, staged old-or-new,
+    parent-sync, rename, remove, and crash-legality obligations) runs against the
+    MemFs, RealFs, and ShadowFs factories; exact JSON delta not recorded.
+  mutation_delta: >
+    the conformance corpus and factories are published test-support machinery under
+    the conformance-harness feature; the sim namespace layer stays outside the
+    mutation surface.
+  blind_spots: >
+    the published corpus proves in-tree and out-of-tree backends against one law;
+    an external backend's own OS-specific error shapes are reachable only through
+    its own factory. The downstream-conformance fixture enables only the
+    conformance-harness surface, not the internal dangerous-test-hooks levers.
+
+- title: Idempotency authority export is one canonical image and restore fails closed on hostile input
+  section: Fault-Injection Harness
+  pattern: Fault-Injection Harness
+  status: unmeasured
+  invariants:
+    - INV-IDEMPOTENCY-EXPORT-RESTORE-FAIL-CLOSED
+  locations:
+    - bpk-lib/crates/core/src/store/idemp_transfer.rs
+    - bpk-lib/crates/core/src/store/idemp_transfer_tests.rs
+    - bpk-lib/crates/core/tests/idempotency_authority_export_restore.rs
+    - bpk-lib/crates/core/tests/idempotency_authority_restore_refusals.rs
+  commands:
+    - cargo test -p batpak --test idempotency_authority_export_restore
+    - cargo test -p batpak --test idempotency_authority_restore_refusals
+    - cargo test -p batpak store::idemp_transfer
+  coverage_delta: >
+    exercises idemp_transfer.rs export/restore, idemp_image.rs parse, and the
+    offline restore door; exact JSON delta not recorded.
+  mutation_delta: >
+    idemp_transfer.rs joins the idempotency-authority critical seam; the seam
+    catch-rate threshold applies. No run receipt recorded yet.
+  blind_spots: >
+    corruption, future version, stale rollback, foreign lineage, sibling
+    divergence, entries beyond coverage, and unauthorized generation are each a
+    distinct typed IdempotencyRestoreRefused refusal; entries-beyond-coverage and
+    v1-image rejection are provable only through the in-crate P1b island
+    (idemp_transfer_tests.rs) because the opaque public surface cannot forge them
+    honestly.
+
+- title: Crash during retention maintenance stays legal at every publication boundary
+  section: State-Machine Harness
+  pattern: State-Machine Harness
+  status: unmeasured
+  invariants:
+    - INV-COMPACTION-NAMESPACE-COMMIT
+  locations:
+    - bpk-lib/crates/core/tests/workload_crash_during_maintenance.rs
+    - bpk-lib/crates/core/tests/compaction_crash/mod.rs
+  commands:
+    - cargo test -p batpak --features dangerous-test-hooks --test workload_crash_during_maintenance
+  coverage_delta: >
+    one declared workload manifest runs keyed traffic, rotates segments to arm
+    compaction, crashes at every publication op index without a clean close, and
+    reopens into a complete old or new generation; exact JSON delta not recorded.
+  mutation_delta: >
+    the workload drives the same lifecycle_compact.rs / topology.rs seam as the
+    crash corpus; its proof is the deterministic op-index walk, not a mutation
+    score.
+  blind_spots: >
+    one declared workload manifest, not the full #185 envelope - the
+    sustained-load, backpressure, and recovery-tail families remain open.
+
+- title: Fuzz replay executes its feature-gated binaries and its semantic regressions bite
+  section: Oracle Harness
+  pattern: Oracle Harness
+  status: unmeasured
+  invariants:
+    - INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION
+    - INV-IDEMPOTENCY-DURABLE-WINDOW
+    - INV-FUZZ-REGRESSION-SEMANTIC
+    - INV-PROOF-RECEIPT-COMPLETE
+  locations:
+    - bpk-lib/crates/core/tests/fuzz_replay.rs
+    - bpk-lib/crates/core/tests/fuzz_replay_semantics.rs
+    - bpk-lib/tools/integrity/src/fuzz_replay_contract.rs
+  commands:
+    - cargo xtask fuzz-replay
+    - cargo test -p batpak --test fuzz_replay --features dangerous-test-hooks
+    - cargo test -p batpak --test fuzz_replay_semantics --features dangerous-test-hooks
+  coverage_delta: unmeasured
+  mutation_delta: >
+    the semantic regression fixtures are ProductionFlip-proven by prove-gates-bite;
+    no mutation run receipt yet (Phase 0)
+  blind_spots: >
+    the proof receipt records counts and identities but is not yet
+    freshness-bound to release (issue #197 later phases); the crash-matrix gate
+    covers only the compaction boundary enum so far
+
+- title: Compaction work-count receipt proves op counts do not scale with untouched history
+  section: Property Harness
+  pattern: Property Harness
+  status: unmeasured
+  invariants:
+    - INV-COMPACTION-NAMESPACE-COMMIT
+  locations:
+    - bpk-lib/crates/core/tests/compaction_work_receipt.rs
+  commands:
+    - cargo test -p batpak --features dangerous-test-hooks --test compaction_work_receipt
+  coverage_delta: >
+    records source segment count, bytes read/written, staged writes, file syncs,
+    parent-dir syncs, renames, removals, authority image entries, and index
+    entries visited via ShadowFs op observation; exact JSON delta not recorded.
+  mutation_delta: >
+    the receipt pins a work-unit complexity law over lifecycle_compact.rs; the
+    idempotency-authority seam owns the mutation threshold for that module.
+  blind_spots: >
+    the law is expressed in work units, not wall time: two stores differing only in
+    untouched history size must produce compaction op counts that do not scale with
+    total live events. No dedicated performance invariant exists yet; this receipt
+    is the anchor against the O(all-live-events) tip-sweep regression.
+
+- title: Recovery state is inspectable without opening or mutating the store
+  section: State-Machine Harness
+  pattern: State-Machine Harness
+  status: unmeasured
+  invariants:
+    - INV-COMPACTION-NAMESPACE-COMMIT
+  locations:
+    - bpk-lib/crates/core/src/store/recovery_inspect.rs
+    - bpk-lib/crates/core/tests/recovery_inspection.rs
+  commands:
+    - cargo test -p batpak --features dangerous-test-hooks --test recovery_inspection
+  coverage_delta: >
+    exercises Store::inspect_recovery_state reading the marker, store.meta commit
+    and authority descriptors, and namespace observations without constructing
+    Store<Open>; exact JSON delta not recorded.
+  mutation_delta: >
+    recovery_inspect.rs reads the same commit/marker artifacts the recovery state
+    machine decides on; it carries no destructive path and no seam of its own.
+  blind_spots: >
+    inspection reports the committed generation, marker summary, and required
+    writable action as public-safe hex ids, paths, and enums; it never votes on
+    recovery by file presence and never mutates disk.

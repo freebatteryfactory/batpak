@@ -11,6 +11,16 @@ idempotency window is a fail-closed authority instead of a degrade-to-empty
 cache (#189), and both are anchored to a new persistent store lineage
 identity (#205). Breaking on-disk consequences are listed under **Breaking**.
 
+The follow-up repair round widens the cut: compaction becomes a
+namespace-durable transaction whose final segment filenames are truthful
+publication facts (#177), the fault-injection simulation layer models
+directory-entry truth and ships as a reusable external-backend `StoreFs`
+conformance corpus (#179), the idempotency authority gains a public offline
+export/restore seam (#188), `StoreError` publishes a stable handling
+taxonomy (#180), and the proof machine is made hostile to vacuous green — a
+mechanically-derived zero-warnings posture gate (#225) and a full Windows
+family CI lane (#224) close the remaining blind spots.
+
 ### Added
 - **`Store::identity()` — persistent store lineage identity** (#205): a
   `StoreIdentity` UUID minted from the injected clock on first writable open
@@ -40,6 +50,48 @@ identity (#205). Breaking on-disk consequences are listed under **Breaking**.
   first-unprovable-offset fields say, and the sanctioned recovery moves
   (restore from backup, inspect a *copy*, never edit or delete the segment in
   place).
+- **Public idempotency-authority export/restore seam** (#188):
+  `Store::export_idempotency_authority` returns the ONE canonical opaque
+  authority image (an `IdempotencyAuthorityExport` bytes-equivalent to the
+  durable `index.idemp` v2 image up to its covered generation/frontier — no
+  parallel format, no embedder-visible tuple schema, original receipt
+  identity and extensions preserved). Restore is offline-primary:
+  `Store::restore_idempotency_authority(config, export)` is a
+  closed-directory associated fn that locks the store dir, mints a fresh
+  local authority image id, and republishes through the canonical protocol.
+  It REFUSES with a distinct typed `StoreError::IdempotencyRestoreRefused`
+  reason for a corrupt image, a future format version, a stale rollback, a
+  foreign lineage, a diverged/farther-ahead sibling, entries beyond declared
+  coverage, and an unresolved pending compaction — the restore call is
+  itself the authorization ceremony, never a live adopt door.
+- **Published `StoreFs` conformance corpus + fault/namespace simulation
+  layer** (#179): a reusable case corpus (`store::conformance` —
+  `StoreFsConformanceCase`, `run_all`/`run_case`/`run_cases`, `CaseFamily`,
+  and `MemFsFactory`/`ShadowFsFactory`/`RealFsFactory`) behind the new
+  `conformance-harness` feature, plus the `ShadowFs` crash/namespace
+  simulation backend. The native, memory, and wrapped simulation backends
+  are all proven against the SAME contract (create-new exclusivity, short
+  reads, staged publish old-or-new-never-torn, parent-sync, rename, remove,
+  and crash legality), so an out-of-tree backend is proven-conformant by the
+  same law that gates the in-tree ones. `dangerous-test-hooks` implies
+  `conformance-harness`; the internal SimFs namespace matrix and poison
+  levers stay behind `dangerous-test-hooks`.
+- **`StoreError::handling_class` — published handling taxonomy** (#180): a
+  stable `HandlingClass` enum plus `impl StoreError { fn handling_class(&self)
+  -> HandlingClass }`, moved out of the private testkit classifier (which now
+  delegates to it) as an exhaustive match with no wildcard arm — every future
+  variant is forced to declare its class.
+- **`Store::inspect_recovery_state` — non-opening forensic inspection**
+  (#177): `inspect_recovery_state(config)` reads the pending-compaction
+  marker, the `store.meta` commit/authority descriptors, and namespace
+  observations and reports a public-safe `RecoveryInspection` (committed
+  generation, marker summary, required writable action) WITHOUT constructing
+  an open store or mutating disk.
+- **New typed refusal variants**: `StoreError::CompactionRecoveryRefused`
+  (marker path + a `CompactionRecoveryRefusal` reason) and
+  `StoreError::IdempotencyRestoreRefused` (an `IdempotencyRestoreRefusal`
+  reason). Both are open-refusal / fail-closed family, alongside the existing
+  metadata/authority refusals.
 
 ### Changed
 - **Untrusted segment-manifest rows are suspicion geometry, not proof**
@@ -58,15 +110,50 @@ identity (#205). Breaking on-disk consequences are listed under **Breaking**.
   event id at that sequence + chain commitment) — a corrupt, missing-but-
   expected, stale, foreign-lineage, or diverged-sibling image is a typed open
   refusal instead of a silent empty rebuild that would re-admit retired keys
-  after retention. Compaction now flushes the authority image and metadata
-  BEFORE deleting source segments (old-or-new, never neither); a publish
-  failure mid-compaction halts before anything is destroyed.
+  after retention. The compaction commit protocol that publishes this image
+  is now a full namespace transaction — see the #177 bullet below.
 - **Injected clocks own all timekeeping** (#182): `SystemClock` and the
   `clock_from_fn` adapter capture the ambient monotonic anchor lazily on
   first read, never at construction, so a store driven by a fully injected
   `Clock` never touches ambient `SystemTime`/`Instant` — construction is
   wasm32-safe and clock injection is airtight (proven by a process-isolated
   tripwire test).
+- **Compaction commit protocol is a namespace transaction** (#177/#195): a
+  replacement segment materializes under a distinct staged name
+  (`.compact-new`), is sealed and synced completely, and takes its final
+  segment name ONLY after the idempotency authority image and the
+  `store.meta` commit record — bound to the transition's branded compaction
+  id and authority-image id — are durably published. Parent directories sync
+  at each publication point; source segments stay recoverable
+  (`.compact-src`) and retire only after the committed replacement generation
+  is recoverable; the pending-compaction marker (a canonical versioned binary
+  artifact, `compaction.pending`) clears last. A final filename is a truthful
+  publication fact, never a commit signal on its own: roll-forward is decided
+  by the marker plus the `store.meta`-authorized commit record, and every
+  crash or fault boundary reopens as exactly the old complete generation, the
+  new complete generation, or a typed refusal — never a mixture, and never
+  healed by a clean `close()` before reopen. (Replaces the earlier "flush the
+  authority image before deleting sources" phrasing.)
+- **The gauntlet fails on vacuous proof** (#197 Phase 0): the assurance
+  machine now REDS when a selected feature-gated test binary compiles out or
+  executes zero intended tests, when a critical fuzz target lacks a real
+  committed minimized semantic regression input proven red against the old
+  decision core, when a declared regression directory holds only ceremonial
+  empty files, when an L4 invariant claims crash coverage without a fixture
+  for every declared transition, and when a recorded proof command's feature
+  set excludes the test it claims to prove. Proof receipts now record the
+  exact command, enabled features, binary, executed/skipped test counts,
+  corpus and regression identities, commit SHA, and terminal result.
+- **Zero-warnings posture is a mechanically-derived gate** (#225): the
+  `zero-warnings-posture` integrity gate derives the posture from real facts
+  (workspace lint tables, clippy/rustdoc `-D warnings` lane invocations, the
+  armed zero-allow tripwire) rather than a prose-only claim, with a planted
+  RED fixture proving it bites.
+- **The Windows family CI lane runs the full family surface** (#224): the
+  `ci-windows-surface` lane exercises the complete `--workspace
+  --all-features` set (with explicit documented platform exclusions), so the
+  new conformance/namespace tests are inside the Windows lane — no new blind
+  spot.
 
 ### Breaking
 - **Sealed segments with unverifiable manifests refuse to open under the
@@ -82,6 +169,16 @@ identity (#205). Breaking on-disk consequences are listed under **Breaking**.
 - **New on-disk sidecar `store.meta`** (#205): written on first writable
   open of every store (including migrated legacy directories). Read-only
   opens of never-migrated legacy stores do not require it.
+- **A store crashed mid-compaction under the old protocol refuses to
+  roll forward on false evidence** (#177): a legacy JSON pending marker
+  (`compaction.pending.json`) is parsed for diagnostics only and refuses
+  with `CompactionRecoveryRefusal::LegacyMarkerUnsupported` — there is no
+  automatic v1 recovery; complete the compaction by reopening once under
+  batpak ≤ 0.10.x, or migrate offline. A read-only open of a directory with
+  an unresolved pending compaction now refuses
+  (`RepairRequiresWritableOpen`) instead of limping on a substituted view
+  that could not serve point reads. Both are strictly-more-honest
+  fail-closed replacements for the old false roll-forward.
 
 ### Migration
 - A store that now refuses to open with a strict sealed-segment refusal:
@@ -96,8 +193,16 @@ identity (#205). Breaking on-disk consequences are listed under **Breaking**.
   yields a fresh-looking store; it yields a typed refusal. Restore the
   deleted sidecar from backup, or accept a new lineage by copying the events
   out through a fresh store.
+- Leftover staged (`.compact-new`) or source (`.compact-src`) files are
+  acted on only when a pending-compaction marker names them: with no marker
+  present the store opens normally and the residue is classified as
+  non-authoritative (not a segment). A marker present drives the recovery
+  state machine, which rolls the transition forward, rolls it back (removing
+  the staged leftover and restoring the source), or refuses with a typed
+  `CompactionRecoveryRefused` — no crash boundary is silently accepted.
 - `StoreError` is `#[non_exhaustive]`; downstream `matches!`-style checks
-  are unaffected by the seven new refusal variants.
+  are unaffected by the new refusal variants (the seven authority/metadata
+  variants plus `CompactionRecoveryRefused` and `IdempotencyRestoreRefused`).
 
 ## [0.10.0] - 2026-07-05
 

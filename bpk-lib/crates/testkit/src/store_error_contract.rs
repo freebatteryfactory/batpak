@@ -9,6 +9,11 @@
 //! routes through [`contract_table`] (filtering to its family), so every
 //! per-family builder is consumed in every binary — no `dead_code` surface and
 //! no escape hatch required (see ADR-0012).
+//!
+//! Classification is NOT re-implemented here: the published
+//! `StoreError::handling_class()` (#180) is the single source of truth, and
+//! [`assert_case_contract`] asserts every row against it. The taxonomy enum is
+//! re-exported from the crate so consumers keep naming it through this module.
 
 use batpak::coordinate::CoordinateError;
 use batpak::event::{
@@ -16,20 +21,21 @@ use batpak::event::{
     UpcastChainRegistryError,
 };
 use batpak::store::{
-    CheckpointIdError, HiddenRangesCorruption, HlcPoint, ProfileInvalidKind, StoreError,
-    StoreInvariant, StoreLockMode, WatermarkKind,
+    CheckpointIdError, CompactionRecoveryRefusal, HiddenRangesCorruption, HlcPoint,
+    IdempotencyRestoreRefusal, ProfileInvalidKind, StoreError, StoreInvariant, StoreLockMode,
+    WatermarkKind,
 };
 use std::error::Error as _;
 use std::io;
 use std::path::PathBuf;
 
 /// Downstream handling class a `StoreError` variant must keep stable.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HandlingClass {
-    Domain,
-    RetryableOperational,
-    FailClosedOperational,
-}
+///
+/// Re-exported verbatim from the crate's published contract
+/// ([`batpak::store::HandlingClass`]): classification is owned by
+/// `StoreError::handling_class()`, and this harness asserts every table row
+/// against that one public source of truth (#180) rather than a private copy.
+pub use batpak::store::HandlingClass;
 
 /// One row of the `StoreError` contract table: an error value plus the
 /// handling class, source forwarding, and `Display` fields it must preserve.
@@ -41,111 +47,6 @@ pub struct Case {
     pub display_needles: &'static [&'static str],
 }
 
-/// Map a `StoreError` to its required downstream handling class.
-///
-/// Every public variant is matched by an EXPLICIT arm (no catch-all that swallows
-/// a real variant), so adding a new `StoreError` variant makes this `match` fail
-/// to compile until it is given a reviewed classification. `StoreError` is
-/// `#[non_exhaustive]`, so the Rust compiler still requires a trailing wildcard:
-/// it is genuinely unreachable for any variant defined today and exists only to
-/// satisfy the `#[non_exhaustive]` obligation. The wildcard panics so that a
-/// future variant added in the defining crate (which would compile here without
-/// touching this file) still fails loudly the first time it is classified rather
-/// than silently borrowing a neighbour's class.
-pub fn classify(error: &StoreError) -> HandlingClass {
-    match error {
-        StoreError::Io(_)
-        | StoreError::CacheFailed(_)
-        | StoreError::CheckpointWriteFailed { .. }
-        | StoreError::IdempotencyOverflowFailClosed { .. }
-        | StoreError::WaitTimeout { .. } => HandlingClass::RetryableOperational,
-        StoreError::StoreLocked { .. }
-        | StoreError::Coordinate(_)
-        | StoreError::CheckpointId(_)
-        | StoreError::EventPayloadRegistry(_)
-        | StoreError::UpcastChainIncomplete(_)
-        | StoreError::InvalidPayloadVersion { .. }
-        | StoreError::NotFound(_)
-        | StoreError::SequenceMismatch { .. }
-        | StoreError::Configuration(_)
-        | StoreError::IdempotencyRequired
-        | StoreError::VisibilityFenceActive
-        | StoreError::VisibilityFenceNotActive
-        | StoreError::VisibilityFenceCancelled
-        | StoreError::IdempotencyPartialBatch { .. }
-        | StoreError::RangeMalformed { .. }
-        | StoreError::InvalidCoordinate { .. }
-        | StoreError::ReservedKind { .. }
-        | StoreError::InvalidCausation { .. }
-        | StoreError::InvalidCommitMetadata { .. }
-        | StoreError::CoordinateNulByte
-        | StoreError::CoordinatePathTraversal
-        | StoreError::CoordinateControlChar
-        | StoreError::BatchItemTooLarge { .. }
-        | StoreError::EntityClockOverflow { .. }
-        | StoreError::InvalidClock { .. } => HandlingClass::Domain,
-        StoreError::BatchFailed { source, .. } | StoreError::BatchSyncFailed { source, .. } => {
-            classify(source.as_ref())
-        }
-        StoreError::Serialization(_)
-        | StoreError::CrcMismatch { .. }
-        | StoreError::CorruptSegment { .. }
-        | StoreError::PlatformProfileInvalid { .. }
-        | StoreError::PlatformProfileMismatch { .. }
-        | StoreError::PlatformAdmissionFailed { .. }
-        | StoreError::WriterCrashed
-        | StoreError::SequenceGateViolation { .. }
-        | StoreError::CorruptFrame { .. }
-        | StoreError::SegmentTooManyEntries { .. }
-        | StoreError::InternerExhausted { .. }
-        | StoreError::DataDirMalformed { .. }
-        | StoreError::AncestryCorrupt { .. }
-        | StoreError::IdempotencyFutureVersion { .. }
-        | StoreError::MmapFutureVersion { .. }
-        | StoreError::CheckpointFutureVersion { .. }
-        | StoreError::HiddenRangesFutureVersion { .. }
-        | StoreError::ForkEvidenceFutureVersion { .. }
-        | StoreError::ImportProvenanceFutureVersion { .. }
-        | StoreError::SidxFutureVersion { .. }
-        | StoreError::HiddenRangesCorrupt { .. }
-        | StoreError::StoreMetadataCorrupt { .. }
-        | StoreError::StoreMetadataMissing { .. }
-        | StoreError::StoreMetadataFutureVersion { .. }
-        | StoreError::IdempotencyAuthorityCorrupt { .. }
-        | StoreError::IdempotencyAuthorityMissing { .. }
-        | StoreError::IdempotencyAuthorityStale { .. }
-        | StoreError::IdempotencyAuthorityForeign { .. }
-        | StoreError::CursorCheckpointCorrupt { .. }
-        | StoreError::CursorCheckpointRegionMismatch { .. }
-        | StoreError::InvariantViolation { .. } => HandlingClass::FailClosedOperational,
-        #[cfg(feature = "dangerous-test-hooks")]
-        StoreError::FaultInjected(_) => HandlingClass::FailClosedOperational,
-        // `StoreError` is `#[non_exhaustive]`; this wildcard is unreachable for
-        // every variant that exists today (all are matched explicitly above) and
-        // is required only to satisfy the compiler. Any variant later added in
-        // the defining crate trips this fail-loud the first time it is classified,
-        // so callers never silently borrow a neighbour's handling class. The
-        // message is carried by the empty-lookup `expect` (sanctioned `expect_used`
-        // in test helpers) so it surfaces verbatim without a bare `panic!`.
-        _ => unclassified(error),
-    }
-}
-
-/// Fail-loud sink for the unreachable `#[non_exhaustive]` wildcard in
-/// [`classify`]. A future `StoreError` variant that reaches here finds no entry
-/// in the (deliberately empty) classification escape map, so the `expect` fires
-/// with the descriptive message. Routing through a runtime map lookup (rather
-/// than an inline literal `Err`/`None`) keeps the call a genuine fallible
-/// `expect` rather than a pointless-literal unwrap.
-fn unclassified(error: &StoreError) -> HandlingClass {
-    use std::collections::HashMap;
-    let escape: HashMap<std::mem::Discriminant<StoreError>, HandlingClass> = HashMap::new();
-    escape.get(&std::mem::discriminant(error)).copied().expect(
-        "STORE_ERROR CONTRACT TABLE OUT OF DATE: \
-         add an explicit handling class for the new StoreError variant",
-    )
-}
-
 /// Assert one contract-table row: classification stability, every `Display`
 /// needle, and the source-forwarding contract. Shared by every split binary so
 /// the assertions stay byte-identical across families.
@@ -153,7 +54,7 @@ pub fn assert_case_contract(case: &Case) {
     let display = case.error.to_string();
     let source = case.error.source().map(std::string::ToString::to_string);
 
-    let actual_class = classify(&case.error);
+    let actual_class = case.error.handling_class();
     assert_eq!(
         actual_class, case.class,
         "STORE_ERROR CLASSIFICATION DRIFT: {} should stay {:?}, got {:?}. display={display}",
@@ -575,6 +476,41 @@ pub fn retryable_operational_cases() -> Vec<Case> {
 /// violations that must halt rather than retry.
 pub fn fail_closed_operational_cases() -> Vec<Case> {
     vec![
+        Case {
+            // A pending-compaction transaction that cannot be resolved into
+            // exactly the old or the new generation is fail-closed corruption
+            // (#177/#195): recovery never guesses from file existence, and the
+            // published `handling_class()` classifies it in the
+            // `StoreMetadataMissing` fail-closed family (A7.2/A12).
+            name: "compaction_recovery_refused",
+            error: StoreError::CompactionRecoveryRefused {
+                marker_path: PathBuf::from("fixtures/data/compaction.pending"),
+                kind: CompactionRecoveryRefusal::SourceMissing { segment_id: 3 },
+            },
+            class: HandlingClass::FailClosedOperational,
+            source_needle: None,
+            display_needles: &[
+                "pending compaction",
+                "fixtures/data/compaction.pending",
+                "cannot be resolved",
+            ],
+        },
+        Case {
+            // A refused idempotency-authority restore (#188) is fail-closed:
+            // an image is admitted only when store metadata authorizes its
+            // generation token, never by a side door. Same family as
+            // `IdempotencyAuthorityForeign` (03/P12).
+            name: "idempotency_restore_refused",
+            error: StoreError::IdempotencyRestoreRefused {
+                reason: IdempotencyRestoreRefusal::UnauthorizedGeneration { image_covered: 4 },
+            },
+            class: HandlingClass::FailClosedOperational,
+            source_needle: None,
+            display_needles: &[
+                "idempotency-authority restore refused",
+                "generation token",
+            ],
+        },
         Case {
             name: "sequence_gate_violation",
             error: StoreError::SequenceGateViolation {

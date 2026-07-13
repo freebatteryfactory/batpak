@@ -7,6 +7,15 @@ mod chain_walk;
 pub mod cold_start;
 mod compaction_report;
 mod config;
+/// Published `StoreFs` conformance corpus + backend factories (#179): the
+/// executable form of the `StoreFs` durability contract. A downstream backend
+/// author runs `conformance::run_all(&factory)` and publishes the report.
+#[cfg(feature = "conformance-harness")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "conformance-harness"))
+)]
+pub mod conformance;
 /// The explicit crypto-shred erasure op (`Store::shred_scope`); opt-in
 /// `payload-encryption` only.
 #[cfg(feature = "payload-encryption")]
@@ -28,10 +37,16 @@ mod file_classification;
 mod fork_report;
 mod frontier_api;
 mod gate;
+/// Branded `u128` identity types (`CompactionId`, `AuthorityImageId`,
+/// `StoreLineage`) for the compaction namespace-commit protocol (contract A3).
+/// Crate-internal: no `From`/`Into`, threaded only through durable artifacts.
+pub(crate) mod generation_ids;
 // `pub(crate)` (was `mod`) so the feature-gated `crate::__fuzz` module can name
 // `hidden_ranges::{load_cancelled_ranges, VISIBILITY_RANGES_FILENAME}`. Crate-
 // internal only; no public API-surface change.
 pub(crate) mod hidden_ranges;
+/// Public opaque idempotency-authority export/restore seam (#188).
+mod idemp_transfer;
 mod import;
 mod import_api;
 /// In-memory 2D event index, rebuilt from segments on startup.
@@ -60,13 +75,23 @@ mod read_api;
 mod read_walk;
 mod receipt_verification;
 pub(crate) mod receipt_verify;
+/// Non-opening forensic recovery inspection (`Store::inspect_recovery_state`,
+/// contract A14): reads the marker + `store.meta` without constructing an open
+/// store or mutating disk.
+mod recovery_inspect;
 #[cfg(test)]
 mod runtime_contracts;
 /// On-disk segment format, frame encoding/decoding, and compaction helpers.
 pub mod segment;
 mod signing;
 /// Cooperative single-thread seeded simulation runtime (test hooks only).
-#[cfg(feature = "dangerous-test-hooks")]
+///
+/// Gated on `conformance-harness` (not `dangerous-test-hooks`): the clean
+/// external conformance surface (`ShadowFs`, the `conformance` corpus) lives
+/// under `sim`, and `dangerous-test-hooks` implies `conformance-harness`, so
+/// the internal fault/poison levers still compile in the dangerous lane while a
+/// downstream backend author gets `ShadowFs` without them (contract A12).
+#[cfg(feature = "conformance-harness")]
 pub(crate) mod sim;
 mod snapshot_report;
 /// Runtime statistics and diagnostic snapshots.
@@ -114,8 +139,9 @@ pub use delivery::observation::{
 };
 pub use delivery::subscription::Subscription;
 pub use error::{
-    HiddenRangesCorruption, IdempAuthorityCorruption, IdempAuthorityForeignKind,
-    ProfileInvalidKind, StoreError, StoreInvariant, StoreLockMode, StoreMetaCorruption,
+    CompactionRecoveryRefusal, HandlingClass, HiddenRangesCorruption, IdempAuthorityCorruption,
+    IdempAuthorityForeignKind, IdempotencyRestoreRefusal, ProfileInvalidKind, StoreError,
+    StoreInvariant, StoreLockMode, StoreMetaCorruption,
 };
 #[cfg(feature = "dangerous-test-hooks")]
 #[cfg_attr(
@@ -131,6 +157,7 @@ pub use fork_report::{
     ForkStrategyCounts, KeysetPolicy, FORK_EVIDENCE_REPORT_SCHEMA_VERSION,
 };
 pub use gate::DurabilityGate;
+pub use idemp_transfer::IdempotencyAuthorityExport;
 pub use import::{
     decode_import_provenance_wire, encode_import_provenance_wire, provenance,
     provenance_from_extensions, ImportFilter, ImportOptions, ImportProvenance, ImportReport,
@@ -213,6 +240,7 @@ pub use receipt_verification::{ReceiptVerification, ReceiptVerificationError};
 // portable inputs — ack fields + chain metadata + verifying keys — with the
 // SAME implementation the store-side methods delegate to.
 pub use receipt_verify::{verify_receipt_claim, ReceiptClaim, ReceiptVerifyingKeys};
+pub use recovery_inspect::RecoveryInspection;
 pub use signing::SigningKey;
 /// The canonical deterministic [`Clock`](crate::store::Clock) for simulators.
 ///
@@ -221,6 +249,25 @@ pub use signing::SigningKey;
 /// construct one logical clock instead of re-implementing the trait.
 #[cfg(feature = "dangerous-test-hooks")]
 pub use sim::SimClock;
+/// The namespace-truth crash simulator (#177). Clean external conformance
+/// surface: `dangerous-test-hooks` implies `conformance-harness`, so the
+/// dangerous lane still sees it, but a downstream backend author enables only
+/// `conformance-harness` to prove their `StoreFs` (contract A12).
+#[cfg(feature = "conformance-harness")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "conformance-harness"))
+)]
+pub use sim::ShadowFs;
+/// The byte-fault simulation layer + its fault vocabulary (#179). Internal:
+/// stays behind `dangerous-test-hooks` — the SimFs promotion is a dangerous
+/// lever, not part of the clean conformance surface (contract A12).
+#[cfg(feature = "dangerous-test-hooks")]
+#[cfg_attr(
+    all(docsrs, not(batpak_stable_docs)),
+    doc(cfg(feature = "dangerous-test-hooks"))
+)]
+pub use sim::fs::{CrashOp, ReadFaultKind, SimFs};
 pub use snapshot_report::{
     snapshot_report_body_hash, SnapshotEvidenceHash, SnapshotEvidenceReport, SnapshotFenceTokenRef,
     SnapshotFileKind, SnapshotFinding, SnapshotOptions, SnapshotReportBody, SnapshotWatermarkRef,
