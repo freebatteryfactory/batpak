@@ -345,3 +345,157 @@ fn typed_append_rejects_manual_payload_version_zero() {
     );
     store.close().expect("close store");
 }
+
+// --- apply_transition_with_options: options-bearing typestate seam (#204) ---
+
+fn published_doc() -> PublishedDoc {
+    PublishedDoc {
+        title: "hello".into(),
+        from: "draft".into(),
+        to: "published".into(),
+    }
+}
+
+#[test]
+fn apply_transition_with_options_keyed_retry_returns_original_receipt() {
+    let (_dir, store) = test_store();
+    let coord = Coordinate::new("entity:transition-keyed", "scope:test").expect("valid coord");
+    let key: u128 = 0x7EA5_1D3A_0000_0204_0000_0000_0000_0001;
+    let opts = AppendOptions {
+        idempotency_key: Some(batpak::id::IdempotencyKey::from(key)),
+        ..Default::default()
+    };
+
+    let first = store
+        .apply_transition_with_options(
+            &coord,
+            Transition::<Draft, Published, PublishedDoc>::from_payload(published_doc()),
+            opts.clone(),
+        )
+        .expect("first keyed transition");
+    let count_after_first = store.stats().event_count;
+
+    let retry = store
+        .apply_transition_with_options(
+            &coord,
+            Transition::<Draft, Published, PublishedDoc>::from_payload(published_doc()),
+            opts,
+        )
+        .expect("keyed retry of the same transition");
+
+    assert_eq!(
+        first.event_id, retry.event_id,
+        "PROPERTY: a keyed retry of the same transition must be a no-op returning the \
+         original receipt, exactly like keyed typed appends.\n\
+         Investigate: src/store/write_api.rs apply_transition_with_options → \
+         submit_with_options_versioned idempotency check."
+    );
+    assert_eq!(
+        store.stats().event_count,
+        count_after_first,
+        "PROPERTY: the keyed retry must not append a second event.\n\
+         Investigate: src/store/write_api.rs apply_transition_with_options."
+    );
+
+    store.close().expect("close");
+}
+
+#[test]
+fn apply_transition_with_options_matches_decomposed_typed_append() {
+    // Equivalence oracle: applying a transition through the options seam must
+    // produce the same on-disk event shape as manually decomposing it into
+    // `kind()` / `into_payload()` and appending through
+    // `append_typed_with_options` — same kind, same payload version stamp,
+    // same payload byte length, same decoded payload.
+    let (_dir, store) = test_store();
+    let coord_a = Coordinate::new("entity:transition-oracle-a", "scope:test").expect("valid coord");
+    let coord_b = Coordinate::new("entity:transition-oracle-b", "scope:test").expect("valid coord");
+
+    let via_transition = store
+        .apply_transition_with_options(
+            &coord_a,
+            Transition::<Draft, Published, PublishedDoc>::from_payload(published_doc()),
+            AppendOptions::default(),
+        )
+        .expect("apply_transition_with_options");
+
+    let decomposed = Transition::<Draft, Published, PublishedDoc>::from_payload(published_doc());
+    let decomposed_kind = decomposed.kind();
+    let decomposed_payload = decomposed.into_payload();
+    let via_typed = store
+        .append_typed_with_options(&coord_b, &decomposed_payload, AppendOptions::default())
+        .expect("append_typed_with_options of the decomposed transition");
+
+    let a = store
+        .get(via_transition.event_id)
+        .expect("get transition event");
+    let b = store.get(via_typed.event_id).expect("get decomposed event");
+    assert_eq!(
+        a.event.event_kind(),
+        decomposed_kind,
+        "PROPERTY: the options seam must stamp the transition's structurally derived kind (P::KIND)."
+    );
+    assert_eq!(
+        a.event.event_kind(),
+        b.event.event_kind(),
+        "PROPERTY: both lowerings must produce the same EventKind."
+    );
+    assert_eq!(
+        a.event.header.payload_version, b.event.header.payload_version,
+        "PROPERTY: both lowerings must stamp the same PAYLOAD_VERSION \
+         (submit_with_options_versioned threading)."
+    );
+    assert_eq!(
+        a.event.header.payload_size, b.event.header.payload_size,
+        "PROPERTY: both lowerings must serialize the payload to identical bytes \
+         (same length through the shared submit funnel)."
+    );
+    assert_eq!(
+        a.event.payload, b.event.payload,
+        "PROPERTY: both lowerings must persist an identical decoded payload."
+    );
+
+    store.close().expect("close");
+}
+
+#[test]
+fn apply_transition_with_options_threads_the_durability_gate() {
+    // A store whose cadence sync never fires within the test (high n) plus an
+    // unreachable durable gate: the ONLY way this call can time out is if
+    // AppendOptions.gate was actually passed through to the wait path. If the
+    // seam dropped the gate, the call would return Ok immediately.
+    let dir = TempDir::new().expect("create temp dir");
+    let config = StoreConfig::new(dir.path())
+        .with_segment_max_bytes(4096)
+        .with_sync_every_n_events(1_000);
+    let store = Store::open(config).expect("open store");
+    let coord = Coordinate::new("entity:transition-gate", "scope:test").expect("valid coord");
+
+    let opts = AppendOptions::new().with_gate(batpak::store::DurabilityGate::new(
+        batpak::store::WatermarkKind::Durable,
+        std::time::Duration::from_millis(100),
+    ));
+    let err = store
+        .apply_transition_with_options(
+            &coord,
+            Transition::<Draft, Published, PublishedDoc>::from_payload(published_doc()),
+            opts,
+        )
+        .map(|_| ())
+        .expect_err(
+            "PROPERTY: an unreachable durable gate must not return a receipt from \
+             apply_transition_with_options",
+        );
+    assert!(
+        matches!(
+            err,
+            StoreError::WaitTimeout {
+                watermark: batpak::store::WatermarkKind::Durable,
+                ..
+            }
+        ),
+        "PROPERTY: the gate timeout must surface WaitTimeout on the Durable watermark, got {err:?}"
+    );
+
+    store.close().expect("close");
+}

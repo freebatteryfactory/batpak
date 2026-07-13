@@ -630,6 +630,34 @@ impl Store<Open> {
             .wait()
     }
 
+    /// WRITE: apply a typestate transition with append options — kind is read
+    /// from `P::KIND`.
+    ///
+    /// The options-bearing sibling of [`Store::apply_transition`], mirroring
+    /// how [`Store::append_typed_with_options`] extends [`Store::append_typed`]:
+    /// the transition keeps its structural kind/payload binding (FREEZE-7)
+    /// while gaining idempotency keys, durability gates, and receipt
+    /// extensions through [`AppendOptions`]. A keyed retry of the same
+    /// transition is a no-op returning the original receipt, exactly as for
+    /// keyed typed appends.
+    ///
+    /// # Errors
+    /// Returns `StoreError::Serialization` if the payload cannot be serialized.
+    /// Returns `StoreError::WriterCrashed` if the writer thread has exited unexpectedly.
+    pub fn apply_transition_with_options<
+        From: crate::typestate::transition::StateMarker,
+        To: crate::typestate::transition::StateMarker,
+        P: EventPayload,
+    >(
+        &self,
+        coord: &Coordinate,
+        transition: crate::typestate::transition::Transition<From, To, P>,
+        opts: AppendOptions,
+    ) -> Result<AppendReceipt, StoreError> {
+        let payload = transition.into_payload();
+        self.submit_with_options_versioned(coord, P::KIND, &payload, opts, P::PAYLOAD_VERSION)
+    }
+
     /// WRITE (typed): append a root-cause event — kind derived from `T::KIND`.
     ///
     /// # Errors

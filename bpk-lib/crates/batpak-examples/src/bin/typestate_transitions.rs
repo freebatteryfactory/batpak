@@ -132,10 +132,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = store.apply_transition(&coord, transition)?;
     let _ = writeln!(out, "  → Unsealed (event persisted)");
 
-    // Activate it
+    // Activate it — this time through the options-bearing seam: an idempotency
+    // key makes the transition at-most-once (a keyed retry returns the original
+    // receipt instead of appending a duplicate event).
     let (_resource, transition) = resource.activate();
-    let _ = store.apply_transition(&coord, transition)?;
-    let _ = writeln!(out, "  → Active again (event persisted)");
+    let opts = AppendOptions::new().with_idempotency(batpak::id::IdempotencyKey::from(0x0204_u128));
+    let _ = store.apply_transition_with_options(&coord, transition, opts)?;
+    let _ = writeln!(out, "  → Active again (keyed event persisted)");
 
     // -- Show the event log --
     let _ = writeln!(out, "\nEvent log for the resource:");

@@ -16,7 +16,7 @@ pub(crate) struct AppendSubmission {
     ///
     /// `0` is the default for every untyped / legacy / batch / denial /
     /// lifecycle path; only the typed lowerings (`append_typed*`,
-    /// `submit_typed*`, `*_reaction_typed`, `apply_transition`) raise it to
+    /// `submit_typed*`, `*_reaction_typed`, `apply_transition*`) raise it to
     /// `T::PAYLOAD_VERSION` via [`AppendSubmission::with_payload_version`]. It is
     /// stamped into the header by [`AppendSubmission::build_event`] and rides
     /// outside the hashed/signed region.
