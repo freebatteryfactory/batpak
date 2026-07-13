@@ -278,6 +278,12 @@ public_api_baseline_additions:
   - item: store::StoreMetaCorruption (+ StoreError::StoreMetadataCorrupt/Missing/FutureVersion)
     disposition: intentional_public
     witness: crates/core/tests/store_identity.rs
+  - item: store::IdempAuthorityCorruption + store::IdempAuthorityForeignKind (+ StoreError::IdempotencyAuthorityCorrupt/Missing/Stale/Foreign)
+    disposition: intentional_public
+    witness: crates/core/tests/idempotency_authority_fail_closed.rs
+  - item: Store::apply_transition_with_options
+    disposition: intentional_public
+    witness: crates/core/tests/store_append_behavior.rs
   - item: Store::query_entries_after
     disposition: intentional_public
     witness: crates/core/tests/read_api_pagination.rs
