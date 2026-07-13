@@ -4,6 +4,101 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Integrity-authority batch (#192, #189, #205, #204, #182): the store stops
+trusting any self-authenticating on-disk sidecar. Untrusted segment manifests
+can no longer prove anything about missing data (#192), the durable
+idempotency window is a fail-closed authority instead of a degrade-to-empty
+cache (#189), and both are anchored to a new persistent store lineage
+identity (#205). Breaking on-disk consequences are listed under **Breaking**.
+
+### Added
+- **`Store::identity()` — persistent store lineage identity** (#205): a
+  `StoreIdentity` UUID minted from the injected clock on first writable open
+  and persisted in a new `store.meta` sidecar (magic `FBATSM`, v1). Snapshot
+  AND fork copy it: identity is *lineage*, not divergence detection — it
+  distinguishes unrelated stores, is stable across path moves and reopens,
+  and by itself does NOT detect rewind or sibling-fork divergence. External
+  derived state must bind the identity PLUS a history anchor (see
+  `10_PROJECTIONS.md`). Migration is one-shot and never re-mints: a legacy
+  directory gets `store.meta` written once; a store carrying post-migration
+  witnesses (an idempotency-authority v2 image) whose `store.meta` is missing
+  refuses to open with `StoreError::StoreMetadataMissing`.
+- **`Store::apply_transition_with_options`** (#204): the options-bearing
+  sibling of `apply_transition` — typestate transitions keep their structural
+  kind/payload binding while gaining idempotency keys, durability gates, and
+  receipt extensions through `AppendOptions`. A keyed retry of the same
+  transition is a no-op returning the original receipt.
+- **Typed refusal surface for authority sidecars** (#189, #205): new
+  `StoreError` variants `IdempotencyAuthorityCorrupt` / `Missing` / `Stale` /
+  `Foreign` (with `IdempAuthorityCorruption` and `IdempAuthorityForeignKind`
+  detail enums) and `StoreMetadataCorrupt` / `Missing` / `FutureVersion`
+  (with `StoreMetaCorruption`). Authority loss is a typed open refusal —
+  there is no degraded half-open mode.
+- **Operator runbook for sealed-segment refusals** (#192):
+  `cookbook/200_SEALED_SEGMENT_REFUSAL.md` explains what a strict-posture
+  segment-scan refusal means, what the refusal message's verified-boundary /
+  first-unprovable-offset fields say, and the sanctioned recovery moves
+  (restore from backup, inspect a *copy*, never edit or delete the segment in
+  place).
+
+### Changed
+- **Untrusted segment-manifest rows are suspicion geometry, not proof**
+  (#192): a CRC-corroborated SIDX row authenticates only its own frame — it
+  can no longer vouch for loss or emptiness elsewhere in the segment (BLAKE3
+  is unkeyed, so stored hashes are copyable by an adversary). Recovery
+  decisions route through the frame-scan tail policy alone; the strict
+  posture refuses any non-empty unprovable tail with a refusal that carries
+  the segment id and path, the last independently verified frame boundary,
+  the first unprovable offset, whether any CRC-valid frame decodes past it,
+  and the explicit statement that no authenticated evidence proves the
+  missing region empty (ADR-0036).
+- **The durable idempotency window is a fail-closed authority** (#189): the
+  `index.idemp` sidecar is now versioned v2 and binds its entries to the
+  store lineage plus a compound history anchor (covered global sequence +
+  event id at that sequence + chain commitment) — a corrupt, missing-but-
+  expected, stale, foreign-lineage, or diverged-sibling image is a typed open
+  refusal instead of a silent empty rebuild that would re-admit retired keys
+  after retention. Compaction now flushes the authority image and metadata
+  BEFORE deleting source segments (old-or-new, never neither); a publish
+  failure mid-compaction halts before anything is destroyed.
+- **Injected clocks own all timekeeping** (#182): `SystemClock` and the
+  `clock_from_fn` adapter capture the ambient monotonic anchor lazily on
+  first read, never at construction, so a store driven by a fully injected
+  `Clock` never touches ambient `SystemTime`/`Instant` — construction is
+  wasm32-safe and clock injection is airtight (proven by a process-isolated
+  tripwire test).
+
+### Breaking
+- **Sealed segments with unverifiable manifests refuse to open under the
+  strict posture** (#192): this includes legacy SDX2-footer non-tail segments
+  and segments whose footer is benignly corrupt — previously these could
+  open by trusting the manifest's own claims. Migration: open the store once
+  under batpak ≤ 0.10.0 and compact, or restore from backup; see
+  `cookbook/200_SEALED_SEGMENT_REFUSAL.md`. Do not edit segments in place.
+- **`index.idemp` format bumped to v2** (#189): a v1 image is accepted only
+  during one-time legacy migration (no recorded expectation); after
+  migration, missing or regressed authority images refuse the open. A future
+  (v3+) image remains a canonical `IdempotencyFutureVersion` refusal.
+- **New on-disk sidecar `store.meta`** (#205): written on first writable
+  open of every store (including migrated legacy directories). Read-only
+  opens of never-migrated legacy stores do not require it.
+
+### Migration
+- A store that now refuses to open with a strict sealed-segment refusal:
+  open it once under batpak ≤ 0.10.0 and compact (rewrites sealed segments
+  with current-format manifests), or restore from backup. Follow
+  `cookbook/200_SEALED_SEGMENT_REFUSAL.md`; never edit or delete a segment
+  in place.
+- Legacy (≤ 0.10.0) store directories migrate automatically on the first
+  writable open: `store.meta` is minted once and `index.idemp` upgrades to
+  v2 on the next flush. The migration is crash-restartable and one-time —
+  afterwards, deleting `store.meta` or the idempotency image no longer
+  yields a fresh-looking store; it yields a typed refusal. Restore the
+  deleted sidecar from backup, or accept a new lineage by copying the events
+  out through a fresh store.
+- `StoreError` is `#[non_exhaustive]`; downstream `matches!`-style checks
+  are unaffected by the seven new refusal variants.
+
 ## [0.10.0] - 2026-07-05
 
 The reserved pre-1.0 breaking window (ROADMAP §3): API-shape changes driven by

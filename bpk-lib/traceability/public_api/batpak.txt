@@ -4183,8 +4183,6 @@ pub fn batpak::store::SystemClock::now_mono_ns(&self) -> i64
 pub fn batpak::store::SystemClock::now_us(&self) -> i64
 pub fn batpak::store::SystemClock::now_wall_ns(&self) -> i64
 pub fn batpak::store::SystemClock::process_boot_ns(&self) -> u64
-impl core::default::Default for batpak::store::SystemClock
-pub fn batpak::store::SystemClock::default() -> Self
 pub struct batpak::store::ThreadSpawn
 impl batpak::store::Spawn for batpak::store::ThreadSpawn
 pub fn batpak::store::ThreadSpawn::spawn(&self, name: alloc::string::String, stack_size: core::option::Option<usize>, body: alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>) -> core::result::Result<alloc::boxed::Box<dyn batpak::store::JobHandle>, batpak::store::SpawnError>
@@ -4517,3 +4515,103 @@ pub trait batpak::MultiReactive<Input: batpak::event::sourcing::ProjectionInput>
 pub type batpak::MultiReactive::Error: core::error::Error + core::marker::Send + core::marker::Sync + 'static
 pub fn batpak::MultiReactive::dispatch(&mut self, event: &batpak::event::StoredEvent<<Input as batpak::event::sourcing::ProjectionInput>::Payload>, out: &mut batpak::store::reaction::ReactionBatch, at_least_once: core::option::Option<&batpak::store::delivery::observation::AtLeastOnce>) -> core::result::Result<(), batpak::event::sourcing::MultiDispatchError<Self::Error>>
 pub fn batpak::MultiReactive::relevant_event_kinds() -> &'static [batpak::event::kind::EventKind]
+#[non_exhaustive] pub enum batpak::store::IdempAuthorityCorruption
+#[non_exhaustive] pub enum batpak::store::IdempAuthorityForeignKind
+#[non_exhaustive] pub enum batpak::store::StoreMetaCorruption
+impl batpak::id::EntityIdType for batpak::id::StoreIdentity
+impl batpak::id::StoreIdentity
+impl core::convert::From<batpak::id::StoreIdentity> for u128
+impl core::convert::From<u128> for batpak::id::StoreIdentity
+impl core::fmt::Display for batpak::id::StoreIdentity
+impl core::fmt::Display for batpak::store::IdempAuthorityCorruption
+impl core::fmt::Display for batpak::store::IdempAuthorityForeignKind
+impl core::fmt::Display for batpak::store::StoreMetaCorruption
+impl core::str::traits::FromStr for batpak::id::StoreIdentity
+impl serde_core::ser::Serialize for batpak::id::StoreIdentity
+impl<'de> serde_core::de::Deserialize<'de> for batpak::id::StoreIdentity
+pub batpak::prelude::StoreError::IdempotencyAuthorityCorrupt
+pub batpak::prelude::StoreError::IdempotencyAuthorityCorrupt::kind: batpak::store::IdempAuthorityCorruption
+pub batpak::prelude::StoreError::IdempotencyAuthorityCorrupt::path: std::path::PathBuf
+pub batpak::prelude::StoreError::IdempotencyAuthorityForeign
+pub batpak::prelude::StoreError::IdempotencyAuthorityForeign::kind: batpak::store::IdempAuthorityForeignKind
+pub batpak::prelude::StoreError::IdempotencyAuthorityMissing
+pub batpak::prelude::StoreError::IdempotencyAuthorityMissing::path: std::path::PathBuf
+pub batpak::prelude::StoreError::IdempotencyAuthorityStale
+pub batpak::prelude::StoreError::IdempotencyAuthorityStale::expected_covered: u64
+pub batpak::prelude::StoreError::IdempotencyAuthorityStale::image_covered: u64
+pub batpak::prelude::StoreError::StoreMetadataCorrupt
+pub batpak::prelude::StoreError::StoreMetadataCorrupt::kind: batpak::store::StoreMetaCorruption
+pub batpak::prelude::StoreError::StoreMetadataCorrupt::path: std::path::PathBuf
+pub batpak::prelude::StoreError::StoreMetadataFutureVersion
+pub batpak::prelude::StoreError::StoreMetadataFutureVersion::found: u16
+pub batpak::prelude::StoreError::StoreMetadataFutureVersion::path: std::path::PathBuf
+pub batpak::prelude::StoreError::StoreMetadataFutureVersion::supported: u16
+pub batpak::prelude::StoreError::StoreMetadataMissing
+pub batpak::prelude::StoreError::StoreMetadataMissing::path: std::path::PathBuf
+pub batpak::store::IdempAuthorityCorruption::BadMagic
+pub batpak::store::IdempAuthorityCorruption::CrcMismatch
+pub batpak::store::IdempAuthorityCorruption::CrcMismatch::computed: u32
+pub batpak::store::IdempAuthorityCorruption::CrcMismatch::stored: u32
+pub batpak::store::IdempAuthorityCorruption::DecodeFailed(rmp_serde::decode::Error)
+pub batpak::store::IdempAuthorityCorruption::ReadFailed(std::io::Error)
+pub batpak::store::IdempAuthorityCorruption::TooShort
+pub batpak::store::IdempAuthorityCorruption::TooShort::actual: usize
+pub batpak::store::IdempAuthorityCorruption::TooShort::required: usize
+pub batpak::store::IdempAuthorityCorruption::UnsupportedVersion
+pub batpak::store::IdempAuthorityCorruption::UnsupportedVersion::expected: u16
+pub batpak::store::IdempAuthorityCorruption::UnsupportedVersion::observed: u16
+pub batpak::store::IdempAuthorityForeignKind::HistoryAnchor
+pub batpak::store::IdempAuthorityForeignKind::Lineage
+pub batpak::store::StoreError::IdempotencyAuthorityCorrupt
+pub batpak::store::StoreError::IdempotencyAuthorityCorrupt::kind: batpak::store::IdempAuthorityCorruption
+pub batpak::store::StoreError::IdempotencyAuthorityCorrupt::path: std::path::PathBuf
+pub batpak::store::StoreError::IdempotencyAuthorityForeign
+pub batpak::store::StoreError::IdempotencyAuthorityForeign::kind: batpak::store::IdempAuthorityForeignKind
+pub batpak::store::StoreError::IdempotencyAuthorityMissing
+pub batpak::store::StoreError::IdempotencyAuthorityMissing::path: std::path::PathBuf
+pub batpak::store::StoreError::IdempotencyAuthorityStale
+pub batpak::store::StoreError::IdempotencyAuthorityStale::expected_covered: u64
+pub batpak::store::StoreError::IdempotencyAuthorityStale::image_covered: u64
+pub batpak::store::StoreError::StoreMetadataCorrupt
+pub batpak::store::StoreError::StoreMetadataCorrupt::kind: batpak::store::StoreMetaCorruption
+pub batpak::store::StoreError::StoreMetadataCorrupt::path: std::path::PathBuf
+pub batpak::store::StoreError::StoreMetadataFutureVersion
+pub batpak::store::StoreError::StoreMetadataFutureVersion::found: u16
+pub batpak::store::StoreError::StoreMetadataFutureVersion::path: std::path::PathBuf
+pub batpak::store::StoreError::StoreMetadataFutureVersion::supported: u16
+pub batpak::store::StoreError::StoreMetadataMissing
+pub batpak::store::StoreError::StoreMetadataMissing::path: std::path::PathBuf
+pub batpak::store::StoreMetaCorruption::BadMagic
+pub batpak::store::StoreMetaCorruption::CrcMismatch
+pub batpak::store::StoreMetaCorruption::CrcMismatch::computed: u32
+pub batpak::store::StoreMetaCorruption::CrcMismatch::stored: u32
+pub batpak::store::StoreMetaCorruption::DecodeFailed(rmp_serde::decode::Error)
+pub batpak::store::StoreMetaCorruption::ReadFailed(std::io::Error)
+pub batpak::store::StoreMetaCorruption::TooShort
+pub batpak::store::StoreMetaCorruption::TooShort::actual: usize
+pub batpak::store::StoreMetaCorruption::TooShort::required: usize
+pub batpak::store::StoreMetaCorruption::UnsupportedVersion
+pub batpak::store::StoreMetaCorruption::UnsupportedVersion::expected: u16
+pub batpak::store::StoreMetaCorruption::UnsupportedVersion::observed: u16
+pub const batpak::id::StoreIdentity::ENTITY_NAME: &'static str
+pub const batpak::store::STORE_META_VERSION: u16
+pub const fn batpak::id::StoreIdentity::from_u128(id: u128) -> Self
+pub fn batpak::id::StoreIdentity::as_u128(&self) -> u128
+pub fn batpak::id::StoreIdentity::deserialize<D: serde_core::de::Deserializer<'de>>(de: D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub fn batpak::id::StoreIdentity::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::id::StoreIdentity::from(id: u128) -> Self
+pub fn batpak::id::StoreIdentity::from_str(s: &str) -> core::result::Result<Self, Self::Err>
+pub fn batpak::id::StoreIdentity::new(id: u128) -> Self
+pub fn batpak::id::StoreIdentity::nil() -> Self
+pub fn batpak::id::StoreIdentity::now_v7() -> Self
+pub fn batpak::id::StoreIdentity::now_v7_with_clock(clock: &dyn batpak::store::Clock) -> Self
+pub fn batpak::id::StoreIdentity::serialize<S: serde_core::ser::Serializer>(&self, ser: S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+pub fn batpak::store::IdempAuthorityCorruption::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::store::IdempAuthorityForeignKind::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn batpak::store::Store<State>::identity(&self) -> core::result::Result<batpak::id::StoreIdentity, batpak::prelude::StoreError>
+pub fn batpak::store::Store<batpak::store::Open>::apply_transition_with_options<From: batpak::typestate::transition::StateMarker, To: batpak::typestate::transition::StateMarker, P: batpak::event::payload::EventPayload>(&self, coord: &batpak::coordinate::Coordinate, transition: batpak::typestate::transition::Transition<From, To, P>, opts: batpak::prelude::AppendOptions) -> core::result::Result<batpak::prelude::AppendReceipt, batpak::prelude::StoreError>
+pub fn batpak::store::StoreMetaCorruption::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn u128::from(id: batpak::id::StoreIdentity) -> Self
+pub struct batpak::id::StoreIdentity(_)
+pub struct batpak::prelude::StoreIdentity(_)
+pub type batpak::id::StoreIdentity::Err = alloc::string::String
