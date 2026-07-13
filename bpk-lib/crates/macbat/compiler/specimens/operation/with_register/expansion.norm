@@ -1,0 +1,5 @@
+fn reg (input : & [u8] , cx : & mut syncbat :: Ctx < '_ >) -> syncbat :: HandlerResult { Ok (input . to_vec ()) }
+const REG : :: syncbat :: OperationDescriptor = :: syncbat :: OperationDescriptor :: new ("reg" , :: syncbat :: EffectClass :: Emit , "schema.in.v1" , "schema.out.v1" , "receipt.v1" ,) ;
+const _ : fn (& [u8] , & mut :: syncbat :: Ctx < '_ >) -> :: syncbat :: HandlerResult = reg ;
+pub fn reg_item () -> :: syncbat :: OperationRegisterItem { :: syncbat :: OperationRegisterItem :: new (REG . clone () , reg) }
+pub fn register_reg (builder : & mut :: syncbat :: CoreBuilder ,) -> :: std :: result :: Result < & mut :: syncbat :: CoreBuilder , :: syncbat :: BuildError > { builder . register_item (reg_item ()) }

@@ -1,0 +1,5 @@
+error: category exceeds the u8 range
+ --> tests/trybuild_negative/event_category_overflow.rs:3:21
+  |
+3 | #[batpak(category = 256, type_id = 1)]
+  |                     ^^^

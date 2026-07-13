@@ -1,0 +1,56 @@
+# MacBat macro lane — a NESTED Cargo workspace, quarantined behind its own lock
+# and target dir and excluded from the parent workspace (see
+# `bpk-lib/Cargo.toml` `[workspace].exclude`). This is the one place a compiler
+# runs before the J1/J2 integration event, so it depends on nothing in core.
+[workspace]
+resolver = "2"
+members = ["macros", "compiler", "registration"]
+
+[workspace.package]
+version = "0.10.0"
+edition = "2024"                 # macro crates may be edition 2024 early, in-lane
+rust-version = "1.97"
+
+# Copied VERBATIM from the parent `bpk-lib/Cargo.toml` [workspace.lints] tables so
+# the lane enforces the identical doctrine (zero-allow tripwire lives in the AST
+# detectors; these are the clippy/rustc floors): panic/unwrap denied everywhere,
+# wildcard_enum_match_arm denied, cast/print/etc. denied.
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+panic = "deny"
+needless_return = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+# The five lints below were `warn` until the #178 posture ratchet. Their
+# blocking-ness lived only in CI's `-D warnings` invocation; a bare local
+# `cargo clippy` would have silently accepted a regression. All were 0-count
+# when promoted, so the deny is zero-cost — and AGENTS.md already described
+# `wildcard_enum_match_arm` as denied repo-wide, so the manifest now agrees.
+wildcard_enum_match_arm = "deny"
+assertions_on_constants = "deny"
+disallowed_methods = "deny"
+large_enum_variant = "deny"
+clone_on_ref_ptr = "deny"
+needless_pass_by_value = "deny"
+# Deliberate wholesale allow: the `store::store_*` / `writer::writer_*` naming
+# convention is intentional vocabulary here, and the lint has no per-path
+# tuning — silencing it in the table is noise suppression, not laxity.
+module_name_repetitions = "allow"
+# Deliberate wholesale allow: `#[must_use]` on every Result-adjacent public fn
+# would be pure churn (Result is already must_use); revisit as a one-shot
+# pre-1.0 harvest if the public API grows unused-return foot-guns.
+must_use_candidate = "allow"
+missing_errors_doc = "deny"
+
+[workspace.lints.rust]
+deprecated = "deny"
+# Gauntlet Phase 0B sentinel RED fixtures compile only under this cfg (set via
+# RUSTFLAGS="--cfg gauntlet_red_fixture"); it is intentionally NOT a Cargo
+# feature so `--all-features` never enables a fixture designed to fail. Register
+# it here so the every-PR build does not warn/deny on the unexpected cfg.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(gauntlet_red_fixture)'] }

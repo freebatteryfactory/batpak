@@ -1,0 +1,21 @@
+# The pure semantic contract compiler. Not a proc-macro crate itself — it owns
+# `ContractIr`, the grammar, diagnostics, the eight passes, lowerings, snapshots,
+# origins, budgets, and hygiene, and unconditionally depends on syn/quote/
+# proc-macro2 (the packet-02 `feature = "compiler"` gate is deleted by the
+# 3-crate split). It NEVER depends on `batpak` core.
+[package]
+name = "macbat-compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+trybuild = "1"
+
+[lints]
+workspace = true

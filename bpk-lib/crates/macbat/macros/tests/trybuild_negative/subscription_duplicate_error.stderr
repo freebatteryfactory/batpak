@@ -1,0 +1,5 @@
+error: `error` may appear at most once
+ --> tests/trybuild_negative/subscription_duplicate_error.rs:3:34
+  |
+3 | #[batpak(input = JsonValueInput, error = StoreError)]
+  |                                  ^^^^^

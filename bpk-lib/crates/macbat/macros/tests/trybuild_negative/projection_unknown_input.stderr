@@ -1,0 +1,5 @@
+error: unknown key `inputt`
+ --> tests/trybuild_negative/projection_unknown_input.rs:3:10
+  |
+3 | #[batpak(inputt = JsonValueInput, event = Ev, handler = on_ev)]
+  |          ^^^^^^

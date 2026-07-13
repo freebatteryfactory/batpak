@@ -1,0 +1,5 @@
+error: width/precision `$` arguments are not supported by #[derive(Error)]; inline the value or hand-write the type
+ --> tests/trybuild_negative/error_dollar_arg.rs:4:13
+  |
+4 |     #[error("value {a:1$}")]
+  |             ^^^^^^^^^^^^^^

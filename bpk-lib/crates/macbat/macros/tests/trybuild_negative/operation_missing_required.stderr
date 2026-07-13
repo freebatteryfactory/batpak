@@ -1,0 +1,13 @@
+error: operation is missing required key `receipt_kind`
+ --> tests/trybuild_negative/operation_missing_required.rs:2:1
+  |
+2 | / #[operation(
+3 | |     descriptor = D,
+4 | |     name = "n",
+5 | |     effect = Compute,
+6 | |     input_schema = "i",
+7 | |     output_schema = "o"
+8 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `operation` (in Nightly builds, run with -Z macro-backtrace for more info)

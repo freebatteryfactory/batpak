@@ -1,0 +1,13 @@
+contract_id = "variant_inventory/Pair"
+version = 1
+concept = module
+kind = VariantInventory
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "Pair"
+  generics = ""
+  variants =
+    - "First"
+    - "Second"

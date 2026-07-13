@@ -1,0 +1,13 @@
+contract_id = "event/ItemRecorded"
+version = 1
+concept = event
+kind = Event
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "ItemRecorded"
+  category = 10
+  type_id = 1
+  payload_version = 1
+  kind_bits = 40961

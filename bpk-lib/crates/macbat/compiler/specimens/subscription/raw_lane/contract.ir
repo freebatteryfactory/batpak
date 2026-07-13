@@ -1,0 +1,16 @@
+contract_id = "subscription/RawLane"
+version = 1
+concept = subscription
+kind = Subscription
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "RawLane"
+  generics = ""
+  input = "RawMsgpackInput"
+  error = "StoreError"
+  bindings =
+    -
+      event = "RawEvent"
+      handler = "on_raw"

@@ -1,0 +1,5 @@
+error: projections have no associated error type
+ --> tests/trybuild_negative/projection_error_key_rejected.rs:3:34
+  |
+3 | #[batpak(input = JsonValueInput, error = StoreError)]
+  |                                  ^^^^^

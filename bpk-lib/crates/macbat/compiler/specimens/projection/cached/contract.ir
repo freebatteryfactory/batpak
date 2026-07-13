@@ -1,0 +1,17 @@
+contract_id = "projection/Cached"
+version = 1
+concept = projection
+kind = Projection
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "Cached"
+  generics = ""
+  input = "JsonValueInput"
+  cache_version = 42
+  state_contract = none
+  bindings =
+    -
+      event = "Recorded"
+      handler = "on_recorded"

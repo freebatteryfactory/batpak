@@ -1,0 +1,36 @@
+contract_id = "error/Positional"
+version = 1
+concept = error
+kind = Error
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "Positional"
+  generics = ""
+  variants =
+    -
+      ident = "Plain"
+      fields =
+        shape = unnamed
+        count = 1
+      display =
+        original = "\"plain: {0}\""
+        rewritten = "plain: {__arg_0}"
+        used_names = []
+        used_positions =
+          - 0
+      source = none
+    -
+      ident = "Two"
+      fields =
+        shape = unnamed
+        count = 2
+      display =
+        original = "\"two: {0} / {1}\""
+        rewritten = "two: {__arg_0} / {__arg_1}"
+        used_names = []
+        used_positions =
+          - 0
+          - 1
+      source = none

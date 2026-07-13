@@ -1,0 +1,5 @@
+error: cache_version is a projection key, not a subscription key
+ --> tests/trybuild_negative/subscription_cache_version_rejected.rs:3:54
+  |
+3 | #[batpak(input = JsonValueInput, error = StoreError, cache_version = 1)]
+  |                                                      ^^^^^^^^^^^^^

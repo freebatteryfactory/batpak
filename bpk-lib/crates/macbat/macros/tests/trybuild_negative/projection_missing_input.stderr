@@ -1,0 +1,7 @@
+error: missing required key `input`
+ --> tests/trybuild_negative/projection_missing_input.rs:2:10
+  |
+2 | #[derive(Projection)]
+  |          ^^^^^^^^^^
+  |
+  = note: this error originates in the derive macro `Projection` (in Nightly builds, run with -Z macro-backtrace for more info)

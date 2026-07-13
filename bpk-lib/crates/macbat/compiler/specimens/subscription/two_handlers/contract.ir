@@ -1,0 +1,19 @@
+contract_id = "subscription/TwoHandlers"
+version = 1
+concept = subscription
+kind = Subscription
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "TwoHandlers"
+  generics = ""
+  input = "JsonValueInput"
+  error = "StoreError"
+  bindings =
+    -
+      event = "First"
+      handler = "on_first"
+    -
+      event = "Second"
+      handler = "on_second"

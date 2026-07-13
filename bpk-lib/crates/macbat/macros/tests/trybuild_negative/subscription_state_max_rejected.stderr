@@ -1,0 +1,5 @@
+error: state cardinality is a projection contract, not a subscription key
+ --> tests/trybuild_negative/subscription_state_max_rejected.rs:3:54
+  |
+3 | #[batpak(input = JsonValueInput, error = StoreError, state_max_cardinality = 1)]
+  |                                                      ^^^^^^^^^^^^^^^^^^^^^

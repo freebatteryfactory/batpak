@@ -1,0 +1,2 @@
+impl :: core :: fmt :: Display for OnlyUnit { fn fmt (& self , f : & mut :: core :: fmt :: Formatter < '_ >) -> :: core :: fmt :: Result { match self { Self :: Only => :: core :: write ! (f , "the one and only") , } } }
+impl :: std :: error :: Error for OnlyUnit { }

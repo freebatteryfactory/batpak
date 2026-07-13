@@ -193,3 +193,20 @@ doc: docs
 
 cargo +args:
     cd bpk-lib; cargo {{args}}
+
+# ── MacBat macro lane ────────────────────────────────────────────────────────
+# The nested `bpk-lib/crates/macbat` workspace is excluded from the parent and
+# runs a compiler before the J1/J2 integration event. `xtask` depends on core, so
+# it cannot drive this lane — these recipes use RAW cargo against the nested
+# workspace. `; ` chains work in both pwsh (windows-shell) and sh.
+macro-lane-check:
+    cd bpk-lib/crates/macbat; cargo check --workspace
+
+macro-lane-test:
+    cd bpk-lib/crates/macbat; cargo test --workspace
+
+macro-lane-snapshot *args:
+    cd bpk-lib/crates/macbat; cargo test -p macbat-compiler --test snapshot {{args}}
+
+macro-lane-expand specimen:
+    cd bpk-lib/crates/macbat; cargo run -p macbat-compiler --example expand -- {{specimen}}

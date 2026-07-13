@@ -1,0 +1,5 @@
+error: version 0 is reserved for legacy/untyped frames
+ --> tests/trybuild_negative/event_version_zero.rs:3:47
+  |
+3 | #[batpak(category = 1, type_id = 1, version = 0)]
+  |                                               ^

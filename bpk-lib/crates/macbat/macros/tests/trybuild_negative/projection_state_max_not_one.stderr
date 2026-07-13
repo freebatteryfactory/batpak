@@ -1,0 +1,5 @@
+error: state_max_cardinality supports only single-aggregate state (= 1)
+ --> tests/trybuild_negative/projection_state_max_not_one.rs:3:58
+  |
+3 | #[batpak(input = JsonValueInput, state_max_cardinality = 2)]
+  |                                                          ^

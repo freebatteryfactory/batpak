@@ -1,0 +1,5 @@
+error: duplicate `category` key
+ --> tests/trybuild_negative/event_duplicate_key.rs:3:37
+  |
+3 | #[batpak(category = 1, type_id = 1, category = 2)]
+  |                                     ^^^^^^^^

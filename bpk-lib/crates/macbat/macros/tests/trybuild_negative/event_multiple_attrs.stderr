@@ -1,0 +1,5 @@
+error: expected exactly one #[batpak(...)] attribute
+ --> tests/trybuild_negative/event_multiple_attrs.rs:4:1
+  |
+4 | #[batpak(version = 2)]
+  | ^

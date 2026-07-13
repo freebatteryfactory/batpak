@@ -1,0 +1,5 @@
+error: `input` may appear at most once
+ --> tests/trybuild_negative/projection_duplicate_input.rs:3:10
+  |
+3 | #[batpak(input = JsonValueInput)]
+  |          ^^^^^

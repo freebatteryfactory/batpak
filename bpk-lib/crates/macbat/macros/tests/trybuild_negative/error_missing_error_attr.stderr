@@ -1,0 +1,5 @@
+error: every variant of a `#[derive(Error)]` enum needs an `#[error("...")]` attribute; if a variant's Display cannot be a single format literal, hand-write the whole type instead
+ --> tests/trybuild_negative/error_missing_error_attr.rs:6:5
+  |
+6 |     B,
+  |     ^

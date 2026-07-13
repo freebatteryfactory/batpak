@@ -1,0 +1,5 @@
+error: expected a named-field struct
+ --> tests/trybuild_negative/projection_on_tuple_struct.rs:5:8
+  |
+5 | struct P(u8);
+  |        ^

@@ -1,0 +1,13 @@
+contract_id = "event/DefaultVersion"
+version = 1
+concept = event
+kind = Event
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "DefaultVersion"
+  category = 1
+  type_id = 2
+  payload_version = 1
+  kind_bits = 4098

@@ -1,0 +1,7 @@
+error: expected an enum
+ --> tests/trybuild_negative/error_on_struct.rs:2:10
+  |
+2 | #[derive(Error)]
+  |          ^^^^^
+  |
+  = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more info)

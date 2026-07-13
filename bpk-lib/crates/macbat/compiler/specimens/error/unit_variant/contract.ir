@@ -1,0 +1,20 @@
+contract_id = "error/OnlyUnit"
+version = 1
+concept = error
+kind = Error
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "OnlyUnit"
+  generics = ""
+  variants =
+    -
+      ident = "Only"
+      fields = unit
+      display =
+        original = "\"the one and only\""
+        rewritten = "the one and only"
+        used_names = []
+        used_positions = []
+      source = none

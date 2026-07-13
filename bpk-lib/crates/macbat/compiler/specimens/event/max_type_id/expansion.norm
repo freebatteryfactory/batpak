@@ -1,0 +1,3 @@
+impl :: batpak :: event :: EventPayload for MaxTypeId { const KIND : :: batpak :: event :: EventKind = :: batpak :: event :: EventKind :: custom (1u8 , 4095u16) ; const PAYLOAD_VERSION : u16 = 1u16 ; }
+const _ : () = { :: batpak :: __private :: inventory :: submit ! { :: batpak :: __private :: EventPayloadRegistration { kind_bits : 8191u16 , payload_version : 1u16 , type_name : concat ! (module_path ! () , "::" , stringify ! (MaxTypeId)) , } } } ;
+# [cfg (test)] # [test] fn __batpak_kind_collision_check_max_type_id () { :: batpak :: __private :: assert_no_kind_collisions () ; }

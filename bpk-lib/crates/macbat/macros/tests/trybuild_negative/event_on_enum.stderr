@@ -1,0 +1,5 @@
+error: expected a named-field struct
+ --> tests/trybuild_negative/event_on_enum.rs:4:6
+  |
+4 | enum E {
+  |      ^

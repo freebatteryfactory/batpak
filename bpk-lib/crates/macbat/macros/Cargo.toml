@@ -1,0 +1,27 @@
+[package]
+name = "macbat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Thin proc-macro front doors for the batpak contract compiler (macbat)."
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# The pure semantic compiler owns all parsing / quote! / validation logic. This
+# crate is a front door only: every entry point is a ~12-line adapter over
+# `macbat_compiler::compile_derive` / `compile_attribute`.
+macbat-compiler = { path = "../compiler", version = "0.10.0" }
+proc-macro2 = "1"
+
+[dev-dependencies]
+# Cluster 14 owns the test corpus; these are the deps its macros/tests/ targets
+# need (negative goldens + emitted-token round-trip). Adjust there if the
+# harness grows.
+trybuild = "1"
+syn = { version = "2", features = ["full"] }

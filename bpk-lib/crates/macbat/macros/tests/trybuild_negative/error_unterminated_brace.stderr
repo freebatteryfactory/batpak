@@ -1,0 +1,5 @@
+error: unterminated `{` in `#[error]` format string
+ --> tests/trybuild_negative/error_unterminated_brace.rs:4:13
+  |
+4 |     #[error("bad {")]
+  |             ^^^^^^^

@@ -1,0 +1,5 @@
+error: operations must be free functions with no receiver
+  --> tests/trybuild_negative/operation_has_receiver.rs:10:6
+   |
+10 | fn f(&self, input: &[u8]) -> u8 {
+   |      ^

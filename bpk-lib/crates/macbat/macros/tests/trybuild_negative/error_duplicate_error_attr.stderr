@@ -1,0 +1,5 @@
+error: duplicate `#[error(...)]` on this variant; exactly one is required
+ --> tests/trybuild_negative/error_duplicate_error_attr.rs:5:5
+  |
+5 |     #[error("b")]
+  |     ^

@@ -1,0 +1,5 @@
+error: expected a named-field struct
+ --> tests/trybuild_negative/event_on_tuple_struct.rs:4:8
+  |
+4 | struct E(u8);
+  |        ^

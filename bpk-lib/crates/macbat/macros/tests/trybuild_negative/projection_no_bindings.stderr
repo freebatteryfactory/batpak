@@ -1,0 +1,7 @@
+error: at least one `event = <Payload>, handler = <fn>` binding is required
+ --> tests/trybuild_negative/projection_no_bindings.rs:2:10
+  |
+2 | #[derive(Projection)]
+  |          ^^^^^^^^^^
+  |
+  = note: this error originates in the derive macro `Projection` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,41 @@
+contract_id = "error/FromError"
+version = 1
+concept = error
+kind = Error
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "FromError"
+  generics = ""
+  variants =
+    -
+      ident = "Io"
+      fields =
+        shape = unnamed
+        count = 1
+      display =
+        original = "\"io failed: {0}\""
+        rewritten = "io failed: {__arg_0}"
+        used_names = []
+        used_positions =
+          - 0
+      source =
+        member =
+          kind = indexed
+          index = 0
+        is_box = false
+        ty = "Leaf"
+        is_from = true
+    -
+      ident = "Other"
+      fields =
+        shape = unnamed
+        count = 1
+      display =
+        original = "\"other {0}\""
+        rewritten = "other {__arg_0}"
+        used_names = []
+        used_positions =
+          - 0
+      source = none

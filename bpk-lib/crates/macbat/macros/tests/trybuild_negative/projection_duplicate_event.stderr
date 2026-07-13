@@ -1,0 +1,5 @@
+error: each event payload may be bound to exactly one handler
+ --> tests/trybuild_negative/projection_duplicate_event.rs:5:18
+  |
+5 | #[batpak(event = Ev, handler = on_b)]
+  |                  ^^

@@ -1,0 +1,5 @@
+error: every variant must be a unit variant
+ --> tests/trybuild_negative/variant_inventory_data_carrying_variant.rs:5:5
+  |
+5 |     B(u8),
+  |     ^

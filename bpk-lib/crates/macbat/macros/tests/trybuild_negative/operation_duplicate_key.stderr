@@ -1,0 +1,5 @@
+error: duplicate `name` key
+ --> tests/trybuild_negative/operation_duplicate_key.rs:5:5
+  |
+5 |     name = "b",
+  |     ^^^^

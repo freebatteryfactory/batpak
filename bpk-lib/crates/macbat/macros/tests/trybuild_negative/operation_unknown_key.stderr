@@ -1,0 +1,5 @@
+error: unknown key `bogus`
+ --> tests/trybuild_negative/operation_unknown_key.rs:9:5
+  |
+9 |     bogus = "x"
+  |     ^^^^^

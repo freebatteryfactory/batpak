@@ -1,0 +1,5 @@
+# The nested MacBat workspace builds into its own target dir, isolated from the
+# parent `bpk-lib/target/`. Ignore the workspace-root build output and any
+# per-member target dirs so no build artifacts are tracked.
+/target
+/*/target

@@ -1,0 +1,2 @@
+impl :: core :: fmt :: Display for Specs { fn fmt (& self , f : & mut :: core :: fmt :: Formatter < '_ >) -> :: core :: fmt :: Result { match self { Self :: Debug { payload } => :: core :: write ! (f , "debug {payload:?}") , Self :: Hex { byte } => :: core :: write ! (f , "hex 0x{byte:02x}") , } } }
+impl :: std :: error :: Error for Specs { }

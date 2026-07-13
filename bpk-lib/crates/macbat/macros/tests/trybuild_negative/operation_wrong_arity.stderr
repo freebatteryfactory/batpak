@@ -1,0 +1,5 @@
+error: operations take exactly two parameters
+  --> tests/trybuild_negative/operation_wrong_arity.rs:10:6
+   |
+10 | fn f(input: &[u8]) -> u8 {
+   |      ^^^^^

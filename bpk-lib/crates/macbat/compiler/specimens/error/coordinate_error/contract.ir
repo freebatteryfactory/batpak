@@ -1,0 +1,48 @@
+contract_id = "error/CoordinateError"
+version = 1
+concept = error
+kind = Error
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "CoordinateError"
+  generics = ""
+  variants =
+    -
+      ident = "EmptyEntity"
+      fields = unit
+      display =
+        original = "\"entity cannot be empty\""
+        rewritten = "entity cannot be empty"
+        used_names = []
+        used_positions = []
+      source = none
+    -
+      ident = "EntityTooLong"
+      fields =
+        shape = named
+        fields =
+          -
+            ident = "len"
+            ty = "usize"
+          -
+            ident = "max"
+            ty = "usize"
+      display =
+        original = "\"entity length {len} exceeds maximum {max}\""
+        rewritten = "entity length {len} exceeds maximum {max}"
+        used_names =
+          - "len"
+          - "max"
+        used_positions = []
+      source = none
+    -
+      ident = "NulByte"
+      fields = unit
+      display =
+        original = "\"coordinate component contains a NUL byte\""
+        rewritten = "coordinate component contains a NUL byte"
+        used_names = []
+        used_positions = []
+      source = none

@@ -1,0 +1,5 @@
+error: effect must be one of Inspect | Compute | Persist | Emit | Control
+ --> tests/trybuild_negative/operation_unknown_effect.rs:5:5
+  |
+5 |     effect = Teleport,
+  |     ^^^^^^

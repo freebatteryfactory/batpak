@@ -1,0 +1,5 @@
+error: category is outside the legal 4-bit custom range
+ --> tests/trybuild_negative/event_reserved_category_0x0.rs:3:21
+  |
+3 | #[batpak(category = 0x0, type_id = 1)]
+  |                     ^^^

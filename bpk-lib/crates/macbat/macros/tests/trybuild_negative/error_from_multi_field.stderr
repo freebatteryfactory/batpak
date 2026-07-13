@@ -1,0 +1,5 @@
+error: `#[from]` requires the variant to have exactly one field
+ --> tests/trybuild_negative/error_from_multi_field.rs:7:7
+  |
+7 |     V(#[from] Leaf, u32),
+  |       ^

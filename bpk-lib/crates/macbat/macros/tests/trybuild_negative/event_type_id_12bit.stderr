@@ -1,0 +1,5 @@
+error: type_id exceeds the 12-bit range (0x000..=0x0FFF)
+ --> tests/trybuild_negative/event_type_id_12bit.rs:3:34
+  |
+3 | #[batpak(category = 1, type_id = 0x1000)]
+  |                                  ^^^^^^

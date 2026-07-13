@@ -1,0 +1,2 @@
+impl :: core :: fmt :: Display for Positional { fn fmt (& self , f : & mut :: core :: fmt :: Formatter < '_ >) -> :: core :: fmt :: Result { match self { Self :: Plain (__arg_0) => :: core :: write ! (f , "plain: {__arg_0}") , Self :: Two (__arg_0 , __arg_1) => :: core :: write ! (f , "two: {__arg_0} / {__arg_1}") , } } }
+impl :: std :: error :: Error for Positional { }

@@ -1,0 +1,5 @@
+error: expected a unit-only enum
+ --> tests/trybuild_negative/variant_inventory_on_struct.rs:3:8
+  |
+3 | struct S {
+  |        ^

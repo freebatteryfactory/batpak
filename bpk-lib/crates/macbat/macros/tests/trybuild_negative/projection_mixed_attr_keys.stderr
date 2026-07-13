@@ -1,0 +1,5 @@
+error: an attribute may carry config keys or an event binding, not both
+ --> tests/trybuild_negative/projection_mixed_attr_keys.rs:3:1
+  |
+3 | #[batpak(input = JsonValueInput, event = Ev, handler = on_ev)]
+  | ^

@@ -1,0 +1,21 @@
+contract_id = "projection/CounterState"
+version = 1
+concept = projection
+kind = Projection
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "CounterState"
+  generics = ""
+  input = "JsonValueInput"
+  cache_version = 0
+  state_contract =
+    max_cardinality = 1
+  bindings =
+    -
+      event = "Incremented"
+      handler = "on_incremented"
+    -
+      event = "Decremented"
+      handler = "on_decremented"

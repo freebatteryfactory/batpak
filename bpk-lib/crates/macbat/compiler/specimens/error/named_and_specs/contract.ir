@@ -1,0 +1,41 @@
+contract_id = "error/Specs"
+version = 1
+concept = error
+kind = Error
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "Specs"
+  generics = ""
+  variants =
+    -
+      ident = "Debug"
+      fields =
+        shape = named
+        fields =
+          -
+            ident = "payload"
+            ty = "Vec < u8 >"
+      display =
+        original = "\"debug {payload:?}\""
+        rewritten = "debug {payload:?}"
+        used_names =
+          - "payload"
+        used_positions = []
+      source = none
+    -
+      ident = "Hex"
+      fields =
+        shape = named
+        fields =
+          -
+            ident = "byte"
+            ty = "u8"
+      display =
+        original = "\"hex 0x{byte:02x}\""
+        rewritten = "hex 0x{byte:02x}"
+        used_names =
+          - "byte"
+        used_positions = []
+      source = none

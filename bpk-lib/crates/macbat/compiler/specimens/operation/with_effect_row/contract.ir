@@ -1,0 +1,31 @@
+contract_id = "operation/append_all"
+version = 1
+concept = operation
+kind = Operation
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  function = "fn append_all (input : & [u8] , cx : & mut syncbat :: Ctx < '_ >) -> syncbat :: HandlerResult { Ok (input . to_vec ()) }"
+  descriptor = "APPEND_ALL"
+  name = "\"append.all\""
+  effect = persist
+  input_schema = "\"schema.in.v1\""
+  output_schema = "\"schema.out.v1\""
+  receipt_kind = "\"receipt.v1\""
+  title = none
+  effect_row =
+    reads_events =
+      - "\"evt.read\""
+    appends_events =
+      - "\"evt.append\""
+    queries_projections =
+      - "\"proj.query\""
+    emits_receipts =
+      - "\"receipt.emit\""
+    uses_host_controls =
+      - "\"ctrl.use\""
+    requires_capabilities =
+      - "\"cap.req\""
+  register = "register_append_all"
+  register_item = none

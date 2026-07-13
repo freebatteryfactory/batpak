@@ -1,0 +1,2 @@
+impl :: core :: fmt :: Display for CoordinateError { fn fmt (& self , f : & mut :: core :: fmt :: Formatter < '_ >) -> :: core :: fmt :: Result { match self { Self :: EmptyEntity => :: core :: write ! (f , "entity cannot be empty") , Self :: EntityTooLong { len , max } => :: core :: write ! (f , "entity length {len} exceeds maximum {max}") , Self :: NulByte => :: core :: write ! (f , "coordinate component contains a NUL byte") , } } }
+impl :: std :: error :: Error for CoordinateError { }

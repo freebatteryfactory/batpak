@@ -19,6 +19,7 @@ members = [
 # It depends on `crates/core` by path, so it always fuzzes the real code.
 exclude = [
     "fuzz",
+    "crates/macbat",
 ]
 default-members = ["crates/core"]
 resolver = "2"

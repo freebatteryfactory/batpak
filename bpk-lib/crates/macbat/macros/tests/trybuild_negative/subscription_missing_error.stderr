@@ -1,0 +1,7 @@
+error: missing required key `error`
+ --> tests/trybuild_negative/subscription_missing_error.rs:2:10
+  |
+2 | #[derive(Subscription)]
+  |          ^^^^^^^^^^^^
+  |
+  = note: this error originates in the derive macro `Subscription` (in Nightly builds, run with -Z macro-backtrace for more info)

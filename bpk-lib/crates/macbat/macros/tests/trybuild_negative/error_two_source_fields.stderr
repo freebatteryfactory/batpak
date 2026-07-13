@@ -1,0 +1,5 @@
+error: a variant may declare at most one `#[source]`/`#[from]` field
+  --> tests/trybuild_negative/error_two_source_fields.rs:10:9
+   |
+10 |         #[source]
+   |         ^

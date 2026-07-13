@@ -1,0 +1,19 @@
+contract_id = "subscription/MultiReactor"
+version = 1
+concept = subscription
+kind = Subscription
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "MultiReactor"
+  generics = ""
+  input = "JsonValueInput"
+  error = "StoreError"
+  bindings =
+    -
+      event = "PayloadA"
+      handler = "on_a"
+    -
+      event = "PayloadB"
+      handler = "on_b"

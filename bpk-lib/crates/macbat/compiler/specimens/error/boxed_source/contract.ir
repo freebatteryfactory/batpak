@@ -1,0 +1,47 @@
+contract_id = "error/Boxed"
+version = 1
+concept = error
+kind = Error
+reserved_invariants = 0
+reserved_witnesses = 0
+reserved_observations = 0
+body =
+  ident = "Boxed"
+  generics = ""
+  variants =
+    -
+      ident = "Wrap"
+      fields =
+        shape = named
+        fields =
+          -
+            ident = "source"
+            ty = "Box < dyn std :: error :: Error + Send + Sync >"
+      display =
+        original = "\"boxed: {source}\""
+        rewritten = "boxed: {source}"
+        used_names =
+          - "source"
+        used_positions = []
+      source =
+        member =
+          kind = named
+          ident = "source"
+        is_box = true
+        ty = "Box < dyn std :: error :: Error + Send + Sync >"
+        is_from = false
+    -
+      ident = "Bare"
+      fields =
+        shape = named
+        fields =
+          -
+            ident = "code"
+            ty = "u16"
+      display =
+        original = "\"bare {code}\""
+        rewritten = "bare {code}"
+        used_names =
+          - "code"
+        used_positions = []
+      source = none

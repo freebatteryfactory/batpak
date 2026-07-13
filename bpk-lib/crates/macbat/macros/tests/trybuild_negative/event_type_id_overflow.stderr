@@ -1,0 +1,5 @@
+error: type_id exceeds the u16 range
+ --> tests/trybuild_negative/event_type_id_overflow.rs:3:34
+  |
+3 | #[batpak(category = 1, type_id = 65536)]
+  |                                  ^^^^^

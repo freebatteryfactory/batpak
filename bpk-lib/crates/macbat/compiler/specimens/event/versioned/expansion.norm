@@ -1,0 +1,3 @@
+impl :: batpak :: event :: EventPayload for SchemaEvolved { const KIND : :: batpak :: event :: EventKind = :: batpak :: event :: EventKind :: custom (14u8 , 3074u16) ; const PAYLOAD_VERSION : u16 = 2u16 ; }
+const _ : () = { :: batpak :: __private :: inventory :: submit ! { :: batpak :: __private :: EventPayloadRegistration { kind_bits : 60418u16 , payload_version : 2u16 , type_name : concat ! (module_path ! () , "::" , stringify ! (SchemaEvolved)) , } } } ;
+# [cfg (test)] # [test] fn __batpak_kind_collision_check_schema_evolved () { :: batpak :: __private :: assert_no_kind_collisions () ; }

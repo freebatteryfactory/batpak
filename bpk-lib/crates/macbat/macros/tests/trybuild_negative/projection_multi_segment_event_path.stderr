@@ -1,0 +1,5 @@
+error: event must be a single-segment path (bring it into scope with `use`)
+ --> tests/trybuild_negative/projection_multi_segment_event_path.rs:4:18
+  |
+4 | #[batpak(event = outer::Ev, handler = on_ev)]
+  |                  ^^^^^

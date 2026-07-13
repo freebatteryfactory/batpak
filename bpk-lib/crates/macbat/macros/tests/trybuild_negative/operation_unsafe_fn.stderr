@@ -1,0 +1,5 @@
+error: unsafe operation
+  --> tests/trybuild_negative/operation_unsafe_fn.rs:10:1
+   |
+10 | unsafe fn f(input: &[u8], cx: &mut u8) -> u8 {
+   | ^^^^^^
