@@ -80,6 +80,50 @@ One traversal may feed many fitness systems when lawful. The fact plane is not a
 
 Forge materializes generated tables, manifests, docs, SDKs, corpus indexes, and command schemas from signed facts. A generated view carries source contract ID and digest. Hand-maintained mirrors are refused after a generated successor exists.
 
+## AST enforcement gate (DEC-068)
+
+This gate does **not** exist yet. It is implemented at G3. This section freezes its exact obligation so implementation cannot quietly narrow it. Until then, the bootstrap lexical scan (DEC-067) provides defense in depth; the TestPak AST gate is the authoritative Rust classification.
+
+TestPak's AST gate owns detection of:
+
+```text
+function-local and closure-local named domain types
+unsafe blocks, functions, and impls
+pointer and integer-pointer casts
+narrowing numeric casts
+lint suppressions (#[allow] / #[expect])
+panic / unwrap / expect / dbg in production source
+dependency-owned public types in ordinary public APIs
+drawer modules (utils, common, helpers, manager, processor, misc)
+stale architecture aliases (derived from spec/dispositions.rs)
+canonical-order dependence on hash-map iteration
+```
+
+Required behavior:
+
+```text
+production violation           hard finding
+test-only contextual expect    permitted
+dangerous mechanism            requires an exact compiler-assumption ledger entry
+bootstrap lexical result       defense in depth
+TestPak AST result             authoritative Rust classification
+```
+
+Named hostile fixtures (implemented at G3):
+
+```text
+local_domain_type_inside_function_is_rejected
+local_domain_type_inside_closure_is_rejected
+test_local_fixture_type_is_classified_correctly
+production_expect_is_rejected
+test_expect_with_context_is_allowed
+unledgered_unsafe_fn_is_rejected
+unledgered_pointer_cast_is_rejected
+public_flume_receiver_is_rejected
+hash_map_iteration_in_canonical_encoder_is_rejected
+drawer_module_name_requires_explicit_disposition
+```
+
 ## Independent models
 
 The product PakVM interpreter executes real programs. TestPak retains deliberately simple evaluators for selected algebras: decision/K3, codec, path ordering, projection tree, schedule, delivery, and recovery. It does not maintain a second full VM religion.

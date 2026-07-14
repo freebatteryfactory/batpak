@@ -98,6 +98,8 @@ release
     exact published artifacts
 ```
 
+The TestPak AST enforcement gate (`12_TESTPAK.md`, DEC-068) runs in the PR-fast structural lane and again in the merge lane; an unresolved AST finding is a release-refusal condition. The bootstrap lexical scan (DEC-067) runs in every lane as defense in depth, but the AST gate is the authoritative Rust classification.
+
 The compatibility surface is the real one — examples, fuzz, Loom/chaos, public
 API/semver, WASM, Windows, and release/preflight parity — not merely a
 compile-green toolchain bump. Release-grade proof is freshness-bound, hostile,
