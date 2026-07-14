@@ -18,6 +18,7 @@ invariants.rs                   bootstrap laws
 dispositions.rs                 architectural decision/disposition facts
 legacy_obligations.rs           retained clean semantic denominator
 legacy_invariant_coverage.rs    one-for-one disposition of the live legacy invariant catalog
+operators.rs                    concrete BatQL operator facts (OperatorSpec)
 ```
 
 Do not generate these files from implementation source during bootstrap. They are the seed against which implementation is checked. After self-hosting, TestPak may generate equivalent views while seedcheck retains an independently reviewed expected form.

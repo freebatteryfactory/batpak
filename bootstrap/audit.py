@@ -124,6 +124,201 @@ def legacy_manifest_findings(manifest_ids: list[str], coverage_ids: list[str], e
     return out
 
 
+# --- BatQL: OperatorSpec parity, grammar closure, proof disposition ----------
+# This is the AUDITOR half of the generator/auditor pair. It recomputes the
+# operator projection INDEPENDENTLY of bootstrap/project.py (its own parser,
+# its own renderers) and compares. The two share no parsing, normalization,
+# projection-building, or comparison logic; only the inert marker names are
+# common, and those are asserted on both sides.
+BATQL_OP_ROW = re.compile(
+    r'OperatorSpec \{ id: "([^"]*)", class: OperatorClass::(\w+), '
+    r'word_surface: "([^"]*)", symbol_surface: "([^"]*)", semantic_op: "([^"]*)", '
+    r'arity: Arity::(\w+), fixity: Fixity::(\w+), precedence: (\d+), '
+    r'associativity: Associativity::(\w+), input_sorts: "([^"]*)", '
+    r'result_sort: "([^"]*)", exactness: Exactness::(\w+), overflow: "([^"]*)", '
+    r'exception: "([^"]*)", formatting: "([^"]*)", spoken: "([^"]*)", '
+    r'mutation_classes: "([^"]*)" \}'
+)
+BATQL_OP_FIELDS = (
+    "id", "class", "word", "symbol", "semantic_op", "arity", "fixity",
+    "precedence", "associativity", "input_sorts", "result_sort", "exactness",
+    "overflow", "exception", "formatting", "spoken", "mutation_classes",
+)
+BATQL_CLASS_RANK = {"Arithmetic": 0, "Comparison": 1, "Logical": 2}
+BATQL_PROOF_DISPOSITIONS = ["VERIFIED", "LEGACY_WEAK", "UNVERIFIED", "PROOF_UNAVAILABLE", "PROOF_INVALID"]
+
+
+def batql_parse_operators(root: Path) -> list[dict[str, str]]:
+    source = (root / "spec/operators.rs").read_text(encoding="utf-8")
+    return [dict(zip(BATQL_OP_FIELDS, match)) for match in BATQL_OP_ROW.findall(source)]
+
+
+def _batql_canonical(ops: list[dict[str, str]]) -> list[dict[str, str]]:
+    return sorted(ops, key=lambda o: (BATQL_CLASS_RANK.get(o["class"], 9), o["id"]))
+
+
+def batql_render_catalog(ops: list[dict[str, str]]) -> str:
+    out = [
+        "| OperatorId | Class | Word | Symbol | Arity | Fixity | Precedence | Associativity | Result sort | Exactness |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for op in _batql_canonical(ops):
+        symbol = f"`{op['symbol']}`" if op["symbol"] else ""
+        out.append(
+            f"| {op['id']} | {op['class']} | `{op['word']}` | {symbol} | {op['arity']} | "
+            f"{op['fixity']} | {op['precedence']} | {op['associativity']} | {op['result_sort']} | {op['exactness']} |"
+        )
+    return "\n".join(out)
+
+
+def batql_render_grammar(ops: list[dict[str, str]]) -> str:
+    ops = _batql_canonical(ops)
+    comparison = [o["word"] for o in ops if o["class"] == "Comparison"]
+    comparison += [f'"{o["symbol"]}"' for o in ops if o["class"] == "Comparison" and o["symbol"]]
+    arithmetic = [f'"{o["word"]}"' for o in ops if o["class"] == "Arithmetic"]
+    logical = [o["word"] for o in ops if o["class"] == "Logical" and o["fixity"] == "Infix"]
+    return "\n".join([
+        "```text",
+        "comparison_operator",
+        "  := " + " | ".join(comparison),
+        "",
+        "arithmetic_operator",
+        "  := " + " | ".join(arithmetic),
+        "",
+        "logical_operator",
+        "  := " + " | ".join(logical),
+        "```",
+    ])
+
+
+def batql_render_projection(ops: list[dict[str, str]]) -> str:
+    out = [
+        "| OperatorId | Formatting | Spoken | Legal mutation classes |",
+        "| --- | --- | --- | --- |",
+    ]
+    for op in _batql_canonical(ops):
+        out.append(f"| {op['id']} | `{op['formatting']}` | {op['spoken']} | {op['mutation_classes']} |")
+    return "\n".join(out)
+
+
+def batql_extract_block(text: str, name: str) -> str | None:
+    match = re.search(
+        r"<!-- " + re.escape(name) + r":BEGIN[^>]*-->\n(.*?)\n<!-- " + re.escape(name) + r":END -->",
+        text,
+        re.S,
+    )
+    return match.group(1) if match else None
+
+
+def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
+    out: list[str] = []
+    ids = [o["id"] for o in ops]
+    if len(ids) != len(set(ids)):
+        out.append("spec/operators.rs: duplicate OperatorId")
+    owner: dict[tuple[str, str], str] = {}
+    for op in ops:
+        for surface in (op["word"], op["symbol"]):
+            if not surface:
+                continue
+            key = (surface, op["fixity"])
+            if key in owner and owner[key] != op["id"]:
+                out.append(
+                    f"spec/operators.rs: token {surface!r} with fixity {op['fixity']} claimed by {owner[key]} and {op['id']}"
+                )
+            owner[key] = op["id"]
+    required = [f for f in BATQL_OP_FIELDS if f != "symbol"]
+    for op in ops:
+        for field in required:
+            if not op.get(field, "").strip():
+                out.append(f"spec/operators.rs: operator {op.get('id', '?')} missing field {field}")
+    return out
+
+
+def batql_grammar_fences(companion: str) -> list[str]:
+    start = companion.find("\n# 15.")
+    if start < 0:
+        return []
+    end = companion.find("\n# 16.", start + 1)
+    region = companion[start: end if end >= 0 else len(companion)]
+    fences = re.findall(r"```text\n(.*?)\n```", region, re.S)
+    return [fence for fence in fences if "  :=" in fence]
+
+
+def batql_grammar_closure_findings(fences: list[str]) -> tuple[list[str], int, int]:
+    """Returns (findings, defined_count, undefined_count)."""
+    defined: list[str] = []
+    referenced: set[str] = set()
+    for fence in fences:
+        for line in fence.split("\n"):
+            if re.match(r"^[a-z][a-z0-9_]*$", line):
+                defined.append(line)
+                continue
+            stripped = line.strip()
+            if stripped.startswith(":=") or stripped.startswith("|"):
+                rhs = stripped[2:] if stripped.startswith(":=") else stripped[1:]
+                rhs = re.sub(r"<[^>]*>", " ", rhs)
+                rhs = re.sub(r'"[^"]*"', " ", rhs)
+                for token in re.findall(r"[a-z][a-z0-9_]*", rhs):
+                    referenced.add(token)
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in defined:
+        if name in seen:
+            out.append(f"grammar nonterminal {name} has more than one owning production")
+        seen.add(name)
+    undefined = sorted(referenced - set(defined))
+    for name in undefined:
+        out.append(f"grammar references undefined nonterminal {name}")
+    return out, len(set(defined)), len(undefined)
+
+
+def batql_proof_disposition_states(companion: str) -> list[str]:
+    match = re.search(r"## 4\.5 Proof disposition\n\n```text\n(.*?)\n```", companion, re.S)
+    if not match:
+        return []
+    return [line.strip() for line in match.group(1).split("\n") if line.strip()]
+
+
+def batql_proof_disposition_findings(states: list[str]) -> list[str]:
+    if states != BATQL_PROOF_DISPOSITIONS:
+        return [f"BatQL proof-disposition axis is {states}, expected {BATQL_PROOF_DISPOSITIONS}"]
+    return []
+
+
+def check_batql(root: Path, findings: list[str]) -> None:
+    companion_path = root / "companion/BATQL_LANGUAGE.md"
+    if not companion_path.is_file():
+        findings.append("missing companion/BATQL_LANGUAGE.md")
+        return
+    companion = companion_path.read_text(encoding="utf-8")
+    ops = batql_parse_operators(root)
+    if not ops:
+        findings.append("spec/operators.rs: no OperatorSpec rows parsed")
+    findings.extend(batql_operator_fact_findings(ops))
+    for name, expected in (
+        ("OPERATORS-CATALOG", batql_render_catalog(ops)),
+        ("OPERATORS-GRAMMAR", batql_render_grammar(ops)),
+        ("OPERATORS-PROJECTION", batql_render_projection(ops)),
+    ):
+        actual = batql_extract_block(companion, name)
+        if actual is None:
+            findings.append(f"companion/BATQL_LANGUAGE.md: missing generated block {name}")
+        elif actual != expected:
+            findings.append(
+                f"companion/BATQL_LANGUAGE.md: generated block {name} does not match the spec/operators.rs projection"
+            )
+    grammar_findings, _defined, _undefined = batql_grammar_closure_findings(batql_grammar_fences(companion))
+    findings.extend(grammar_findings)
+    findings.extend(batql_proof_disposition_findings(batql_proof_disposition_states(companion)))
+    if "`REQUIRE VERIFIED` accepts only `VERIFIED`" not in companion:
+        findings.append("companion/BATQL_LANGUAGE.md 4.5: REQUIRE VERIFIED-only law missing")
+    if "may upgrade or collapse" not in companion:
+        findings.append("companion/BATQL_LANGUAGE.md 4.5: proof-disposition no-upgrade/no-collapse law missing")
+    receipts_path = root / "docs/14_RECEIPTS_AND_EXPLANATION.md"
+    if receipts_path.is_file() and "LegacyWeak" not in receipts_path.read_text(encoding="utf-8"):
+        findings.append("docs/14_RECEIPTS_AND_EXPLANATION.md: LegacyWeak proof state missing")
+
+
 def check_architecture(root: Path, findings: list[str]) -> None:
     path = root / "spec/architecture.rs"
     if not path.is_file():
@@ -500,6 +695,7 @@ def main() -> int:
     check_architecture(root, findings)
     check_seed_ids(root, findings)
     check_stale_vocabulary(root, findings)
+    check_batql(root, findings)
 
     manifest = root / "SPEC.sha256"
     actual_files = frozen_files(root)

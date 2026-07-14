@@ -219,11 +219,13 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/dispositions.rs",
     "spec/legacy_obligations.rs",
     "spec/legacy_invariant_coverage.rs",
+    "spec/operators.rs",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",
     "bootstrap/materialize.rs",
     "bootstrap/audit.py",
     "bootstrap/freeze.py",
+    "bootstrap/project.py",
     "spec/README.md",
     "history/README.md",
 ];

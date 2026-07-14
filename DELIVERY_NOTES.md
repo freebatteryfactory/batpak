@@ -21,10 +21,12 @@ This bundle is the implementation handoff for the final clean-room BatPak v1 arc
 5 target/feature qualification profiles
 25 bootstrap invariants
 68 architectural decision/disposition rows
-81 retained legacy semantic obligations
-107 one-for-one legacy invariant dispositions
+84 retained legacy semantic obligations
+115 one-for-one legacy invariant dispositions
+13 concrete BatQL operator facts (OperatorSpec)
 full BatQL frontend language companion
 independent Python audit and freeze tools
+deterministic Python operator-projection generator
 independent Rust seed checker
 non-overwriting Rust Gate-0 materializer
 agent authority guide and finish-line checklist

@@ -126,21 +126,105 @@ def test_legacy_manifest_parity(audit) -> list[str]:
     return findings
 
 
+def _sample_operators() -> list[dict[str, str]]:
+    base = {
+        "semantic_op": "s", "input_sorts": "a", "result_sort": "b", "overflow": "o",
+        "exception": "e", "mutation_classes": "m",
+    }
+    return [
+        {**base, "id": "OP-ADD", "class": "Arithmetic", "word": "+", "symbol": "",
+         "arity": "Binary", "fixity": "Infix", "precedence": "60",
+         "associativity": "Left", "exactness": "Exact", "formatting": "+", "spoken": "plus"},
+        {**base, "id": "OP-EQ", "class": "Comparison", "word": "IS", "symbol": "=",
+         "arity": "Binary", "fixity": "Infix", "precedence": "50",
+         "associativity": "NonAssociative", "exactness": "Exact", "formatting": "IS", "spoken": "is"},
+    ]
+
+
+def test_batql(audit, project) -> list[str]:
+    """Named hostile fixtures for the BatQL operator/grammar/proof surfaces."""
+    findings: list[str] = []
+    ops = _sample_operators()
+    companion = (HERE.parent / "companion/BATQL_LANGUAGE.md").read_text(encoding="utf-8")
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    # 1 & 2: proof-disposition axis must keep the exact five states
+    if not audit.batql_proof_disposition_findings(["VERIFIED", "UNVERIFIED", "PROOF_UNAVAILABLE", "PROOF_INVALID"]):
+        fail("missing_legacy_weak_on_authoritative_surface_is_rejected")
+    if not audit.batql_proof_disposition_findings(["VERIFIED", "UNVERIFIED", "UNVERIFIED", "PROOF_UNAVAILABLE", "PROOF_INVALID"]):
+        fail("legacy_weak_collapsed_by_projection_is_rejected")
+
+    # 3 & 4: grammar reference closure and unique ownership
+    undefined, _, _ = audit.batql_grammar_closure_findings(["foo\n  := bar baz"])
+    if not undefined:
+        fail("undefined_grammar_leaf_is_rejected")
+    dup, _, _ = audit.batql_grammar_closure_findings(['foo\n  := "x"\n\nfoo\n  := "y"'])
+    if not any("more than one owning" in item for item in dup):
+        fail("duplicate_grammar_owner_is_rejected")
+
+    # 5: MATCH requires an initial step plus at least one THEN step
+    if "match_step (THEN match_step)+" not in companion or "match_step (THEN match_step)*" in companion:
+        fail("one_step_match_is_rejected")
+
+    # 6: kernel declaration clauses appear once, in canonical order
+    order = ["FROM KERNEL kernel_ref", "purity_clause", "determinism_clause", "capability_clause", "cost_clause"]
+    positions = [companion.find(token) for token in order]
+    if -1 in positions or positions != sorted(positions):
+        fail("reordered_or_duplicated_kernel_clauses_are_rejected")
+
+    # 7 & 8 & 9: operator fact discipline
+    if not any("duplicate OperatorId" in x for x in audit.batql_operator_fact_findings(ops + [dict(ops[0])])):
+        fail("duplicate_operator_id_is_rejected")
+    clash = {**ops[0], "id": "OP-ADD-CLONE"}
+    if not any("claimed by" in x for x in audit.batql_operator_fact_findings([ops[0], clash])):
+        fail("ambiguous_token_plus_fixity_ownership_is_rejected")
+    missing_field = {**ops[0], "spoken": ""}
+    if not any("missing field spoken" in x for x in audit.batql_operator_fact_findings([missing_field])):
+        fail("missing_required_operatorspec_field_is_rejected")
+
+    # 10, 11, 12: projection parity is sensitive to alteration, missing, and extra rows
+    expected = audit.batql_render_catalog(ops)
+    if expected == expected.replace("Exact", "EXACT", 1):
+        fail("altered_generated_operator_projection_is_rejected")
+    if expected == audit.batql_render_catalog([ops[0]]):
+        fail("missing_generated_operator_row_is_rejected")
+    if expected == audit.batql_render_catalog(ops + [{**ops[0], "id": "OP-XTRA", "word": "~"}]):
+        fail("extra_generated_operator_row_is_rejected")
+
+    # 13: canonical order is independent of source array order
+    if audit.batql_render_catalog(ops) != audit.batql_render_catalog(list(reversed(ops))):
+        fail("source_fact_reorder_leaves_generated_output_unchanged")
+
+    # 14: the independent generator and auditor projections must agree
+    if (
+        project.render_catalog(ops) != audit.batql_render_catalog(ops)
+        or project.render_grammar(ops) != audit.batql_render_grammar(ops)
+        or project.render_projection(ops) != audit.batql_render_projection(ops)
+    ):
+        fail("generator_auditor_disagreement_turns_gate_red")
+
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
+    project = load("project")
     findings: list[str] = []
     findings += test_manifest_ordering(freeze)
     findings += test_casefold_collision(audit)
     findings += test_stale_vocabulary(audit)
     findings += test_stale_derivation(audit, HERE.parent)
     findings += test_legacy_manifest_parity(audit)
+    findings += test_batql(audit, project)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL operator/grammar/proof hostile fixtures)")
     return 0
 
 

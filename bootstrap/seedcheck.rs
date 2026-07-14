@@ -10,6 +10,8 @@ mod dispositions;
 mod legacy_obligations;
 #[path = "../spec/legacy_invariant_coverage.rs"]
 mod legacy_invariant_coverage;
+#[path = "../spec/operators.rs"]
+mod operators;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -25,7 +27,7 @@ fn main() {
         let dev_only = architecture::PACKAGES.iter().filter(|p| p.class == architecture::PackageClass::DevOnly).count();
         let examples = architecture::PACKAGES.iter().filter(|p| p.class == architecture::PackageClass::Example).count();
         println!(
-            "seedcheck: PASS {} v{} train {} ({} packages: {} production, {} adapter, {} dev-only, {} example; {} edges; {} qualification profiles; {} invariants; {} decisions; {} legacy obligations; {} legacy invariant dispositions)",
+            "seedcheck: PASS {} v{} train {} ({} packages: {} production, {} adapter, {} dev-only, {} example; {} edges; {} qualification profiles; {} invariants; {} decisions; {} legacy obligations; {} legacy invariant dispositions; {} operators)",
             architecture::REPOSITORY_NAME,
             architecture::SPEC_VERSION,
             architecture::WORKSPACE_VERSION,
@@ -40,6 +42,7 @@ fn main() {
             dispositions::DECISIONS.len(),
             legacy_obligations::OBLIGATIONS.len(),
             legacy_invariant_coverage::COVERAGE.len(),
+            operators::OPERATORS.len(),
         );
         return;
     }
@@ -237,6 +240,56 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             | legacy_invariant_coverage::CoverageDisposition::Demote
             | legacy_invariant_coverage::CoverageDisposition::Kill
             | legacy_invariant_coverage::CoverageDisposition::Requalify => {}
+        }
+    }
+    let operator_ids: BTreeSet<&str> = operators::OPERATORS.iter().map(|o| o.id).collect();
+    if operator_ids.len() != operators::OPERATORS.len() {
+        findings.push("duplicate operator ID".into());
+    }
+    let mut surface_owner: BTreeMap<(&str, &str), &str> = BTreeMap::new();
+    for op in operators::OPERATORS {
+        if op.id.trim().is_empty()
+            || op.word_surface.trim().is_empty()
+            || op.semantic_op.trim().is_empty()
+            || op.input_sorts.trim().is_empty()
+            || op.result_sort.trim().is_empty()
+            || op.overflow.trim().is_empty()
+            || op.exception.trim().is_empty()
+            || op.formatting.trim().is_empty()
+            || op.spoken.trim().is_empty()
+            || op.mutation_classes.trim().is_empty()
+        {
+            findings.push(format!("incomplete operator {}", op.id));
+        }
+        let fixity = match op.fixity {
+            operators::Fixity::Prefix => "Prefix",
+            operators::Fixity::Infix => "Infix",
+        };
+        for surface in [op.word_surface, op.symbol_surface] {
+            if surface.is_empty() {
+                continue;
+            }
+            if let Some(prev) = surface_owner.insert((surface, fixity), op.id) {
+                if prev != op.id {
+                    findings.push(format!("operator token {surface} fixity {fixity} claimed by {prev} and {}", op.id));
+                }
+            }
+        }
+        match op.class {
+            operators::OperatorClass::Arithmetic
+            | operators::OperatorClass::Comparison
+            | operators::OperatorClass::Logical => {}
+        }
+        match op.arity {
+            operators::Arity::Unary | operators::Arity::Binary => {}
+        }
+        match op.associativity {
+            operators::Associativity::Left
+            | operators::Associativity::Right
+            | operators::Associativity::NonAssociative => {}
+        }
+        match op.exactness {
+            operators::Exactness::Exact | operators::Exactness::NotApplicable => {}
         }
     }
 }

@@ -110,7 +110,7 @@ Saved queries name an explicit source cut. Interactive omission is captured as `
 
 ## Arithmetic and ordering
 
-Typed arithmetic legality (same-unit add/subtract, dimensionless multiply, ratio-producing divide, rejected cross-currency and Money×Money, mandatory named rounding modes, typed `INVALID` on overflow/divide-by-zero) is frozen in the language companion (DEC-060). `ORDER BY HLC` is not a bare HLC sort: it lowers to a total key — `HLC, GlobalSequence` within a journal and `HLC, StoreId, GlobalSequence` across journals — with half-open `[start, end)` ranges; the full law and forbidden uses live in `16_IDENTITY_TIME_AND_NAVIGATION.md` (DEC-061).
+Typed arithmetic legality (same-unit add/subtract, dimensionless multiply, ratio-producing divide, rejected cross-currency and Money×Money, mandatory named rounding modes, typed `INVALID` on overflow/divide-by-zero) is frozen in the language companion (DEC-060). The concrete operator facts — spelling, arity, fixity, precedence, associativity, exactness, and the six canonical rounding modes with their surface aliases — are owned by `spec/operators.rs` (OperatorSpec) and projected into the companion's generated operator blocks; OperatorSpec is the one operator authority and does not own the function, MATCH, declaration, or lexical grammar. `ORDER BY HLC` is not a bare HLC sort: it lowers to a total key — `HLC, GlobalSequence` within a journal and `HLC, StoreId, GlobalSequence` across journals — with half-open `[start, end)` ranges; the full law and forbidden uses live in `16_IDENTITY_TIME_AND_NAVIGATION.md` (DEC-061).
 
 ## Partial evaluation
 

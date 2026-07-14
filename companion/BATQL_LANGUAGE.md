@@ -1277,6 +1277,7 @@ Those states remain distinguishable.
 
 ```text
 VERIFIED
+LEGACY_WEAK
 UNVERIFIED
 PROOF_UNAVAILABLE
 PROOF_INVALID
@@ -1284,7 +1285,11 @@ PROOF_INVALID
 
 A query result may be valid data without carrying proof.
 
-A proof request must never silently upgrade `UNVERIFIED` to `VERIFIED`.
+`LEGACY_WEAK` is a distinct state, not a synonym for `UNVERIFIED`: it marks a result whose only supporting evidence comes from a weaker legacy proof regime that the current gate would not accept as `VERIFIED`. Collapsing it into `UNVERIFIED` erases a real distinction and is a hard finding.
+
+`REQUIRE VERIFIED` accepts only `VERIFIED`. It never accepts `LEGACY_WEAK`, `UNVERIFIED`, `PROOF_UNAVAILABLE`, or `PROOF_INVALID`.
+
+A proof request must never silently upgrade any weaker disposition to `VERIFIED`, and no projection, transport, formatter, result envelope, or receipt may upgrade or collapse the exact recorded disposition. The five states pass through unchanged; the receipt and explanation projection of this axis is owned by `docs/14_RECEIPTS_AND_EXPLANATION.md`.
 
 ## 4.6 Freshness
 
@@ -1389,16 +1394,48 @@ dimensional / dimensionless → same dimension
 
 ### Rounding is explicit
 
-Every scale-reducing conversion names its rounding mode. Two-argument `ROUND` is not valid:
+DEC-060 freezes six canonical rounding modes. Every scale-reducing conversion names one of them; two-argument `ROUND` is not valid, and no authority-bearing conversion has an implicit rounding mode.
+
+```text
+HalfEven
+HalfAwayFromZero
+TowardZero
+AwayFromZero
+Floor
+Ceiling
+```
+
+The BatQL surface keeps its existing spellings as exact aliases of four modes; `FLOOR` and `CEILING` name the remaining two directly. A surface spelling is legal only because it lowers to exactly one canonical mode:
+
+```text
+HALF_EVEN  → HalfEven
+HALF_UP    → HalfAwayFromZero
+DOWN       → TowardZero
+UP         → AwayFromZero
+FLOOR      → Floor
+CEILING    → Ceiling
+```
+
+Alias equivalence is frozen against positive and negative halfway cases, rounded to integer scale:
+
+```text
+value   HalfEven   HALF_UP/HalfAwayFromZero   DOWN/TowardZero   UP/AwayFromZero   Floor   Ceiling
++2.5       2                  3                       2                 3            2        3
+-2.5      -2                 -3                      -2                -3           -3       -2
++0.5       0                  1                       0                 1            0        1
+-0.5       0                 -1                       0                -1           -1        0
+```
+
+`Floor` rounds toward negative infinity; `Ceiling` rounds toward positive infinity. The concrete operator and rounding facts are owned by `spec/operators.rs` (OperatorSpec); DEC-060 is the authored decision that points to it.
 
 ```batql
 ROUND(value, target_scale, HALF_EVEN)
 ROUND(value, target_scale, HALF_UP)
 ROUND(value, target_scale, DOWN)
 ROUND(value, target_scale, UP)
+ROUND(value, target_scale, FLOOR)
+ROUND(value, target_scale, CEILING)
 ```
-
-No authority-bearing conversion has an implicit rounding mode.
 
 ### Failure is typed, never silent
 
@@ -3003,6 +3040,20 @@ ask_definition
      clause+
      END ASK
 
+function_definition
+  := DEFINE FUNCTION identifier parameters returns
+     expression
+     END FUNCTION
+
+function_declaration
+  := DECLARE FUNCTION identifier parameters returns
+     FROM KERNEL kernel_ref
+     purity_clause
+     determinism_clause
+     capability_clause
+     cost_clause
+     END FUNCTION
+
 clause
   := who_clause
    | what_clause
@@ -3100,6 +3151,12 @@ how_statement
    | LIMIT MATCHES TO integer
    | ON disposition disposition_action
 
+match_body
+  := match_step (THEN match_step)+ BY expression within_clause?
+
+match_step
+  := OPTIONAL? identifier "=" EVENT type_name
+
 why_clause
   := WHY why_statement+
 
@@ -3113,8 +3170,10 @@ why_statement
 expression
   := literal
    | identifier
+   | parameter_ref
    | field_access
    | function_call
+   | arithmetic_expression
    | comparison
    | logical_expression
    | case_expression
@@ -3128,19 +3187,12 @@ expression
 comparison
   := expression comparison_operator expression
 
-comparison_operator
-  := IS
-   | IS NOT
-   | IS LESS THAN
-   | IS AT MOST
-   | IS MORE THAN
-   | IS AT LEAST
-   | "="
-   | "!="
-   | "<"
-   | "<="
-   | ">"
-   | ">="
+arithmetic_expression
+  := expression arithmetic_operator expression
+
+logical_expression
+  := NOT expression
+   | expression logical_operator expression
 
 availability_test
   := expression IS KNOWN
@@ -3195,8 +3247,10 @@ with_idempotency
   := WITH IDEMPOTENCY expression
 
 rounding_mode
-  := HALF_EVEN | HALF_UP | DOWN | UP
+  := HALF_EVEN | HALF_UP | DOWN | UP | FLOOR | CEILING
 ```
+
+The four function/declaration/MATCH structural forms and every lexical and metavariable leaf are defined below in 15.2. The operator productions (`comparison_operator`, `arithmetic_operator`, `logical_operator`) are generated from `spec/operators.rs` in 15.3; they are the one operator authority. `rounding_mode` lists the surface spellings that lower to the six canonical rounding modes frozen by DEC-060.
 
 The complete grammar must remain parseable without semantic backtracking.
 
@@ -3213,7 +3267,206 @@ division_by_zero_is_invalid
 implicit_rounding_is_rejected
 scale_reduction_requires_rounding_mode
 every_normative_batql_example_matches_the_grammar
+every_referenced_grammar_nonterminal_is_defined
+match_requires_initial_step_plus_one_then
+kernel_declaration_clauses_are_canonically_ordered
+require_verified_accepts_only_verified
 ```
+
+The grammar is closed: every nonterminal referenced in 15, 15.2, and 15.3 has exactly one owning production, so a normative fence can be derived down to lexical leaves. Informal terminals are written between angle brackets; literal terminals are quoted; keywords are uppercase and case-insensitive.
+
+## 15.2 Lexical and metavariable leaves
+
+```text
+identifier
+  := letter (letter | digit | "_")*
+
+letter
+  := <one ASCII letter A through Z or a through z>
+
+digit
+  := <one ASCII digit 0 through 9>
+
+integer
+  := digit ("_"? digit)*
+
+decimal
+  := integer "." integer
+
+boolean_literal
+  := TRUE | FALSE
+
+string
+  := "\"" string_char* "\""
+
+string_char
+  := <any Unicode scalar value except an unescaped double quote or backslash, or a defined backslash escape>
+
+literal
+  := integer | decimal | string | boolean_literal | MISSING
+
+type_name
+  := identifier ("<" type_name ("," type_name)* ">")?
+
+parameters
+  := "(" (parameter ("," parameter)*)? ")"
+
+parameter
+  := identifier ":" type_name
+
+returns
+  := RETURNS type_name
+
+arguments
+  := expression ("," expression)*
+
+record
+  := "{" (field_init ("," field_init)*)? "}"
+
+field_init
+  := identifier ":" expression
+
+parameter_ref
+  := "$" identifier
+
+field_access
+  := identifier ("." identifier)+
+
+function_call
+  := identifier "(" arguments? ")"
+
+within_clause
+  := WITHIN duration
+
+duration
+  := duration_unit "(" integer ")"
+
+duration_unit
+  := DAYS | HOURS | MINUTES | SECONDS | WEEKS | MILLISECONDS
+
+temporal_anchor
+  := HEAD
+   | RECEIPT expression
+   | COMMIT expression
+
+expression_list
+  := expression ("," expression)*
+
+order_key
+  := COMMIT | HLC | CAUSAL | SEQUENCE | expression
+
+direction
+  := ASCENDING | DESCENDING
+
+cursor_after
+  := AFTER expression
+
+fold_partition
+  := BY expression
+
+work_unit
+  := EVENTS | NODES | UNITS
+
+disposition
+  := PENDING | INVALID | UNAVAILABLE | SHREDDED | MISSING | NOT_APPLICABLE
+
+disposition_action
+  := COLLECT AS identifier
+   | DROP AND MARK INCOMPLETE
+
+proof_item_list
+  := proof_item ("," proof_item)*
+
+proof_item
+  := EVENTS | RECEIPTS | CAUSATION | FOLD | FILTERS | QUERY | RESULT
+
+projection_item_list
+  := projection_item ("," projection_item)*
+
+projection_item
+  := MARGIN | EVIDENCE | COST | COMPLETENESS | PLAN
+
+reason
+  := identifier ("." identifier)*
+
+kernel_ref
+  := "@" identifier ":" hex_digest
+
+hex_digest
+  := <lowercase hexadecimal content-hash digits>
+
+purity_clause
+  := PURE
+
+determinism_clause
+  := DETERMINISTIC
+
+capability_clause
+  := CAPABILITIES capability_spec
+
+capability_spec
+  := NONE | identifier ("," identifier)*
+
+cost_clause
+  := COST AT MOST integer UNITS
+```
+
+## 15.3 Generated operator projections
+
+These blocks are generated from `spec/operators.rs` by `bootstrap/project.py` and independently re-checked by `bootstrap/audit.py`. OperatorSpec is the one operator authority; it owns operator relationships and these projected tables and fragments only, never the function, MATCH, declaration, or general lexical grammar. Do not hand-edit the generated content.
+
+<!-- OPERATORS-CATALOG:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+| OperatorId | Class | Word | Symbol | Arity | Fixity | Precedence | Associativity | Result sort | Exactness |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| OP-ADD | Arithmetic | `+` |  | Binary | Infix | 60 | Left | exact same-unit | Exact |
+| OP-DIV | Arithmetic | `/` |  | Binary | Infix | 70 | Left | Ratio or scaled exact | Exact |
+| OP-MUL | Arithmetic | `*` |  | Binary | Infix | 70 | Left | exact dimensional | Exact |
+| OP-SUB | Arithmetic | `-` |  | Binary | Infix | 60 | Left | exact same-unit | Exact |
+| OP-EQ | Comparison | `IS` | `=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-GE | Comparison | `IS AT LEAST` | `>=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-GT | Comparison | `IS MORE THAN` | `>` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-LE | Comparison | `IS AT MOST` | `<=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-LT | Comparison | `IS LESS THAN` | `<` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-NE | Comparison | `IS NOT` | `!=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-AND | Logical | `AND` |  | Binary | Infix | 30 | Left | Truth | NotApplicable |
+| OP-NOT | Logical | `NOT` |  | Unary | Prefix | 40 | NonAssociative | Truth | NotApplicable |
+| OP-OR | Logical | `OR` |  | Binary | Infix | 20 | Left | Truth | NotApplicable |
+<!-- OPERATORS-CATALOG:END -->
+
+The operator grammar fragment defines the operator productions referenced by `comparison`, `arithmetic_expression`, and `logical_expression`:
+
+<!-- OPERATORS-GRAMMAR:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+```text
+comparison_operator
+  := IS | IS AT LEAST | IS MORE THAN | IS AT MOST | IS LESS THAN | IS NOT | "=" | ">=" | ">" | "<=" | "<" | "!="
+
+arithmetic_operator
+  := "+" | "/" | "*" | "-"
+
+logical_operator
+  := AND | OR
+```
+<!-- OPERATORS-GRAMMAR:END -->
+
+Formatting and spoken projections and legal mutation classes:
+
+<!-- OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+| OperatorId | Formatting | Spoken | Legal mutation classes |
+| --- | --- | --- | --- |
+| OP-ADD | `+` | plus | precedence, associativity, constant-folding, parenthesis, unit-checking |
+| OP-DIV | `/` | divided by | precedence, associativity, constant-folding, parenthesis, division-by-zero, scale-adjustment |
+| OP-MUL | `*` | times | precedence, associativity, constant-folding, parenthesis, scale-adjustment |
+| OP-SUB | `-` | minus | precedence, associativity, constant-folding, parenthesis, unit-checking |
+| OP-EQ | `IS` | is | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-GE | `IS AT LEAST` | is at least | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-GT | `IS MORE THAN` | is more than | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-LE | `IS AT MOST` | is at most | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-LT | `IS LESS THAN` | is less than | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-NE | `IS NOT` | is not | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-AND | `AND` | and | precedence, associativity, parenthesis |
+| OP-NOT | `NOT` | not | precedence, parenthesis |
+| OP-OR | `OR` | or | precedence, associativity, parenthesis |
+<!-- OPERATORS-PROJECTION:END -->
 
 ---
 
