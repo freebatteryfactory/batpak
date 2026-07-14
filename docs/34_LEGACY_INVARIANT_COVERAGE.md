@@ -14,6 +14,25 @@ This matrix prevents a clean-room rewrite from preserving only the memorable law
 
 The detailed clean obligations live in [Legacy Semantic Obligations](21_LEGACY_SEMANTIC_OBLIGATIONS.md). This document closes the denominator between the old invariant catalog and those successors. Legacy identifiers remain evidence pointers, not target ownership.
 
+## Source manifest reconciliation
+
+The denominator is the full **115-declaration** legacy invariant catalog at `LEGACY_SOURCE_COMMIT`, frozen in `spec/legacy_invariant_coverage.rs::SOURCE_INVARIANT_IDS`. The count is the number of `- id:` *declarations*, not a raw `INV-` token scan: the source view carries a generated `INV-CATALOG` block marker that resembles an invariant name but is a structural key, not a declaration, so it is excluded. The audit enforces exact set parity between `SOURCE_INVARIANT_IDS` and the coverage rows, so a declared invariant cannot silently lose coverage and a coverage row cannot cite an undeclared invariant.
+
+This closure raised the denominator from the earlier 107-row capability snapshot to the full 115. The eight newly reconciled invariants are:
+
+```text
+INV-COMPACTION-NAMESPACE-COMMIT            -> LEG-082  (recovered obligation)
+INV-IDEMPOTENCY-EXPORT-RESTORE-FAIL-CLOSED -> LEG-083  (recovered obligation)
+INV-STOREERROR-HANDLING-CLASS             -> LEG-047
+INV-STOREFS-CONFORMANCE-REUSABLE          -> LEG-016
+INV-SIMFS-NAMESPACE-TRUTH                 -> LEG-016 and BP-TESTPAK-1
+INV-FUZZ-REGRESSION-SEMANTIC              -> LEG-049
+INV-PROOF-RECEIPT-COMPLETE                -> LEG-049
+INV-ZERO-WARNINGS                         -> DEC-067 and DEC-068
+```
+
+The two recovered obligations had a witnessed law and no successor; the remaining six already mapped cleanly onto existing successors and needed only an explicit coverage row. The former 107-row snapshot is retained as secondary historical evidence, not a competing denominator.
+
 ## Dispositions
 
 ```text
@@ -39,6 +58,7 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-CLOCK-NOW-US-LIVE` | PRESERVE | `LEG-069` | The default clock adapter must be live and typed. |
 | `INV-COLD-START-ARTIFACTS` | PRESERVE | `LEG-017, LEG-052, and LEG-053` | Open/reopen artifacts and authority distinctions remain explicit. |
 | `INV-COLUMNAR-REPLACES-DASHMAP` | SUPERSEDE | `LEG-018 and DEC-033` | The SIDX successor earns column tiles; the old overlay topology is not frozen. |
+| `INV-COMPACTION-NAMESPACE-COMMIT` | PRESERVE | `LEG-082` | Compaction namespace publication stays crash-atomic, decided only by agreement of the pending marker, store metadata commit record, and authority image. |
 | `INV-COMPLEXITY-EXPONENT-BOUNDED` | PRESERVE | `LEG-020` | Asymptotic and work-count gates remain anti-vacuous. |
 | `INV-CONCURRENCY-SCHEDULE-PROOF` | PRESERVE | `BP-TESTPAK-1 deterministic schedule plane` | Schedule exploration remains required across idempotency, CAS, supervision, and compaction. |
 | `INV-CONTEXT-VIEWS-DERIVED-FROM-HISTORY` | PRESERVE | `LEG-017 and LEG-026` | Views remain disposable derivations of accepted history. |
@@ -69,6 +89,7 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-FRONTIER-ORDERING` | PRESERVE | `LEG-005` | Accepted, written, durable, visible, applied, and emitted ordering remains explicit. |
 | `INV-FRONTIER-TORN-FREE` | PRESERVE | `LEG-005 and LEG-056` | Published frontier views cannot expose torn multi-field state. |
 | `INV-FRONTIER-WAIT-MONOTONIC` | PRESERVE | `LEG-072` | Spurious wakeups cannot satisfy progress. |
+| `INV-FUZZ-REGRESSION-SEMANTIC` | PRESERVE | `LEG-049` | Every critical semantic fuzz target keeps a committed minimized regression fixture proven red against the pre-fix decision core; file presence is not a receipt. |
 | `INV-GAUNTLET-FOLD-FUSION` | PRESERVE | `LEG-031 and LEG-048` | Proof-plane fusion must equal separate passes. |
 | `INV-GENERATED-WITNESS-PIN` | PRESERVE | `LEG-024 and LEG-046` | Generated collision and ownership witnesses remain bound to declarations. |
 | `INV-GROUP-COMMIT-IDEMPOTENCY` | PRESERVE | `LEG-057` | Grouped admission requires stable idempotency. |
@@ -76,6 +97,7 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-HLC-JOIN-SEMILATTICE` | PRESERVE | `LEG-073` | The causal HLC algebra remains lawful and separate from commit order. |
 | `INV-IDEMPOTENCY-AUTHORITY-ATOMIC-COMPACTION` | PRESERVE | `LEG-007 and LEG-009` | Authority and namespace publication remain one recoverable transition. |
 | `INV-IDEMPOTENCY-DURABLE-WINDOW` | PRESERVE | `LEG-007` | Within-window retries remain durable no-ops. |
+| `INV-IDEMPOTENCY-EXPORT-RESTORE-FAIL-CLOSED` | PRESERVE | `LEG-083` | Idempotency-authority export and restore stay fail-closed, lineage- and generation-bound, and republish a fresh AuthorityImageId through the destination authority chain. |
 | `INV-IMPORT-CONTENT-ISOMORPHISM` | PRESERVE | `LEG-013` | Import preserves content/provenance while assigning destination identity. |
 | `INV-IMPORT-CRASH-IDEMPOTENT` | PRESERVE | `LEG-074` | Interrupted import remains safely retryable. |
 | `INV-IMPORT-NO-RUNAWAY` | PRESERVE | `LEG-075` | Same-journal import freezes its source ceiling. |
@@ -109,17 +131,21 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-PREPARED-BATCH-STAGING-EQUIVALENCE` | PRESERVE | `LEG-078` | Prepared staging remains an optimization only. |
 | `INV-PROJECTION-FUSION-EQUIVALENCE` | PRESERVE | `LEG-031` | Fused folds equal separate folds. |
 | `INV-PROJECTION-FUSION-EQUIVALENT` | PRESERVE | `LEG-031 and LEG-079` | Runtime fused replay preserves per-projection filtering and frontiers. |
+| `INV-PROOF-RECEIPT-COMPLETE` | PRESERVE | `LEG-049` | The gauntlet reds rather than certifies vacuously; a proof receipt is complete only with command, features, binary, executed and skipped counts, corpus identities, and terminal result. |
 | `INV-RECEIPT-SEALED` | PRESERVE | `LEG-059` | Only the owning gate/runtime constructs receipts. |
 | `INV-RECOVERY-ORACLE-LEGAL` | PRESERVE | `LEG-010 and LEG-071` | Crash recovery remains independently classified and deterministic. |
 | `INV-REPLAY-LANE-SELECTION` | DEMOTE | `LegacyMessagePack compatibility reader under LEG-002` | The old raw-MessagePack lane is evidence; native codec/layout selection supersedes it. |
 | `INV-SCHEMA-VERSION-ISOLATION` | PRESERVE | `LEG-017 and LEG-028` | Derived state remains schema/version/generation isolated. |
 | `INV-SEMANTIC-DIFF-EQUIVALENCE` | PRESERVE | `LEG-079` | Equivalent profiles must expose identical observables. |
 | `INV-SIDX-TIMESTAMP-US-APPROXIMATION` | KILL | `Explicit time precision in the SIDX successor` | The millisecond approximation is legacy evidence, not target law. |
+| `INV-SIMFS-NAMESPACE-TRUTH` | PRESERVE | `LEG-016 and BP-TESTPAK-1` | The fault-injection simulation models namespace durability separately from byte durability so the recovery oracle can express impossible directory outcomes. |
 | `INV-STORE-ERROR-TAXONOMY` | PRESERVE | `LEG-047` | Failures remain structured and generated from owned declarations. |
 | `INV-STORE-ISOMORPHISM-LAWS` | PRESERVE | `LEG-064 and LEG-079` | Durable identity seams retain round-trip/isomorphism proof. |
 | `INV-STORE-LIFECYCLE-HONESTY` | PRESERVE | `LEG-052` | Writer and shutdown failures cannot report success. |
 | `INV-STORE-LINEAGE-IDENTITY` | PRESERVE | `LEG-008` | Lineage is minted once and mutable authority binds stronger generation/history evidence. |
 | `INV-STORE-SYNC-ONLY` | PRESERVE | `LEG-080` | The semantic store/runtime API remains synchronous. |
+| `INV-STOREERROR-HANDLING-CLASS` | PRESERVE | `LEG-047` | Every StoreError variant maps to exactly one HandlingClass through one exhaustive taxonomy with no wildcard arm. |
+| `INV-STOREFS-CONFORMANCE-REUSABLE` | PRESERVE | `LEG-016` | The StoreFs conformance corpus is a reusable harness proving native, memory, and wrapped-simulation backends against one law. |
 | `INV-SUBSCRIPTION-STATE-MACHINE` | PRESERVE | `LEG-060` | Subscription lifecycle and closed/overrun terminals remain explicit. |
 | `INV-SUBSTRATE-TRAVERSAL-DOMAIN-NEUTRAL` | PRESERVE | `LEG-063` | Substrate traversal never leaks domain semantics. |
 | `INV-SYNCBAT-CAPABILITY-GRANT-ENFORCEMENT` | PRESERVE | `LEG-061` | Capabilities are checked before execution. |
@@ -133,6 +159,7 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION` | PRESERVE | `LEG-019` | Untrusted cache/manifest rows cannot become recovery authority. |
 | `INV-WIRE-ROUNDTRIP-TOTALITY` | PRESERVE | `LEG-064` | Wire surfaces remain total on valid values and reject malformed bytes atomically. |
 | `INV-WORKSPACE-DAG-ACYCLIC` | PRESERVE | `spec/architecture.rs, seedcheck.rs, and audit.py` | The workspace graph remains independently derived and acyclic. |
+| `INV-ZERO-WARNINGS` | SUPERSEDE | `DEC-067 and DEC-068` | The zero-warnings posture is mechanically derived from lint tables, clippy and rustdoc deny lanes, and the armed zero-allow tripwire; the legacy gate implementation does not survive. |
 
 ## Note: the two fusion invariants are distinct
 
@@ -147,7 +174,7 @@ INV-PROJECTION-FUSION-EQUIVALENT
     filtering, frontiers, watermark, and cache semantics
 ```
 
-Both keep unique IDs; the 107-row denominator stands. Do not merge or renumber them.
+Both keep unique IDs; the 115-row denominator stands. Do not merge or renumber them.
 
 ## Closure law
 

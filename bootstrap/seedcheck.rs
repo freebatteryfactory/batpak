@@ -182,6 +182,21 @@ fn check_unique_ids(findings: &mut Vec<String>) {
         if value.law.trim().is_empty() || value.clean_owner.trim().is_empty() || value.gate.trim().is_empty() {
             findings.push(format!("incomplete legacy obligation {}", value.id));
         }
+        match value.compatibility_disposition {
+            legacy_obligations::CompatibilityDisposition::None
+            | legacy_obligations::CompatibilityDisposition::ReadOlderAccepted
+            | legacy_obligations::CompatibilityDisposition::CanonicalOrTypedRefusal
+            | legacy_obligations::CompatibilityDisposition::FrozenCanonicalIdentity => {}
+        }
+        match value.deletion_condition {
+            legacy_obligations::DeletionCondition::Never
+            | legacy_obligations::DeletionCondition::OnSuccessorGateClosure
+            | legacy_obligations::DeletionCondition::OnCompatibilityWindowExpiry => {}
+        }
+        match value.active_or_closed_status {
+            legacy_obligations::ObligationStatus::Active
+            | legacy_obligations::ObligationStatus::Closed => {}
+        }
     }
     let coverage_ids: BTreeSet<&str> = legacy_invariant_coverage::COVERAGE.iter().map(|v| v.legacy_id).collect();
     if coverage_ids.len() != legacy_invariant_coverage::COVERAGE.len() { findings.push("duplicate legacy invariant coverage ID".into()); }
@@ -190,6 +205,27 @@ fn check_unique_ids(findings: &mut Vec<String>) {
     }
     if legacy_invariant_coverage::LEGACY_SOURCE_COMMIT.len() != 40 {
         findings.push("legacy invariant source commit is not a full SHA".into());
+    }
+    let manifest_ids: BTreeSet<&str> = legacy_invariant_coverage::SOURCE_INVARIANT_IDS.iter().copied().collect();
+    if manifest_ids.len() != legacy_invariant_coverage::SOURCE_INVARIANT_IDS.len() {
+        findings.push("duplicate source invariant declaration id".into());
+    }
+    if legacy_invariant_coverage::SOURCE_INVARIANT_IDS.len() != legacy_invariant_coverage::EXPECTED_COVERAGE_ROWS {
+        findings.push(format!(
+            "source invariant manifest has {} ids, expected {}",
+            legacy_invariant_coverage::SOURCE_INVARIANT_IDS.len(),
+            legacy_invariant_coverage::EXPECTED_COVERAGE_ROWS
+        ));
+    }
+    for declared in &manifest_ids {
+        if !coverage_ids.contains(declared) {
+            findings.push(format!("declared legacy invariant {declared} has no coverage row"));
+        }
+    }
+    for covered in &coverage_ids {
+        if !manifest_ids.contains(covered) {
+            findings.push(format!("coverage row {covered} is not a declared source invariant"));
+        }
     }
     for value in legacy_invariant_coverage::COVERAGE {
         if value.legacy_id.trim().is_empty() || value.successor.trim().is_empty() || value.rationale.trim().is_empty() {

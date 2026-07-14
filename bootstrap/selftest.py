@@ -100,6 +100,32 @@ def test_stale_derivation(audit, root) -> list[str]:
     return findings
 
 
+def test_legacy_manifest_parity(audit) -> list[str]:
+    """Hostile fixtures for the D-1 declaration-parity denominator.
+
+    The denominator is measured against declared invariant IDs, so a structural
+    key that merely resembles an invariant name (the generated INV-CATALOG
+    marker) must never be counted as a declaration.
+    """
+    findings: list[str] = []
+    base = ["INV-A", "INV-B", "INV-C"]
+    check = audit.legacy_manifest_findings
+
+    if check(base, base, 3):
+        findings.append("exact_declaration_parity_should_pass FAILED")
+    if not check(base + ["INV-CATALOG"], base, 3):
+        findings.append("structural_INV_token_counted_as_declaration_is_rejected FAILED")
+    if not check(base, ["INV-A", "INV-B"], 3):
+        findings.append("declared_invariant_without_coverage_is_rejected FAILED")
+    if not check(base, base + ["INV-GHOST"], 3):
+        findings.append("coverage_for_undeclared_invariant_is_rejected FAILED")
+    if not check(base, base, 4):
+        findings.append("denominator_count_mismatch_is_rejected FAILED")
+    if not check(base + ["INV-A"], base, 3):
+        findings.append("duplicate_declaration_id_is_rejected FAILED")
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -108,6 +134,7 @@ def main() -> int:
     findings += test_casefold_collision(audit)
     findings += test_stale_vocabulary(audit)
     findings += test_stale_derivation(audit, HERE.parent)
+    findings += test_legacy_manifest_parity(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:

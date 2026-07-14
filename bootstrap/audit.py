@@ -101,6 +101,29 @@ def string_array(source: str, name: str) -> list[str]:
     return re.findall(r'"([^"]+)"', match.group(1))
 
 
+def legacy_manifest_findings(manifest_ids: list[str], coverage_ids: list[str], expected_rows: int) -> list[str]:
+    """Declaration-parity between the frozen source manifest and coverage rows.
+
+    D-1: the legacy denominator is measured against declared invariant IDs, never
+    a raw ``INV-`` token count. A structural key that resembles an invariant name
+    (e.g. the generated ``INV-CATALOG`` block marker) is not a declaration and
+    must not appear in the manifest. Every declared id has exactly one coverage
+    row and vice versa.
+    """
+    out: list[str] = []
+    if len(manifest_ids) != len(set(manifest_ids)):
+        out.append("SOURCE_INVARIANT_IDS contains a duplicate declaration id")
+    if len(manifest_ids) != expected_rows:
+        out.append(f"SOURCE_INVARIANT_IDS has {len(manifest_ids)} ids, expected {expected_rows}")
+    manifest = set(manifest_ids)
+    coverage = set(coverage_ids)
+    for missing in sorted(manifest - coverage):
+        out.append(f"declared legacy invariant {missing} has no coverage row")
+    for extra in sorted(coverage - manifest):
+        out.append(f"coverage row {extra} is not a declared source invariant")
+    return out
+
+
 def check_architecture(root: Path, findings: list[str]) -> None:
     path = root / "spec/architecture.rs"
     if not path.is_file():
@@ -252,22 +275,27 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         elif decision_seed_rows.get(value) != decision_doc_rows[value]:
             findings.append(f"decision seed/document mismatch for {value}")
     legacy_doc = (root / "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md").read_text(encoding="utf-8")
-    legacy_doc_rows: dict[str, tuple[str, str, str]] = {}
+    legacy_doc_rows: dict[str, tuple[str, str, str, str, str, str]] = {}
     for line in legacy_doc.splitlines():
         if not line.startswith("| LEG-"):
             continue
         cells = [cell.strip() for cell in line.strip().split("|")[1:-1]]
-        if len(cells) != 7:
+        if len(cells) != 10:
             findings.append(f"legacy ledger malformed row: {line}")
             continue
-        ident, law, _evidence, owner, _mechanism, _witness, gate = cells
+        ident, law, _evidence, owner, _mechanism, _witness, gate, compat, deletion, status = cells
         clean = lambda value: re.sub(r"`([^`]*)`", r"\1", value)
-        legacy_doc_rows[ident] = (clean(law), clean(owner), clean(gate))
+        legacy_doc_rows[ident] = (
+            clean(law), clean(owner), clean(gate), clean(compat), clean(deletion), clean(status)
+        )
     legacy_source = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
     legacy_seed_rows = {
-        ident: (law, owner, gate)
-        for ident, law, owner, gate in re.findall(
-            r'LegacyObligation \{ id: "([^"]+)", law: "([^"]+)", clean_owner: "([^"]+)", gate: "([^"]+)" \}',
+        ident: (law, owner, gate, compat, deletion, status)
+        for ident, law, owner, gate, compat, deletion, status in re.findall(
+            r'LegacyObligation \{ id: "([^"]+)", law: "([^"]+)", clean_owner: "([^"]+)", gate: "([^"]+)", '
+            r"compatibility_disposition: CompatibilityDisposition::(\w+), "
+            r"deletion_condition: DeletionCondition::(\w+), "
+            r"active_or_closed_status: ObligationStatus::(\w+) \}",
             legacy_source,
         )
     }
@@ -311,6 +339,13 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
     source_commit = re.search(r'LEGACY_SOURCE_COMMIT:\s*&str\s*=\s*"([0-9a-f]+)"', coverage_source)
     if source_commit is None or len(source_commit.group(1)) != 40:
         findings.append("legacy invariant coverage source commit is missing or not a full SHA")
+    manifest_ids = string_array(coverage_source, "SOURCE_INVARIANT_IDS")
+    if not manifest_ids:
+        findings.append("spec/legacy_invariant_coverage.rs: missing SOURCE_INVARIANT_IDS manifest")
+    else:
+        findings.extend(
+            legacy_manifest_findings(manifest_ids, parsed.get("legacy_coverage", []), expected_count)
+        )
     for value in parsed.get("legacy_coverage", []):
         if value not in coverage_doc_rows:
             findings.append(f"legacy invariant coverage seed {value} absent from docs/34_LEGACY_INVARIANT_COVERAGE.md")
