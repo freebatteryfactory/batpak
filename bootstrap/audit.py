@@ -43,8 +43,14 @@ def markdown_links(text: str):
 
 
 def frozen_files(root: Path) -> dict[str, Path]:
+    # Do not rely on Path object ordering (case-sensitive on POSIX,
+    # case-insensitive on Windows). Downstream checks are set/row-based, so
+    # enumeration order does not matter here; portability ordering lives in
+    # freeze.py and is proven by bootstrap/selftest.py.
     out: dict[str, Path] = {}
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
         relative = path.relative_to(root)
         rel = relative.as_posix()
         if any(part in EXCLUDE_DIRS for part in relative.parts):
@@ -53,6 +59,24 @@ def frozen_files(root: Path) -> dict[str, Path]:
             continue
         out[rel] = path
     return out
+
+
+def casefold_collisions(rel_paths) -> list[tuple[str, str]]:
+    """Distinct paths that collide under case-folding.
+
+    Windows (and case-insensitive filesystems) cannot safely materialize both
+    ``Foo.md`` and ``foo.md`` even where POSIX can. Ordering the survey by the
+    UTF-8 relative-path bytes keeps the reported pair stable across hosts.
+    """
+    seen: dict[str, str] = {}
+    collisions: list[tuple[str, str]] = []
+    for rel in sorted(rel_paths, key=lambda value: value.encode("utf-8")):
+        key = rel.casefold()
+        if key in seen:
+            collisions.append((seen[key], rel))
+        else:
+            seen[key] = rel
+    return collisions
 
 
 def string_array(source: str, name: str) -> list[str]:
@@ -325,6 +349,8 @@ def main() -> int:
 
     manifest = root / "SPEC.sha256"
     actual_files = frozen_files(root)
+    for earlier, later in casefold_collisions(actual_files.keys()):
+        findings.append(f"case-folded path collision (not Windows-portable): {earlier} and {later}")
     manifest_rows: dict[str, str] = {}
     if not manifest.is_file():
         findings.append("missing SPEC.sha256")

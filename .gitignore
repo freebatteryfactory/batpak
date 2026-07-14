@@ -1,0 +1,7 @@
+# Clean-room construction locks. These untracked directories must never be
+# swept into the orphan branch. /bpk-lib/ is legacy working-tree residue whose
+# tracked source is preserved on branch legacy/main; remove this ignore once the
+# directory is physically deleted.
+/.cursor/
+/bpk-lib/
+/target/

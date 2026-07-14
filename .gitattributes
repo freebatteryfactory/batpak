@@ -1,0 +1,13 @@
+# Clean-room byte-integrity policy.
+# All tracked text is stored and checked out with literal LF so that the
+# SHA-256 freeze in SPEC.sha256 is identical on POSIX and Windows checkouts.
+# Binary fixtures are never line-ending filtered.
+
+* text=auto eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.zip  binary
