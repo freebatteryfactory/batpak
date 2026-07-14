@@ -1,0 +1,123 @@
+---
+status: AUTHORITATIVE
+contract_id: BP-BATQL-ARCH-1
+authority_scope: BatQL compiler boundary, frozen grammar concepts, lowering, analysis, and execution contract
+supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
+last_reconciled: 2026-07-13
+---
+
+# BatQL Architectural Contract
+
+## Identity
+
+BatQL is a typed temporal query and action language over immutable BatPak history. It is not a policy language with an event reader attached and not a general-purpose programming language.
+
+The full language is frozen in [BATQL_LANGUAGE.md](../companion/BATQL_LANGUAGE.md).
+
+## Package boundary
+
+The `batql` package owns:
+
+```text
+lexer and parser
+name and contract resolution
+type and availability checking
+historical-frame checking
+capability/effect analysis
+bounds and cost analysis
+normalization and canonical formatting
+partial evaluation
+query and tile access planning
+structured explanation preparation
+ProgramImage and WorldImage input lowering
+origin and diagnostic mapping
+```
+
+It depends on BatPak-owned contracts and image types. It does not own PakVM execution, SyncBat scheduling, Bvisor admission, transport, or host adapters.
+
+## Public grammar
+
+```text
+WHO   subject or partition
+WHAT  result, formulas, decision, or declared action
+WHERE source and source-event filters
+WHEN  coherent historical cut and optional observation-time range
+HOW   fold, match, group, order, bounds, completeness, freshness, proof posture
+WHY   explanation, provenance, evidence, cost, and proof request
+```
+
+Canonical formatting orders clauses `WHO → WHAT → WHERE → WHEN → HOW → WHY`.
+
+## Top-level modes
+
+```text
+ASK   pure query, no effects
+DO    admitted transaction, declared effects, always receipted
+```
+
+A pure image containing effect instructions is a compile-time and image-validation error.
+
+## Compiler pipeline
+
+```text
+source
+→ parse
+→ resolve contracts and fields
+→ type/availability analysis
+→ freeze historical-frame requirements
+→ effect/capability closure
+→ bounds and cost analysis
+→ normalize
+→ partial evaluation
+→ access/tile plan
+→ ProgramImage
+→ deterministic WorldImage composition input
+```
+
+## Semantic algebras
+
+### Query/dataflow
+
+Source, subject, snapshot, time range, filter, fold, match, partition, group, aggregate, join, order, page, project, proof request.
+
+### Formula/decision
+
+Literal, binding, field, record, call, compare, K3 logic, case, aggregate, window, availability test, require, allow, deny, defer, reason, evidence, typed margin.
+
+### Effect
+
+Append, append batch, request effect, stage artifact, emit result, and checkpoint intent.
+
+## Availability and decision
+
+BatQL uses the shared value states:
+
+```text
+Known, Missing, Pending, Invalid, Unavailable, Shredded, NotApplicable
+```
+
+Predicate truth is `True | False | Pending`. Decisions are `Allow | Deny | Defer`. Completeness, freshness, and proof disposition remain separate.
+
+`Pending` is never silently treated as false. Known annihilators remain lawful under strong K3.
+
+## Historical frame
+
+Saved queries name an explicit source cut. Interactive omission is captured as `AS OF HEAD` before execution and included in result identity. Relative ranges are anchored. Commit order, HLC filtering, stream position, and causality do not collapse into one time keyword.
+
+## Partial evaluation
+
+The compiler folds constants, eliminates unreachable branches, resolves schemas/fields/capability closure, prunes selectors, determines required columns, calculates bounds, prepares explanation templates, and records tile eligibility.
+
+It does not execute host effects or query live journal state during compilation.
+
+## Explanation product
+
+One typed evaluation produces value, structured explanation, evidence summary, typed margin, completeness, proof disposition, and work observations. `WHY` projects from that result and does not rerun the decision through a second evaluator.
+
+## Built-in kernels
+
+A pure built-in kernel is content-identified, typed, deterministic where declared, capability-declared, and costed. Arbitrary host callbacks and runtime code generation are not part of V1.
+
+## Language change law
+
+The conceptual grammar is locked. A syntax or semantic change requires a demonstrated parser/type/conformance defect, a compatibility disposition, updated canonical formatter, spoken projection, fuzz grammar, and goldens. Fashion is not a defect.

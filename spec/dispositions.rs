@@ -1,0 +1,66 @@
+//! Frozen clean-room architecture decision facts.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Disposition {
+    Keep,
+    Lock,
+    Kill,
+    Supersede,
+    Demote,
+    Defer,
+    OpenImplementation,
+    RetainAsEvidence,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DecisionSpec {
+    pub id: &'static str,
+    pub disposition: Disposition,
+    pub subject: &'static str,
+    pub successor: &'static str,
+}
+
+pub const DECISIONS: &[DecisionSpec] = &[
+    DecisionSpec { id: "DEC-001", disposition: Disposition::Lock, subject: "Pass 1 machine-centered architecture", successor: "Base of final v1" },
+    DecisionSpec { id: "DEC-002", disposition: Disposition::RetainAsEvidence, subject: "Pass 2 package-stratified architecture", successor: "Useful ideas salvaged individually; package map rejected" },
+    DecisionSpec { id: "DEC-003", disposition: Disposition::Kill, subject: "Separate storage-format package", successor: ".fbat remains owned by batpak" },
+    DecisionSpec { id: "DEC-004", disposition: Disposition::Kill, subject: "Standalone runtime VM package", successor: "PakVM and Bvisor live inside SyncBat" },
+    DecisionSpec { id: "DEC-005", disposition: Disposition::Supersede, subject: "VPak as machine name", successor: "PakVM is machine; .vpak is package extension" },
+    DecisionSpec { id: "DEC-006", disposition: Disposition::Lock, subject: "SyncBat internal shape", successor: "runtime, pakvm, bvisor, world, port" },
+    DecisionSpec { id: "DEC-007", disposition: Disposition::Kill, subject: "Universal type directory", successor: "Root concept file + same-name directory" },
+    DecisionSpec { id: "DEC-008", disposition: Disposition::Kill, subject: "Universal tables/systems/ports/kernels tree", successor: "Put mechanics under the concept they serve" },
+    DecisionSpec { id: "DEC-009", disposition: Disposition::Supersede, subject: "HostBat", successor: "WorldImage, ProgramImage, lifecycle events, ProcessContract, NetBat" },
+    DecisionSpec { id: "DEC-010", disposition: Disposition::Supersede, subject: "Bvisor OS backend product matrix", successor: "Capability/attempt membrane over PakVM" },
+    DecisionSpec { id: "DEC-011", disposition: Disposition::Keep, subject: ".fbat", successor: "BatPak append-oriented source-truth format" },
+    DecisionSpec { id: "DEC-012", disposition: Disposition::Keep, subject: ".vpak", successor: "Immutable WorldImage package format" },
+    DecisionSpec { id: "DEC-013", disposition: Disposition::Keep, subject: "BatQL compiler package", successor: "Independent frontend over BatPak image contracts" },
+    DecisionSpec { id: "DEC-014", disposition: Disposition::Lock, subject: "TestPak role tree", successor: "Role folders; proof classes are metadata" },
+    DecisionSpec { id: "DEC-015", disposition: Disposition::Lock, subject: "Muterprater scope", successor: "Mutation testing only inside TestPak" },
+    DecisionSpec { id: "DEC-016", disposition: Disposition::Keep, subject: "Status/supersession metadata", successor: "Required on all docs" },
+    DecisionSpec { id: "DEC-017", disposition: Disposition::Keep, subject: "Bounded push + durable pull", successor: "Core delivery doctrine" },
+    DecisionSpec { id: "DEC-018", disposition: Disposition::Keep, subject: "K3", successor: "Truth/decision handling only where unresolved data matters" },
+    DecisionSpec { id: "DEC-019", disposition: Disposition::Keep, subject: "NC¹ circuit lowering", successor: "Eligible bounded decision fragments only" },
+    DecisionSpec { id: "DEC-020", disposition: Disposition::Demote, subject: "Serde/MessagePack", successor: "Interop and historical readers, not new semantic authority" },
+    DecisionSpec { id: "DEC-021", disposition: Disposition::Demote, subject: "Flume", successor: "Private reference mechanism during topology-by-topology succession" },
+    DecisionSpec { id: "DEC-022", disposition: Disposition::Demote, subject: "UUID crate", successor: "Differential oracle until owned generator closes" },
+    DecisionSpec { id: "DEC-023", disposition: Disposition::Defer, subject: "Arbitrary native/Wasm guest execution", successor: "Future external-effect adapter only after real adopter" },
+    DecisionSpec { id: "DEC-024", disposition: Disposition::Keep, subject: "Artifact/content plane", successor: "Concern and port; no public bundle extension yet" },
+    DecisionSpec { id: "DEC-025", disposition: Disposition::Keep, subject: "Thin CLI package", successor: "Binary adapter only, no semantic ownership" },
+    DecisionSpec { id: "DEC-040", disposition: Disposition::Lock, subject: "BatPak and SyncBat semantic profiles", successor: "no_std + alloc; host mechanisms stay in explicit std/browser adapters" },
+    DecisionSpec { id: "DEC-041", disposition: Disposition::Lock, subject: "Cargo package batpak", successor: "The real semantic and durable library, not an empty umbrella; repository and library share the product name" },
+    DecisionSpec { id: "DEC-042", disposition: Disposition::Defer, subject: "BatDenseRecord representation", successor: "Requires a sealed-image or measured-kernel adopter; not part of the initial native authority path" },
+    DecisionSpec { id: "DEC-026", disposition: Disposition::Lock, subject: "Immutable accepted history", successor: "Corrections are later events" },
+    DecisionSpec { id: "DEC-027", disposition: Disposition::Lock, subject: "Read-time schema evolution", successor: "Historical bytes remain unchanged" },
+    DecisionSpec { id: "DEC-028", disposition: Disposition::Lock, subject: "Turn versus Attempt", successor: "Logical and physical execution identities remain distinct" },
+    DecisionSpec { id: "DEC-029", disposition: Disposition::Lock, subject: "Runtime/Bvisor restart split", successor: "Runtime decides legality; Bvisor performs mechanics" },
+    DecisionSpec { id: "DEC-030", disposition: Disposition::Lock, subject: "Availability axes", successor: "Value state, truth, decision, completeness, freshness, proof are separate" },
+    DecisionSpec { id: "DEC-031", disposition: Disposition::Lock, subject: "HLC scope", successor: "Chronology/filtering aid, not durability or universal order" },
+    DecisionSpec { id: "DEC-032", disposition: Disposition::Keep, subject: "ECS/data orientation", successor: "Implementation algebra, not ontology" },
+    DecisionSpec { id: "DEC-033", disposition: Disposition::Keep, subject: "SIDX successor", successor: "First earned column tile" },
+    DecisionSpec { id: "DEC-034", disposition: Disposition::Keep, subject: "One evaluation, many projections", successor: "Value/explanation/evidence/margin/cost share typed evaluation" },
+    DecisionSpec { id: "DEC-035", disposition: Disposition::OpenImplementation, subject: "EventFrameV2 field IDs and exact bytes", successor: "G2" },
+    DecisionSpec { id: "DEC-036", disposition: Disposition::OpenImplementation, subject: ".vpak section and PakVM opcode numbers", successor: "G5" },
+    DecisionSpec { id: "DEC-037", disposition: Disposition::OpenImplementation, subject: "First persistent browser adapter", successor: "G5/G7" },
+    DecisionSpec { id: "DEC-038", disposition: Disposition::OpenImplementation, subject: "Performance/work thresholds", successor: "owning gate + TestPak" },
+    DecisionSpec { id: "DEC-039", disposition: Disposition::Defer, subject: "Public packed-artifact extension", successor: "real adopter required" },
+];

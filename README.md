@@ -1,0 +1,90 @@
+---
+status: AUTHORITATIVE
+contract_id: BP-ROOT-README
+authority_scope: entrypoint and reading order
+supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
+last_reconciled: 2026-07-13
+---
+
+# BatPak Clean-Room Specification v1.0
+
+This bundle is the final clean-room architecture for **BatPak**.
+
+BatPak is a contract-compiled, sync-first event machine. It stores accepted local truth in `.fbat`, compiles Rust declarations through MacBat, compiles application questions and actions through BatQL, runs logical work through SyncBat, interprets sealed programs through PakVM, admits and supervises attempts through Bvisor, carries bounded calls through NetBat, and proves the repository through TestPak.
+
+The one-line system law is:
+
+> **MacBat declares. BatPak remembers. BatQL compiles. SyncBat runs. PakVM interprets. Bvisor contains. NetBat carries. TestPak attacks and proves.**
+
+PakVM and Bvisor are not standalone packages. They are internal planes of the `syncbat` runtime crate, beside `runtime`, `world`, and `port`.
+
+## Build qualification
+
+The semantic profiles of `batpak` and `syncbat` are required to compile under `no_std + alloc`. Native and browser host mechanisms are explicit adapters and may not alter semantic traces, receipts, or recovery law.
+
+## Frozen package map
+
+| Name | Kind | Authority |
+| --- | --- | --- |
+| `batpak` | production Cargo package | semantic and durable core, including `.fbat` |
+| `macbat-compiler` | production Cargo package | pure contract compiler |
+| `macbat` | proc-macro Cargo package | Rust declaration front door |
+| `syncbat` | production Cargo package | runtime, PakVM, Bvisor, world composition, host ports |
+| `batql` | production Cargo package | BatQL frontend and ProgramImage compiler |
+| `netbat` | production Cargo package | bounded typed transport |
+| `testpak` | dev-only Cargo package | repository proof, forge, gauntlet, benchmarks, mutation |
+| `batpak-cli` | binary adapter | thin command composition, no semantic ownership |
+| `pakvm` | module inside `syncbat` | typed program validation and interpretation |
+| `bvisor` | module inside `syncbat` | capability, budget, attempt, supervision, reconciliation |
+| `muterprater` | module inside `testpak` | mutation testing only |
+
+`.vpak` remains the immutable executable package extension. `PakVM` is the machine. `ProgramImage` and `WorldImage` are semantic types.
+
+## Authority order
+
+```text
+00 Constitution
+→ typed facts in spec/
+→ status and decision ledgers
+→ numbered domain contracts
+→ BatQL companion grammar
+→ generated views
+→ source and receipts
+→ legacy evidence
+```
+
+When two documents disagree, do not average them. Apply [Status and Supersession](docs/29_STATUS_AND_SUPERSESSION.md), then report the contradiction if it survives.
+
+## Reading order
+
+1. [Constitution](docs/00_CONSTITUTION.md)
+2. [System Model](docs/02_SYSTEM_MODEL.md)
+3. [Repository and Packages](docs/03_REPOSITORY_AND_PACKAGES.md)
+4. [Type System and Source Layout](docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md)
+5. [Storage, `.fbat`, and Tiles](docs/05_STORAGE_FBAT_AND_TILES.md)
+6. [MacBat](docs/06_MACBAT.md)
+7. [PakVM ISA](docs/07_PAKVM_ISA.md)
+8. [SyncBat Runtime](docs/08_SYNCBAT_RUNTIME.md)
+9. [Bvisor](docs/09_BVISOR.md)
+10. [World Images and Ports](docs/10_WORLD_IMAGES_AND_PORTS.md)
+11. [BatQL Architectural Contract](docs/13_BATQL_CONTRACT.md)
+12. [BatQL Language](companion/BATQL_LANGUAGE.md)
+13. [Legacy Semantic Obligations](docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md)
+14. [Legacy Invariant Coverage](docs/34_LEGACY_INVARIANT_COVERAGE.md)
+15. [Decision and Rejection Ledger](docs/30_DECISION_AND_REJECTION_LEDGER.md)
+16. [Agent Finish-Line Checklist](docs/33_AGENT_FINISH_LINE_CHECKLIST.md)
+
+The remaining numbered documents close the storage, schema, delivery, proof, security, migration, bootstrap, command, and workflow details.
+
+## Independent checks
+
+```sh
+python bootstrap/freeze.py . --check
+python bootstrap/audit.py .
+rustc bootstrap/seedcheck.rs -o target/seedcheck
+./target/seedcheck .
+rustc bootstrap/materialize.rs -o target/materialize
+# Run ./target/materialize . only when creating the Gate-0 source skeleton.
+```
+
+`audit.py` and `freeze.py` use only the Python standard library. `seedcheck.rs` uses only Rust's standard library and remains independent after TestPak self-hosts.

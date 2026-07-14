@@ -1,0 +1,23 @@
+---
+status: AUTHORITATIVE
+contract_id: BP-SPEC-FACTS-README
+authority_scope: machine-readable seed fact guidance
+supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
+last_reconciled: 2026-07-13
+---
+
+# Typed Seed Facts
+
+The Rust files in this directory are deliberately small, standard-library-only architecture facts consumed by seedcheck and later imported into TestPak Repo IR.
+
+They are authoritative where their fronting documents say so:
+
+```text
+architecture.rs                 packages, edges, profiles, required docs, forbidden paths
+invariants.rs                   bootstrap laws
+dispositions.rs                 architectural decision/disposition facts
+legacy_obligations.rs           retained clean semantic denominator
+legacy_invariant_coverage.rs    one-for-one disposition of the live legacy invariant catalog
+```
+
+Do not generate these files from implementation source during bootstrap. They are the seed against which implementation is checked. After self-hosting, TestPak may generate equivalent views while seedcheck retains an independently reviewed expected form.
