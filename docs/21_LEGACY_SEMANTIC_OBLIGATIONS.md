@@ -148,6 +148,12 @@ gate
 | LEG-079 | Any two profiles or representations claiming semantic equivalence produce identical visible observables at one frozen cut; disagreement is a hard finding, never a tolerated optimization delta | semantic-diff invariant | `testpak::oracle` | Strengthen across native and browser profiles | seeded cross-profile semantic differential | G3/G8 |
 | LEG-080 | The public store/runtime surface remains sync-first with no hidden executor; async and browser hosts own suspension and resume outside the semantic API | sync-only and no-runtime invariants | `syncbat::port` | Preserve, expose explicit adapters only | dependency scan + native/browser trace parity | G0/G5/G7 |
 
+## Secret authority
+
+| ID | Retained law | Legacy evidence | Clean owner | Mechanism disposition | Required witness | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| LEG-081 | Secret-authority deletion is durable and anti-rollback: a shred is acknowledged only after the owning key backend durably destroys the required material; secret authority binds StoreId AuthorityGeneration KeyGeneration key-scope and shred-transition identity; no foreign stale or pre-shred keyset restores readability to a newer store generation; Shredded Unavailable and KeysetMissing stay distinct; snapshot fork WorldImage artifact bundles and ordinary receipts carry no raw key material by default; an external key backend preserves the same deletion durability generation and anti-rollback semantics | keyscope and delivery tests; key-backend durability and anti-rollback issues #194/#195 | `batpak::secret` | Preserve law; new key representation and backend allowed | shred-durability, crash-before-durable-delete, pre-shred-restore, foreign-generation, and external-backend-parity fixtures | G2/G3 |
+
 ## Closure rule
 
 A code agent may discover additional legacy laws. It adds a new `LEG-*` row before importing the behavior. It may not silently widen an existing row to cover unrelated semantics.

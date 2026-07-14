@@ -26,6 +26,25 @@ legacy compatibility matrix rows
 
 Selection requires language-neutral goldens, canonicality rules, hostile length tests, old-reader disposition, and one coordinated migration record.
 
+## G2 crypto and secret constants
+
+The security properties and typed vocabulary are frozen now in `35_CRYPTO_AND_SECRET_AUTHORITY.md` (DEC-052/053/054, LEG-081). Only these exact values are selected at G2, before any durable encrypted bytes exist (DEC-055):
+
+```text
+exact AEAD algorithm and version
+nonce width and construction
+key width
+AAD field set and canonical byte ordering
+domain-separation context strings
+key-backend durable image bytes
+rotation and rewrap wire schemas
+signature algorithm and version
+external-anchor encoding
+legacy keyset compatibility bytes
+```
+
+Selection requires language-neutral goldens and hostile vectors. No password KDF is in scope (DEC-054): V1 accepts no password or passphrase as key material.
+
 ## G4 BatQL constants
 
 ```text

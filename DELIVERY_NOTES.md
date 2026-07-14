@@ -13,15 +13,15 @@ This bundle is the implementation handoff for the final clean-room BatPak v1 arc
 ## Inventory
 
 ```text
-35 numbered architecture documents (00 through 34)
-43 Markdown documents
+36 numbered architecture documents (00 through 35)
+44 Markdown documents
 31,000+ words of architecture and language specification
 9 declared Cargo packages (8 + the non-publishable batpak-examples witness)
 19 declared package edges
 5 target/feature qualification profiles
 25 bootstrap invariants
-51 architectural decision/disposition rows
-80 retained legacy semantic obligations
+55 architectural decision/disposition rows
+81 retained legacy semantic obligations
 107 one-for-one legacy invariant dispositions
 full BatQL frontend language companion
 independent Python audit and freeze tools

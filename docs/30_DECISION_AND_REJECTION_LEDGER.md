@@ -62,6 +62,9 @@ RETAIN-AS-EVIDENCE   historical material may be consulted, never treated as law
 | DEC-049 | LOCK | Declared WorldImage entrypoint invocation | InvokeEntrypoint executes a ProgramImage bound by an admitted WorldImage entrypoint; persistent deployment; ASK or DO; effects only when the entrypoint contract declares them; capability from the WorldImage grant; a request cannot substitute a foreign ProgramImage while keeping entrypoint authority; identity binds WorldImageId WorldInterfaceHash EntrypointId ProgramImageId InvocationId AttemptId |
 | DEC-050 | LOCK | Ephemeral query ProgramImage invocation | ExecuteQueryProgram executes a client-supplied canonical query-only ProgramImage ephemerally under a server-issued read-only query capability envelope; effects process installation and lifecycle hooks forbidden; the server validates the image independently and client compilation grants no trust; response binds ProgramImageId query authority digest historical cut source generation completeness proof disposition actual work result digest and receipt; ALLOW DENY DEFER may be data but never drive an effect |
 | DEC-051 | LOCK | Source compilation and raw-BatQL authority boundary | BatQL source text is authoring input never executable authority; PakVM executes validated ProgramImages not source; ordinary NetBat permits InvokeEntrypoint and ExecuteQueryProgram and rejects CompileAndExecuteRawBatQL EvalText and ExecuteSource; source compilation is a separately admitted dev and admin CompilerPort not available to guests not implied by NetBat access and absent from the default server profile; it emits ProgramImage plus CompilationReceipt through the ordinary validation and admission path so source identity is provenance not runtime authority |
+| DEC-052 | LOCK | Integrity role separation | Checksum32 ContentDigest CommitmentDigest MacTag Signature and ExternalAnchor are six distinct types; a checksum never implies authority; an unkeyed digest never authenticates its own expected value |
+| DEC-053 | LOCK | Secret authority vocabulary and no homemade crypto | batpak::secret owns KeyScope KeyId KeyGeneration KeyBackendId KeyState ShredTransition RotationId RewrapId and AntiRollbackPolicy; encrypted payloads require a qualified AEAD; entropy enters only through EntropyPort; no homemade cryptographic primitives; raw secrets never enter .fbat .vpak WorldImage ordinary receipts proof manifests logs Debug or Display |
+| DEC-054 | DEFER | Password-derived key material | V1 accepts no human password or passphrase as key material; no password KDF is part of the V1 runtime contract; a KDF enters only if a later explicit password-derived-key feature earns one through the amendment path |
 
 ## Behavior decisions
 
@@ -86,6 +89,7 @@ RETAIN-AS-EVIDENCE   historical material may be consulted, never treated as law
 | DEC-037 | OPEN-IMPLEMENTATION | First persistent browser adapter | G5/G7 |
 | DEC-038 | OPEN-IMPLEMENTATION | Performance/work thresholds | owning gate + TestPak |
 | DEC-039 | DEFER | Public packed-artifact extension | real adopter required |
+| DEC-055 | OPEN-IMPLEMENTATION | Exact cryptographic constants | G2 |
 
 ## Reopening rule
 

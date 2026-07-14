@@ -211,6 +211,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "docs/32_IMPLEMENTATION_CONSTANTS.md",
     "docs/33_AGENT_FINISH_LINE_CHECKLIST.md",
     "docs/34_LEGACY_INVARIANT_COVERAGE.md",
+    "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md",
     "companion/BATQL_LANGUAGE.md",
     "spec/architecture.rs",
     "spec/invariants.rs",
