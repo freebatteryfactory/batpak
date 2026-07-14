@@ -154,6 +154,19 @@ The owning package declares its error enum. BatPak owns shared error vocabulary 
 
 MacBat is the pen. The owner owns the sentence.
 
+## Collection and canonical-order law (DEC-065)
+
+Collections are chosen so that canonical outputs never depend on nondeterministic iteration:
+
+```text
+Vec and bounded arenas       column and buffer storage
+BTreeMap / BTreeSet          where an ordered map is semantically required
+sorted Vec                   small fixed catalogs
+hash maps                    derived mechanism caches only
+```
+
+Hash-map iteration order never influences canonical identity, formatting, diagnostics, execution order, or receipts. A hash map may accelerate a lookup; it may not decide any byte that a digest, receipt, or canonical encoding commits to.
+
 ## Closed machine enums
 
 Instruction kinds, lifecycle states, authority roles, delivery topologies, and terminal outcomes are closed enums. Exhaustive matches are required. Open extension occurs through explicit composition of data contracts, not wildcard arms.

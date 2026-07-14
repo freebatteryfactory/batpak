@@ -129,7 +129,7 @@ The guest does not see whether a native host blocked, a browser awaited a promis
 
 Validation computes static maxima where possible. Bvisor reserves admissible budgets. PakVM counts actual instructions, rows, decoded bytes, tile bytes, groups, matches, outputs, artifacts, effects, and call depth.
 
-Wall time is supporting evidence, not the sole budget unit.
+Wall time is supporting evidence, not the sole budget unit. A declared bound exceeded is `BudgetExceeded`; a failed but legal bounded arena allocation is `ResourceExhausted`; neither is `INVALID`, and neither publishes partial state. The typed resource-exhaustion law is owned by `08_SYNCBAT_RUNTIME.md` (DEC-066).
 
 ## Reference and optimized paths
 

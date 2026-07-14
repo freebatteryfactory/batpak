@@ -175,6 +175,66 @@ Semantic qualification is distinct from Cargo feature defaults. Per DEC-047, the
 
 The native and browser profiles may supply mechanisms but may not change semantic result, error, receipt, replay, or authority contracts. Exact profile facts live in `spec/architecture.rs`.
 
+## no_std realization (DEC-065)
+
+The `no_std + alloc` profiles are realized, not merely asserted. The required semantic surfaces:
+
+```text
+batpak semantic (no_std + alloc)
+    IDs and branded identities
+    contracts and schemas
+    canonical codecs over caller buffers
+    EventFrame values
+    paths and navigation
+    content digests and commitments
+    receipts and pure verification
+    storage request/response protocols
+    pure journal and recovery state transitions
+
+syncbat semantic (no_std + alloc)
+    ProgramImage and WorldImage values
+    PakVM validation and reference interpretation
+    runtime transition state
+    Bvisor admission and attempt state
+    port request/response protocols
+    deterministic in-memory execution
+```
+
+Std/browser adapters — and only adapters — own the mechanisms:
+
+```text
+filesystem and memory mapping
+threads
+sockets
+wall and monotonic clock providers
+entropy providers
+OS keychain/KMS bridges
+OPFS / IndexedDB / Web Crypto
+```
+
+`default-features = false` must be **compile-proven**; a green build with defaults is not by itself evidence of the no_std surface. The qualification matrix that CI must exercise:
+
+```text
+batpak no_std + alloc
+syncbat no_std + alloc
+native std default
+threaded opt-in
+browser/wasm host
+encryption opt-in
+interop opt-in
+```
+
+The collection and canonical-order law is owned by `04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md`.
+
+Named hostile fixtures (proof owner TestPak; gates G0/G5/G7):
+
+```text
+no_std_batpak_has_no_std_dependency_route
+no_std_syncbat_has_no_std_dependency_route
+default_std_does_not_enable_threaded_or_browser_adapters
+browser_and_native_profiles_preserve_program_semantics
+```
+
 ## Package-internal source grammar
 
 Packages organize around concepts, not universal layer folders:

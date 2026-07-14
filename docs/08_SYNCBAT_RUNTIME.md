@@ -140,6 +140,43 @@ NonReplayable
 
 Runtime uses that contract and durable evidence to decide whether another attempt is legal.
 
+## Resource exhaustion (DEC-066)
+
+Two distinct semantic outcomes, never collapsed into each other, into a string, or into `INVALID`:
+
+```text
+BudgetExceeded      a declared request/program/work bound was exceeded
+ResourceExhausted   the host could not satisfy an otherwise legal bounded allocation
+```
+
+`INVALID` means a value violated its semantic contract. Resource exhaustion is an execution failure, not a value-availability state. Do not add an overlapping `AllocationRefused` unless a later implementation proves it a distinct public meaning.
+
+Every attacker-influenced allocation follows one order, publishing nothing until it completes:
+
+```text
+decode declared length
+→ checked arithmetic
+→ enforce semantic bound
+→ try_reserve
+→ initialize
+→ publish only after completion
+```
+
+Failure must never produce a panic, an abort presented as ordinary refusal, an integer wrap, a partially initialized canonical value, a partially published event or artifact, or a partially advanced checkpoint. This applies to `.fbat` decode/append, `.vpak` validation, BatQL parsing/normalization, PakVM arenas, group/match state, NetBat framing, proof bundles, artifact staging, and tile materialization. Plane-specific errors may wrap the two canonical classes but may not collapse them.
+
+Named hostile fixtures (proof owner TestPak; gates G2/G5/G6):
+
+```text
+attacker_length_is_checked_before_reserve
+allocation_failure_returns_resource_exhausted
+declared_work_overrun_returns_budget_exceeded
+resource_exhaustion_never_publishes_partial_event
+resource_exhaustion_never_advances_checkpoint
+artifact_staging_failure_publishes_no_artifact_ref
+pakvm_arena_exhaustion_returns_typed_terminal_disposition
+hash_map_iteration_cannot_change_canonical_bytes
+```
+
 ## Supervision
 
 Logical strategies may include one-for-one, one-for-all, and rest-for-one where the process graph earns them. Restart intensity and windows are typed. A crash is not automatically retryable.
