@@ -58,18 +58,62 @@ def test_casefold_collision(audit) -> list[str]:
     return findings
 
 
+def test_stale_vocabulary(audit) -> list[str]:
+    """Hostile fixtures for the decision-derived stale-vocabulary matcher."""
+    findings: list[str] = []
+    amap = {"filebat": ("DEC-003", frozenset({"DecisionLedger", "LegacyEvidence"}), "FileBat")}
+
+    def scan(text: str, context: str) -> list[str]:
+        out: list[str] = []
+        audit.scan_stale_occurrences("synthetic.md", text, context, amap, out)
+        return out
+
+    if not scan("FileBat is superseded", "OrdinaryAuthoritative"):
+        findings.append("stale_alias_in_authoritative_doc_is_rejected FAILED")
+    if not scan("let handle = FileBat::open();", "ProductionSource"):
+        findings.append("stale_alias_in_production_source_is_rejected FAILED")
+    if not scan("FileBat [STALE-REF: DEC-011]", "OrdinaryAuthoritative"):
+        findings.append("stale_alias_with_wrong_decision_reference_is_rejected FAILED")
+    if scan("FileBat [STALE-REF: DEC-003]", "OrdinaryAuthoritative"):
+        findings.append("stale_alias_with_killed_decision_reference_is_allowed FAILED")
+    if not scan("plain text [STALE-REF: DEC-999]", "OrdinaryAuthoritative"):
+        findings.append("unknown_stale_reference_is_rejected FAILED")
+    if scan("FileBat appears in the ledger", "DecisionLedger"):
+        findings.append("stale_alias_in_allowed_context_passes FAILED")
+    return findings
+
+
+def test_stale_derivation(audit, root) -> list[str]:
+    """The matcher is derived from spec/dispositions.rs, not a hand list."""
+    findings: list[str] = []
+    problems: list[str] = []
+    amap = audit.parse_stale_vocabulary(root, problems)
+    if problems:
+        findings.append(f"parse_stale_vocabulary reported problems on the real seed: {problems}")
+    if len(amap) < 20:
+        findings.append(f"generated_stale_table_must_match_decisions: derived only {len(amap)} aliases")
+    owner = amap.get("filebat")
+    if not owner or owner[0] != "DEC-003":
+        findings.append("FileBat alias is not derived to its killing decision DEC-003")
+    if "made-up-stale-term" in amap:
+        findings.append("alias_removed_from_decision_disappears_from_all_views FAILED")
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
     findings: list[str] = []
     findings += test_manifest_ordering(freeze)
     findings += test_casefold_collision(audit)
+    findings += test_stale_vocabulary(audit)
+    findings += test_stale_derivation(audit, HERE.parent)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (manifest ordering is UTF-8-canonical; casefold collision detected)")
+    print("selftest: PASS (portability + stale-vocabulary hostile fixtures)")
     return 0
 
 

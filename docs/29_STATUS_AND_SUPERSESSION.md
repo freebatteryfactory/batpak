@@ -68,3 +68,38 @@ Serde trait as event-contract authority
 ```
 
 Agents do not “support both just in case.” They apply the decision ledger.
+
+## Derived stale vocabulary (machine-checked)
+
+The complete stale-alias set is DERIVED from `spec/dispositions.rs`; `audit.py` proves this projection matches it exactly. Do not edit by hand — change the owning decision's `stale_aliases` instead.
+
+<!-- STALE-VOCAB:BEGIN -->
+```text
+FileBat
+filebat package
+file-bat crate
+separate storage-format package
+standalone Bat VM
+bat-vm package
+standalone runtime VM package
+VPak machine
+VPak as the machine name
+universal type drawer
+src/_types
+_types drawer
+universal layer-folder tree
+HostBat
+HostBat shell
+Host composition shell
+HostBat compatibility path
+OS-backend Bvisor
+OS backend matrix
+platform sandbox backend matrix
+Serde as event-contract authority
+Serde supertrait on event contract
+raw Flume receiver
+public Flume receiver
+empty product umbrella
+meaning-free umbrella
+```
+<!-- STALE-VOCAB:END -->

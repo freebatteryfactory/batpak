@@ -52,10 +52,7 @@ Delete-and-discover public API change is refused.
 
 ## Compatibility scope (DEC-059)
 
-Compatibility applies to durable legacy data and intentionally preserved public
-contracts. It does not require keeping superseded internal crate topology, the
-retired HostBat shell, a standalone Bat VM package, a separate storage-format
-package, an OS-backend Bvisor matrix, or dual execution models alive.
+Compatibility applies to durable legacy data and intentionally preserved public contracts. It does not require keeping superseded internal crate topology, HostBat [STALE-REF: DEC-009], a standalone Bat VM [STALE-REF: DEC-004], FileBat [STALE-REF: DEC-003], an OS-backend Bvisor [STALE-REF: DEC-010] matrix, or dual execution models alive.
 
 Semver is a contract for users of the current architecture, not a hostage
 negotiator for dead architecture.

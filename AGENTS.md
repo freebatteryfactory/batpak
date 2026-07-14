@@ -53,7 +53,7 @@ src/turn/plan.rs
 src/turn/apply.rs
 ```
 
-No universal type drawer exists. No domain-significant named type is declared inside a function. A mechanism-private module type is allowed only under the concept it implements and must appear in the generated Type Ledger.
+No universal type drawer [STALE-REF: DEC-007] exists. No domain-significant named type is declared inside a function. A mechanism-private module type is allowed only under the concept it implements and must appear in the generated Type Ledger.
 
 ## Non-negotiable code doctrine
 

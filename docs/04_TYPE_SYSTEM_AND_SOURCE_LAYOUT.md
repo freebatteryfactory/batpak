@@ -27,7 +27,7 @@ src/turn/plan.rs
 src/turn/apply.rs
 ```
 
-This replaces a universal type drawer. It keeps types obvious without separating them from the concept whose laws they carry.
+This replaces a universal type drawer [STALE-REF: DEC-007]. It keeps types obvious without separating them from the concept whose laws they carry.
 
 ## Type placement
 

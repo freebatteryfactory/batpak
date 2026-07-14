@@ -10,13 +10,28 @@ from pathlib import Path
 STATUSES = {"AUTHORITATIVE", "GENERATED", "EVIDENCE-ONLY", "SUPERSEDED", "REJECTED"}
 REQUIRED_FRONT = {"status", "contract_id", "authority_scope", "supersedes", "last_reconciled"}
 PLACEHOLDERS = ("TBD", "TO BE DECIDED", "IMPLEMENTATION DECIDES", "FIXME")
-STALE_TERMS = ("FileBat", "filebat package", "bat-vm package", "src/_types", "meaning-free umbrella")
-STALE_EXEMPT = {
-    "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
-    "docs/30_DECISION_AND_REJECTION_LEDGER.md",
-    "docs/31_FINAL_CONTRADICTION_AUDIT.md",
-    "FINAL_RECONCILIATION.md",
+# Stale vocabulary is DERIVED from spec/dispositions.rs (never a hand-kept list).
+# Each retiring decision names its stale aliases and the contexts in which they
+# may still appear. Ordinary authoritative material and production/config source
+# are not permissive contexts: they must carry an inline [STALE-REF: DEC-...].
+STALE_CONTEXT_BY_PATH = {
+    "docs/30_DECISION_AND_REJECTION_LEDGER.md": "DecisionLedger",
+    "docs/29_STATUS_AND_SUPERSESSION.md": "SupersessionGuide",
+    "docs/33_AGENT_FINISH_LINE_CHECKLIST.md": "SupersessionGuide",
+    "docs/31_FINAL_CONTRADICTION_AUDIT.md": "RejectionRecord",
+    "FINAL_RECONCILIATION.md": "RejectionRecord",
+    "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md": "LegacyEvidence",
+    "docs/34_LEGACY_INVARIANT_COVERAGE.md": "LegacyEvidence",
+    "docs/22_MIGRATION_AND_CUTOVER.md": "MigrationCompatibility",
+    "docs/15_SCHEMA_CODEC_AND_MIGRATION.md": "MigrationCompatibility",
+    "docs/20_DEPENDENCY_SOVEREIGNTY.md": "MigrationCompatibility",
+    "spec/dispositions.rs": "DecisionLedger",
 }
+STALE_PROJECTION_DOCS = ("docs/29_STATUS_AND_SUPERSESSION.md", "docs/33_AGENT_FINISH_LINE_CHECKLIST.md")
+STALE_REF_RE = re.compile(r"\[STALE-REF:\s*(DEC-\d+)\]")
+STALE_VOCAB_BLOCK_RE = re.compile(r"<!-- STALE-VOCAB:BEGIN -->(.*?)<!-- STALE-VOCAB:END -->", re.S)
+RETIRING_DISPOSITIONS = {"Kill", "Supersede", "Demote", "Lock"}
+PRODUCTION_SOURCE_DIRS = ("crates", "apps")
 EXCLUDE_DIRS = {".git", "target", "__pycache__"}
 EXCLUDE_SUFFIXES = {".zip", ".pyc"}
 
@@ -227,7 +242,7 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
     decision_seed_rows = {
         ident: (disposition_tags[variant], subject, successor)
         for ident, variant, subject, successor in re.findall(
-            r'DecisionSpec \{ id: "([^"]+)", disposition: Disposition::([A-Za-z]+), subject: "([^"]+)", successor: "([^"]+)" \}',
+            r'DecisionSpec \{ id: "([^"]+)", disposition: Disposition::([A-Za-z]+), subject: "([^"]+)", successor: "([^"]+)"',
             decision_source,
         )
     }
@@ -303,6 +318,113 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
             findings.append(f"legacy invariant coverage seed/document mismatch for {value}")
 
 
+def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[str, frozenset[str], str]]:
+    """Derive the stale-alias matcher from spec/dispositions.rs.
+
+    Returns alias_lower -> (owning decision id, allowed contexts, canonical alias).
+    The matcher is a consequence of the decisions that retired vocabulary; there
+    is no separately authored stale-term list.
+    """
+    path = root / "spec/dispositions.rs"
+    if not path.is_file():
+        findings.append("missing spec/dispositions.rs for stale-vocabulary derivation")
+        return {}
+    source = path.read_text(encoding="utf-8")
+    alias_map: dict[str, tuple[str, frozenset[str], str]] = {}
+    row = re.compile(
+        r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+),.*?'
+        r"stale_aliases: &\[([^\]]*)\], stale_allowed_contexts: &\[([^\]]*)\],"
+    )
+    for ident, disposition, aliases_raw, contexts_raw in row.findall(source):
+        aliases = re.findall(r'"([^"]+)"', aliases_raw)
+        contexts = frozenset(re.findall(r"StaleContext::(\w+)", contexts_raw))
+        if aliases and disposition not in RETIRING_DISPOSITIONS:
+            findings.append(f"spec/dispositions.rs: {ident} carries stale aliases but disposition {disposition} does not retire vocabulary")
+        if aliases and not contexts:
+            findings.append(f"spec/dispositions.rs: {ident} has stale aliases but no allowed contexts")
+        for alias in aliases:
+            key = alias.lower()
+            if key in alias_map:
+                findings.append(f"spec/dispositions.rs: stale alias {alias!r} claimed by {alias_map[key][0]} and {ident}")
+            alias_map[key] = (ident, contexts, alias)
+    return alias_map
+
+
+def stale_context_for(rel: str, status: str | None) -> str:
+    if rel in STALE_CONTEXT_BY_PATH:
+        return STALE_CONTEXT_BY_PATH[rel]
+    if status == "EVIDENCE-ONLY":
+        return "LegacyEvidence"
+    if rel.split("/", 1)[0] in PRODUCTION_SOURCE_DIRS:
+        return "ProductionSource"
+    return "OrdinaryAuthoritative"
+
+
+def scan_stale_occurrences(rel: str, text: str, context: str, alias_map, findings: list[str]) -> None:
+    lower = text.lower()
+    known = {ident for ident, _, _ in alias_map.values()}
+    for match in STALE_REF_RE.finditer(text):
+        if match.group(1) not in known:
+            findings.append(f"{rel}: STALE-REF names {match.group(1)}, which owns no stale alias")
+    for key, (ident, contexts, alias) in alias_map.items():
+        start = 0
+        while True:
+            pos = lower.find(key, start)
+            if pos < 0:
+                break
+            start = pos + len(key)
+            if context in contexts:
+                continue
+            line_start = text.rfind("\n", 0, pos) + 1
+            line_end = text.find("\n", pos)
+            line = text[line_start: line_end if line_end >= 0 else len(text)]
+            if ident in STALE_REF_RE.findall(line):
+                continue
+            findings.append(f"{rel}: stale term {alias!r} ({ident}) in {context} context needs [STALE-REF: {ident}]")
+
+
+def check_stale_vocabulary(root: Path, findings: list[str]) -> None:
+    alias_map = parse_stale_vocabulary(root, findings)
+    if not alias_map:
+        return
+    derived = {alias for _, _, alias in alias_map.values()}
+    for path in sorted(root.rglob("*.md")):
+        rel_path = path.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel_path.parts):
+            continue
+        rel = rel_path.as_posix()
+        text = path.read_text(encoding="utf-8")
+        context = stale_context_for(rel, frontmatter(text).get("status"))
+        scan_stale_occurrences(rel, text, context, alias_map, findings)
+    for base in PRODUCTION_SOURCE_DIRS:
+        base_dir = root / base
+        if not base_dir.is_dir():
+            continue
+        for path in sorted(base_dir.rglob("*")):
+            if not path.is_file() or path.suffix not in (".rs", ".toml"):
+                continue
+            rel = path.relative_to(root).as_posix()
+            scan_stale_occurrences(rel, path.read_text(encoding="utf-8"), "ProductionSource", alias_map, findings)
+    for rel in STALE_PROJECTION_DOCS:
+        path = root / rel
+        if not path.is_file():
+            findings.append(f"missing stale-vocabulary projection doc {rel}")
+            continue
+        block = STALE_VOCAB_BLOCK_RE.search(path.read_text(encoding="utf-8"))
+        if not block:
+            findings.append(f"{rel}: missing <!-- STALE-VOCAB:BEGIN/END --> projection block")
+            continue
+        listed = {
+            line.strip()
+            for line in block.group(1).splitlines()
+            if line.strip() and not line.strip().startswith("```")
+        }
+        for alias in sorted(derived - listed):
+            findings.append(f"{rel}: stale projection missing derived alias {alias!r}")
+        for alias in sorted(listed - derived):
+            findings.append(f"{rel}: stale projection lists {alias!r}, not derived from any decision")
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     findings: list[str] = []
@@ -330,10 +452,6 @@ def main() -> int:
             for token in PLACEHOLDERS:
                 if token in upper:
                     findings.append(f"{rel}: normative placeholder {token}")
-            if rel not in STALE_EXEMPT:
-                for token in STALE_TERMS:
-                    if token.lower() in text.lower():
-                        findings.append(f"{rel}: stale architecture term {token!r}")
         for target in markdown_links(text):
             resolved = (path.parent / target).resolve()
             try:
@@ -346,6 +464,7 @@ def main() -> int:
 
     check_architecture(root, findings)
     check_seed_ids(root, findings)
+    check_stale_vocabulary(root, findings)
 
     manifest = root / "SPEC.sha256"
     actual_files = frozen_files(root)
