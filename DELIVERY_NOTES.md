@@ -20,7 +20,7 @@ This bundle is the implementation handoff for the final clean-room BatPak v1 arc
 19 declared package edges
 5 target/feature qualification profiles
 25 bootstrap invariants
-47 architectural decision/disposition rows
+51 architectural decision/disposition rows
 80 retained legacy semantic obligations
 107 one-for-one legacy invariant dispositions
 full BatQL frontend language companion

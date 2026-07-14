@@ -39,6 +39,23 @@ network frame
 → bounded encode
 ```
 
+## Invocation carriage
+
+The two invocation classes are owned by `docs/10`. NetBat carries them as two distinct request envelopes and nothing else:
+
+```text
+entrypoint.invoke.v1
+query-program.execute.v1
+```
+
+Exact wire spellings are selected at the owning gate; the semantic envelopes are frozen now.
+
+Entrypoint request carries: world identity, entrypoint identity, interface identity, input schema/version, input bytes, caller authority, request bounds.
+
+Query-program request carries: ProgramImage bytes or `ArtifactRef`, `ProgramImageId`, query capability envelope, historical cut, result/proof bounds, input parameters.
+
+NetBat must: bound lengths before allocation; transport opaque canonical image bytes; preserve typed dispositions. NetBat must never: interpret query semantics; widen capabilities; convert raw source to a ProgramImage; let TLS imply ProgramImage trust. There is no `CompileAndExecuteRawBatQL`, `EvalText`, or `ExecuteSource` envelope; source compilation is the separately admitted `CompilerPort` (DEC-051), not ordinary transport.
+
 ## Transport profiles
 
 Initial host adapters may include native stream sockets and browser-compatible HTTP/WebSocket profiles. The transport profile is explicit and cannot change message-level proof meaning.

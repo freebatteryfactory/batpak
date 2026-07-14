@@ -63,6 +63,72 @@ attempt table
 
 Live capability authority cannot be serialized out of the instance.
 
+## Invocation classes
+
+`docs/10` owns the two — and only two — ways a caller reaches PakVM execution. Both execute canonical ProgramImages; they differ in deployment authority, lifetime, effect permission, and capability origin, never in interpreter semantics.
+
+### `InvokeEntrypoint` (DEC-049)
+
+A deployed, persistent entrypoint declared by an admitted WorldImage. Its ProgramImage is bound by WorldImage identity; a request cannot substitute a foreign ProgramImage while keeping the entrypoint's authority. An entrypoint is not a name mapped to whatever code the server currently holds. It may be ASK or DO; effects are permitted only when the entrypoint contract declares them. Capability comes from the WorldImage grant. Identity binds `WorldImageId`, `WorldInterfaceHash`, `EntrypointId`, `ProgramImageId`, `InvocationId`, `AttemptId`.
+
+### `ExecuteQueryProgram` (DEC-050)
+
+A client-supplied canonical, query-only ProgramImage, executed ephemerally under a server-issued read-only query capability envelope. Effects, process installation, and persistent lifecycle hooks are forbidden. The server validates the image independently — "the client compiled it" grants no trust. Allowed operations: bounded read, filter, fold, match, group, aggregate, project, explain, prove. Required bounds: source/selectors, event or row work, decoded bytes, groups, matches, result bytes/items, proof bytes/work. The response binds `ProgramImageId`, query authority digest, historical cut, source generation/frontier, completeness, proof disposition, actual work, result digest, and receipt. A query program may evaluate `ALLOW`/`DENY`/`DEFER` as data; it may never use the result to perform an effect.
+
+### Canonical comparison
+
+| Property             | `InvokeEntrypoint`           | `ExecuteQueryProgram`          |
+| -------------------- | ---------------------------- | ------------------------------ |
+| Source               | Admitted WorldImage          | Supplied ProgramImage          |
+| Lifetime             | Persistent deployment        | Ephemeral request              |
+| Profile              | Declared entrypoint          | Query-only                     |
+| ASK                  | Yes                          | Yes                            |
+| DO/effects           | When declared                | Never                          |
+| Capability source    | WorldImage grant             | Restricted request envelope    |
+| Process installation | Declared processes only      | Forbidden                      |
+| Raw BatQL            | No                           | No                             |
+| Identity             | World + entrypoint + program | Program + query grant          |
+| Admission            | World and invocation         | Program, query profile, bounds |
+| Receipt              | Invocation/attempt receipt   | Query execution receipt        |
+
+> Both invocation classes execute canonical ProgramImages through PakVM and Bvisor. They differ in deployment authority, lifetime, effect permission, and capability origin, not in interpreter semantics.
+
+### Compilation boundary (DEC-051)
+
+BatQL source text is authoring input, never executable authority. PakVM executes validated ProgramImages, not source text. Ordinary transport permits `InvokeEntrypoint` and `ExecuteQueryProgram`; it never permits `CompileAndExecuteRawBatQL`, `EvalText`, or `ExecuteSource`.
+
+Source compilation is a separately admitted host capability, `CompilerPort`: a development/admin profile only, not available to guest programs, not implied by NetBat access, and absent from the default server profile. It never compiles-and-silently-executes in one opaque action; it keeps the evidence chain visible:
+
+```text
+BatQL source
+→ CompilationRequest
+→ ProgramImage
+→ CompilationReceipt
+→ ordinary invocation/admission path
+```
+
+The compiled image still passes ordinary validation and admission. Source identity is provenance, not runtime authority — the compiler is never a tunnel around PakVM validation.
+
+### Hostile fixture obligations (proof owner: TestPak; gates G5/G7)
+
+```text
+raw_batql_is_not_a_netbat_invocation
+compiler_port_is_not_available_to_guest_programs
+compiler_port_is_absent_from_default_server_profile
+compiler_output_still_requires_program_validation
+query_program_with_effect_instruction_is_rejected
+query_program_cannot_install_process
+query_program_cannot_request_write_capability
+query_program_over_work_bound_is_denied_before_execution
+query_program_result_binds_program_and_grant_identity
+entrypoint_cannot_substitute_foreign_program_image
+entrypoint_effect_must_be_declared_by_world_interface
+tls_does_not_upgrade_program_or_proof_authority
+attempt_receipt_cannot_cross_invocation_classes
+```
+
+Equivalence oracle: the same query compiled into the same canonical ProgramImage must produce equivalent PakVM semantics whether invoked as a pure declared entrypoint or an ephemeral `ExecuteQueryProgram`, given the same source cut, parameters, selectors, bounds, and proof posture. The receipts differ (authority and invocation identities differ); the query value and structured derivation do not.
+
 ## World namespace
 
 A filesystem-like namespace is an ergonomic projection, not a host filesystem:

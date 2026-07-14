@@ -74,6 +74,10 @@ source
 → deterministic WorldImage composition input
 ```
 
+## Compilation authority
+
+BatQL compilation produces a canonical ProgramImage. Source may be compiled locally or through an explicitly admitted host `CompilerPort`. PakVM never executes BatQL text directly. Remote ad hoc queries submit query-only ProgramImages (`ExecuteQueryProgram`); effectful programs must enter through declared WorldImage entrypoints (`InvokeEntrypoint`). The invocation classes and the compilation boundary are owned by `docs/10` (DEC-049, DEC-050, DEC-051).
+
 ## Semantic algebras
 
 ### Query/dataflow
