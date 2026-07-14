@@ -25,6 +25,10 @@ PakVM uses typed SSA/dataflow with structured regions. It is not an untyped stac
 
 V1 excludes arbitrary backward jumps, general recursion, raw memory access, ambient callbacks, host syscalls, and unbounded loops. Iteration occurs through bounded operators.
 
+## ISA version
+
+`PakVmIsaVersion` identifies the instruction-set and encoding revision. It is a distinct type from `.vpak` section identity, `ProgramImageVersion`, and `WorldImageVersion`; the complete version-identity law is owned by `16_IDENTITY_TIME_AND_NAVIGATION.md` (DEC-064). Exact opcode numbers and the ISA version value are G5 implementation constants.
+
 ## `.vpak` image structure
 
 A `.vpak` package is immutable, sectioned, bounded, and content-addressed. Expected semantic sections include:
@@ -87,6 +91,33 @@ A pure query image cannot contain Effect instructions. The validator rejects the
 ## Built-in kernels
 
 A kernel is content-identified, typed, bounded, deterministic where declared, and implemented in reviewed Rust. It cannot smuggle an ambient host callback. PakVM calls only kernels in the admitted WorldImage and capability closure.
+
+### Kernel identity (DEC-062)
+
+`FROM KERNEL @blake3:...` refers to a canonical `KernelManifest`, never a display name, a Rust path, a function pointer, or an arbitrary source-file digest. Four identities are distinct:
+
+```text
+KernelContractId          semantic operation and version
+KernelInterfaceHash       canonical inputs, outputs, errors, determinism,
+                          capabilities, bounds, and cost contract
+KernelImplementationId    the exact qualified implementation/build manifest
+KernelQualificationReceiptId  proof the implementation satisfies the contract
+```
+
+A canonical implementation manifest binds at least:
+
+```text
+source-tree or implementation artifact digest
+toolchain
+target
+features
+dependency-lock subset
+generated-code inputs
+build profile
+resulting artifact digest where applicable
+```
+
+PakVM never resolves a kernel by string name alone. Kernel binding policy inside a WorldImage is owned by `10_WORLD_IMAGES_AND_PORTS.md`.
 
 ## Suspension
 

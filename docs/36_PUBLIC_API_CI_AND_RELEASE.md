@@ -117,6 +117,7 @@ generated facts
 compatibility corpus
 test / mutation / fuzz / benchmark dispositions
 unsafe and dependency ledgers
+kernel qualification receipts (KernelImplementationId + KernelQualificationReceiptId)
 package contents
 public API
 SBOM and license evidence

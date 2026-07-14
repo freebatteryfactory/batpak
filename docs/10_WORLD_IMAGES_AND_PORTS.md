@@ -46,6 +46,31 @@ Linking is explicit, deterministic, and collision-checked across contract IDs, s
 
 Order-independent inputs produce the same canonical image where composition declares order irrelevant.
 
+## Kernel binding (DEC-062)
+
+A WorldImage binds each kernel through exactly one policy. Kernel identity types and the canonical manifest are owned by `07_PAKVM_ISA.md`.
+
+```text
+ExactImplementation
+    pins KernelImplementationId
+
+QualifiedInterface
+    pins KernelContractId + KernelInterfaceHash,
+    and requires an accepted KernelQualificationReceiptId
+```
+
+PakVM never resolves a kernel by display name. The `AttemptReceipt` records the exact `KernelImplementationId` actually used, even when the WorldImage allowed a qualified interface — so a portable qualified binding still yields an exact execution record.
+
+Named hostile fixtures (proof owner TestPak; gates G4/G5):
+
+```text
+kernel_cannot_resolve_by_display_name
+kernel_contract_and_implementation_ids_are_not_interchangeable
+qualified_interface_requires_matching_qualification_receipt
+exact_kernel_binding_rejects_another_implementation
+attempt_receipt_records_exact_kernel_implementation
+```
+
 ## World instance
 
 A live instance binds:

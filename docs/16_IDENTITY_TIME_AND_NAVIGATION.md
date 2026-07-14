@@ -45,6 +45,35 @@ Commitment
 
 No identity answers two questions.
 
+## Version identities (DEC-064)
+
+Version is not one generic type crossing subsystem boundaries. Each format and protocol carries its own distinct version identity:
+
+```text
+BatQlLanguageVersion
+ProgramImageVersion
+WorldImageVersion
+PakVmIsaVersion
+FbatFormatVersion
+BatTaggedRecordVersion
+NetBatProtocolVersion
+KernelManifestVersion
+ReceiptSchemaVersion
+SchemaVersion
+```
+
+Distinct version types do not typecheck when substituted for one another. Canonical bytes carry their own owning format/version identity.
+
+`ProgramImageId` commits to the canonical ProgramImage bytes, including its version. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.
+
+Named hostile fixtures (proof owner TestPak; gates G2/G5/G7):
+
+```text
+program_image_id_is_independent_of_compiler_provenance
+distinct_version_types_do_not_typecheck_when_substituted
+netbat_version_does_not_upgrade_pakvm_isa
+```
+
 ## Coordinate
 
 `Coordinate` remains public BatPak vocabulary for a logical event/process location. It is not a filesystem path, network address, physical shard, wall time, or generic cursor.

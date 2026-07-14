@@ -87,6 +87,32 @@ RawOpaqueV1          explicit app-managed bytes under a declared contract
 
 Historical bytes are never rewritten to make a dependency graph look cleaner.
 
+## Compression posture (DEC-063)
+
+V1 is uncompressed where identity and recovery depend on exact bytes:
+
+```text
+.fbat authority frames             uncompressed
+.vpak canonical semantic sections  uncompressed
+large payloads and outputs         ArtifactRef (content-addressed plane)
+derived tiles and artifacts        may use an explicit versioned compression profile
+```
+
+Transparent compression is forbidden: it would defeat canonical bytes, bounded decode, random access, corruption isolation, selective field decode, crypto-shred semantics, and independent verification. No compression algorithm is selected now.
+
+A future compressed profile requires a `CompressionId`, canonical parameters, bounded decompression, a maximum expansion ratio, a digest-coverage law, compatibility rows, hostile fixtures, and a measured adopter. It must state separately whether identity covers stored compressed bytes, canonical uncompressed bytes, or both through distinct typed digests.
+
+`FbatFormatVersion` and `BatTaggedRecordVersion` are distinct typed identities (DEC-064); a future format version that a reader cannot open fails with its own typed disposition, never a silent misread.
+
+Named hostile fixtures (proof owner TestPak; gates G2/G8):
+
+```text
+compressed_fbat_authority_frame_is_rejected_in_v1
+compressed_vpak_semantic_section_is_rejected_in_v1
+compression_profile_requires_expansion_bound
+future_format_version_fails_with_its_own_typed_disposition
+```
+
 ## Integrity hierarchy
 
 ```text
