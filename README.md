@@ -73,7 +73,8 @@ When two documents disagree, do not average them. Apply [Status and Supersession
 14. [Legacy Semantic Obligations](docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md)
 15. [Legacy Invariant Coverage](docs/34_LEGACY_INVARIANT_COVERAGE.md)
 16. [Decision and Rejection Ledger](docs/30_DECISION_AND_REJECTION_LEDGER.md)
-17. [Agent Finish-Line Checklist](docs/33_AGENT_FINISH_LINE_CHECKLIST.md)
+17. [Public API, CI, and Release](docs/36_PUBLIC_API_CI_AND_RELEASE.md)
+18. [Agent Finish-Line Checklist](docs/33_AGENT_FINISH_LINE_CHECKLIST.md)
 
 The remaining numbered documents close the storage, schema, delivery, proof, security, migration, bootstrap, command, and workflow details.
 
