@@ -329,10 +329,10 @@ CASE
     THEN USD(0)
 
   WHEN days_late IS AT MOST 30
-    THEN ROUND(amount * DECIMAL(0.001) * days_late, 2)
+    THEN ROUND(amount * DECIMAL(0.001) * days_late, 2, HALF_EVEN)
 
   OTHERWISE
-    ROUND(amount * DECIMAL(0.002) * days_late, 2)
+    ROUND(amount * DECIMAL(0.002) * days_late, 2, HALF_EVEN)
 END CASE
 
 END FUNCTION
@@ -495,7 +495,7 @@ Broad selection must still satisfy source authority and work limits.
 WHAT
   LET gross = SUM(line.amount)
   LET discounts = SUM(line.discount)
-  LET net = ROUND(gross - discounts, 2)
+  LET net = ROUND(gross - discounts, 2, HALF_EVEN)
 
   RETURN {
     gross: gross,
@@ -790,6 +790,8 @@ HLC       Causally monotone approximate chronology.
 CAUSAL    Explicit predecessor or causation topology.
 SEQUENCE  Store progress position.
 ```
+
+`ORDER BY HLC` is not a bare HLC sort. It lowers to a total, deterministic key (`HLC, GlobalSequence` within one journal; `HLC, StoreId, GlobalSequence` across journals), and `DURING HLC start THROUGH HLC end` is half-open `[start, end)`. The complete ordering law and HLC's forbidden uses are owned by `docs/16_IDENTITY_TIME_AND_NAVIGATION.md` (DEC-061).
 
 ### No generic timestamp laundering
 
@@ -1349,6 +1351,66 @@ Floating-point values are not part of the default semantic core.
 
 Probabilistic built-in kernels may return a typed `Probability`, but their arithmetic, precision, and reproducibility contract must be declared.
 
+## 5.2a Typed arithmetic legality (DEC-060)
+
+BatQL cannot claim strict typing while leaving operator meaning underdetermined. The legal operator matrix is frozen. Anything not listed is a compile-time type error.
+
+### Addition and subtraction
+
+Same dimension and unit only:
+
+```text
+Money<USD> + Money<USD>       → Money<USD>
+Money<USD> + Money<EUR>       → rejected
+Percent - Percent            → PercentagePoints
+Percent + PercentagePoints   → Percent
+ObservedWallTime - ObservedWallTime → SignedDuration
+```
+
+### Multiplication
+
+At least one operand must be dimensionless (`Integer`, `Decimal`, `Ratio`, `Percent`); the result keeps the dimensional operand:
+
+```text
+Money<USD> * Decimal   → Money<USD>
+Money<USD> * Percent   → DecimalMoney<USD>
+Duration * Integer     → Duration
+Money * Money          → rejected
+```
+
+### Division
+
+```text
+Money<USD> / Money<USD>   → Ratio
+Duration / Duration       → Ratio
+Money<USD> / Money<EUR>   → rejected
+dimensional / dimensionless → same dimension
+```
+
+### Rounding is explicit
+
+Every scale-reducing conversion names its rounding mode. Two-argument `ROUND` is not valid:
+
+```batql
+ROUND(value, target_scale, HALF_EVEN)
+ROUND(value, target_scale, HALF_UP)
+ROUND(value, target_scale, DOWN)
+ROUND(value, target_scale, UP)
+```
+
+No authority-bearing conversion has an implicit rounding mode.
+
+### Failure is typed, never silent
+
+```text
+overflow            → INVALID
+division by zero    → INVALID
+unsupported scale   → INVALID
+illegal units       → compile-time type error
+```
+
+Arithmetic never wraps, saturates, truncates, or silently rounds. Currency conversion requires an explicit conversion function and a typed, receipted rate/evidence source; there is no implicit cross-currency arithmetic.
+
 ## 5.3 Literals
 
 ```batql
@@ -1394,7 +1456,7 @@ The formatter resolves this to the named parameter form when the declaration is 
 
 ```batql
 LET gross = SUM(event.amount)
-LET tax = ROUND(gross * PERCENT(6), 2)
+LET tax = ROUND(gross * PERCENT(6), 2, HALF_EVEN)
 LET total = gross + tax
 ```
 
@@ -2974,13 +3036,20 @@ let_statement
   := LET identifier "=" expression
 
 return_statement
-  := RETURN expression
+  := RETURN return_list
    | RETURN RECEIPT
    | RETURN record
    | RETURN TIMELINE record
-   | RETURN GET expression
-   | RETURN CHILDREN OF expression
-   | RETURN SCAN UNDER expression
+   | RETURN GET where_value
+   | RETURN CHILDREN OF where_value
+   | RETURN SCAN UNDER where_value
+
+return_list
+  := expression ("," expression)*
+
+where_value
+  := expression
+   | WHO
 
 where_clause
   := WHERE source predicate_tail*
@@ -3050,6 +3119,9 @@ expression
    | logical_expression
    | case_expression
    | decide_expression
+   | try_expression
+   | decision_composition
+   | rounding_mode
    | record
    | availability_test
 
@@ -3078,9 +3150,70 @@ availability_test
    | expression IS UNAVAILABLE
    | expression IS SHREDDED
    | expression IS NOT APPLICABLE
+
+case_expression
+  := CASE (WHEN expression THEN expression)+ OTHERWISE expression END CASE
+
+decide_expression
+  := DECIDE decide_step+ decision_terminal END DECIDE
+
+decide_step
+  := REQUIRE expression (ELSE decision_terminal)? on_pending?
+   | LET identifier "=" expression
+
+decision_terminal
+  := ALLOW reason with_arg*
+   | DENY reason with_arg*
+   | DEFER reason with_arg*
+
+on_pending
+  := ON PENDING DEFER reason
+
+with_arg
+  := WITH identifier "=" expression
+   | WITH MARGIN expression
+
+try_expression
+  := TRY expression ON INVALID RETURN expression END TRY
+
+decision_composition
+  := ALL_OF "(" arguments ")"
+   | ANY_OF "(" arguments ")"
+
+append_statement
+  := APPEND TO JOURNAL string event_literal with_idempotency?
+   | APPEND ATOMIC TO JOURNAL string event_literal+ END BATCH
+
+event_literal
+  := EVENT type_name record
+
+effect_statement
+  := REQUEST EFFECT type_name record with_idempotency?
+   | REQUEST CANCELLABLE EFFECT type_name record with_idempotency?
+
+with_idempotency
+  := WITH IDEMPOTENCY expression
+
+rounding_mode
+  := HALF_EVEN | HALF_UP | DOWN | UP
 ```
 
 The complete grammar must remain parseable without semantic backtracking.
+
+## 15.1 Conformance obligations
+
+One grammar-conformance check parses every normative BatQL code fence (```batql) in this document and in `docs/13_BATQL_CONTRACT.md`; each must parse under the frozen grammar. This is grammar repair, not new syntax — no form appears here that a normative example does not already use.
+
+Named hostile fixtures (proof owner: batql/TestPak; gate G4):
+
+```text
+money_with_different_currencies_is_rejected
+money_times_money_is_rejected
+division_by_zero_is_invalid
+implicit_rounding_is_rejected
+scale_reduction_requires_rounding_mode
+every_normative_batql_example_matches_the_grammar
+```
 
 ---
 

@@ -108,6 +108,10 @@ Predicate truth is `True | False | Pending`. Decisions are `Allow | Deny | Defer
 
 Saved queries name an explicit source cut. Interactive omission is captured as `AS OF HEAD` before execution and included in result identity. Relative ranges are anchored. Commit order, HLC filtering, stream position, and causality do not collapse into one time keyword.
 
+## Arithmetic and ordering
+
+Typed arithmetic legality (same-unit add/subtract, dimensionless multiply, ratio-producing divide, rejected cross-currency and Money×Money, mandatory named rounding modes, typed `INVALID` on overflow/divide-by-zero) is frozen in the language companion (DEC-060). `ORDER BY HLC` is not a bare HLC sort: it lowers to a total key — `HLC, GlobalSequence` within a journal and `HLC, StoreId, GlobalSequence` across journals — with half-open `[start, end)` ranges; the full law and forbidden uses live in `16_IDENTITY_TIME_AND_NAVIGATION.md` (DEC-061).
+
 ## Partial evaluation
 
 The compiler folds constants, eliminates unreachable branches, resolves schemas/fields/capability closure, prunes selectors, determines required columns, calculates bounds, prepares explanation templates, and records tile eligibility.

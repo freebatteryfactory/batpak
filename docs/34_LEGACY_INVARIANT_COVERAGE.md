@@ -134,6 +134,21 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-WIRE-ROUNDTRIP-TOTALITY` | PRESERVE | `LEG-064` | Wire surfaces remain total on valid values and reject malformed bytes atomically. |
 | `INV-WORKSPACE-DAG-ACYCLIC` | PRESERVE | `spec/architecture.rs, seedcheck.rs, and audit.py` | The workspace graph remains independently derived and acyclic. |
 
+## Note: the two fusion invariants are distinct
+
+`INV-PROJECTION-FUSION-EQUIVALENCE` and `INV-PROJECTION-FUSION-EQUIVALENT` are not a duplicate row. They are two genuinely different laws and both are preserved:
+
+```text
+INV-PROJECTION-FUSION-EQUIVALENCE
+    generic banana-split fold algebra: fused folds equal separate folds
+
+INV-PROJECTION-FUSION-EQUIVALENT
+    concrete Store replay behavior: fused replay preserves per-projection
+    filtering, frontiers, watermark, and cache semantics
+```
+
+Both keep unique IDs; the 107-row denominator stands. Do not merge or renumber them.
+
 ## Closure law
 
 A code agent may not import behavior from an unmapped legacy invariant. A newly discovered invariant is first added here and, when semantic, receives a `LEG-*` obligation. Exact legacy mechanism names do not become target API merely because their law is retained.

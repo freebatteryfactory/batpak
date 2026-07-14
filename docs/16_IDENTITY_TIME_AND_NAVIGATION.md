@@ -78,6 +78,33 @@ DagPosition          explicit predecessor topology
 
 HLC enables temporal range pruning, approximate chronology, lag observation, and tile min/max bounds. It does not prove durability, replace causation edges, measure elapsed time, or supersede commit sequence.
 
+## HLC query ordering and range (DEC-061)
+
+HLC is causal/chronological evidence. It is not a total order and never becomes journal-progress authority. Because two events may share or not compare on HLC alone, `ORDER BY HLC` canonicalizes and lowers to a complete key:
+
+```text
+within one journal:   HLC, then GlobalSequence
+across journals:      HLC, then StoreId, then GlobalSequence
+```
+
+`GlobalSequence` is the physical journal commit sequence, so the resulting order is total and deterministic. HLC range predicates are half-open:
+
+```text
+DURING HLC start THROUGH HLC end   →   [start, end)
+```
+
+HLC remains valid for chronology, temporal filtering, tile pruning, and lag observation. It remains forbidden for durability coverage, cursor resume, frontier advancement, commit identity, deadline measurement, and implicit causation. When causal HLC evidence is absent, the result is `Unavailable`; `ObservedWallTime` is never silently promoted into `Hlc`.
+
+Named hostile fixtures (proof owner TestPak; gates G2/G3):
+
+```text
+order_by_hlc_uses_commit_tiebreak
+cross_store_hlc_order_is_total
+hlc_range_is_half_open
+frontier_progress_never_uses_hlc_order
+observed_wall_time_is_not_promoted_to_hlc
+```
+
 ## TurnId
 
 TurnId commits to ProcessInstanceId, ProcessContract version, and exact input start/end frontiers. It is stable across replay of the same logical turn and seeds output/effect idempotency.
