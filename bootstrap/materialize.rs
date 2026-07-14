@@ -123,7 +123,12 @@ fn workspace_manifest() -> String {
         let _ = writeln!(out, "{} = {{ path = \"{}\" }}", package.package, package.path);
     }
     out.push_str("\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\nunused_must_use = \"deny\"\n\n");
+    // expect_used is deliberately NOT globally denied: TestPak tests use
+    // contextual .expect(). There is no blanket `as`-cast ban either; pointer
+    // and layout casts belong to the compiler-assumption ledger and the future
+    // TestPak AST gate (DEC-067).
     out.push_str("[workspace.lints.clippy]\ndbg_macro = \"deny\"\ntodo = \"deny\"\nunimplemented = \"deny\"\nunwrap_used = \"deny\"\npanic = \"deny\"\nprint_stdout = \"deny\"\nprint_stderr = \"deny\"\n");
+    out.push_str("wildcard_enum_match_arm = \"deny\"\ncast_possible_truncation = \"deny\"\ncast_sign_loss = \"deny\"\nmissing_errors_doc = \"deny\"\nlarge_enum_variant = \"deny\"\nclone_on_ref_ptr = \"deny\"\nneedless_pass_by_value = \"deny\"\n");
     out
 }
 

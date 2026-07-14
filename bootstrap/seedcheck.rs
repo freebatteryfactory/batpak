@@ -231,10 +231,25 @@ fn check_syncbat_shape(root: &Path, findings: &mut Vec<String>) {
 }
 
 fn check_source_debt(root: &Path, findings: &mut Vec<String>) {
-    for base in [root.join("crates"), root.join("apps")] {
+    for base in [root.join("crates"), root.join("apps"), root.join("examples")] {
         if !base.is_dir() { continue; }
         walk(&base, root, findings);
     }
+}
+
+// Conservative, path-based test ownership. The bootstrap oracle never parses
+// arbitrary Rust test bodies; TestPak's AST gate owns the precise distinction.
+fn is_test_owned(rel: &Path) -> bool {
+    for component in rel.components() {
+        if let std::path::Component::Normal(name) = component {
+            if let Some(text) = name.to_str() {
+                if matches!(text, "tests" | "benches" | "fixtures" | "corpus" | "fuzz") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn walk(path: &Path, root: &Path, findings: &mut Vec<String>) {
@@ -244,10 +259,18 @@ fn walk(path: &Path, root: &Path, findings: &mut Vec<String>) {
         if p.is_dir() { walk(&p, root, findings); continue; }
         if p.extension().is_some_and(|e| e == "rs") {
             let Ok(text)=fs::read_to_string(&p) else { findings.push(format!("cannot read {}", p.display())); continue; };
-            let rel=p.strip_prefix(root).unwrap_or(&p).display();
+            let rel_path = p.strip_prefix(root).unwrap_or(&p).to_path_buf();
+            let rel=rel_path.display();
             let code = sanitize_rust(&text);
             for banned in ["#[allow", "#![allow", "#[expect", "#![expect", "todo!", "unimplemented!"] {
                 if code.contains(banned) { findings.push(format!("banned source token {banned:?} in {rel}")); }
+            }
+            // Production-source lexical debt (defense in depth). Test-owned paths
+            // are exempt so contextual .expect() in tests remains legal.
+            if !is_test_owned(&rel_path) {
+                for banned in [".unwrap(", ".expect(", "panic!", "dbg!"] {
+                    if code.contains(banned) { findings.push(format!("banned production token {banned:?} in {rel}")); }
+                }
             }
             let tokens = rust_tokens(&code);
             let has_unsafe = tokens.iter().any(|token| token.text == "unsafe");
@@ -440,4 +463,56 @@ fn function_local_type_lines(tokens: &[RustToken]) -> BTreeSet<usize> {
         }
     }
     findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_test_owned, sanitize_rust};
+    use std::path::Path;
+
+    fn production_debt(code: &str) -> Vec<String> {
+        let sanitized = sanitize_rust(code);
+        let mut hits = Vec::new();
+        for token in [".unwrap(", ".expect(", "panic!", "dbg!"] {
+            if sanitized.contains(token) { hits.push(token.to_string()); }
+        }
+        hits
+    }
+
+    #[test]
+    fn production_panic_is_rejected() {
+        assert!(production_debt("fn f() { panic!(\"boom\"); }").iter().any(|h| h == "panic!"));
+    }
+
+    #[test]
+    fn production_unwrap_is_rejected() {
+        assert!(production_debt("fn f() { let _ = x.unwrap(); }").iter().any(|h| h == ".unwrap("));
+    }
+
+    #[test]
+    fn production_expect_is_rejected() {
+        assert!(production_debt("fn f() { let _ = x.expect(\"why\"); }").iter().any(|h| h == ".expect("));
+    }
+
+    #[test]
+    fn production_dbg_is_rejected() {
+        assert!(production_debt("fn f() { dbg!(x); }").iter().any(|h| h == "dbg!"));
+    }
+
+    #[test]
+    fn commented_and_string_tokens_are_ignored() {
+        assert!(production_debt("// panic!\nlet s = \".unwrap(\";").is_empty());
+    }
+
+    #[test]
+    fn test_path_expect_is_allowed() {
+        assert!(is_test_owned(Path::new("crates/batpak/tests/recovery.rs")));
+        assert!(is_test_owned(Path::new("crates/testpak/fixtures/x.rs")));
+        assert!(!is_test_owned(Path::new("crates/batpak/src/event.rs")));
+    }
+
+    #[test]
+    fn bootstrap_detector_fixture_does_not_grade_itself() {
+        assert!(production_debt("let banned = [r#\"panic!\"#, r\".unwrap(\"];").is_empty());
+    }
 }
