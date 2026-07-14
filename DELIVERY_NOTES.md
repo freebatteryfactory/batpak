@@ -16,11 +16,11 @@ This bundle is the implementation handoff for the final clean-room BatPak v1 arc
 35 numbered architecture documents (00 through 34)
 43 Markdown documents
 31,000+ words of architecture and language specification
-8 declared Cargo packages
-16 declared package edges
+9 declared Cargo packages (8 + the non-publishable batpak-examples witness)
+19 declared package edges
 5 target/feature qualification profiles
 25 bootstrap invariants
-42 architectural decision/disposition rows
+47 architectural decision/disposition rows
 80 retained legacy semantic obligations
 107 one-for-one legacy invariant dispositions
 full BatQL frontend language companion
@@ -45,10 +45,12 @@ L3  syncbat   batql
       ↑
 L4   netbat
       ↑
-L5  batpak-cli
+L5  batpak-cli   batpak-examples
 
 L6  testpak is dev-only over the semantic packages.
 ```
+
+`batpak-examples` (L5, non-publishable) imports the production public APIs and is a compatibility witness; the production semantic package count is unchanged.
 
 `syncbat` contains the five internal planes `runtime`, `pakvm`, `bvisor`, `world`, and `port`. No standalone VM, PakVM, or Bvisor package exists.
 

@@ -53,6 +53,11 @@ RETAIN-AS-EVIDENCE   historical material may be consulted, never treated as law
 | DEC-040 | LOCK | BatPak and SyncBat semantic profiles | `no_std + alloc`; host mechanisms stay in explicit std/browser adapters |
 | DEC-041 | LOCK | Cargo package `batpak` | The real semantic and durable library, not an empty umbrella; repository and library share the product name |
 | DEC-042 | DEFER | BatDenseRecord representation | Requires a sealed-image or measured-kernel adopter; not part of the initial native authority path |
+| DEC-043 | LOCK | Examples package batpak-examples | Public-surface witness at examples/; publish is false; owns no semantic law; no TestPak dependency; production APIs only; observable output; executed through TestPak orchestration |
+| DEC-044 | LOCK | TestPak sole corpus and fixture home | crates/testpak/corpus and crates/testpak/fixtures own frozen assets; root corpus/ and fixtures/ are forbidden; no canonical package-local mirrors |
+| DEC-045 | LOCK | TestPak binary target | The testpak package ships src/lib.rs and src/bin/testpak.rs; the root justfile projects cargo run -p testpak; no separate command crate |
+| DEC-046 | LOCK | Workspace version train | 1.0.0-alpha.1 implementation train; publishable production packages ship lockstep to 1.0.0; versions below the train are rejected |
+| DEC-047 | LOCK | Default feature behavior | batpak and syncbat default to std with useful native usability; no_std via default-features false; std must not activate the threaded browser encryption mapping or interop adapter zoo |
 
 ## Behavior decisions
 

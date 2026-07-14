@@ -23,14 +23,17 @@ fn main() {
         let production = architecture::PACKAGES.iter().filter(|p| p.class == architecture::PackageClass::Production).count();
         let adapters = architecture::PACKAGES.iter().filter(|p| p.class == architecture::PackageClass::BinaryAdapter).count();
         let dev_only = architecture::PACKAGES.iter().filter(|p| p.class == architecture::PackageClass::DevOnly).count();
+        let examples = architecture::PACKAGES.iter().filter(|p| p.class == architecture::PackageClass::Example).count();
         println!(
-            "seedcheck: PASS {} v{} ({} packages: {} production, {} adapter, {} dev-only; {} edges; {} qualification profiles; {} invariants; {} decisions; {} legacy obligations; {} legacy invariant dispositions)",
+            "seedcheck: PASS {} v{} train {} ({} packages: {} production, {} adapter, {} dev-only, {} example; {} edges; {} qualification profiles; {} invariants; {} decisions; {} legacy obligations; {} legacy invariant dispositions)",
             architecture::REPOSITORY_NAME,
             architecture::SPEC_VERSION,
+            architecture::WORKSPACE_VERSION,
             architecture::PACKAGES.len(),
             production,
             adapters,
             dev_only,
+            examples,
             architecture::EDGES.len(),
             architecture::QUALIFICATION_PROFILES.len(),
             invariants::INVARIANTS.len(),
@@ -55,11 +58,23 @@ fn inspect(root: &Path) -> Vec<String> {
     }
     check_graph(&mut findings);
     check_profiles(&mut findings);
+    check_version(&mut findings);
     check_unique_ids(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+fn check_version(findings: &mut Vec<String>) {
+    // Reject any workspace version below the signed 1.0 implementation train so
+    // a template cannot regress the family to a pre-1.0 line (e.g. 0.1.0).
+    let version = architecture::WORKSPACE_VERSION;
+    let major = version.split('.').next().and_then(|part| part.parse::<u64>().ok());
+    match major {
+        Some(major) if major >= 1 => {}
+        _ => findings.push(format!("workspace version {version} is below the signed 1.0 train")),
+    }
 }
 
 fn check_graph(findings: &mut Vec<String>) {
@@ -85,6 +100,12 @@ fn check_graph(findings: &mut Vec<String>) {
         }
         if edge.importer == "testpak" && edge.class != architecture::EdgeClass::DevOnly {
             findings.push(format!("testpak edge must be dev-only: {}", edge.importee));
+        }
+        if edge.importee == "batpak-examples" {
+            findings.push(format!("nothing may depend on the examples package: {} -> batpak-examples", edge.importer));
+        }
+        if edge.importer == "batpak-examples" && edge.importee == "testpak" {
+            findings.push("batpak-examples must not depend on dev tooling (testpak)".to_string());
         }
         if edge.importer == "batpak-cli" && edge.class == architecture::EdgeClass::DevOnly {
             findings.push(format!("CLI edge cannot be dev-only: {}", edge.importee));

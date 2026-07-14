@@ -5,6 +5,7 @@ pub enum PackageClass {
     Production,
     BinaryAdapter,
     DevOnly,
+    Example,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +42,12 @@ pub struct EdgeSpec {
 
 pub const REPOSITORY_NAME: &str = "BatPak";
 pub const SPEC_VERSION: &str = "1.0.0";
+
+/// Workspace implementation train. Publishable production packages ship
+/// lockstep to `1.0.0`; nonpublishable packages inherit this version without
+/// becoming release artifacts. Bootstrap rejects any version below this train
+/// so a template cannot regress the family to a pre-1.0 line.
+pub const WORKSPACE_VERSION: &str = "1.0.0-alpha.1";
 
 pub const PACKAGES: &[PackageSpec] = &[
     PackageSpec {
@@ -99,6 +106,13 @@ pub const PACKAGES: &[PackageSpec] = &[
         class: PackageClass::BinaryAdapter,
         layer: 5,
     },
+    PackageSpec {
+        package: "batpak-examples",
+        path: "examples",
+        role: "public-surface witness; runnable demos over production APIs only; owns no semantic law and depends on no dev tooling",
+        class: PackageClass::Example,
+        layer: 5,
+    },
 ];
 
 pub const QUALIFICATION_PROFILES: &[QualificationProfile] = &[
@@ -151,6 +165,9 @@ pub const EDGES: &[EdgeSpec] = &[
     EdgeSpec { importer: "testpak", importee: "syncbat", class: EdgeClass::DevOnly, profile: "proof" },
     EdgeSpec { importer: "testpak", importee: "batql", class: EdgeClass::DevOnly, profile: "proof" },
     EdgeSpec { importer: "testpak", importee: "netbat", class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: "batpak-examples", importee: "batpak", class: EdgeClass::Required, profile: "example" },
+    EdgeSpec { importer: "batpak-examples", importee: "syncbat", class: EdgeClass::Required, profile: "example" },
+    EdgeSpec { importer: "batpak-examples", importee: "batql", class: EdgeClass::Required, profile: "example" },
 ];
 
 pub const REQUIRED_DOCS: &[&str] = &[
@@ -221,6 +238,8 @@ pub const FORBIDDEN_TARGET_PATHS: &[&str] = &[
     "crates/testkit",
     "tools/xtask",
     "tools/integrity",
+    "corpus",
+    "fixtures",
 ];
 
 pub const SYNCBAT_REQUIRED_PLANES: &[&str] = &[

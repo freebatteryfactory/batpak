@@ -39,6 +39,8 @@ fn materialize(root: &Path) -> io::Result<()> {
         write_checked(package_root.join("README.md"), &package_readme(package))?;
         if package.class == architecture::PackageClass::BinaryAdapter {
             write_checked(package_root.join("src/main.rs"), &binary_source(package))?;
+        } else if package.class == architecture::PackageClass::Example {
+            write_checked(package_root.join("src/bin/family_smoke.rs"), &example_source(package))?;
         } else {
             write_checked(package_root.join("src/lib.rs"), &library_source(package))?;
         }
@@ -113,7 +115,8 @@ fn workspace_manifest() -> String {
         let _ = writeln!(out, "  \"{}\",", package.path);
     }
     out.push_str("]\n\n[workspace.package]\n");
-    out.push_str("version = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.97\"\n");
+    let _ = writeln!(out, "version = \"{}\"", architecture::WORKSPACE_VERSION);
+    out.push_str("edition = \"2024\"\nrust-version = \"1.97\"\n");
     out.push_str("license = \"MIT OR Apache-2.0\"\nrepository = \"https://github.com/freebatteryfactory/batpak\"\n\n");
     out.push_str("[workspace.dependencies]\n");
     for package in architecture::PACKAGES {
@@ -130,7 +133,9 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
     out.push_str("[package]\n");
     let _ = writeln!(out, "name = \"{}\"", package.package);
     out.push_str("version.workspace = true\nedition.workspace = true\nrust-version.workspace = true\nlicense.workspace = true\nrepository.workspace = true\n");
-    if package.class == architecture::PackageClass::DevOnly {
+    if package.class == architecture::PackageClass::DevOnly
+        || package.class == architecture::PackageClass::Example
+    {
         out.push_str("publish = false\n");
     }
 
@@ -152,7 +157,11 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
     }
 
     if package.package == "batpak" || package.package == "syncbat" {
-        out.push_str("\n[features]\ndefault = []\nstd = []\n");
+        // Default profile is usable native std (DEC-047). no_std consumers opt
+        // out with default-features = false. std must not become a junk drawer:
+        // the threaded/browser/encryption/mapping/interop adapters stay behind
+        // their own explicit opt-in profiles, added at their owning gate.
+        out.push_str("\n[features]\ndefault = [\"std\"]\nstd = []\n");
         if package.package == "syncbat" {
             out.push_str("browser = []\n");
         }
@@ -214,6 +223,15 @@ fn library_source(package: &architecture::PackageSpec) -> String {
 fn binary_source(package: &architecture::PackageSpec) -> String {
     format!(
         "//! Thin product command adapter for `{}`.\n\nfn main() {{}}\n",
+        package.package
+    )
+}
+
+fn example_source(package: &architecture::PackageSpec) -> String {
+    // Gate-0 placeholder. Real family demos replace it; every example must emit
+    // observable output and depend only on public production APIs.
+    format!(
+        "//! Gate-0 placeholder example for `{}`.\n\nfn main() {{\n    println!(\"batpak-examples: gate-0 placeholder\");\n}}\n",
         package.package
     )
 }

@@ -16,13 +16,15 @@ TestPak is the repository proof battery and development command authority. It is
 
 ```text
 testpak/src/
-├── fixture/       deterministic worlds, inputs, corruption, and negative cases
+├── fixture.rs +   loaders/classifiers/generators over the fixture assets
+│   fixture/       (frozen bytes live in crates/testpak/fixtures/, not here)
 ├── model/         deliberately simple reference semantics
 ├── oracle/        independent expected-result computation
 ├── harness/       production implementation drivers
 ├── schedule/      deterministic, hostile, crash, and concurrency schedules
 ├── bench/         workload definitions and measurement contracts
-├── corpus/        persisted compatibility, fuzz, recovery, and mutation cases
+├── corpus.rs +    load/index/minimize the persisted corpus cases
+│   corpus/        (frozen bytes live in crates/testpak/corpus/, not here)
 ├── repo/          Repo IR and architecture inspection
 ├── forge/         deterministic generated artifacts
 ├── gauntlet/      trust-boundary and proof-of-proof orchestration
@@ -32,6 +34,29 @@ testpak/src/
 ```
 
 Proof classes such as property, state-machine, differential, equivalence, fault-injection, crash-recovery, structural, and complexity are metadata on harnesses. They are not architecture folders.
+
+## Canonical asset homes
+
+Frozen assets and Rust that operates on them are separate:
+
+```text
+crates/testpak/corpus/     frozen bytes: compatibility, fuzz, recovery, mutation
+crates/testpak/fixtures/   hostile/negative fixtures and deterministic inputs
+crates/testpak/src/        loaders, classifiers, generators, minimizers
+```
+
+These are the sole canonical homes (DEC-044). Root `corpus/` and root `fixtures/` are forbidden target paths. A package may keep a tiny local test fixture only when it is explicitly noncanonical and owned solely by that package's own test — never a canonical mirror.
+
+## Binary target
+
+TestPak ships its command door as a binary in the same package — no separate command crate (DEC-045):
+
+```text
+crates/testpak/src/lib.rs
+crates/testpak/src/bin/testpak.rs   (publish = false)
+```
+
+The root `justfile` is a discoverability projection over `cargo run -p testpak -- <command>`. TestPak launches and checks `batpak-examples` through workspace metadata / Cargo commands, never through a Cargo dependency edge to the examples package.
 
 ## Repo IR
 

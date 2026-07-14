@@ -53,13 +53,18 @@ BatPak/
 │   ├── batql/
 │   ├── netbat/
 │   └── testpak/
+│       ├── corpus/          frozen assets (sole canonical home)
+│       ├── fixtures/        hostile/negative fixtures (sole canonical home)
+│       └── src/
 ├── apps/
 │   └── batpak-cli/
-├── corpus/
-├── fixtures/
-├── examples/
+├── examples/                batpak-examples package (src/bin/)
 └── .github/
 ```
+
+Frozen corpora and fixtures live only under `crates/testpak/`. Root `corpus/`
+and `fixtures/` are forbidden target paths; there are no canonical package-local
+mirrors.
 
 ## Package roles
 
@@ -103,6 +108,10 @@ Dev-only top layer. It may inspect every package. Muterprater is one module insi
 
 Thin binary adapter named `batpak`. It composes commands from the production libraries and owns no semantic type, codec, runtime law, or proof rule.
 
+### `batpak-examples`
+
+Non-publishable public-surface witness at `examples/` (`src/bin/`). It depends only on the production libraries' public APIs (`batpak`, `syncbat`, `batql`), owns no semantic law, and has no dev-tooling dependency. Every example emits observable output and is executed through TestPak orchestration — never through a Cargo dependency edge from `testpak`. It is a compatibility witness, not another battery, so the production semantic package count does not change.
+
 ## Dependency graph
 
 ```text
@@ -129,11 +138,12 @@ L1  macbat
 L2  batpak
 L3  syncbat, batql
 L4  netbat
-L5  batpak-cli
+L5  batpak-cli, batpak-examples
 L6  testpak (dev-only)
 ```
 
-Every dependency points to a strictly lower layer. Same-layer packages are siblings and may communicate only through lower-owned types or top-level composition, never by adding a convenience edge.
+`batpak-examples` (L5) imports `batpak`, `syncbat`, and `batql`; nothing imports
+it, and it never imports dev tooling. Every dependency points to a strictly lower layer. Same-layer packages are siblings and may communicate only through lower-owned types or top-level composition, never by adding a convenience edge.
 
 ## Crate boundary test
 
@@ -161,6 +171,8 @@ syncbat browser    wasm32 host adapters
 
 The semantic profiles include contracts, typed values, canonical parsing/encoding over caller-provided buffers, image validation, PakVM reference interpretation, logical runtime transitions, Bvisor admission state, and port request/response protocols. They exclude native filesystem handles, threads, sockets, ambient clocks, entropy providers, and browser APIs.
 
+Semantic qualification is distinct from Cargo feature defaults. Per DEC-047, the `batpak` and `syncbat` default profiles are usable native `std` (a real `cargo add batpak` works); a consumer reaches the `no_std + alloc` semantic profile with `default-features = false`. Enabling `std` by default grants ordinary native usability only — it must never pull in the threaded, browser, encryption, mapping, or interop adapters, which stay behind their own explicit opt-in profiles added at their owning gate.
+
 The native and browser profiles may supply mechanisms but may not change semantic result, error, receipt, replay, or authority contracts. Exact profile facts live in `spec/architecture.rs`.
 
 ## Package-internal source grammar
@@ -181,3 +193,5 @@ Tables, systems, ports, and kernels live under the concept they serve. Generated
 ## Forbidden target topology
 
 The clean target contains no standalone runtime-machine, Bvisor, PakVM, Host composition, storage-format, legacy testkit, xtask, or integrity package. Their useful meanings have explicit successors in the current graph.
+
+It also contains no root `corpus/` or `fixtures/` directory: those assets live only under `crates/testpak/`. `spec/architecture.rs` lists both as forbidden target paths.

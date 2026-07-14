@@ -108,7 +108,7 @@ def check_architecture(root: Path, findings: list[str]) -> None:
     if len(paths) != len(set(paths)):
         findings.append("spec/architecture.rs: duplicate package path")
     for package, package_path, role, package_class, layer in package_rows:
-        if not package_path or not role or package_class not in {"Production", "BinaryAdapter", "DevOnly"} or not layer.isdigit():
+        if not package_path or not role or package_class not in {"Production", "BinaryAdapter", "DevOnly", "Example"} or not layer.isdigit():
             findings.append(f"spec/architecture.rs: incomplete package {package}")
 
     edge_rows = re.findall(
