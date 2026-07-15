@@ -1797,6 +1797,96 @@ def test_integrity_witnesses(audit) -> list[str]:
     return findings
 
 
+def test_derived_material_witnesses(audit) -> list[str]:
+    """LEG-019 duals plus the LEG-020/LEG-028 bounded-work rows (5.5D4b-2a).
+
+    Structural only. Bootstrap runs no SIDX recovery, detects no real loss,
+    performs no traversal, and measures no allocation.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            text = path.read_text(encoding="utf-8")
+            path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
+            expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
+
+    LEG = "spec/legacy_obligations.rs"
+    GA = "docs/24_GAUNTLET.md"
+    D21 = "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md"
+    dm = audit.derived_material_findings
+
+    if dm(root) or audit.witness_reference_findings(root):
+        fail("d4b2a_witness_contract_passes")
+
+    # every new proof-row identity survives, one probe each
+    for leg, ids in audit.D4B2A_ROWS.items():
+        for wid in ids:
+            probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
+                  f"{leg} witness {wid} is absent from docs/24", "", validator=dm)
+
+    # the law's load-bearing clauses -- both duals must stay
+    for clause, label in (
+        ("cannot prove safety and cannot prove loss", "sidx_proving_loss_or_safety_is_rejected"),
+        ("proves only that exact row-to-authoritative-frame relationship",
+         "corroborated_row_authenticating_siblings_count_order_or_tail_is_rejected"),
+        ("never an authoritative proven-loss or proven-safety conclusion",
+         "derived_table_reaching_an_authoritative_conclusion_is_rejected"),
+        ("no trusted-local SIDX authority", "trusted_local_sidx_authority_is_rejected"),
+        ("cannot authenticate themselves", "derived_material_self_authentication_is_rejected"),
+    ):
+        probe(label, LEG, clause, f"LEG-019 law no longer states: {clause}", "", validator=dm)
+
+    # bounded discovery and bounded allocation keep distinct owners
+    probe("bounded_output_accepted_as_bounded_discovery_work_is_rejected", GA,
+          "page_limit_bounds_discovery_work_not_only_output\n",
+          "LEG-028 witness page_limit_bounds_discovery_work_not_only_output is absent",
+          "", validator=dm)
+    probe("full_matched_set_allocation_accepted_is_rejected", GA,
+          "allocation_does_not_scale_with_full_matched_set\n",
+          "LEG-020 witness allocation_does_not_scale_with_full_matched_set is absent",
+          "", validator=dm)
+    probe("discovery_and_allocation_sharing_one_owner_is_rejected", GA,
+          "), also carried by `LEG-020`:", "share one qualification target",
+          "), also carried by `LEG-028`:", validator=dm)
+
+    # resolver coverage for the new rows
+    probe("d4b2a_row_bound_to_wrong_leg_is_rejected", GA,
+          "), also carried by `LEG-019`:", "which docs/24 binds to LEG-023",
+          "), also carried by `LEG-023`:")
+    probe("docs21_missing_a_d4b2a_row_is_rejected", D21,
+          "; derived_row_cannot_prove_absence_or_loss",
+          "omits owned proof row derived_row_cannot_prove_absence_or_loss")
+    probe("docs21_extra_d4b2a_row_is_rejected", D21,
+          "allocation_does_not_scale_with_full_matched_set",
+          "references derived_row_cannot_authenticate_order, which docs/24 binds to LEG-019",
+          "derived_row_cannot_authenticate_order")
+    probe("duplicate_row_across_d4b1_and_d4b2a_is_rejected", GA,
+          "forged_sibling_cannot_cause_false_loss\n",
+          "binds proof-row id middle_event_deletion_is_rejected more than once",
+          "middle_event_deletion_is_rejected\n")
+    probe("d4b2a_meaning_removed_is_rejected", GA,
+          "derived_row_cannot_authenticate_order\n    Corroborating row contents does not establish table ordering.",
+          "has no authoritative meaning", "")
+    probe("d4b2a_future_executable_posture_removed_is_rejected", GA,
+          "Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-019`:",
+          "states no future-executable proof owner or gate",
+          "Required witnesses (proof owner Nobody; gates ), also carried by `LEG-019`:")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -1824,6 +1914,7 @@ def main() -> int:
     findings += test_delivery_notes_d2(audit)
     findings += test_proof_policy(audit)
     findings += test_integrity_witnesses(audit)
+    findings += test_derived_material_witnesses(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -1832,7 +1923,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material hostile fixtures)")
     return 0
 
 

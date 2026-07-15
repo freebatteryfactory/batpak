@@ -169,6 +169,88 @@ forged_index_row_cannot_choose_and_authenticate_bytes
 
 These are future executable TestPak witnesses. Bootstrap proves their names, owner binding, documentary meaning, and cross-surface agreement only. It does not execute journal verification, read a real chain, or detect real event loss.
 
+## Derived-material false-loss and false-safety witnesses (LEG-019)
+
+Unauthenticated derived material may accelerate, locate, or describe suspicion. It cannot authenticate itself, and the two failure directions stay equally visible: it can neither prove safety nor prove loss. A corroborated row proves one row-to-frame relationship and nothing about its neighbours, the table, or what is missing.
+
+Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-019`:
+
+```text
+forged_sibling_cannot_cause_false_loss
+agreeing_truncated_table_cannot_cause_false_safety
+derived_row_cannot_authenticate_siblings
+derived_row_cannot_authenticate_table_count
+derived_row_cannot_authenticate_order
+derived_row_cannot_authenticate_tail_boundary
+derived_row_cannot_prove_absence_or_loss
+```
+
+Authoritative meanings:
+
+```text
+forged_sibling_cannot_cause_false_loss
+    One forged or contradictory derived sibling cannot make the system declare an
+    authoritative event lost without checking authoritative storage.
+
+agreeing_truncated_table_cannot_cause_false_safety
+    A derived table whose present rows agree with authority cannot prove that
+    omitted middle or trailing authoritative events do not exist.
+
+derived_row_cannot_authenticate_siblings
+    Corroborating one row does not authenticate another row.
+
+derived_row_cannot_authenticate_table_count
+    Corroborating present rows does not establish the authoritative number of rows.
+
+derived_row_cannot_authenticate_order
+    Corroborating row contents does not establish table ordering.
+
+derived_row_cannot_authenticate_tail_boundary
+    A derived claimed tail is not authoritative merely because its final present
+    row verifies.
+
+derived_row_cannot_prove_absence_or_loss
+    An unauthenticated omission is not authoritative evidence of absence or loss.
+```
+
+## Bounded-discovery witness (LEG-028)
+
+Bounded traversal is a claim about discovery work, not about the size of the returned vector.
+
+Required witnesses (proof owner TestPak; gates G2/G7), also carried by `LEG-028`:
+
+```text
+page_limit_bounds_discovery_work_not_only_output
+```
+
+Authoritative meanings:
+
+```text
+page_limit_bounds_discovery_work_not_only_output
+    The page limit and work budget constrain discovery before unbounded decode,
+    allocation, or materialization. Scanning or decoding the complete matched set
+    and truncating only the returned output does not satisfy bounded traversal.
+```
+
+## Bounded-allocation witness (LEG-020)
+
+Complexity evidence is a claim about retained work. A small answer computed by materializing everything is not bounded. Cross-references `page_limit_bounds_discovery_work_not_only_output` (LEG-028), which owns the discovery-side claim.
+
+Required witnesses (proof owner TestPak; gates G3/G8), also carried by `LEG-020`:
+
+```text
+allocation_does_not_scale_with_full_matched_set
+```
+
+Authoritative meanings:
+
+```text
+allocation_does_not_scale_with_full_matched_set
+    Memory allocation and retained materialization do not scale with the complete
+    matched set when the contract promises bounded paging or streaming. Small
+    returned output is not proof of bounded discovery, allocation, or retained work.
+```
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.

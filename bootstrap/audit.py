@@ -1719,6 +1719,57 @@ def integrity_witness_findings(root: Path) -> list[str]:
     return out
 
 
+# --- 5.5D4b-2a derived-material duals (LEG-019) ------------------------------
+# The two directions stay equally visible. A table that agrees cannot prove
+# safety, and a table that disagrees cannot prove loss.
+D4B2A_LEG019_CLAUSES = [
+    "cannot authenticate themselves",
+    "proves only that exact row-to-authoritative-frame relationship",
+    "cannot prove safety and cannot prove loss",
+    "never an authoritative proven-loss or proven-safety conclusion",
+    "no trusted-local SIDX authority",
+]
+D4B2A_ROWS = {
+    "LEG-019": [
+        "forged_sibling_cannot_cause_false_loss",
+        "agreeing_truncated_table_cannot_cause_false_safety",
+        "derived_row_cannot_authenticate_siblings",
+        "derived_row_cannot_authenticate_table_count",
+        "derived_row_cannot_authenticate_order",
+        "derived_row_cannot_authenticate_tail_boundary",
+        "derived_row_cannot_prove_absence_or_loss",
+    ],
+    "LEG-028": ["page_limit_bounds_discovery_work_not_only_output"],
+    "LEG-020": ["allocation_does_not_scale_with_full_matched_set"],
+}
+
+
+def derived_material_findings(root: Path) -> list[str]:
+    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    m = re.search(r'id: "LEG-019", law: "([^"]+)"', src)
+    out: list[str] = []
+    if not m:
+        return ["LEG-019 is absent from spec/legacy_obligations.rs"]
+    law = m.group(1)
+    for clause in D4B2A_LEG019_CLAUSES:
+        if clause not in law:
+            out.append(f"LEG-019 law no longer states: {clause}")
+    rows = witness_rows(root)
+    for leg, ids in D4B2A_ROWS.items():
+        for wid in ids:
+            row = rows.get(wid)
+            if row is None:
+                out.append(f"{leg} witness {wid} is absent from docs/24")
+            elif row["leg"] != leg:
+                out.append(f"{leg} witness {wid} is bound to {row['leg']}")
+    # The discovery-side and allocation-side claims keep one primary owner each.
+    disc = rows.get("page_limit_bounds_discovery_work_not_only_output", {}).get("leg")
+    alloc = rows.get("allocation_does_not_scale_with_full_matched_set", {}).get("leg")
+    if disc == alloc:
+        out.append("bounded discovery and bounded allocation share one qualification target")
+    return out
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -2186,6 +2237,7 @@ def main() -> int:
     findings.extend(proof_policy_findings(root))
     findings.extend(witness_reference_findings(root))
     findings.extend(integrity_witness_findings(root))
+    findings.extend(derived_material_findings(root))
     findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"
