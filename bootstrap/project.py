@@ -121,6 +121,170 @@ def render_numeric(ops: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+# --- Guarantee graph (DEC-070) -----------------------------------------------
+GUARANTEE_DOC = "docs/GUARANTEE_GRAPH.generated.md"
+SEED_DOC = "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"
+FAMILY_RANK = {"SEED": 0, "LEG": 1, "DEC": 2, "ARCH": 3, "QUAL": 4}
+GUARANTEE_FRONT = (
+    "---\n"
+    "status: GENERATED\n"
+    "authority_scope: derived structural index only\n"
+    "generated_by: bootstrap/project.py\n"
+    "generated_from: typed SEED, LEG, DEC, architecture, and qualification fact families\n"
+    "do_not_edit: true\n"
+    "---\n"
+)
+_SEED_ROW = re.compile(
+    r'InvariantSpec \{ id: "([^"]+)", statement: "((?:[^"\\]|\\.)*)", '
+    r'kind: GuaranteeKind::(\w+), lifetime: GuaranteeLifetime::(\w+), '
+    r'owner: "([^"]*)", gates: "([^"]*)", witness: "([^"]*)", '
+    r'failure_disposition: "([^"]*)", derives_from: &\[([^\]]*)\], '
+    r'refines: &\[([^\]]*)\], discharges: &\[([^\]]*)\], supersedes: &\[([^\]]*)\] \}'
+)
+_LEG_ROW = re.compile(
+    r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
+    r'gate: "([^"]+)", compatibility_disposition: CompatibilityDisposition::\w+, '
+    r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
+)
+_DEC_ROW = re.compile(r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+), subject: "[^"]+"')
+_PKG_ROW = re.compile(
+    r'PackageSpec \{\s*package: "([^"]+)",\s*path: "[^"]+",\s*role: "[^"]+",\s*'
+    r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
+_QUAL_ROW = re.compile(
+    r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
+    r'target: "([^"]+)",\s*requirement: "[^"]+",\s*\}', re.S)
+
+
+def _ids(raw):
+    return re.findall(r'"([^"]+)"', raw)
+
+
+def guarantee_seed(root):
+    src = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    out = []
+    for m in _SEED_ROW.findall(src):
+        out.append({
+            "id": m[0], "statement": m[1], "kind": m[2], "lifetime": m[3],
+            "owner": m[4], "gates": m[5], "witness": m[6], "failure": m[7],
+            "DerivesFrom": _ids(m[8]), "Refines": _ids(m[9]),
+            "Discharges": _ids(m[10]), "Supersedes": _ids(m[11]),
+        })
+    return out
+
+
+def guarantee_nodes(root):
+    nodes = []
+    for s in guarantee_seed(root):
+        nodes.append({"id": s["id"], "family": "SEED", "kind": s["kind"], "lifetime": s["lifetime"],
+                      "owner": s["owner"], "gates": s["gates"], "witness": s["witness"],
+                      "failure": f"Seed({s['failure']})"})
+    leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    for lid, owner, gate, deletion, status in _LEG_ROW.findall(leg):
+        if status == "Closed":
+            life = "ClosedEvidence"
+        elif deletion == "OnCompatibilityWindowExpiry":
+            life = "UntilCompatibilityExpiry"
+        else:
+            life = "UntilSuccessor"
+        nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": life,
+                      "owner": owner, "gates": gate, "witness": "", "failure": f"Legacy({gate})"})
+    dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    for did, disp in _DEC_ROW.findall(dec):
+        nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
+                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md", "gates": "", "witness": "",
+                      "failure": f"Decision({disp})"})
+    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    for pkg, cls, layer in _PKG_ROW.findall(arch):
+        nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
+                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "",
+                      "witness": "", "failure": f"Architecture(L{layer} {cls})"})
+    for pkg, profile, target in _QUAL_ROW.findall(arch):
+        nodes.append({"id": f"QUAL-{pkg}-{profile}", "family": "QUAL", "kind": "QualificationRequirement",
+                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": target,
+                      "witness": "", "failure": f"Qualification({target})"})
+    nodes.sort(key=lambda n: (FAMILY_RANK[n["family"]], n["id"]))
+    return nodes
+
+
+def guarantee_edges(root):
+    edges = []
+    for s in guarantee_seed(root):
+        for kind in ("DerivesFrom", "Refines", "Discharges", "Supersedes"):
+            for target in s[kind]:
+                edges.append((s["id"], kind, target))
+    edges.sort(key=lambda e: (e[0], e[1], e[2]))
+    return edges
+
+
+def _relations(s):
+    parts = []
+    for kind in ("DerivesFrom", "Refines", "Discharges", "Supersedes"):
+        for target in s[kind]:
+            parts.append(f"{kind} {target}")
+    return "; ".join(parts) if parts else "-"
+
+
+def render_seed_classification(root):
+    seed = guarantee_seed(root)
+    out = [
+        "| GuaranteeId | Kind | Lifetime | Owner | Gates | Witness | Relations |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for s in seed:
+        out.append(f"| {s['id']} | {s['kind']} | {s['lifetime']} | {s['owner']} | {s['gates']} | {s['witness']} | {_relations(s)} |")
+    return "\n".join(out)
+
+
+def _count(items):
+    counts = {}
+    for x in items:
+        counts[x] = counts.get(x, 0) + 1
+    return counts
+
+
+def render_guarantee_graph(root):
+    nodes = guarantee_nodes(root)
+    edges = guarantee_edges(root)
+    node_ids = {n["id"] for n in nodes}
+    unresolved = sum(1 for _s, _k, t in edges if t not in node_ids)
+    by_family = _count(n["family"] for n in nodes)
+    by_kind = _count(n["kind"] for n in nodes)
+    by_life = _count(n["lifetime"] for n in nodes)
+    closed = by_life.get("ClosedEvidence", 0)
+    historical = by_life.get("HistoricalCoverageOnly", 0)
+    active = len(nodes) - closed - historical
+    lines = [GUARANTEE_FRONT.rstrip("\n"), "",
+             "# Guarantee Graph (generated)", "",
+             "Derived structural index across the authored fact families (DEC-070). It is not",
+             "normative: every law resolves to its owning fact. Displayed law text is copied for",
+             "navigation only; the owning fact is authoritative. Do not edit.", "",
+             "## Source-family inventory", "",
+             "| Family | Nodes |", "| --- | --- |"]
+    for fam in ("SEED", "LEG", "DEC", "ARCH", "QUAL"):
+        lines.append(f"| {fam} | {by_family.get(fam, 0)} |")
+    lines += ["", "## Totals", "", "```text",
+              f"nodes: {len(nodes)}", f"edges: {len(edges)}", f"unresolved references: {unresolved}",
+              "```", "", "## Counts by kind", "", "| GuaranteeKind | Nodes |", "| --- | --- |"]
+    for kind in sorted(by_kind):
+        lines.append(f"| {kind} | {by_kind[kind]} |")
+    lines += ["", "## Counts by lifetime", "", "| GuaranteeLifetime | Nodes |", "| --- | --- |"]
+    for life in sorted(by_life):
+        lines.append(f"| {life} | {by_life[life]} |")
+    lines += ["", "## Active versus closed", "", "```text",
+              f"active (gating): {active}", f"closed evidence: {closed}",
+              f"historical coverage only: {historical}", "```", "",
+              "## Classified SEED", "", render_seed_classification(root), "",
+              "## Nodes", "", "| GuaranteeId | Family | Kind | Lifetime | Owner | Gates |",
+              "| --- | --- | --- | --- | --- | --- |"]
+    for n in nodes:
+        lines.append(f"| {n['id']} | {n['family']} | {n['kind']} | {n['lifetime']} | {n['owner']} | {n['gates']} |")
+    lines += ["", "## Edges", "", "| Source | Relation | Target |", "| --- | --- | --- |"]
+    for s, k, t in edges:
+        lines.append(f"| {s} | {k} | {t} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 BLOCK_RENDER = {
     "OPERATORS-CATALOG": render_catalog,
@@ -177,6 +341,20 @@ def main() -> int:
         for name in missing:
             findings.append(f"{rel}: missing generated block markers for {name}")
         plans.append((path, original, rewritten))
+    # Guarantee classification: SEED marker block in docs/23 + the whole graph file
+    seed_path = root / SEED_DOC
+    seed_original = seed_path.read_text(encoding="utf-8")
+    seed_pattern = block_pattern("SEED-CLASSIFICATION")
+    if not seed_pattern.search(seed_original):
+        findings.append(f"{SEED_DOC}: missing generated block markers for SEED-CLASSIFICATION")
+        seed_rewritten = seed_original
+    else:
+        body = render_seed_classification(root)
+        seed_rewritten = seed_pattern.sub(lambda m: m.group(1) + body + m.group(3), seed_original)
+    plans.append((seed_path, seed_original, seed_rewritten))
+    graph_path = root / GUARANTEE_DOC
+    graph_original = graph_path.read_text(encoding="utf-8") if graph_path.is_file() else ""
+    plans.append((graph_path, graph_original, render_guarantee_graph(root)))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
@@ -188,7 +366,7 @@ def main() -> int:
             if rewritten != original:
                 path.write_bytes(rewritten.encode("utf-8"))
         verb = "WROTE" if changed else "OK"
-        print(f"project: {verb} {len(BLOCK_RENDER)} operator blocks across {len(by_file)} files ({len(ops)} operators)")
+        print(f"project: {verb} operator blocks, SEED classification, and the Guarantee Graph ({len(ops)} operators)")
         return 0
     # --check
     stale = [path.name for path, original, rewritten in plans if rewritten != original]

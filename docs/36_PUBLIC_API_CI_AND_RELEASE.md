@@ -151,6 +151,10 @@ MSRV is a qualified, tested floor, not a comment. The target/profile matrix
 profiles) is qualified per target; one platform's proof never blesses another.
 Exact MSRV and target constants are selected at their owning gate with evidence.
 
+## Generated-proof compatibility (DEC-070)
+
+The Guarantee Graph (`docs/GUARANTEE_GRAPH.generated.md`) and the generated SEED classification and operator blocks are frozen, audited, derived artifacts, not public API surface. They carry no compatibility promise of their own; every guarantee resolves to its owning fact. Release qualification regenerates and re-audits them; a hand-edited generated artifact fails the gate.
+
 ## Numeric compatibility (DEC-069 / docs/37)
 
 The additive BatQL V1 numeric type-vocabulary (`FixedDecimal`, `ExactRatio`, `ApproximateBinary`, `Interval`, and the `Binary32`/`Binary64` format identities) and the `FLOOR`/`CEILING` rounding spellings are recorded language changes with additive-only compatibility: no existing valid expression changes meaning. Public numeric surfaces preserve exact format tags and raw bits, approximate values never gain silent authority, and release qualification covers the numeric profile identities and the exact-versus-approximate crossing contracts.

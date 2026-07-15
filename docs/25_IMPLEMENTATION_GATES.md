@@ -76,6 +76,10 @@ Dependencies leave only after proof, never because the gate name says “cleanup
 
 Deliver repository command WorldImages where useful, independent seedcheck parity, context packets, release seal, issue/legacy closure receipts, and exact published artifacts.
 
+## Guarantee classification (DEC-070)
+
+Each guarantee's gates are owned by its native fact family (SEED in `spec/invariants.rs`, LEG, DEC, architecture, qualification). The [Guarantee Graph](GUARANTEE_GRAPH.generated.md) is a derived structural index that shows kind, lifetime, owner, gates, and relations; it is non-normative and cannot gate on its own. Lifetime (`UntilGate`, `UntilSuccessor`, `UntilCompatibilityExpiry`, `Permanent`, `HistoricalCoverageOnly`, `ClosedEvidence`) is orthogonal to active/closed status and deletion condition.
+
 ## Numeric gate ownership (DEC-069 / docs/37)
 
 The numeric contract in `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md` is owned across gates: G2 fixes the durable Fixed128 format constants and wire encoding (exact format tags and raw bits preserved, no normalization), G5 admits qualified numeric kernels and profiles, and TestPak realizes the numeric proof families (`24_GAUNTLET.md`). Bootstrap enforces only the numeric contract, never executed arithmetic.

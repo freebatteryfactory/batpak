@@ -81,6 +81,9 @@ no proof disposition collapsed on projection (the five states VERIFIED, LEGACY_W
 no approximate value granted silent numeric authority (crossings require a receipted Quantize or IntervalDecision; DEC-069, docs/37)
 no numeric classification collapsed into availability (a known NaN is not Missing or Pending; the axes stay orthogonal)
 no exact/approximate authority boundary flattened into one universal numeric type
+no universal hand-authored guarantee ledger (SEED/LEG/DEC/architecture/qualification keep native authority; the Guarantee Graph is derived, DEC-070)
+no guarantee lifetime conflated with deletion condition or active/closed status (DeletionCondition::Never never forces Permanent or Active)
+no guarantee relation inferred from prose similarity, shared owner, or document section
 ```
 
 ## Remaining implementation work is not architecture ambiguity

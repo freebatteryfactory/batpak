@@ -2,6 +2,8 @@
 
 #[path = "../spec/architecture.rs"]
 mod architecture;
+#[path = "../spec/guarantees.rs"]
+mod guarantees;
 #[path = "../spec/invariants.rs"]
 mod invariants;
 #[path = "../spec/dispositions.rs"]
@@ -161,6 +163,25 @@ fn check_unique_ids(findings: &mut Vec<String>) {
     if invariant_ids.len() != invariants::INVARIANTS.len() { findings.push("duplicate invariant ID".into()); }
     for value in invariants::INVARIANTS {
         if value.statement.trim().is_empty() { findings.push(format!("empty invariant statement {}", value.id)); }
+        if value.owner.trim().is_empty() || value.witness.trim().is_empty() {
+            findings.push(format!("unclassified invariant {} (missing owner or witness)", value.id));
+        }
+        match value.kind {
+            guarantees::GuaranteeKind::SemanticLaw
+            | guarantees::GuaranteeKind::ArchitectureConstraint
+            | guarantees::GuaranteeKind::BootstrapAssertion
+            | guarantees::GuaranteeKind::LegacyObligation
+            | guarantees::GuaranteeKind::QualificationRequirement
+            | guarantees::GuaranteeKind::Decision => {}
+        }
+        match value.lifetime {
+            guarantees::GuaranteeLifetime::Permanent
+            | guarantees::GuaranteeLifetime::UntilGate
+            | guarantees::GuaranteeLifetime::UntilCompatibilityExpiry
+            | guarantees::GuaranteeLifetime::UntilSuccessor
+            | guarantees::GuaranteeLifetime::HistoricalCoverageOnly
+            | guarantees::GuaranteeLifetime::ClosedEvidence => {}
+        }
     }
     let decision_ids: BTreeSet<&str> = dispositions::DECISIONS.iter().map(|v| v.id).collect();
     if decision_ids.len() != dispositions::DECISIONS.len() { findings.push("duplicate decision ID".into()); }

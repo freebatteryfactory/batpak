@@ -14,17 +14,18 @@ This bundle is the implementation handoff for the final clean-room BatPak v1 arc
 
 ```text
 38 numbered architecture documents (00 through 37)
-46 Markdown documents
+47 Markdown documents
 31,000+ words of architecture and language specification
 9 declared Cargo packages (8 + the non-publishable batpak-examples witness)
 19 declared package edges
 5 target/feature qualification profiles
 25 bootstrap invariants
-69 architectural decision/disposition rows
+70 architectural decision/disposition rows
 84 retained legacy semantic obligations
 115 one-for-one legacy invariant dispositions
 13 concrete BatQL operator facts (OperatorSpec)
 canonical numeric semantics and authority contract (docs/37, DEC-069)
+25 classified SEED guarantees plus one derived Guarantee Graph (DEC-070)
 full BatQL frontend language companion
 independent Python audit and freeze tools
 deterministic Python operator-projection generator

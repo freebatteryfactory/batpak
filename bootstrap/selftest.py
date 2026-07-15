@@ -250,6 +250,87 @@ def test_numeric(audit) -> list[str]:
     return findings
 
 
+def test_guarantees(audit, project) -> list[str]:
+    """Named hostile fixtures for the Guarantee Graph (DEC-070)."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def seed(sid, kind="SemanticLaw", life="Permanent", owner="o", witness="w"):
+        return {"id": sid, "kind": kind, "lifetime": life, "owner": owner, "gates": "",
+                "witness": witness, "failure": "f",
+                "rel": {"DerivesFrom": [], "Refines": [], "Discharges": [], "Supersedes": []}}
+
+    def node(nid, family="SEED", kind="SemanticLaw", life="Permanent", owner="o", gates="", witness="w"):
+        return {"id": nid, "family": family, "kind": kind, "lifetime": life,
+                "owner": owner, "gates": gates, "witness": witness}
+
+    good = [seed(f"SEED-{i}") for i in range(25)]
+    if audit.guarantee_classification_findings(good):
+        fail("valid_classification_passes")
+    if not audit.guarantee_classification_findings(good[:24]):
+        fail("missing_seed_row_is_rejected")
+    if not audit.guarantee_classification_findings(good + [seed("SEED-25")]):
+        fail("extra_seed_row_is_rejected")
+    if not audit.guarantee_classification_findings([{**good[0], "kind": "Bogus"}] + good[1:]):
+        fail("wrong_guarantee_kind_is_rejected")
+    if not audit.guarantee_classification_findings([{**good[0], "lifetime": "Bogus"}] + good[1:]):
+        fail("wrong_guarantee_lifetime_is_rejected")
+    if not audit.guarantee_classification_findings([{**good[0], "owner": ""}] + good[1:]):
+        fail("unclassified_seed_row_is_rejected")
+
+    ids = {"A", "B", "C"}
+    if not audit.guarantee_relation_findings(ids, [("A", "DerivesFrom", "Z")]):
+        fail("dangling_relation_target_is_rejected")
+    if not audit.guarantee_relation_findings(ids, [("A", "DerivesFrom", "A")]):
+        fail("self_edge_is_rejected")
+    if not audit.guarantee_relation_findings(ids, [("A", "DerivesFrom", "B"), ("A", "DerivesFrom", "B")]):
+        fail("duplicate_edge_is_rejected")
+    for fam in ("DerivesFrom", "Refines", "Supersedes", "Discharges"):
+        if not any("cycle" in x for x in audit.guarantee_relation_findings(ids, [("A", fam, "B"), ("B", fam, "A")])):
+            fail(f"{fam.lower()}_cycle_is_rejected")
+
+    if not any("Permanent SemanticLaw names no witness" in x
+               for x in audit.guarantee_lifetime_findings([node("SEED-X", witness="")], {})):
+        fail("permanent_law_without_witness_is_rejected")
+    if not any("UntilGate names no gate" in x
+               for x in audit.guarantee_lifetime_findings([node("X", life="UntilGate", gates="")], {})):
+        fail("untilgate_without_gate_is_rejected")
+    if not any("HistoricalCoverageOnly cannot gate" in x
+               for x in audit.guarantee_lifetime_findings([node("X", life="HistoricalCoverageOnly", gates="G2")], {})):
+        fail("historicalcoverageonly_carrying_active_gate_is_rejected")
+
+    def legnode(life, gates="G2"):
+        return node("LEG-1", family="LEG", kind="LegacyObligation", life=life, gates=gates, witness="")
+
+    active_never = {"LEG-1": {"owner": "o", "gate": "G2", "compat": "None", "deletion": "Never", "status": "Active"}}
+    if not any("must not force Permanent" in x for x in audit.guarantee_lifetime_findings([legnode("Permanent")], active_never)):
+        fail("deletion_never_forcing_permanent_is_rejected")
+    if not any("Active LEG projects as ClosedEvidence" in x
+               for x in audit.guarantee_lifetime_findings([legnode("ClosedEvidence")], active_never)):
+        fail("closedevidence_marked_active_is_rejected")
+    closed = {"LEG-1": {"owner": "o", "gate": "G2", "compat": "None", "deletion": "OnSuccessorGateClosure", "status": "Closed"}}
+    if not any("still names an implementation gate" in x
+               for x in audit.guarantee_lifetime_findings([legnode("ClosedEvidence")], closed)):
+        fail("closed_leg_still_gating_is_rejected")
+    no_succ = {"LEG-1": {"owner": "", "gate": "G2", "compat": "None", "deletion": "OnSuccessorGateClosure", "status": "Active"}}
+    if not any("UntilSuccessor names no successor" in x
+               for x in audit.guarantee_lifetime_findings([legnode("UntilSuccessor")], no_succ)):
+        fail("untilsuccessor_without_successor_is_rejected")
+
+    root = HERE.parent
+    proj_nodes = [(n["id"], n["family"], n["kind"], n["lifetime"], n["owner"], n["gates"]) for n in project.guarantee_nodes(root)]
+    audit_nodes = [(n["id"], n["family"], n["kind"], n["lifetime"], n["owner"], n["gates"]) for n in audit.guarantee_derive(root)[0]]
+    if proj_nodes != audit_nodes:
+        fail("generator_auditor_guarantee_disagreement")
+    nodes, _edges = audit.guarantee_derive(root)
+    if nodes != sorted(nodes, key=lambda n: (audit.G_FAMILY_RANK[n["family"]], n["id"])):
+        fail("source_reorder_changes_guarantee_order")
+
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -262,12 +343,13 @@ def main() -> int:
     findings += test_legacy_manifest_parity(audit)
     findings += test_batql(audit, project)
     findings += test_numeric(audit)
+    findings += test_guarantees(audit, project)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee hostile fixtures)")
     return 0
 
 

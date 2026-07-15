@@ -9,6 +9,7 @@ from pathlib import Path
 
 STATUSES = {"AUTHORITATIVE", "GENERATED", "EVIDENCE-ONLY", "SUPERSEDED", "REJECTED"}
 REQUIRED_FRONT = {"status", "contract_id", "authority_scope", "supersedes", "last_reconciled"}
+GENERATED_FRONT = {"status", "authority_scope", "generated_by", "generated_from", "do_not_edit"}
 PLACEHOLDERS = ("TBD", "TO BE DECIDED", "IMPLEMENTATION DECIDES", "FIXME")
 # Stale vocabulary is DERIVED from spec/dispositions.rs (never a hand-kept list).
 # Each retiring decision names its stale aliases and the contexts in which they
@@ -434,6 +435,253 @@ def check_numeric(root: Path, findings: list[str]) -> None:
             findings.append("companion/BATQL_LANGUAGE.md: numeric Type-vocabulary record (BatQL V1) missing")
 
 
+# --- Guarantee graph (DEC-070): INDEPENDENT derivation, comparison, rules -----
+# This is the AUDITOR half. It derives guarantee nodes/edges from the source
+# facts with its own parsers and rules, then compares against the generated
+# artifacts. It shares no parsing, normalization, lifetime derivation, edge
+# construction, cycle detection, serialization, or comparison logic with
+# bootstrap/project.py.
+G_FAMILY_RANK = {"SEED": 0, "LEG": 1, "DEC": 2, "ARCH": 3, "QUAL": 4}
+G_SEED_ROW = re.compile(
+    r'InvariantSpec \{ id: "([^"]+)", statement: "(?:[^"\\]|\\.)*", '
+    r'kind: GuaranteeKind::(\w+), lifetime: GuaranteeLifetime::(\w+), '
+    r'owner: "([^"]*)", gates: "([^"]*)", witness: "([^"]*)", '
+    r'failure_disposition: "([^"]*)", derives_from: &\[([^\]]*)\], '
+    r'refines: &\[([^\]]*)\], discharges: &\[([^\]]*)\], supersedes: &\[([^\]]*)\] \}'
+)
+G_LEG_ROW = re.compile(
+    r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
+    r'gate: "([^"]+)", compatibility_disposition: CompatibilityDisposition::(\w+), '
+    r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
+)
+G_DEC_ROW = re.compile(r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+),')
+G_PKG_ROW = re.compile(
+    r'PackageSpec \{\s*package: "([^"]+)",\s*path: "[^"]+",\s*role: "[^"]+",\s*'
+    r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
+G_QUAL_ROW = re.compile(
+    r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
+    r'target: "([^"]+)",\s*requirement: "[^"]+",\s*\}', re.S)
+GUARANTEE_KINDS = {"SemanticLaw", "ArchitectureConstraint", "BootstrapAssertion",
+                   "LegacyObligation", "QualificationRequirement", "Decision"}
+GUARANTEE_LIFETIMES = {"Permanent", "UntilGate", "UntilCompatibilityExpiry",
+                       "UntilSuccessor", "HistoricalCoverageOnly", "ClosedEvidence"}
+
+
+def _g_ids(raw: str) -> list[str]:
+    return re.findall(r'"([^"]+)"', raw)
+
+
+def guarantee_seed_rows(root: Path) -> list[dict]:
+    src = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    rows = []
+    for m in G_SEED_ROW.findall(src):
+        rows.append({
+            "id": m[0], "kind": m[1], "lifetime": m[2], "owner": m[3], "gates": m[4],
+            "witness": m[5], "failure": m[6],
+            "rel": {"DerivesFrom": _g_ids(m[7]), "Refines": _g_ids(m[8]),
+                    "Discharges": _g_ids(m[9]), "Supersedes": _g_ids(m[10])},
+        })
+    return rows
+
+
+def guarantee_leg_meta(root: Path) -> dict[str, dict]:
+    leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    out = {}
+    for lid, owner, gate, compat, deletion, status in G_LEG_ROW.findall(leg):
+        out[lid] = {"owner": owner, "gate": gate, "compat": compat, "deletion": deletion, "status": status}
+    return out
+
+
+def _leg_lifetime(meta: dict) -> str:
+    if meta["status"] == "Closed":
+        return "ClosedEvidence"
+    if meta["deletion"] == "OnCompatibilityWindowExpiry":
+        return "UntilCompatibilityExpiry"
+    return "UntilSuccessor"
+
+
+def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple]]:
+    nodes = []
+    seed = guarantee_seed_rows(root)
+    for s in seed:
+        nodes.append({"id": s["id"], "family": "SEED", "kind": s["kind"], "lifetime": s["lifetime"],
+                      "owner": s["owner"], "gates": s["gates"], "witness": s["witness"]})
+    leg_meta = guarantee_leg_meta(root)
+    for lid, meta in leg_meta.items():
+        nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": _leg_lifetime(meta),
+                      "owner": meta["owner"], "gates": meta["gate"], "witness": ""})
+    dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    for did, _disp in G_DEC_ROW.findall(dec):
+        nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
+                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md", "gates": "", "witness": ""})
+    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
+        nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
+                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "", "witness": ""})
+    for pkg, profile, target in G_QUAL_ROW.findall(arch):
+        nodes.append({"id": f"QUAL-{pkg}-{profile}", "family": "QUAL", "kind": "QualificationRequirement",
+                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": target, "witness": ""})
+    nodes.sort(key=lambda n: (G_FAMILY_RANK[n["family"]], n["id"]))
+    edges = []
+    for s in seed:
+        for kind in ("DerivesFrom", "Refines", "Discharges", "Supersedes"):
+            for target in s["rel"][kind]:
+                edges.append((s["id"], kind, target))
+    edges.sort(key=lambda e: (e[0], e[1], e[2]))
+    return nodes, edges
+
+
+def _g_has_cycle(adj: dict[str, list[str]]) -> bool:
+    color = {}
+
+    def visit(u):
+        color[u] = 1
+        for v in adj.get(u, []):
+            c = color.get(v, 0)
+            if c == 1 or (c == 0 and visit(v)):
+                return True
+        color[u] = 2
+        return False
+
+    return any(color.get(n, 0) == 0 and visit(n) for n in list(adj))
+
+
+def guarantee_relation_findings(node_ids: set[str], edges: list[tuple]) -> list[str]:
+    out = []
+    seen = set()
+    for s, k, t in edges:
+        if s == t:
+            out.append(f"guarantee self-edge {s} {k}")
+        if (s, k, t) in seen:
+            out.append(f"duplicate guarantee edge {s} {k} {t}")
+        seen.add((s, k, t))
+        if t not in node_ids:
+            out.append(f"guarantee relation target {t} does not resolve ({s} {k})")
+    for fam in ("DerivesFrom", "Refines", "Supersedes", "Discharges"):
+        adj: dict[str, list[str]] = {}
+        for s, k, t in edges:
+            if k == fam:
+                adj.setdefault(s, []).append(t)
+        if _g_has_cycle(adj):
+            out.append(f"guarantee {fam} relation has a cycle")
+    return out
+
+
+def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict]) -> list[str]:
+    out = []
+    for n in nodes:
+        life, kind = n["lifetime"], n["kind"]
+        if life == "HistoricalCoverageOnly" and n["gates"].strip():
+            out.append(f"{n['id']} HistoricalCoverageOnly cannot gate")
+        if life == "UntilGate" and not n["gates"].strip():
+            out.append(f"{n['id']} UntilGate names no gate")
+        if life == "Permanent" and kind == "SemanticLaw" and not n["witness"].strip():
+            out.append(f"{n['id']} Permanent SemanticLaw names no witness")
+        if n["family"] == "LEG":
+            meta = leg_meta.get(n["id"], {})
+            if meta.get("status") == "Active" and life == "ClosedEvidence":
+                out.append(f"{n['id']} Active LEG projects as ClosedEvidence")
+            if meta.get("status") == "Closed" and life != "ClosedEvidence":
+                out.append(f"{n['id']} Closed LEG does not project as ClosedEvidence")
+            if meta.get("status") == "Closed" and n["gates"].strip():
+                out.append(f"{n['id']} Closed LEG still names an implementation gate")
+            if life == "Permanent":
+                out.append(f"{n['id']} LEG projects as Permanent; DeletionCondition::Never must not force Permanent")
+            if life == "UntilCompatibilityExpiry" and meta.get("compat") == "None":
+                out.append(f"{n['id']} UntilCompatibilityExpiry names no compatibility condition")
+            if life == "UntilSuccessor" and not meta.get("owner", "").strip():
+                out.append(f"{n['id']} UntilSuccessor names no successor owner")
+    return out
+
+
+def guarantee_classification_findings(seed_rows: list[dict]) -> list[str]:
+    out = []
+    if len(seed_rows) != 25:
+        out.append(f"SEED classification has {len(seed_rows)} rows, expected 25")
+    ids = [r["id"] for r in seed_rows]
+    if len(ids) != len(set(ids)):
+        out.append("duplicate SEED guarantee id")
+    for r in seed_rows:
+        if r["kind"] not in GUARANTEE_KINDS:
+            out.append(f"{r['id']} unknown guarantee kind {r['kind']}")
+        if r["lifetime"] not in GUARANTEE_LIFETIMES:
+            out.append(f"{r['id']} unknown guarantee lifetime {r['lifetime']}")
+        if not r["owner"].strip():
+            out.append(f"{r['id']} classified without an owner")
+        if not r["witness"].strip():
+            out.append(f"{r['id']} classified without a witness")
+    return out
+
+
+def _md_section_rows(text: str, title: str) -> list[list[str]]:
+    start = text.find(f"\n## {title}\n")
+    if start < 0:
+        return []
+    region = text[start + 1:]
+    nxt = region.find("\n## ")
+    region = region[:nxt] if nxt >= 0 else region
+    rows = []
+    for line in region.splitlines():
+        line = line.strip()
+        if line.startswith("| ") and not line.startswith("| ---") and "GuaranteeId" not in line and "Source |" not in line:
+            rows.append([c.strip() for c in line.split("|")[1:-1]])
+    return rows
+
+
+def check_guarantees(root: Path, findings: list[str]) -> None:
+    if not (root / "spec/guarantees.rs").is_file():
+        findings.append("missing spec/guarantees.rs")
+        return
+    seed_rows = guarantee_seed_rows(root)
+    nodes, edges = guarantee_derive(root)
+    leg_meta = guarantee_leg_meta(root)
+    node_ids = {n["id"] for n in nodes}
+    findings.extend(guarantee_classification_findings(seed_rows))
+    findings.extend(guarantee_relation_findings(node_ids, edges))
+    findings.extend(guarantee_lifetime_findings(nodes, leg_meta))
+    if len(node_ids) != len(nodes):
+        findings.append("duplicate guarantee id across source families")
+    # duplicate-prose structural smell (SEED only; exact normalized text + owner, no relation)
+    seed_src = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    stmts = re.findall(r'id: "([^"]+)", statement: "((?:[^"\\]|\\.)*)"', seed_src)
+    seen_text: dict[tuple[str, str], str] = {}
+    rel_by_id = {r["id"]: r["rel"] for r in seed_rows}
+    for sid, stmt in stmts:
+        owner = next((r["owner"] for r in seed_rows if r["id"] == sid), "")
+        key = (re.sub(r"\s+", " ", stmt).strip(), owner)
+        if key in seen_text:
+            other = seen_text[key]
+            rels = rel_by_id.get(sid, {})
+            if not any(rels.values()):
+                findings.append(f"guarantee duplicate-prose smell: {sid} and {other} share text and owner without a relation")
+        seen_text[key] = sid
+    # comparison: generated SEED block and Guarantee Graph must equal derived facts
+    seed_doc = (root / "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
+    seed_block = batql_extract_block(seed_doc.read_text(encoding="utf-8"), "SEED-CLASSIFICATION") if seed_doc.is_file() else None
+    if seed_block is None:
+        findings.append("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md: missing SEED-CLASSIFICATION block")
+    else:
+        block_rows = [
+            tuple(c.strip() for c in ln.split("|")[1:-1])[:6]
+            for ln in seed_block.splitlines() if ln.strip().startswith("| SEED-")
+        ]
+        derived_rows = [(r["id"], r["kind"], r["lifetime"], r["owner"], r["gates"], r["witness"]) for r in seed_rows]
+        if block_rows != derived_rows:
+            findings.append("docs/23 SEED-CLASSIFICATION block does not equal spec/invariants.rs")
+    graph_path = root / "docs/GUARANTEE_GRAPH.generated.md"
+    if not graph_path.is_file():
+        findings.append("missing docs/GUARANTEE_GRAPH.generated.md")
+        return
+    graph = graph_path.read_text(encoding="utf-8")
+    file_nodes = {(r[0], r[1], r[2], r[3], r[4], r[5]) for r in _md_section_rows(graph, "Nodes") if len(r) == 6}
+    derived_nodes = {(n["id"], n["family"], n["kind"], n["lifetime"], n["owner"], n["gates"]) for n in nodes}
+    if file_nodes != derived_nodes:
+        findings.append("Guarantee Graph node table does not equal the derived source facts")
+    file_edges = {tuple(r) for r in _md_section_rows(graph, "Edges") if len(r) == 3}
+    if file_edges != {(s, k, t) for s, k, t in edges}:
+        findings.append("Guarantee Graph edge table does not equal the derived relations")
+
+
 def check_architecture(root: Path, findings: list[str]) -> None:
     path = root / "spec/architecture.rs"
     if not path.is_file():
@@ -782,7 +1030,8 @@ def main() -> int:
         rel = relative_path.as_posix()
         text = path.read_text(encoding="utf-8")
         meta = frontmatter(text)
-        missing = REQUIRED_FRONT - meta.keys()
+        required = GENERATED_FRONT if meta.get("status") == "GENERATED" else REQUIRED_FRONT
+        missing = required - meta.keys()
         if missing:
             findings.append(f"{rel}: missing frontmatter keys {sorted(missing)}")
         elif meta["status"] not in STATUSES:
@@ -812,6 +1061,7 @@ def main() -> int:
     check_stale_vocabulary(root, findings)
     check_batql(root, findings)
     check_numeric(root, findings)
+    check_guarantees(root, findings)
 
     manifest = root / "SPEC.sha256"
     actual_files = frozen_files(root)
