@@ -14,6 +14,8 @@ Proven properties:
    genuinely distinct paths untouched.
 """
 from __future__ import annotations
+import contextlib
+import hashlib
 import importlib.util
 import sys
 import shutil
@@ -385,9 +387,14 @@ def must_remove(text: str, old: str, what: str) -> str:
 
 
 def gate_sandbox(edits):
-    """A repo copy with guarded edits applied; returns the sandbox root."""
+    """A repo copy with guarded edits applied; returns the sandbox root.
+
+    The canonical tracked workspace is never the mutation target (5.5D4a).
+    Callers discard the copy in a finally block; `isolated_tree` is the
+    context-managed form that cleans up on every exit path.
+    """
     root = HERE.parent
-    tmp = Path(tempfile.mkdtemp())
+    tmp = Path(tempfile.mkdtemp(prefix="batpak-probe-"))
     for sub in ("spec", "docs", "companion"):
         src = root / sub
         if src.is_dir():
@@ -1540,10 +1547,179 @@ def test_proof_policy(audit) -> list[str]:
     return findings
 
 
+# --- Hostile-probe isolation (5.5D4a) ---------------------------------------
+# A probe timeout once left a disabled rule inside the canonical bootstrap/audit.py.
+# Manual restoration worked, but a guard that depends on a later cleanup step is a
+# guard that can be left asleep with its eyes painted open. The canonical tracked
+# workspace is now never a mutation target: probes mutate an isolated copy, the
+# copy is discarded on every exit path including timeout, exception, and
+# cancellation, and the suite proves canonical validator bytes are unchanged.
+CANONICAL_VALIDATORS = ("audit.py", "project.py", "freeze.py", "selftest.py")
+
+
+def _commit(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_commitments() -> dict[str, str]:
+    """Content commitments for every canonical validator, before any probe runs."""
+    return {name: _commit(HERE / name) for name in CANONICAL_VALIDATORS if (HERE / name).is_file()}
+
+
+def canonical_drift(before: dict[str, str]) -> list[str]:
+    """Any canonical validator whose bytes moved is a residue finding, not a pass."""
+    out = []
+    for name, want in sorted(before.items()):
+        got = _commit(HERE / name)
+        if got != want:
+            out.append(f"canonical validator {name} was modified by the hostile-probe suite")
+    return out
+
+
+@contextlib.contextmanager
+def isolated_tree(subdirs=("spec", "docs", "companion")):
+    """An isolated copy of the tracked material. Discarded on EVERY exit path:
+    success, exception, timeout, assertion failure, or cancellation."""
+    root = HERE.parent
+    tmp = Path(tempfile.mkdtemp(prefix="batpak-probe-"))
+    try:
+        for sub in subdirs:
+            src = root / sub
+            if src.is_dir():
+                shutil.copytree(src, tmp / sub)
+        yield tmp
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@contextlib.contextmanager
+def neutered_validator(name: str, target: str, replacement: str = "if False:"):
+    """Load a COPY of a canonical validator with one rule neutered.
+
+    This replaces the retired pattern of patching bootstrap/audit.py in place and
+    restoring afterwards. The canonical file is never opened for writing, so a
+    timeout mid-probe cannot leave a disabled rule behind.
+    """
+    canonical = HERE / f"{name}.py"
+    before = _commit(canonical)
+    source = canonical.read_text(encoding="utf-8")
+    if target not in source:
+        raise ProbeError(f"probe target absent in {name}.py: {target!r}")
+    mutated = source.replace(target, replacement, 1)
+    if mutated == source:
+        raise ProbeError(f"probe mutation changed no bytes in {name}.py: {target!r}")
+    tmp = Path(tempfile.mkdtemp(prefix="batpak-neuter-"))
+    try:
+        path = tmp / f"{name}.py"
+        path.write_text(mutated, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location(f"{name}_neutered", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        if _commit(canonical) != before:
+            raise ProbeError(f"canonical {name}.py was modified during a probe")
+
+
+def test_probe_harness(audit) -> list[str]:
+    """The harness cannot leave residue in the canonical workspace (5.5D4a)."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    before = canonical_commitments()
+
+    # 1 & 2: an exception or an abort mid-probe still cleans up, and the
+    # canonical validator is untouched because it was never the target.
+    leaked: list[Path] = []
+    try:
+        with isolated_tree() as tmp:
+            leaked.append(tmp)
+            raise RuntimeError("simulated probe explosion")
+    except RuntimeError:
+        pass
+    if leaked and leaked[0].exists():
+        fail("probe_exception_cannot_leave_validator_modified")
+    if canonical_drift(before):
+        fail("probe_exception_cannot_leave_validator_modified")
+
+    leaked = []
+    try:
+        with isolated_tree() as tmp:
+            leaked.append(tmp)
+            # a timeout or cancellation surfaces as a BaseException, not Exception
+            raise KeyboardInterrupt("simulated probe timeout/abort")
+    except KeyboardInterrupt:
+        pass
+    if leaked and leaked[0].exists():
+        fail("probe_abort_cannot_leave_validator_modified")
+    if canonical_drift(before):
+        fail("probe_abort_cannot_leave_validator_modified")
+
+    # A neutered validator runs from a copy; the canonical file never moves.
+    with neutered_validator("audit", 'if dec["class"] != "Capability":') as neutered:
+        if neutered.specialization_findings(root):
+            fail("neutered_validator_runs_from_a_copy")
+    if canonical_drift(before):
+        fail("neutered_validator_cannot_modify_canonical_bytes")
+
+    # An abort inside a neutered probe still leaves canonical bytes intact.
+    try:
+        with neutered_validator("audit", 'if dec["class"] != "Capability":'):
+            raise KeyboardInterrupt("simulated timeout while a rule is disabled")
+    except KeyboardInterrupt:
+        pass
+    if canonical_drift(before):
+        fail("probe_abort_cannot_leave_validator_modified")
+
+    # 3 & 4: the harness fails closed on a broken probe rather than passing.
+    try:
+        with neutered_validator("audit", "zzz-absent-target-zzz"):
+            pass
+    except ProbeError:
+        pass
+    else:
+        fail("absent_probe_target_is_rejected")
+    try:
+        must_replace("abc", "abc", "abc", "self-check")
+    except ProbeError:
+        pass
+    else:
+        fail("inert_probe_mutation_is_rejected")
+
+    # 5: a probe that fires the WRONG diagnostic is not a pass. A red light from
+    # the wrong severed wire is not evidence that the alarm works.
+    with neutered_validator("audit", 'if dec["class"] != "Capability":') as neutered:
+        produced = neutered.decision_class_findings(root)
+        if any("unknown DecisionClass" in f for f in produced):
+            fail("wrong_diagnostic_class_is_rejected")
+
+    # 6: the canonical workspace is never a probe target.
+    with isolated_tree() as tmp:
+        if tmp == root or str(tmp).startswith(str(root)):
+            fail("canonical_workspace_is_not_a_probe_target")
+        (tmp / "spec" / "gates.rs").write_text("poisoned", encoding="utf-8")
+        if (root / "spec" / "gates.rs").read_text(encoding="utf-8") == "poisoned":
+            fail("canonical_workspace_is_not_a_probe_target")
+    if canonical_drift(before):
+        fail("canonical_workspace_is_not_a_probe_target")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
     project = load("project")
+    # Canonical validator bytes are committed before any hostile probe runs and
+    # proven unchanged after the suite. A probe that dies mid-mutation cannot
+    # leave a disabled rule behind and still report PASS.
+    canonical_before = canonical_commitments()
     findings: list[str] = []
     findings += test_manifest_ordering(freeze)
     findings += test_casefold_collision(audit)
@@ -1562,13 +1738,15 @@ def main() -> int:
     findings += test_specialization(audit, project)
     findings += test_delivery_notes_d2(audit)
     findings += test_proof_policy(audit)
+    findings += test_probe_harness(audit)
+    findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation hostile fixtures)")
     return 0
 
 
