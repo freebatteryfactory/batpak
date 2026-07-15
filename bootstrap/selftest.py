@@ -652,8 +652,8 @@ def test_decisions(audit, project) -> list[str]:
     for profile in ("InternalConsistency", "SignedHistory", "ExternallyAnchoredHistory"):
         if profile in node_ids:
             fail(f"authenticated-history profile added as a graph node: {profile}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 72:
-        fail("decision node count is not 72")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 73:
+        fail("decision node count is not 73")
 
     if [(n["id"], n.get("dclass"), n["gates"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
        [(n["id"], n.get("dclass"), n["gates"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
@@ -875,17 +875,6 @@ def test_claim_receipt_law(audit) -> list[str]:
                 fail(f"{name} (wanted {needle!r}, got {produced!r})")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-    return findings
-
-
-def test_delivery_notes(audit) -> list[str]:
-    """The delivery inventory must not keep a stale decision count."""
-    findings: list[str] = []
-    text = (HERE.parent / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
-    if "70 architectural decision/disposition rows" in text:
-        findings.append("delivery_notes_remaining_at_70_decisions FAILED")
-    if "72 architectural decision/disposition rows" not in text:
-        findings.append("delivery_notes_states_72_decisions FAILED")
     return findings
 
 
@@ -1160,6 +1149,193 @@ def test_substrate(audit) -> list[str]:
     return findings
 
 
+def test_specialization(audit, project) -> list[str]:
+    """Named hostile fixtures for adaptive residual specialization (DEC-073).
+
+    Structural only. Bootstrap does not execute PakVM, specialize a program, run
+    a scan, measure a benchmark, test SIMD, compare residual results, or validate
+    machine code, and these fixtures claim none of that.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def doc_findings(tmp):
+        out: list[str] = []
+        audit.check_document_law(tmp, out)
+        return out
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        tmp = gate_sandbox([(rel, old, new)])
+        try:
+            expect(name, (validator or doc_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    ISA = "docs/07_PAKVM_ISA.md"
+    ECS = "docs/18_DATA_ORIENTED_ECS.md"
+    DISP = "spec/dispositions.rs"
+
+    # --- DEC-073 identity ---------------------------------------------------
+    if audit.specialization_findings(root) or audit.specialization_key_findings(root):
+        fail("dec073_contract_passes")
+    probe("dec073_wrong_class_is_rejected", DISP,
+          'id: "DEC-073", class: DecisionClass::Capability',
+          "DEC-073 class Enforcement is not Capability",
+          'id: "DEC-073", class: DecisionClass::Enforcement',
+          validator=audit.specialization_findings)
+    probe("dec073_wrong_gates_are_rejected", DISP,
+          "gates: &[GateId::G4, GateId::G5, GateId::G8, GateId::G9], disposition: Disposition::Lock, "
+          'subject: "Adaptive residual specialization"',
+          "!= [G4, G5, G8, G9]",
+          "gates: &[GateId::G4], disposition: Disposition::Lock, "
+          'subject: "Adaptive residual specialization"',
+          validator=audit.specialization_findings)
+
+    # --- one probe per key component: a broad marker would prove several at once
+    for component in audit.D2_KEY_COMPONENTS:
+        probe(f"specialization_key_missing_{component.split()[0].lower()}_is_rejected",
+              ISA, component, f"specialization key omits {component}",
+              validator=audit.specialization_key_findings)
+
+    # --- reference authority ------------------------------------------------
+    probe("reference_interpreter_demoted_from_semantic_authority_is_rejected",
+          ISA, "The reference interpreter is the executable semantic authority for admitted programs",
+          "the reference interpreter is the executable semantic authority")
+    probe("specialized_plan_made_program_authority_is_rejected",
+          ISA, "It is never program authority, canonical source, a new `ProgramImage`",
+          "SpecializedPlan is derived, never authority")
+    probe("residual_made_sole_oracle_is_rejected",
+          ISA, "the residual path is never the sole oracle", "the residual is never the sole oracle")
+    probe("plan_reuse_under_a_different_key_permitted_is_rejected",
+          ISA, "SpecializedPlan reused under a different key", "reuse under a different key is illegal")
+
+    # --- cache and fallback -------------------------------------------------
+    probe("cache_deletion_permitted_to_change_meaning_is_rejected",
+          ISA, "Deleting every specialization cache changes performance and `WorkObservation` only",
+          "cache deletion changes performance only")
+    probe("cache_key_mismatch_accepted_is_rejected",
+          ISA, "it discards, refuses reuse, and falls back to reference execution",
+          "cache mismatch discards and falls back")
+    probe("corrupt_residual_reused_is_rejected",
+          ISA, "An old residual is never reinterpreted under a new key",
+          "an old residual is never reinterpreted under a new key")
+    probe("specialization_failure_without_reference_fallback_is_rejected",
+          ISA, "because reference execution remains complete",
+          "reference execution remains complete without a cache")
+
+    # --- bounded first use --------------------------------------------------
+    probe("first_use_specialization_without_budget_or_deadline_is_rejected",
+          ISA, "an explicit work budget, an absolute monotonic deadline, a bounded memory posture",
+          "first use is budgeted and deadline-bound")
+    probe("specialization_attempt_resets_logical_deadline_is_rejected",
+          ISA, "The specialization attempt never resets the logical operation deadline",
+          "specialization never resets the logical deadline")
+
+    # --- safety boundary ----------------------------------------------------
+    probe("specializer_executes_an_effect_is_rejected",
+          ISA, "It may not pre-execute durable effects, port effects, wall-clock reads",
+          "specialization pre-executes no effects")
+    probe("specializer_bypasses_bvisor_admission_is_rejected",
+          ISA, "It may not eliminate or bypass Bvisor admission",
+          "specialization cannot bypass Bvisor admission")
+    probe("specializer_mints_a_capability_is_rejected",
+          ISA, "PakVM specialization cannot mint capabilities.", "specialization cannot mint capabilities")
+    probe("specializer_advances_a_durable_checkpoint_is_rejected",
+          ISA, "PakVM specialization cannot advance a durable checkpoint.",
+          "specialization cannot advance a durable checkpoint")
+    probe("specializer_authorizes_a_physical_effect_is_rejected",
+          ISA, "PakVM specialization cannot authorize a physical effect.",
+          "specialization cannot authorize a physical effect")
+    probe("check_discharged_because_it_usually_passes_is_rejected",
+          ISA, "A check is not eliminated merely because the current implementation usually passes it",
+          "a check is not discharged because it usually passes")
+    probe("dynamic_fact_bound_as_static_is_rejected",
+          ISA, "wall-clock time, file descriptor numbers, socket state",
+          "dynamic facts are not bound as static")
+    probe("key_component_silently_omitted_is_rejected",
+          ISA, "It may never be silently omitted", "a key component is never silently omitted")
+
+    # --- V1 requirement boundary -------------------------------------------
+    probe("native_jit_or_executable_memory_made_a_v1_requirement_is_rejected",
+          ISA, "machine-code JIT, executable-memory allocation, self-modifying code",
+          "no machine-code JIT or executable memory in V1")
+    probe("nightly_unsafe_or_simd_made_mandatory_is_rejected",
+          ECS, "V1 does not require nightly Rust, unsafe target intrinsics, a portable-SIMD dependency",
+          "nightly, unsafe intrinsics, and SIMD are not required")
+
+    # --- result parity ------------------------------------------------------
+    probe("specialized_execution_omits_proof_parity_is_rejected",
+          ISA, "preserve semantic value, `Availability`, `Truth`, `Decision`, `Completeness`, `ProofDisposition`",
+          "result axes are preserved across paths")
+    probe("faster_path_emitting_less_proof_is_rejected",
+          ISA, "A faster path never emits less proof, explanation, or receipt material",
+          "a faster path emits no less proof")
+    probe("work_observation_execution_path_omitted_is_rejected",
+          ISA, "FallbackAfterSpecializationRefusal", "WorkObservation names the execution path")
+
+    # --- scalar seam --------------------------------------------------------
+    probe("scalar_scan_kernel_removed_is_rejected",
+          ECS, "The scalar `ScanKernel` is mandatory and is the reference behavior",
+          "the scalar scan kernel is the reference behavior")
+    probe("optimized_kernel_made_sole_oracle_is_rejected",
+          ECS, "No optimized kernel is ever the sole oracle", "no optimized kernel is the sole oracle")
+    probe("optimized_kernel_accepted_without_qualification_is_rejected",
+          ECS, "An unavailable optimized kernel falls back to scalar reference behavior",
+          "an optimized kernel requires qualification and fallback")
+    probe("selection_mask_frozen_to_64_rows_is_rejected",
+          ECS, "The physical representation is not frozen", "the mask width is not frozen")
+    probe("aosoa64_made_canonical_is_rejected",
+          ECS, "Nothing here constitutionalizes `u64`, 64 rows, `AoSoA64`, or one tile width forever",
+          "AoSoA64 and fixed 64-row masks are not constitutional")
+    probe("mask_ops_across_row_domains_is_rejected",
+          ECS, "legal only for masks over the same row domain, logical length, source cut",
+          "mask algebra is domain bound")
+    probe("mask_not_selecting_unused_high_bits_is_rejected",
+          ECS, "unused high bits cannot select nonexistent rows", "NOT is bounded by the logical row length")
+    probe("column_tile_made_authority_is_rejected",
+          ECS, "`ColumnTile` remains an earned physical derived layout", "ColumnTile remains derived")
+    probe("late_materialization_reorders_rows_is_rejected",
+          ECS, "preserving source row order, row identity", "late materialization preserves row order")
+    probe("unbounded_materialization_before_selection_is_rejected",
+          ECS, "It may not materialize an unbounded result and then claim the mask saved work",
+          "no unbounded materialization before selection")
+    probe("work_observation_omitted_from_scan_seam_is_rejected",
+          ECS, "the frozen obligation is that work remains observable", "WorkObservation stays observable")
+
+    # --- graph conservation -------------------------------------------------
+    nodes, edges = audit.guarantee_derive(root)
+    ids = {n["id"] for n in nodes}
+    if "DEC-073" not in ids:
+        fail("guarantee_graph_missing_dec073")
+    for synthetic in ("SpecializedPlan", "SelectionMask", "ScanKernel", "Column", "ColumnTile",
+                      "SpecializationKey", "WorkObservation"):
+        if synthetic in ids:
+            fail(f"synthetic specialization node introduced: {synthetic}")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 73:
+        fail("decision_node_count_is_not_73")
+    if len(nodes) != 196 or len(edges) != 9:
+        fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
+    return findings
+
+
+def test_delivery_notes_d2(audit) -> list[str]:
+    """The delivery inventory tracks the live decision count."""
+    findings: list[str] = []
+    text = (HERE.parent / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
+    if "72 architectural decision/disposition rows" in text:
+        findings.append("delivery_notes_remaining_at_72_decisions FAILED")
+    if "73 architectural decision/disposition rows" not in text:
+        findings.append("delivery_notes_states_73_decisions FAILED")
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -1178,15 +1354,16 @@ def main() -> int:
     findings += test_authenticated_history(audit)
     findings += test_document_law(audit)
     findings += test_claim_receipt_law(audit)
-    findings += test_delivery_notes(audit)
     findings += test_substrate(audit)
+    findings += test_specialization(audit, project)
+    findings += test_delivery_notes_d2(audit)
     findings += test_control_characters(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization hostile fixtures)")
     return 0
 
 

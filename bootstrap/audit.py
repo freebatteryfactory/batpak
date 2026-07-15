@@ -1115,11 +1115,80 @@ DOC_LAW_MARKERS = {
         ("optional witness is mandatory to validate once supplied",
          "Once supplied it is mandatory to validate"),
     ],
+    "docs/07_PAKVM_ISA.md": [
+        ("the reference interpreter is the executable semantic authority",
+         "The reference interpreter is the executable semantic authority for admitted programs"),
+        ("the residual is never the sole oracle", "the residual path is never the sole oracle"),
+        ("SpecializedPlan is derived, never authority",
+         "It is never program authority, canonical source, a new `ProgramImage`"),
+        ("reuse under a different key is illegal", "SpecializedPlan reused under a different key"),
+        ("only two specialization modes", "bounded first-use residual specialization"),
+        ("no machine-code JIT or executable memory in V1",
+         "machine-code JIT, executable-memory allocation, self-modifying code"),
+        ("a key component is never silently omitted", "It may never be silently omitted"),
+        ("dynamic facts are not bound as static", "wall-clock time, file descriptor numbers, socket state"),
+        ("specialization pre-executes no effects",
+         "It may not pre-execute durable effects, port effects, wall-clock reads"),
+        ("specialization cannot bypass Bvisor admission",
+         "It may not eliminate or bypass Bvisor admission"),
+        ("specialization cannot mint capabilities", "PakVM specialization cannot mint capabilities."),
+        ("specialization cannot advance a durable checkpoint",
+         "PakVM specialization cannot advance a durable checkpoint."),
+        ("specialization cannot authorize a physical effect",
+         "PakVM specialization cannot authorize a physical effect."),
+        ("a check is not discharged because it usually passes",
+         "A check is not eliminated merely because the current implementation usually passes it"),
+        ("cache mismatch discards and falls back",
+         "it discards, refuses reuse, and falls back to reference execution"),
+        ("an old residual is never reinterpreted under a new key",
+         "An old residual is never reinterpreted under a new key"),
+        ("cache deletion changes performance only",
+         "Deleting every specialization cache changes performance and `WorkObservation` only"),
+        ("reference execution remains complete without a cache",
+         "because reference execution remains complete"),
+        ("first use is budgeted and deadline-bound",
+         "an explicit work budget, an absolute monotonic deadline, a bounded memory posture"),
+        ("specialization never resets the logical deadline",
+         "The specialization attempt never resets the logical operation deadline"),
+        ("result axes are preserved across paths",
+         "preserve semantic value, `Availability`, `Truth`, `Decision`, `Completeness`, `ProofDisposition`"),
+        ("a faster path emits no less proof",
+         "A faster path never emits less proof, explanation, or receipt material"),
+        ("WorkObservation names the execution path", "FallbackAfterSpecializationRefusal"),
+    ],
+    "docs/18_DATA_ORIENTED_ECS.md": [
+        ("the scalar scan kernel is the reference behavior",
+         "The scalar `ScanKernel` is mandatory and is the reference behavior"),
+        ("no optimized kernel is the sole oracle",
+         "No optimized kernel is ever the sole oracle"),
+        ("the mask width is not frozen", "The physical representation is not frozen"),
+        ("AoSoA64 and fixed 64-row masks are not constitutional",
+         "Nothing here constitutionalizes `u64`, 64 rows, `AoSoA64`, or one tile width forever"),
+        ("mask algebra is domain bound",
+         "legal only for masks over the same row domain, logical length, source cut"),
+        ("NOT is bounded by the logical row length",
+         "unused high bits cannot select nonexistent rows"),
+        ("ColumnTile remains derived", "`ColumnTile` remains an earned physical derived layout"),
+        ("late materialization preserves row order", "preserving source row order, row identity"),
+        ("no unbounded materialization before selection",
+         "It may not materialize an unbounded result and then claim the mask saved work"),
+        ("nightly, unsafe intrinsics, and SIMD are not required",
+         "V1 does not require nightly Rust, unsafe target intrinsics, a portable-SIMD dependency"),
+        ("an optimized kernel requires qualification and fallback",
+         "An unavailable optimized kernel falls back to scalar reference behavior"),
+        ("speed alone does not qualify a kernel", "Wall-clock speed alone is insufficient"),
+        ("WorkObservation stays observable", "the frozen obligation is that work remains observable"),
+    ],
     "docs/14_RECEIPTS_AND_EXPLANATION.md": [
         ("receipt preserves the exact profile", "selected AuthenticatedHistoryProfile"),
         ("receipt preserves the exact witness policy", "selected WitnessPolicy"),
         ("receipt preserves the exact witness disposition",
          "selected WitnessPolicy exact WitnessDisposition"),
+        ("the specialization manifest names the complete key", "complete SpecializationKey"),
+        ("the manifest separates retained from discharged checks",
+         "checks discharged from proven static facts"),
+        ("the manifest is evidence, not authority",
+         "It does not upgrade the residual into authority"),
         ("receipt preserves the integrity claim", "IntegrityClaim"),
         ("receipt preserves the authenticity claim", "AuthenticityClaim"),
         ("receipt preserves the freshness claim", "FreshnessClaim"),
@@ -1287,6 +1356,59 @@ def d1_substrate_findings(root: Path) -> list[str]:
         for clause in clauses:
             if clause not in law:
                 out.append(f"{lid} law no longer states: {clause}")
+    return out
+
+
+# --- 5.5D2 adaptive residual specialization (DEC-073) -----------------------
+# Bootstrap enforces the CONTRACT. It never executes PakVM, specializes a
+# program, runs a scan, measures a benchmark, tests SIMD, compares residual
+# results, or validates machine code, and must never claim to.
+D2_KEY_COMPONENTS = [
+    "ProgramImageId",
+    "WorldImageId",
+    "PakVM ISA version",
+    "specializer implementation or semantic version identity",
+    "residual-plan format identity",
+    "schema identities",
+    "layout identities",
+    "numeric profile identities",
+    "operator and qualified-kernel interface identities",
+    "qualified-kernel implementation identities where pinned",
+    "capability-envelope identity",
+    "target profile",
+    "qualified CPU-feature profile where relevant",
+]
+D2_FORBIDDEN_PUBLIC_SYNTAX = ("SPECIALIZE", "AoSoA", "SIMD")
+
+
+def specialization_key_findings(root: Path) -> list[str]:
+    """Every required key component is named. One finding per missing component,
+    so removing one marker cannot accidentally prove several unrelated cases."""
+    text = re.sub(r"\s+", " ", (root / "docs/07_PAKVM_ISA.md").read_text(encoding="utf-8"))
+    out = []
+    for component in D2_KEY_COMPONENTS:
+        if re.sub(r"\s+", " ", component) not in text:
+            out.append(f"specialization key omits {component}")
+    return out
+
+
+def specialization_findings(root: Path) -> list[str]:
+    """DEC-073 structure: class, gates, and the no-public-syntax rule."""
+    out: list[str] = []
+    rows = {r["id"]: r for r in decision_rows(root)}
+    dec = rows.get("DEC-073")
+    if dec is None:
+        out.append("DEC-073 is absent from spec/dispositions.rs")
+        return out
+    if dec["class"] != "Capability":
+        out.append(f"DEC-073 class {dec['class']} is not Capability")
+    if dec["gate_names"] != ["G4", "G5", "G8", "G9"]:
+        out.append(f"DEC-073 gates {dec['gate_names']} != [G4, G5, G8, G9]")
+    # The execution path never changes program meaning, so no public syntax.
+    grammar = (root / "companion/BATQL_LANGUAGE.md").read_text(encoding="utf-8")
+    for token in D2_FORBIDDEN_PUBLIC_SYNTAX:
+        if re.search(r"^\s*\|?\s*\"" + token + r"\"", grammar, re.M):
+            out.append(f"public BatQL syntax introduced for {token}")
     return out
 
 
@@ -1752,6 +1874,8 @@ def main() -> int:
     check_guarantees(root, findings)
     check_document_law(root, findings)
     findings.extend(d1_substrate_findings(root))
+    findings.extend(specialization_findings(root))
+    findings.extend(specialization_key_findings(root))
     findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"

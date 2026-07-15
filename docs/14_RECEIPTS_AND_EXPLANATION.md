@@ -121,6 +121,32 @@ None of these is derivable from another. A committed publication with an incompl
 
 A reconciliation record appends or references new evidence. It never rewrites the original durable event or falsifies the original attempt observation.
 
+## Specialization manifest (DEC-073)
+
+A specialization result exposes a manifest or receipt describing:
+
+```text
+originating AdmittedProgram identity
+complete SpecializationKey
+facts bound as static
+dynamic inputs still required
+branches eliminated
+constant expressions folded
+schema and path resolutions prebound
+kernel bindings selected
+capability structure precomputed
+checks retained for execution
+checks discharged from proven static facts
+specialization work consumed
+specialization deadline and budget posture
+residual content commitment
+specialization success, refusal, or fallback posture
+```
+
+A check is recorded as discharged only when the static facts and typed law prove it cannot vary for that plan, never because the current implementation usually passes it.
+
+This receipt is evidence about derivation. It does not upgrade the residual into authority. Specialized execution emits the same proof, explanation, and receipt material as reference execution; only `WorkObservation` differs, and it names which path ran.
+
 ## Outcome uncertainty
 
 External effects may end with `OutcomeUnknown` after a crash or lost observation. That is not failure and not success. Reconciliation follows the effect's recovery class and durable evidence.

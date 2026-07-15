@@ -18,14 +18,14 @@ navigation only; the owning fact is authoritative. Do not edit.
 | --- | --- |
 | SEED | 25 |
 | LEG | 84 |
-| DEC | 72 |
+| DEC | 73 |
 | ARCH | 9 |
 | QUAL | 5 |
 
 ## Totals
 
 ```text
-nodes: 195
+nodes: 196
 edges: 9
 unresolved references: 0
 ```
@@ -36,7 +36,7 @@ unresolved references: 0
 | --- | --- |
 | ArchitectureConstraint | 19 |
 | BootstrapAssertion | 2 |
-| Decision | 72 |
+| Decision | 73 |
 | LegacyObligation | 84 |
 | QualificationRequirement | 5 |
 | SemanticLaw | 13 |
@@ -45,14 +45,14 @@ unresolved references: 0
 
 | GuaranteeLifetime | Nodes |
 | --- | --- |
-| Permanent | 111 |
+| Permanent | 112 |
 | UntilCompatibilityExpiry | 5 |
 | UntilGate | 79 |
 
 ## Active versus closed
 
 ```text
-active (gating): 195
+active (gating): 196
 closed evidence: 0
 historical coverage only: 0
 ```
@@ -272,6 +272,7 @@ historical coverage only: 0
 | DEC-070 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 |
 | DEC-071 | DEC | Decision | Permanent | Capability | docs/30_DECISION_AND_REJECTION_LEDGER.md | G2/G9 |
 | DEC-072 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0/G9 |
+| DEC-073 | DEC | Decision | Permanent | Capability | docs/30_DECISION_AND_REJECTION_LEDGER.md | G4/G5/G8/G9 |
 | ARCH-batpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs |  |
 | ARCH-batpak-cli | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs |  |
 | ARCH-batpak-examples | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs |  |

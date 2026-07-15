@@ -86,3 +86,25 @@ A release with an unclassified denominator row is refused.
 ## Numeric proof obligations (DEC-069 / docs/37)
 
 The numeric proof families declared in `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md` section 13 are gauntlet obligations: decimal-to-coefficient exactness, exact-ratio canonicalization, dimensional legality, raw-bit preservation, finite dyadic decomposition, NaN and infinity refusals, interval well-formedness and the six IntervalDecision truth tables, quantization containment and receipt completeness, rounding-boundary and mode-specific laws, and wide-exact-to-Fixed128 conversion. Their executable TestPak and Muterprater ownership lands in 5.5D (`12_TESTPAK.md`). Bootstrap enforces the numeric contract only; it never evaluates or quantizes actual numbers.
+
+## Specialization proof square (DEC-073)
+
+Future TestPak qualification owns this square; 5.5D2 records the obligation and its ownership only. Bootstrap does not execute it.
+
+```text
+1. interpret the original admitted program
+2. specialize the original admitted program and execute the residual
+3. mutate the semantic program and interpret the semantic mutant
+4. mutate the semantic program, specialize it, and execute the residual mutant
+```
+
+Required relationships:
+
+```text
+reference(original)        == residual(original)
+reference(semantic mutant) == residual(semantic mutant)
+```
+
+Where a residual-level mutation corresponds to a semantic mutation, the residual mutation route agrees with the specialize-the-semantic-mutant route. This proves the specialization transformation is meaning preserving. It does not replace the independent semantic oracle (SEED-INDEPENDENT-ORACLE).
+
+Executable mutation routing and promotion law are owned by a later pass, not by this record.

@@ -135,10 +135,11 @@ Executable phases stay distinct:
 ParsedProgram
 TypedProgram
 AdmittedProgram
+SpecializedPlan
 ExecutedResult
 ```
 
-`SpecializedPlan` is a derived future phase whose exact identity and lifecycle are frozen in 5.5D; its mechanics are not defined here.
+`SpecializedPlan` is a derived optimization phase bound to one `AdmittedProgram` and one complete specialization key (DEC-073). It is never authority, never a `ProgramImage`, and never reusable under a different key; its identity, lifecycle, safety boundary, and cache law are owned by `07_PAKVM_ISA.md`.
 
 ## Time and order
 

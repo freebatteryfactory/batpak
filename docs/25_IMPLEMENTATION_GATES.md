@@ -92,6 +92,19 @@ Each guarantee's gates are owned by its native fact family (SEED in `spec/invari
 
 The numeric contract in `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md` is owned across gates: G2 fixes the durable Fixed128 format constants and wire encoding (exact format tags and raw bits preserved, no normalization), G5 admits qualified numeric kernels and profiles, and TestPak realizes the numeric proof families (`24_GAUNTLET.md`). Bootstrap enforces only the numeric contract, never executed arithmetic.
 
+## Specialization gate ownership (DEC-073)
+
+Adaptive residual specialization is owned across four gates:
+
+```text
+G4  BatQL compiler and compile-time specialization
+G5  PakVM reference execution and bounded first-use specialization
+G8  optimized tiles, kernels, codecs, and delivery succession
+G9  differential qualification and release seal
+```
+
+The reference interpreter is complete at G5 without any specializer. No gate may accept a residual path as the semantic authority or the sole oracle. Bootstrap enforces only the specialization contract; it never executes PakVM, specializes a program, runs a scan, or measures a benchmark.
+
 ## GJ: Integrated final tree
 
 Refuse the gate if any of these remain:

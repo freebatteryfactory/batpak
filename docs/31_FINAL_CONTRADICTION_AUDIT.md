@@ -99,6 +99,14 @@ no authenticated-history claim exceeding the selected profile and verified witne
 no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
 no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance
 no authenticated-history profile, witness, claim-posture, or gate node in the Guarantee Graph (decision class and gates are node metadata, never synthetic nodes or edges)
+no residual SpecializedPlan treated as program authority, canonical source, a ProgramImage, a replacement ISA, a second VM, or the sole oracle (the reference interpreter is the executable semantic authority; DEC-073, docs/07)
+no specialization cache whose deletion changes value, availability, truth, decision, completeness, ProofDisposition, effects, effect ordering, authority meaning, or required receipts (it may change performance and WorkObservation only)
+no residual reused under a different specialization key, and no key silently omitting a component that can influence the plan or binding a dynamic fact as static
+no specialization that pre-executes an effect, bypasses Bvisor admission, mints a capability, advances a durable checkpoint, or resets the logical operation deadline
+no faster execution path emitting less proof, explanation, or receipt material than reference execution
+no optimized ScanKernel as sole oracle or without qualification and scalar fallback, and no SelectionMask width, AoSoA64 layout, nightly Rust, unsafe intrinsic, or SIMD dependency made a V1 requirement (DEC-073 refining DEC-032/DEC-033)
+no mask operation across differing row domains, and no NOT selecting unused high bits beyond the logical row length
+no public BatQL specialization, SIMD, mask, AoSoA, or CPU-feature syntax (execution path never changes program meaning)
 no durable publication reported as an ordinary operation failure, and no commit knowledge, receipt completeness, or reconciliation posture collapsed into one status (LEG-037, docs/05)
 no outcome-unknown or cancelled-after-admission treated as proof of non-commit, and no reconciliation rewriting the original durable event or attempt observation
 no atomic typed batch publishing a partial durable subset, and no generic kind-plus-bytes publication envelope as the canonical route (LEG-037)
