@@ -205,6 +205,13 @@ def test_batql(audit, project) -> list[str]:
     ):
         fail("generator_auditor_disagreement_turns_gate_red")
 
+    # 15: FLOOR/CEILING without the language-change record turns the gate red
+    modes = "rounding_mode\n  := HALF_EVEN | HALF_UP | DOWN | UP | FLOOR | CEILING\n"
+    if audit.batql_language_change_findings(modes + "\nLanguage-change record (BatQL V1)\n"):
+        fail("language_change_record_present_passes")
+    if not audit.batql_language_change_findings(modes):
+        fail("floor_ceiling_without_language_change_record_is_rejected")
+
     return findings
 
 

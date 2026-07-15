@@ -1437,6 +1437,33 @@ ROUND(value, target_scale, FLOOR)
 ROUND(value, target_scale, CEILING)
 ```
 
+### Language-change record (BatQL V1)
+
+`FLOOR` and `CEILING` did not exist as BatQL spellings before this record; they are added deliberately, not discovered as a grammar defect.
+
+```text
+new spellings:
+    FLOOR
+    CEILING
+
+canonical lowerings:
+    FLOOR   -> Floor
+    CEILING -> Ceiling
+
+reason:
+    all six canonical authority-changing rounding modes must be explicitly nameable
+
+compatibility:
+    additive syntax only
+    no existing valid expression changes meaning
+
+authority:
+    DEC-060 amendment
+    plus this BatQL language-change record
+```
+
+`HALF_EVEN`, `HALF_UP`, `DOWN`, and `UP` remain compatibility surface aliases (`HALF_EVEN → HalfEven`, `HALF_UP → HalfAwayFromZero`, `DOWN → TowardZero`, `UP → AwayFromZero`). `FLOOR` and `CEILING` directly name their canonical modes `Floor` and `Ceiling` rather than acting as aliases of another spelling.
+
 ### Failure is typed, never silent
 
 ```text
@@ -3256,7 +3283,7 @@ The complete grammar must remain parseable without semantic backtracking.
 
 ## 15.1 Conformance obligations
 
-One grammar-conformance check parses every normative BatQL code fence (```batql) in this document and in `docs/13_BATQL_CONTRACT.md`; each must parse under the frozen grammar. This is grammar repair, not new syntax — no form appears here that a normative example does not already use.
+One grammar-conformance check parses every normative BatQL code fence (```batql) in this document and in `docs/13_BATQL_CONTRACT.md`; each must parse under the frozen grammar. Two distinct changes are recorded here, and they are not the same kind. The closure of `function_definition`, `function_declaration`, MATCH, and the lexical and metavariable leaves is **grammar repair**: those forms are already used by normative examples and gained no new meaning. The addition of the `FLOOR` and `CEILING` rounding-mode spellings is an **explicitly authorized additive BatQL V1 language extension** (see the language-change record in 5.2a) — two new keywords, not repair, and not a claim that no syntax changed.
 
 Named hostile fixtures (proof owner: batql/TestPak; gate G4):
 

@@ -285,6 +285,20 @@ def batql_proof_disposition_findings(states: list[str]) -> list[str]:
     return []
 
 
+def batql_language_change_findings(companion: str) -> list[str]:
+    """FLOOR and CEILING are additive BatQL V1 syntax, not grammar repair. If the
+    rounding-mode surface exposes them, the language-change record must exist;
+    removing the record while keeping the new spellings is a silent syntax
+    addition and turns the gate red."""
+    match = re.search(r"rounding_mode\n  := ([^\n]+)", companion)
+    modes = match.group(1) if match else ""
+    has_new_spellings = "FLOOR" in modes and "CEILING" in modes
+    has_record = "Language-change record (BatQL V1)" in companion
+    if has_new_spellings and not has_record:
+        return ["companion/BATQL_LANGUAGE.md: FLOOR/CEILING rounding spellings present without a BatQL V1 language-change record"]
+    return []
+
+
 def check_batql(root: Path, findings: list[str]) -> None:
     companion_path = root / "companion/BATQL_LANGUAGE.md"
     if not companion_path.is_file():
@@ -310,6 +324,7 @@ def check_batql(root: Path, findings: list[str]) -> None:
     grammar_findings, _defined, _undefined = batql_grammar_closure_findings(batql_grammar_fences(companion))
     findings.extend(grammar_findings)
     findings.extend(batql_proof_disposition_findings(batql_proof_disposition_states(companion)))
+    findings.extend(batql_language_change_findings(companion))
     if "`REQUIRE VERIFIED` accepts only `VERIFIED`" not in companion:
         findings.append("companion/BATQL_LANGUAGE.md 4.5: REQUIRE VERIFIED-only law missing")
     if "may upgrade or collapse" not in companion:
