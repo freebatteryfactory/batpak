@@ -211,12 +211,12 @@ admission and never reaches this table.
 | DEC-002 | DEC | Decision | HistoricalCoverageOnly | HistoricalReceipt | docs/30_DECISION_AND_REJECTION_LEDGER.md | GateIndependent | - | NoFamilyWitness |
 | DEC-003 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G2 | - | NoFamilyWitness |
 | DEC-004 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G5 | - | NoFamilyWitness |
-| DEC-005 | DEC | Decision | HistoricalCoverageOnly | Naming | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 | - | NoFamilyWitness |
+| DEC-005 | DEC | Decision | HistoricalCoverageOnly | Naming | docs/30_DECISION_AND_REJECTION_LEDGER.md | historical:G0 | - | NoFamilyWitness |
 | DEC-006 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G5 | - | NoFamilyWitness |
 | DEC-007 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 | - | NoFamilyWitness |
 | DEC-008 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 | - | NoFamilyWitness |
-| DEC-009 | DEC | Decision | HistoricalCoverageOnly | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 | - | NoFamilyWitness |
-| DEC-010 | DEC | Decision | HistoricalCoverageOnly | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G5 | - | NoFamilyWitness |
+| DEC-009 | DEC | Decision | HistoricalCoverageOnly | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | historical:G0 | - | NoFamilyWitness |
+| DEC-010 | DEC | Decision | HistoricalCoverageOnly | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | historical:G5 | - | NoFamilyWitness |
 | DEC-011 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G2 | - | NoFamilyWitness |
 | DEC-012 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G5 | - | NoFamilyWitness |
 | DEC-013 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G4 | - | NoFamilyWitness |

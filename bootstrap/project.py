@@ -303,9 +303,13 @@ def admit(root, family, ident, row, failure):
     grule, gconst = pol["gate_posture"]
     if grule == "FamilyConstant":
         posture = gate_tokens(gconst, root)
-    elif grule == "FromDecisionClassAndRowGates":
+    elif grule == "FromDecisionDispositionClassAndGates":
         if row.get("gates"):
-            posture = row["gates"]
+            # A retired decision keeps its authored GateIds as PROVENANCE. The
+            # references are preserved, never deleted, and never rendered as an
+            # active schedule.
+            posture = (f"historical:{row['gates']}"
+                       if lifetime == "HistoricalCoverageOnly" else row["gates"])
         elif row.get("class") in gate_optional_classes(root):
             # The class authors gate-independence; absence is not the claim.
             posture = "GateIndependent"

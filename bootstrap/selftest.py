@@ -308,11 +308,11 @@ def test_guarantees(audit, project) -> list[str]:
         fail("permanent_decision_witness_deferred_to_c2")
     if audit.guarantee_lifetime_findings([node("Q", kind="QualificationRequirement", witness="NoFamilyWitness")], {}, []):
         fail("permanent_qualification_is_self_witnessing")
-    if not any("UntilGate names no gate" in x
+    if not any("UntilGate names no active gate schedule" in x
                for x in audit.guarantee_lifetime_findings([node("X", life="UntilGate", gates="")], {}, [])):
         fail("untilgate_without_gate_is_rejected")
-    if not any("HistoricalCoverageOnly cannot gate" in x
-               for x in audit.guarantee_lifetime_findings([node("X", family="LEG", life="HistoricalCoverageOnly", gates="G2")], {}, [])):
+    if not any("HistoricalCoverageOnly cannot be actively scheduled" in x
+               for x in audit.guarantee_lifetime_findings([node("X", life="HistoricalCoverageOnly", gates="G2")], {}, [])):
         fail("historicalcoverageonly_carrying_active_gate_is_rejected")
     if not any("no resolvable typed successor" in x
                for x in audit.guarantee_lifetime_findings([node("X", life="UntilSuccessor", owner="batpak::store", gates="G2")], {}, [])):
@@ -2507,8 +2507,23 @@ def test_guarantee_authority(audit, project) -> list[str]:
         fail("ungated_historical_receipt_is_gate_independent_by_class")
     if idx["DEC-002"]["lifetime"] != "HistoricalCoverageOnly":
         fail("retain_as_evidence_is_not_projected_as_permanent")
-    if idx["DEC-005"]["gate_posture"] != "G0":
+    if idx["DEC-005"]["gate_posture"] != "historical:G0":
         fail("requires_gate_is_a_floor_not_a_ceiling")
+    # A retired decision keeps its authored GateIds as provenance, and provenance
+    # is never an active schedule. No family is exempt from the invariant.
+    for did, want in (("DEC-009", "historical:G0"), ("DEC-010", "historical:G5")):
+        if idx[did]["gate_posture"] != want:
+            fail(f"{did}_retains_its_gate_reference_as_historical_association")
+    def hist_node(posture):
+        return {"id": "D", "family": "DEC", "kind": "Decision",
+                "lifetime": "HistoricalCoverageOnly", "owner": "o",
+                "gate_posture": posture, "target": "", "witness": "NoFamilyWitness"}
+
+    if audit.guarantee_lifetime_findings([hist_node("historical:G0")], {}, []):
+        fail("historical_association_is_not_an_active_schedule")
+    if not any("cannot be actively scheduled" in x
+               for x in audit.guarantee_lifetime_findings([hist_node("G0")], {}, [])):
+        fail("historical_lifetime_with_an_active_schedule_is_rejected_for_every_family")
 
     # 7. ARCH loses its declared G0 schedule.
     probe("arch_row_losing_g0_scheduling_is_rejected", GU,

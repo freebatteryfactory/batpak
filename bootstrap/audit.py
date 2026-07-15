@@ -650,9 +650,12 @@ def admit_view(root: Path, family: str, ident: str, row: dict, failure: str) -> 
     grule, gconst = pol["gate_posture"]
     if grule == "FamilyConstant":
         posture = gate_render(gate_list(gconst), root)
-    elif grule == "FromDecisionClassAndRowGates":
+    elif grule == "FromDecisionDispositionClassAndGates":
         if row.get("gates"):
-            posture = row["gates"]
+            # A retired decision keeps its authored GateIds as PROVENANCE: the
+            # references are preserved, never deleted, never rendered as active.
+            posture = (f"historical:{row['gates']}"
+                       if lifetime == "HistoricalCoverageOnly" else row["gates"])
         elif row.get("class") in gate_optional_decision_classes(root):
             posture = "GateIndependent"
         else:
@@ -772,6 +775,12 @@ def guarantee_relation_findings(node_ids: set[str], edges: list[tuple]) -> list[
 PERMANENT_WITNESS_KINDS = {"SemanticLaw", "BootstrapAssertion", "ArchitectureConstraint"}
 
 
+def _is_scheduled(posture: str) -> bool:
+    """An ACTIVE gate schedule. `historical:` provenance and `GateIndependent`
+    are not schedules; both are authored postures, not missing data."""
+    return bool(posture.strip()) and posture != "GateIndependent"         and not posture.startswith("historical:")
+
+
 def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], edges: list[tuple]) -> list[str]:
     node_ids = {n["id"] for n in nodes}
     # A guarantee is validly UntilSuccessor only if a resolvable typed successor
@@ -781,17 +790,15 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], ed
     for n in nodes:
         life, posture, kind = n["lifetime"], n["gate_posture"], n["kind"]
         # "Cannot gate" is about carrying an active implementation obligation. A
-        # superseded or retained-as-evidence DECISION still names the gate it
-        # historically pertained to; that is provenance, not scheduling, and a
-        # DEC's gates are node metadata that never become edges. Applying the LEG
-        # obligation rule to DEC metadata would conflate the two dimensions this
-        # closure exists to separate. Before 5.5D4b no node was ever
+        # No family exemption. A retired decision keeps its authored GateIds as a
+        # HistoricalAssociation, which is provenance rather than an active
+        # schedule, so it satisfies "cannot gate" by construction instead of by
+        # being excused from the rule. Before 5.5D4b no node was ever
         # HistoricalCoverageOnly, so this rule had never once fired.
-        if life == "HistoricalCoverageOnly" and n["family"] != "DEC" and posture.strip() \
-                and posture != "GateIndependent":
-            out.append(f"{n['id']} HistoricalCoverageOnly cannot gate")
-        if life == "UntilGate" and (not posture.strip() or posture == "GateIndependent"):
-            out.append(f"{n['id']} UntilGate names no gate")
+        if life == "HistoricalCoverageOnly" and _is_scheduled(posture):
+            out.append(f"{n['id']} HistoricalCoverageOnly cannot be actively scheduled")
+        if life == "UntilGate" and not _is_scheduled(posture):
+            out.append(f"{n['id']} UntilGate names no active gate schedule")
         if life == "UntilSuccessor" and n["id"] not in superseded:
             out.append(f"{n['id']} UntilSuccessor names no resolvable typed successor relation")
         if life == "Permanent" and kind in PERMANENT_WITNESS_KINDS \
@@ -803,7 +810,7 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], ed
                 out.append(f"{n['id']} Active LEG projects as ClosedEvidence")
             if meta.get("status") == "Closed" and life != "ClosedEvidence":
                 out.append(f"{n['id']} Closed LEG does not project as ClosedEvidence")
-            if meta.get("status") == "Closed" and posture.strip() and posture != "GateIndependent":
+            if meta.get("status") == "Closed" and _is_scheduled(posture):
                 out.append(f"{n['id']} Closed LEG still names an implementation gate")
             if life == "Permanent":
                 out.append(f"{n['id']} LEG projects as Permanent; DeletionCondition::Never must not force Permanent")

@@ -84,7 +84,15 @@ pub enum SourceFailure {
 /// law — it is a positive claim, not the absence of one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GatePosture {
+    /// An ACTIVE qualification or construction binding: this guarantee is
+    /// scheduled to qualify at these gates.
     Scheduled(&'static [GateId]),
+    /// The gates this guarantee was originally established against, retained as
+    /// PROVENANCE after supersession or retirement. A historical association is
+    /// not a schedule: a `HistoricalCoverageOnly` guarantee keeps its authored
+    /// GateIds without ever appearing actively scheduled.
+    HistoricalAssociation(&'static [GateId]),
+    /// No gate schedules this law. A positive claim, not the absence of one.
     GateIndependent,
 }
 
@@ -157,14 +165,24 @@ pub enum GatePostureRule {
     /// The native row declares its own gate list.
     RowDeclared,
     FamilyConstant(GatePosture),
-    /// DEC: `Scheduled` when the row declares gates. `GateIndependent` when the
-    /// row declares none AND `DecisionClass::requires_gate()` is false — that is
-    /// an authored claim carried by the class, not absence used as policy. A row
-    /// declaring no gates while its class requires them fails admission.
+    /// DEC posture, derived from three authored facts: the disposition, the
+    /// class, and the row's own gates.
+    ///
+    /// - the disposition retires the decision (its lifetime is
+    ///   `HistoricalCoverageOnly`) and the row declares gates
+    ///     -> `HistoricalAssociation`: the GateIds are kept as provenance, never
+    ///        deleted and never reinterpreted as an active schedule;
+    /// - the row declares gates and the decision is still active
+    ///     -> `Scheduled`;
+    /// - the row declares none and `DecisionClass::requires_gate()` is false
+    ///     -> `GateIndependent`, an authored claim carried by the class rather
+    ///        than absence used as policy;
+    /// - the row declares none while its class requires a gate
+    ///     -> admission fails.
     ///
     /// `requires_gate()` is a floor, not a ceiling: a class that does not require
     /// a gate may still declare one, and then the declared gates win.
-    FromDecisionClassAndRowGates,
+    FromDecisionDispositionClassAndGates,
 }
 
 /// Typed family policy: the family-wide semantics an individual row does not and
@@ -205,7 +223,7 @@ pub const GUARANTEE_FAMILY_POLICIES: &[GuaranteeFamilyPolicy] = &[
         kind: KindRule::FamilyConstant(GuaranteeKind::Decision),
         owner: OwnerRule::FamilyConstant("docs/30_DECISION_AND_REJECTION_LEDGER.md"),
         lifetime: LifetimeRule::FromDecisionDisposition,
-        gate_posture: GatePostureRule::FromDecisionClassAndRowGates,
+        gate_posture: GatePostureRule::FromDecisionDispositionClassAndGates,
         witness: WitnessPosture::NoFamilyWitness,
     },
     GuaranteeFamilyPolicy {
