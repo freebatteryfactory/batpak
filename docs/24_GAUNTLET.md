@@ -251,6 +251,57 @@ allocation_does_not_scale_with_full_matched_set
     returned output is not proof of bounded discovery, allocation, or retained work.
 ```
 
+## Deferred native-postcondition witnesses (LEG-043)
+
+A requested or attempted mechanism is not an established postcondition. These rows are named now so the proof boundary exists; their execution is intentionally blocked until the relevant adapter is admitted. Their presence claims no native launcher, no descriptor table, and no syscall.
+
+Required witnesses (proof owner TestPak; gates G5; future executable: yes; deferred until: the relevant native or foreign execution adapter is admitted; bootstrap executed: no), also carried by `LEG-043`:
+
+```text
+descriptor_postcondition_failure_is_not_reported_applied
+fcntl_getfd_failure_fails_closed
+fcntl_setfd_failure_fails_closed
+```
+
+Authoritative meanings:
+
+```text
+descriptor_postcondition_failure_is_not_reported_applied
+    A requested descriptor postcondition is not reported as established,
+    applied, or verified when the required postcondition verification fails.
+
+fcntl_getfd_failure_fails_closed
+    Failure to read descriptor flags cannot produce a verified close-on-exec
+    or equivalent descriptor postcondition.
+
+fcntl_setfd_failure_fails_closed
+    Failure to apply descriptor flags cannot produce an applied or verified
+    descriptor postcondition.
+```
+
+## Reopen and reimport idempotency witness (LEG-074)
+
+One sharp reproducer inside LEG-074's broader crash-boundary matrix. It does not replace that matrix, and it does not replace the general idempotency-authority export/restore law owned by `LEG-083`.
+
+Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-074`:
+
+```text
+close_reopen_reimport_returns_zero_new_events
+```
+
+Authoritative meanings:
+
+```text
+close_reopen_reimport_returns_zero_new_events
+    After a completed import is durably closed and reopened, retrying the same
+    stable import identity imports zero new events and returns the
+    already-established authority outcome rather than duplicating source events.
+    The witness binds stable import identity, source lineage, destination
+    lineage, completed close state, reopened destination state, idempotency
+    authority binding, the original established authority outcome, and a
+    resulting new-event count of zero.
+```
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.

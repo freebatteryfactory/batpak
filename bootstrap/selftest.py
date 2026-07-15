@@ -1887,6 +1887,127 @@ def test_derived_material_witnesses(audit) -> list[str]:
     return findings
 
 
+def test_deferred_witnesses(audit) -> list[str]:
+    """LEG-043 deferred native rows and the LEG-074 reimport row (5.5D4b-2b).
+
+    Structural only. Bootstrap never called fcntl, never inspected a descriptor
+    table, never launched a native process, never verified a live close-on-exec
+    flag, and ships no native launcher. These fixtures prove the proof boundary
+    is named and honestly deferred -- nothing more.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            text = path.read_text(encoding="utf-8")
+            path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
+            expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
+
+    GA = "docs/24_GAUNTLET.md"
+    D21 = "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md"
+    dp = audit.deferred_posture_findings
+    H43 = ("Required witnesses (proof owner TestPak; gates G5; future executable: yes; "
+           "deferred until: the relevant native or foreign execution adapter is admitted; "
+           "bootstrap executed: no), also carried by `LEG-043`:")
+    H74 = ("Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; "
+           "bootstrap executed: no), also carried by `LEG-074`:")
+
+    if dp(root) or audit.witness_reference_findings(root):
+        fail("d4b2b_witness_contract_passes")
+
+    # every new proof-row identity survives
+    for leg, ids in audit.D4B2B_ROWS.items():
+        for wid in ids:
+            probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
+                  f"{leg} witness {wid} is absent from docs/24", "", validator=dp)
+
+    # deferred posture must be explicit, honest, and admission-bounded
+    probe("leg043_missing_future_executable_posture_is_rejected", GA,
+          "gates G5; future executable: yes; deferred until:",
+          "states no future-executable posture", "gates G5; deferred until:", validator=dp)
+    probe("leg043_missing_deferral_posture_is_rejected", GA,
+          "; deferred until: the relevant native or foreign execution adapter is admitted",
+          "states no deferral condition", "", validator=dp)
+    probe("leg043_vague_later_deferral_is_rejected", GA,
+          "deferred until: the relevant native or foreign execution adapter is admitted",
+          "names no admission boundary", "deferred until: later", validator=dp)
+    probe("leg043_falsely_marked_bootstrap_executed_is_rejected", GA,
+          "bootstrap executed: no), also carried by `LEG-043`:",
+          "falsely claims bootstrap execution",
+          "bootstrap executed: yes), also carried by `LEG-043`:", validator=dp)
+    probe("leg043_falsely_marked_currently_qualified_is_rejected", GA,
+          "bootstrap executed: no), also carried by `LEG-043`:",
+          "falsely claims current executable qualification",
+          "bootstrap executed: no; currently qualified), also carried by `LEG-043`:", validator=dp)
+    probe("leg043_unknown_gate_is_rejected", GA, "gates G5;", "unknown GateId", "gates G12;",
+          validator=dp)
+    probe("leg043_gates_differing_from_owning_leg_is_rejected", GA, "gates G5;",
+          "differ from LEG-043 gates", "gates G2;", validator=dp)
+    probe("leg074_incorrectly_marked_native_deferred_is_rejected", GA,
+          "gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-074`:",
+          "inherits a native-adapter deferral it does not have",
+          "gates G2/G3; future executable: yes; deferred until: the adapter is admitted; "
+          "bootstrap executed: no), also carried by `LEG-074`:", validator=dp)
+    probe("leg074_falsely_marked_bootstrap_executed_is_rejected", GA,
+          "bootstrap executed: no), also carried by `LEG-074`:",
+          "falsely claims bootstrap execution",
+          "bootstrap executed: yes), also carried by `LEG-074`:", validator=dp)
+
+    # meanings carry the law they exist to defend
+    # A proof row's MEANING is what a future implementation qualifies against.
+    # Removing a clause from it is a weakening even though the ID survives.
+    for frag, label, needle in (
+        ("not reported as established",
+         "descriptor_postcondition_reported_applied_after_failure_is_rejected",
+         "meaning no longer states: not reported as established"),
+        ("Failure to read descriptor flags cannot produce a verified close-on-exec",
+         "fcntl_read_failure_reported_verified_is_rejected",
+         "meaning no longer states: Failure to read descriptor flags"),
+        ("Failure to apply descriptor flags cannot produce an applied or verified",
+         "fcntl_write_failure_reported_applied_is_rejected",
+         "meaning no longer states: Failure to apply descriptor flags"),
+        ("imports zero new events", "reimport_creating_new_events_is_rejected",
+         "meaning no longer states: imports zero new events"),
+        ("already-established authority outcome", "reimport_inventing_an_outcome_is_rejected",
+         "meaning no longer states: already-established authority outcome"),
+        ("witness binds stable import identity", "reimport_losing_bound_identities_is_rejected",
+         "meaning no longer states: witness binds stable import identity"),
+    ):
+        probe(label, GA, frag, needle, "", validator=audit.proof_meaning_findings)
+
+    # resolver coverage for the new rows
+    probe("d4b2b_row_bound_to_wrong_leg_is_rejected", GA,
+          "), also carried by `LEG-074`:", "which docs/24 binds to LEG-023",
+          "), also carried by `LEG-023`:")
+    probe("docs21_missing_a_d4b2b_row_is_rejected", D21,
+          "; fcntl_setfd_failure_fails_closed", "omits owned proof row fcntl_setfd_failure_fails_closed")
+    probe("docs21_extra_d4b2b_row_is_rejected", D21,
+          "close_reopen_reimport_returns_zero_new_events",
+          "references fcntl_getfd_failure_fails_closed, which docs/24 binds to LEG-043",
+          "fcntl_getfd_failure_fails_closed")
+    probe("duplicate_row_across_prior_d4b_passes_is_rejected", GA,
+          "fcntl_getfd_failure_fails_closed\n",
+          "binds proof-row id middle_event_deletion_is_rejected more than once",
+          "middle_event_deletion_is_rejected\n")
+    probe("d4b2b_future_executable_posture_removed_is_rejected", GA, H74,
+          "states no future-executable posture",
+          "Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-074`:",
+          validator=dp)
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -1915,6 +2036,7 @@ def main() -> int:
     findings += test_proof_policy(audit)
     findings += test_integrity_witnesses(audit)
     findings += test_derived_material_witnesses(audit)
+    findings += test_deferred_witnesses(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -1923,7 +2045,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness hostile fixtures)")
     return 0
 
 

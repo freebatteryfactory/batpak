@@ -1580,7 +1580,8 @@ def proof_policy_findings(root: Path) -> list[str]:
 # Ownership is read from the explicit binding in the live docs/24 block header,
 # never inferred from witness-name keywords or nearby headings.
 W_OWNER_BLOCK = re.compile(
-    r"Required witnesses \(proof owner ([^;]+); gates ([^)]*)\)[^\n:]*?`(LEG-\d+)`:\s*\n+```text\n(.*?)\n```",
+    r"Required witnesses \(proof owner ([^;]+); gates ([^;)]*)((?:;[^)]*)?)\)"
+    r"[^\n:]*?`(LEG-\d+)`:\s*\n+```text\n(.*?)\n```",
     re.S,
 )
 W_MEANING_BLOCK = re.compile(r"Authoritative meanings:\s*\n+```text\n(.*?)\n```", re.S)
@@ -1591,7 +1592,7 @@ def witness_rows(root: Path) -> dict[str, dict]:
     """proof-row id -> {owner LEG, proof owner, gates}. docs/24 is the authority."""
     doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
     out: dict[str, dict] = {}
-    for proof_owner, gates, leg, body in W_OWNER_BLOCK.findall(doc):
+    for proof_owner, gates, posture, leg, body in W_OWNER_BLOCK.findall(doc):
         for line in body.splitlines():
             wid = line.strip()
             if not wid or not W_ID.match(wid):
@@ -1600,7 +1601,8 @@ def witness_rows(root: Path) -> dict[str, dict]:
                 out[wid]["duplicate"] = True
                 continue
             out[wid] = {"leg": leg, "proof_owner": proof_owner.strip(),
-                        "gates": gates.strip(), "duplicate": False}
+                        "gates": gates.strip(), "posture": posture.strip(),
+                        "duplicate": False}
     return out
 
 
@@ -1767,6 +1769,114 @@ def derived_material_findings(root: Path) -> list[str]:
     alloc = rows.get("allocation_does_not_scale_with_full_matched_set", {}).get("leg")
     if disc == alloc:
         out.append("bounded discovery and bounded allocation share one qualification target")
+    return out
+
+
+# --- 5.5D4b-2b deferred proof posture ---------------------------------------
+# "Deferred" must be an explicit, machine-audited fact. It is never inferred
+# from the word fcntl, the witness ID, the owner name, or the document section.
+# A deferred row records that the proof boundary exists; it never claims that
+# bootstrap called a syscall, inspected a descriptor table, or shipped a
+# launcher.
+D4B2B_ROWS = {
+    "LEG-043": [
+        "descriptor_postcondition_failure_is_not_reported_applied",
+        "fcntl_getfd_failure_fails_closed",
+        "fcntl_setfd_failure_fails_closed",
+    ],
+    "LEG-074": ["close_reopen_reimport_returns_zero_new_events"],
+}
+D4B2B_DEFERRED = set(D4B2B_ROWS["LEG-043"])
+D4B2B_VAGUE = ("later", "eventually", "someday", "tbd", "in future", "at some point")
+
+
+def leg_gates(root: Path, leg: str) -> str:
+    """The owning LEG's live typed gate list, rendered. Never invented."""
+    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    m = re.search(r'id: "' + leg + r'".*?gates: &\[([^\]]*)\]', src, re.S)
+    return gate_render(gate_list(m.group(1)), root) if m else ""
+
+
+# Load-bearing clauses inside a proof row's authoritative meaning. Presence of
+# the ID is not enough: the meaning is what a future implementation qualifies
+# against, so its claims must survive too.
+D4B2B_MEANING_CLAUSES = {
+    "descriptor_postcondition_failure_is_not_reported_applied": [
+        "not reported as established",
+        "when the required postcondition verification fails",
+    ],
+    "fcntl_getfd_failure_fails_closed": [
+        "Failure to read descriptor flags cannot produce a verified close-on-exec",
+    ],
+    "fcntl_setfd_failure_fails_closed": [
+        "Failure to apply descriptor flags cannot produce an applied or verified",
+    ],
+    "close_reopen_reimport_returns_zero_new_events": [
+        "imports zero new events",
+        "already-established authority outcome",
+        "witness binds stable import identity",
+        "source lineage",
+        "destination",
+        "reopened destination state",
+        "idempotency",
+        "new-event count of zero",
+    ],
+}
+
+
+def proof_meaning_findings(root: Path) -> list[str]:
+    """Each proof row's meaning still states the claims it exists to defend."""
+    doc = re.sub(r"\s+", " ", (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8"))
+    out = []
+    for wid, clauses in D4B2B_MEANING_CLAUSES.items():
+        for clause in clauses:
+            if re.sub(r"\s+", " ", clause) not in doc:
+                out.append(f"proof row {wid} meaning no longer states: {clause}")
+    return out
+
+
+def deferred_posture_findings(root: Path) -> list[str]:
+    rows = witness_rows(root)
+    out: list[str] = []
+    for leg, ids in D4B2B_ROWS.items():
+        want_gates = leg_gates(root, leg)
+        for wid in ids:
+            row = rows.get(wid)
+            if row is None:
+                out.append(f"{leg} witness {wid} is absent from docs/24")
+                continue
+            if row["leg"] != leg:
+                out.append(f"{leg} witness {wid} is bound to {row['leg']}")
+            posture = row["posture"].lower()
+            if "future executable: yes" not in posture:
+                out.append(f"proof row {wid} states no future-executable posture")
+            if "bootstrap executed: no" not in posture:
+                out.append(f"proof row {wid} does not state that bootstrap did not execute it")
+            if "bootstrap executed: yes" in posture:
+                out.append(f"proof row {wid} falsely claims bootstrap execution")
+            if "currently qualified" in posture:
+                out.append(f"proof row {wid} falsely claims current executable qualification")
+            # the proof row qualifies at its owning obligation's gates
+            if row["gates"] != want_gates:
+                out.append(
+                    f"proof row {wid} gates {row['gates']!r} differ from {leg} gates {want_gates!r}"
+                )
+            out.extend(gate_findings(root, "proof row", wid, gate_list(
+                " ".join(f"GateId::{t}" for t in row["gates"].split("/") if t))))
+            if wid in D4B2B_DEFERRED:
+                m = re.search(r"deferred until:\s*([^;)]*)", row["posture"], re.I)
+                if not m or not m.group(1).strip():
+                    out.append(f"deferred proof row {wid} states no deferral condition")
+                else:
+                    cond = m.group(1).strip()
+                    if any(v in cond.lower() for v in D4B2B_VAGUE) or "admitted" not in cond.lower():
+                        out.append(
+                            f"deferred proof row {wid} names no admission boundary: {cond!r}"
+                        )
+            else:
+                # a non-deferred future row must not inherit the adapter deferral
+                if "deferred until" in posture:
+                    out.append(f"proof row {wid} inherits a native-adapter deferral it does not have")
     return out
 
 
@@ -2238,6 +2348,8 @@ def main() -> int:
     findings.extend(witness_reference_findings(root))
     findings.extend(integrity_witness_findings(root))
     findings.extend(derived_material_findings(root))
+    findings.extend(deferred_posture_findings(root))
+    findings.extend(proof_meaning_findings(root))
     findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"
