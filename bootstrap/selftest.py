@@ -19,6 +19,7 @@ import hashlib
 import importlib.util
 import sys
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -2538,6 +2539,47 @@ def test_guarantee_authority(audit, project) -> list[str]:
     return findings
 
 
+def test_rust_specification_compiles(_audit) -> list[str]:
+    """The typed specification surface must actually compile (5.5D4b).
+
+    Until this session no rustc was available and every Rust contract shipped
+    compiler-unverified. When a toolchain IS present this runs; when it is absent
+    it reports that plainly rather than passing silently. A skipped check that
+    prints PASS is exactly the fake proof this project refuses.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    rustc = shutil.which("rustc")
+    if not rustc:
+        print("selftest: rustc unavailable; Rust specification surface remains "
+              "compiler-unverified until Gate 0")
+        return findings
+    tmp = Path(tempfile.mkdtemp(prefix="batpak-rustc-"))
+    try:
+        # The spec is a LIBRARY: every pub item is API, so nothing is dead code.
+        lib = tmp / "spec_probe.rs"
+        mods = sorted(p.stem for p in (root / "spec").glob("*.rs"))
+        lib.write_text("\n".join(
+            f'#[path = "{(root / "spec" / (m + ".rs")).as_posix()}"] pub mod {m};'
+            for m in mods) + "\n", encoding="utf-8")
+        for name, src, extra in (
+            ("batpak_spec", lib, ["--crate-type", "lib"]),
+            ("seedcheck", root / "bootstrap/seedcheck.rs", []),
+            ("materialize", root / "bootstrap/materialize.rs", []),
+        ):
+            proc = subprocess.run(
+                [rustc, "--edition", "2021", "--emit=metadata", "--crate-name", name,
+                 "-o", str(tmp / (name + ".rmeta")), str(src)] + extra,
+                capture_output=True, text=True)
+            if proc.returncode != 0:
+                head = "\n".join(proc.stderr.splitlines()[:6])
+                findings.append(
+                    f"rust specification surface does not compile ({name}):\n{head}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -2570,6 +2612,7 @@ def main() -> int:
     findings += test_leg081_authority(audit)
     findings += test_proof_target_resolver(audit)
     findings += test_guarantee_authority(audit, project)
+    findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -2578,7 +2621,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures + rust specification compile)")
     return 0
 
 

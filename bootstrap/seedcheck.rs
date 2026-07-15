@@ -1,19 +1,27 @@
 #![deny(warnings)]
 
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/gates.rs"]
 mod gates;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/architecture.rs"]
 mod architecture;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/guarantees.rs"]
 mod guarantees;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/invariants.rs"]
 mod invariants;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/dispositions.rs"]
 mod dispositions;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/legacy_obligations.rs"]
 mod legacy_obligations;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/legacy_invariant_coverage.rs"]
 mod legacy_invariant_coverage;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/operators.rs"]
 mod operators;
 
@@ -395,7 +403,7 @@ fn check_unique_ids(findings: &mut Vec<String>) {
         }
         // The class -- not the title, ID range, document section, or keyword --
         // decides whether the row must name a gate (DEC-072).
-        check_gates(value.id, value.gates, &mut findings);
+        check_gates(value.id, value.gates, findings);
         if value.class.requires_gate() && value.gates.is_empty() {
             findings.push(format!(
                 "{} is implementation-bearing and names no gate",
@@ -424,10 +432,10 @@ fn check_unique_ids(findings: &mut Vec<String>) {
         }
     }
     for value in invariants::INVARIANTS {
-        check_gates(value.id, value.gates, &mut findings);
+        check_gates(value.id, value.gates, findings);
     }
     for value in legacy_obligations::OBLIGATIONS {
-        check_gates(value.id, value.gates, &mut findings);
+        check_gates(value.id, value.gates, findings);
     }
     let legacy_ids: BTreeSet<&str> = legacy_obligations::OBLIGATIONS.iter().map(|v| v.id).collect();
     if legacy_ids.len() != legacy_obligations::OBLIGATIONS.len() { findings.push("duplicate legacy obligation ID".into()); }

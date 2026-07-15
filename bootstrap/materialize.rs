@@ -1,5 +1,12 @@
 #![deny(warnings)]
 
+// architecture.rs resolves `crate::gates::GateId`, so the gate identity module
+// must be declared alongside it. This was missed when spec/gates.rs arrived in
+// 5.5C2a and no compiler was available to catch it.
+#[allow(dead_code)] // declarative spec surface; not this binary's program
+#[path = "../spec/gates.rs"]
+mod gates;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/architecture.rs"]
 mod architecture;
 
