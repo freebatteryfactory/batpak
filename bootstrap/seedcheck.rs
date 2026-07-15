@@ -24,6 +24,9 @@ mod legacy_invariant_coverage;
 #[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/operators.rs"]
 mod operators;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
+#[path = "../spec/pakvm_isa.rs"]
+mod pakvm_isa;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -75,6 +78,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_profiles(&mut findings);
     check_authenticated_history(&mut findings);
     check_version(&mut findings);
+    check_pakvm_isa(&mut findings);
     check_unique_ids(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
@@ -867,5 +871,228 @@ mod tests {
     #[test]
     fn bootstrap_detector_fixture_does_not_grade_itself() {
         assert!(production_debt("let banned = [r#\"panic!\"#, r\".unwrap(\"];").is_empty());
+    }
+}
+
+/// The semantic ISA admits every authored node, and admits nothing else.
+///
+/// This runs the SAME `pakvm_isa::admit` the specification declares. It does not
+/// re-derive the answer here: a checker that recomputed the policy would be a
+/// second owner of it, which is the defect this whole pass exists to remove.
+fn check_pakvm_isa(findings: &mut Vec<String>) {
+    use pakvm_isa::*;
+    let mut admitted = 0usize;
+    for &node in PAKVM_NODES {
+        match admit(node) {
+            PakVmAdmission::Admitted(spec) => {
+                admitted += 1;
+                // A projector may serialize an admitted spec; it may never
+                // complete one. Every string field must therefore already say
+                // something.
+                for (field, value) in [
+                    ("authored name", spec.authored_name),
+                    ("operand sorts", spec.operand_sorts),
+                    ("result sorts", spec.result_sorts),
+                    ("source origin", spec.source_origin),
+                ] {
+                    if value.is_empty() {
+                        findings.push(format!("PakVM node {:?} admits with an empty {field}", node));
+                    }
+                }
+                if spec.work_formula.units().is_empty() {
+                    findings.push(format!(
+                        "PakVM node {:?} admits with a work formula accounting in no unit", node));
+                }
+            }
+            PakVmAdmission::Refused(why) => {
+                findings.push(format!("PakVM node {:?} does not admit: {why}", node));
+            }
+        }
+    }
+    if admitted != PAKVM_NODES.len() {
+        findings.push(format!(
+            "PakVM semantic ISA admitted {admitted} of {} authored nodes", PAKVM_NODES.len()));
+    }
+    // Identity is symbolic and unique. A duplicate id or a duplicate authored
+    // name would let two meanings share one node.
+    for i in 0..PAKVM_NODES.len() {
+        for j in (i + 1)..PAKVM_NODES.len() {
+            if PAKVM_NODES[i] == PAKVM_NODES[j] {
+                findings.push(format!("PakVM node {:?} is listed twice", PAKVM_NODES[i]));
+            }
+            if PAKVM_NODES[i].authored_name() == PAKVM_NODES[j].authored_name() {
+                findings.push(format!(
+                    "PakVM nodes {:?} and {:?} share the authored name {:?}",
+                    PAKVM_NODES[i], PAKVM_NODES[j], PAKVM_NODES[i].authored_name()));
+            }
+        }
+    }
+    // Every authored work unit is claimed by some node family. A unit nothing
+    // accounts in means either the unit list or the node inventory is wrong, and
+    // silently carrying it would hide which.
+    for unit in [WorkUnit::Instructions, WorkUnit::Rows, WorkUnit::DecodedBytes,
+                 WorkUnit::TileBytes, WorkUnit::Groups, WorkUnit::Matches, WorkUnit::Outputs,
+                 WorkUnit::Artifacts, WorkUnit::Effects, WorkUnit::CallDepth] {
+        let claimed = PAKVM_NODES.iter().any(|&n| match admit(n) {
+            PakVmAdmission::Admitted(s) => s.work_formula.units().contains(&unit),
+            PakVmAdmission::Refused(_) => false,
+        });
+        if !claimed {
+            findings.push(format!(
+                "authored work unit {:?} is accounted by no PakVM node family", unit));
+        }
+    }
+}
+
+#[cfg(test)]
+mod pakvm_isa_tests {
+    use crate::pakvm_isa::*;
+
+    fn refusal(a: PakVmAdmission) -> &'static str {
+        match a {
+            PakVmAdmission::Refused(why) => why,
+            PakVmAdmission::Admitted(_) => "ADMITTED",
+        }
+    }
+
+    // The premise every probe below depends on: the node exists, its real policy
+    // admits, and each mutation therefore changes a live outcome rather than a
+    // dead one. A red light from an already-broken node would prove nothing.
+    #[test]
+    fn the_probe_targets_admit_before_mutation() {
+        for &node in PAKVM_NODES {
+            assert!(matches!(admit(node), PakVmAdmission::Admitted(_)), "{node:?}");
+        }
+    }
+
+    #[test]
+    fn an_internal_lowering_identity_is_not_a_semantic_node() {
+        // A SpecializedPlan micro-op wearing a semantic node's identity.
+        let ap = PakVmAlgebraPolicy {
+            lowering: PakVmRule::AlgebraConstant(LoweringPosture::InternalLoweringIdentity),
+            ..*algebra_policy(PakVmAlgebra::QueryDataflow).unwrap()
+        };
+        let cp = *class_policy(PakVmNodeClass::RowTransform).unwrap();
+        assert_eq!(refusal(admit_with(PakVmNodeId::Filter, &ap, &cp)),
+                   "an internal lowering identity is not a semantic node");
+    }
+
+    #[test]
+    fn two_owners_for_one_field_is_refused() {
+        // The algebra fixes the effect posture AND the class declares one.
+        let ap = *algebra_policy(PakVmAlgebra::QueryDataflow).unwrap();
+        let cp = PakVmNodeClassPolicy {
+            effect: Some(EffectPosture::ObservationalOnly),
+            ..*class_policy(PakVmNodeClass::RowTransform).unwrap()
+        };
+        assert_eq!(refusal(admit_with(PakVmNodeId::Filter, &ap, &cp)),
+                   "effect posture has no single owner");
+    }
+
+    #[test]
+    fn no_owner_for_one_field_is_refused() {
+        // The algebra delegates and the class stays silent. Admission must fail
+        // rather than let a downstream projector pick a value.
+        let ap = PakVmAlgebraPolicy {
+            effect: PakVmRule::ClassDeclared,
+            ..*algebra_policy(PakVmAlgebra::QueryDataflow).unwrap()
+        };
+        let cp = *class_policy(PakVmNodeClass::RowTransform).unwrap();
+        assert_eq!(refusal(admit_with(PakVmNodeId::Filter, &ap, &cp)),
+                   "effect posture has no single owner");
+    }
+
+    #[test]
+    fn an_effect_node_claiming_purity_is_refused() {
+        // Would slip past the validator that rejects Effect nodes in a pure
+        // query image (docs/07, DEC-050).
+        let ap = PakVmAlgebraPolicy {
+            effect: PakVmRule::AlgebraConstant(EffectPosture::Pure),
+            capability: PakVmRule::AlgebraConstant(CapabilityRequirement::None),
+            ..*algebra_policy(PakVmAlgebra::Effect).unwrap()
+        };
+        let cp = *class_policy(PakVmNodeClass::DurableAppend).unwrap();
+        assert_eq!(refusal(admit_with(PakVmNodeId::Append, &ap, &cp)),
+                   "effect posture and algebra disagree");
+    }
+
+    #[test]
+    fn a_query_node_claiming_effectfulness_is_refused() {
+        // The other direction: smuggling an effect into the query algebra.
+        let ap = PakVmAlgebraPolicy {
+            effect: PakVmRule::AlgebraConstant(EffectPosture::Effectful),
+            ..*algebra_policy(PakVmAlgebra::QueryDataflow).unwrap()
+        };
+        let cp = *class_policy(PakVmNodeClass::RowTransform).unwrap();
+        assert_eq!(refusal(admit_with(PakVmNodeId::Filter, &ap, &cp)),
+                   "effect posture and algebra disagree");
+    }
+
+    #[test]
+    fn an_effect_without_its_declared_capability_is_refused() {
+        let ap = PakVmAlgebraPolicy {
+            capability: PakVmRule::AlgebraConstant(CapabilityRequirement::ReadOnlySourceEnvelope),
+            ..*algebra_policy(PakVmAlgebra::Effect).unwrap()
+        };
+        let cp = *class_policy(PakVmNodeClass::DurableAppend).unwrap();
+        assert_eq!(refusal(admit_with(PakVmNodeId::Append, &ap, &cp)),
+                   "effect capability is required by a node that declares no effect");
+    }
+
+    #[test]
+    fn a_pure_node_requiring_a_capability_is_refused() {
+        let ap = *algebra_policy(PakVmAlgebra::FormulaDecision).unwrap();
+        let cp = PakVmNodeClassPolicy {
+            capability: Some(CapabilityRequirement::ReadOnlySourceEnvelope),
+            ..*class_policy(PakVmNodeClass::ScalarComputation).unwrap()
+        };
+        assert_eq!(refusal(admit_with(PakVmNodeId::Compare, &ap, &cp)),
+                   "a pure node requires a capability");
+    }
+
+    #[test]
+    fn an_iterating_node_costing_one_instruction_is_refused() {
+        // A scan that declares constant cost would make bounded traversal
+        // unmeasurable: the budget could never bite.
+        let ap = *algebra_policy(PakVmAlgebra::QueryDataflow).unwrap();
+        let cp = PakVmNodeClassPolicy {
+            work_formula: WorkFormulaFamily::ConstantInstruction,
+            ..*class_policy(PakVmNodeClass::SourceTraversal).unwrap()
+        };
+        assert_eq!(refusal(admit_with(PakVmNodeId::Scan, &ap, &cp)),
+                   "boundedness posture and work formula disagree");
+    }
+
+    #[test]
+    fn a_class_policy_filed_under_a_foreign_algebra_is_refused() {
+        let ap = *algebra_policy(PakVmAlgebra::QueryDataflow).unwrap();
+        let cp = PakVmNodeClassPolicy {
+            algebra: PakVmAlgebra::Effect,
+            ..*class_policy(PakVmNodeClass::RowTransform).unwrap()
+        };
+        assert_eq!(refusal(admit_with(PakVmNodeId::Filter, &ap, &cp)),
+                   "node class policy names a different algebra");
+    }
+
+    #[test]
+    fn every_authored_work_unit_is_accounted_by_some_family() {
+        for unit in [WorkUnit::Instructions, WorkUnit::Rows, WorkUnit::DecodedBytes,
+                     WorkUnit::TileBytes, WorkUnit::Groups, WorkUnit::Matches,
+                     WorkUnit::Outputs, WorkUnit::Artifacts, WorkUnit::Effects,
+                     WorkUnit::CallDepth] {
+            assert!(PAKVM_NODES.iter().any(|&n| match admit(n) {
+                PakVmAdmission::Admitted(s) => s.work_formula.units().contains(&unit),
+                PakVmAdmission::Refused(_) => false,
+            }), "{unit:?} is accounted by no node family");
+        }
+    }
+
+    #[test]
+    fn the_authored_algebra_populations_match_docs_07() {
+        let count = |a: PakVmAlgebra| PAKVM_NODES.iter().filter(|n| n.algebra() == a).count();
+        assert_eq!(count(PakVmAlgebra::FormulaDecision), 16);
+        assert_eq!(count(PakVmAlgebra::QueryDataflow), 14);
+        assert_eq!(count(PakVmAlgebra::Effect), 6);
+        assert_eq!(PAKVM_NODES.len(), 36);
     }
 }
