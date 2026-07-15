@@ -90,7 +90,11 @@ no second gate identity type (spec/gates.rs owns GateId, GateSpec, and the gate 
 no gate reference unresolvable against the inventory, duplicated within one fact, or out of canonical order
 no gate identity authored twice (the docs/25 gate inventory is a generated projection of spec/gates.rs and is independently re-audited; the surrounding gate doctrine stays authored)
 no decision without a typed DecisionClass, and no implementation-bearing decision without a typed GateId (Naming and HistoricalReceipt may be ungated; the class decides, never the title or ID range; DEC-072)
-no integrity/authenticity/freshness/rollback-resistance collapsed into one verified boolean (the four axes stay separate; DEC-071, docs/19)
+no integrity/authenticity/freshness/rollback-resistance collapsed into one verified boolean or one mutually exclusive posture value (they are four independently representable typed claims: IntegrityClaim, AuthenticityClaim, FreshnessClaim, RollbackResistanceClaim; DEC-071, docs/19)
+no claim axis inferred from profile identity, witness policy, witness disposition, or another axis (profile identity does not substitute for an explicit claim bundle, and neither does witness disposition)
+no refusal carrying a successful claim bundle, and no refusal with partial local evidence rendered as a successful weaker profile (partial evidence never includes freshness or scoped rollback resistance after witness failure)
+no successful unanchored result for ExternallyAnchoredHistory + Required (an absent or invalid required witness refuses; there is no fallback success)
+no ordered security ladder replacing the four axes (no SecurityPosture, VerificationLevel, AssuranceLevel, or SecurityLevel)
 no authenticated-history claim exceeding the selected profile and verified witness posture (InternalConsistency never claims authorship or freshness; SignedHistory without a verified anchor never claims freshness)
 no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
 no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance

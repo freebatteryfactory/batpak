@@ -210,27 +210,102 @@ pub enum WitnessDisposition {
     AccumulatorMismatch,
 }
 
-/// Exactly what a verification result is allowed to say. Integrity,
-/// authenticity, freshness, and rollback resistance are separate axes and are
-/// never collapsed into one `verified: bool`.
+/// Whether the selected generation is internally coherent: local authoritative
+/// commitments and authority-generation relationships verify, and derived
+/// material is not treated as authority. Every admitted success bundle carries
+/// this; there is no success without it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HistoryClaimPosture {
-    /// Well-formed; local commitments and authority generations verify. Proves
-    /// nothing about authorship or newness.
+pub enum IntegrityClaim {
     InternalConsistencyVerified,
-    /// Authentic authorship within the signed history. Says nothing about
-    /// whether an older validly signed history was restored.
-    AuthenticatedHistoryVerifiedNoFreshnessClaim,
-    /// Anchored for exactly the witnessed generation, lineage, accumulator, and
-    /// the witness's own monotonicity and trust assumptions. Never universal
-    /// rollback prevention.
-    ExternallyAnchoredForThisWitnessedGeneration,
-    /// No freshness evidence exists. Stated explicitly rather than omitted.
-    RollbackResistanceUnavailable,
 }
 
+/// Whether an authenticated signer produced this history. Independent of
+/// whether the history is the newest one: a restored older generation can be
+/// perfectly authentic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthenticityClaim {
+    NotClaimed,
+    SignedHistoryVerified,
+}
+
+/// Whether this generation is the newest history ever acknowledged. Only an
+/// independent monotonic witness carries this claim.
+///
+/// `WitnessedGenerationVerified` is scoped to the exact store lineage,
+/// generation, history or accumulator commitment, witness identity, witness
+/// monotonicity guarantee, and trust assumptions that verified. It is never a
+/// universal newest-history proof, and must not be renamed to imply one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FreshnessClaim {
+    NotClaimed,
+    WitnessedGenerationVerified,
+}
+
+/// Whether restoring an older valid generation is detectable, and within what
+/// scope. Never universal rollback prevention.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RollbackResistanceClaim {
+    /// No freshness evidence exists. Stated explicitly rather than omitted.
+    Unavailable,
+    /// Detectable only within the verified witness's own scope and assumptions.
+    ScopedToVerifiedWitness,
+}
+
+/// Everything a SUCCESSFUL authenticated-history verification claims, stated on
+/// four independent axes.
+///
+/// This replaces a single mutually exclusive posture enum, which could not say
+/// two true things at once: an InternalConsistency success must assert both
+/// `InternalConsistencyVerified` and `RollbackResistanceUnavailable`, and one
+/// variant cannot. A consumer reads every axis directly and never reconstructs
+/// an omitted claim from the profile name, the witness policy, the witness
+/// disposition, or another axis.
+///
+/// This is a SUCCESS bundle only. It is not an arbitrary verification state, an
+/// error category, a refusal outcome, or an incomplete attempt. A refusal is
+/// never forced into one; see `REFUSAL_PARTIAL_CLAIM_LAW`.
+///
+/// The axes are independent, not an ordered ladder. There is no
+/// `SecurityPosture`, `VerificationLevel`, `AssuranceLevel`, or `SecurityLevel`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthenticatedHistoryClaims {
+    pub integrity: IntegrityClaim,
+    pub authenticity: AuthenticityClaim,
+    pub freshness: FreshnessClaim,
+    pub rollback_resistance: RollbackResistanceClaim,
+}
+
+/// Coherent, local, unsigned. Proves the generation hangs together and nothing
+/// more: not who wrote it, and not that it is current.
+pub const INTERNAL_CONSISTENCY_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {
+    integrity: IntegrityClaim::InternalConsistencyVerified,
+    authenticity: AuthenticityClaim::NotClaimed,
+    freshness: FreshnessClaim::NotClaimed,
+    rollback_resistance: RollbackResistanceClaim::Unavailable,
+};
+
+/// Authentic authorship, no external anchor. A restored older validly signed
+/// history satisfies exactly this bundle, which is why freshness stays
+/// `NotClaimed`.
+pub const SIGNED_UNANCHORED_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {
+    integrity: IntegrityClaim::InternalConsistencyVerified,
+    authenticity: AuthenticityClaim::SignedHistoryVerified,
+    freshness: FreshnessClaim::NotClaimed,
+    rollback_resistance: RollbackResistanceClaim::Unavailable,
+};
+
+/// Verified against an independent monotonic witness, scoped to exactly that
+/// witness's lineage, generation, accumulator, guarantee, and trust
+/// assumptions.
+pub const WITNESSED_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {
+    integrity: IntegrityClaim::InternalConsistencyVerified,
+    authenticity: AuthenticityClaim::SignedHistoryVerified,
+    freshness: FreshnessClaim::WitnessedGenerationVerified,
+    rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,
+};
+
 /// One authenticated-history profile: what it admits, where it is implemented,
-/// where it is qualified, and the most it may claim.
+/// where it is qualified, and exactly which success bundles it can reach.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AuthenticatedHistoryProfileSpec {
     pub profile: AuthenticatedHistoryProfile,
@@ -244,10 +319,14 @@ pub struct AuthenticatedHistoryProfileSpec {
     pub requires_independent_witness_verification: bool,
     pub implementation_gates: &'static [GateId],
     pub release_qualification_gates: &'static [GateId],
-    /// The strongest posture this profile may reach with a verified witness.
-    pub claim_posture: HistoryClaimPosture,
-    /// The posture when no verified external anchor is present.
-    pub unanchored_claim_posture: HistoryClaimPosture,
+    /// The success bundle when no verified external anchor is present.
+    ///
+    /// `None` means NO SUCCESSFUL UNANCHORED RESULT IS ADMITTED. It does not
+    /// mean unknown, not configured, posture unavailable, or fallback success.
+    pub unanchored_success_claims: Option<AuthenticatedHistoryClaims>,
+    /// The success bundle when an independent witness verifies. `None` means the
+    /// profile admits no witness at all.
+    pub verified_witness_success_claims: Option<AuthenticatedHistoryClaims>,
 }
 
 /// The frozen matrix. `SignedHistory + Required` is not silently upgraded to
@@ -261,8 +340,9 @@ pub const AUTHENTICATED_HISTORY_PROFILES: &[AuthenticatedHistoryProfileSpec] = &
         requires_independent_witness_verification: false,
         implementation_gates: &[GateId::G2],
         release_qualification_gates: &[GateId::G9],
-        claim_posture: HistoryClaimPosture::InternalConsistencyVerified,
-        unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,
+        unanchored_success_claims: Some(INTERNAL_CONSISTENCY_SUCCESS),
+        // Admits no witness, so no witnessed success exists.
+        verified_witness_success_claims: None,
     },
     AuthenticatedHistoryProfileSpec {
         profile: AuthenticatedHistoryProfile::SignedHistory,
@@ -272,8 +352,8 @@ pub const AUTHENTICATED_HISTORY_PROFILES: &[AuthenticatedHistoryProfileSpec] = &
         requires_independent_witness_verification: false,
         implementation_gates: &[GateId::G2],
         release_qualification_gates: &[GateId::G9],
-        claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,
-        unanchored_claim_posture: HistoryClaimPosture::AuthenticatedHistoryVerifiedNoFreshnessClaim,
+        unanchored_success_claims: Some(SIGNED_UNANCHORED_SUCCESS),
+        verified_witness_success_claims: Some(WITNESSED_SUCCESS),
     },
     AuthenticatedHistoryProfileSpec {
         profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,
@@ -283,10 +363,40 @@ pub const AUTHENTICATED_HISTORY_PROFILES: &[AuthenticatedHistoryProfileSpec] = &
         requires_independent_witness_verification: true,
         implementation_gates: &[GateId::G2],
         release_qualification_gates: &[GateId::G9],
-        claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,
-        unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,
+        // No successful unanchored result is admitted. An absent or invalid
+        // required witness refuses; it never falls back to a weaker success.
+        unanchored_success_claims: None,
+        verified_witness_success_claims: Some(WITNESSED_SUCCESS),
     },
 ];
+
+/// A refusal is not a weaker success.
+///
+/// The normative result model distinguishes:
+///
+/// ```text
+/// Success {
+///     claims: AuthenticatedHistoryClaims,   // complete, all four axes
+///     witness_disposition, profile, policy, identity, proof fields
+/// }
+///
+/// Refusal {
+///     final_claims: None,                   // no successful claim bundle
+///     partial_verified_claims: Option<AuthenticatedHistoryClaims>,
+///     witness_disposition or failure reason, profile, policy,
+///     identity, proof fields
+/// }
+/// ```
+///
+/// `partial_verified_claims` preserves ONLY sub-results that independently
+/// succeeded, for diagnosis. It may carry local integrity or signed-history
+/// evidence. It may never carry `FreshnessClaim::WitnessedGenerationVerified`
+/// or `RollbackResistanceClaim::ScopedToVerifiedWitness` when witness
+/// verification failed, and its presence never converts a refusal into success.
+pub const REFUSAL_PARTIAL_CLAIM_LAW: &str =
+    "a refusal carries no final claim bundle; partial_verified_claims holds only \
+     independently verified local evidence and never freshness or scoped rollback \
+     resistance after witness failure";
 
 /// Every witness disposition that must fail closed under
 /// `WitnessPolicy::Required`. `NotProvided` is included: a required witness that

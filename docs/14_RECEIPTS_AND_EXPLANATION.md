@@ -113,35 +113,74 @@ Every authenticated-history verification result preserves each of these, unmerge
 selected AuthenticatedHistoryProfile
 selected WitnessPolicy
 exact WitnessDisposition
-exact HistoryClaimPosture
+
+IntegrityClaim                        the four claim axes are independent and
+AuthenticityClaim                     each is stated explicitly; none is a
+FreshnessClaim                        summary of the others
+RollbackResistanceClaim
+
 store lineage identity
 generation identity
 history or accumulator commitment
-signer posture                        when the profile signs
-external witness identity and scope   when a witness participates
-verification or refusal reason
+signer identity and verification posture   when the profile signs
+witness identity and exact scope           when a witness participates
+
 ProofDisposition                      passed through, never upgraded or collapsed
+success or refusal outcome
+verification or refusal reason
 ```
 
-Two renderings that must never be identical:
+The four claims are separate because a real result must assert several of them at once. An `InternalConsistency` success says integrity is verified **and** rollback resistance is unavailable, simultaneously. A single posture value cannot say both, so no single value is used.
+
+No projection may infer an omitted claim axis from the profile name, the witness policy, the witness disposition, or another claim axis. A consumer reads the axis it needs; it never reverse-engineers security meaning.
+
+## Success versus refusal (DEC-071)
+
+`AuthenticatedHistoryClaims` is a **successful** claim bundle. A refusal is never forced into one:
 
 ```text
-optional witness absent      WitnessDisposition::NotProvided
-                             success, authenticated history verified,
-                             rollback resistance unavailable
+success   complete claims bundle, all four axes stated
+          exact WitnessDisposition, profile, policy, identity, proof fields
 
-optional witness supplied    WitnessDisposition::Stale | Conflicting |
-and invalid                  Unverifiable | CryptographicallyInvalid |
-                             LineageMismatch | GenerationMismatch |
-                             AccumulatorMismatch
-                             refusal, naming the exact disposition
+refusal   no final claim bundle
+          optional partial evidence: only sub-results that independently
+          succeeded, kept for diagnosis
+          exact WitnessDisposition or failure reason, profile, policy,
+          identity, proof fields
 ```
 
-An absent optional witness is a successful unanchored result. A supplied invalid one is a refusal that names why, preserves independently established local signed-history sub-results for diagnosis, and never degrades into `NotProvided` or a success receipt that discards the failure.
+Partial refusal evidence may carry local integrity or signed-history results that genuinely verified. It may never carry a freshness or scoped rollback-resistance claim after witness verification failed, and its presence never converts a refusal into a success or into a weaker profile's success.
 
-Equally, a locally valid signed history and an externally anchored history never render identically: the first is `AuthenticatedHistoryVerifiedNoFreshnessClaim`, the second `ExternallyAnchoredForThisWitnessedGeneration`, scoped to the exact witness that verified.
+Three pairs that must never render identically:
 
-No formatter, transport, receipt, explanation, or release note may upgrade a claim posture. Rendering is projection, not promotion.
+```text
+optional witness absent          WitnessDisposition::NotProvided
+                                 success; freshness NotClaimed;
+                                 rollback resistance Unavailable
+
+optional witness supplied        WitnessDisposition::Stale | Conflicting |
+and invalid                      Unverifiable | CryptographicallyInvalid |
+                                 LineageMismatch | GenerationMismatch |
+                                 AccumulatorMismatch
+                                 refusal naming the exact disposition
+--------------------------------------------------------------------------
+signed history, no anchor        authenticity SignedHistoryVerified
+                                 freshness NotClaimed
+                                 rollback resistance Unavailable
+
+verified against a witness       authenticity SignedHistoryVerified
+                                 freshness WitnessedGenerationVerified
+                                 rollback resistance ScopedToVerifiedWitness
+--------------------------------------------------------------------------
+successful verification          a complete claims bundle
+refusal with partial evidence    no claims bundle; partial evidence only
+```
+
+An absent optional witness is a successful unanchored result. A supplied invalid one is a refusal that names why, never degrades into `NotProvided`, and never emits a fallback success receipt that discards the failure.
+
+`ExternallyAnchoredHistory` with a required witness has **no successful unanchored result at all**. An absent or invalid required witness refuses; it does not fall back to a weaker success.
+
+No formatter, transport, receipt, explanation, or release note may upgrade or collapse a claim. Rendering is projection, not promotion.
 
 ## Sealing
 

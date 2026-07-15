@@ -665,7 +665,7 @@ def test_authenticated_history(audit) -> list[str]:
     """Named hostile fixtures for the authenticated-history contract (DEC-071).
 
     Structural only. Bootstrap performs no signature, accumulator, witness,
-    freshness, or cryptographic verification, and these fixtures do not pretend
+    freshness, or rollback verification, and these fixtures do not pretend
     otherwise: they prove the CONTRACT cannot be weakened, not that crypto works.
     """
     findings: list[str] = []
@@ -678,84 +678,143 @@ def test_authenticated_history(audit) -> list[str]:
         if not any(needle in f for f in produced):
             fail(f"{name} (wanted {needle!r}, got {produced!r})")
 
-    def probe(name, old, new, needle):
+    def probe(name, old, new, needle, validator=None):
         tmp = gate_sandbox([("spec/architecture.rs", old, new)])
         try:
-            expect(name, audit.authenticated_history_findings(tmp), needle)
+            expect(name, (validator or audit.authenticated_history_findings)(tmp), needle)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
     if audit.authenticated_history_findings(root):
-        fail("frozen_matrix_passes")
+        fail("frozen_matrix_and_bundles_pass")
 
-    # Invalid profile/policy pairs are refused, never normalized.
+    # --- the four axes are independently representable ---------------------
+    # This is the defect C2c corrects: one mutually exclusive posture could not
+    # state integrity AND rollback-resistance at once.
+    bundles = audit.claim_bundles(root)
+    want = {
+        "INTERNAL_CONSISTENCY_SUCCESS":
+            ("InternalConsistencyVerified", "NotClaimed", "NotClaimed", "Unavailable"),
+        "SIGNED_UNANCHORED_SUCCESS":
+            ("InternalConsistencyVerified", "SignedHistoryVerified", "NotClaimed", "Unavailable"),
+        "WITNESSED_SUCCESS":
+            ("InternalConsistencyVerified", "SignedHistoryVerified",
+             "WitnessedGenerationVerified", "ScopedToVerifiedWitness"),
+    }
+    for name, axes in want.items():
+        got = bundles.get(name)
+        if got is None:
+            fail(f"{name.lower()}_bundle_exists")
+        elif got != axes:
+            fail(f"{name.lower()}_encodes_all_four_axes (wanted {axes}, got {got})")
+    # Each axis must be independently readable, not a summary of the others.
+    if bundles.get("INTERNAL_CONSISTENCY_SUCCESS", ("",))[0] != "InternalConsistencyVerified" or \
+       bundles.get("INTERNAL_CONSISTENCY_SUCCESS", ("", "", "", ""))[3] != "Unavailable":
+        fail("internal_consistency_success_encodes_integrity_and_rollback_unavailable_together")
+
+    probe("history_claim_posture_reintroduced_is_rejected",
+          "pub enum IntegrityClaim {", "pub enum HistoryClaimPosture {",
+          "retired claim vocabulary HistoryClaimPosture")
+    probe("claim_posture_field_reintroduced_is_rejected",
+          "    pub integrity: IntegrityClaim,", "    pub claim_posture: IntegrityClaim,",
+          "retired claim vocabulary claim_posture")
+    probe("security_ladder_is_rejected",
+          "pub enum IntegrityClaim {", "pub enum SecurityLevel {",
+          "generic security ladder SecurityLevel")
+
+    # --- no fallback success for a required witness ------------------------
+    probe("externally_anchored_given_unanchored_success_is_rejected",
+          "        // No successful unanchored result is admitted. An absent or invalid\n"
+          "        // required witness refuses; it never falls back to a weaker success.\n"
+          "        unanchored_success_claims: None,\n"
+          "        verified_witness_success_claims: Some(WITNESSED_SUCCESS),",
+          "        unanchored_success_claims: Some(SIGNED_UNANCHORED_SUCCESS),\n"
+          "        verified_witness_success_claims: Some(WITNESSED_SUCCESS),",
+          "must refuse, not fall back to a weaker success")
+
+    # --- per-axis claim ceilings -------------------------------------------
+    probe("internal_consistency_claiming_signed_authenticity_is_rejected",
+          "pub const INTERNAL_CONSISTENCY_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {\n"
+          "    integrity: IntegrityClaim::InternalConsistencyVerified,\n"
+          "    authenticity: AuthenticityClaim::NotClaimed,",
+          "pub const INTERNAL_CONSISTENCY_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {\n"
+          "    integrity: IntegrityClaim::InternalConsistencyVerified,\n"
+          "    authenticity: AuthenticityClaim::SignedHistoryVerified,",
+          "!= frozen bundle")
+    probe("internal_consistency_claiming_freshness_is_rejected",
+          "    authenticity: AuthenticityClaim::NotClaimed,\n"
+          "    freshness: FreshnessClaim::NotClaimed,\n"
+          "    rollback_resistance: RollbackResistanceClaim::Unavailable,",
+          "    authenticity: AuthenticityClaim::NotClaimed,\n"
+          "    freshness: FreshnessClaim::WitnessedGenerationVerified,\n"
+          "    rollback_resistance: RollbackResistanceClaim::Unavailable,",
+          "drift apart")
+    probe("internal_consistency_claiming_scoped_rollback_resistance_is_rejected",
+          "    authenticity: AuthenticityClaim::NotClaimed,\n"
+          "    freshness: FreshnessClaim::NotClaimed,\n"
+          "    rollback_resistance: RollbackResistanceClaim::Unavailable,",
+          "    authenticity: AuthenticityClaim::NotClaimed,\n"
+          "    freshness: FreshnessClaim::NotClaimed,\n"
+          "    rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,",
+          "drift apart")
+    probe("unanchored_signed_history_claiming_freshness_is_rejected",
+          "pub const SIGNED_UNANCHORED_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {\n"
+          "    integrity: IntegrityClaim::InternalConsistencyVerified,\n"
+          "    authenticity: AuthenticityClaim::SignedHistoryVerified,\n"
+          "    freshness: FreshnessClaim::NotClaimed,\n"
+          "    rollback_resistance: RollbackResistanceClaim::Unavailable,",
+          "pub const SIGNED_UNANCHORED_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryClaims {\n"
+          "    integrity: IntegrityClaim::InternalConsistencyVerified,\n"
+          "    authenticity: AuthenticityClaim::SignedHistoryVerified,\n"
+          "    freshness: FreshnessClaim::WitnessedGenerationVerified,\n"
+          "    rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,",
+          "unanchored success claims freshness or rollback resistance")
+
+    # --- freshness and rollback resistance may not drift apart -------------
+    probe("freshness_verified_while_rollback_unavailable_is_rejected",
+          "    freshness: FreshnessClaim::WitnessedGenerationVerified,\n"
+          "    rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,",
+          "    freshness: FreshnessClaim::WitnessedGenerationVerified,\n"
+          "    rollback_resistance: RollbackResistanceClaim::Unavailable,",
+          "drift apart")
+    probe("rollback_scoped_while_freshness_not_claimed_is_rejected",
+          "    freshness: FreshnessClaim::WitnessedGenerationVerified,\n"
+          "    rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,",
+          "    freshness: FreshnessClaim::NotClaimed,\n"
+          "    rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,",
+          "drift apart")
+    probe("success_bundle_without_verified_integrity_is_rejected",
+          "pub enum IntegrityClaim {\n    InternalConsistencyVerified,\n}",
+          "pub enum IntegrityClaim {\n    InternalConsistencyVerified,\n    NotClaimed,\n}",
+          "!= frozen")
+
+    # --- invalid profile/policy pairs are refused, never normalized --------
     probe("internal_consistency_with_optional_witness_is_rejected",
-          "profile: AuthenticatedHistoryProfile::InternalConsistency,\n        "
-          "permitted_witness_policies: &[WitnessPolicy::None],",
-          "profile: AuthenticatedHistoryProfile::InternalConsistency,\n        "
-          "permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],",
+          "        permitted_witness_policies: &[WitnessPolicy::None],\n"
+          "        requires_local_commitment_verification: true,\n"
+          "        requires_signed_history_verification: false,",
+          "        permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],\n"
+          "        requires_local_commitment_verification: true,\n"
+          "        requires_signed_history_verification: false,",
           "frozen matrix says")
     probe("signed_history_with_required_witness_is_rejected",
-          "profile: AuthenticatedHistoryProfile::SignedHistory,\n        "
-          "permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],",
-          "profile: AuthenticatedHistoryProfile::SignedHistory,\n        "
-          "permitted_witness_policies: &[WitnessPolicy::Required],",
+          "        permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],",
+          "        permitted_witness_policies: &[WitnessPolicy::Required],",
           "permits WitnessPolicy::Required outside ExternallyAnchoredHistory")
     probe("externally_anchored_with_optional_witness_is_rejected",
-          "profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,\n        "
-          "permitted_witness_policies: &[WitnessPolicy::Required],",
-          "profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,\n        "
-          "permitted_witness_policies: &[WitnessPolicy::Optional],",
+          "        permitted_witness_policies: &[WitnessPolicy::Required],",
+          "        permitted_witness_policies: &[WitnessPolicy::Optional],",
           "permits a non-Required witness policy")
 
-    # Claim ceilings.
-    probe("internal_consistency_claiming_signed_history_authenticity_is_rejected",
-          "requires_local_commitment_verification: true,\n        "
-          "requires_signed_history_verification: false,\n        "
-          "requires_independent_witness_verification: false,\n        "
-          "implementation_gates: &[GateId::G2],\n        "
-          "release_qualification_gates: &[GateId::G9],\n        "
-          "claim_posture: HistoryClaimPosture::InternalConsistencyVerified,",
-          "requires_local_commitment_verification: true,\n        "
-          "requires_signed_history_verification: true,\n        "
-          "requires_independent_witness_verification: false,\n        "
-          "implementation_gates: &[GateId::G2],\n        "
-          "release_qualification_gates: &[GateId::G9],\n        "
-          "claim_posture: HistoryClaimPosture::InternalConsistencyVerified,",
-          "InternalConsistency requires signed-history or witness verification")
-    probe("internal_consistency_claiming_rollback_resistance_is_rejected",
-          "claim_posture: HistoryClaimPosture::InternalConsistencyVerified,\n        "
-          "unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,",
-          "claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,\n        "
-          "unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,",
-          "exceeding internal consistency")
-    probe("signed_history_claiming_freshness_without_a_verified_witness_is_rejected",
-          "unanchored_claim_posture: HistoryClaimPosture::AuthenticatedHistoryVerifiedNoFreshnessClaim,",
-          "unanchored_claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,",
-          "claims freshness or rollback resistance")
-
-    # Every frozen required-witness failure class gets its own probe: a hole in
-    # any single class is what lets a rolled-back store verify as healthy. The
-    # first occurrence of each line is REQUIRED_WITNESS_FAILURE_SET.
+    # --- witness axes stay distinct ---------------------------------------
     for variant in ("NotProvided", "Stale", "Conflicting", "Unverifiable",
                     "CryptographicallyInvalid", "LineageMismatch", "GenerationMismatch",
                     "AccumulatorMismatch"):
         probe(f"required_witness_{variant.lower()}_dropped_from_failure_set_is_rejected",
-              f"    WitnessDisposition::{variant},\n",
-              "",
-              "!= frozen failure set")
+              f"    WitnessDisposition::{variant},\n", "", "!= frozen failure set")
     probe("witness_disposition_collapsed_into_valid_invalid_is_rejected",
-          "    /// Supplied and contradicts the observed history.\n    Conflicting,\n",
-          "",
+          "    /// Supplied and contradicts the observed history.\n    Conflicting,\n", "",
           "collapses required distinctions")
-    probe("history_claim_posture_collapsed_is_rejected",
-          "    /// No freshness evidence exists. Stated explicitly rather than omitted.\n"
-          "    RollbackResistanceUnavailable,\n",
-          "",
-          "collapses required distinctions")
-
-    # An absent optional witness must not fail; a supplied invalid one must not
-    # degrade into absence or success.
     probe("optional_witness_absent_incorrectly_failing_is_rejected",
           "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n    WitnessDisposition::Stale,",
           "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n"
@@ -765,6 +824,68 @@ def test_authenticated_history(audit) -> list[str]:
           "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n    WitnessDisposition::Stale,\n",
           "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n",
           "may degrade to absence or success")
+    probe("refusal_partial_evidence_law_removed_is_rejected",
+          "pub const REFUSAL_PARTIAL_CLAIM_LAW", "pub const REFUSAL_PARTIAL_CLAIM_LAW_RENAMED",
+          "states no refusal/partial-evidence law")
+    return findings
+
+
+def test_claim_receipt_law(audit) -> list[str]:
+    """docs/14 must carry each claim axis separately (DEC-071)."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def doc_findings(tmp):
+        out: list[str] = []
+        audit.check_document_law(tmp, out)
+        return out
+
+    cases = [
+        ("docs14_missing_integrity_claim_is_rejected", "IntegrityClaim",
+         "receipt preserves the integrity claim"),
+        ("docs14_missing_authenticity_claim_is_rejected", "AuthenticityClaim",
+         "receipt preserves the authenticity claim"),
+        ("docs14_missing_freshness_claim_is_rejected", "FreshnessClaim",
+         "receipt preserves the freshness claim"),
+        ("docs14_missing_rollback_resistance_claim_is_rejected", "RollbackResistanceClaim",
+         "receipt preserves the rollback-resistance claim"),
+        ("docs14_omitting_success_versus_refusal_is_rejected", "success or refusal outcome",
+         "receipt states success versus refusal"),
+        ("docs14_allowing_axis_inference_from_profile_name_is_rejected",
+         "may infer an omitted claim axis", "no axis inferred from a profile name"),
+        ("docs14_refusal_forced_into_success_bundle_is_rejected",
+         "A refusal is never forced into one", "a refusal is not a weaker success"),
+        ("docs14_partial_evidence_claiming_freshness_is_rejected",
+         "never carry a freshness or scoped rollback-resistance claim after witness verification failed",
+         "partial evidence never claims freshness after witness failure"),
+        ("docs14_required_witness_fallback_success_is_rejected",
+         "no successful unanchored result at all",
+         "no successful unanchored result for a required witness"),
+        ("docs14_optional_absent_and_invalid_rendering_identically_is_rejected",
+         "An absent optional witness is a successful unanchored result",
+         "absent and invalid optional witnesses never render identically"),
+    ]
+    for name, old, needle in cases:
+        tmp = gate_sandbox([("docs/14_RECEIPTS_AND_EXPLANATION.md", old, "")])
+        try:
+            produced = doc_findings(tmp)
+            if not any(needle in f for f in produced):
+                fail(f"{name} (wanted {needle!r}, got {produced!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
+def test_delivery_notes(audit) -> list[str]:
+    """The delivery inventory must not keep a stale decision count."""
+    findings: list[str] = []
+    text = (HERE.parent / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
+    if "70 architectural decision/disposition rows" in text:
+        findings.append("delivery_notes_remaining_at_70_decisions FAILED")
+    if "72 architectural decision/disposition rows" not in text:
+        findings.append("delivery_notes_states_72_decisions FAILED")
     return findings
 
 
@@ -793,7 +914,8 @@ def test_document_law(audit) -> list[str]:
          "docs/14_RECEIPTS_AND_EXPLANATION.md", "selected AuthenticatedHistoryProfile",
          "receipt preserves the exact profile"),
         ("receipt_losing_exact_witness_disposition_is_rejected",
-         "docs/14_RECEIPTS_AND_EXPLANATION.md", "exact WitnessDisposition",
+         "docs/14_RECEIPTS_AND_EXPLANATION.md",
+         "selected WitnessPolicy\nexact WitnessDisposition",
          "receipt preserves the exact witness disposition"),
     ):
         tmp = gate_sandbox([(rel, old, "")])
@@ -872,6 +994,8 @@ def main() -> int:
     findings += test_decisions(audit, project)
     findings += test_authenticated_history(audit)
     findings += test_document_law(audit)
+    findings += test_claim_receipt_law(audit)
+    findings += test_delivery_notes(audit)
     findings += test_control_characters(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)

@@ -65,12 +65,154 @@ fn inspect(root: &Path) -> Vec<String> {
     }
     check_graph(&mut findings);
     check_profiles(&mut findings);
+    check_authenticated_history(&mut findings);
     check_version(&mut findings);
     check_unique_ids(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+/// The authenticated-history claim contract (DEC-071).
+///
+/// Structural only: this performs no signature, accumulator, witness, freshness,
+/// or rollback verification of any kind, and proves nothing about cryptography.
+/// It proves the CONTRACT cannot be weakened.
+fn check_authenticated_history(findings: &mut Vec<String>) {
+    use architecture::{
+        AuthenticatedHistoryProfile, AuthenticityClaim, FreshnessClaim, IntegrityClaim,
+        RollbackResistanceClaim, WitnessDisposition, WitnessPolicy,
+    };
+    let profiles = architecture::AUTHENTICATED_HISTORY_PROFILES;
+    if profiles.len() != 3 {
+        findings.push(format!("expected 3 authenticated-history profiles, found {}", profiles.len()));
+    }
+    let mut seen = BTreeSet::new();
+    for spec in profiles {
+        // Exhaustive: a new profile must be classified here, not defaulted.
+        match spec.profile {
+            AuthenticatedHistoryProfile::InternalConsistency
+            | AuthenticatedHistoryProfile::SignedHistory
+            | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => {}
+        }
+        if !seen.insert(format!("{:?}", spec.profile)) {
+            findings.push(format!("duplicate authenticated-history profile {:?}", spec.profile));
+        }
+        if !spec.requires_local_commitment_verification {
+            findings.push(format!("{:?} does not require local commitment verification", spec.profile));
+        }
+        for policy in spec.permitted_witness_policies {
+            match policy {
+                WitnessPolicy::None | WitnessPolicy::Optional | WitnessPolicy::Required => {}
+            }
+            if *policy == WitnessPolicy::Required
+                && spec.profile != AuthenticatedHistoryProfile::ExternallyAnchoredHistory
+            {
+                findings.push(format!(
+                    "{:?} permits WitnessPolicy::Required outside ExternallyAnchoredHistory",
+                    spec.profile
+                ));
+            }
+        }
+        if spec.implementation_gates.is_empty() {
+            findings.push(format!("{:?} names no implementation gate", spec.profile));
+        }
+        if spec.release_qualification_gates.is_empty() {
+            findings.push(format!("{:?} names no release qualification gate", spec.profile));
+        }
+        // A success bundle states all four axes. Every success verifies
+        // integrity, and freshness never drifts from rollback resistance.
+        for bundle in [spec.unanchored_success_claims, spec.verified_witness_success_claims]
+            .into_iter()
+            .flatten()
+        {
+            match bundle.integrity {
+                IntegrityClaim::InternalConsistencyVerified => {}
+            }
+            match bundle.authenticity {
+                AuthenticityClaim::NotClaimed | AuthenticityClaim::SignedHistoryVerified => {}
+            }
+            match bundle.freshness {
+                FreshnessClaim::NotClaimed | FreshnessClaim::WitnessedGenerationVerified => {}
+            }
+            match bundle.rollback_resistance {
+                RollbackResistanceClaim::Unavailable
+                | RollbackResistanceClaim::ScopedToVerifiedWitness => {}
+            }
+            let fresh = bundle.freshness == FreshnessClaim::WitnessedGenerationVerified;
+            let scoped = bundle.rollback_resistance == RollbackResistanceClaim::ScopedToVerifiedWitness;
+            if fresh != scoped {
+                findings.push(format!(
+                    "{:?} lets freshness and rollback resistance drift apart",
+                    spec.profile
+                ));
+            }
+        }
+        // An unanchored success never claims freshness or scoped rollback
+        // resistance: a restored older validly signed history satisfies it.
+        if let Some(bundle) = spec.unanchored_success_claims {
+            if bundle.freshness != FreshnessClaim::NotClaimed
+                || bundle.rollback_resistance != RollbackResistanceClaim::Unavailable
+            {
+                findings.push(format!(
+                    "{:?} unanchored success claims freshness or rollback resistance",
+                    spec.profile
+                ));
+            }
+            if spec.profile == AuthenticatedHistoryProfile::InternalConsistency
+                && bundle.authenticity != AuthenticityClaim::NotClaimed
+            {
+                findings.push("InternalConsistency unanchored success claims signed authenticity".into());
+            }
+        }
+        // `None` here means NO SUCCESSFUL UNANCHORED RESULT IS ADMITTED.
+        if spec.profile == AuthenticatedHistoryProfile::ExternallyAnchoredHistory
+            && spec.unanchored_success_claims.is_some()
+        {
+            findings.push(
+                "ExternallyAnchoredHistory admits an unanchored success bundle; an absent or invalid \
+                 required witness must refuse, not fall back to a weaker success"
+                    .into(),
+            );
+        }
+        if spec.profile != AuthenticatedHistoryProfile::InternalConsistency
+            && spec.verified_witness_success_claims.is_none()
+        {
+            findings.push(format!("{:?} admits no witnessed success bundle", spec.profile));
+        }
+    }
+    // A required witness fails closed on every frozen failure class, including
+    // one that was never supplied.
+    for disposition in architecture::REQUIRED_WITNESS_FAILURE_SET {
+        match disposition {
+            WitnessDisposition::NotApplicable | WitnessDisposition::Verified => {
+                findings.push(format!(
+                    "REQUIRED_WITNESS_FAILURE_SET contains the non-failure {disposition:?}"
+                ));
+            }
+            _ => {}
+        }
+    }
+    if !architecture::REQUIRED_WITNESS_FAILURE_SET.contains(&WitnessDisposition::NotProvided) {
+        findings.push("a required witness that was never supplied is not a refusal".into());
+    }
+    // Optional: optional to supply, mandatory to validate once supplied.
+    if architecture::OPTIONAL_WITNESS_REFUSAL_SET.contains(&WitnessDisposition::NotProvided) {
+        findings.push("OPTIONAL_WITNESS_REFUSAL_SET refuses an absent optional witness".into());
+    }
+    for disposition in architecture::REQUIRED_WITNESS_FAILURE_SET {
+        if *disposition != WitnessDisposition::NotProvided
+            && !architecture::OPTIONAL_WITNESS_REFUSAL_SET.contains(disposition)
+        {
+            findings.push(format!(
+                "a supplied {disposition:?} optional witness may degrade to absence or success"
+            ));
+        }
+    }
+    if architecture::REFUSAL_PARTIAL_CLAIM_LAW.trim().is_empty() {
+        findings.push("no refusal/partial-evidence law is stated".into());
+    }
 }
 
 fn check_version(findings: &mut Vec<String>) {

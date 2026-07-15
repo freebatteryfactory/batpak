@@ -830,18 +830,50 @@ A_AH_PROFILE_ROW = re.compile(
     r'requires_independent_witness_verification: (\w+),\s*'
     r'implementation_gates: &\[([^\]]*)\],\s*'
     r'release_qualification_gates: &\[([^\]]*)\],\s*'
-    r'claim_posture: HistoryClaimPosture::(\w+),\s*'
-    r'unanchored_claim_posture: HistoryClaimPosture::(\w+),\s*\}',
+    r'(?:\s*//[^\n]*\n)*\s*unanchored_success_claims: (None|Some\(\w+\)),'
+    r'(?:\s*//[^\n]*\n)*\s*verified_witness_success_claims: (None|Some\(\w+\)),\s*\}',
     re.S,
 )
 A_WITNESS_VARIANT = re.compile(r'WitnessPolicy::(\w+)')
 A_DISPOSITION_VARIANT = re.compile(r'WitnessDisposition::(\w+)')
+A_CLAIM_BUNDLE = re.compile(
+    r'pub const (\w+): AuthenticatedHistoryClaims = AuthenticatedHistoryClaims \{\s*'
+    r'integrity: IntegrityClaim::(\w+),\s*'
+    r'authenticity: AuthenticityClaim::(\w+),\s*'
+    r'freshness: FreshnessClaim::(\w+),\s*'
+    r'rollback_resistance: RollbackResistanceClaim::(\w+),\s*\}',
+    re.S,
+)
 
-# The frozen matrix. Anything outside it is refused, never normalized.
 A_FROZEN_MATRIX = {
     "InternalConsistency": ["None"],
     "SignedHistory": ["None", "Optional"],
     "ExternallyAnchoredHistory": ["Required"],
+}
+# The three canonical success bundles, four axes each. Independent axes, not an
+# ordered ladder: an InternalConsistency success asserts verified integrity AND
+# unavailable rollback resistance simultaneously, which one enum could not say.
+A_FROZEN_BUNDLES = {
+    "INTERNAL_CONSISTENCY_SUCCESS":
+        ("InternalConsistencyVerified", "NotClaimed", "NotClaimed", "Unavailable"),
+    "SIGNED_UNANCHORED_SUCCESS":
+        ("InternalConsistencyVerified", "SignedHistoryVerified", "NotClaimed", "Unavailable"),
+    "WITNESSED_SUCCESS":
+        ("InternalConsistencyVerified", "SignedHistoryVerified",
+         "WitnessedGenerationVerified", "ScopedToVerifiedWitness"),
+}
+# profile -> (unanchored success bundle, verified-witness success bundle).
+# None means NO SUCCESSFUL RESULT IS ADMITTED, never "unknown".
+A_FROZEN_PROFILE_BUNDLES = {
+    "InternalConsistency": ("Some(INTERNAL_CONSISTENCY_SUCCESS)", "None"),
+    "SignedHistory": ("Some(SIGNED_UNANCHORED_SUCCESS)", "Some(WITNESSED_SUCCESS)"),
+    "ExternallyAnchoredHistory": ("None", "Some(WITNESSED_SUCCESS)"),
+}
+A_CLAIM_AXES = {
+    "IntegrityClaim": {"InternalConsistencyVerified"},
+    "AuthenticityClaim": {"NotClaimed", "SignedHistoryVerified"},
+    "FreshnessClaim": {"NotClaimed", "WitnessedGenerationVerified"},
+    "RollbackResistanceClaim": {"Unavailable", "ScopedToVerifiedWitness"},
 }
 A_REQUIRED_FAILURES = {
     "NotProvided", "Stale", "Conflicting", "Unverifiable",
@@ -853,12 +885,11 @@ A_WITNESS_DISPOSITIONS = {
     "Unverifiable", "CryptographicallyInvalid", "LineageMismatch",
     "GenerationMismatch", "AccumulatorMismatch",
 }
-A_CLAIM_POSTURES = {
-    "InternalConsistencyVerified",
-    "AuthenticatedHistoryVerifiedNoFreshnessClaim",
-    "ExternallyAnchoredForThisWitnessedGeneration",
-    "RollbackResistanceUnavailable",
-}
+# Retired by 5.5C2c: one mutually exclusive posture could not represent four
+# orthogonal claims, and its non-Option unanchored field gave
+# ExternallyAnchoredHistory the shape of a fallback success.
+A_RETIRED_CLAIM_VOCAB = ("HistoryClaimPosture", "claim_posture", "unanchored_claim_posture")
+A_CLAIM_LADDER_NAMES = ("SecurityPosture", "VerificationLevel", "AssuranceLevel", "SecurityLevel")
 
 
 def authenticated_history_rows(root: Path) -> list[dict]:
@@ -873,10 +904,21 @@ def authenticated_history_rows(root: Path) -> list[dict]:
             "witness": m[4] == "true",
             "impl_gates": gate_list(m[5]),
             "release_gates": gate_list(m[6]),
-            "claim": m[7],
-            "unanchored": m[8],
+            "unanchored": m[7],
+            "verified_witness": m[8],
         })
     return out
+
+
+def claim_bundles(root: Path) -> dict[str, tuple[str, str, str, str]]:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    return {m[0]: (m[1], m[2], m[3], m[4]) for m in A_CLAIM_BUNDLE.findall(src)}
+
+
+def _enum_variants(root: Path, name: str) -> set[str]:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
+    return set(re.findall(r"^\s{4}(\w+),", m.group(1), re.M)) if m else set()
 
 
 def _const_variants(root: Path, name: str) -> list[str]:
@@ -885,11 +927,55 @@ def _const_variants(root: Path, name: str) -> list[str]:
     return A_DISPOSITION_VARIANT.findall(m.group(1)) if m else []
 
 
+def claim_axis_findings(root: Path) -> list[str]:
+    """Four independently representable claim axes, no ladder, no flattening."""
+    out: list[str] = []
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    for term in A_RETIRED_CLAIM_VOCAB:
+        if term in src:
+            out.append(f"spec/architecture.rs reintroduces retired claim vocabulary {term}")
+    for name in A_CLAIM_LADDER_NAMES:
+        # A DECLARATION, not a doc comment naming what must never be built.
+        if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b", src, re.M):
+            out.append(f"spec/architecture.rs introduces a generic security ladder {name}")
+    for axis, want in A_CLAIM_AXES.items():
+        got = _enum_variants(root, axis)
+        if not got:
+            out.append(f"spec/architecture.rs declares no {axis}")
+        elif got != want:
+            out.append(f"{axis} variants {sorted(got)} != frozen {sorted(want)}")
+    fields = re.search(r"pub struct AuthenticatedHistoryClaims \{(.*?)\n\}", src, re.S)
+    if not fields:
+        out.append("spec/architecture.rs declares no AuthenticatedHistoryClaims")
+    else:
+        for want in ("integrity: IntegrityClaim", "authenticity: AuthenticityClaim",
+                     "freshness: FreshnessClaim", "rollback_resistance: RollbackResistanceClaim"):
+            if want not in fields.group(1):
+                out.append(f"AuthenticatedHistoryClaims omits {want}")
+    bundles = claim_bundles(root)
+    if set(bundles) != set(A_FROZEN_BUNDLES):
+        out.append(f"claim bundles {sorted(bundles)} != frozen {sorted(A_FROZEN_BUNDLES)}")
+    for name, want in A_FROZEN_BUNDLES.items():
+        got = bundles.get(name)
+        if got and got != want:
+            out.append(f"{name} claims {got} != frozen bundle {want}")
+    # Axis coherence, for these three profiles and this witness model.
+    for name, got in bundles.items():
+        integrity, authenticity, freshness, rollback = got
+        if integrity != "InternalConsistencyVerified":
+            out.append(f"{name} success bundle does not verify integrity")
+        if (freshness == "WitnessedGenerationVerified") != (rollback == "ScopedToVerifiedWitness"):
+            out.append(f"{name} lets freshness and rollback resistance drift apart")
+    if not re.search(r"^pub const REFUSAL_PARTIAL_CLAIM_LAW: &str =", src, re.M):
+        out.append("spec/architecture.rs states no refusal/partial-evidence law")
+    return out
+
+
 def authenticated_history_findings(root: Path) -> list[str]:
     rows = authenticated_history_rows(root)
-    out: list[str] = []
+    out: list[str] = list(claim_axis_findings(root))
     if not rows:
-        return ["spec/architecture.rs declares no AUTHENTICATED_HISTORY_PROFILES"]
+        return out + ["spec/architecture.rs declares no AUTHENTICATED_HISTORY_PROFILES"]
     names = [r["profile"] for r in rows]
     if len(names) != len(set(names)):
         out.append("duplicate authenticated-history profile name")
@@ -900,66 +986,64 @@ def authenticated_history_findings(root: Path) -> list[str]:
         if want is None:
             continue
         if r["policies"] != want:
-            out.append(
-                f"{r['profile']} permits witness policies {r['policies']}, frozen matrix says {want}"
-            )
-        # Required exists only with ExternallyAnchoredHistory.
+            out.append(f"{r['profile']} permits witness policies {r['policies']}, frozen matrix says {want}")
         if "Required" in r["policies"] and r["profile"] != "ExternallyAnchoredHistory":
             out.append(f"{r['profile']} permits WitnessPolicy::Required outside ExternallyAnchoredHistory")
         if r["profile"] == "ExternallyAnchoredHistory" and (
             "None" in r["policies"] or "Optional" in r["policies"]
         ):
             out.append("ExternallyAnchoredHistory permits a non-Required witness policy")
-        # Claim ceilings: no profile may claim more than it verifies.
-        if r["profile"] == "InternalConsistency":
-            if r["signed"] or r["witness"]:
-                out.append("InternalConsistency requires signed-history or witness verification")
-            if r["claim"] != "InternalConsistencyVerified":
-                out.append(f"InternalConsistency claims {r['claim']}, exceeding internal consistency")
-            if r["unanchored"] != "RollbackResistanceUnavailable":
-                out.append("InternalConsistency does not state rollback resistance unavailable")
+        # Which success bundles each profile may reach.
+        want_un, want_wit = A_FROZEN_PROFILE_BUNDLES[r["profile"]]
+        if r["unanchored"] != want_un:
+            if r["profile"] == "ExternallyAnchoredHistory" and r["unanchored"] != "None":
+                out.append(
+                    "ExternallyAnchoredHistory admits an unanchored success bundle; an absent or "
+                    "invalid required witness must refuse, not fall back to a weaker success"
+                )
+            else:
+                out.append(f"{r['profile']} unanchored_success_claims {r['unanchored']} != frozen {want_un}")
+        if r["verified_witness"] != want_wit:
+            out.append(
+                f"{r['profile']} verified_witness_success_claims {r['verified_witness']} != frozen {want_wit}"
+            )
+        # Capability/claim agreement.
+        if r["profile"] == "InternalConsistency" and (r["signed"] or r["witness"]):
+            out.append("InternalConsistency requires signed-history or witness verification")
         if r["profile"] == "SignedHistory":
             if not r["signed"]:
                 out.append("SignedHistory does not require signed-history verification")
             if r["witness"]:
                 out.append("SignedHistory requires an independent witness; that is ExternallyAnchoredHistory")
-            if r["unanchored"] != "AuthenticatedHistoryVerifiedNoFreshnessClaim":
-                out.append(
-                    "SignedHistory without a verified witness claims freshness or rollback resistance"
-                )
-        if r["profile"] == "ExternallyAnchoredHistory":
-            if not (r["signed"] and r["witness"]):
-                out.append("ExternallyAnchoredHistory does not require signed history plus an independent witness")
-            if r["unanchored"] != "RollbackResistanceUnavailable":
-                out.append("ExternallyAnchoredHistory unanchored posture claims rollback resistance")
+        if r["profile"] == "ExternallyAnchoredHistory" and not (r["signed"] and r["witness"]):
+            out.append("ExternallyAnchoredHistory does not require signed history plus an independent witness")
         if not r["local"]:
             out.append(f"{r['profile']} does not require local commitment verification")
-        if r["claim"] not in A_CLAIM_POSTURES:
-            out.append(f"{r['profile']} names unknown claim posture {r['claim']}")
+        # An unanchored success never claims freshness or scoped rollback resistance.
+        bundles = claim_bundles(root)
+        m = re.match(r"Some\((\w+)\)", r["unanchored"])
+        if m and m.group(1) in bundles:
+            _i, authenticity, freshness, rollback = bundles[m.group(1)]
+            if freshness != "NotClaimed" or rollback != "Unavailable":
+                out.append(f"{r['profile']} unanchored success claims freshness or rollback resistance")
+            if r["profile"] == "InternalConsistency" and authenticity != "NotClaimed":
+                out.append("InternalConsistency unanchored success claims signed authenticity")
+            if r["profile"] == "SignedHistory" and authenticity != "SignedHistoryVerified":
+                out.append("SignedHistory unanchored success does not claim signed authenticity")
         out.extend(gate_findings(root, "profile", r["profile"] + " implementation", r["impl_gates"]))
         out.extend(gate_findings(root, "profile", r["profile"] + " release", r["release_gates"]))
         if not r["impl_gates"]:
             out.append(f"{r['profile']} names no implementation gate")
         if not r["release_gates"]:
             out.append(f"{r['profile']} names no release qualification gate")
-    # The witness axes must stay distinct.
     src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    enum_m = re.search(r"pub enum WitnessDisposition \{(.*?)\n\}", src, re.S)
-    if not enum_m:
+    declared = _enum_variants(root, "WitnessDisposition")
+    if not declared:
         out.append("spec/architecture.rs declares no WitnessDisposition")
     else:
-        declared = set(re.findall(r"^\s{4}(\w+),", enum_m.group(1), re.M))
         missing = A_WITNESS_DISPOSITIONS - declared
         if missing:
             out.append(f"WitnessDisposition collapses required distinctions: missing {sorted(missing)}")
-    posture_m = re.search(r"pub enum HistoryClaimPosture \{(.*?)\n\}", src, re.S)
-    if not posture_m:
-        out.append("spec/architecture.rs declares no HistoryClaimPosture")
-    else:
-        declared = set(re.findall(r"^\s{4}(\w+),", posture_m.group(1), re.M))
-        missing = A_CLAIM_POSTURES - declared
-        if missing:
-            out.append(f"HistoryClaimPosture collapses required distinctions: missing {sorted(missing)}")
     required = set(_const_variants(root, "REQUIRED_WITNESS_FAILURE_SET"))
     if required != A_REQUIRED_FAILURES:
         out.append(
@@ -970,6 +1054,26 @@ def authenticated_history_findings(root: Path) -> list[str]:
         out.append("OPTIONAL_WITNESS_REFUSAL_SET refuses an absent optional witness")
     if optional != A_REQUIRED_FAILURES - {"NotProvided"}:
         out.append("a supplied invalid optional witness may degrade to absence or success")
+    return out
+
+
+def retired_claim_vocabulary_findings(root: Path) -> list[str]:
+    """The flattened claim type may not return through any authoritative surface."""
+    out: list[str] = []
+    for rel in ("spec/architecture.rs", "spec/dispositions.rs", "spec/guarantees.rs",
+                "docs/14_RECEIPTS_AND_EXPLANATION.md", "docs/19_SECURITY_MODEL.md",
+                "docs/05_STORAGE_FBAT_AND_TILES.md", "docs/31_FINAL_CONTRADICTION_AUDIT.md"):
+        path = root / rel
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "[RETIRED-CLAIM-QUOTE]" in line:
+                continue  # an explicitly marked historical quotation
+            for term in A_RETIRED_CLAIM_VOCAB:
+                if term in line:
+                    out.append(f"{rel}: retired claim vocabulary {term} reintroduced")
+                    break
     return out
 
 
@@ -1014,13 +1118,24 @@ DOC_LAW_MARKERS = {
     "docs/14_RECEIPTS_AND_EXPLANATION.md": [
         ("receipt preserves the exact profile", "selected AuthenticatedHistoryProfile"),
         ("receipt preserves the exact witness policy", "selected WitnessPolicy"),
-        ("receipt preserves the exact witness disposition", "exact WitnessDisposition"),
-        ("receipt preserves the exact claim posture", "exact HistoryClaimPosture"),
+        ("receipt preserves the exact witness disposition",
+         "selected WitnessPolicy exact WitnessDisposition"),
+        ("receipt preserves the integrity claim", "IntegrityClaim"),
+        ("receipt preserves the authenticity claim", "AuthenticityClaim"),
+        ("receipt preserves the freshness claim", "FreshnessClaim"),
+        ("receipt preserves the rollback-resistance claim", "RollbackResistanceClaim"),
+        ("receipt states success versus refusal", "success or refusal outcome"),
+        ("no axis inferred from a profile name", "may infer an omitted claim axis"),
+        ("a refusal is not a weaker success", "A refusal is never forced into one"),
+        ("partial evidence never claims freshness after witness failure",
+         "never carry a freshness or scoped rollback-resistance claim after witness verification failed"),
+        ("no successful unanchored result for a required witness",
+         "no successful unanchored result at all"),
         ("receipt preserves the proof disposition",
          "ProofDisposition                      passed through, never upgraded or collapsed"),
         ("absent and invalid optional witnesses never render identically",
          "An absent optional witness is a successful unanchored result"),
-        ("no formatter upgrades a claim", "may upgrade a claim posture"),
+        ("no formatter upgrades or collapses a claim", "may upgrade or collapse a claim"),
     ],
     "docs/05_STORAGE_FBAT_AND_TILES.md": [
         ("storage owns segment seals", "segment seal"),
@@ -1060,6 +1175,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(gate_reference_findings(root))
     findings.extend(decision_class_findings(root))
     findings.extend(authenticated_history_findings(root))
+    findings.extend(retired_claim_vocabulary_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
