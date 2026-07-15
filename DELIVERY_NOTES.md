@@ -90,6 +90,10 @@ Rust source lexical/delimiter structural scan      PASS
 SHA-256 manifest recomputation                      PASS
 ```
 
+`spec/gates.rs` is the one gate identity. The 25 SEED and 84 LEG gate-bearing facts were migrated from
+slash-delimited strings to `&'static [GateId]`; the migration was proven set-equal and byte-identical in
+every rendered projection, so no gate was added, dropped, renamed, duplicated, or reordered.
+
 The environment did not contain `rustc` or `cargo`. Therefore `bootstrap/seedcheck.rs` and `bootstrap/materialize.rs` were structurally inspected but not compiled here. Compiling and executing both under Rust 1.97.0 is Gate 0's first executable obligation, not a waived check.
 
 ## Integrity

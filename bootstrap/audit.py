@@ -441,17 +441,62 @@ def check_numeric(root: Path, findings: list[str]) -> None:
 # artifacts. It shares no parsing, normalization, lifetime derivation, edge
 # construction, cycle detection, serialization, or comparison logic with
 # bootstrap/project.py.
+# Independent gate identity reader. This deliberately does NOT share parsing,
+# ordering, or rendering with bootstrap/project.py: the auditor extracts variants
+# by pattern rather than by positional split, and builds its own canonical order
+# from spec/gates.rs. The oracle cannot manufacture the evidence it grades.
+A_GATE_SPEC = re.compile(r'GateSpec \{ id: GateId::(\w+), token: "([^"]*)", title: "([^"]*)" \}')
+A_GATE_VARIANT = re.compile(r'GateId::(\w+)')
+A_GATE_ENUM = re.compile(r'pub enum GateId \{([^}]*)\}', re.S)
+
+
+def gate_inventory(root: Path) -> list[tuple[str, str, str]]:
+    return A_GATE_SPEC.findall((root / "spec" / "gates.rs").read_text(encoding="utf-8"))
+
+
+def gate_enum_variants(root: Path) -> list[str]:
+    m = A_GATE_ENUM.search((root / "spec" / "gates.rs").read_text(encoding="utf-8"))
+    if not m:
+        return []
+    return [v.strip().rstrip(",") for v in m.group(1).split() if v.strip().rstrip(",")]
+
+
+def gate_list(expr: str) -> list[str]:
+    """Variants named by a typed gate list, in source order."""
+    return A_GATE_VARIANT.findall(expr)
+
+
+def gate_render(names: list[str], root: Path) -> str:
+    token_of = {g[0]: g[1] for g in gate_inventory(root)}
+    return "/".join(token_of.get(n, f"<unknown:{n}>") for n in names)
+
+
+def gate_findings(root: Path, label: str, ident: str, names: list[str]) -> list[str]:
+    """Resolvable, duplicate-free, canonically ordered."""
+    inv = [g[0] for g in gate_inventory(root)]
+    out = []
+    for n in names:
+        if n not in inv:
+            out.append(f"{label} {ident} names unknown GateId {n}")
+    if len(names) != len(set(names)):
+        out.append(f"{label} {ident} names a duplicate GateId")
+    known = [n for n in names if n in inv]
+    if known != sorted(known, key=inv.index):
+        out.append(f"{label} {ident} gate list is not in canonical order")
+    return out
+
+
 G_FAMILY_RANK = {"SEED": 0, "LEG": 1, "DEC": 2, "ARCH": 3, "QUAL": 4}
 G_SEED_ROW = re.compile(
     r'InvariantSpec \{ id: "([^"]+)", statement: "(?:[^"\\]|\\.)*", '
     r'kind: GuaranteeKind::(\w+), lifetime: GuaranteeLifetime::(\w+), '
-    r'owner: "([^"]*)", gates: "([^"]*)", witness: "([^"]*)", '
+    r'owner: "([^"]*)", gates: &\[([^\]]*)\], witness: "([^"]*)", '
     r'failure_disposition: "([^"]*)", derives_from: &\[([^\]]*)\], '
     r'refines: &\[([^\]]*)\], discharges: &\[([^\]]*)\], supersedes: &\[([^\]]*)\] \}'
 )
 G_LEG_ROW = re.compile(
     r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
-    r'gate: "([^"]+)", compatibility_disposition: CompatibilityDisposition::(\w+), '
+    r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::(\w+), '
     r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
 )
 G_DEC_ROW = re.compile(r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+),')
@@ -476,8 +521,8 @@ def guarantee_seed_rows(root: Path) -> list[dict]:
     rows = []
     for m in G_SEED_ROW.findall(src):
         rows.append({
-            "id": m[0], "kind": m[1], "lifetime": m[2], "owner": m[3], "gates": m[4],
-            "witness": m[5], "failure": m[6],
+            "id": m[0], "kind": m[1], "lifetime": m[2], "owner": m[3],
+            "gate_names": gate_list(m[4]), "witness": m[5], "failure": m[6],
             "rel": {"DerivesFrom": _g_ids(m[7]), "Refines": _g_ids(m[8]),
                     "Discharges": _g_ids(m[9]), "Supersedes": _g_ids(m[10])},
         })
@@ -487,8 +532,9 @@ def guarantee_seed_rows(root: Path) -> list[dict]:
 def guarantee_leg_meta(root: Path) -> dict[str, dict]:
     leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
     out = {}
-    for lid, owner, gate, compat, deletion, status in G_LEG_ROW.findall(leg):
-        out[lid] = {"owner": owner, "gate": gate, "compat": compat, "deletion": deletion, "status": status}
+    for lid, owner, gate, compat, deletion, status in G_LEG_ROW.findall(leg):  # noqa: E501
+        out[lid] = {"owner": owner, "gate_names": gate_list(gate), "compat": compat,
+                    "deletion": deletion, "status": status}
     return out
 
 
@@ -508,11 +554,13 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple]]:
     seed = guarantee_seed_rows(root)
     for s in seed:
         nodes.append({"id": s["id"], "family": "SEED", "kind": s["kind"], "lifetime": s["lifetime"],
-                      "owner": s["owner"], "gates": s["gates"], "witness": s["witness"]})
+                      "owner": s["owner"], "gates": gate_render(s["gate_names"], root),
+                      "witness": s["witness"]})
     leg_meta = guarantee_leg_meta(root)
     for lid, meta in leg_meta.items():
         nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": _leg_lifetime(meta),
-                      "owner": meta["owner"], "gates": meta["gate"], "witness": ""})
+                      "owner": meta["owner"], "gates": gate_render(meta["gate_names"], root),
+                      "witness": ""})
     dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
     for did, _disp in G_DEC_ROW.findall(dec):
         nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
@@ -643,6 +691,81 @@ def _md_section_rows(text: str, title: str) -> list[list[str]]:
     return rows
 
 
+def gate_inventory_findings(root: Path) -> list[str]:
+    """The gate inventory is the one gate identity: complete, unique, ordered."""
+    inv = gate_inventory(root)
+    variants = gate_enum_variants(root)
+    out = []
+    if not inv:
+        out.append("spec/gates.rs declares no GATES inventory")
+        return out
+    ids = [g[0] for g in inv]
+    tokens = [g[1] for g in inv]
+    for v in variants:
+        if v not in ids:
+            out.append(f"GateId::{v} is missing from the GATES inventory")
+    for i in ids:
+        if i not in variants:
+            out.append(f"GATES names {i}, which is not a GateId variant")
+    if len(ids) != len(set(ids)):
+        out.append("GATES declares a duplicate GateId")
+    if len(tokens) != len(set(tokens)):
+        out.append("GATES declares one token under two GateIds")
+    if ids != variants:
+        out.append("GATES order does not equal GateId declaration order")
+    for gid, token, title in inv:
+        if not token.strip():
+            out.append(f"gate {gid} has an empty token")
+        if not title.strip():
+            out.append(f"gate {gid} has an empty title")
+    return out
+
+
+def gate_reference_findings(root: Path) -> list[str]:
+    """Every typed gate reference in every gate-bearing fact family resolves."""
+    out = []
+    for row in guarantee_seed_rows(root):
+        out.extend(gate_findings(root, "SEED", row["id"], row["gate_names"]))
+        if not row["gate_names"]:
+            out.append(f"SEED {row['id']} names no gate")
+    for lid, meta in guarantee_leg_meta(root).items():
+        out.extend(gate_findings(root, "LEG", lid, meta["gate_names"]))
+        if not meta["gate_names"]:
+            out.append(f"LEG {lid} names no gate")
+    src_inv = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    src_leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    if re.search(r'\bgates?:\s*"', src_inv):
+        out.append("spec/invariants.rs still carries a string gate field")
+    if re.search(r'\bgates?:\s*"', src_leg):
+        out.append("spec/legacy_obligations.rs still carries a string gate field")
+    return out
+
+
+GATE_BLOCK_RE = re.compile(
+    r"<!-- GATE-INVENTORY:BEGIN[^>]*-->\n(.*?)\n<!-- GATE-INVENTORY:END -->", re.S
+)
+
+
+def gate_doc_findings(root: Path) -> list[str]:
+    """docs/25 gate inventory block equals spec/gates.rs, recomputed independently."""
+    doc = (root / "docs/25_IMPLEMENTATION_GATES.md").read_text(encoding="utf-8")
+    m = GATE_BLOCK_RE.search(doc)
+    if not m:
+        return ["docs/25_IMPLEMENTATION_GATES.md: missing GATE-INVENTORY block"]
+    rows = []
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line.startswith("|") or set(line) <= set("|- "):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) == 3 and cells[0] != "GateId":
+            rows.append(tuple(cells))
+    want = [(g[0], g[1], g[2]) for g in gate_inventory(root)]
+    if rows != want:
+        return ["docs/25 GATE-INVENTORY block does not equal spec/gates.rs"]
+    return []
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -651,6 +774,9 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     nodes, edges = guarantee_derive(root)
     leg_meta = guarantee_leg_meta(root)
     node_ids = {n["id"] for n in nodes}
+    findings.extend(gate_inventory_findings(root))
+    findings.extend(gate_doc_findings(root))
+    findings.extend(gate_reference_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
@@ -680,7 +806,8 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
             tuple(c.strip() for c in ln.split("|")[1:-1])[:6]
             for ln in seed_block.splitlines() if ln.strip().startswith("| SEED-")
         ]
-        derived_rows = [(r["id"], r["kind"], r["lifetime"], r["owner"], r["gates"], r["witness"]) for r in seed_rows]
+        derived_rows = [(r["id"], r["kind"], r["lifetime"], r["owner"],
+                         gate_render(r["gate_names"], root), r["witness"]) for r in seed_rows]
         if block_rows != derived_rows:
             findings.append("docs/23 SEED-CLASSIFICATION block does not equal spec/invariants.rs")
     graph_path = root / "docs/GUARANTEE_GRAPH.generated.md"
@@ -863,9 +990,10 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         )
     legacy_source = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
     legacy_seed_rows = {
-        ident: (law, owner, gate, compat, deletion, status)
-        for ident, law, owner, gate, compat, deletion, status in re.findall(
-            r'LegacyObligation \{ id: "([^"]+)", law: "([^"]+)", clean_owner: "([^"]+)", gate: "([^"]+)", '
+        ident: (law, owner, gate_render(gate_list(gates), root), compat, deletion, status)
+        for ident, law, owner, gates, compat, deletion, status in re.findall(
+            r'LegacyObligation \{ id: "([^"]+)", law: "([^"]+)", clean_owner: "([^"]+)", '
+            r'gates: &\[([^\]]*)\], '
             r"compatibility_disposition: CompatibilityDisposition::(\w+), "
             r"deletion_condition: DeletionCondition::(\w+), "
             r"active_or_closed_status: ObligationStatus::(\w+) \}",

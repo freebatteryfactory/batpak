@@ -10,19 +10,27 @@ last_reconciled: 2026-07-13
 
 ## Destination order
 
-```text
-G0 Constitution and skeleton
-G1 MacBat
-G2 BatPak semantic and durable core
-G3 TestPak seed
-G4 BatQL compiler
-G5 SyncBat world, ports, PakVM reference, Bvisor admission
-G6 SyncBat logical runtime and recovery
-G7 NetBat and product CLI
-G8 Optimized tiles, codecs, and delivery succession
-G9 Self-hosting and release seal
-GJ Integrated final tree
-```
+`spec/gates.rs` is the typed authority for gate identity, canonical order, and
+token spelling; every gate-bearing fact family references a `GateId`, never a
+gate name in prose. The inventory below is generated from it by
+`bootstrap/project.py` and independently re-audited. The gate doctrine in the
+rest of this document is authored.
+
+<!-- GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/project.py; do not edit -->
+| GateId | Token | Title |
+| --- | --- | --- |
+| G0 | G0 | Constitution and skeleton |
+| G1 | G1 | MacBat |
+| G2 | G2 | BatPak semantic and durable core |
+| G3 | G3 | TestPak seed |
+| G4 | G4 | BatQL compiler |
+| G5 | G5 | SyncBat world, ports, PakVM reference, Bvisor admission |
+| G6 | G6 | SyncBat logical runtime and recovery |
+| G7 | G7 | NetBat and product CLI |
+| G8 | G8 | Optimized tiles, codecs, and delivery succession |
+| G9 | G9 | Self-hosting and release seal |
+| GJ | GJ | Integrated final tree |
+<!-- GATE-INVENTORY:END -->
 
 Each gate is one review unit with savepoint commits inside it. A later gate may not redefine an earlier owner's meaning.
 

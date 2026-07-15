@@ -134,16 +134,43 @@ GUARANTEE_FRONT = (
     "do_not_edit: true\n"
     "---\n"
 )
+_GATE_SPEC_ROW = re.compile(
+    r'GateSpec \{ id: GateId::(\w+), token: "([^"]*)", title: "([^"]*)" \}'
+)
+
+
+def gate_inventory(root: Path) -> list[tuple[str, str, str]]:
+    """The gate inventory in declaration order. Declaration order IS canonical."""
+    src = (root / "spec" / "gates.rs").read_text(encoding="utf-8")
+    return _GATE_SPEC_ROW.findall(src)
+
+
+def gate_tokens(expr: str, root: Path) -> str:
+    """Render a typed GateId list as canonical tokens joined with '/'.
+
+    Splits the list positionally and maps each variant through the inventory,
+    so an unknown variant raises rather than rendering itself.
+    """
+    order = [g[0] for g in gate_inventory(root)]
+    token_of = {g[0]: g[1] for g in gate_inventory(root)}
+    names = [c.strip().split("::")[-1] for c in expr.split(",") if c.strip()]
+    for nm in names:
+        if nm not in token_of:
+            raise SystemExit(f"project: unknown GateId {nm} in {expr!r}")
+    names.sort(key=order.index)
+    return "/".join(token_of[nm] for nm in names)
+
+
 _SEED_ROW = re.compile(
     r'InvariantSpec \{ id: "([^"]+)", statement: "((?:[^"\\]|\\.)*)", '
     r'kind: GuaranteeKind::(\w+), lifetime: GuaranteeLifetime::(\w+), '
-    r'owner: "([^"]*)", gates: "([^"]*)", witness: "([^"]*)", '
+    r'owner: "([^"]*)", gates: &\[([^\]]*)\], witness: "([^"]*)", '
     r'failure_disposition: "([^"]*)", derives_from: &\[([^\]]*)\], '
     r'refines: &\[([^\]]*)\], discharges: &\[([^\]]*)\], supersedes: &\[([^\]]*)\] \}'
 )
 _LEG_ROW = re.compile(
     r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
-    r'gate: "([^"]+)", compatibility_disposition: CompatibilityDisposition::\w+, '
+    r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::\w+, '
     r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
 )
 _DEC_ROW = re.compile(r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+), subject: "[^"]+"')
@@ -165,7 +192,7 @@ def guarantee_seed(root):
     for m in _SEED_ROW.findall(src):
         out.append({
             "id": m[0], "statement": m[1], "kind": m[2], "lifetime": m[3],
-            "owner": m[4], "gates": m[5], "witness": m[6], "failure": m[7],
+            "owner": m[4], "gates": gate_tokens(m[5], root), "witness": m[6], "failure": m[7],
             "DerivesFrom": _ids(m[8]), "Refines": _ids(m[9]),
             "Discharges": _ids(m[10]), "Supersedes": _ids(m[11]),
         })
@@ -179,7 +206,8 @@ def guarantee_nodes(root):
                       "owner": s["owner"], "gates": s["gates"], "witness": s["witness"],
                       "failure": f"Seed({s['failure']})"})
     leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
-    for lid, owner, gate, deletion, status in _LEG_ROW.findall(leg):
+    for lid, owner, gate_expr, deletion, status in _LEG_ROW.findall(leg):
+        gate = gate_tokens(gate_expr, root)
         # A LEG row names a clean owner and gates but no typed successor
         # GuaranteeRef, so an active gate-closed obligation is UntilGate, not
         # UntilSuccessor. UntilSuccessor requires a resolved typed successor.
@@ -290,6 +318,17 @@ def render_guarantee_graph(root):
 
 
 NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
+GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
+
+
+def render_gate_inventory(root: Path) -> str:
+    """The docs/25 gate inventory, projected from spec/gates.rs."""
+    rows = ["| GateId | Token | Title |", "| --- | --- | --- |"]
+    for gid, token, title in gate_inventory(root):
+        rows.append(f"| {gid} | {token} | {title} |")
+    return "\n".join(rows)
+
+
 BLOCK_RENDER = {
     "OPERATORS-CATALOG": render_catalog,
     "OPERATORS-GRAMMAR": render_grammar,
@@ -356,6 +395,16 @@ def main() -> int:
         body = render_seed_classification(root)
         seed_rewritten = seed_pattern.sub(lambda m: m.group(1) + body + m.group(3), seed_original)
     plans.append((seed_path, seed_original, seed_rewritten))
+    gates_path = root / GATES_DOC
+    gates_original = gates_path.read_text(encoding="utf-8")
+    gates_pattern = block_pattern("GATE-INVENTORY")
+    if not gates_pattern.search(gates_original):
+        findings.append(f"{GATES_DOC}: missing generated block markers for GATE-INVENTORY")
+        gates_rewritten = gates_original
+    else:
+        body = render_gate_inventory(root)
+        gates_rewritten = gates_pattern.sub(lambda m: m.group(1) + body + m.group(3), gates_original)
+    plans.append((gates_path, gates_original, gates_rewritten))
     graph_path = root / GUARANTEE_DOC
     graph_original = graph_path.read_text(encoding="utf-8") if graph_path.is_file() else ""
     plans.append((graph_path, graph_original, render_guarantee_graph(root)))

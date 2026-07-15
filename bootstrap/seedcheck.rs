@@ -1,5 +1,7 @@
 #![deny(warnings)]
 
+#[path = "../spec/gates.rs"]
+mod gates;
 #[path = "../spec/architecture.rs"]
 mod architecture;
 #[path = "../spec/guarantees.rs"]
@@ -200,10 +202,75 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             | dispositions::Disposition::RetainAsEvidence => {}
         }
     }
+    // The one gate identity. The inventory must be complete, unique, and in
+    // canonical (declaration) order; every typed gate reference resolves through
+    // it, so no fact can name a gate that does not exist.
+    let gate_ids: Vec<gates::GateId> = gates::GATES.iter().map(|g| g.id).collect();
+    let gate_id_set: BTreeSet<&str> = gates::GATES.iter().map(|g| g.id.token()).collect();
+    let gate_tokens: BTreeSet<&str> = gates::GATES.iter().map(|g| g.token).collect();
+    if gate_id_set.len() != gates::GATES.len() {
+        findings.push("duplicate GateId in the gate inventory".into());
+    }
+    if gate_tokens.len() != gates::GATES.len() {
+        findings.push("one gate token claimed by two GateIds".into());
+    }
+    for value in gates::GATES {
+        if value.token.trim().is_empty() || value.title.trim().is_empty() {
+            findings.push(format!("incomplete gate {}", value.token));
+        }
+        if value.token != value.id.token() {
+            findings.push(format!("gate {} token disagrees with GateId::token()", value.token));
+        }
+        // Exhaustive: a new gate variant must be classified here, not defaulted.
+        match value.id {
+            gates::GateId::G0
+            | gates::GateId::G1
+            | gates::GateId::G2
+            | gates::GateId::G3
+            | gates::GateId::G4
+            | gates::GateId::G5
+            | gates::GateId::G6
+            | gates::GateId::G7
+            | gates::GateId::G8
+            | gates::GateId::G9
+            | gates::GateId::GJ => {}
+        }
+    }
+    let mut sorted_gate_ids = gate_ids.clone();
+    sorted_gate_ids.sort();
+    if gate_ids != sorted_gate_ids {
+        findings.push("gate inventory is not in canonical GateId order".into());
+    }
+    // Canonical, duplicate-free, resolvable gate lists on every gate-bearing fact.
+    let check_gates = |ident: &str, list: &[gates::GateId], findings: &mut Vec<String>| {
+        if list.is_empty() {
+            findings.push(format!("{} names no gate", ident));
+        }
+        let unique: BTreeSet<&str> = list.iter().map(|g| g.token()).collect();
+        if unique.len() != list.len() {
+            findings.push(format!("{} names a duplicate GateId", ident));
+        }
+        let mut sorted = list.to_vec();
+        sorted.sort();
+        if list.to_vec() != sorted {
+            findings.push(format!("{} gate list is not in canonical order", ident));
+        }
+        for gate in list {
+            if !gates::GATES.iter().any(|g| g.id == *gate) {
+                findings.push(format!("{} names a gate outside the inventory", ident));
+            }
+        }
+    };
+    for value in invariants::INVARIANTS {
+        check_gates(value.id, value.gates, &mut findings);
+    }
+    for value in legacy_obligations::OBLIGATIONS {
+        check_gates(value.id, value.gates, &mut findings);
+    }
     let legacy_ids: BTreeSet<&str> = legacy_obligations::OBLIGATIONS.iter().map(|v| v.id).collect();
     if legacy_ids.len() != legacy_obligations::OBLIGATIONS.len() { findings.push("duplicate legacy obligation ID".into()); }
     for value in legacy_obligations::OBLIGATIONS {
-        if value.law.trim().is_empty() || value.clean_owner.trim().is_empty() || value.gate.trim().is_empty() {
+        if value.law.trim().is_empty() || value.clean_owner.trim().is_empty() || value.gates.is_empty() {
             findings.push(format!("incomplete legacy obligation {}", value.id));
         }
         match value.compatibility_disposition {

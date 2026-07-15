@@ -86,6 +86,9 @@ no guarantee lifetime conflated with deletion condition or active/closed status 
 no guarantee relation inferred from prose similarity, shared owner, or document section
 no clean_owner text or gate name treated as a successor guarantee edge (UntilSuccessor requires a resolvable typed successor; a gate-closed active obligation is UntilGate)
 no bare SEED, DEC, or architecture law Discharges or Closes an active obligation before its qualifying evidence or closure receipt exists at Gate 0
+no second gate identity type (spec/gates.rs owns GateId, GateSpec, and the gate inventory; every gate-bearing fact family references &[GateId], never a gate name in prose or a string)
+no gate reference unresolvable against the inventory, duplicated within one fact, or out of canonical order
+no gate identity authored twice (the docs/25 gate inventory is a generated projection of spec/gates.rs and is independently re-audited; the surrounding gate doctrine stays authored)
 ```
 
 ## Remaining implementation work is not architecture ambiguity

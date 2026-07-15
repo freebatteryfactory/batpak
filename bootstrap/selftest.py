@@ -16,6 +16,7 @@ Proven properties:
 from __future__ import annotations
 import importlib.util
 import sys
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -361,6 +362,186 @@ def test_guarantees(audit, project) -> list[str]:
     return findings
 
 
+# --- Guarded mutation: a claimed negative test is itself a claim -------------
+# A red light caused by the wrong severed wire is not evidence that the alarm
+# works. Every mutation below proves four things: the target existed, the bytes
+# actually changed, the intended validator ran, and the EXPECTED finding class
+# appeared -- never merely that something somewhere returned nonzero.
+class ProbeError(AssertionError):
+    """The probe itself is broken: absent target or inert mutation."""
+
+
+def must_replace(text: str, old: str, new: str, what: str) -> str:
+    if old not in text:
+        raise ProbeError(f"probe target absent, mutation never applied: {what}")
+    out = text.replace(old, new, 1)
+    if out == text:
+        raise ProbeError(f"probe mutation changed no bytes: {what}")
+    return out
+
+
+def must_remove(text: str, old: str, what: str) -> str:
+    return must_replace(text, old, "", what)
+
+
+def gate_sandbox(edits):
+    """A repo copy with guarded edits applied; returns the sandbox root."""
+    root = HERE.parent
+    tmp = Path(tempfile.mkdtemp())
+    for sub in ("spec", "docs", "companion"):
+        src = root / sub
+        if src.is_dir():
+            shutil.copytree(src, tmp / sub)
+    for rel, old, new in edits:
+        path = tmp / rel
+        text = path.read_text(encoding="utf-8")
+        path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
+    return tmp
+
+
+def test_gates(audit, project) -> list[str]:
+    """Named hostile fixtures for the one gate identity (5.5C2a)."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        # The expected finding class must appear, not merely some error.
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, edits, validator, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            expect(name, validator(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def guarantee_findings(tmp):
+        out: list[str] = []
+        audit.check_guarantees(tmp, out)
+        return out
+
+    # --- typed gate list rules ---
+    expect("unknown_gateid_is_rejected",
+           audit.gate_findings(root, "SEED", "X", ["G99"]), "unknown GateId")
+    expect("duplicate_gateid_in_one_fact_is_rejected",
+           audit.gate_findings(root, "SEED", "X", ["G2", "G2"]), "duplicate GateId")
+    expect("noncanonical_gate_order_is_rejected",
+           audit.gate_findings(root, "SEED", "X", ["G5", "G2"]), "not in canonical order")
+    if audit.gate_findings(root, "SEED", "X", ["G2", "G5"]):
+        fail("canonical_gate_list_passes")
+
+    # --- inventory integrity ---
+    probe("gateid_missing_from_inventory_is_rejected",
+          [("spec/gates.rs",
+            '    GateSpec { id: GateId::GJ, token: "GJ", title: "Integrated final tree" },',
+            "")],
+          audit.gate_inventory_findings, "missing from the GATES inventory")
+    probe("inventory_token_duplicated_across_two_gateids_is_rejected",
+          [("spec/gates.rs",
+            'GateSpec { id: GateId::G1, token: "G1", title: "MacBat" }',
+            'GateSpec { id: GateId::G1, token: "G0", title: "MacBat" }')],
+          audit.gate_inventory_findings, "one token under two GateIds")
+
+    # --- migration conservation: a SEED/LEG gate set may not move ---
+    def gates_of(tmp, ident):
+        return {n["id"]: n["gates"] for n in audit.guarantee_derive(tmp)[0]}[ident]
+
+    base_seed = gates_of(root, "SEED-PAKVM-NAME")
+    tmp = gate_sandbox([("spec/invariants.rs",
+                         'owner: "docs/07_PAKVM_ISA.md", gates: &[GateId::G0, GateId::G5]',
+                         'owner: "docs/07_PAKVM_ISA.md", gates: &[GateId::G0]')])
+    if gates_of(tmp, "SEED-PAKVM-NAME") == base_seed:
+        fail("seed_gate_dropped_during_migration_is_detected")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    tmp = gate_sandbox([("spec/invariants.rs",
+                         'owner: "docs/07_PAKVM_ISA.md", gates: &[GateId::G0, GateId::G5]',
+                         'owner: "docs/07_PAKVM_ISA.md", gates: &[GateId::G0, GateId::G5, GateId::G7]')])
+    if gates_of(tmp, "SEED-PAKVM-NAME") == base_seed:
+        fail("seed_gate_added_during_migration_is_detected")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    base_leg = gates_of(root, "LEG-001")
+    tmp = gate_sandbox([("spec/legacy_obligations.rs",
+                         'clean_owner: "batpak::store", gates: &[GateId::G2], compatibility_disposition: '
+                         "CompatibilityDisposition::None, deletion_condition: "
+                         "DeletionCondition::OnSuccessorGateClosure",
+                         'clean_owner: "batpak::store", gates: &[], compatibility_disposition: '
+                         "CompatibilityDisposition::None, deletion_condition: "
+                         "DeletionCondition::OnSuccessorGateClosure")])
+    if gates_of(tmp, "LEG-001") == base_leg:
+        fail("leg_gate_dropped_during_migration_is_detected")
+    expect("emptied_gate_list_is_rejected",
+           audit.gate_reference_findings(tmp), "names no gate")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    probe("leg_gate_added_during_migration_is_rejected",
+          [("spec/legacy_obligations.rs",
+            'clean_owner: "batpak::event", gates: &[GateId::G2]',
+            'clean_owner: "batpak::event", gates: &[GateId::G2, GateId::G2]')],
+          audit.gate_reference_findings, "duplicate GateId")
+
+    # --- the retired string representation may not survive anywhere ---
+    probe("old_string_gate_field_in_seed_is_rejected",
+          [("spec/invariants.rs", "pub gates: &'static [GateId],", 'pub gates: "G0",')],
+          audit.gate_reference_findings, "still carries a string gate field")
+    probe("old_string_gate_field_in_leg_is_rejected",
+          [("spec/legacy_obligations.rs", "pub gates: &'static [GateId],", 'pub gate: "G2",')],
+          audit.gate_reference_findings, "still carries a string gate field")
+
+    # --- generated projections may not drift from the typed authority ---
+    probe("docs25_gate_inventory_drift_is_rejected",
+          [("docs/25_IMPLEMENTATION_GATES.md",
+            "| G4 | G4 | BatQL compiler |", "| G4 | G4 | BatQL compilerr |")],
+          audit.gate_doc_findings, "does not equal spec/gates.rs")
+    probe("docs23_rendered_seed_gate_drift_is_rejected",
+          [("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
+            "| SEED-PAKVM-NAME | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G0/G5 |",
+            "| SEED-PAKVM-NAME | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G0 |")],
+          guarantee_findings, "SEED-CLASSIFICATION block does not equal")
+    probe("guarantee_graph_gate_metadata_drift_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "| LEG-001 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |",
+            "| LEG-001 | LEG | LegacyObligation | UntilGate | batpak::store | G7 |")],
+          guarantee_findings, "node table does not equal")
+    probe("docs21_rendered_leg_gate_drift_is_rejected",
+          [("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
+            "| concurrency model + duplicate-writer refusal | G2 |",
+            "| concurrency model + duplicate-writer refusal | G3 |")],
+          lambda tmp: [f for f in (lambda o: (audit.check_seed_ids(tmp, o), o)[1])([])],
+          "legacy seed/document mismatch")
+
+    # --- generator and auditor agree; source order does not change bytes ---
+    if [(n["id"], n["gates"]) for n in project.guarantee_nodes(root)] != \
+       [(n["id"], n["gates"]) for n in audit.guarantee_derive(root)[0]]:
+        fail("generator_auditor_gate_disagreement")
+    if [g[0] for g in project.gate_inventory(root)] != [g[0] for g in audit.gate_inventory(root)]:
+        fail("generator_auditor_inventory_disagreement")
+    inv = [g[0] for g in audit.gate_inventory(root)]
+    if inv != sorted(inv, key=audit.gate_enum_variants(root).index):
+        fail("gate_inventory_is_canonically_ordered")
+
+    # --- the probe harness itself fails closed ---
+    try:
+        must_replace("abc", "zzz", "q", "self-check")
+    except ProbeError:
+        pass
+    else:
+        fail("must_replace_fails_closed_on_absent_target")
+    try:
+        must_replace("abc", "abc", "abc", "self-check")
+    except ProbeError:
+        pass
+    else:
+        fail("must_replace_fails_closed_on_inert_mutation")
+
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -374,12 +555,13 @@ def main() -> int:
     findings += test_batql(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
+    findings += test_gates(audit, project)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate hostile fixtures)")
     return 0
 
 

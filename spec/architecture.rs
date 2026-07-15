@@ -223,6 +223,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/legacy_invariant_coverage.rs",
     "spec/operators.rs",
     "spec/guarantees.rs",
+    "spec/gates.rs",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",
     "bootstrap/materialize.rs",
