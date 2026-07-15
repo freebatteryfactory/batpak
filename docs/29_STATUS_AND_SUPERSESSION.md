@@ -73,7 +73,7 @@ Agents do not “support both just in case.” They apply the decision ledger.
 
 The complete stale-alias set is DERIVED from `spec/dispositions.rs`; `audit.py` proves this projection matches it exactly. Do not edit by hand — change the owning decision's `stale_aliases` instead.
 
-<!-- STALE-VOCAB:BEGIN -->
+<!-- STALE-VOCAB:BEGIN generated from spec/dispositions.rs by bootstrap/project.py; do not edit -->
 ```text
 FileBat
 filebat package

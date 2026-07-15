@@ -459,6 +459,38 @@ NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
 
 
+# --- Stale-vocabulary projection (5.5D4b) ------------------------------------
+# The alias set is a CONSEQUENCE of the decisions that retired vocabulary. It was
+# duplicated by hand in two documents and guarded by an equality check -- two
+# human-maintained copies that a checker babysat. One typed owner, two generated
+# projections, no mirror.
+STALE_DOCS = ("docs/29_STATUS_AND_SUPERSESSION.md", "docs/33_AGENT_FINISH_LINE_CHECKLIST.md")
+_STALE_ROW = re.compile(
+    r'DecisionSpec \{ id: "DEC-\d+", class: DecisionClass::\w+, gates: &\[[^\]]*\], '
+    r'disposition: Disposition::\w+, subject: "[^"]*", successor: "[^"]*", '
+    r'stale_aliases: &\[([^\]]*)\]', re.S)
+
+
+def stale_aliases(root: Path) -> list[str]:
+    """Every retired alias, in DEC declaration order. Declaration order IS
+    canonical, so the projection stays grouped under the decision that retired
+    each term rather than scattering them alphabetically."""
+    src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    out: list[str] = []
+    for raw in _STALE_ROW.findall(src):
+        for alias in re.findall(r'"([^"]+)"', raw):
+            if alias not in out:
+                out.append(alias)
+    return out
+
+
+def render_stale_vocabulary(root: Path) -> str:
+    lines = ["```text"]
+    lines += stale_aliases(root)
+    lines.append("```")
+    return "\n".join(lines)
+
+
 def render_gate_inventory(root: Path) -> str:
     """The docs/25 gate inventory, projected from spec/gates.rs."""
     rows = ["| GateId | Token | Title |", "| --- | --- | --- |"]
@@ -535,6 +567,18 @@ def main() -> int:
     plans.append((seed_path, seed_original, seed_rewritten))
     gates_path = root / GATES_DOC
     gates_original = gates_path.read_text(encoding="utf-8")
+    for rel in STALE_DOCS:
+        sp = root / rel
+        if not sp.is_file():
+            findings.append(f"{rel}: missing stale-vocabulary projection doc")
+            continue
+        so = sp.read_text(encoding="utf-8")
+        spat = block_pattern("STALE-VOCAB")
+        if not spat.search(so):
+            findings.append(f"{rel}: missing generated block markers for STALE-VOCAB")
+        else:
+            plans.append((sp, so, spat.sub(
+                lambda m: m.group(1) + render_stale_vocabulary(root) + m.group(3), so)))
     gates_pattern = block_pattern("GATE-INVENTORY")
     if not gates_pattern.search(gates_original):
         findings.append(f"{GATES_DOC}: missing generated block markers for GATE-INVENTORY")

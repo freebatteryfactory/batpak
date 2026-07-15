@@ -2397,6 +2397,147 @@ def test_proof_target_resolver(audit) -> list[str]:
     return findings
 
 
+def test_guarantee_authority(audit, project) -> list[str]:
+    """Guarantee admission and projection authority (5.5D4b closure).
+
+    These are the adversaries that would have caught the C1 defect. The old suite
+    attacked mutation and parity, and both are blind to common-mode invention: two
+    scripts carrying the same unauthorized constant agree perfectly.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    GU = "spec/guarantees.rs"
+    DI = "spec/dispositions.rs"
+    AR = "spec/architecture.rs"
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new,
+                                         f"{rel}: {old[:44]!r}"), encoding="utf-8")
+            expect(name, (validator or audit.guarantee_admission_findings)(tmp), needle)
+
+    if audit.guarantee_admission_findings(root):
+        fail("every_node_passes_typed_admission")
+
+    # 1. No semantic literal may live in both bootstrap paths. A constant in two
+    #    "independent" scripts is common-mode invention, not evidence.
+    import ast as _ast
+
+    def lits(rel):
+        tree = _ast.parse((HERE / rel).read_text(encoding="utf-8"))
+        return {n.value for n in _ast.walk(tree)
+                if isinstance(n, _ast.Constant) and isinstance(n.value, str)}
+
+    shared = lits("project.py") & lits("audit.py")
+    banned = {"Permanent", "docs/30_DECISION_AND_REJECTION_LEDGER.md", "spec/architecture.rs",
+              "LegacyObligation", "Decision", "ArchitectureConstraint", "QualificationRequirement",
+              "spec/architecture.rs; audit.py architecture checks"}
+    pj = (HERE / "project.py").read_text(encoding="utf-8")
+    au = (HERE / "audit.py").read_text(encoding="utf-8")
+    for lit in sorted(shared & banned):
+        for dim in ("lifetime", "owner", "kind", "gates", "witness"):
+            asn = f'"{dim}": "{lit}"'
+            if asn in pj and asn in au:
+                fail(f"common_mode_semantic_constant_{dim}_{lit[:24]}_present_in_both_paths")
+
+    # 2. Every family policy is declared; nothing is left to a projector default.
+    pol = audit.guarantee_family_policies(root)
+    if set(pol) != {"SEED", "LEG", "DEC", "ARCH", "QUAL"}:
+        fail(f"all_five_families_declare_typed_policy (got {sorted(pol)})")
+    if project.family_policies(root) != pol:
+        fail("generator_and_auditor_read_the_same_typed_family_policy")
+    if audit.decision_lifetime_map(root) != project.disposition_lifetimes(root):
+        fail("generator_and_auditor_read_the_same_typed_disposition_map")
+
+    # 3. The DEC lifetime map is owned by the typed source, not by either script.
+    dm = audit.decision_lifetime_map(root)
+    for disp, life in (("Lock", "Permanent"), ("Keep", "Permanent"), ("Kill", "Permanent"),
+                       ("Defer", "Permanent"), ("OpenImplementation", "UntilGate"),
+                       ("Demote", "UntilCompatibilityExpiry"),
+                       ("Supersede", "HistoricalCoverageOnly"),
+                       ("RetainAsEvidence", "HistoricalCoverageOnly")):
+        if dm.get(disp) != life:
+            fail(f"disposition_{disp}_maps_to_{life} (got {dm.get(disp)!r})")
+    probe("illegal_disposition_to_lifetime_mapping_is_rejected", DI,
+          "Disposition::OpenImplementation => GuaranteeLifetime::UntilGate,",
+          "has no typed lifetime", "", validator=audit.guarantee_admission_findings)
+
+    # 4. A projector may not supply a semantic default when policy is absent.
+    probe("family_policy_removal_fails_closed", GU,
+          '        family: "ARCH",\n        kind: KindRule::FamilyConstant(GuaranteeKind::ArchitectureConstraint),',
+          "no declared family policy for ARCH",
+          '        family: "ARCH-RENAMED",\n        kind: KindRule::FamilyConstant(GuaranteeKind::ArchitectureConstraint),')
+    probe("family_constant_without_a_value_fails_closed", GU,
+          'owner: OwnerRule::FamilyConstant("docs/30_DECISION_AND_REJECTION_LEDGER.md"),',
+          "owner is FamilyConstant but names no value",
+          'owner: OwnerRule::FamilyConstant(""),')
+
+    # 5. A qualification target may never enter a gate field.
+    probe("qualification_target_in_a_gate_field_is_rejected", AR,
+          "target: \"std\",\n        gates: &[GateId::G0, GateId::G5],",
+          "names a value that is not a declared GateId",
+          "target: \"std\",\n        gates: &[GateId::std],")
+    if any(audit.guarantee_gates(root, f"QUAL-{p}") in ("std", "no_std + alloc", "wasm32 host")
+           for p in ("batpak-native", "batpak-semantic", "syncbat-browser")):
+        fail("qualification_target_cannot_be_read_as_a_gate_posture")
+
+    # 6. Missing metadata is not gate-independence, and neither is an empty list.
+    probe("qual_row_without_a_typed_schedule_fails_closed", AR,
+          "        gates: &[GateId::G0, GateId::G5],\n        requirement: \"contracts, schemas",
+          "gate posture is RowDeclared but the row declares none",
+          "        gates: &[],\n        requirement: \"contracts, schemas")
+    probe("dec_requiring_a_gate_without_one_fails_closed", DI,
+          'id: "DEC-003", class: DecisionClass::Architecture, gates: &[GateId::G2]',
+          "requires a gate but the row declares none",
+          'id: "DEC-003", class: DecisionClass::Architecture, gates: &[]')
+    # An ungated HistoricalReceipt is GateIndependent by an AUTHORED class claim.
+    idx = {n["id"]: n for n in audit.guarantee_derive(root)[0]}
+    if idx["DEC-001"]["gate_posture"] != "GateIndependent":
+        fail("ungated_historical_receipt_is_gate_independent_by_class")
+    if idx["DEC-002"]["lifetime"] != "HistoricalCoverageOnly":
+        fail("retain_as_evidence_is_not_projected_as_permanent")
+    if idx["DEC-005"]["gate_posture"] != "G0":
+        fail("requires_gate_is_a_floor_not_a_ceiling")
+
+    # 7. ARCH loses its declared G0 schedule.
+    probe("arch_row_losing_g0_scheduling_is_rejected", GU,
+          "gate_posture: GatePostureRule::FamilyConstant(GatePosture::Scheduled(&[GateId::G0])),",
+          "gate posture is RowDeclared but the row declares none",
+          "gate_posture: GatePostureRule::RowDeclared,")
+
+    # 8. Parity passes while provenance fails: mutate the SAME constant in both
+    #    paths. This is the exact hole -- before the closure the graph regenerated,
+    #    parity passed, and every gate stayed green.
+    with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+        gu = tmp / GU
+        gu.write_text(must_replace(gu.read_text(encoding="utf-8"),
+                      "lifetime: LifetimeRule::FromDecisionDisposition,",
+                      "lifetime: LifetimeRule::FamilyConstant(GuaranteeLifetime::Permanent),",
+                      "common-mode lifetime"), encoding="utf-8")
+        lives = {n["id"]: n["lifetime"] for n in audit.guarantee_derive(tmp)[0]}
+        if lives.get("DEC-002") != "Permanent":
+            fail("common_mode_mutation_probe_did_not_take_effect")
+        # The typed source now says Permanent, so BOTH paths agree and parity is
+        # silent. Only the typed owner changed -- which is the point: policy lives
+        # in one place and a reviewer sees it in the diff, not in two scripts.
+        proj = {n["id"]: n["lifetime"] for n in project.guarantee_nodes(tmp)}
+        if proj.get("DEC-002") != lives.get("DEC-002"):
+            fail("policy_change_is_visible_to_both_paths_from_one_owner")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -2428,6 +2569,7 @@ def main() -> int:
     findings += test_deferred_witnesses(audit)
     findings += test_leg081_authority(audit)
     findings += test_proof_target_resolver(audit)
+    findings += test_guarantee_authority(audit, project)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -2436,7 +2578,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures)")
     return 0
 
 

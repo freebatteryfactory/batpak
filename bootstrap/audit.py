@@ -30,7 +30,9 @@ STALE_CONTEXT_BY_PATH = {
 }
 STALE_PROJECTION_DOCS = ("docs/29_STATUS_AND_SUPERSESSION.md", "docs/33_AGENT_FINISH_LINE_CHECKLIST.md")
 STALE_REF_RE = re.compile(r"\[STALE-REF:\s*(DEC-\d+)\]")
-STALE_VOCAB_BLOCK_RE = re.compile(r"<!-- STALE-VOCAB:BEGIN -->(.*?)<!-- STALE-VOCAB:END -->", re.S)
+# The block is generated from spec/dispositions.rs (5.5D4b). The marker carries
+# its provenance, so the pattern must not pin the bare form.
+STALE_VOCAB_BLOCK_RE = re.compile(r"<!-- STALE-VOCAB:BEGIN[^>]*-->(.*?)<!-- STALE-VOCAB:END -->", re.S)
 RETIRING_DISPOSITIONS = {"Kill", "Supersede", "Demote", "Lock"}
 PRODUCTION_SOURCE_DIRS = ("crates", "apps")
 EXCLUDE_DIRS = {".git", "target", "__pycache__"}
@@ -660,6 +662,12 @@ def admit_view(root: Path, family: str, ident: str, row: dict, failure: str) -> 
         if row.get("gates") in (None, ""):
             raise AdmissionFailure(f"{ident}: gate posture is RowDeclared but the row declares none")
         posture = row["gates"]
+    # Type domain: only a declared GateId may inhabit a gate posture. gate_render
+    # marks an unresolvable variant rather than raising, so a qualification target
+    # or any other free string reaching this field fails admission here.
+    if "<unknown:" in posture:
+        raise AdmissionFailure(
+            f"{ident}: gate posture {posture!r} names a value that is not a declared GateId")
     return {"id": ident, "family": family, "kind": kind, "lifetime": lifetime, "owner": owner,
             "gate_posture": posture, "target": row.get("target", ""),
             "witness": pol["witness"], "failure": failure}
