@@ -105,6 +105,44 @@ Crypto-shredded or unavailable required inputs produce explicit incompleteness. 
 
 External effects may end with `OutcomeUnknown` after a crash or lost observation. That is not failure and not success. Reconciliation follows the effect's recovery class and durable evidence.
 
+## Authenticated-history posture (DEC-071)
+
+Every authenticated-history verification result preserves each of these, unmerged:
+
+```text
+selected AuthenticatedHistoryProfile
+selected WitnessPolicy
+exact WitnessDisposition
+exact HistoryClaimPosture
+store lineage identity
+generation identity
+history or accumulator commitment
+signer posture                        when the profile signs
+external witness identity and scope   when a witness participates
+verification or refusal reason
+ProofDisposition                      passed through, never upgraded or collapsed
+```
+
+Two renderings that must never be identical:
+
+```text
+optional witness absent      WitnessDisposition::NotProvided
+                             success, authenticated history verified,
+                             rollback resistance unavailable
+
+optional witness supplied    WitnessDisposition::Stale | Conflicting |
+and invalid                  Unverifiable | CryptographicallyInvalid |
+                             LineageMismatch | GenerationMismatch |
+                             AccumulatorMismatch
+                             refusal, naming the exact disposition
+```
+
+An absent optional witness is a successful unanchored result. A supplied invalid one is a refusal that names why, preserves independently established local signed-history sub-results for diagnosis, and never degrades into `NotProvided` or a success receipt that discards the failure.
+
+Equally, a locally valid signed history and an externally anchored history never render identically: the first is `AuthenticatedHistoryVerifiedNoFreshnessClaim`, the second `ExternallyAnchoredForThisWitnessedGeneration`, scoped to the exact witness that verified.
+
+No formatter, transport, receipt, explanation, or release note may upgrade a claim posture. Rendering is projection, not promotion.
+
 ## Sealing
 
 Receipts are canonicalized before hashing. The hash commits to semantic structured fields, not unstable diagnostic prose. Signatures, inclusion proofs, and external anchors are separate strengthening layers.

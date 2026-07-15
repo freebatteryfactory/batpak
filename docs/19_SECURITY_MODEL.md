@@ -68,6 +68,42 @@ Unbounded structures are rejected before execution. PakVM and Bvisor count logic
 
 Derived tiles/caches never authenticate themselves. Mutable authority damage is not absence. Verification distinguishes content equality, commitment validity, signature, inclusion, external anchor, and generation continuity.
 
+## Whole-store rollback (DEC-071)
+
+An attacker controlling local durable storage may restore an older complete generation whose internal commitments and signatures remain valid. Nothing about that restored generation is malformed: it is a genuine, coherent, authentically signed past state.
+
+Internal consistency can prove that the restored generation is coherent. Signed history can prove that the generation was authentically signed. Neither alone proves that it is the newest generation ever acknowledged. That freshness claim, and any scoped rollback-resistance claim, requires an independent monotonic witness.
+
+These four axes stay distinct and are never collapsed into one `verified` boolean:
+
+```text
+integrity            the bytes and commitments are well-formed and self-consistent
+authenticity         an authenticated signer produced this history
+freshness            this is the newest generation ever acknowledged
+rollback resistance  restoring an older valid generation is detectable
+```
+
+A store's history verification claims exactly what its `AuthenticatedHistoryProfile` and verified `WitnessDisposition` support, and no more (`spec/architecture.rs`):
+
+```text
+InternalConsistency           internal consistency verified
+                              rollback resistance unavailable
+
+SignedHistory                 authenticated history verified
+  no verified anchor          no freshness or rollback-resistance claim
+
+SignedHistory                 externally anchored for exactly the witnessed
+  verified optional anchor    generation, lineage, and accumulator
+
+ExternallyAnchoredHistory     fails closed without a verified witness; claims
+  witness Required            rollback resistance only within the witness's own
+                              monotonicity, scope, and trust assumptions
+```
+
+An optional witness is optional to supply. Once supplied it is mandatory to validate: a stale, conflicting, unverifiable, cryptographically invalid, lineage-mismatched, generation-mismatched, or accumulator-mismatched witness refuses the verification and is never silently treated as though no witness were given. Rollback resistance is never claimed universally; it is always scoped to the witness that actually verified.
+
+This is distinct from the key-material anti-rollback law in `35_CRYPTO_AND_SECRET_AUTHORITY.md` (LEG-081), which governs shred durability and pre-shred keyset restoration. A shredded keyset and a rolled-back history are different attacks with different evidence.
+
 ## Postcondition honesty
 
 A report claims only checked results. Planned is not granted; attempted is not completed; written is not durable; checksum matched is not authenticated; transport secured is not proof verified.

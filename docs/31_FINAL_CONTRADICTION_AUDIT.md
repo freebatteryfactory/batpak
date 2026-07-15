@@ -89,6 +89,13 @@ no bare SEED, DEC, or architecture law Discharges or Closes an active obligation
 no second gate identity type (spec/gates.rs owns GateId, GateSpec, and the gate inventory; every gate-bearing fact family references &[GateId], never a gate name in prose or a string)
 no gate reference unresolvable against the inventory, duplicated within one fact, or out of canonical order
 no gate identity authored twice (the docs/25 gate inventory is a generated projection of spec/gates.rs and is independently re-audited; the surrounding gate doctrine stays authored)
+no decision without a typed DecisionClass, and no implementation-bearing decision without a typed GateId (Naming and HistoricalReceipt may be ungated; the class decides, never the title or ID range; DEC-072)
+no integrity/authenticity/freshness/rollback-resistance collapsed into one verified boolean (the four axes stay separate; DEC-071, docs/19)
+no authenticated-history claim exceeding the selected profile and verified witness posture (InternalConsistency never claims authorship or freshness; SignedHistory without a verified anchor never claims freshness)
+no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
+no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance
+no authenticated-history profile, witness, claim-posture, or gate node in the Guarantee Graph (decision class and gates are node metadata, never synthetic nodes or edges)
+no invisible C0 control character in tracked specification, bootstrap, or contract text (LF and TAB only; a backspace impersonating a word boundary once made a rule unmatchable)
 ```
 
 ## Remaining implementation work is not architecture ambiguity

@@ -499,7 +499,10 @@ G_LEG_ROW = re.compile(
     r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::(\w+), '
     r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
 )
-G_DEC_ROW = re.compile(r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+),')
+G_DEC_ROW = re.compile(
+    r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::(\w+), '
+    r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+),'
+)
 G_PKG_ROW = re.compile(
     r'PackageSpec \{\s*package: "([^"]+)",\s*path: "[^"]+",\s*role: "[^"]+",\s*'
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
@@ -562,9 +565,11 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple]]:
                       "owner": meta["owner"], "gates": gate_render(meta["gate_names"], root),
                       "witness": ""})
     dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
-    for did, _disp in G_DEC_ROW.findall(dec):
+    for did, dcls, dgates, _disp in G_DEC_ROW.findall(dec):
+        # Decision gates are node metadata; they never become graph edges.
         nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
-                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md", "gates": "", "witness": ""})
+                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md",
+                      "gates": gate_render(gate_list(dgates), root), "witness": "", "dclass": dcls})
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
     for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
         nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
@@ -766,6 +771,282 @@ def gate_doc_findings(root: Path) -> list[str]:
     return []
 
 
+# --- Decision classification and gate binding (DEC-072) ---------------------
+# The AUDITOR half. Parses spec/dispositions.rs independently of
+# bootstrap/project.py and re-derives every rule from the typed row. The class,
+# never the title/ID range/document section/keyword, decides gate obligation.
+A_DEC_CLASS_ROW = re.compile(
+    r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::(\w+), '
+    r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+), subject: "([^"]*)"'
+)
+A_DEC_CLASSES = {
+    "Architecture", "Capability", "Compatibility", "Enforcement",
+    "HistoricalReceipt", "Naming", "ImplementationPosture",
+}
+# Implementation-bearing classes must name a gate. There is no vague
+# architecture subclass that dodges gate binding.
+A_DEC_GATE_REQUIRED = {
+    "Architecture", "Capability", "Compatibility", "Enforcement", "ImplementationPosture",
+}
+A_DEC_GATE_OPTIONAL = {"HistoricalReceipt", "Naming"}
+
+
+def decision_rows(root: Path) -> list[dict]:
+    src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    out = []
+    for did, cls, gates, disp, subject in A_DEC_CLASS_ROW.findall(src):
+        out.append({"id": did, "class": cls, "gate_names": gate_list(gates),
+                    "disposition": disp, "subject": subject})
+    return out
+
+
+def decision_class_findings(root: Path) -> list[str]:
+    rows = decision_rows(root)
+    out: list[str] = []
+    declared = len(re.findall(r'DecisionSpec \{ id: "DEC-', (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+    if len(rows) != declared:
+        out.append(f"{declared - len(rows)} DecisionSpec row(s) carry no DecisionClass")
+    for r in rows:
+        if r["class"] not in A_DEC_CLASSES:
+            out.append(f"{r['id']} has unknown DecisionClass {r['class']}")
+            continue
+        out.extend(gate_findings(root, "DEC", r["id"], r["gate_names"]))
+        if r["class"] in A_DEC_GATE_REQUIRED and not r["gate_names"]:
+            out.append(f"{r['id']} is {r['class']} and names no implementation or qualification gate")
+        if r["class"] not in A_DEC_GATE_REQUIRED and r["class"] not in A_DEC_GATE_OPTIONAL:
+            out.append(f"{r['id']} class {r['class']} has no gate rule")
+    return out
+
+
+# --- Authenticated history (DEC-071) ----------------------------------------
+# Structural contract checks only. Bootstrap performs no signature, accumulator,
+# witness, freshness, or cryptographic verification and must never claim to.
+A_AH_PROFILE_ROW = re.compile(
+    r'AuthenticatedHistoryProfileSpec \{\s*'
+    r'profile: AuthenticatedHistoryProfile::(\w+),\s*'
+    r'permitted_witness_policies: &\[([^\]]*)\],\s*'
+    r'requires_local_commitment_verification: (\w+),\s*'
+    r'requires_signed_history_verification: (\w+),\s*'
+    r'requires_independent_witness_verification: (\w+),\s*'
+    r'implementation_gates: &\[([^\]]*)\],\s*'
+    r'release_qualification_gates: &\[([^\]]*)\],\s*'
+    r'claim_posture: HistoryClaimPosture::(\w+),\s*'
+    r'unanchored_claim_posture: HistoryClaimPosture::(\w+),\s*\}',
+    re.S,
+)
+A_WITNESS_VARIANT = re.compile(r'WitnessPolicy::(\w+)')
+A_DISPOSITION_VARIANT = re.compile(r'WitnessDisposition::(\w+)')
+
+# The frozen matrix. Anything outside it is refused, never normalized.
+A_FROZEN_MATRIX = {
+    "InternalConsistency": ["None"],
+    "SignedHistory": ["None", "Optional"],
+    "ExternallyAnchoredHistory": ["Required"],
+}
+A_REQUIRED_FAILURES = {
+    "NotProvided", "Stale", "Conflicting", "Unverifiable",
+    "CryptographicallyInvalid", "LineageMismatch", "GenerationMismatch",
+    "AccumulatorMismatch",
+}
+A_WITNESS_DISPOSITIONS = {
+    "NotApplicable", "NotProvided", "Verified", "Stale", "Conflicting",
+    "Unverifiable", "CryptographicallyInvalid", "LineageMismatch",
+    "GenerationMismatch", "AccumulatorMismatch",
+}
+A_CLAIM_POSTURES = {
+    "InternalConsistencyVerified",
+    "AuthenticatedHistoryVerifiedNoFreshnessClaim",
+    "ExternallyAnchoredForThisWitnessedGeneration",
+    "RollbackResistanceUnavailable",
+}
+
+
+def authenticated_history_rows(root: Path) -> list[dict]:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    out = []
+    for m in A_AH_PROFILE_ROW.findall(src):
+        out.append({
+            "profile": m[0],
+            "policies": A_WITNESS_VARIANT.findall(m[1]),
+            "local": m[2] == "true",
+            "signed": m[3] == "true",
+            "witness": m[4] == "true",
+            "impl_gates": gate_list(m[5]),
+            "release_gates": gate_list(m[6]),
+            "claim": m[7],
+            "unanchored": m[8],
+        })
+    return out
+
+
+def _const_variants(root: Path, name: str) -> list[str]:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    m = re.search(r"pub const " + re.escape(name) + r":[^=]*=\s*&\[(.*?)\];", src, re.S)
+    return A_DISPOSITION_VARIANT.findall(m.group(1)) if m else []
+
+
+def authenticated_history_findings(root: Path) -> list[str]:
+    rows = authenticated_history_rows(root)
+    out: list[str] = []
+    if not rows:
+        return ["spec/architecture.rs declares no AUTHENTICATED_HISTORY_PROFILES"]
+    names = [r["profile"] for r in rows]
+    if len(names) != len(set(names)):
+        out.append("duplicate authenticated-history profile name")
+    if set(names) != set(A_FROZEN_MATRIX):
+        out.append(f"authenticated-history profile set {sorted(names)} != frozen {sorted(A_FROZEN_MATRIX)}")
+    for r in rows:
+        want = A_FROZEN_MATRIX.get(r["profile"])
+        if want is None:
+            continue
+        if r["policies"] != want:
+            out.append(
+                f"{r['profile']} permits witness policies {r['policies']}, frozen matrix says {want}"
+            )
+        # Required exists only with ExternallyAnchoredHistory.
+        if "Required" in r["policies"] and r["profile"] != "ExternallyAnchoredHistory":
+            out.append(f"{r['profile']} permits WitnessPolicy::Required outside ExternallyAnchoredHistory")
+        if r["profile"] == "ExternallyAnchoredHistory" and (
+            "None" in r["policies"] or "Optional" in r["policies"]
+        ):
+            out.append("ExternallyAnchoredHistory permits a non-Required witness policy")
+        # Claim ceilings: no profile may claim more than it verifies.
+        if r["profile"] == "InternalConsistency":
+            if r["signed"] or r["witness"]:
+                out.append("InternalConsistency requires signed-history or witness verification")
+            if r["claim"] != "InternalConsistencyVerified":
+                out.append(f"InternalConsistency claims {r['claim']}, exceeding internal consistency")
+            if r["unanchored"] != "RollbackResistanceUnavailable":
+                out.append("InternalConsistency does not state rollback resistance unavailable")
+        if r["profile"] == "SignedHistory":
+            if not r["signed"]:
+                out.append("SignedHistory does not require signed-history verification")
+            if r["witness"]:
+                out.append("SignedHistory requires an independent witness; that is ExternallyAnchoredHistory")
+            if r["unanchored"] != "AuthenticatedHistoryVerifiedNoFreshnessClaim":
+                out.append(
+                    "SignedHistory without a verified witness claims freshness or rollback resistance"
+                )
+        if r["profile"] == "ExternallyAnchoredHistory":
+            if not (r["signed"] and r["witness"]):
+                out.append("ExternallyAnchoredHistory does not require signed history plus an independent witness")
+            if r["unanchored"] != "RollbackResistanceUnavailable":
+                out.append("ExternallyAnchoredHistory unanchored posture claims rollback resistance")
+        if not r["local"]:
+            out.append(f"{r['profile']} does not require local commitment verification")
+        if r["claim"] not in A_CLAIM_POSTURES:
+            out.append(f"{r['profile']} names unknown claim posture {r['claim']}")
+        out.extend(gate_findings(root, "profile", r["profile"] + " implementation", r["impl_gates"]))
+        out.extend(gate_findings(root, "profile", r["profile"] + " release", r["release_gates"]))
+        if not r["impl_gates"]:
+            out.append(f"{r['profile']} names no implementation gate")
+        if not r["release_gates"]:
+            out.append(f"{r['profile']} names no release qualification gate")
+    # The witness axes must stay distinct.
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    enum_m = re.search(r"pub enum WitnessDisposition \{(.*?)\n\}", src, re.S)
+    if not enum_m:
+        out.append("spec/architecture.rs declares no WitnessDisposition")
+    else:
+        declared = set(re.findall(r"^\s{4}(\w+),", enum_m.group(1), re.M))
+        missing = A_WITNESS_DISPOSITIONS - declared
+        if missing:
+            out.append(f"WitnessDisposition collapses required distinctions: missing {sorted(missing)}")
+    posture_m = re.search(r"pub enum HistoryClaimPosture \{(.*?)\n\}", src, re.S)
+    if not posture_m:
+        out.append("spec/architecture.rs declares no HistoryClaimPosture")
+    else:
+        declared = set(re.findall(r"^\s{4}(\w+),", posture_m.group(1), re.M))
+        missing = A_CLAIM_POSTURES - declared
+        if missing:
+            out.append(f"HistoryClaimPosture collapses required distinctions: missing {sorted(missing)}")
+    required = set(_const_variants(root, "REQUIRED_WITNESS_FAILURE_SET"))
+    if required != A_REQUIRED_FAILURES:
+        out.append(
+            f"REQUIRED_WITNESS_FAILURE_SET {sorted(required)} != frozen failure set {sorted(A_REQUIRED_FAILURES)}"
+        )
+    optional = set(_const_variants(root, "OPTIONAL_WITNESS_REFUSAL_SET"))
+    if "NotProvided" in optional:
+        out.append("OPTIONAL_WITNESS_REFUSAL_SET refuses an absent optional witness")
+    if optional != A_REQUIRED_FAILURES - {"NotProvided"}:
+        out.append("a supplied invalid optional witness may degrade to absence or success")
+    return out
+
+
+# --- Control-character integrity --------------------------------------------
+# 5.5C2a shipped a rule containing an ASCII backspace impersonating a word
+# boundary; grep and sed rendered it invisibly. Tracked specification text is
+# LF-only and carries no other C0 controls.
+CONTROL_TEXT_SUFFIXES = {".py", ".rs", ".md", ".sha256", ".toml"}
+CONTROL_TEXT_NAMES = {".gitattributes", ".gitignore"}
+CONTROL_ALLOWED = {0x09, 0x0A}  # TAB, LF. CR is rejected: the tree freezes LF.
+
+
+def control_character_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    for rel, path in sorted(frozen_files(root).items()):
+        if path.suffix not in CONTROL_TEXT_SUFFIXES and path.name not in CONTROL_TEXT_NAMES:
+            continue
+        data = path.read_bytes()
+        for offset, byte in enumerate(data):
+            if byte < 0x20 and byte not in CONTROL_ALLOWED or byte == 0x7F:
+                out.append(f"{rel}: byte {offset}: forbidden control character U+{byte:04X}")
+                break
+    return out
+
+
+# --- Document law: the claims that must not quietly vanish -------------------
+# Whitespace-insensitive markers: prose wraps, law does not.
+DOC_LAW_MARKERS = {
+    "docs/19_SECURITY_MODEL.md": [
+        ("whole-store rollback threat",
+         "may restore an older complete generation whose internal commitments and signatures remain valid"),
+        ("whole-store rollback threat",
+         "Neither alone proves that it is the newest generation ever acknowledged"),
+        ("freshness requires an independent monotonic witness",
+         "requires an independent monotonic witness"),
+        ("four axes stay distinct",
+         "rollback resistance  restoring an older valid generation is detectable"),
+        ("four axes stay distinct", "authenticity         an authenticated signer produced this history"),
+        ("optional witness is mandatory to validate once supplied",
+         "Once supplied it is mandatory to validate"),
+    ],
+    "docs/14_RECEIPTS_AND_EXPLANATION.md": [
+        ("receipt preserves the exact profile", "selected AuthenticatedHistoryProfile"),
+        ("receipt preserves the exact witness policy", "selected WitnessPolicy"),
+        ("receipt preserves the exact witness disposition", "exact WitnessDisposition"),
+        ("receipt preserves the exact claim posture", "exact HistoryClaimPosture"),
+        ("receipt preserves the proof disposition",
+         "ProofDisposition                      passed through, never upgraded or collapsed"),
+        ("absent and invalid optional witnesses never render identically",
+         "An absent optional witness is a successful unanchored result"),
+        ("no formatter upgrades a claim", "may upgrade a claim posture"),
+    ],
+    "docs/05_STORAGE_FBAT_AND_TILES.md": [
+        ("storage owns segment seals", "segment seal"),
+        ("storage owns the history commitment", "global append accumulator"),
+        ("coherence is not freshness", "Coherence is not freshness"),
+    ],
+    "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md": [
+        ("docs/35 does not own whole-store history",
+         "It does not own whole-store authenticated history"),
+    ],
+}
+
+
+def check_document_law(root: Path, findings: list[str]) -> None:
+    """Each named claim survives in its owning document."""
+    for rel, markers in DOC_LAW_MARKERS.items():
+        path = root / rel
+        if not path.is_file():
+            findings.append(f"missing {rel}")
+            continue
+        text = re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
+        for label, marker in markers:
+            if re.sub(r"\s+", " ", marker) not in text:
+                findings.append(f"{rel}: {label} is absent")
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -777,6 +1058,8 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(gate_inventory_findings(root))
     findings.extend(gate_doc_findings(root))
     findings.extend(gate_reference_findings(root))
+    findings.extend(decision_class_findings(root))
+    findings.extend(authenticated_history_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
@@ -815,8 +1098,23 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
         findings.append("missing docs/GUARANTEE_GRAPH.generated.md")
         return
     graph = graph_path.read_text(encoding="utf-8")
-    file_nodes = {(r[0], r[1], r[2], r[3], r[4], r[5]) for r in _md_section_rows(graph, "Nodes") if len(r) == 6}
-    derived_nodes = {(n["id"], n["family"], n["kind"], n["lifetime"], n["owner"], n["gates"]) for n in nodes}
+    node_rows = _md_section_rows(graph, "Nodes")
+    # Every row must be full width. A width change that silently drops rows would
+    # make this comparison pass against an empty set.
+    malformed = [r for r in node_rows if len(r) != 7]
+    if malformed or not node_rows:
+        findings.append(
+            f"Guarantee Graph node table has {len(malformed)} malformed row(s) of {len(node_rows)}"
+        )
+    file_nodes = {(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in node_rows if len(r) == 7}
+    derived_nodes = {
+        (n["id"], n["family"], n["kind"], n["lifetime"], n.get("dclass", "-"), n["owner"], n["gates"])
+        for n in nodes
+    }
+    if len(file_nodes) != len(nodes):
+        findings.append(
+            f"Guarantee Graph node table has {len(file_nodes)} rows, derived {len(nodes)}"
+        )
     if file_nodes != derived_nodes:
         findings.append("Guarantee Graph node table does not equal the derived source facts")
     file_edges = {tuple(r) for r in _md_section_rows(graph, "Edges") if len(r) == 3}
@@ -945,12 +1243,12 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         if not line.startswith("| DEC-"):
             continue
         cells = [cell.strip() for cell in line.strip().split("|")[1:-1]]
-        if len(cells) != 4:
+        if len(cells) != 6:
             findings.append(f"decision ledger malformed row: {line}")
             continue
-        ident, tag, subject, successor = cells
+        ident, tag, dclass, dgates, subject, successor = cells
         clean = lambda value: re.sub(r"`([^`]*)`", r"\1", value)
-        decision_doc_rows[ident] = (tag, clean(subject), clean(successor))
+        decision_doc_rows[ident] = (tag, clean(subject), clean(successor), dclass, dgates)
     disposition_tags = {
         "Keep": "KEEP",
         "Lock": "LOCK",
@@ -963,9 +1261,11 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
     }
     decision_source = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
     decision_seed_rows = {
-        ident: (disposition_tags[variant], subject, successor)
-        for ident, variant, subject, successor in re.findall(
-            r'DecisionSpec \{ id: "([^"]+)", disposition: Disposition::([A-Za-z]+), subject: "([^"]+)", successor: "([^"]+)"',
+        ident: (disposition_tags[variant], subject, successor, dclass,
+                gate_render(gate_list(dgates), root))
+        for ident, dclass, dgates, variant, subject, successor in re.findall(
+            r'DecisionSpec \{ id: "([^"]+)", class: DecisionClass::(\w+), gates: &\[([^\]]*)\], '
+            r'disposition: Disposition::([A-Za-z]+), subject: "([^"]+)", successor: "([^"]+)"',
             decision_source,
         )
     }
@@ -1068,7 +1368,8 @@ def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[s
     source = path.read_text(encoding="utf-8")
     alias_map: dict[str, tuple[str, frozenset[str], str]] = {}
     row = re.compile(
-        r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+),.*?'
+        r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::\w+, gates: &\[[^\]]*\], '
+        r"disposition: Disposition::(\w+),.*?"
         r"stale_aliases: &\[([^\]]*)\], stale_allowed_contexts: &\[([^\]]*)\],"
     )
     for ident, disposition, aliases_raw, contexts_raw in row.findall(source):
@@ -1205,6 +1506,8 @@ def main() -> int:
     check_batql(root, findings)
     check_numeric(root, findings)
     check_guarantees(root, findings)
+    check_document_law(root, findings)
+    findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"
     actual_files = frozen_files(root)

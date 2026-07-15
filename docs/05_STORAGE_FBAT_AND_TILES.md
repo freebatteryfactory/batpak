@@ -158,6 +158,36 @@ Authorities and caches bind StoreId, AuthorityGeneration, source frontier, sourc
 
 A foreign or stale derived cache is discarded and rebuilt. A foreign or damaged authority is refused unless an explicit restore transition authorizes replacement.
 
+## Authenticated history at open and restore (DEC-071)
+
+The store owns the durable material that authenticated history verifies. `spec/architecture.rs` owns the typed profile matrix; `19_SECURITY_MODEL.md` owns the threat and the claims; this document owns the storage semantics:
+
+```text
+segment seal            a per-segment authenticity commitment over accepted bytes
+history commitment      a global append accumulator, or an equivalent whole-history
+                        commitment, that a later generation extends monotonically
+witness binding         an external anchor binds StoreId, AuthorityGeneration, and
+                        the history commitment; an anchor for another lineage,
+                        generation, or accumulator does not verify this store
+```
+
+Open and restore behave according to the selected `AuthenticatedHistoryProfile`:
+
+```text
+InternalConsistency        verify local commitments and authority-generation
+                           relationships; claim no authorship or freshness
+
+SignedHistory              additionally verify segment seals, the history
+                           commitment, and signer identity
+
+ExternallyAnchoredHistory  additionally verify an independent monotonic witness;
+                           fail closed when it does not verify
+```
+
+A restored older generation may satisfy every local commitment and every signature and still not be the newest history ever acknowledged. Coherence is not freshness. The store never infers freshness from internal evidence alone.
+
+No byte layout is frozen here. The seal and accumulator encodings, the signature algorithm, and the witness protocol are G2 implementation and G9 qualification constants, not spec bytes.
+
 ## Storage ports
 
 The store depends on a BatPak-owned handle/transaction interface that can be implemented by native filesystems, in-memory models, embedded flash adapters, or browser persistence adapters.

@@ -1,5 +1,7 @@
 //! Frozen clean-room repository architecture facts.
 
+use crate::gates::GateId;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PackageClass {
     Production,
@@ -146,6 +148,171 @@ pub const QUALIFICATION_PROFILES: &[QualificationProfile] = &[
         target: "wasm32 host",
         requirement: "browser adapters preserve semantic result, receipt, bounds, and recovery contracts without OS-backend normalization",
     },
+];
+
+// --- Authenticated history (DEC-071) ----------------------------------------
+// A DIFFERENT concept from the build-target `QualificationProfile` above, which
+// says which package compiles for which target. These facts say what a store's
+// history verification actually proves. The two families deliberately share no
+// type, field name, parser, projection, or audit rule; nothing here is named a
+// bare `Profile`, `Policy`, or `Disposition`.
+//
+// This is a contract, not an implementation: bootstrap performs no signature,
+// accumulator, witness, freshness, or cryptographic verification of any kind.
+
+/// What a caller explicitly selects. A stronger claim requires a stronger
+/// profile; an invalid pairing is refused, never normalized into a neighbour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthenticatedHistoryProfile {
+    /// Local coherence only. No authorship and no freshness claim.
+    InternalConsistency,
+    /// Authenticated authorship and integrity within the signed history.
+    SignedHistory,
+    /// Signed history plus an independent monotonic witness.
+    ExternallyAnchoredHistory,
+}
+
+/// Whether an independent monotonic witness participates. Typed, and
+/// constrained by profile: `Required` exists only with
+/// `ExternallyAnchoredHistory`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WitnessPolicy {
+    None,
+    Optional,
+    Required,
+}
+
+/// The outcome of witness evaluation. These stay distinct on purpose: collapsing
+/// them into `Valid`/`Invalid` is what lets a restored older history read as
+/// healthy. An absent optional witness and a supplied broken one are different
+/// facts and must never render identically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WitnessDisposition {
+    /// The policy does not use witnesses (`WitnessPolicy::None`).
+    NotApplicable,
+    /// The policy permits or requires a witness and none was supplied.
+    NotProvided,
+    /// Supplied and verified for this lineage, generation, and accumulator.
+    Verified,
+    /// Supplied and authentic, but older than the observed history.
+    Stale,
+    /// Supplied and contradicts the observed history.
+    Conflicting,
+    /// Supplied but could not be evaluated (unreachable or unparseable).
+    Unverifiable,
+    /// Supplied and failed cryptographic verification.
+    CryptographicallyInvalid,
+    /// Supplied but bound to a different store lineage.
+    LineageMismatch,
+    /// Supplied but bound to a different generation.
+    GenerationMismatch,
+    /// Supplied but bound to a different history accumulator.
+    AccumulatorMismatch,
+}
+
+/// Exactly what a verification result is allowed to say. Integrity,
+/// authenticity, freshness, and rollback resistance are separate axes and are
+/// never collapsed into one `verified: bool`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryClaimPosture {
+    /// Well-formed; local commitments and authority generations verify. Proves
+    /// nothing about authorship or newness.
+    InternalConsistencyVerified,
+    /// Authentic authorship within the signed history. Says nothing about
+    /// whether an older validly signed history was restored.
+    AuthenticatedHistoryVerifiedNoFreshnessClaim,
+    /// Anchored for exactly the witnessed generation, lineage, accumulator, and
+    /// the witness's own monotonicity and trust assumptions. Never universal
+    /// rollback prevention.
+    ExternallyAnchoredForThisWitnessedGeneration,
+    /// No freshness evidence exists. Stated explicitly rather than omitted.
+    RollbackResistanceUnavailable,
+}
+
+/// One authenticated-history profile: what it admits, where it is implemented,
+/// where it is qualified, and the most it may claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthenticatedHistoryProfileSpec {
+    pub profile: AuthenticatedHistoryProfile,
+    /// The frozen valid pairings. Anything absent here is refused.
+    pub permitted_witness_policies: &'static [WitnessPolicy],
+    /// Local authoritative commitments and authority generations verify.
+    pub requires_local_commitment_verification: bool,
+    /// Signed seals and a signed whole-history commitment verify.
+    pub requires_signed_history_verification: bool,
+    /// An independent monotonic witness verifies.
+    pub requires_independent_witness_verification: bool,
+    pub implementation_gates: &'static [GateId],
+    pub release_qualification_gates: &'static [GateId],
+    /// The strongest posture this profile may reach with a verified witness.
+    pub claim_posture: HistoryClaimPosture,
+    /// The posture when no verified external anchor is present.
+    pub unanchored_claim_posture: HistoryClaimPosture,
+}
+
+/// The frozen matrix. `SignedHistory + Required` is not silently upgraded to
+/// `ExternallyAnchoredHistory`: the caller selects the stronger profile.
+pub const AUTHENTICATED_HISTORY_PROFILES: &[AuthenticatedHistoryProfileSpec] = &[
+    AuthenticatedHistoryProfileSpec {
+        profile: AuthenticatedHistoryProfile::InternalConsistency,
+        permitted_witness_policies: &[WitnessPolicy::None],
+        requires_local_commitment_verification: true,
+        requires_signed_history_verification: false,
+        requires_independent_witness_verification: false,
+        implementation_gates: &[GateId::G2],
+        release_qualification_gates: &[GateId::G9],
+        claim_posture: HistoryClaimPosture::InternalConsistencyVerified,
+        unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,
+    },
+    AuthenticatedHistoryProfileSpec {
+        profile: AuthenticatedHistoryProfile::SignedHistory,
+        permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],
+        requires_local_commitment_verification: true,
+        requires_signed_history_verification: true,
+        requires_independent_witness_verification: false,
+        implementation_gates: &[GateId::G2],
+        release_qualification_gates: &[GateId::G9],
+        claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,
+        unanchored_claim_posture: HistoryClaimPosture::AuthenticatedHistoryVerifiedNoFreshnessClaim,
+    },
+    AuthenticatedHistoryProfileSpec {
+        profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,
+        permitted_witness_policies: &[WitnessPolicy::Required],
+        requires_local_commitment_verification: true,
+        requires_signed_history_verification: true,
+        requires_independent_witness_verification: true,
+        implementation_gates: &[GateId::G2],
+        release_qualification_gates: &[GateId::G9],
+        claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,
+        unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,
+    },
+];
+
+/// Every witness disposition that must fail closed under
+/// `WitnessPolicy::Required`. `NotProvided` is included: a required witness that
+/// was never supplied is a refusal, not a silent success.
+pub const REQUIRED_WITNESS_FAILURE_SET: &[WitnessDisposition] = &[
+    WitnessDisposition::NotProvided,
+    WitnessDisposition::Stale,
+    WitnessDisposition::Conflicting,
+    WitnessDisposition::Unverifiable,
+    WitnessDisposition::CryptographicallyInvalid,
+    WitnessDisposition::LineageMismatch,
+    WitnessDisposition::GenerationMismatch,
+    WitnessDisposition::AccumulatorMismatch,
+];
+
+/// A supplied optional witness that failed. Optional to supply; once supplied,
+/// mandatory to validate. None of these may degrade into `NotProvided` or emit
+/// a success receipt that discards the failure.
+pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[
+    WitnessDisposition::Stale,
+    WitnessDisposition::Conflicting,
+    WitnessDisposition::Unverifiable,
+    WitnessDisposition::CryptographicallyInvalid,
+    WitnessDisposition::LineageMismatch,
+    WitnessDisposition::GenerationMismatch,
+    WitnessDisposition::AccumulatorMismatch,
 ];
 
 pub const EDGES: &[EdgeSpec] = &[

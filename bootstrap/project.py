@@ -173,7 +173,10 @@ _LEG_ROW = re.compile(
     r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::\w+, '
     r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
 )
-_DEC_ROW = re.compile(r'DecisionSpec \{ id: "(DEC-\d+)", disposition: Disposition::(\w+), subject: "[^"]+"')
+_DEC_ROW = re.compile(
+    r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::(\w+), '
+    r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+), subject: "[^"]+"'
+)
 _PKG_ROW = re.compile(
     r'PackageSpec \{\s*package: "([^"]+)",\s*path: "[^"]+",\s*role: "[^"]+",\s*'
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
@@ -220,10 +223,13 @@ def guarantee_nodes(root):
         nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": life,
                       "owner": owner, "gates": gate, "witness": "", "failure": f"Legacy({gate})"})
     dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
-    for did, disp in _DEC_ROW.findall(dec):
+    for did, dcls, dgates, disp in _DEC_ROW.findall(dec):
+        # Decision gates are node METADATA. They never become graph edges, and no
+        # gate or profile node is synthesized to hold them.
         nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
-                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md", "gates": "", "witness": "",
-                      "failure": f"Decision({disp})"})
+                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md",
+                      "gates": gate_tokens(dgates, root), "witness": "",
+                      "dclass": dcls, "failure": f"Decision({disp})"})
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
     for pkg, cls, layer in _PKG_ROW.findall(arch):
         nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
@@ -306,10 +312,11 @@ def render_guarantee_graph(root):
               f"active (gating): {active}", f"closed evidence: {closed}",
               f"historical coverage only: {historical}", "```", "",
               "## Classified SEED", "", render_seed_classification(root), "",
-              "## Nodes", "", "| GuaranteeId | Family | Kind | Lifetime | Owner | Gates |",
-              "| --- | --- | --- | --- | --- | --- |"]
+              "## Nodes", "", "| GuaranteeId | Family | Kind | Lifetime | DecisionClass | Owner | Gates |",
+              "| --- | --- | --- | --- | --- | --- | --- |"]
     for n in nodes:
-        lines.append(f"| {n['id']} | {n['family']} | {n['kind']} | {n['lifetime']} | {n['owner']} | {n['gates']} |")
+        lines.append(f"| {n['id']} | {n['family']} | {n['kind']} | {n['lifetime']} | "
+                     f"{n.get('dclass', '-')} | {n['owner']} | {n['gates']} |")
     lines += ["", "## Edges", "", "| Source | Relation | Target |", "| --- | --- | --- |"]
     for s, k, t in edges:
         lines.append(f"| {s} | {k} | {t} |")

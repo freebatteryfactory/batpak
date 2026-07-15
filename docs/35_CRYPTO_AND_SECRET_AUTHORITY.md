@@ -181,6 +181,20 @@ legacy keyset compatibility bytes
 G2 must select these exact cryptographic constants before implementing durable
 encrypted bytes. Implementation does not get to leave them ambient.
 
+## Authenticated history is owned elsewhere (DEC-071)
+
+This document owns signing-key ownership, secret authority, and verification-key trust. It does not own whole-store authenticated history:
+
+```text
+spec/architecture.rs   the typed AuthenticatedHistoryProfile matrix and witness policy
+19_SECURITY_MODEL.md   the whole-store rollback threat and the permitted claims
+05_STORAGE_FBAT_AND_TILES.md  segment seals, history commitment, open/restore behavior
+```
+
+The anti-rollback law above is about **key material**: a completed shred cannot be reversed by restoring a pre-shred keyset. That is a different attack from **whole-store history rollback**, where an attacker restores an older complete generation whose signatures remain valid. A signing key proves authorship; it does not prove that a signed generation is the newest one ever acknowledged. Only an independent monotonic witness carries that claim.
+
+Signing and verification keys used by `SignedHistory` and `ExternallyAnchoredHistory` obey the key-backend contract and secret-authority vocabulary here. The signature algorithm, key storage, witness provider, and network protocol remain unselected (G2 implementation, G9 qualification).
+
 ## Ownership and proof
 
 ```text

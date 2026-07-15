@@ -163,45 +163,6 @@ fn cycle<'a>(node: &'a str, graph: &BTreeMap<&'a str, Vec<&'a str>>, visiting: &
 fn check_unique_ids(findings: &mut Vec<String>) {
     let invariant_ids: BTreeSet<&str> = invariants::INVARIANTS.iter().map(|v| v.id).collect();
     if invariant_ids.len() != invariants::INVARIANTS.len() { findings.push("duplicate invariant ID".into()); }
-    for value in invariants::INVARIANTS {
-        if value.statement.trim().is_empty() { findings.push(format!("empty invariant statement {}", value.id)); }
-        if value.owner.trim().is_empty() || value.witness.trim().is_empty() {
-            findings.push(format!("unclassified invariant {} (missing owner or witness)", value.id));
-        }
-        match value.kind {
-            guarantees::GuaranteeKind::SemanticLaw
-            | guarantees::GuaranteeKind::ArchitectureConstraint
-            | guarantees::GuaranteeKind::BootstrapAssertion
-            | guarantees::GuaranteeKind::LegacyObligation
-            | guarantees::GuaranteeKind::QualificationRequirement
-            | guarantees::GuaranteeKind::Decision => {}
-        }
-        match value.lifetime {
-            guarantees::GuaranteeLifetime::Permanent
-            | guarantees::GuaranteeLifetime::UntilGate
-            | guarantees::GuaranteeLifetime::UntilCompatibilityExpiry
-            | guarantees::GuaranteeLifetime::UntilSuccessor
-            | guarantees::GuaranteeLifetime::HistoricalCoverageOnly
-            | guarantees::GuaranteeLifetime::ClosedEvidence => {}
-        }
-    }
-    let decision_ids: BTreeSet<&str> = dispositions::DECISIONS.iter().map(|v| v.id).collect();
-    if decision_ids.len() != dispositions::DECISIONS.len() { findings.push("duplicate decision ID".into()); }
-    for value in dispositions::DECISIONS {
-        if value.subject.trim().is_empty() || value.successor.trim().is_empty() {
-            findings.push(format!("incomplete decision {}", value.id));
-        }
-        match value.disposition {
-            dispositions::Disposition::Keep
-            | dispositions::Disposition::Lock
-            | dispositions::Disposition::Kill
-            | dispositions::Disposition::Supersede
-            | dispositions::Disposition::Demote
-            | dispositions::Disposition::Defer
-            | dispositions::Disposition::OpenImplementation
-            | dispositions::Disposition::RetainAsEvidence => {}
-        }
-    }
     // The one gate identity. The inventory must be complete, unique, and in
     // canonical (declaration) order; every typed gate reference resolves through
     // it, so no fact can name a gate that does not exist.
@@ -261,6 +222,65 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             }
         }
     };
+
+    for value in invariants::INVARIANTS {
+        if value.statement.trim().is_empty() { findings.push(format!("empty invariant statement {}", value.id)); }
+        if value.owner.trim().is_empty() || value.witness.trim().is_empty() {
+            findings.push(format!("unclassified invariant {} (missing owner or witness)", value.id));
+        }
+        match value.kind {
+            guarantees::GuaranteeKind::SemanticLaw
+            | guarantees::GuaranteeKind::ArchitectureConstraint
+            | guarantees::GuaranteeKind::BootstrapAssertion
+            | guarantees::GuaranteeKind::LegacyObligation
+            | guarantees::GuaranteeKind::QualificationRequirement
+            | guarantees::GuaranteeKind::Decision => {}
+        }
+        match value.lifetime {
+            guarantees::GuaranteeLifetime::Permanent
+            | guarantees::GuaranteeLifetime::UntilGate
+            | guarantees::GuaranteeLifetime::UntilCompatibilityExpiry
+            | guarantees::GuaranteeLifetime::UntilSuccessor
+            | guarantees::GuaranteeLifetime::HistoricalCoverageOnly
+            | guarantees::GuaranteeLifetime::ClosedEvidence => {}
+        }
+    }
+    let decision_ids: BTreeSet<&str> = dispositions::DECISIONS.iter().map(|v| v.id).collect();
+    if decision_ids.len() != dispositions::DECISIONS.len() { findings.push("duplicate decision ID".into()); }
+    for value in dispositions::DECISIONS {
+        if value.subject.trim().is_empty() || value.successor.trim().is_empty() {
+            findings.push(format!("incomplete decision {}", value.id));
+        }
+        // The class -- not the title, ID range, document section, or keyword --
+        // decides whether the row must name a gate (DEC-072).
+        check_gates(value.id, value.gates, &mut findings);
+        if value.class.requires_gate() && value.gates.is_empty() {
+            findings.push(format!(
+                "{} is implementation-bearing and names no gate",
+                value.id
+            ));
+        }
+        // Exhaustive: a new class must be classified here, not defaulted.
+        match value.class {
+            dispositions::DecisionClass::Architecture
+            | dispositions::DecisionClass::Capability
+            | dispositions::DecisionClass::Compatibility
+            | dispositions::DecisionClass::Enforcement
+            | dispositions::DecisionClass::HistoricalReceipt
+            | dispositions::DecisionClass::Naming
+            | dispositions::DecisionClass::ImplementationPosture => {}
+        }
+        match value.disposition {
+            dispositions::Disposition::Keep
+            | dispositions::Disposition::Lock
+            | dispositions::Disposition::Kill
+            | dispositions::Disposition::Supersede
+            | dispositions::Disposition::Demote
+            | dispositions::Disposition::Defer
+            | dispositions::Disposition::OpenImplementation
+            | dispositions::Disposition::RetainAsEvidence => {}
+        }
+    }
     for value in invariants::INVARIANTS {
         check_gates(value.id, value.gates, &mut findings);
     }

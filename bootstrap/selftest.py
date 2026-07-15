@@ -505,8 +505,8 @@ def test_gates(audit, project) -> list[str]:
           guarantee_findings, "SEED-CLASSIFICATION block does not equal")
     probe("guarantee_graph_gate_metadata_drift_is_rejected",
           [("docs/GUARANTEE_GRAPH.generated.md",
-            "| LEG-001 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |",
-            "| LEG-001 | LEG | LegacyObligation | UntilGate | batpak::store | G7 |")],
+            "| LEG-001 | LEG | LegacyObligation | UntilGate | - | batpak::store | G2 |",
+            "| LEG-001 | LEG | LegacyObligation | UntilGate | - | batpak::store | G7 |")],
           guarantee_findings, "node table does not equal")
     probe("docs21_rendered_leg_gate_drift_is_rejected",
           [("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
@@ -542,6 +542,319 @@ def test_gates(audit, project) -> list[str]:
     return findings
 
 
+def test_decisions(audit, project) -> list[str]:
+    """Named hostile fixtures for DecisionClass and gate binding (DEC-072)."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, edits, validator, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            expect(name, validator(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # A row losing its class is a parse-visible defect, not a silent default.
+    probe("missing_decision_class_is_rejected",
+          [("spec/dispositions.rs",
+            'DecisionSpec { id: "DEC-016", class: DecisionClass::Enforcement, gates: &[GateId::G0], ',
+            'DecisionSpec { id: "DEC-016", ')],
+          audit.decision_class_findings, "carry no DecisionClass")
+    probe("unknown_decision_class_is_rejected",
+          [("spec/dispositions.rs", "class: DecisionClass::Enforcement, gates: &[GateId::G0], "
+                                    'disposition: Disposition::Keep, subject: "Status/supersession metadata"',
+            "class: DecisionClass::Bogus, gates: &[GateId::G0], "
+            'disposition: Disposition::Keep, subject: "Status/supersession metadata"')],
+          audit.decision_class_findings, "unknown DecisionClass")
+
+    # Each implementation-bearing class must name a gate. One representative row
+    # per class, so a class-specific hole cannot hide behind its neighbours.
+    for cls, did, gates in (
+        ("Architecture", "DEC-007", "&[GateId::G0]"),
+        ("Capability", "DEC-017", "&[GateId::G6]"),
+        ("Compatibility", "DEC-020", "&[GateId::G2]"),
+        ("Enforcement", "DEC-016", "&[GateId::G0]"),
+        ("ImplementationPosture", "DEC-033", "&[GateId::G8]"),
+    ):
+        probe(f"{cls.lower()}_decision_without_gate_is_rejected",
+              [("spec/dispositions.rs",
+                f'id: "{did}", class: DecisionClass::{cls}, gates: {gates}',
+                f'id: "{did}", class: DecisionClass::{cls}, gates: &[]')],
+              audit.decision_class_findings, "names no implementation or qualification gate")
+
+    probe("unknown_gateid_on_a_decision_is_rejected",
+          [("spec/dispositions.rs", 'id: "DEC-016", class: DecisionClass::Enforcement, gates: &[GateId::G0]',
+            'id: "DEC-016", class: DecisionClass::Enforcement, gates: &[GateId::G12]')],
+          audit.decision_class_findings, "unknown GateId")
+    probe("duplicate_gateid_on_a_decision_is_rejected",
+          [("spec/dispositions.rs", 'id: "DEC-016", class: DecisionClass::Enforcement, gates: &[GateId::G0]',
+            'id: "DEC-016", class: DecisionClass::Enforcement, gates: &[GateId::G0, GateId::G0]')],
+          audit.decision_class_findings, "duplicate GateId")
+    probe("noncanonical_decision_gate_order_is_rejected",
+          [("spec/dispositions.rs", 'id: "DEC-072", class: DecisionClass::Enforcement, gates: &[GateId::G0, GateId::G9]',
+            'id: "DEC-072", class: DecisionClass::Enforcement, gates: &[GateId::G9, GateId::G0]')],
+          audit.decision_class_findings, "not in canonical order")
+
+    # An ungated Naming/HistoricalReceipt row is lawful and must stay green.
+    if audit.decision_class_findings(root):
+        fail("ungated_naming_and_historical_receipt_rows_pass")
+
+    def seed_id_findings(tmp):
+        out: list[str] = []
+        audit.check_seed_ids(tmp, out)
+        return out
+
+    probe("docs30_decision_class_mismatch_is_rejected",
+          [("docs/30_DECISION_AND_REJECTION_LEDGER.md",
+            "| DEC-016 | KEEP | Enforcement | G0 |", "| DEC-016 | KEEP | Capability | G0 |")],
+          seed_id_findings, "decision seed/document mismatch for DEC-016")
+    probe("docs30_decision_gate_mismatch_is_rejected",
+          [("docs/30_DECISION_AND_REJECTION_LEDGER.md",
+            "| DEC-016 | KEEP | Enforcement | G0 |", "| DEC-016 | KEEP | Enforcement | G5 |")],
+          seed_id_findings, "decision seed/document mismatch for DEC-016")
+
+    def guarantee_findings(tmp):
+        out: list[str] = []
+        audit.check_guarantees(tmp, out)
+        return out
+
+    probe("guarantee_graph_losing_decision_class_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "| DEC-016 | DEC | Decision | Permanent | Enforcement |",
+            "| DEC-016 | DEC | Decision | Permanent | - |")],
+          guarantee_findings, "node table does not equal")
+    probe("guarantee_graph_losing_a_decision_gate_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "| DEC-072 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0/G9 |",
+            "| DEC-072 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 |")],
+          guarantee_findings, "node table does not equal")
+
+    # Decision gates are metadata. They never become edges, and no gate or
+    # profile node is synthesized to hold them.
+    nodes, edges = audit.guarantee_derive(root)
+    families = {n["family"] for n in nodes}
+    if families != {"SEED", "LEG", "DEC", "ARCH", "QUAL"}:
+        fail(f"unexpected guarantee family present: {sorted(families)}")
+    node_ids = {n["id"] for n in nodes}
+    inv_tokens = {g[1] for g in audit.gate_inventory(root)}
+    if node_ids & inv_tokens:
+        fail("synthetic gate node present in the Guarantee Graph")
+    for s, k, t in edges:
+        if s in inv_tokens or t in inv_tokens:
+            fail(f"synthetic gate edge present: {s} {k} {t}")
+    for profile in ("InternalConsistency", "SignedHistory", "ExternallyAnchoredHistory"):
+        if profile in node_ids:
+            fail(f"authenticated-history profile added as a graph node: {profile}")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 72:
+        fail("decision node count is not 72")
+
+    if [(n["id"], n.get("dclass"), n["gates"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
+       [(n["id"], n.get("dclass"), n["gates"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
+        fail("generator_auditor_decision_metadata_disagreement")
+    return findings
+
+
+def test_authenticated_history(audit) -> list[str]:
+    """Named hostile fixtures for the authenticated-history contract (DEC-071).
+
+    Structural only. Bootstrap performs no signature, accumulator, witness,
+    freshness, or cryptographic verification, and these fixtures do not pretend
+    otherwise: they prove the CONTRACT cannot be weakened, not that crypto works.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, old, new, needle):
+        tmp = gate_sandbox([("spec/architecture.rs", old, new)])
+        try:
+            expect(name, audit.authenticated_history_findings(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.authenticated_history_findings(root):
+        fail("frozen_matrix_passes")
+
+    # Invalid profile/policy pairs are refused, never normalized.
+    probe("internal_consistency_with_optional_witness_is_rejected",
+          "profile: AuthenticatedHistoryProfile::InternalConsistency,\n        "
+          "permitted_witness_policies: &[WitnessPolicy::None],",
+          "profile: AuthenticatedHistoryProfile::InternalConsistency,\n        "
+          "permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],",
+          "frozen matrix says")
+    probe("signed_history_with_required_witness_is_rejected",
+          "profile: AuthenticatedHistoryProfile::SignedHistory,\n        "
+          "permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],",
+          "profile: AuthenticatedHistoryProfile::SignedHistory,\n        "
+          "permitted_witness_policies: &[WitnessPolicy::Required],",
+          "permits WitnessPolicy::Required outside ExternallyAnchoredHistory")
+    probe("externally_anchored_with_optional_witness_is_rejected",
+          "profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,\n        "
+          "permitted_witness_policies: &[WitnessPolicy::Required],",
+          "profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,\n        "
+          "permitted_witness_policies: &[WitnessPolicy::Optional],",
+          "permits a non-Required witness policy")
+
+    # Claim ceilings.
+    probe("internal_consistency_claiming_signed_history_authenticity_is_rejected",
+          "requires_local_commitment_verification: true,\n        "
+          "requires_signed_history_verification: false,\n        "
+          "requires_independent_witness_verification: false,\n        "
+          "implementation_gates: &[GateId::G2],\n        "
+          "release_qualification_gates: &[GateId::G9],\n        "
+          "claim_posture: HistoryClaimPosture::InternalConsistencyVerified,",
+          "requires_local_commitment_verification: true,\n        "
+          "requires_signed_history_verification: true,\n        "
+          "requires_independent_witness_verification: false,\n        "
+          "implementation_gates: &[GateId::G2],\n        "
+          "release_qualification_gates: &[GateId::G9],\n        "
+          "claim_posture: HistoryClaimPosture::InternalConsistencyVerified,",
+          "InternalConsistency requires signed-history or witness verification")
+    probe("internal_consistency_claiming_rollback_resistance_is_rejected",
+          "claim_posture: HistoryClaimPosture::InternalConsistencyVerified,\n        "
+          "unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,",
+          "claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,\n        "
+          "unanchored_claim_posture: HistoryClaimPosture::RollbackResistanceUnavailable,",
+          "exceeding internal consistency")
+    probe("signed_history_claiming_freshness_without_a_verified_witness_is_rejected",
+          "unanchored_claim_posture: HistoryClaimPosture::AuthenticatedHistoryVerifiedNoFreshnessClaim,",
+          "unanchored_claim_posture: HistoryClaimPosture::ExternallyAnchoredForThisWitnessedGeneration,",
+          "claims freshness or rollback resistance")
+
+    # Every frozen required-witness failure class gets its own probe: a hole in
+    # any single class is what lets a rolled-back store verify as healthy. The
+    # first occurrence of each line is REQUIRED_WITNESS_FAILURE_SET.
+    for variant in ("NotProvided", "Stale", "Conflicting", "Unverifiable",
+                    "CryptographicallyInvalid", "LineageMismatch", "GenerationMismatch",
+                    "AccumulatorMismatch"):
+        probe(f"required_witness_{variant.lower()}_dropped_from_failure_set_is_rejected",
+              f"    WitnessDisposition::{variant},\n",
+              "",
+              "!= frozen failure set")
+    probe("witness_disposition_collapsed_into_valid_invalid_is_rejected",
+          "    /// Supplied and contradicts the observed history.\n    Conflicting,\n",
+          "",
+          "collapses required distinctions")
+    probe("history_claim_posture_collapsed_is_rejected",
+          "    /// No freshness evidence exists. Stated explicitly rather than omitted.\n"
+          "    RollbackResistanceUnavailable,\n",
+          "",
+          "collapses required distinctions")
+
+    # An absent optional witness must not fail; a supplied invalid one must not
+    # degrade into absence or success.
+    probe("optional_witness_absent_incorrectly_failing_is_rejected",
+          "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n    WitnessDisposition::Stale,",
+          "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n"
+          "    WitnessDisposition::NotProvided,\n    WitnessDisposition::Stale,",
+          "refuses an absent optional witness")
+    probe("present_invalid_optional_witness_treated_as_absent_is_rejected",
+          "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n    WitnessDisposition::Stale,\n",
+          "pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[\n",
+          "may degrade to absence or success")
+    return findings
+
+
+def test_document_law(audit) -> list[str]:
+    """The rollback threat and the anti-flattening axes must stay in the docs."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def doc_findings(tmp):
+        out: list[str] = []
+        audit.check_document_law(tmp, out)
+        return out
+
+    for name, rel, old, needle in (
+        ("whole_store_rollback_threat_removed_is_rejected",
+         "docs/19_SECURITY_MODEL.md",
+         "may restore an older complete generation whose internal commitments and signatures remain valid",
+         "whole-store rollback threat"),
+        ("integrity_authenticity_freshness_collapsed_is_rejected",
+         "docs/19_SECURITY_MODEL.md",
+         "rollback resistance  restoring an older valid generation is detectable",
+         "four axes"),
+        ("receipt_losing_exact_profile_is_rejected",
+         "docs/14_RECEIPTS_AND_EXPLANATION.md", "selected AuthenticatedHistoryProfile",
+         "receipt preserves the exact profile"),
+        ("receipt_losing_exact_witness_disposition_is_rejected",
+         "docs/14_RECEIPTS_AND_EXPLANATION.md", "exact WitnessDisposition",
+         "receipt preserves the exact witness disposition"),
+    ):
+        tmp = gate_sandbox([(rel, old, "")])
+        try:
+            produced = doc_findings(tmp)
+            if not any(needle in f for f in produced):
+                fail(f"{name} (wanted {needle!r}, got {produced!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
+def test_control_characters(audit) -> list[str]:
+    """An invisible byte impersonating a regular expression must be rejected."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    # The exact 5.5C2a defect: a backspace where a word boundary belongs.
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "spec").mkdir()
+    (tmp / "spec" / "poisoned.rs").write_bytes(
+        b'if re.search(r\'\x08gates?:\\s*"\', src):\n'
+    )
+    produced = audit.control_character_findings(tmp)
+    if not any("forbidden control character U+0008" in f for f in produced):
+        fail(f"backspace_in_a_validator_regex_is_rejected (got {produced!r})")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    for name, payload, code in (
+        ("nul_byte_is_rejected", b"a\x00b\n", "U+0000"),
+        ("vertical_tab_is_rejected", b"a\x0bb\n", "U+000B"),
+        ("form_feed_is_rejected", b"a\x0cb\n", "U+000C"),
+        ("escape_byte_is_rejected", b"a\x1bb\n", "U+001B"),
+        ("carriage_return_is_rejected", b"a\r\nb\n", "U+000D"),
+        ("delete_byte_is_rejected", b"a\x7fb\n", "U+007F"),
+    ):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "spec").mkdir()
+        (tmp / "spec" / "x.rs").write_bytes(payload)
+        produced = audit.control_character_findings(tmp)
+        if not any(code in f for f in produced):
+            fail(f"{name} (wanted {code}, got {produced!r})")
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # LF and TAB are lawful and must not be reported.
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "spec").mkdir()
+    (tmp / "spec" / "x.rs").write_bytes(b"fn main() {\n\tlet x = 1;\n}\n")
+    if audit.control_character_findings(tmp):
+        fail("lf_and_tab_are_permitted")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    # The real tree stays clean.
+    if audit.control_character_findings(root):
+        fail(f"repository_text_is_control_character_clean ({audit.control_character_findings(root)[:3]})")
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -556,12 +869,16 @@ def main() -> int:
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)
+    findings += test_decisions(audit, project)
+    findings += test_authenticated_history(audit)
+    findings += test_document_law(audit)
+    findings += test_control_characters(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character hostile fixtures)")
     return 0
 
 
