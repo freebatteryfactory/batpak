@@ -217,7 +217,7 @@ derived_row_cannot_prove_absence_or_loss
 
 Bounded traversal is a claim about discovery work, not about the size of the returned vector.
 
-Required witnesses (proof owner TestPak; gates G2/G7), also carried by `LEG-028`:
+Required witnesses (proof owner TestPak; gates G2), also carried by `LEG-028`:
 
 ```text
 page_limit_bounds_discovery_work_not_only_output

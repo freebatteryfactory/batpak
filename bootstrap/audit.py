@@ -1581,7 +1581,8 @@ def proof_policy_findings(root: Path) -> list[str]:
 # never inferred from witness-name keywords or nearby headings.
 W_OWNER_BLOCK = re.compile(
     r"Required witnesses \(proof owner ([^;]+); gates ([^;)]*)((?:;[^)]*)?)\)"
-    r"[^\n:]*?`(LEG-\d+)`:\s*\n+```text\n(.*?)\n```",
+    r"([^\n:]*?)`((?:LEG|DEC|SEED|ARCH|QUAL)-[A-Za-z0-9][A-Za-z0-9_-]*)`:"
+    r"\s*\n+```text\n(.*?)\n```",
     re.S,
 )
 W_MEANING_BLOCK = re.compile(r"Authoritative meanings:\s*\n+```text\n(.*?)\n```", re.S)
@@ -1592,7 +1593,7 @@ def witness_rows(root: Path) -> dict[str, dict]:
     """proof-row id -> {owner LEG, proof owner, gates}. docs/24 is the authority."""
     doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
     out: dict[str, dict] = {}
-    for proof_owner, gates, posture, leg, body in W_OWNER_BLOCK.findall(doc):
+    for proof_owner, gates, posture, tail, leg, body in W_OWNER_BLOCK.findall(doc):
         for line in body.splitlines():
             wid = line.strip()
             if not wid or not W_ID.match(wid):
@@ -1600,7 +1601,8 @@ def witness_rows(root: Path) -> dict[str, dict]:
             if wid in out:
                 out[wid]["duplicate"] = True
                 continue
-            out[wid] = {"leg": leg, "proof_owner": proof_owner.strip(),
+            out[wid] = {"leg": leg, "target": leg, "tail": tail,
+                        "proof_owner": proof_owner.strip(),
                         "gates": gates.strip(), "posture": posture.strip(),
                         "duplicate": False}
     return out
@@ -1791,10 +1793,13 @@ D4B2B_VAGUE = ("later", "eventually", "someday", "tbd", "in future", "at some po
 
 
 def leg_gates(root: Path, leg: str) -> str:
-    """The owning LEG's live typed gate list, rendered. Never invented."""
-    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
-    m = re.search(r'id: "' + leg + r'".*?gates: &\[([^\]]*)\]', src, re.S)
-    return gate_render(gate_list(m.group(1)), root) if m else ""
+    """The owning LEG's live typed gate list, rendered. Never invented.
+
+    Delegates to the generic guarantee index (5.5D4b-3b0). LEG resolution is
+    byte-for-byte what it was before the widening.
+    """
+    entry = guarantee_index(root).get(leg)
+    return entry["gates"] if entry and entry["family"] == "LEG" else ""
 
 
 # Load-bearing clauses inside a proof row's authoritative meaning. Presence of
@@ -2109,6 +2114,218 @@ def leg081_authority_findings(root: Path) -> list[str]:
         for wid in sorted(want - covered):
             out.append(f"LEG-081 canonical proof row {wid} appears in no coverage clause")
     return out
+
+
+# --- 5.5D4b-3b0 generic proof-target resolution -----------------------------
+# A proof row targets any existing source-qualified GuaranteeRef. The first
+# resolver was LEG-shaped only because LEG rows migrated first; that was never a
+# law. There is one canonical row format for every family -- no second identity,
+# no per-family parser, no LEG exemption.
+#
+# Every family below is read through the fact parser that already owns it. This
+# module adds no new parser for spec/.
+GUARANTEE_FAMILIES = ("LEG", "DEC", "SEED", "ARCH", "QUAL")
+G_REF = re.compile(r"(?:LEG|DEC|SEED|ARCH|QUAL)-[A-Za-z0-9][A-Za-z0-9_-]*")
+
+
+def guarantee_index(root: Path) -> dict[str, dict]:
+    """GuaranteeRef -> {family, gates}.
+
+    gates is None when the family declares no machine-resolvable gate list. None
+    is never silently read as "no gates": a row targeting such a family fails
+    closed rather than inheriting an invented empty list.
+    """
+    out: dict[str, dict] = {}
+    for r in guarantee_seed_rows(root):
+        out[r["id"]] = {"family": "SEED", "gates": gate_render(r["gate_names"], root)}
+    for lid, meta in guarantee_leg_meta(root).items():
+        out[lid] = {"family": "LEG", "gates": gate_render(meta["gate_names"], root)}
+    for r in decision_rows(root):
+        out[r["id"]] = {"family": "DEC", "gates": gate_render(r["gate_names"], root)}
+    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    # ARCH declares no gates, and QUAL's typed row carries a compilation target
+    # ("std", "no_std + alloc", "wasm32 host"), not a GateId list. Neither yields
+    # a gate list today; see D4B3B0_UNGATED_FAMILIES.
+    for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
+        out[f"ARCH-{pkg}"] = {"family": "ARCH", "gates": None}
+    for pkg, profile, _target in G_QUAL_ROW.findall(arch):
+        out[f"QUAL-{pkg}-{profile}"] = {"family": "QUAL", "gates": None}
+    return out
+
+
+D4B3B0_UNGATED_FAMILIES = ("ARCH", "QUAL")
+
+
+def guarantee_gates(root: Path, ref: str) -> str | None:
+    entry = guarantee_index(root).get(ref)
+    return entry["gates"] if entry else None
+
+
+# Transitional expectation clause. A row may state, inside its authoritative
+# meaning:
+#
+#     expects: <source-native terminal result, refusal, or success predicate>
+#     disposition: <terminal receipt or disposition path>
+#
+# The 29 rows that predate this grammar remain valid and unedited. Absence is
+# tracked, never accepted as the permanent format: the pending count may shrink
+# but must not grow, so a newly promoted row cannot omit the clause. D4d migrates
+# the remainder and turns universal enforcement on.
+D4B3B0_PENDING_EXPECTATION_CEILING = 29
+D4B3B0_VAGUE = ("tbd", "later", "eventually", "someday", "as appropriate",
+                "as needed", "correctly", "something", "n/a")
+W_EXPECTS = re.compile(r"^\s+expects:\s*(.*)$")
+W_DISPOSITION = re.compile(r"^\s+disposition:\s*(.*)$")
+
+
+def witness_expectations(root: Path) -> dict[str, dict]:
+    """proof-row id -> {expects, disposition} for rows carrying the clause."""
+    doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    out: dict[str, dict] = {}
+    for body in W_MEANING_BLOCK.findall(doc):
+        cur = None
+        for line in body.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if not line.startswith(" ") and W_ID.match(s):
+                cur = s
+                continue
+            if cur is None:
+                continue
+            m = W_EXPECTS.match(line)
+            if m:
+                out.setdefault(cur, {})["expects"] = m.group(1).strip()
+                continue
+            m = W_DISPOSITION.match(line)
+            if m:
+                out.setdefault(cur, {})["disposition"] = m.group(1).strip()
+    return out
+
+
+# Grammar check reads the target slot before it is known to be a GuaranteeRef, so
+# a GateId or free text in that slot produces its own diagnostic instead of
+# silently unmatching the whole block.
+W_ANY_TARGET_BLOCK = re.compile(
+    r"Required witnesses \(proof owner [^)]*\)([^\n:]*?)`([^`\n]+)`:\s*\n+```text\n", re.S)
+
+
+def proof_target_grammar_findings(root: Path) -> list[str]:
+    doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    tokens = {g[1] for g in gate_inventory(root)}
+    out: list[str] = []
+    for _tail, target in W_ANY_TARGET_BLOCK.findall(doc):
+        if G_REF.fullmatch(target):
+            continue
+        if target in tokens:
+            out.append(
+                f"docs/24 names GateId {target} as a proof target; a gate schedules "
+                f"qualification and never owns semantic meaning"
+            )
+        else:
+            out.append(f"docs/24 names {target!r} as a proof target, which is not a source-qualified GuaranteeRef")
+    return out
+
+
+def proof_target_findings(root: Path) -> list[str]:
+    idx = guarantee_index(root)
+    rows = witness_rows(root)
+    exp = witness_expectations(root)
+    out: list[str] = []
+    for wid, row in sorted(rows.items()):
+        ref = row["target"]
+        # one primary target per row; supporting references live in the meaning
+        extra = sorted({r for r in G_REF.findall(row["tail"]) if r != ref})
+        if extra:
+            out.append(f"proof row {wid} names more than one primary target: {ref} and {', '.join(extra)}")
+        entry = idx.get(ref)
+        if entry is None:
+            # An unknown *family* never reaches here: W_OWNER_BLOCK only matches
+            # the five known prefixes, so proof_target_grammar_findings owns that
+            # diagnostic. This branch is for a well-formed ref naming no live
+            # guarantee.
+            out.append(
+                f"proof row {wid} targets {ref}, which resolves to no existing "
+                f"{ref.split('-', 1)[0]} guarantee"
+            )
+            continue
+        # gates resolve from the typed target. Source-block gate text is never authority.
+        if entry["gates"] is None:
+            out.append(
+                f"proof row {wid} targets {ref}, whose {entry['family']} family declares no "
+                f"machine-resolvable gate list"
+            )
+            continue
+        if row["gates"] != entry["gates"]:
+            out.append(
+                f"proof row {wid} gates {row['gates']!r} differ from typed {ref} gates {entry['gates']!r}"
+            )
+    for wid, e in sorted(exp.items()):
+        if wid not in rows:
+            out.append(f"expectation clause names unknown proof row {wid}")
+            continue
+        for field in ("expects", "disposition"):
+            v = e.get(field, "")
+            if not v:
+                out.append(f"proof row {wid} expectation clause states no {field}")
+            elif any(x in v.lower() for x in D4B3B0_VAGUE):
+                out.append(f"proof row {wid} expectation clause {field} is not falsifiable: {v!r}")
+    pending = sorted(w for w in rows if w not in exp)
+    if len(pending) > D4B3B0_PENDING_EXPECTATION_CEILING:
+        out.append(
+            f"{len(pending)} proof rows carry no expectation clause, above the transitional "
+            f"ceiling of {D4B3B0_PENDING_EXPECTATION_CEILING}; a newly promoted row must carry it"
+        )
+    return out
+
+
+# Structural candidate discovery. Heading text is never the parser API: the 29/52
+# undercount happened because a scan keyed on one English phrase missed
+# "implemented at G3" and "Hostile fixture obligations". A fence is proof-bearing
+# because its label carries executable metadata, not because it says a blessed
+# phrase.
+D4B3B0_FENCE = re.compile(r"```text\n(.*?)\n```", re.S)
+D4B3B0_CAND_ID = re.compile(r"^[a-z][a-z0-9_]{6,}$")
+
+
+def candidate_fences(root: Path) -> list[dict]:
+    tokens = {g[1] for g in gate_inventory(root)}
+    canon = set(witness_rows(root))
+    out: list[dict] = []
+    for p in sorted((root / "docs").glob("*.md")):
+        text = p.read_text(encoding="utf-8")
+        for m in D4B3B0_FENCE.finditer(text):
+            ids = [l.strip() for l in m.group(1).splitlines() if l.strip()]
+            if not ids or not all(D4B3B0_CAND_ID.match(i) for i in ids):
+                continue
+            before = [l for l in text[: m.start()].splitlines() if l.strip()]
+            label = before[-1] if before else ""
+            has_meta = (
+                "proof owner" in label.lower()
+                or G_REF.search(label) is not None
+                or any(re.search(r"\b" + t + r"\b", label) for t in tokens)
+            )
+            rel = "docs/" + p.name
+            if not has_meta:
+                kind = "DescriptiveEvidence"
+            elif rel == "docs/24_GAUNTLET.md":
+                kind = "Authority"
+            elif all(i in canon for i in ids):
+                kind = "Projection"
+            else:
+                kind = "UnboundCandidate"
+            out.append({"doc": rel, "line": text[: m.start()].count("\n") + 1,
+                        "label": label, "ids": ids, "kind": kind})
+    return out
+
+
+def candidate_summary(root: Path) -> tuple[int, int, int]:
+    """(unbound ids, unbound blocks, rows pending the expectation clause)."""
+    unbound = [c for c in candidate_fences(root) if c["kind"] == "UnboundCandidate"]
+    rows = witness_rows(root)
+    exp = witness_expectations(root)
+    return (sum(len(c["ids"]) for c in unbound), len(unbound),
+            len([w for w in rows if w not in exp]))
 
 
 def check_guarantees(root: Path, findings: list[str]) -> None:
@@ -2580,6 +2797,8 @@ def main() -> int:
     findings.extend(integrity_witness_findings(root))
     findings.extend(derived_material_findings(root))
     findings.extend(deferred_posture_findings(root))
+    findings.extend(proof_target_grammar_findings(root))
+    findings.extend(proof_target_findings(root))
     findings.extend(leg081_authority_findings(root))
     findings.extend(proof_meaning_findings(root))
     findings.extend(control_character_findings(root))
@@ -2622,9 +2841,15 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
+    # The structurally discovered candidate set and the transitional expectation
+    # debt are reported every run, not asserted as constants here. Both must reach
+    # zero by D4d; a number that only ever appears in a report cannot rot into a
+    # registry that every normalization commit has to ceremonially update.
+    cand_ids, cand_blocks, pending = candidate_summary(root)
     print(
         f"audit: PASS ({len(markdown)} markdown documents, {len(contract_ids)} contract IDs, "
-        f"{len(actual_files)} frozen files)"
+        f"{len(actual_files)} frozen files; {cand_ids} unbound proof candidates in "
+        f"{cand_blocks} blocks; {pending} rows pending an expectation clause)"
     )
     return 0
 

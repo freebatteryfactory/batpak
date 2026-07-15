@@ -2186,6 +2186,193 @@ def test_leg081_authority(audit) -> list[str]:
     return findings
 
 
+def test_proof_target_resolver(audit) -> list[str]:
+    """Generic source-qualified GuaranteeRef resolution (5.5D4b-3b0).
+
+    Structural only. Bootstrap executes no proof row of any family. These
+    fixtures prove the resolver accepts every guarantee family through one row
+    format, reads gates from the typed target rather than the source block, and
+    fails closed on an unknown or non-guarantee target.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def silent(name: str, produced) -> None:
+        if produced:
+            fail(f"{name} (expected no finding, got {produced!r})")
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            text = path.read_text(encoding="utf-8")
+            path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
+            expect(name, (validator or audit.proof_target_findings)(tmp), needle)
+
+    GA = "docs/24_GAUNTLET.md"
+    pt = audit.proof_target_findings
+    pg = audit.proof_target_grammar_findings
+    # LEG-028 owns exactly one row, so retargeting its block cannot collide.
+    H28 = "Required witnesses (proof owner TestPak; gates G2), also carried by `LEG-028`:"
+    W28 = "page_limit_bounds_discovery_work_not_only_output"
+
+    if pt(root) or pg(root) or audit.witness_reference_findings(root):
+        fail("d4b3b0_resolver_contract_passes")
+
+    # The index resolves every declared guarantee, and only those.
+    idx = audit.guarantee_index(root)
+    if len(idx) != 197:
+        fail(f"guarantee_index_covers_every_guarantee (got {len(idx)})")
+    for ref, want in (("LEG-081", "G2/G3"), ("DEC-065", "G0/G5"), ("SEED-FBAT-CORE", "G2")):
+        if audit.guarantee_gates(root, ref) != want:
+            fail(f"{ref}_gates_resolve_from_typed_target")
+    # ARCH/QUAL declare no gate list. None must never be read as "no gates".
+    for ref in ("ARCH-batpak", "QUAL-batpak-native"):
+        if audit.guarantee_gates(root, ref) is not None:
+            fail(f"{ref}_reports_no_machine_resolvable_gate_list")
+    # LEG resolution is unchanged by the widening.
+    if audit.leg_gates(root, "LEG-043") != "G5" or audit.leg_gates(root, "LEG-081") != "G2/G3":
+        fail("leg_gates_behaviour_unchanged_by_widening")
+    if audit.leg_gates(root, "DEC-065") != "":
+        fail("leg_gates_refuses_a_non_leg_ref")
+
+    # A DEC target resolves through the one canonical row format.
+    probe("dec_target_resolves_through_generic_resolver", GA, H28,
+          "gates 'G2' differ from typed DEC-050 gates 'G4/G5'",
+          "Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-050`:")
+    with isolated_tree() as tmp:
+        p = tmp / GA
+        p.write_text(must_replace(p.read_text(encoding="utf-8"), H28,
+                     "Required witnesses (proof owner TestPak; gates G4/G5), also carried by `DEC-050`:",
+                     "retarget to DEC"), encoding="utf-8")
+        silent("dec_target_with_matching_typed_gates_is_accepted",
+               [f for f in pt(tmp) if W28 in f])
+        if audit.witness_rows(tmp).get(W28, {}).get("target") != "DEC-050":
+            fail("dec_target_is_recorded_as_the_primary_target")
+
+    # SEED / ARCH / QUAL target forms parse and resolve on synthetic rows.
+    with isolated_tree() as tmp:
+        p = tmp / GA
+        p.write_text(must_replace(p.read_text(encoding="utf-8"), H28,
+                     "Required witnesses (proof owner TestPak; gates G2), also carried by `SEED-FBAT-CORE`:",
+                     "retarget to SEED"), encoding="utf-8")
+        silent("seed_target_with_matching_typed_gates_is_accepted",
+               [f for f in pt(tmp) if W28 in f])
+    for ref, fam in (("ARCH-batpak", "ARCH"), ("QUAL-batpak-native", "QUAL")):
+        probe(f"{fam.lower()}_target_parses_and_reports_no_gate_list", GA, H28,
+              f"targets {ref}, whose {fam} family declares no machine-resolvable gate list",
+              f"Required witnesses (proof owner TestPak; gates G2), also carried by `{ref}`:")
+
+    # Unknown family and unknown member both fail closed.
+    # An unknown family cannot reach the target resolver: the row grammar admits
+    # only the five known prefixes, so the grammar rule is what fails it closed.
+    probe("unknown_guarantee_family_is_rejected", GA, H28,
+          "docs/24 names 'BOGUS-1' as a proof target, which is not a source-qualified GuaranteeRef",
+          "Required witnesses (proof owner TestPak; gates G2), also carried by `BOGUS-1`:",
+          validator=pg)
+    with isolated_tree() as tmp:
+        p = tmp / GA
+        p.write_text(must_replace(p.read_text(encoding="utf-8"), H28,
+                     "Required witnesses (proof owner TestPak; gates G2), also carried by `BOGUS-1`:",
+                     "unknown family"), encoding="utf-8")
+        if W28 in audit.witness_rows(tmp):
+            fail("unknown_family_block_is_not_parsed_as_a_canonical_row")
+    probe("unknown_guarantee_member_fails_closed", GA, H28,
+          "targets DEC-999, which resolves to no existing DEC guarantee",
+          "Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-999`:")
+
+    # A gate schedules qualification; it never owns semantic meaning.
+    probe("gateid_cannot_be_a_proof_target", GA, H28,
+          "names GateId G2 as a proof target",
+          "Required witnesses (proof owner TestPak; gates G2), also carried by `G2`:",
+          validator=pg)
+    probe("free_text_cannot_be_a_proof_target", GA, H28,
+          "as a proof target, which is not a source-qualified GuaranteeRef",
+          "Required witnesses (proof owner TestPak; gates G2), also carried by `batpak::projection`:",
+          validator=pg)
+
+    # One primary target per row.
+    probe("two_primary_targets_is_rejected", GA, H28,
+          "names more than one primary target: LEG-028 and DEC-050",
+          "Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-050` and `LEG-028`:")
+
+    # Gates come from the typed target, never from the source block's text.
+    probe("block_gate_text_cannot_override_the_typed_target", GA, H28,
+          "gates 'G2/G7' differ from typed LEG-028 gates 'G2'",
+          "Required witnesses (proof owner TestPak; gates G2/G7), also carried by `LEG-028`:")
+
+    # Structural discovery: heading text is not the parser API.
+    cands = audit.candidate_fences(root)
+    unbound = [c for c in cands if c["kind"] == "UnboundCandidate"]
+    # Phase-local assertion, not a durable registry: the current sweep finds all 52.
+    if len(unbound) != 8 or sum(len(c["ids"]) for c in unbound) != 52:
+        fail("structural_sweep_finds_the_current_52_candidates_in_8_blocks "
+             f"(got {sum(len(c['ids']) for c in unbound)} in {len(unbound)})")
+    labels = [c["label"] for c in unbound]
+    if not any("implemented at G3" in l for l in labels):
+        fail("sweep_finds_the_block_that_states_no_proof_owner")
+    if not any("Hostile fixture obligations" in l for l in labels):
+        fail("sweep_finds_the_block_with_a_different_heading_noun")
+
+    with isolated_tree() as tmp:
+        p = tmp / "docs/12_TESTPAK.md"
+        p.write_text(must_replace(p.read_text(encoding="utf-8"),
+                     "Named hostile fixtures (implemented at G3):",
+                     "Completely different authored label (implemented at G3):",
+                     "docs/12 heading"), encoding="utf-8")
+        ub = [c for c in audit.candidate_fences(tmp) if c["kind"] == "UnboundCandidate"]
+        if sum(len(c["ids"]) for c in ub) != 52:
+            fail("exact_heading_variation_does_not_hide_a_proof_block")
+
+    with isolated_tree() as tmp:
+        p = tmp / "docs/12_TESTPAK.md"
+        p.write_text(must_replace(p.read_text(encoding="utf-8"),
+                     "Named hostile fixtures (implemented at G3):",
+                     "Illustrative scenarios:", "docs/12 metadata"), encoding="utf-8")
+        kinds = {(c["doc"], c["line"]): c["kind"] for c in audit.candidate_fences(tmp)}
+        if "DescriptiveEvidence" not in [k for (d, _), k in kinds.items() if d == "docs/12_TESTPAK.md"]:
+            fail("fence_without_executable_metadata_is_descriptive_not_promoted")
+
+    # Transitional expectation clause.
+    ids, blocks, pending = audit.candidate_summary(root)
+    if (ids, blocks, pending) != (52, 8, 29):
+        fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
+    W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
+    probe("expectation_clause_without_disposition_is_rejected", GA, W28M,
+          f"proof row {W28} expectation clause states no disposition",
+          W28M + "\n    expects: refusal BudgetExceeded before decode.")
+    probe("expectation_clause_without_predicate_is_rejected", GA, W28M,
+          f"proof row {W28} expectation clause states no expects",
+          W28M + "\n    disposition: the AttemptReceipt records the refusal.")
+    probe("unfalsifiable_expectation_clause_is_rejected", GA, W28M,
+          "expectation clause expects is not falsifiable",
+          W28M + "\n    expects: TBD\n    disposition: the AttemptReceipt records the refusal.")
+    probe("newly_promoted_row_without_an_expectation_clause_is_rejected", GA,
+          W28 + "\n```", "proof rows carry no expectation clause, above the transitional ceiling of 29",
+          W28 + "\nnewly_promoted_row_without_a_clause\n```")
+
+    # A complete clause is accepted and does not disturb the pending count.
+    with isolated_tree() as tmp:
+        p = tmp / GA
+        p.write_text(must_replace(p.read_text(encoding="utf-8"), W28M,
+                     W28M + "\n    expects: refusal BudgetExceeded raised before unbounded decode."
+                            "\n    disposition: the AttemptReceipt records the refusal and no page is published.",
+                     "add a complete clause"), encoding="utf-8")
+        silent("complete_expectation_clause_is_accepted", pt(tmp))
+        if audit.candidate_summary(tmp)[2] != 28:
+            fail("expectation_clause_decrements_the_pending_count")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -2216,6 +2403,7 @@ def main() -> int:
     findings += test_derived_material_witnesses(audit)
     findings += test_deferred_witnesses(audit)
     findings += test_leg081_authority(audit)
+    findings += test_proof_target_resolver(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -2224,7 +2412,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver hostile fixtures)")
     return 0
 
 
