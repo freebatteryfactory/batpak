@@ -203,16 +203,19 @@ storage/host adapter  the key-backend mechanism
 TestPak               independent crash, rollback, and transplant witnesses
 ```
 
-Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-081`:
+This document owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: LEG-081; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 shred_ack_waits_for_backend_durability
 crash_before_durable_key_delete_does_not_report_shred_success
 reopen_after_ack_cannot_recover_shredded_plaintext
-pre_shred_keyset_restore_is_rejected
+shred_transition_binding_mismatch_is_rejected
+stale_or_pre_shred_keyset_restore_is_rejected
 foreign_keyset_generation_is_rejected
-shredded_and_keyset_missing_remain_distinct
-snapshot_and_fork_exclude_keys_by_default
+shredded_unavailable_and_keyset_missing_remain_distinct
+snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
 external_key_backend_preserves_shred_semantics
 ```
 

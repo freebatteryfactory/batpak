@@ -302,6 +302,138 @@ close_reopen_reimport_returns_zero_new_events
     resulting new-event count of zero.
 ```
 
+## Secret-authority shred witnesses (LEG-081)
+
+Canonical proof-row identity and meaning for `LEG-081`. `docs/35_CRYPTO_AND_SECRET_AUTHORITY.md` owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions; it projects these IDs and states no per-row executable meaning. The typed law in `spec/legacy_obligations.rs` is unchanged by this pass: its owner, gates, status, compatibility disposition, deletion condition, and lifetime all stand.
+
+Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-081`:
+
+```text
+shred_ack_waits_for_backend_durability
+crash_before_durable_key_delete_does_not_report_shred_success
+reopen_after_ack_cannot_recover_shredded_plaintext
+shred_transition_binding_mismatch_is_rejected
+stale_or_pre_shred_keyset_restore_is_rejected
+foreign_keyset_generation_is_rejected
+shredded_unavailable_and_keyset_missing_remain_distinct
+snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
+external_key_backend_preserves_shred_semantics
+```
+
+Authoritative meanings:
+
+```text
+shred_ack_waits_for_backend_durability
+    A shred acknowledgement is emitted only after the owning backend has durably
+    established destruction of the relevant key authority. An accepted request or
+    an attempted delete is not sufficient.
+
+crash_before_durable_key_delete_does_not_report_shred_success
+    A crash before durable key destruction cannot leave a successful shred
+    acknowledgement or a successful final shred result. Recovery preserves the
+    incomplete or refused posture.
+
+reopen_after_ack_cannot_recover_shredded_plaintext
+    After a valid durable shred acknowledgement, closing and reopening the store
+    cannot recover plaintext through the shredded key scope.
+
+shred_transition_binding_mismatch_is_rejected
+    The shred transition binds StoreId, AuthorityGeneration, KeyGeneration, key
+    scope, and shred-transition identity. A mismatch in any bound component fails
+    closed and cannot produce an acknowledged, applied, or verified shred
+    transition.
+
+stale_or_pre_shred_keyset_restore_is_rejected
+    A stale keyset, or a keyset from before the acknowledged shred transition,
+    cannot restore readability for the shredded scope.
+
+foreign_keyset_generation_is_rejected
+    A keyset from another store lineage, authority generation, key generation, or
+    otherwise foreign authority context cannot restore readability for the
+    shredded scope.
+
+shredded_unavailable_and_keyset_missing_remain_distinct
+    Shredded, Unavailable, and KeysetMissing remain distinct availability or
+    authority outcomes in typed results, receipts, recovery, and explanations. No
+    projection or formatter may collapse one into another.
+
+snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
+    Snapshot, fork, WorldImage, artifact-bundle, and ordinary receipt surfaces
+    exclude raw key material by default. They may carry approved identities,
+    commitments, encrypted or opaque references, and proof posture, but they may
+    not export usable raw secret-key bytes through an ordinary projection.
+
+external_key_backend_preserves_shred_semantics
+    An external key backend must preserve the same acknowledgement durability,
+    transition binding, stale and foreign restore rejection, result-state
+    distinctions, raw-key export exclusions, and fail-closed behaviour as the
+    in-process authority contract. Backend indirection may change mechanism,
+    never semantics.
+```
+
+Coverage is a property of the law, not of the prose around it. Every clause of the
+typed `LEG-081` law carries at least one owned executable witness, and every
+canonical row names the clause it pressures. This table is local to `LEG-081`; it
+is not a universal proof-clause framework.
+
+LEG-081 proof-coverage matrix:
+
+```text
+durable destruction before acknowledgement
+    shred_ack_waits_for_backend_durability
+    crash_before_durable_key_delete_does_not_report_shred_success
+    reopen_after_ack_cannot_recover_shredded_plaintext
+
+shred-transition identity and authority binding
+    shred_transition_binding_mismatch_is_rejected
+
+stale, pre-shred, and foreign restore rejection
+    stale_or_pre_shred_keyset_restore_is_rejected
+    foreign_keyset_generation_is_rejected
+
+Shredded / Unavailable / KeysetMissing distinction
+    shredded_unavailable_and_keyset_missing_remain_distinct
+
+raw-key exclusion from snapshot, fork, WorldImage, artifact, and ordinary receipt surfaces
+    snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
+
+external backend semantic parity
+    external_key_backend_preserves_shred_semantics
+```
+
+<!-- HISTORICAL-MIGRATION:BEGIN -->
+### Historical migration note (5.5D4b-2c)
+
+Before this pass, `docs/35_CRYPTO_AND_SECRET_AUTHORITY.md` listed eight witness names and no per-row meaning. Those names were a preimplementation sketch, never a shipped compatibility surface, and they did not cover the typed law: the shred-transition binding clause carried no witness at all, and three names claimed narrower scope than the clause they defended. The law was not amended to fit the names; the names were corrected to fit the law. This note is the only surface on which the retired IDs may appear.
+
+```text
+preserved                                        5
+renamed for scope accuracy                       3
+added to cover a previously unwitnessed clause   1
+silently deleted                                 0
+aliased                                          0
+```
+
+Renamed, with no alias retained:
+
+```text
+pre_shred_keyset_restore_is_rejected
+    now stale_or_pre_shred_keyset_restore_is_rejected
+
+shredded_and_keyset_missing_remain_distinct
+    now shredded_unavailable_and_keyset_missing_remain_distinct
+
+snapshot_and_fork_exclude_keys_by_default
+    now snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
+```
+
+Added to witness the previously unwitnessed binding clause:
+
+```text
+shred_transition_binding_mismatch_is_rejected
+```
+<!-- HISTORICAL-MIGRATION:END -->
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.

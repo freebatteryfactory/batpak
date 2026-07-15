@@ -1765,8 +1765,8 @@ def test_integrity_witnesses(audit) -> list[str]:
           "; midstream_genesis_is_rejected", "omits owned proof row midstream_genesis_is_rejected")
     probe("docs21_extra_witness_is_rejected", D21,
           "middle_event_deletion_is_rejected;",
-          "references unknown proof-row id shred_ack_waits_for_backend_durability",
-          "shred_ack_waits_for_backend_durability; middle_event_deletion_is_rejected;")
+          "references unknown proof-row id unknown_leg_proof_row_for_fixture",
+          "unknown_leg_proof_row_for_fixture; middle_event_deletion_is_rejected;")
     probe("duplicate_docs24_proof_row_id_is_rejected", GA,
           "middle_event_deletion_is_rejected\nevent_reorder_is_rejected",
           "binds proof-row id middle_event_deletion_is_rejected more than once",
@@ -2008,6 +2008,184 @@ def test_deferred_witnesses(audit) -> list[str]:
     return findings
 
 
+def test_leg081_authority(audit) -> list[str]:
+    """LEG-081 proof-row authority migration (5.5D4b-2c).
+
+    Structural only. Bootstrap never shredded a key, never called a key backend,
+    never crashed a store, and never inspected key material. These fixtures prove
+    that the nine proof contracts are owned in one place, projected exactly
+    elsewhere, and that every clause of the typed law carries a witness.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            text = path.read_text(encoding="utf-8")
+            path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
+            expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
+
+    GA = "docs/24_GAUNTLET.md"
+    D21 = "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md"
+    D35 = "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md"
+    la = audit.leg081_authority_findings
+    pm = audit.proof_meaning_findings
+    H81 = ("Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; "
+           "bootstrap executed: no), also carried by `LEG-081`:")
+    PROJ = ("Required proof rows, projected from docs/24 (qualification target: LEG-081; "
+            "canonical proof-row owner: docs/24 Gauntlet):")
+    LEAK = "travel only through an explicit, independent ceremony."
+
+    if la(root) or audit.witness_reference_findings(root) or pm(root):
+        fail("d4b2c_leg081_contract_passes")
+
+    # The retarget premise: the old fixture id is now owned, and its replacement
+    # is genuinely unknown. Without both, the retargeted probe would go red for
+    # the wrong severed wire.
+    rows = audit.witness_rows(root)
+    if rows.get("shred_ack_waits_for_backend_durability", {}).get("leg") != "LEG-081":
+        fail("retired_fixture_id_is_now_owned_by_leg081")
+    if "unknown_leg_proof_row_for_fixture" in rows:
+        fail("replacement_fixture_id_is_genuinely_unknown")
+
+    # Every canonical identity survives in docs/24.
+    for wid in audit.D4B2C_ROWS:
+        probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
+              f"LEG-081 canonical proof row {wid} is absent from docs/24", "", validator=la)
+
+    # Retired vocabulary cannot return outside the historical migration note.
+    # `stale_or_pre_shred_keyset_restore_is_rejected` contains a retired id as a
+    # substring; the clean tree passing above proves the boundary rule does not
+    # fire on it, and these prove it does fire on the bare retired id.
+    for old in audit.D4B2C_RETIRED:
+        probe(f"retired_{old}_reintroduced_is_rejected", D35, LEAK,
+              f"reintroduces retired proof-row id {old} outside the historical migration note",
+              LEAK + f" See {old}.", validator=la)
+
+    # docs/21 projects exactly the nine.
+    probe("docs21_leg081_missing_projected_id_is_rejected", D21,
+          "; foreign_keyset_generation_is_rejected",
+          "omits owned proof row foreign_keyset_generation_is_rejected")
+    probe("docs21_leg081_extra_projected_id_is_rejected", D21,
+          "shred_ack_waits_for_backend_durability;",
+          "references middle_event_deletion_is_rejected, which docs/24 binds to LEG-023",
+          "middle_event_deletion_is_rejected; shred_ack_waits_for_backend_durability;")
+
+    # docs/35 projects exactly the nine and reclaims nothing.
+    probe("docs35_leg081_missing_projected_id_is_rejected", D35,
+          "foreign_keyset_generation_is_rejected\n",
+          "docs/35 omits projected LEG-081 proof row foreign_keyset_generation_is_rejected",
+          "", validator=la)
+    probe("docs35_leg081_extra_projected_id_is_rejected", D35,
+          "shred_ack_waits_for_backend_durability\n",
+          "docs/35 projects middle_event_deletion_is_rejected, which docs/24 binds to LEG-023",
+          "shred_ack_waits_for_backend_durability\nmiddle_event_deletion_is_rejected\n",
+          validator=la)
+    probe("docs35_projection_label_removed_is_rejected", D35, PROJ,
+          "docs/35 states no LEG-081 proof-row projection labelled as projected from docs/24",
+          "Required proof rows:", validator=la)
+    probe("docs35_projection_claims_own_canonical_ownership_is_rejected", D35, PROJ,
+          "docs/35 projection names canonical proof-row owner 'docs/35 itself', not docs/24",
+          PROJ.replace("canonical proof-row owner: docs/24 Gauntlet",
+                       "canonical proof-row owner: docs/35 itself"), validator=la)
+    probe("docs35_reclaims_authoritative_ownership_is_rejected", D35, LEAK,
+          "docs/35 reclaims authoritative proof-row ownership",
+          LEAK + "\n\nRequired witnesses (proof owner TestPak; gates G2/G3), also carried by "
+          "`LEG-081`:\n\n```text\nshred_ack_waits_for_backend_durability\n```\n",
+          validator=la)
+    probe("docs35_reclaims_authoritative_witness_meaning_is_rejected", D35, LEAK,
+          "docs/35 reclaims per-ID authoritative witness meaning",
+          LEAK + "\n\nAuthoritative meanings:\n\n```text\n"
+          "shred_ack_waits_for_backend_durability\n    A local restatement.\n```\n",
+          validator=la)
+
+    # docs/24 row posture, owner, gates, target, meaning, uniqueness.
+    probe("docs24_leg081_row_bound_to_wrong_leg_is_rejected", GA,
+          "), also carried by `LEG-081`:",
+          "LEG-081 canonical proof row shred_ack_waits_for_backend_durability is bound to LEG-020",
+          "), also carried by `LEG-020`:", validator=la)
+    probe("docs24_leg081_wrong_proof_owner_is_rejected", GA, H81,
+          "names proof owner 'Nobody', not TestPak",
+          H81.replace("proof owner TestPak", "proof owner Nobody"), validator=la)
+    probe("docs24_leg081_gate_mismatch_is_rejected", GA, H81,
+          "differ from typed LEG-081 gates 'G2/G3'",
+          H81.replace("gates G2/G3;", "gates G2;"), validator=la)
+    probe("docs24_leg081_unknown_gate_is_rejected", GA, H81,
+          "names unknown GateId G12",
+          H81.replace("gates G2/G3;", "gates G2/G12;"), validator=la)
+    probe("docs24_leg081_missing_future_executable_posture_is_rejected", GA, H81,
+          "states no future-executable posture",
+          H81.replace("; future executable: yes", ""), validator=la)
+    probe("docs24_leg081_false_bootstrap_execution_is_rejected", GA, H81,
+          "falsely claims bootstrap execution",
+          H81.replace("bootstrap executed: no", "bootstrap executed: yes"), validator=la)
+    probe("docs24_leg081_meaning_removal_is_rejected", GA,
+          "shred_transition_binding_mismatch_is_rejected\n    The shred transition binds StoreId,"
+          " AuthorityGeneration, KeyGeneration, key\n",
+          "LEG-081 proof row shred_transition_binding_mismatch_is_rejected has no authoritative meaning",
+          "", validator=la)
+    probe("duplicate_leg081_proof_row_id_is_rejected", GA,
+          "foreign_keyset_generation_is_rejected\nshredded_unavailable",
+          "docs/24 binds LEG-081 proof row foreign_keyset_generation_is_rejected more than once",
+          "foreign_keyset_generation_is_rejected\nforeign_keyset_generation_is_rejected"
+          "\nshredded_unavailable", validator=la)
+    probe("leg081_proof_row_id_rename_is_rejected", GA,
+          "foreign_keyset_generation_is_rejected\n",
+          "docs/24 binds unexpected proof row foreign_keyset_generation_renamed to LEG-081",
+          "foreign_keyset_generation_renamed\n", validator=la)
+
+    # Meanings still carry the law they exist to defend.
+    for frag, label in (
+        ("established destruction of the relevant key authority.",
+         "shred_ack_durability_clause_removal_is_rejected"),
+        ("acknowledgement or a successful final shred result.",
+         "crash_recovery_posture_clause_removal_is_rejected"),
+        ("scope, and shred-transition identity.",
+         "binding_components_clause_removal_is_rejected"),
+        ("projection or formatter may collapse one into another.",
+         "state_distinction_clause_removal_is_rejected"),
+        ("not export usable raw secret-key bytes",
+         "raw_key_export_clause_removal_is_rejected"),
+        ("never semantics.",
+         "external_backend_parity_clause_removal_is_rejected"),
+    ):
+        probe(label, GA, frag, "meaning no longer states", "", validator=pm)
+
+    # Every law clause keeps an owned executable witness.
+    probe("coverage_clause_missing_is_rejected", GA,
+          "external backend semantic parity\n    external_key_backend_preserves_shred_semantics\n",
+          "LEG-081 coverage matrix omits law clause: external backend semantic parity",
+          "", validator=la)
+    probe("coverage_clause_with_no_proof_row_is_rejected", GA,
+          "external backend semantic parity\n    external_key_backend_preserves_shred_semantics",
+          "LEG-081 coverage clause names no proof row: external backend semantic parity",
+          "external backend semantic parity", validator=la)
+    probe("canonical_row_omitted_from_coverage_matrix_is_rejected", GA,
+          "    reopen_after_ack_cannot_recover_shredded_plaintext\n",
+          "LEG-081 canonical proof row reopen_after_ack_cannot_recover_shredded_plaintext"
+          " appears in no coverage clause", "", validator=la)
+    probe("unknown_proof_row_in_coverage_matrix_is_rejected", GA,
+          "    external_key_backend_preserves_shred_semantics\n",
+          "LEG-081 coverage matrix names unknown proof row ghost_coverage_row",
+          "    external_key_backend_preserves_shred_semantics\n    ghost_coverage_row\n",
+          validator=la)
+    probe("coverage_matrix_removed_is_rejected", GA, "LEG-081 proof-coverage matrix:",
+          "docs/24 states no LEG-081 proof-coverage matrix",
+          "LEG-081 proof-coverage notes:", validator=la)
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -2037,6 +2215,7 @@ def main() -> int:
     findings += test_integrity_witnesses(audit)
     findings += test_derived_material_witnesses(audit)
     findings += test_deferred_witnesses(audit)
+    findings += test_leg081_authority(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -2045,7 +2224,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority hostile fixtures)")
     return 0
 
 

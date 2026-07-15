@@ -1828,7 +1828,7 @@ def proof_meaning_findings(root: Path) -> list[str]:
     """Each proof row's meaning still states the claims it exists to defend."""
     doc = re.sub(r"\s+", " ", (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8"))
     out = []
-    for wid, clauses in D4B2B_MEANING_CLAUSES.items():
+    for wid, clauses in {**D4B2B_MEANING_CLAUSES, **D4B2C_MEANING_CLAUSES}.items():
         for clause in clauses:
             if re.sub(r"\s+", " ", clause) not in doc:
                 out.append(f"proof row {wid} meaning no longer states: {clause}")
@@ -1877,6 +1877,237 @@ def deferred_posture_findings(root: Path) -> list[str]:
                 # a non-deferred future row must not inherit the adapter deferral
                 if "deferred until" in posture:
                     out.append(f"proof row {wid} inherits a native-adapter deferral it does not have")
+    return out
+
+
+# --- 5.5D4b-2c LEG-081 proof-row authority and coverage ---------------------
+# docs/24 owns the nine canonical rows. docs/35 keeps the secret-authority law
+# and projects the same nine IDs; it owns no per-row executable meaning. The
+# eight pre-migration names were a preimplementation sketch: they left the
+# shred-transition binding clause unwitnessed and three names claimed less scope
+# than the clause they defended. Coverage is proven against the typed law's
+# clauses, never inferred from surrounding prose.
+D4B2C_LEG = "LEG-081"
+D4B2C_D24 = "docs/24_GAUNTLET.md"
+D4B2C_D35 = "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md"
+D4B2C_D21 = "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md"
+D4B2C_ROWS = [
+    "shred_ack_waits_for_backend_durability",
+    "crash_before_durable_key_delete_does_not_report_shred_success",
+    "reopen_after_ack_cannot_recover_shredded_plaintext",
+    "shred_transition_binding_mismatch_is_rejected",
+    "stale_or_pre_shred_keyset_restore_is_rejected",
+    "foreign_keyset_generation_is_rejected",
+    "shredded_unavailable_and_keyset_missing_remain_distinct",
+    "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
+    "external_key_backend_preserves_shred_semantics",
+]
+# Retired vocabulary. Note the first is a proper substring of its successor, so
+# reintroduction is matched on identifier boundaries, never by `in`.
+D4B2C_RETIRED = [
+    "pre_shred_keyset_restore_is_rejected",
+    "shredded_and_keyset_missing_remain_distinct",
+    "snapshot_and_fork_exclude_keys_by_default",
+]
+D4B2C_COVERAGE = {
+    "durable destruction before acknowledgement": [
+        "shred_ack_waits_for_backend_durability",
+        "crash_before_durable_key_delete_does_not_report_shred_success",
+        "reopen_after_ack_cannot_recover_shredded_plaintext",
+    ],
+    "shred-transition identity and authority binding": [
+        "shred_transition_binding_mismatch_is_rejected",
+    ],
+    "stale, pre-shred, and foreign restore rejection": [
+        "stale_or_pre_shred_keyset_restore_is_rejected",
+        "foreign_keyset_generation_is_rejected",
+    ],
+    "Shredded / Unavailable / KeysetMissing distinction": [
+        "shredded_unavailable_and_keyset_missing_remain_distinct",
+    ],
+    "raw-key exclusion from snapshot, fork, WorldImage, artifact, and ordinary receipt surfaces": [
+        "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
+    ],
+    "external backend semantic parity": [
+        "external_key_backend_preserves_shred_semantics",
+    ],
+}
+D4B2C_MEANING_CLAUSES = {
+    "shred_ack_waits_for_backend_durability": [
+        "only after the owning backend has durably established destruction",
+        "An accepted request or an attempted delete is not sufficient",
+    ],
+    "crash_before_durable_key_delete_does_not_report_shred_success": [
+        "cannot leave a successful shred acknowledgement",
+        "Recovery preserves the incomplete or refused posture",
+    ],
+    "reopen_after_ack_cannot_recover_shredded_plaintext": [
+        "cannot recover plaintext through the shredded key scope",
+    ],
+    "shred_transition_binding_mismatch_is_rejected": [
+        "binds StoreId, AuthorityGeneration, KeyGeneration, key scope, and shred-transition identity",
+        "fails closed and cannot produce an acknowledged, applied, or verified shred transition",
+    ],
+    "stale_or_pre_shred_keyset_restore_is_rejected": [
+        "keyset from before the acknowledged shred transition",
+    ],
+    "foreign_keyset_generation_is_rejected": [
+        "another store lineage, authority generation, key generation",
+    ],
+    "shredded_unavailable_and_keyset_missing_remain_distinct": [
+        "remain distinct availability or authority outcomes",
+        "No projection or formatter may collapse one into another",
+    ],
+    "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys": [
+        "exclude raw key material by default",
+        "not export usable raw secret-key bytes",
+    ],
+    "external_key_backend_preserves_shred_semantics": [
+        "the same acknowledgement durability",
+        "Backend indirection may change mechanism, never semantics",
+    ],
+}
+D4B2C_MIGRATION_NOTE = re.compile(
+    r"<!-- HISTORICAL-MIGRATION:BEGIN -->(.*?)<!-- HISTORICAL-MIGRATION:END -->", re.S
+)
+D4B2C_MATRIX = re.compile(r"LEG-081 proof-coverage matrix:\s*\n+```text\n(.*?)\n```", re.S)
+D4B2C_D35_PROJECTION = re.compile(
+    r"Required proof rows, projected from docs/24 \(qualification target: (LEG-\d+); "
+    r"canonical proof-row owner: ([^)]+)\):\s*\n+```text\n(.*?)\n```",
+    re.S,
+)
+
+
+def coverage_matrix(root: Path):
+    """[(law clause, [proof-row id])] in document order, or None if absent."""
+    m = D4B2C_MATRIX.search((root / D4B2C_D24).read_text(encoding="utf-8"))
+    if not m:
+        return None
+    out: list[tuple[str, list[str]]] = []
+    for line in m.group(1).splitlines():
+        if not line.strip():
+            continue
+        if line.startswith(" "):
+            if out:
+                out[-1][1].append(line.strip())
+        else:
+            out.append((line.strip(), []))
+    return out
+
+
+def leg081_authority_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    rows = witness_rows(root)
+    meanings = witness_meanings(root)
+    want = set(D4B2C_ROWS)
+    want_gates = leg_gates(root, D4B2C_LEG)
+
+    # 1. docs/24 binds exactly the nine canonical rows to LEG-081
+    owned = {w for w, r in rows.items() if r["leg"] == D4B2C_LEG}
+    for wid in sorted(want - owned):
+        other = rows.get(wid, {}).get("leg")
+        if other:
+            out.append(f"LEG-081 canonical proof row {wid} is bound to {other} in docs/24")
+        else:
+            out.append(f"LEG-081 canonical proof row {wid} is absent from docs/24")
+    for wid in sorted(owned - want):
+        out.append(f"docs/24 binds unexpected proof row {wid} to LEG-081")
+    for wid in sorted(want & owned):
+        row = rows[wid]
+        if row["duplicate"]:
+            out.append(f"docs/24 binds LEG-081 proof row {wid} more than once")
+        if row["proof_owner"] != "TestPak":
+            out.append(f"LEG-081 proof row {wid} names proof owner {row['proof_owner']!r}, not TestPak")
+        if row["gates"] != want_gates:
+            out.append(
+                f"LEG-081 proof row {wid} gates {row['gates']!r} differ from typed LEG-081 gates {want_gates!r}"
+            )
+        out.extend(gate_findings(root, "proof row", wid, gate_list(
+            " ".join(f"GateId::{t}" for t in row["gates"].split("/") if t))))
+        posture = row["posture"].lower()
+        if "future executable: yes" not in posture:
+            out.append(f"LEG-081 proof row {wid} states no future-executable posture")
+        if "bootstrap executed: yes" in posture:
+            out.append(f"LEG-081 proof row {wid} falsely claims bootstrap execution")
+        elif "bootstrap executed: no" not in posture:
+            out.append(f"LEG-081 proof row {wid} does not state that bootstrap did not execute it")
+        if wid not in meanings:
+            out.append(f"LEG-081 proof row {wid} has no authoritative meaning")
+
+    # 2. docs/35 projects the same nine and reclaims no authority
+    d35 = (root / D4B2C_D35).read_text(encoding="utf-8")
+    if re.search(r"Required witnesses \(proof owner", d35):
+        out.append("docs/35 reclaims authoritative proof-row ownership; docs/24 owns proof-row identity")
+    if W_MEANING_BLOCK.search(d35):
+        out.append("docs/35 reclaims per-ID authoritative witness meaning; docs/24 owns it")
+    m = D4B2C_D35_PROJECTION.search(d35)
+    if not m:
+        out.append("docs/35 states no LEG-081 proof-row projection labelled as projected from docs/24")
+    else:
+        target, owner, body = m.groups()
+        if target != D4B2C_LEG:
+            out.append(f"docs/35 projection targets {target}, not LEG-081")
+        if "docs/24" not in owner:
+            out.append(f"docs/35 projection names canonical proof-row owner {owner.strip()!r}, not docs/24")
+        got: list[str] = []
+        for line in body.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if line != s or not W_ID.match(s):
+                out.append(f"docs/35 projection line is not a bare proof-row id: {line!r}")
+                continue
+            got.append(s)
+        if len(got) != len(set(got)):
+            out.append("docs/35 projects a duplicate LEG-081 proof-row id")
+        for missing in sorted(want - set(got)):
+            out.append(f"docs/35 omits projected LEG-081 proof row {missing}")
+        for extra in sorted(set(got) - want):
+            owner_leg = rows.get(extra, {}).get("leg")
+            if owner_leg is None:
+                out.append(f"docs/35 projects unknown proof-row id {extra}")
+            else:
+                out.append(f"docs/35 projects {extra}, which docs/24 binds to {owner_leg}")
+
+    # 3. retired vocabulary survives only inside the marked historical note
+    for rel in (D4B2C_D21, D4B2C_D24, D4B2C_D35):
+        text = D4B2C_MIGRATION_NOTE.sub("", (root / rel).read_text(encoding="utf-8"))
+        for old in D4B2C_RETIRED:
+            if re.search(r"(?<![a-z0-9_])" + re.escape(old) + r"(?![a-z0-9_])", text):
+                out.append(
+                    f"{rel} reintroduces retired proof-row id {old} outside the historical migration note"
+                )
+
+    # 4. every law clause carries an owned executable witness
+    cov = coverage_matrix(root)
+    if cov is None:
+        out.append("docs/24 states no LEG-081 proof-coverage matrix")
+    else:
+        seen: list[str] = [c for c, _ in cov]
+        covered: set[str] = set()
+        for clause in D4B2C_COVERAGE:
+            if clause not in seen:
+                out.append(f"LEG-081 coverage matrix omits law clause: {clause}")
+            elif seen.count(clause) != 1:
+                out.append(f"LEG-081 coverage matrix names law clause {clause!r} more than once")
+        for clause, ids in cov:
+            if clause not in D4B2C_COVERAGE:
+                out.append(f"LEG-081 coverage matrix names unknown law clause: {clause}")
+                continue
+            if not ids:
+                out.append(f"LEG-081 coverage clause names no proof row: {clause}")
+            for wid in ids:
+                if wid in want:
+                    covered.add(wid)
+                else:
+                    out.append(f"LEG-081 coverage matrix names unknown proof row {wid} for clause: {clause}")
+            if set(ids) != set(D4B2C_COVERAGE[clause]):
+                out.append(
+                    f"LEG-081 coverage clause {clause!r} maps {sorted(ids)}, "
+                    f"not {sorted(D4B2C_COVERAGE[clause])}"
+                )
+        for wid in sorted(want - covered):
+            out.append(f"LEG-081 canonical proof row {wid} appears in no coverage clause")
     return out
 
 
@@ -2349,6 +2580,7 @@ def main() -> int:
     findings.extend(integrity_witness_findings(root))
     findings.extend(derived_material_findings(root))
     findings.extend(deferred_posture_findings(root))
+    findings.extend(leg081_authority_findings(root))
     findings.extend(proof_meaning_findings(root))
     findings.extend(control_character_findings(root))
 
