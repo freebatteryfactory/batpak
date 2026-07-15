@@ -700,6 +700,162 @@ aliased    0
 ```
 <!-- HISTORICAL-MIGRATION:END -->
 
+## Resource-exhaustion witnesses (DEC-066)
+
+Canonical proof-row identity and meaning for typed resource exhaustion and the no-partial-publication law. `docs/08_SYNCBAT_RUNTIME.md` owns the allocation discipline, the two canonical failure classes, and the plane coverage list; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G5/G6), also carried by `DEC-066`:
+
+```text
+attacker_length_is_checked_before_reserve
+allocation_failure_returns_resource_exhausted
+declared_work_overrun_returns_budget_exceeded
+resource_exhaustion_never_publishes_partial_event
+resource_exhaustion_never_advances_checkpoint
+artifact_staging_failure_publishes_no_artifact_ref
+pakvm_arena_exhaustion_returns_typed_terminal_disposition
+```
+
+Authoritative meanings:
+
+```text
+attacker_length_is_checked_before_reserve
+    Every attacker-influenced allocation decodes the declared length, checks the
+    arithmetic, and enforces the semantic bound BEFORE reserving. A declared
+    length is a claim, not a size: a hostile length must be refused without the
+    reservation ever being attempted, so the bound cannot be enforced by
+    observing the allocator fail.
+    expects: a hostile declared length is refused before any reservation is
+      attempted, and the process allocates no memory proportional to it
+    disposition: a typed bound violation raised at the decode boundary, never an
+      allocation failure standing in for a missing length check
+
+allocation_failure_returns_resource_exhausted
+    A genuine allocation failure returns `ResourceExhausted`. It is an execution
+    failure, never `INVALID`: no value violated its contract. The two never
+    collapse into each other, into a string, or into a shared error code.
+    expects: a failing try_reserve yields ResourceExhausted, distinct from INVALID
+      and from BudgetExceeded
+    disposition: a typed ResourceExhausted; a plane-specific error may wrap it but
+      may not flatten it into a contract violation
+
+declared_work_overrun_returns_budget_exceeded
+    Exceeding the declared work budget returns `BudgetExceeded`, which remains
+    distinct from `ResourceExhausted`. Running out of a budget the caller declared
+    is not the same event as the machine running out of a resource, and the two
+    disposals cannot be merged even when both terminate the same operation.
+    expects: an operation exceeding its declared work budget yields
+      BudgetExceeded, distinct from ResourceExhausted and from INVALID
+    disposition: a typed BudgetExceeded naming the exceeded budget; a plane error
+      may wrap it but may not collapse it into resource exhaustion
+
+resource_exhaustion_never_publishes_partial_event
+    Resource exhaustion at any point never publishes a partial event. Publication
+    happens only after completion, so an exhausted operation leaves no
+    half-written event visible to any reader, replay, or projection.
+    expects: exhaustion injected at every publication boundary leaves zero
+      partially published events observable
+    disposition: the operation fails with its typed exhaustion class and publishes
+      nothing; a published event is always complete
+
+resource_exhaustion_never_advances_checkpoint
+    Resource exhaustion never advances a checkpoint. A checkpoint asserts durable
+    progress; an operation that failed made none, so recovery from the checkpoint
+    cannot skip the work the failure prevented.
+    expects: exhaustion injected around checkpoint advancement leaves the
+      checkpoint at its prior durable position
+    disposition: the checkpoint remains unadvanced and the typed exhaustion class
+      is returned; a partially advanced checkpoint is not a lawful state
+
+artifact_staging_failure_publishes_no_artifact_ref
+    A staging failure publishes no `ArtifactRef`. A reference names a complete
+    content-addressed artifact, so a failed staging yields no reference at all
+    rather than one pointing at incomplete content.
+    expects: a failure injected at every staging boundary yields no ArtifactRef on
+      any surface, including receipts and diagnostics
+    disposition: the typed staging failure is returned and no reference is minted;
+      an ArtifactRef always names complete content
+
+pakvm_arena_exhaustion_returns_typed_terminal_disposition
+    PakVM arena exhaustion returns a typed terminal disposition. It never panics,
+    aborts, presents an abort as an ordinary refusal, wraps an integer, or leaves
+    a partially initialized canonical value in the arena.
+    expects: exhausting a PakVM arena mid-execution yields a typed terminal
+      disposition, with no panic, no abort, and no partially initialized value
+      readable afterwards
+    disposition: a typed terminal execution disposition distinct from INVALID; an
+      abort presented as an ordinary refusal is a defect, not a disposition
+```
+
+## Kernel identity and binding witnesses (DEC-062)
+
+Canonical proof-row identity and meaning for the kernel identity and binding policy. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the kernel vocabulary, the two binding modes, and the receipt rule; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G4), also carried by `DEC-062`:
+
+```text
+kernel_cannot_resolve_by_display_name
+kernel_contract_and_implementation_ids_are_not_interchangeable
+qualified_interface_requires_matching_qualification_receipt
+exact_kernel_binding_rejects_another_implementation
+attempt_receipt_records_exact_kernel_implementation
+```
+
+Authoritative meanings:
+
+```text
+kernel_cannot_resolve_by_display_name
+    `FROM KERNEL` refers to a canonical `KernelManifest` entry. PakVM never
+    resolves a kernel by display name, Rust path, or function pointer, so a
+    renamed or relocated implementation cannot be reached by spelling its label,
+    and two kernels sharing a label remain distinct.
+    expects: resolution by display name, Rust path, or function pointer is
+      refused, and resolution succeeds only against the canonical manifest entry
+    disposition: a typed resolution refusal; a name-based lookup path does not
+      exist to fall back to
+
+kernel_contract_and_implementation_ids_are_not_interchangeable
+    `KernelContractId`, `KernelInterfaceHash`, `KernelImplementationId`, and
+    `KernelQualificationReceiptId` are distinct identities. Substituting one where
+    another is required is rejected: a contract is not an implementation, and a
+    hash of an interface is neither.
+    expects: substituting any one kernel identity for another is rejected rather
+      than silently resolving to a plausible kernel
+    disposition: a typed identity mismatch naming both the expected and supplied
+      identity kinds
+
+qualified_interface_requires_matching_qualification_receipt
+    A `QualifiedInterface` binding pins `KernelContractId` plus
+    `KernelInterfaceHash` and requires an ACCEPTED matching
+    `KernelQualificationReceiptId`. A missing, foreign, or non-matching receipt
+    fails closed: portability is granted by qualification evidence, never by
+    interface shape alone.
+    expects: a QualifiedInterface binding with an absent, foreign, or
+      non-matching qualification receipt is refused before execution
+    disposition: a typed binding refusal naming the unsatisfied qualification;
+      a matching interface hash alone does not authorize execution
+
+exact_kernel_binding_rejects_another_implementation
+    An `ExactImplementation` binding pins one `KernelImplementationId`. Another
+    implementation is rejected even when it satisfies the same contract and
+    interface hash: an exact pin is a statement about identity, not about
+    capability.
+    expects: an ExactImplementation binding refuses a different
+      KernelImplementationId that satisfies the same contract and interface hash
+    disposition: a typed binding refusal naming the pinned and encountered
+      implementation ids
+
+attempt_receipt_records_exact_kernel_implementation
+    The `AttemptReceipt` records the exact `KernelImplementationId` actually used,
+    including when the WorldImage allowed a `QualifiedInterface`. A portable
+    qualified binding still yields an exact execution record, so what ran is
+    always recoverable from the receipt.
+    expects: an attempt executed under a QualifiedInterface binding records the
+      exact KernelImplementationId that ran, not the contract id or interface hash
+    disposition: the receipt names one implementation; a receipt recording only
+      the qualified interface is incomplete evidence, not an alternative form
+```
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.

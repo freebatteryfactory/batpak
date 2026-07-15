@@ -61,7 +61,9 @@ QualifiedInterface
 
 PakVM never resolves a kernel by display name. The `AttemptReceipt` records the exact `KernelImplementationId` actually used, even when the WorldImage allowed a qualified interface — so a portable qualified binding still yields an exact execution record.
 
-Named hostile fixtures (proof owner TestPak; gates G4/G5):
+This document owns the kernel vocabulary, the two binding modes, and the receipt rule. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: `DEC-062`; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 kernel_cannot_resolve_by_display_name

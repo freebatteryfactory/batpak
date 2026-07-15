@@ -222,7 +222,9 @@ decode declared length
 
 Failure must never produce a panic, an abort presented as ordinary refusal, an integer wrap, a partially initialized canonical value, a partially published event or artifact, or a partially advanced checkpoint. This applies to `.fbat` decode/append, `.vpak` validation, BatQL parsing/normalization, PakVM arenas, group/match state, NetBat framing, proof bundles, artifact staging, and tile materialization. Plane-specific errors may wrap the two canonical classes but may not collapse them.
 
-Named hostile fixtures (proof owner TestPak; gates G2/G5/G6):
+This document owns the allocation discipline, the two canonical failure classes, and the plane coverage list. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: `DEC-066`; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 attacker_length_is_checked_before_reserve
