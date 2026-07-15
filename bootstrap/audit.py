@@ -2074,13 +2074,22 @@ D4B2C_ROWS = [
     "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
     "external_key_backend_preserves_shred_semantics",
 ]
-# Retired vocabulary. Note the first is a proper substring of its successor, so
-# reintroduction is matched on identifier boundaries, never by `in`.
-D4B2C_RETIRED = [
-    "pre_shred_keyset_restore_is_rejected",
-    "shredded_and_keyset_missing_remain_distinct",
-    "snapshot_and_fork_exclude_keys_by_default",
-]
+# Retired proof-row vocabulary: retired id -> the successor that replaced it.
+# ONE registry for the whole specification, not one per phase that renames a row.
+# A retired id may appear only inside a marked historical migration note; the
+# successor is its only other name. Note that
+# `pre_shred_keyset_restore_is_rejected` is a proper substring of its own
+# successor, so reintroduction is matched on identifier boundaries, never by `in`.
+RETIRED_PROOF_ROWS = {
+    "pre_shred_keyset_restore_is_rejected":
+        "stale_or_pre_shred_keyset_restore_is_rejected",
+    "shredded_and_keyset_missing_remain_distinct":
+        "shredded_unavailable_and_keyset_missing_remain_distinct",
+    "snapshot_and_fork_exclude_keys_by_default":
+        "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
+    "hash_map_iteration_cannot_change_canonical_bytes":
+        "hash_map_iteration_cannot_influence_canonical_observables",
+}
 D4B2C_COVERAGE = {
     "durable destruction before acknowledgement": [
         "shred_ack_waits_for_backend_durability",
@@ -2148,6 +2157,25 @@ D4B2C_D35_PROJECTION = re.compile(
     r"canonical proof-row owner: ([^)]+)\):\s*\n+```text\n(.*?)\n```",
     re.S,
 )
+
+
+def retired_proof_row_findings(root: Path) -> list[str]:
+    """A retired proof-row id returns nowhere but a marked historical note.
+
+    Every document, not a per-phase list of the ones a rename happened to touch:
+    a retired id leaking into docs/09 is the same defect as one leaking into
+    docs/35, and only one of those was ever checked.
+    """
+    out: list[str] = []
+    for p in sorted((root / "docs").glob("*.md")):
+        text = D4B2C_MIGRATION_NOTE.sub("", p.read_text(encoding="utf-8"))
+        for old, new in RETIRED_PROOF_ROWS.items():
+            if re.search(r"(?<![a-z0-9_])" + re.escape(old) + r"(?![a-z0-9_])", text):
+                out.append(
+                    f"docs/{p.name} reintroduces retired proof-row id {old} outside the "
+                    f"historical migration note; its successor is {new}"
+                )
+    return out
 
 
 def coverage_matrix(root: Path):
@@ -2241,14 +2269,8 @@ def leg081_authority_findings(root: Path) -> list[str]:
             else:
                 out.append(f"docs/35 projects {extra}, which docs/24 binds to {owner_leg}")
 
-    # 3. retired vocabulary survives only inside the marked historical note
-    for rel in (D4B2C_D21, D4B2C_D24, D4B2C_D35):
-        text = D4B2C_MIGRATION_NOTE.sub("", (root / rel).read_text(encoding="utf-8"))
-        for old in D4B2C_RETIRED:
-            if re.search(r"(?<![a-z0-9_])" + re.escape(old) + r"(?![a-z0-9_])", text):
-                out.append(
-                    f"{rel} reintroduces retired proof-row id {old} outside the historical migration note"
-                )
+    # 3. retired vocabulary is owned by retired_proof_row_findings, which sweeps
+    #    every document rather than the three this rule happened to know about.
 
     # 4. every law clause carries an owned executable witness
     cov = coverage_matrix(root)
@@ -2525,6 +2547,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(decision_class_findings(root))
     findings.extend(authenticated_history_findings(root))
     findings.extend(retired_claim_vocabulary_findings(root))
+    findings.extend(retired_proof_row_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))

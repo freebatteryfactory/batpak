@@ -232,7 +232,6 @@ resource_exhaustion_never_publishes_partial_event
 resource_exhaustion_never_advances_checkpoint
 artifact_staging_failure_publishes_no_artifact_ref
 pakvm_arena_exhaustion_returns_typed_terminal_disposition
-hash_map_iteration_cannot_change_canonical_bytes
 ```
 
 ## Supervision

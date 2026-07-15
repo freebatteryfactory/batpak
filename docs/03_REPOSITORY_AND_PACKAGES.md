@@ -226,13 +226,18 @@ interop opt-in
 
 The collection and canonical-order law is owned by `04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md`.
 
-Named hostile fixtures (proof owner TestPak; gates G0/G5/G7):
+Every profile in the matrix preserves program semantics (DEC-065). The same program over the same inputs yields the same canonical observables on native and browser alike: an adapter supplies mechanism and evidence, never semantic meaning (LEG-066). Profile-owned differences are confined to mechanism, performance, and available capability. A capability a profile does not offer is refused with its own typed disposition; it is never emulated into a different program-observable result.
+
+This document owns the package inventory, the feature posture, and the qualification matrix. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: `DEC-065`; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 no_std_batpak_has_no_std_dependency_route
 no_std_syncbat_has_no_std_dependency_route
 default_std_does_not_enable_threaded_or_browser_adapters
 browser_and_native_profiles_preserve_program_semantics
+hash_map_iteration_cannot_influence_canonical_observables
 ```
 
 ## Package-internal source grammar

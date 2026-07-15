@@ -2073,14 +2073,17 @@ def test_leg081_authority(audit) -> list[str]:
         probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
               f"LEG-081 canonical proof row {wid} is absent from docs/24", "", validator=la)
 
-    # Retired vocabulary cannot return outside the historical migration note.
-    # `stale_or_pre_shred_keyset_restore_is_rejected` contains a retired id as a
-    # substring; the clean tree passing above proves the boundary rule does not
-    # fire on it, and these prove it does fire on the bare retired id.
-    for old in audit.D4B2C_RETIRED:
+    # Retired vocabulary cannot return outside the historical migration note, in
+    # ANY document: one registry, one rule. `stale_or_pre_shred_keyset_restore_is_rejected`
+    # contains a retired id as a substring; the clean tree passing above proves the
+    # boundary rule does not fire on it, and these prove it does fire on the bare
+    # retired id. docs/35 is the plant site precisely because it owns none of these
+    # rows now: a rule scoped to a phase's own documents would miss the leak.
+    rp = audit.retired_proof_row_findings
+    for old in audit.RETIRED_PROOF_ROWS:
         probe(f"retired_{old}_reintroduced_is_rejected", D35, LEAK,
               f"reintroduces retired proof-row id {old} outside the historical migration note",
-              LEAK + f" See {old}.", validator=la)
+              LEAK + f" See {old}.", validator=rp)
 
     # docs/21 projects exactly the nine.
     probe("docs21_leg081_missing_projected_id_is_rejected", D21,
@@ -2336,9 +2339,9 @@ def test_proof_target_resolver(audit) -> list[str]:
     # Structural discovery: heading text is not the parser API.
     cands = audit.candidate_fences(root)
     unbound = [c for c in cands if c["kind"] == "UnboundCandidate"]
-    # Phase-local assertion, not a durable registry: the current sweep finds all 40.
-    if len(unbound) != 5 or sum(len(c["ids"]) for c in unbound) != 40:
-        fail("structural_sweep_finds_the_current_40_candidates_in_5_blocks "
+    # Phase-local assertion, not a durable registry: the current sweep finds all 35.
+    if len(unbound) != 4 or sum(len(c["ids"]) for c in unbound) != 35:
+        fail("structural_sweep_finds_the_current_35_candidates_in_4_blocks "
              f"(got {sum(len(c['ids']) for c in unbound)} in {len(unbound)})")
     labels = [c["label"] for c in unbound]
     if not any("implemented at G3" in l for l in labels):
@@ -2353,7 +2356,7 @@ def test_proof_target_resolver(audit) -> list[str]:
                      "Completely different authored label (implemented at G3):",
                      "docs/12 heading"), encoding="utf-8")
         ub = [c for c in audit.candidate_fences(tmp) if c["kind"] == "UnboundCandidate"]
-        if sum(len(c["ids"]) for c in ub) != 40:
+        if sum(len(c["ids"]) for c in ub) != 35:
             fail("exact_heading_variation_does_not_hide_a_proof_block")
 
     with isolated_tree() as tmp:
@@ -2367,7 +2370,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # Transitional expectation clause.
     ids, blocks, pending = audit.candidate_summary(root)
-    if (ids, blocks, pending) != (40, 5, 29):
+    if (ids, blocks, pending) != (35, 4, 29):
         fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
     W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
     probe("expectation_clause_without_disposition_is_rejected", GA, W28M,

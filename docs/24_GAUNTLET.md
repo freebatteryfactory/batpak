@@ -611,6 +611,95 @@ observed_wall_time_is_not_promoted_to_hlc
       ordinary operation failure
 ```
 
+## Realization-matrix witnesses (DEC-065)
+
+Canonical proof-row identity and meaning for the no_std/alloc realization matrix, the derived-cache collection posture, and cross-profile semantic equivalence. `docs/03_REPOSITORY_AND_PACKAGES.md` owns the package inventory, the feature posture, and the qualification matrix; `docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md` owns the collection and canonical-order law. Both project these IDs and state no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G0/G5), also carried by `DEC-065`:
+
+```text
+no_std_batpak_has_no_std_dependency_route
+no_std_syncbat_has_no_std_dependency_route
+default_std_does_not_enable_threaded_or_browser_adapters
+browser_and_native_profiles_preserve_program_semantics
+hash_map_iteration_cannot_influence_canonical_observables
+```
+
+Authoritative meanings:
+
+```text
+no_std_batpak_has_no_std_dependency_route
+    Built with `default-features = false`, `batpak` realizes its no_std + alloc
+    surface: no dependency route reaches `std`, whether direct, transitive,
+    feature-unified, or reintroduced by a dev or build dependency. The property is
+    compile-proven against the no_std target; a green default build proves nothing
+    about it.
+    expects: the no_std + alloc qualification target compiles and links with no
+      std route present in the resolved dependency graph
+    disposition: a compile-time or resolution failure naming the offending route,
+      never a passing default build offered as evidence of the no_std surface
+
+no_std_syncbat_has_no_std_dependency_route
+    Built with `default-features = false`, `syncbat` realizes its no_std + alloc
+    surface under the same law as `batpak`. Its runtime plane structure grants no
+    exemption: a std route arriving through an adapter, a feature union, or a
+    plane-local dependency is the same defect.
+    expects: the no_std + alloc qualification target compiles and links with no
+      std route present in the resolved dependency graph
+    disposition: a compile-time or resolution failure naming the offending route,
+      never a runtime capability check standing in for the compile proof
+
+default_std_does_not_enable_threaded_or_browser_adapters
+    The default std profile enables neither the threaded adapter nor the browser
+    adapter. Threading and browser hosting are opt-in features, so a default build
+    cannot silently acquire threads, web APIs, or their ambient authority through
+    feature unification.
+    expects: the default std build resolves with the threaded and browser adapter
+      features off, including under feature unification across the workspace
+    disposition: an adapter absent from the build entirely; a compiled-in adapter
+      left dormant at runtime does not satisfy this row
+
+browser_and_native_profiles_preserve_program_semantics
+    Every qualified profile preserves program semantics. The same program over the
+    same inputs yields the same canonical observables on native and browser alike:
+    an adapter supplies mechanism and evidence, never semantic meaning (LEG-066).
+    Profile-owned differences are confined to mechanism, performance, and available
+    capability. A capability a profile does not offer is refused with its own typed
+    disposition, never emulated into a different program-observable result.
+    expects: one program over one input yields byte-identical canonical results,
+      receipts, and typed dispositions on the native std and browser profiles
+    disposition: a divergence is a profile defect reported against the adapter,
+      never reconciled by declaring one profile's result authoritative
+
+hash_map_iteration_cannot_influence_canonical_observables
+    A hash map is a derived cache. Its iteration order never influences canonical
+    identity, canonical bytes, formatting, diagnostics, execution order, or
+    receipts. Canonical order comes from ordered structures — `Vec`, bounded
+    arenas, `BTreeMap`, and sorted catalogs — so a perturbed hash seed changes
+    nothing a program or an auditor can observe.
+    expects: replaying the same inputs under a perturbed hash-map iteration order
+      yields identical canonical bytes, formatting, diagnostics, execution order,
+      and receipts
+    disposition: canonical order resolves from the ordered structure that owns it;
+      an observable that varies with iteration order is a defect, not a tolerance
+```
+
+<!-- HISTORICAL-MIGRATION:BEGIN -->
+### Historical migration note (5.5D4b-3b, DEC-065)
+
+`docs/08_SYNCBAT_RUNTIME.md` carried `hash_map_iteration_cannot_change_canonical_bytes` inside its resource-exhaustion fixture block. Both the placement and the name were wrong, and neither was a shipped compatibility surface.
+
+The placement: hash-map iteration order is not a resource-exhaustion property. The row defends the derived-cache collection posture, which DEC-065 owns, not the try_reserve and budget law docs/08 owns.
+
+The name: DEC-065 states that hash-map iteration never influences canonical identity, formatting, diagnostics, execution order, or receipts. "Canonical bytes" is one of five observables. A row named for the narrowest one would pass while formatting, diagnostics, execution order, or a receipt varied with the hash seed. The law was not narrowed to fit the name; the name was corrected to fit the law.
+
+```text
+retired    hash_map_iteration_cannot_change_canonical_bytes
+successor  hash_map_iteration_cannot_influence_canonical_observables
+aliased    0
+```
+<!-- HISTORICAL-MIGRATION:END -->
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.
