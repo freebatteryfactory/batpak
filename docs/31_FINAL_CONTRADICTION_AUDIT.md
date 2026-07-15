@@ -99,6 +99,10 @@ no authenticated-history claim exceeding the selected profile and verified witne
 no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
 no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance
 no authenticated-history profile, witness, claim-posture, or gate node in the Guarantee Graph (decision class and gates are node metadata, never synthetic nodes or edges)
+no second witness authority (docs/24 owns proof-row identity and executable meaning; the docs/21 Required witness column projects those IDs and is audited, never authoritative; LEG-023)
+no ContentDigest equality accepted as EventCommitment equality, and no verified-set membership accepted as immediate-predecessor proof (LEG-023, DEC-052)
+no genesis marker resetting an already-started stream, and no derived index selecting the expected authority bytes and then authenticating its own selection
+no LEG-023 absorption of the lane-isolation law owned by LEG-050 or the visible-linearization law owned by LEG-067 (it cites them)
 no unclassified proof-policy change, and no Weakening without DEC or supersession authority, affected guarantees, old and new boundary, replacement or accepted-risk disposition, hostile qualification, release visibility, and a receipt (DEC-074); weakening the anti-weakening gate itself needs the same package
 no proof-policy Neutral claimed without parity evidence (a refactor is not automatically neutral), and no apparently stronger policy that narrows the tested domain or drops denominator units escaping the Weakening class
 no mutation result collapsed into pass/fail or killed/not-killed, and no NotActivated, Refused, Unbuildable, TimedOut, or InfrastructureFailure counted as Killed or Survived (DEC-015)

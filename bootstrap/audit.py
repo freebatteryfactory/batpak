@@ -1572,6 +1572,153 @@ def proof_policy_findings(root: Path) -> list[str]:
     return out
 
 
+# --- Witness reference resolution (5.5D4b) ----------------------------------
+# docs/24 owns proof-row identity and executable meaning. docs/21 projects the
+# required witness IDs per legacy obligation. The projection is audited but is
+# never a second authority: a meaning changes in docs/24 or nowhere.
+#
+# Ownership is read from the explicit binding in the live docs/24 block header,
+# never inferred from witness-name keywords or nearby headings.
+W_OWNER_BLOCK = re.compile(
+    r"Required witnesses \(proof owner ([^;]+); gates ([^)]*)\)[^\n:]*?`(LEG-\d+)`:\s*\n+```text\n(.*?)\n```",
+    re.S,
+)
+W_MEANING_BLOCK = re.compile(r"Authoritative meanings:\s*\n+```text\n(.*?)\n```", re.S)
+W_ID = re.compile(r"^[a-z0-9_]+$")
+
+
+def witness_rows(root: Path) -> dict[str, dict]:
+    """proof-row id -> {owner LEG, proof owner, gates}. docs/24 is the authority."""
+    doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    out: dict[str, dict] = {}
+    for proof_owner, gates, leg, body in W_OWNER_BLOCK.findall(doc):
+        for line in body.splitlines():
+            wid = line.strip()
+            if not wid or not W_ID.match(wid):
+                continue
+            if wid in out:
+                out[wid]["duplicate"] = True
+                continue
+            out[wid] = {"leg": leg, "proof_owner": proof_owner.strip(),
+                        "gates": gates.strip(), "duplicate": False}
+    return out
+
+
+def witness_meanings(root: Path) -> set[str]:
+    doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    named: set[str] = set()
+    for body in W_MEANING_BLOCK.findall(doc):
+        for line in body.splitlines():
+            if line and not line.startswith(" ") and W_ID.match(line.strip()):
+                named.add(line.strip())
+    return named
+
+
+def docs21_witness_refs(root: Path) -> dict[str, list[str]]:
+    """LEG id -> the witness IDs its docs/21 cell projects."""
+    doc = (root / "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md").read_text(encoding="utf-8")
+    out: dict[str, list[str]] = {}
+    for line in doc.splitlines():
+        if not line.startswith("| LEG-"):
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) != 10:
+            continue
+        refs = [r.strip() for r in cells[5].split(";") if W_ID.match(r.strip())]
+        if refs:
+            out[cells[0]] = refs
+    return out
+
+
+def witness_reference_findings(root: Path) -> list[str]:
+    """docs/21 projects exactly the witness IDs docs/24 binds to that LEG."""
+    rows = witness_rows(root)
+    meanings = witness_meanings(root)
+    refs = docs21_witness_refs(root)
+    out: list[str] = []
+    for wid, row in sorted(rows.items()):
+        if row["duplicate"]:
+            out.append(f"docs/24 binds proof-row id {wid} more than once")
+        if wid not in meanings:
+            out.append(f"docs/24 proof row {wid} has no authoritative meaning")
+        if "TestPak" not in row["proof_owner"] or not row["gates"]:
+            out.append(f"docs/24 proof row {wid} states no future-executable proof owner or gate")
+    # every owned row is projected, and nothing extra is
+    owned: dict[str, set[str]] = {}
+    for wid, row in rows.items():
+        owned.setdefault(row["leg"], set()).add(wid)
+    for leg, want in sorted(owned.items()):
+        got = refs.get(leg, [])
+        if len(got) != len(set(got)):
+            out.append(f"docs/21 {leg} projects a duplicate witness reference")
+        got_set = set(got)
+        for missing in sorted(want - got_set):
+            out.append(f"docs/21 {leg} omits owned proof row {missing}")
+        for extra in sorted(got_set - want):
+            owner = rows.get(extra, {}).get("leg")
+            if owner is None:
+                out.append(f"docs/21 {leg} references unknown proof-row id {extra}")
+            else:
+                out.append(f"docs/21 {leg} references {extra}, which docs/24 binds to {owner}")
+    # A LEG that owns nothing may still project references. Those must resolve
+    # and must be bound to that LEG, or the projection is claiming another
+    # owner's witness.
+    for leg, got in sorted(refs.items()):
+        if leg in owned:
+            continue
+        if len(got) != len(set(got)):
+            out.append(f"docs/21 {leg} projects a duplicate witness reference")
+        for extra in got:
+            owner = rows.get(extra, {}).get("leg")
+            if owner is None:
+                out.append(f"docs/21 {leg} references unknown proof-row id {extra}")
+            elif owner != leg:
+                out.append(f"docs/21 {leg} references {extra}, which docs/24 binds to {owner}")
+    return out
+
+
+# LEG-023's law must keep the six integrity claims separate and refuse the two
+# impersonations that make a digest match look like chain integrity.
+D4B_LEG023_CLAUSES = [
+    "never proves EventCommitment equality",
+    "requires the exact immediate predecessor",
+    "an event appearing somewhere in a verified set is not thereby the immediate predecessor",
+    "legal genesis occurs only at the lawful stream head",
+    "may not select the expected authority bytes and then use those selected bytes to authenticate its own selection",
+    "lane isolation is owned by LEG-050",
+    "visible linearization by LEG-067",
+]
+D4B_LEG023_WITNESSES = [
+    "middle_event_deletion_is_rejected",
+    "event_reorder_is_rejected",
+    "duplicate_payload_splice_is_rejected",
+    "cross_lane_predecessor_is_rejected",
+    "cross_entity_predecessor_is_rejected",
+    "midstream_genesis_is_rejected",
+    "forged_index_row_cannot_choose_and_authenticate_bytes",
+]
+
+
+def integrity_witness_findings(root: Path) -> list[str]:
+    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    m = re.search(r'id: "LEG-023", law: "([^"]+)"', src)
+    out: list[str] = []
+    if not m:
+        return ["LEG-023 is absent from spec/legacy_obligations.rs"]
+    law = m.group(1)
+    for clause in D4B_LEG023_CLAUSES:
+        if clause not in law:
+            out.append(f"LEG-023 law no longer states: {clause}")
+    rows = witness_rows(root)
+    for wid in D4B_LEG023_WITNESSES:
+        row = rows.get(wid)
+        if row is None:
+            out.append(f"LEG-023 witness {wid} is absent from docs/24")
+        elif row["leg"] != "LEG-023":
+            out.append(f"LEG-023 witness {wid} is bound to {row['leg']}")
+    return out
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -2037,6 +2184,8 @@ def main() -> int:
     findings.extend(specialization_findings(root))
     findings.extend(specialization_key_findings(root))
     findings.extend(proof_policy_findings(root))
+    findings.extend(witness_reference_findings(root))
+    findings.extend(integrity_witness_findings(root))
     findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"

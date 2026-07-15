@@ -1712,6 +1712,91 @@ def test_probe_harness(audit) -> list[str]:
     return findings
 
 
+def test_integrity_witnesses(audit) -> list[str]:
+    """LEG-023 hostile integrity witnesses and the witness-reference resolver.
+
+    Structural only. Bootstrap executes no journal verification, reads no real
+    chain, detects no real event loss, and runs no SIDX recovery. These fixtures
+    prove the witness identities, owner bindings, meanings, and cross-surface
+    agreement survive -- not that a chain was verified.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            text = path.read_text(encoding="utf-8")
+            path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
+            expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
+
+    LEG = "spec/legacy_obligations.rs"
+    GA = "docs/24_GAUNTLET.md"
+    D21 = "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md"
+    iw = audit.integrity_witness_findings
+
+    if audit.witness_reference_findings(root) or iw(root):
+        fail("leg023_witness_contract_passes")
+
+    # Each of the seven witness identities must survive in docs/24.
+    for wid in audit.D4B_LEG023_WITNESSES:
+        probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n", f"{wid} is absent from docs/24",
+              "", validator=iw)
+
+    # The resolver: unknown, duplicated, misowned, missing, extra.
+    probe("unknown_leg_witness_reference_is_rejected", D21,
+          "middle_event_deletion_is_rejected;", "references unknown proof-row id ghost_witness",
+          "ghost_witness; middle_event_deletion_is_rejected;")
+    probe("duplicate_leg_witness_reference_is_rejected", D21,
+          "middle_event_deletion_is_rejected;", "projects a duplicate witness reference",
+          "middle_event_deletion_is_rejected; middle_event_deletion_is_rejected;")
+    probe("witness_owned_by_wrong_leg_is_rejected", GA,
+          "), also carried by `LEG-023`:", "which docs/24 binds to LEG-081",
+          "), also carried by `LEG-081`:")
+    probe("docs21_missing_owned_witness_is_rejected", D21,
+          "; midstream_genesis_is_rejected", "omits owned proof row midstream_genesis_is_rejected")
+    probe("docs21_extra_witness_is_rejected", D21,
+          "middle_event_deletion_is_rejected;",
+          "references unknown proof-row id shred_ack_waits_for_backend_durability",
+          "shred_ack_waits_for_backend_durability; middle_event_deletion_is_rejected;")
+    probe("duplicate_docs24_proof_row_id_is_rejected", GA,
+          "middle_event_deletion_is_rejected\nevent_reorder_is_rejected",
+          "binds proof-row id middle_event_deletion_is_rejected more than once",
+          "middle_event_deletion_is_rejected\nmiddle_event_deletion_is_rejected\nevent_reorder_is_rejected")
+    probe("witness_meaning_removal_is_rejected", GA,
+          "midstream_genesis_is_rejected\n    A genesis marker cannot reset an already-started stream.",
+          "has no authoritative meaning", "")
+    probe("future_executable_posture_removal_is_rejected", GA,
+          "Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-023`:",
+          "states no future-executable proof owner or gate",
+          "Required witnesses (proof owner Nobody; gates ), also carried by `LEG-023`:")
+
+    # Weakening the law itself: each impersonation the law forbids.
+    for clause, label in (
+        ("never proves EventCommitment equality", "content_digest_substituting_for_event_commitment_is_rejected"),
+        ("an event appearing somewhere in a verified set is not thereby the immediate predecessor",
+         "set_membership_accepted_as_predecessor_is_rejected"),
+        ("legal genesis occurs only at the lawful stream head", "midstream_genesis_allowed_is_rejected"),
+        ("may not select the expected authority bytes and then use those selected bytes to authenticate its own selection",
+         "forged_index_selecting_and_authenticating_is_rejected"),
+        ("requires the exact immediate predecessor", "inexact_predecessor_allowed_is_rejected"),
+        ("lane isolation is owned by LEG-050", "leg023_absorbing_leg050_is_rejected"),
+        ("visible linearization by LEG-067", "leg023_absorbing_leg067_is_rejected"),
+    ):
+        probe(label, LEG, clause, f"LEG-023 law no longer states: {clause}", "", validator=iw)
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -1738,6 +1823,7 @@ def main() -> int:
     findings += test_specialization(audit, project)
     findings += test_delivery_notes_d2(audit)
     findings += test_proof_policy(audit)
+    findings += test_integrity_witnesses(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
@@ -1746,7 +1832,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness hostile fixtures)")
     return 0
 
 

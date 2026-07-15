@@ -119,6 +119,56 @@ handwritten specializer, cache, kernel, mechanism    Lane CompilerBacked
 
 No lane is the sole proof route. A semantic mutant that changes meaning must be observable through the reference path and the specialized path. A residual-only mutation either maps to a semantic counterpart or is classified as an implementation/mechanism mutation; it never pretends to be a semantic mutant.
 
+## Integrity and predecessor witnesses (LEG-023)
+
+This document owns proof-row identity and executable meaning. `21_LEGACY_SEMANTIC_OBLIGATIONS.md` projects the required witness IDs for each legacy obligation; that projection is audited but is not a second authority. A witness meaning is changed here, never there.
+
+Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-023`:
+
+```text
+middle_event_deletion_is_rejected
+event_reorder_is_rejected
+duplicate_payload_splice_is_rejected
+cross_lane_predecessor_is_rejected
+cross_entity_predecessor_is_rejected
+midstream_genesis_is_rejected
+forged_index_row_cannot_choose_and_authenticate_bytes
+```
+
+Authoritative meanings:
+
+```text
+middle_event_deletion_is_rejected
+    Removing a middle event cannot make the surviving neighbours verify as
+    one intact chain.
+
+event_reorder_is_rejected
+    Individually valid events in the wrong immediate-predecessor order fail
+    verification.
+
+duplicate_payload_splice_is_rejected
+    Matching payload bytes or ContentDigest cannot substitute a different
+    EventCommitment or predecessor position.
+
+cross_lane_predecessor_is_rejected
+    A predecessor from another lane cannot satisfy the expected stream
+    predecessor. Lane isolation itself is owned by LEG-050.
+
+cross_entity_predecessor_is_rejected
+    A predecessor from another entity cannot satisfy the expected stream
+    predecessor. Lane isolation itself is owned by LEG-050.
+
+midstream_genesis_is_rejected
+    A genesis marker cannot reset an already-started stream. Dense visible
+    linearization itself is owned by LEG-067.
+
+forged_index_row_cannot_choose_and_authenticate_bytes
+    Derived metadata cannot select authority bytes and bootstrap verification
+    from the selection it supplied.
+```
+
+These are future executable TestPak witnesses. Bootstrap proves their names, owner binding, documentary meaning, and cross-surface agreement only. It does not execute journal verification, read a real chain, or detect real event loss.
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.
