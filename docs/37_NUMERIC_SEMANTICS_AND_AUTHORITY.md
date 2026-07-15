@@ -47,8 +47,23 @@ checked range
 explicit numeric profile (NumericProfileId)
 ```
 
+Fixed128 is the canonical inline representation of `FixedDecimal` only, not of
+every exact sort. Each exact sort keeps its own canonical form; forcing every
+exact value through Fixed128 would approximate it — one third has no finite
+decimal form:
+
+```text
+ExactInteger   canonical bounded integer representation
+FixedDecimal   Fixed128 (signed i128 coefficient, explicit scale, UnitId, NumericProfileId)
+ExactRatio     canonical bounded reduced ratio: denominator nonzero and positive,
+               gcd-reduced, zero as 0/1, checked range
+WideExact      qualified non-inline profile seam (section 11)
+```
+
 The physical EventFrame field layout and the maximum scale are **not** frozen
-here; they are G2 format constants. The frozen semantic requirements are:
+here; they are G2 format constants. The physical widths and wire layout of
+ExactInteger and ExactRatio likewise remain G2 constants unless already frozen.
+The frozen semantic requirements are:
 
 ```text
 scale is explicit
@@ -340,37 +355,77 @@ the decision cannot claim a conclusive side.
 
 ## 9. Quantize
 
-`Quantize` is the explicit crossing from Qualified Approximation into Fixed128
-authority. It accepts:
+Quantization crosses Qualified Approximation into exact authority. It never
+invents a point: two distinct arrows keep representation change separate from
+uncertainty collapse. Every quantization crossing produces a
+`QuantizationReceipt`, even when the conversion is mathematically exact, and there
+is no default rounding mode, no hidden conversion, no direct cast, and no
+best-effort conversion.
+
+### QuantizePoint
+
+`QuantizePoint` accepts a finite point representation:
 
 ```text
-finite approximate observation or finite interval
-target exact numeric profile
-target scale
-UnitId
-explicit rounding mode
-quantization policy (QuantizationPolicyId)
+finite ApproximateBinary observation
+FiniteDyadicObservation
+other admitted exact point representation
 ```
 
-It returns:
+with a target numeric profile, target scale, UnitId, explicit rounding mode, and
+quantization policy (`QuantizationPolicyId`). Its result is a named product, not
+a bare `FixedDecimal` that can wander from its evidence and not a value with a
+separately discardable receipt:
 
 ```text
-Fixed128 result
+FixedDecimal value
+QuantizationReceipt (mandatory) or receipt identity
 exact or inexact disposition
-exact finite source representation
-source interval
+source representation
+source uncertainty or interval evidence when applicable
 target profile
+target scale
 rounding mode
 discarded remainder or equivalent loss evidence
-result error interval
-QuantizationReceipt
+result error evidence
+provenance
 ```
 
-Every approximation-to-authority crossing produces a `QuantizationReceipt`, even
-when the conversion is mathematically exact. There is no default rounding mode,
-no hidden conversion, no direct cast, and no best-effort conversion.
+A fixed representation produced from an approximate source is exact as a
+representation of the chosen rounded value; it is not proof that the original
+real-world quantity was exact. Approximation provenance remains visible after
+quantization.
 
-`Quantize` refuses:
+### QuantizeInterval
+
+`QuantizeInterval` accepts a finite closed interval and returns an enclosing
+finite closed exact interval plus a mandatory `QuantizationReceipt` or receipt
+identity. The V1 enclosure policy rounds the lower bound with `Floor` and the
+upper bound with `Ceiling`, so the target interval contains every value the
+source interval contained. Nearest rounding of both endpoints is refused when it
+could shrink the represented possibility set. The receipt records:
+
+```text
+source interval
+target interval
+target scale
+lower-bound rounding
+upper-bound rounding
+enclosure widening
+exact or widened disposition
+numeric profile
+unit
+provenance
+```
+
+A non-singleton interval never returns one authoritative point. A singleton
+interval remains an interval after conversion; a convenience extraction of its
+sole value is allowed only after proving the converted lower and upper bounds are
+identical.
+
+### Refusals
+
+Both `QuantizePoint` and `QuantizeInterval` refuse:
 
 ```text
 NaN
@@ -382,6 +437,18 @@ unit mismatch
 missing profile
 missing error evidence where the profile requires it
 ```
+
+### Estimation is not quantization
+
+Selecting or estimating one point from a non-singleton interval is not
+quantization. Such a future operation would require an explicit estimator or
+selection policy, an uncertainty model, provenance, an estimation receipt, and a
+separate authority-crossing policy if the estimate is used as an authority value.
+BatPak creates no concrete estimator operator, OperatorId, decision, or public
+syntax for it in V1, and does not forbid estimation permanently: it is a distinct
+qualified operation outside the V1 admitted surface. `IntervalDecision`
+(section 8) is the admitted V1 way to reach a conclusion from an interval without
+inventing a point.
 
 ## 10. Rounding boundary
 
@@ -439,6 +506,17 @@ error or interval propagation. A typed value wrapper does not make ordinary
 float arithmetic safe. Comparison operators may lower interval-versus-threshold
 cases through `IntervalDecision` (section 8); logical operators are unchanged.
 
+`NumericSupport::ExactSupported` admits exact operand signatures only; it never
+admits raw ApproximateBinary operands. In V1: `+ - * /` accept exact signatures
+only; ApproximateBinary arithmetic is not admitted without a qualified numeric
+profile, which does not exist in V1; raw ApproximateBinary comparison is refused —
+qualified approximate evidence must first produce a finite exact `Interval`, and
+`IntervalDecision` then consumes that `Interval` plus an exact compatible
+threshold. Because no operator carries `QualifiedProfileOnly` and no qualified
+numeric profile exists, no raw approximate operand can enter any operator; the
+`exactness` and `numeric_support` fields enforce this structurally without a
+second type system.
+
 The operator numeric support matrix is generated from OperatorSpec and
 independently re-audited:
 
@@ -477,12 +555,21 @@ numeric classification of raw bits
 signed-zero numeric-equality versus evidence-identity separation
 NaN unordered/non-finite refusal
 interval well-formedness and IntervalDecision truth tables (six operators)
-quantization interval containment and exact/inexact disposition
-quantization receipt completeness
+QuantizeInterval always encloses its source interval
+widening the source interval cannot shrink the quantized interval
+a point contained by an interval quantizes into a point contained by that interval's quantized enclosure
+a singleton interval may become non-singleton at a coarser scale but never loses containment
+quantization at the same compatible scale is idempotent where no representation change occurs
+QuantizePoint receipt completeness and mandatory-receipt product shape
 authority-crossing refusals (NaN, infinity, overflow, unit mismatch, missing profile)
 rounding-boundary and mode-specific laws (exact vs rounded vs metamorphic)
+ExactRatio canonicalization is stable and unique
+approximation provenance survives every authority crossing
 wide-exact-to-Fixed128 checked conversion and range refusal
 ```
+
+Bootstrap verifies that these obligations are present and structurally owned; it
+does not execute them. Their executable proof lands in TestPak.
 
 ## 14. Ownership
 

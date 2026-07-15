@@ -249,6 +249,13 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
             out.append(f"spec/operators.rs: operator {op['id']} has unknown numeric_support {support}")
         if op.get("class") in ("Arithmetic", "Comparison") and support in ("", "NotApplicable"):
             out.append(f"spec/operators.rs: {op.get('class')} operator {op['id']} lacks an approximate-support posture")
+        # V1 admits no raw approximate operands: no qualified numeric profile exists,
+        # so no operator may carry QualifiedProfileOnly. ExactSupported is exact-only.
+        if support == "QualifiedProfileOnly":
+            out.append(
+                f"spec/operators.rs: operator {op['id']} admits approximate operands (QualifiedProfileOnly) "
+                f"but no qualified numeric profile exists in V1"
+            )
     return out
 
 
@@ -372,6 +379,15 @@ NUMERIC_LAW_MARKERS = (
     ("interval_decision_lacking_pending_overlap", "overlaps the decision boundary"),
     ("default_rounding_on_authority_conversion", "default rounding mode"),
     ("wide_exact_made_ordinary_inline_authority", "ordinary inline EventFrame values"),
+    # 5.5B2a: separate exact forms and split point/interval quantization
+    ("fixed128_scoped_to_fixeddecimal", "canonical inline representation of `FixedDecimal` only"),
+    ("non_singleton_interval_returns_no_point", "never returns one authoritative point"),
+    ("quantizepoint_named_product", "named product"),
+    ("quantizeinterval_floor_lower_bound", "lower bound with `Floor`"),
+    ("quantizeinterval_ceiling_upper_bound", "upper bound with `Ceiling`"),
+    ("interval_enclosure_contains_all_source_values", "contains every value the source interval contained"),
+    ("estimation_is_not_quantization", "is not quantization"),
+    ("exact_supported_refuses_raw_approximate", "never admits raw ApproximateBinary"),
 )
 NUMERIC_ROUNDING_MODES = ("HalfEven", "HalfAwayFromZero", "TowardZero", "AwayFromZero", "Floor", "Ceiling")
 NUMERIC_INTERVAL_OPERATORS = ("IS (equal)", "IS NOT", "IS LESS THAN", "IS AT MOST", "IS MORE THAN", "IS AT LEAST")

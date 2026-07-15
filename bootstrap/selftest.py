@@ -241,6 +241,12 @@ def test_numeric(audit) -> list[str]:
     if not any("lacks an approximate-support posture" in x for x in audit.batql_operator_fact_findings(arith_no_posture)):
         fail("operatorspec_arithmetic_row_lacking_approx_support_is_rejected")
 
+    # An operator that admits raw approximate operands (QualifiedProfileOnly) with no
+    # qualified numeric profile in V1 is rejected; ExactSupported never admits them.
+    admits_raw_approx = [{**arith_no_posture[0], "numeric_support": "QualifiedProfileOnly"}]
+    if not any("no qualified numeric profile exists" in x for x in audit.batql_operator_fact_findings(admits_raw_approx)):
+        fail("operator_admitting_raw_approximate_without_profile_is_rejected")
+
     return findings
 
 
