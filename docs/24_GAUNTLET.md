@@ -990,6 +990,212 @@ aliased    0
 ```
 <!-- HISTORICAL-MIGRATION:END -->
 
+## Compilation-boundary witnesses (DEC-051)
+
+Canonical proof-row identity and meaning for the source-compilation and raw-BatQL authority boundary. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the boundary law, the evidence chain, and the CompilerPort posture; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G4), also carried by `DEC-051`:
+
+```text
+raw_batql_is_not_a_netbat_invocation
+compiler_port_is_not_available_to_guest_programs
+compiler_port_is_absent_from_default_server_profile
+compiler_output_still_requires_program_validation
+```
+
+Authoritative meanings:
+
+```text
+raw_batql_is_not_a_netbat_invocation
+    Ordinary transport permits `InvokeEntrypoint` and `ExecuteQueryProgram` and
+    nothing else. `CompileAndExecuteRawBatQL`, `EvalText`, and `ExecuteSource` are
+    not NetBat invocations: BatQL source text is authoring input, never executable
+    authority, so there is no transport route that accepts source and runs it.
+    expects: a NetBat request carrying raw BatQL source is refused as an unknown
+      invocation class, and no compilation or execution is attempted
+    disposition: a typed transport refusal at admission; the request never reaches
+      a compiler, so the refusal cannot depend on what the source said
+
+compiler_port_is_not_available_to_guest_programs
+    `CompilerPort` is a separately admitted host capability. A guest program
+    cannot hold it, request it, or reach it through another capability it does
+    hold: compilation authority is not implied by execution authority.
+    expects: a guest program requesting or invoking CompilerPort is refused, and
+      holding any ordinary grant does not confer it
+    disposition: a typed capability refusal; the port is absent from the guest's
+      capability envelope rather than present and guarded
+
+compiler_port_is_absent_from_default_server_profile
+    `CompilerPort` is absent from the default server profile. It belongs to a
+    development or admin profile that must be admitted deliberately, so a
+    default-configured server offers no compilation surface to remove later.
+    expects: the default server profile resolves with no CompilerPort admitted,
+      and admitting one is an explicit profile change
+    disposition: the port is not in the profile; a port present but disabled by
+      configuration does not satisfy this row
+
+compiler_output_still_requires_program_validation
+    A ProgramImage emitted by `CompilerPort` passes ordinary validation and
+    admission like any other. The compiler is never a tunnel around PakVM
+    validation: source identity is provenance, not runtime authority, and a
+    CompilationReceipt attests where an image came from, never that it is
+    admissible.
+    expects: a compiler-emitted ProgramImage that fails ordinary validation is
+      refused, and its CompilationReceipt does not shorten or skip the admission
+      path
+    disposition: the ordinary typed validation refusal; the image is judged by its
+      canonical bytes, exactly as a client-supplied image would be
+
+## Query-program invocation witnesses (DEC-050)
+
+Canonical proof-row identity and meaning for ephemeral query-program invocation. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the invocation-class law, the capability envelope, and the response binding; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G4/G5), also carried by `DEC-050`:
+
+```text
+query_program_cannot_install_process
+query_program_cannot_request_write_capability
+query_program_over_work_bound_is_denied_before_execution
+query_program_result_binds_program_and_grant_identity
+entrypoint_receipt_cannot_satisfy_query_program_execution
+```
+
+Authoritative meanings:
+
+```text
+query_program_cannot_install_process
+    An `ExecuteQueryProgram` invocation is ephemeral. Process installation and
+    lifecycle hooks are forbidden to it: a query cannot leave anything behind that
+    outlives the invocation, whatever its result says.
+    expects: a query program attempting process installation or a lifecycle hook
+      is refused, and nothing persists after the invocation completes
+    disposition: a typed refusal of the forbidden operation; ALLOW, DENY, or DEFER
+      appearing in the query's data never drives an effect
+
+query_program_cannot_request_write_capability
+    A query program runs under a server-issued read-only query capability
+    envelope. It cannot request, escalate to, or otherwise acquire a write
+    capability: the envelope is issued by the server, so the program has no route
+    to widen it.
+    expects: a query program requesting a write capability is refused, and its
+      envelope remains read-only for the whole invocation
+    disposition: a typed capability refusal; the write capability is absent from
+      the envelope rather than present and denied at use
+
+query_program_over_work_bound_is_denied_before_execution
+    A query program exceeding its declared work bound is denied BEFORE execution.
+    The bound is checked against the declared plan, not discovered by running the
+    program until it costs too much: a hostile query must not get to execute at
+    all.
+    expects: a query program whose declared work exceeds the bound is denied with
+      no execution performed and no partial work observable
+    disposition: a typed pre-execution denial; a mid-execution budget termination
+      is a different event and does not satisfy this row
+
+query_program_result_binds_program_and_grant_identity
+    A query response binds ProgramImageId, query authority digest, historical cut,
+    source generation, completeness, proof disposition, actual work, result
+    digest, and receipt. The result names exactly what ran and under whose
+    authority, so a response cannot be reattributed to another program or grant.
+    expects: a response carries every bound component, and altering the program or
+      the grant produces a different binding
+    disposition: the receipt binds all named components; a response missing one is
+      incomplete evidence, not an abbreviated form
+
+entrypoint_receipt_cannot_satisfy_query_program_execution
+    An `InvokeEntrypoint` receipt cannot stand as evidence that an
+    `ExecuteQueryProgram` invocation occurred. The two classes differ in
+    deployment authority, lifetime, effect permission, and capability origin, so
+    entrypoint authority cannot be replayed to claim a query execution that never
+    ran under a query envelope.
+    expects: an entrypoint AttemptReceipt offered as evidence of query-program
+      execution is refused as a class mismatch
+    disposition: a typed invocation-class mismatch naming both classes; matching
+      ProgramImageId does not make the receipts interchangeable
+
+## Entrypoint invocation witnesses (DEC-049)
+
+Canonical proof-row identity and meaning for declared WorldImage entrypoint invocation. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the entrypoint contract, the identity binding, and the effect-declaration rule; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G5), also carried by `DEC-049`:
+
+```text
+entrypoint_cannot_substitute_foreign_program_image
+entrypoint_effect_must_be_declared_by_world_interface
+query_program_receipt_cannot_satisfy_entrypoint_invocation
+```
+
+Authoritative meanings:
+
+```text
+entrypoint_cannot_substitute_foreign_program_image
+    A request cannot substitute a foreign ProgramImage while keeping entrypoint
+    authority. Identity binds WorldImageId, WorldInterfaceHash, EntrypointId,
+    ProgramImageId, InvocationId, and AttemptId together, so swapping the image
+    breaks the binding rather than inheriting the entrypoint's grant.
+    expects: a request naming an admitted entrypoint but a ProgramImageId the
+      entrypoint does not bind is refused before execution
+    disposition: a typed binding refusal naming the bound and supplied image ids;
+      a valid image that the entrypoint does not bind is still foreign
+
+entrypoint_effect_must_be_declared_by_world_interface
+    An entrypoint performs effects only when its contract declares them. The
+    declaration lives in the world interface, so an undeclared effect is refused
+    however the program is written and whatever capability the grant carries.
+    expects: an entrypoint attempting an effect its contract does not declare is
+      refused, while a declared effect proceeds
+    disposition: a typed effect refusal naming the undeclared effect; holding a
+      capability is not a declaration
+
+query_program_receipt_cannot_satisfy_entrypoint_invocation
+    An `ExecuteQueryProgram` receipt cannot stand as evidence that an
+    `InvokeEntrypoint` invocation occurred. An ephemeral query executed under a
+    read-only envelope never carried entrypoint deployment authority, so its
+    receipt cannot be replayed to claim a persistent invocation.
+    expects: a query-program AttemptReceipt offered as evidence of entrypoint
+      invocation is refused as a class mismatch
+    disposition: a typed invocation-class mismatch naming both classes; matching
+      ProgramImageId does not make the receipts interchangeable
+
+## Transport-authority witnesses (LEG-045)
+
+Canonical proof-row identity and meaning for the transport authority boundary. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the transport posture; it projects this ID and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G7), also carried by `LEG-045`:
+
+```text
+tls_does_not_upgrade_program_or_proof_authority
+```
+
+Authoritative meanings:
+
+```text
+tls_does_not_upgrade_program_or_proof_authority
+    Transport is bounded, domain-thin, and cannot launder proof. A TLS session,
+    however authenticated, grants no program authority and upgrades no proof
+    posture: securing the channel says something about the channel and nothing
+    about the image that travelled through it or the evidence it carries.
+    expects: an image or proof arriving over an authenticated TLS session receives
+      the same validation, admission, and proof posture as one arriving otherwise
+    disposition: transport authenticity is recorded as transport evidence; a
+      request to treat it as program or proof authority is refused
+```
+
+<!-- HISTORICAL-MIGRATION:BEGIN -->
+### Historical migration note (5.5D4b-3b, DEC-049 and DEC-050)
+
+`docs/10_WORLD_IMAGES_AND_PORTS.md` carried `attempt_receipt_cannot_cross_invocation_classes` as one row. The claim is directional and the name is not: a receipt crossing FROM entrypoint TO query program and a receipt crossing FROM query program TO entrypoint are two different forgeries, defended by two different laws. One row would pass while proving one direction and leaving the other route open, and no owner could be named for it — DEC-049 owns entrypoint authority and DEC-050 owns query-program authority, so a bidirectional row belongs to neither.
+
+Split into two directional rows, each owned by the class whose authority is being claimed. Nothing was weakened: the original claim is the conjunction of the two successors.
+
+```text
+retired     attempt_receipt_cannot_cross_invocation_classes
+successors  entrypoint_receipt_cannot_satisfy_query_program_execution   (DEC-050)
+            query_program_receipt_cannot_satisfy_entrypoint_invocation  (DEC-049)
+aliased     0
+```
+<!-- HISTORICAL-MIGRATION:END -->
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.

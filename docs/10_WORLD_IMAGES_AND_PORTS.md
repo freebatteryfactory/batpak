@@ -136,23 +136,35 @@ BatQL source
 
 The compiled image still passes ordinary validation and admission. Source identity is provenance, not runtime authority — the compiler is never a tunnel around PakVM validation.
 
-### Hostile fixture obligations (proof owner: TestPak; gates G5/G7)
+### Required proof rows
+
+This document owns the boundary law, the invocation classes, the capability envelopes, and the transport posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere. The rows below span four obligations, each qualifying at its own typed gates.
+
+Required proof rows, projected from docs/24 (qualification targets: `DEC-051` for the compilation boundary, `DEC-050` for query-program invocation, `DEC-049` for entrypoint invocation, `LEG-045` for transport authority; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 raw_batql_is_not_a_netbat_invocation
 compiler_port_is_not_available_to_guest_programs
 compiler_port_is_absent_from_default_server_profile
 compiler_output_still_requires_program_validation
-query_program_with_effect_instruction_is_rejected
 query_program_cannot_install_process
 query_program_cannot_request_write_capability
 query_program_over_work_bound_is_denied_before_execution
 query_program_result_binds_program_and_grant_identity
+entrypoint_receipt_cannot_satisfy_query_program_execution
 entrypoint_cannot_substitute_foreign_program_image
 entrypoint_effect_must_be_declared_by_world_interface
+query_program_receipt_cannot_satisfy_entrypoint_invocation
 tls_does_not_upgrade_program_or_proof_authority
-attempt_receipt_cannot_cross_invocation_classes
 ```
+
+Blocked pending the typed PakVM semantic ISA (proof owner TestPak; DEC-050):
+
+```text
+query_program_with_effect_instruction_is_rejected
+```
+
+This row cannot be normalized yet. "Effect instruction" names a property of a PakVM node, and no typed authority states which nodes carry an effect posture: DEC-050 forbids effects to a query program but does not enumerate the instructions that have one. Writing a meaning now would invent that classification in prose, which is the defect this pass exists to remove. The row is promoted when `spec/pakvm_isa.rs` declares node effect posture (D4c1), and it stays visible here until then rather than being folded into the projection above.
 
 Equivalence oracle: the same query compiled into the same canonical ProgramImage must produce equivalent PakVM semantics whether invoked as a pure declared entrypoint or an ephemeral `ExecuteQueryProgram`, given the same source cut, parameters, selectors, bounds, and proof posture. The receipts differ (authority and invocation identities differ); the query value and structured derivation do not.
 

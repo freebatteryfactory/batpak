@@ -2074,21 +2074,27 @@ D4B2C_ROWS = [
     "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
     "external_key_backend_preserves_shred_semantics",
 ]
-# Retired proof-row vocabulary: retired id -> the successor that replaced it.
+# Retired proof-row vocabulary: retired id -> the successors that replaced it.
 # ONE registry for the whole specification, not one per phase that renames a row.
-# A retired id may appear only inside a marked historical migration note; the
-# successor is its only other name. Note that
-# `pre_shred_keyset_restore_is_rejected` is a proper substring of its own
-# successor, so reintroduction is matched on identifier boundaries, never by `in`.
+# A retired id may appear only inside a marked historical migration note; its
+# successors are its only other names. The value is a tuple because a retirement
+# is not always a rename: splitting one bidirectional row into two directional
+# ones has two successors, and recording only one would lose half the migration.
+# Note that `pre_shred_keyset_restore_is_rejected` is a proper substring of its
+# own successor, so reintroduction is matched on identifier boundaries, never
+# by `in`.
 RETIRED_PROOF_ROWS = {
     "pre_shred_keyset_restore_is_rejected":
-        "stale_or_pre_shred_keyset_restore_is_rejected",
+        ("stale_or_pre_shred_keyset_restore_is_rejected",),
     "shredded_and_keyset_missing_remain_distinct":
-        "shredded_unavailable_and_keyset_missing_remain_distinct",
+        ("shredded_unavailable_and_keyset_missing_remain_distinct",),
     "snapshot_and_fork_exclude_keys_by_default":
-        "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
+        ("snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",),
     "hash_map_iteration_cannot_change_canonical_bytes":
-        "hash_map_iteration_cannot_influence_canonical_observables",
+        ("hash_map_iteration_cannot_influence_canonical_observables",),
+    "attempt_receipt_cannot_cross_invocation_classes":
+        ("entrypoint_receipt_cannot_satisfy_query_program_execution",
+         "query_program_receipt_cannot_satisfy_entrypoint_invocation"),
 }
 D4B2C_COVERAGE = {
     "durable destruction before acknowledgement": [
@@ -2169,11 +2175,12 @@ def retired_proof_row_findings(root: Path) -> list[str]:
     out: list[str] = []
     for p in sorted((root / "docs").glob("*.md")):
         text = D4B2C_MIGRATION_NOTE.sub("", p.read_text(encoding="utf-8"))
-        for old, new in RETIRED_PROOF_ROWS.items():
+        for old, successors in RETIRED_PROOF_ROWS.items():
             if re.search(r"(?<![a-z0-9_])" + re.escape(old) + r"(?![a-z0-9_])", text):
                 out.append(
                     f"docs/{p.name} reintroduces retired proof-row id {old} outside the "
-                    f"historical migration note; its successor is {new}"
+                    f"historical migration note; it was replaced by "
+                    f"{' and '.join(successors)}"
                 )
     return out
 
