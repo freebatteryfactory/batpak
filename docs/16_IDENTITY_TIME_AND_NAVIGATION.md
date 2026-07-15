@@ -66,7 +66,9 @@ Distinct version types do not typecheck when substituted for one another. Canoni
 
 `ProgramImageId` commits to the canonical ProgramImage bytes, including its version. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.
 
-Named hostile fixtures (proof owner TestPak; gates G2/G5/G7):
+This document owns the version vocabulary and the identity commitments above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: `DEC-064`; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 program_image_id_is_independent_of_compiler_provenance
@@ -163,7 +165,9 @@ DURING HLC start THROUGH HLC end   →   [start, end)
 
 HLC remains valid for chronology, temporal filtering, tile pruning, and lag observation. It remains forbidden for durability coverage, cursor resume, frontier advancement, commit identity, deadline measurement, and implicit causation. When causal HLC evidence is absent, the result is `Unavailable`; `ObservedWallTime` is never silently promoted into `Hlc`.
 
-Named hostile fixtures (proof owner TestPak; gates G2/G3):
+This document owns the HLC ordering rule, the range law, and the forbidden-use list. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: `DEC-061`; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 order_by_hlc_uses_commit_tiebreak

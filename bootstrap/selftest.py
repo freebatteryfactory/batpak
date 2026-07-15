@@ -2336,9 +2336,9 @@ def test_proof_target_resolver(audit) -> list[str]:
     # Structural discovery: heading text is not the parser API.
     cands = audit.candidate_fences(root)
     unbound = [c for c in cands if c["kind"] == "UnboundCandidate"]
-    # Phase-local assertion, not a durable registry: the current sweep finds all 48.
-    if len(unbound) != 7 or sum(len(c["ids"]) for c in unbound) != 48:
-        fail("structural_sweep_finds_the_current_48_candidates_in_7_blocks "
+    # Phase-local assertion, not a durable registry: the current sweep finds all 40.
+    if len(unbound) != 5 or sum(len(c["ids"]) for c in unbound) != 40:
+        fail("structural_sweep_finds_the_current_40_candidates_in_5_blocks "
              f"(got {sum(len(c['ids']) for c in unbound)} in {len(unbound)})")
     labels = [c["label"] for c in unbound]
     if not any("implemented at G3" in l for l in labels):
@@ -2353,7 +2353,7 @@ def test_proof_target_resolver(audit) -> list[str]:
                      "Completely different authored label (implemented at G3):",
                      "docs/12 heading"), encoding="utf-8")
         ub = [c for c in audit.candidate_fences(tmp) if c["kind"] == "UnboundCandidate"]
-        if sum(len(c["ids"]) for c in ub) != 48:
+        if sum(len(c["ids"]) for c in ub) != 40:
             fail("exact_heading_variation_does_not_hide_a_proof_block")
 
     with isolated_tree() as tmp:
@@ -2367,7 +2367,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # Transitional expectation clause.
     ids, blocks, pending = audit.candidate_summary(root)
-    if (ids, blocks, pending) != (48, 7, 29):
+    if (ids, blocks, pending) != (40, 5, 29):
         fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
     W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
     probe("expectation_clause_without_disposition_is_rejected", GA, W28M,

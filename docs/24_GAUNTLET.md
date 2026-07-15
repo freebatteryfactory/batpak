@@ -498,6 +498,119 @@ future_format_version_fails_with_its_own_typed_disposition
       version, distinct from a corruption verdict and from a canonical open
 ```
 
+## Version-identity witnesses (DEC-064)
+
+Canonical proof-row identity and meaning for the distinct-version-identity law. `docs/16_IDENTITY_TIME_AND_NAVIGATION.md` owns the version vocabulary, the identity commitments, and the negotiation posture; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-064`:
+
+```text
+program_image_id_is_independent_of_compiler_provenance
+distinct_version_types_do_not_typecheck_when_substituted
+netbat_version_does_not_upgrade_pakvm_isa
+```
+
+Authoritative meanings:
+
+```text
+program_image_id_is_independent_of_compiler_provenance
+    `ProgramImageId` commits to the canonical ProgramImage bytes, including the
+    image version, and to nothing else. Compiler implementation and compiler
+    version are provenance, not identity: two qualified compilers emitting
+    identical canonical bytes produce the same id, and one compiler emitting
+    different canonical bytes produces a different id.
+    expects: two qualified compilers emitting byte-identical canonical images
+      yield equal ProgramImageId values while their recorded compiler provenance
+      differs
+    disposition: identity is decided by the canonical bytes; provenance is
+      carried as receipt evidence and never enters the id computation
+
+distinct_version_types_do_not_typecheck_when_substituted
+    The ten declared version identities are distinct types. No generic Version
+    crosses a subsystem boundary, and substituting one identity where another is
+    required is rejected by the type system rather than by a runtime range check.
+    expects: substituting any declared version identity for another fails to
+      typecheck at the specification surface
+    disposition: a compile-time type error, never a runtime comparison of two
+      version numbers that happen to share a representation
+
+netbat_version_does_not_upgrade_pakvm_isa
+    NetBat protocol negotiation is independent of `PakVmIsaVersion` and
+    `WorldImageVersion`. A negotiated transport version never raises, lowers, or
+    otherwise selects the ISA or image version a program executes against.
+    expects: negotiating any NetBatProtocolVersion leaves the resolved
+      PakVmIsaVersion and WorldImageVersion unchanged
+    disposition: transport negotiation yields a transport version only; an
+      attempt to carry an ISA or image version through negotiation is refused
+```
+
+## HLC ordering and range witnesses (DEC-061)
+
+Canonical proof-row identity and meaning for the HLC query-ordering and range law. `docs/16_IDENTITY_TIME_AND_NAVIGATION.md` owns the time vocabulary, the lowering rule, and the forbidden-use list; it projects these IDs and states no per-row executable meaning.
+
+Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-061`:
+
+```text
+order_by_hlc_uses_commit_tiebreak
+cross_store_hlc_order_is_total
+hlc_range_is_half_open
+frontier_progress_never_uses_hlc_order
+observed_wall_time_is_not_promoted_to_hlc
+```
+
+Authoritative meanings:
+
+```text
+order_by_hlc_uses_commit_tiebreak
+    Within one journal, `ORDER BY HLC` canonicalizes and lowers to the complete
+    key HLC then GlobalSequence. Two events that share or do not compare on HLC
+    alone are separated by the physical journal commit sequence, so the emitted
+    order is total and deterministic rather than dependent on scan order.
+    expects: two events sharing an HLC value emit in GlobalSequence order, and
+      the same query over the same journal emits the same order on every run
+    disposition: the compiled plan carries the two-component key; a plan ordering
+      on HLC alone is not a lawful lowering of ORDER BY HLC
+
+cross_store_hlc_order_is_total
+    Across journals, `ORDER BY HLC` lowers to HLC then StoreId then
+    GlobalSequence. Events from distinct stores that share an HLC value are
+    separated by store lineage before commit sequence, so a cross-store result is
+    totally ordered without consulting wall time or arrival order.
+    expects: events from two stores sharing an HLC value emit in StoreId order,
+      and the emitted order is independent of which store was read first
+    disposition: the compiled plan carries the three-component key; a
+      cross-journal plan that omits StoreId is not a lawful lowering
+
+hlc_range_is_half_open
+    `DURING HLC start THROUGH HLC end` denotes the half-open interval
+    [start, end). An event at exactly `start` is included and an event at exactly
+    `end` is excluded, so adjacent ranges tile without overlap or gap.
+    expects: an event at start is returned, an event at end is not, and two
+      adjacent DURING ranges return each event exactly once
+    disposition: the range predicate is compiled half-open; a closed or
+      implementation-defined boundary is a lowering defect, not a tuning choice
+
+frontier_progress_never_uses_hlc_order
+    HLC is causal and chronological evidence, never journal-progress authority.
+    Frontier advancement, durability coverage, cursor resume, and commit identity
+    are decided by commit sequence and durable cuts; HLC cannot advance a frontier
+    even when it is available and appears consistent.
+    expects: no frontier advancement consumes an HLC value, and an HLC that runs
+      ahead of the durable cut advances no frontier
+    disposition: frontier progress resolves from GlobalSequence and CommitPoint
+      only; an HLC-derived progress claim is refused rather than approximated
+
+observed_wall_time_is_not_promoted_to_hlc
+    `ObservedWallTime` and `Hlc` remain distinct identities. When causal HLC
+    evidence is absent the result is `Unavailable`; an observed wall clock is
+    never silently promoted into an HLC to fill the gap, however close the two
+    readings appear.
+    expects: a query needing absent HLC evidence returns Unavailable while an
+      ObservedWallTime reading is present and unused
+    disposition: a typed Unavailable, distinct from a returned HLC and from an
+      ordinary operation failure
+```
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.
