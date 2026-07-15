@@ -1813,8 +1813,18 @@ def witness_reference_findings(root: Path) -> list[str]:
         if len(got) != len(set(got)):
             out.append(f"docs/21 {leg} projects a duplicate witness reference")
         got_set = set(got)
-        for missing in sorted(want - got_set):
-            out.append(f"docs/21 {leg} omits owned proof row {missing}")
+        if leg.startswith("LEG-"):
+            for missing in sorted(want - got_set):
+                out.append(f"docs/21 {leg} omits owned proof row {missing}")
+        elif got:
+            # docs/21 is the legacy-obligation document and projects LEG-owned
+            # rows only; its parser admits no other family. A proof row may target
+            # any GuaranteeRef, so a non-LEG target projects in the domain document
+            # that owns it. Demanding a docs/21 cell for a DEC would be demanding
+            # one that cannot exist; claiming a foreign row still fails below.
+            out.append(
+                f"docs/21 projects proof rows for {leg}, which is not a legacy obligation"
+            )
         for extra in sorted(got_set - want):
             owner = rows.get(extra, {}).get("leg")
             if owner is None:
@@ -2337,8 +2347,12 @@ def guarantee_gates(root: Path, ref: str) -> str | None:
 D4B3B0_PENDING_EXPECTATION_CEILING = 29
 D4B3B0_VAGUE = ("tbd", "later", "eventually", "someday", "as appropriate",
                 "as needed", "correctly", "something", "n/a")
-W_EXPECTS = re.compile(r"^\s+expects:\s*(.*)$")
-W_DISPOSITION = re.compile(r"^\s+disposition:\s*(.*)$")
+# A clause may wrap. A continuation is a line indented DEEPER than the key that
+# opened it and carrying no key of its own; it folds into that key's value. This
+# is not cosmetic: a first-line-only parser would scan a truncated value, so a
+# vague or self-contradicting qualifier could hide on the second line and pass.
+W_CLAUSE = re.compile(r"^(\s+)(expects|disposition):\s*(.*)$")
+W_INDENT = re.compile(r"^(\s*)(\S.*)$")
 
 
 def witness_expectations(root: Path) -> dict[str, dict]:
@@ -2347,22 +2361,27 @@ def witness_expectations(root: Path) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for body in W_MEANING_BLOCK.findall(doc):
         cur = None
+        key = None
+        depth = 0
         for line in body.splitlines():
             s = line.strip()
             if not s:
+                key = None
                 continue
             if not line.startswith(" ") and W_ID.match(s):
-                cur = s
+                cur, key = s, None
                 continue
             if cur is None:
                 continue
-            m = W_EXPECTS.match(line)
+            m = W_CLAUSE.match(line)
             if m:
-                out.setdefault(cur, {})["expects"] = m.group(1).strip()
+                key, depth = m.group(2), len(m.group(1))
+                out.setdefault(cur, {})[key] = m.group(3).strip()
                 continue
-            m = W_DISPOSITION.match(line)
-            if m:
-                out.setdefault(cur, {})["disposition"] = m.group(1).strip()
+            if key is not None and len(W_INDENT.match(line).group(1)) > depth:
+                out[cur][key] = (out[cur][key] + " " + s).strip()
+                continue
+            key = None
     return out
 
 

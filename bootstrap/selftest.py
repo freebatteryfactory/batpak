@@ -2336,9 +2336,9 @@ def test_proof_target_resolver(audit) -> list[str]:
     # Structural discovery: heading text is not the parser API.
     cands = audit.candidate_fences(root)
     unbound = [c for c in cands if c["kind"] == "UnboundCandidate"]
-    # Phase-local assertion, not a durable registry: the current sweep finds all 52.
-    if len(unbound) != 8 or sum(len(c["ids"]) for c in unbound) != 52:
-        fail("structural_sweep_finds_the_current_52_candidates_in_8_blocks "
+    # Phase-local assertion, not a durable registry: the current sweep finds all 48.
+    if len(unbound) != 7 or sum(len(c["ids"]) for c in unbound) != 48:
+        fail("structural_sweep_finds_the_current_48_candidates_in_7_blocks "
              f"(got {sum(len(c['ids']) for c in unbound)} in {len(unbound)})")
     labels = [c["label"] for c in unbound]
     if not any("implemented at G3" in l for l in labels):
@@ -2353,7 +2353,7 @@ def test_proof_target_resolver(audit) -> list[str]:
                      "Completely different authored label (implemented at G3):",
                      "docs/12 heading"), encoding="utf-8")
         ub = [c for c in audit.candidate_fences(tmp) if c["kind"] == "UnboundCandidate"]
-        if sum(len(c["ids"]) for c in ub) != 52:
+        if sum(len(c["ids"]) for c in ub) != 48:
             fail("exact_heading_variation_does_not_hide_a_proof_block")
 
     with isolated_tree() as tmp:
@@ -2367,7 +2367,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # Transitional expectation clause.
     ids, blocks, pending = audit.candidate_summary(root)
-    if (ids, blocks, pending) != (52, 8, 29):
+    if (ids, blocks, pending) != (48, 7, 29):
         fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
     W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
     probe("expectation_clause_without_disposition_is_rejected", GA, W28M,
@@ -2382,6 +2382,13 @@ def test_proof_target_resolver(audit) -> list[str]:
     probe("newly_promoted_row_without_an_expectation_clause_is_rejected", GA,
           W28 + "\n```", "proof rows carry no expectation clause, above the transitional ceiling of 29",
           W28 + "\nnewly_promoted_row_without_a_clause\n```")
+    # A clause may wrap, so the scan must read the folded value. Before the fold
+    # existed, this mutation passed: the vague qualifier sits on the continuation
+    # line, and a first-line-only parser never saw it.
+    probe("unfalsifiable_expectation_clause_continuation_is_rejected", GA, W28M,
+          "expectation clause expects is not falsifiable",
+          W28M + "\n    expects: refusal BudgetExceeded raised before decode,"
+                 "\n      as appropriate.\n    disposition: the AttemptReceipt records the refusal.")
 
     # A complete clause is accepted and does not disturb the pending count.
     with isolated_tree() as tmp:
@@ -2393,6 +2400,19 @@ def test_proof_target_resolver(audit) -> list[str]:
         silent("complete_expectation_clause_is_accepted", pt(tmp))
         if audit.candidate_summary(tmp)[2] != 28:
             fail("expectation_clause_decrements_the_pending_count")
+
+    # A wrapped clause carries its whole value, not its first line.
+    with isolated_tree() as tmp:
+        p = tmp / GA
+        p.write_text(must_replace(p.read_text(encoding="utf-8"), W28M,
+                     W28M + "\n    expects: refusal BudgetExceeded raised"
+                            "\n      before unbounded decode."
+                            "\n    disposition: the AttemptReceipt records the refusal.",
+                     "wrap a clause"), encoding="utf-8")
+        silent("wrapped_expectation_clause_is_accepted", pt(tmp))
+        got = audit.witness_expectations(tmp).get(W28, {}).get("expects", "")
+        if got != "refusal BudgetExceeded raised before unbounded decode.":
+            fail(f"expectation_clause_continuation_folds_into_its_value (got {got!r})")
 
     findings.extend(canonical_drift(before))
     return findings

@@ -104,7 +104,9 @@ A future compressed profile requires a `CompressionId`, canonical parameters, bo
 
 `FbatFormatVersion` and `BatTaggedRecordVersion` are distinct typed identities (DEC-064); a future format version that a reader cannot open fails with its own typed disposition, never a silent misread.
 
-Named hostile fixtures (proof owner TestPak; gates G2/G8):
+This document owns the compression posture and the future-profile admission requirements. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere. The two obligations below qualify at their own typed gates; sharing this paragraph does not merge their gate schedules.
+
+Required proof rows, projected from docs/24 (qualification targets: `DEC-063` for the V1 compression posture, `LEG-053` for canonical open or typed refusal; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 compressed_fbat_authority_frame_is_rejected_in_v1

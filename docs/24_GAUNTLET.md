@@ -434,6 +434,70 @@ shred_transition_binding_mismatch_is_rejected
 ```
 <!-- HISTORICAL-MIGRATION:END -->
 
+## Compression and format-version witnesses (DEC-063, LEG-053)
+
+Canonical proof-row identity and meaning for the V1 compression posture and the format/version open law. `docs/05_STORAGE_FBAT_AND_TILES.md` owns the storage law, the compression posture itself, and the future-profile admission requirements; it projects these IDs and states no per-row executable meaning. The two obligations qualify at their own gates: a shared source paragraph is not a shared gate schedule.
+
+Required witnesses (proof owner TestPak; gates G2/G8), also carried by `DEC-063`:
+
+```text
+compressed_fbat_authority_frame_is_rejected_in_v1
+compressed_vpak_semantic_section_is_rejected_in_v1
+compression_profile_requires_expansion_bound
+```
+
+Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-053`:
+
+```text
+future_format_version_fails_with_its_own_typed_disposition
+```
+
+Authoritative meanings:
+
+```text
+compressed_fbat_authority_frame_is_rejected_in_v1
+    A `.fbat` authority frame that arrives compressed, or that declares any
+    compression profile, is refused in V1. Authority-frame identity and recovery
+    depend on exact bytes, so V1 offers no route by which an authority frame is
+    stored, opened, or accepted in compressed form.
+    expects: the authority-frame open path refuses the compressed frame and
+      admits no authority frame
+    disposition: a typed V1 compression refusal on the format compatibility path,
+      never a transparent decompress-and-accept
+
+compressed_vpak_semantic_section_is_rejected_in_v1
+    A `.vpak` canonical semantic section that arrives compressed, or that declares
+    any compression profile, is refused in V1. Canonical semantic bytes carry
+    program identity; a decompressed reconstruction is not the canonical byte
+    sequence and cannot stand in for it.
+    expects: the semantic-section reader refuses the compressed section and admits
+      no ProgramImage
+    disposition: a typed V1 compression refusal, never a decompressed section
+      presented as canonical bytes
+
+compression_profile_requires_expansion_bound
+    A compression profile offered for derived tiles or artifacts is admitted only
+    when it declares a CompressionId, canonical parameters, a bounded
+    decompression rule, and a maximum expansion ratio. A profile that omits the
+    expansion bound is refused: an unbounded decode is a resource-exhaustion
+    route, not a compression posture.
+    expects: profile admission refuses a compression profile that declares no
+      maximum expansion ratio
+    disposition: a typed profile-admission refusal naming the absent expansion
+      bound, never an admitted profile carrying an unbounded decode
+
+future_format_version_fails_with_its_own_typed_disposition
+    A persisted format/version pair that a reader cannot open fails with the typed
+    refusal belonging to that pair, never a generic parse error, a corruption
+    verdict, or a silent misread. `FbatFormatVersion` and
+    `BatTaggedRecordVersion` are distinct typed identities (DEC-064), and the
+    refusal names which identity it refused.
+    expects: opening a future FbatFormatVersion returns the version-specific typed
+      refusal and yields no store handle
+    disposition: a typed unsupported-version refusal naming the encountered
+      version, distinct from a corruption verdict and from a canonical open
+```
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.
