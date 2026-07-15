@@ -265,9 +265,12 @@ def test_guarantees(audit, project) -> list[str]:
                 "witness": witness, "failure": "f",
                 "rel": {"DerivesFrom": [], "Refines": [], "Discharges": [], "Supersedes": []}}
 
-    def node(nid, family="SEED", kind="SemanticLaw", life="Permanent", owner="o", gates="", witness="w"):
+    def node(nid, family="SEED", kind="SemanticLaw", life="Permanent", owner="o", gates="",
+             witness="RowDeclared"):
+        # Post-5.5D4b node shape: an admitted view carries a typed gate posture and
+        # a witness posture, never a bare gate string plus free witness text.
         return {"id": nid, "family": family, "kind": kind, "lifetime": life,
-                "owner": owner, "gates": gates, "witness": witness}
+                "owner": owner, "gate_posture": gates, "target": "", "witness": witness}
 
     good = [seed(f"SEED-{i}") for i in range(25)]
     if audit.guarantee_classification_findings(good):
@@ -295,20 +298,20 @@ def test_guarantees(audit, project) -> list[str]:
             fail(f"{fam.lower()}_cycle_is_rejected")
 
     if not any("Permanent SemanticLaw names no witness" in x
-               for x in audit.guarantee_lifetime_findings([node("SEED-X", witness="")], {}, [])):
+               for x in audit.guarantee_lifetime_findings([node("SEED-X", witness="NoFamilyWitness")], {}, [])):
         fail("permanent_semanticlaw_without_witness_is_rejected")
     if not any("Permanent ArchitectureConstraint names no witness" in x
-               for x in audit.guarantee_lifetime_findings([node("A", kind="ArchitectureConstraint", witness="")], {}, [])):
+               for x in audit.guarantee_lifetime_findings([node("A", kind="ArchitectureConstraint", witness="NoFamilyWitness")], {}, [])):
         fail("permanent_architecture_without_witness_is_rejected")
-    if audit.guarantee_lifetime_findings([node("D", kind="Decision", witness="")], {}, []):
+    if audit.guarantee_lifetime_findings([node("D", kind="Decision", witness="NoFamilyWitness")], {}, []):
         fail("permanent_decision_witness_deferred_to_c2")
-    if audit.guarantee_lifetime_findings([node("Q", kind="QualificationRequirement", witness="")], {}, []):
+    if audit.guarantee_lifetime_findings([node("Q", kind="QualificationRequirement", witness="NoFamilyWitness")], {}, []):
         fail("permanent_qualification_is_self_witnessing")
     if not any("UntilGate names no gate" in x
                for x in audit.guarantee_lifetime_findings([node("X", life="UntilGate", gates="")], {}, [])):
         fail("untilgate_without_gate_is_rejected")
     if not any("HistoricalCoverageOnly cannot gate" in x
-               for x in audit.guarantee_lifetime_findings([node("X", life="HistoricalCoverageOnly", gates="G2")], {}, [])):
+               for x in audit.guarantee_lifetime_findings([node("X", family="LEG", life="HistoricalCoverageOnly", gates="G2")], {}, [])):
         fail("historicalcoverageonly_carrying_active_gate_is_rejected")
     if not any("no resolvable typed successor" in x
                for x in audit.guarantee_lifetime_findings([node("X", life="UntilSuccessor", owner="batpak::store", gates="G2")], {}, [])):
@@ -351,11 +354,15 @@ def test_guarantees(audit, project) -> list[str]:
         fail("refines_active_leg_passes")
 
     root = HERE.parent
-    proj_nodes = [(n["id"], n["family"], n["kind"], n["lifetime"], n["owner"], n["gates"]) for n in project.guarantee_nodes(root)]
-    audit_nodes = [(n["id"], n["family"], n["kind"], n["lifetime"], n["owner"], n["gates"]) for n in audit.guarantee_derive(root)[0]]
+    def shape(n):
+        return (n["id"], n["family"], n["kind"], n["lifetime"], n["owner"],
+                n["gate_posture"], n["target"], n["witness"])
+
+    proj_nodes = [shape(n) for n in project.guarantee_nodes(root)]
+    audit_nodes = [shape(n) for n in audit.guarantee_derive(root)[0]]
     if proj_nodes != audit_nodes:
         fail("generator_auditor_guarantee_disagreement")
-    nodes, edges = audit.guarantee_derive(root)
+    nodes, edges, _adm = audit.guarantee_derive(root)
     if nodes != sorted(nodes, key=lambda n: (audit.G_FAMILY_RANK[n["family"]], n["id"])):
         fail("source_reorder_changes_guarantee_order")
     if any(not src.startswith("SEED-") for src, _k, _t in edges):
@@ -454,8 +461,11 @@ def test_gates(audit, project) -> list[str]:
           audit.gate_inventory_findings, "one token under two GateIds")
 
     # --- migration conservation: a SEED/LEG gate set may not move ---
+    # None means the row no longer passes typed admission (5.5D4b). Dropping a
+    # required gate list is still detected -- more sharply than before, because
+    # the row cannot be admitted at all rather than projecting an empty string.
     def gates_of(tmp, ident):
-        return {n["id"]: n["gates"] for n in audit.guarantee_derive(tmp)[0]}[ident]
+        return {n["id"]: n["gate_posture"] for n in audit.guarantee_derive(tmp)[0]}.get(ident)
 
     base_seed = gates_of(root, "SEED-PAKVM-NAME")
     tmp = gate_sandbox([("spec/invariants.rs",
@@ -523,8 +533,8 @@ def test_gates(audit, project) -> list[str]:
           "legacy seed/document mismatch")
 
     # --- generator and auditor agree; source order does not change bytes ---
-    if [(n["id"], n["gates"]) for n in project.guarantee_nodes(root)] != \
-       [(n["id"], n["gates"]) for n in audit.guarantee_derive(root)[0]]:
+    if [(n["id"], n["gate_posture"]) for n in project.guarantee_nodes(root)] != \
+       [(n["id"], n["gate_posture"]) for n in audit.guarantee_derive(root)[0]]:
         fail("generator_auditor_gate_disagreement")
     if [g[0] for g in project.gate_inventory(root)] != [g[0] for g in audit.gate_inventory(root)]:
         fail("generator_auditor_inventory_disagreement")
@@ -645,7 +655,7 @@ def test_decisions(audit, project) -> list[str]:
 
     # Decision gates are metadata. They never become edges, and no gate or
     # profile node is synthesized to hold them.
-    nodes, edges = audit.guarantee_derive(root)
+    nodes, edges, _adm = audit.guarantee_derive(root)
     families = {n["family"] for n in nodes}
     if families != {"SEED", "LEG", "DEC", "ARCH", "QUAL"}:
         fail(f"unexpected guarantee family present: {sorted(families)}")
@@ -662,8 +672,8 @@ def test_decisions(audit, project) -> list[str]:
     if len([n for n in nodes if n["family"] == "DEC"]) != 74:
         fail("decision node count is not 74")
 
-    if [(n["id"], n.get("dclass"), n["gates"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
-       [(n["id"], n.get("dclass"), n["gates"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
+    if [(n["id"], n.get("dclass"), n["gate_posture"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
+       [(n["id"], n.get("dclass"), n["gate_posture"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
         fail("generator_auditor_decision_metadata_disagreement")
     return findings
 
@@ -1317,7 +1327,7 @@ def test_specialization(audit, project) -> list[str]:
           ECS, "the frozen obligation is that work remains observable", "WorkObservation stays observable")
 
     # --- graph conservation -------------------------------------------------
-    nodes, edges = audit.guarantee_derive(root)
+    nodes, edges, _adm = audit.guarantee_derive(root)
     ids = {n["id"] for n in nodes}
     if "DEC-073" not in ids:
         fail("guarantee_graph_missing_dec073")
@@ -1529,7 +1539,7 @@ def test_proof_policy(audit) -> list[str]:
         probe(name, rel, old, needle)
 
     # --- graph conservation -------------------------------------------------
-    nodes, edges = audit.guarantee_derive(root)
+    nodes, edges, _adm = audit.guarantee_derive(root)
     ids = {n["id"] for n in nodes}
     if "DEC-074" not in ids:
         fail("guarantee_graph_missing_dec074")
@@ -2233,10 +2243,17 @@ def test_proof_target_resolver(audit) -> list[str]:
     for ref, want in (("LEG-081", "G2/G3"), ("DEC-065", "G0/G5"), ("SEED-FBAT-CORE", "G2")):
         if audit.guarantee_gates(root, ref) != want:
             fail(f"{ref}_gates_resolve_from_typed_target")
-    # ARCH/QUAL declare no gate list. None must never be read as "no gates".
-    for ref in ("ARCH-batpak", "QUAL-batpak-native"):
-        if audit.guarantee_gates(root, ref) is not None:
-            fail(f"{ref}_reports_no_machine_resolvable_gate_list")
+    # ARCH and QUAL now resolve typed gate postures (5.5D4b): ARCH from its
+    # declared family policy, QUAL from its own row. Before the authority closure
+    # both returned None and a qualification target sat in the gate field.
+    for ref, want in (("ARCH-batpak", "G0"), ("QUAL-batpak-native", "G0/G5"),
+                      ("QUAL-syncbat-browser", "G0/G5")):
+        if audit.guarantee_gates(root, ref) != want:
+            fail(f"{ref}_resolves_its_typed_gate_posture "
+                 f"(wanted {want}, got {audit.guarantee_gates(root, ref)!r})")
+    # A qualification target must never be readable as a gate.
+    if audit.guarantee_gates(root, "QUAL-batpak-semantic") in ("no_std + alloc", "std", "wasm32 host"):
+        fail("qualification_target_cannot_be_read_as_a_gate_posture")
     # LEG resolution is unchanged by the widening.
     if audit.leg_gates(root, "LEG-043") != "G5" or audit.leg_gates(root, "LEG-081") != "G2/G3":
         fail("leg_gates_behaviour_unchanged_by_widening")
@@ -2265,10 +2282,17 @@ def test_proof_target_resolver(audit) -> list[str]:
                      "retarget to SEED"), encoding="utf-8")
         silent("seed_target_with_matching_typed_gates_is_accepted",
                [f for f in pt(tmp) if W28 in f])
-    for ref, fam in (("ARCH-batpak", "ARCH"), ("QUAL-batpak-native", "QUAL")):
-        probe(f"{fam.lower()}_target_parses_and_reports_no_gate_list", GA, H28,
-              f"targets {ref}, whose {fam} family declares no machine-resolvable gate list",
+    for ref, fam, want in (("ARCH-batpak", "ARCH", "G0"), ("QUAL-batpak-native", "QUAL", "G0/G5")):
+        probe(f"{fam.lower()}_target_gate_mismatch_is_read_from_the_typed_target", GA, H28,
+              f"differ from typed {ref} gates '{want}'",
               f"Required witnesses (proof owner TestPak; gates G2), also carried by `{ref}`:")
+        with isolated_tree() as tmp:
+            p2 = tmp / GA
+            p2.write_text(must_replace(p2.read_text(encoding="utf-8"), H28,
+                          f"Required witnesses (proof owner TestPak; gates {want}), "
+                          f"also carried by `{ref}`:", f"retarget to {fam}"), encoding="utf-8")
+            silent(f"{fam.lower()}_target_with_matching_typed_gates_is_accepted",
+                   [f for f in pt(tmp) if W28 in f])
 
     # Unknown family and unknown member both fail closed.
     # An unknown family cannot reach the target resolver: the row grammar admits

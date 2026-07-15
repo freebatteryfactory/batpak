@@ -182,7 +182,7 @@ _PKG_ROW = re.compile(
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
 _QUAL_ROW = re.compile(
     r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
-    r'target: "([^"]+)",\s*requirement: "[^"]+",\s*\}', re.S)
+    r'target: "([^"]+)",\s*gates: &\[([^\]]*)\],\s*requirement: "[^"]+",\s*\}', re.S)
 
 
 def _ids(raw):
@@ -202,12 +202,135 @@ def guarantee_seed(root):
     return out
 
 
+# --- Typed guarantee admission (5.5D4b authority closure) --------------------
+# Every GuaranteeView field comes from a direct authored value, a declared family
+# policy in spec/guarantees.rs, or one named lawful derivation. This projector
+# serializes admitted views. It does not complete them: the nine semantic
+# constants that used to live here (Permanent, the docs/30 owner string, the
+# family kinds, the empty gate/witness strings, and `gates: target`) are gone,
+# because a projector that fills silence is an unauthorized author.
+def _decomment(src):
+    return re.sub(r"//[^\n]*", "", src)
+
+
+_FAM_ROW = re.compile(
+    r'GuaranteeFamilyPolicy \{\s*family: "(\w+)",\s*'
+    r'kind: KindRule::(\w+)(?:\(GuaranteeKind::(\w+)\))?,\s*'
+    r'owner: OwnerRule::(\w+)(?:\("([^"]*)"\))?,\s*'
+    r'lifetime: LifetimeRule::(\w+)(?:\(GuaranteeLifetime::(\w+)\))?,\s*'
+    r'gate_posture: GatePostureRule::(\w+)(?:\(GatePosture::Scheduled\(&\[([^\]]*)\]\)\))?,\s*'
+    r'witness: WitnessPosture::(\w+),\s*\}',
+    re.S,
+)
+
+
+def family_policies(root):
+    """The typed family policy. Parsed, never authored here."""
+    src = _decomment((root / "spec/guarantees.rs").read_text(encoding="utf-8"))
+    out = {}
+    for m in _FAM_ROW.finditer(src):
+        fam, krule, kconst, orule, oconst, lrule, lconst, grule, gconst, wit = m.groups()
+        out[fam] = {
+            "kind": (krule, kconst), "owner": (orule, oconst),
+            "lifetime": (lrule, lconst), "gate_posture": (grule, gconst),
+            "witness": wit,
+        }
+    return out
+
+
+def disposition_lifetimes(root):
+    """Disposition -> GuaranteeLifetime, read from the typed owner's match arms."""
+    src = _decomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    body = re.search(r"pub const fn guarantee_lifetime\(self\) -> GuaranteeLifetime \{(.*?)\n    \}",
+                     src, re.S)
+    out = {}
+    if not body:
+        return out
+    for arm in re.finditer(r"((?:Disposition::\w+\s*\|?\s*)+)=>\s*\{?\s*GuaranteeLifetime::(\w+)",
+                           body.group(1), re.S):
+        for d in re.findall(r"Disposition::(\w+)", arm.group(1)):
+            out[d] = arm.group(2)
+    return out
+
+
+def gate_optional_classes(root):
+    """Classes whose typed `requires_gate()` is false. Read from the owner."""
+    src = _decomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    body = re.search(r"pub const fn requires_gate\(self\) -> bool \{(.*?)\n    \}", src, re.S)
+    if not body:
+        return set()
+    arms = re.split(r"=>\s*true\s*,", body.group(1))
+    if len(arms) < 2:
+        return set()
+    return set(re.findall(r"DecisionClass::(\w+)", arms[1]))
+
+
+class Unadmitted(Exception):
+    """A required field has no authored source. Admission fails closed."""
+
+
+def _resolve(policy, dim, row_value, derived=None):
+    rule, const = policy[dim]
+    if rule == "RowDeclared":
+        if row_value in (None, ""):
+            raise Unadmitted(f"{dim} is RowDeclared but the row declares none")
+        return row_value
+    if rule == "FamilyConstant":
+        if not const:
+            raise Unadmitted(f"{dim} is FamilyConstant but the policy names no value")
+        return const
+    if derived is None:
+        raise Unadmitted(f"{dim} names derivation {rule} but none was supplied")
+    return derived
+
+
+def admit(root, family, ident, row, failure):
+    """native row + family policy + lawful derivation -> complete GuaranteeView."""
+    pol = family_policies(root).get(family)
+    if pol is None:
+        raise Unadmitted(f"{ident}: no declared family policy for {family}")
+    kind = _resolve(pol, "kind", row.get("kind"))
+    owner = _resolve(pol, "owner", row.get("owner"))
+    lrule = pol["lifetime"][0]
+    derived_life = None
+    if lrule == "FromDecisionDisposition":
+        derived_life = disposition_lifetimes(root).get(row.get("disposition"))
+        if derived_life is None:
+            raise Unadmitted(f"{ident}: disposition {row.get('disposition')!r} has no typed lifetime")
+    elif lrule == "FromLegacyStatusAndDeletion":
+        derived_life = row.get("derived_lifetime")
+    lifetime = _resolve(pol, "lifetime", row.get("lifetime"), derived_life)
+    grule, gconst = pol["gate_posture"]
+    if grule == "FamilyConstant":
+        posture = gate_tokens(gconst, root)
+    elif grule == "FromDecisionClassAndRowGates":
+        if row.get("gates"):
+            posture = row["gates"]
+        elif row.get("class") in gate_optional_classes(root):
+            # The class authors gate-independence; absence is not the claim.
+            posture = "GateIndependent"
+        else:
+            raise Unadmitted(
+                f"{ident}: class {row.get('class')} requires a gate but the row declares none")
+    else:
+        if row.get("gates") in (None, ""):
+            raise Unadmitted(f"{ident}: gate posture is RowDeclared but the row declares none")
+        posture = row["gates"]
+    return {
+        "id": ident, "family": family, "kind": kind, "lifetime": lifetime, "owner": owner,
+        "gate_posture": posture, "target": row.get("target", ""),
+        "witness": pol["witness"], "failure": failure,
+        "witness_text": row.get("witness", ""),
+    }
+
+
 def guarantee_nodes(root):
     nodes = []
     for s in guarantee_seed(root):
-        nodes.append({"id": s["id"], "family": "SEED", "kind": s["kind"], "lifetime": s["lifetime"],
-                      "owner": s["owner"], "gates": s["gates"], "witness": s["witness"],
-                      "failure": f"Seed({s['failure']})"})
+        nodes.append(admit(root, "SEED", s["id"], {
+            "kind": s["kind"], "owner": s["owner"], "lifetime": s["lifetime"],
+            "gates": s["gates"], "witness": s["witness"],
+        }, f"Seed({s['failure']})"))
     leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
     for lid, owner, gate_expr, deletion, status in _LEG_ROW.findall(leg):
         gate = gate_tokens(gate_expr, root)
@@ -220,26 +343,26 @@ def guarantee_nodes(root):
             life = "UntilCompatibilityExpiry"
         else:
             life = "UntilGate"
-        nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": life,
-                      "owner": owner, "gates": gate, "witness": "", "failure": f"Legacy({gate})"})
+        nodes.append(admit(root, "LEG", lid, {
+            "owner": owner, "gates": gate, "derived_lifetime": life,
+        }, f"Legacy({gate})"))
     dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
     for did, dcls, dgates, disp in _DEC_ROW.findall(dec):
         # Decision gates are node METADATA. They never become graph edges, and no
         # gate or profile node is synthesized to hold them.
-        nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
-                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md",
-                      "gates": gate_tokens(dgates, root), "witness": "",
-                      "dclass": dcls, "failure": f"Decision({disp})"})
+        node = admit(root, "DEC", did, {
+            "gates": gate_tokens(dgates, root), "disposition": disp, "class": dcls,
+        }, f"Decision({disp})")
+        node["dclass"] = dcls
+        nodes.append(node)
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
     for pkg, cls, layer in _PKG_ROW.findall(arch):
-        nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
-                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "",
-                      "witness": "spec/architecture.rs; audit.py architecture checks",
-                      "failure": f"Architecture(L{layer} {cls})"})
-    for pkg, profile, target in _QUAL_ROW.findall(arch):
-        nodes.append({"id": f"QUAL-{pkg}-{profile}", "family": "QUAL", "kind": "QualificationRequirement",
-                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": target,
-                      "witness": "", "failure": f"Qualification({target})"})
+        nodes.append(admit(root, "ARCH", f"ARCH-{pkg}", {}, f"Architecture(L{layer} {cls})"))
+    for pkg, profile, target, qgates in _QUAL_ROW.findall(arch):
+        # target is the ENVIRONMENT; qgates is the SCHEDULE. Never interchanged.
+        nodes.append(admit(root, "QUAL", f"QUAL-{pkg}-{profile}", {
+            "gates": gate_tokens(qgates, root), "target": target,
+        }, f"Qualification({target})"))
     nodes.sort(key=lambda n: (FAMILY_RANK[n["family"]], n["id"]))
     return nodes
 
@@ -312,11 +435,19 @@ def render_guarantee_graph(root):
               f"active (gating): {active}", f"closed evidence: {closed}",
               f"historical coverage only: {historical}", "```", "",
               "## Classified SEED", "", render_seed_classification(root), "",
-              "## Nodes", "", "| GuaranteeId | Family | Kind | Lifetime | DecisionClass | Owner | Gates |",
-              "| --- | --- | --- | --- | --- | --- | --- |"]
+              "## Nodes", "",
+              "Gate posture schedules qualification. Qualification target names the environment",
+              "a requirement is qualified against. They are different dimensions: a target never",
+              "appears under gate posture. `-` means the dimension does not apply to that family,",
+              "which is distinct from missing data -- a field with no authored source fails",
+              "admission and never reaches this table.", "",
+              "| GuaranteeId | Family | Kind | Lifetime | DecisionClass | Owner | GatePosture | "
+              "QualificationTarget | WitnessPosture |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for n in nodes:
         lines.append(f"| {n['id']} | {n['family']} | {n['kind']} | {n['lifetime']} | "
-                     f"{n.get('dclass', '-')} | {n['owner']} | {n['gates']} |")
+                     f"{n.get('dclass', '-')} | {n['owner']} | {n['gate_posture']} | "
+                     f"{n['target'] or '-'} | {n['witness']} |")
     lines += ["", "## Edges", "", "| Source | Relation | Target |", "| --- | --- | --- |"]
     for s, k, t in edges:
         lines.append(f"| {s} | {k} | {t} |")

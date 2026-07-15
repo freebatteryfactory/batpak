@@ -508,7 +508,7 @@ G_PKG_ROW = re.compile(
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
 G_QUAL_ROW = re.compile(
     r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
-    r'target: "([^"]+)",\s*requirement: "[^"]+",\s*\}', re.S)
+    r'target: "([^"]+)",\s*gates: &\[([^\]]*)\],\s*requirement: "[^"]+",\s*\}', re.S)
 GUARANTEE_KINDS = {"SemanticLaw", "ArchitectureConstraint", "BootstrapAssertion",
                    "LegacyObligation", "QualificationRequirement", "Decision"}
 GUARANTEE_LIFETIMES = {"Permanent", "UntilGate", "UntilCompatibilityExpiry",
@@ -552,40 +552,173 @@ def _leg_lifetime(meta: dict) -> str:
     return "UntilGate"
 
 
-def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple]]:
+# --- Typed guarantee admission, independently parsed (5.5D4b) ----------------
+# This auditor no longer authors family semantics. It parses the SAME typed
+# policy the projector parses -- spec/guarantees.rs GUARANTEE_FAMILY_POLICIES and
+# the derivations owned by spec/dispositions.rs -- and verifies that every
+# projected field traces to it. Independent parsers are useful; duplicate policy
+# is not independence. The nine constants that used to live in both scripts are
+# gone from both.
+def _uncomment(src: str) -> str:
+    return re.sub(r"//[^\n]*", "", src)
+
+
+A_FAM_ROW = re.compile(
+    r'GuaranteeFamilyPolicy \{\s*family: "(\w+)",\s*'
+    r'kind: KindRule::(\w+)(?:\(GuaranteeKind::(\w+)\))?,\s*'
+    r'owner: OwnerRule::(\w+)(?:\("([^"]*)"\))?,\s*'
+    r'lifetime: LifetimeRule::(\w+)(?:\(GuaranteeLifetime::(\w+)\))?,\s*'
+    r'gate_posture: GatePostureRule::(\w+)(?:\(GatePosture::Scheduled\(&\[([^\]]*)\]\)\))?,\s*'
+    r'witness: WitnessPosture::(\w+),\s*\}',
+    re.S,
+)
+
+
+def guarantee_family_policies(root: Path) -> dict[str, dict]:
+    src = _uncomment((root / "spec/guarantees.rs").read_text(encoding="utf-8"))
+    out: dict[str, dict] = {}
+    for m in A_FAM_ROW.finditer(src):
+        fam, krule, kconst, orule, oconst, lrule, lconst, grule, gconst, wit = m.groups()
+        out[fam] = {"kind": (krule, kconst), "owner": (orule, oconst),
+                    "lifetime": (lrule, lconst), "gate_posture": (grule, gconst),
+                    "witness": wit}
+    return out
+
+
+def decision_lifetime_map(root: Path) -> dict[str, str]:
+    """Disposition -> GuaranteeLifetime from the typed owner's match arms."""
+    src = _uncomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    body = re.search(r"pub const fn guarantee_lifetime\(self\) -> GuaranteeLifetime \{(.*?)\n    \}",
+                     src, re.S)
+    out: dict[str, str] = {}
+    if not body:
+        return out
+    for arm in re.finditer(r"((?:Disposition::\w+\s*\|?\s*)+)=>\s*\{?\s*GuaranteeLifetime::(\w+)",
+                           body.group(1), re.S):
+        for d in re.findall(r"Disposition::(\w+)", arm.group(1)):
+            out[d] = arm.group(2)
+    return out
+
+
+def gate_optional_decision_classes(root: Path) -> set[str]:
+    src = _uncomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    body = re.search(r"pub const fn requires_gate\(self\) -> bool \{(.*?)\n    \}", src, re.S)
+    if not body:
+        return set()
+    arms = re.split(r"=>\s*true\s*,", body.group(1))
+    if len(arms) < 2:
+        return set()
+    return set(re.findall(r"DecisionClass::(\w+)", arms[1]))
+
+
+class AdmissionFailure(Exception):
+    """A required GuaranteeView field has no authored source."""
+
+
+def admit_view(root: Path, family: str, ident: str, row: dict, failure: str) -> dict:
+    pol = guarantee_family_policies(root).get(family)
+    if pol is None:
+        raise AdmissionFailure(f"{ident}: no declared family policy for {family}")
+
+    def pick(dim, row_value, derived=None):
+        rule, const = pol[dim]
+        if rule == "RowDeclared":
+            if row_value in (None, ""):
+                raise AdmissionFailure(f"{ident}: {dim} is RowDeclared but the row declares none")
+            return row_value
+        if rule == "FamilyConstant":
+            if not const:
+                raise AdmissionFailure(f"{ident}: {dim} is FamilyConstant but names no value")
+            return const
+        if derived is None:
+            raise AdmissionFailure(f"{ident}: {dim} names derivation {rule} but none was supplied")
+        return derived
+
+    kind = pick("kind", row.get("kind"))
+    owner = pick("owner", row.get("owner"))
+    lrule = pol["lifetime"][0]
+    derived = None
+    if lrule == "FromDecisionDisposition":
+        derived = decision_lifetime_map(root).get(row.get("disposition"))
+        if derived is None:
+            raise AdmissionFailure(f"{ident}: disposition {row.get('disposition')!r} has no typed lifetime")
+    elif lrule == "FromLegacyStatusAndDeletion":
+        derived = row.get("derived_lifetime")
+    lifetime = pick("lifetime", row.get("lifetime"), derived)
+    grule, gconst = pol["gate_posture"]
+    if grule == "FamilyConstant":
+        posture = gate_render(gate_list(gconst), root)
+    elif grule == "FromDecisionClassAndRowGates":
+        if row.get("gates"):
+            posture = row["gates"]
+        elif row.get("class") in gate_optional_decision_classes(root):
+            posture = "GateIndependent"
+        else:
+            raise AdmissionFailure(
+                f"{ident}: class {row.get('class')} requires a gate but the row declares none")
+    else:
+        if row.get("gates") in (None, ""):
+            raise AdmissionFailure(f"{ident}: gate posture is RowDeclared but the row declares none")
+        posture = row["gates"]
+    return {"id": ident, "family": family, "kind": kind, "lifetime": lifetime, "owner": owner,
+            "gate_posture": posture, "target": row.get("target", ""),
+            "witness": pol["witness"], "failure": failure}
+
+
+def guarantee_admission_findings(root: Path) -> list[str]:
+    """Rows that cannot be admitted. Fail-closed means REPORTED, not raised: a
+    crash is not a diagnostic, and a hostile probe that strips a required field
+    must produce a finding a human can read."""
+    return guarantee_derive(root)[2]
+
+
+def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple], list[str]]:
     nodes = []
-    seed = guarantee_seed_rows(root)
-    for s in seed:
-        nodes.append({"id": s["id"], "family": "SEED", "kind": s["kind"], "lifetime": s["lifetime"],
-                      "owner": s["owner"], "gates": gate_render(s["gate_names"], root),
-                      "witness": s["witness"]})
-    leg_meta = guarantee_leg_meta(root)
-    for lid, meta in leg_meta.items():
-        nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": _leg_lifetime(meta),
-                      "owner": meta["owner"], "gates": gate_render(meta["gate_names"], root),
-                      "witness": ""})
+    admission: list[str] = []
+
+    def _admit(family, ident, row, failure):
+        try:
+            return admit_view(root, family, ident, row, failure)
+        except AdmissionFailure as exc:
+            admission.append(f"guarantee admission failed: {exc}")
+            return None
+
+    for s in guarantee_seed_rows(root):
+        nodes.append(_admit("SEED", s["id"], {
+            "kind": s["kind"], "owner": s["owner"], "lifetime": s["lifetime"],
+            "gates": gate_render(s["gate_names"], root), "witness": s["witness"],
+        }, f"Seed({s['failure']})"))
+    for lid, meta in guarantee_leg_meta(root).items():
+        nodes.append(_admit("LEG", lid, {
+            "owner": meta["owner"], "gates": gate_render(meta["gate_names"], root),
+            "derived_lifetime": _leg_lifetime(meta),
+        }, "Legacy"))
     dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
-    for did, dcls, dgates, _disp in G_DEC_ROW.findall(dec):
+    for did, dcls, dgates, disp in G_DEC_ROW.findall(dec):
         # Decision gates are node metadata; they never become graph edges.
-        nodes.append({"id": did, "family": "DEC", "kind": "Decision", "lifetime": "Permanent",
-                      "owner": "docs/30_DECISION_AND_REJECTION_LEDGER.md",
-                      "gates": gate_render(gate_list(dgates), root), "witness": "", "dclass": dcls})
+        node = _admit("DEC", did, {
+            "gates": gate_render(gate_list(dgates), root), "disposition": disp, "class": dcls,
+        }, f"Decision({disp})")
+        if node is not None:
+            node["dclass"] = dcls
+        nodes.append(node)
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
-        nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
-                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "",
-                      "witness": "spec/architecture.rs; audit.py architecture checks"})
-    for pkg, profile, target in G_QUAL_ROW.findall(arch):
-        nodes.append({"id": f"QUAL-{pkg}-{profile}", "family": "QUAL", "kind": "QualificationRequirement",
-                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": target, "witness": ""})
+    for pkg, cls, layer in G_PKG_ROW.findall(arch):
+        nodes.append(_admit("ARCH", f"ARCH-{pkg}", {}, f"Architecture(L{layer} {cls})"))
+    for pkg, profile, target, qgates in G_QUAL_ROW.findall(arch):
+        # target is the ENVIRONMENT; qgates is the SCHEDULE. Never interchanged.
+        nodes.append(_admit("QUAL", f"QUAL-{pkg}-{profile}", {
+            "gates": gate_render(gate_list(qgates), root), "target": target,
+        }, f"Qualification({target})"))
+    nodes = [n for n in nodes if n is not None]
     nodes.sort(key=lambda n: (G_FAMILY_RANK[n["family"]], n["id"]))
     edges = []
-    for s in seed:
+    for s in guarantee_seed_rows(root):
         for kind in ("DerivesFrom", "Refines", "Discharges", "Supersedes"):
             for target in s["rel"][kind]:
                 edges.append((s["id"], kind, target))
     edges.sort(key=lambda e: (e[0], e[1], e[2]))
-    return nodes, edges
+    return nodes, edges, admission
 
 
 def _g_has_cycle(adj: dict[str, list[str]]) -> bool:
@@ -638,14 +771,23 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], ed
     superseded = {t for s, k, t in edges if k == "Supersedes" and t in node_ids}
     out = []
     for n in nodes:
-        life, kind = n["lifetime"], n["kind"]
-        if life == "HistoricalCoverageOnly" and n["gates"].strip():
+        life, posture, kind = n["lifetime"], n["gate_posture"], n["kind"]
+        # "Cannot gate" is about carrying an active implementation obligation. A
+        # superseded or retained-as-evidence DECISION still names the gate it
+        # historically pertained to; that is provenance, not scheduling, and a
+        # DEC's gates are node metadata that never become edges. Applying the LEG
+        # obligation rule to DEC metadata would conflate the two dimensions this
+        # closure exists to separate. Before 5.5D4b no node was ever
+        # HistoricalCoverageOnly, so this rule had never once fired.
+        if life == "HistoricalCoverageOnly" and n["family"] != "DEC" and posture.strip() \
+                and posture != "GateIndependent":
             out.append(f"{n['id']} HistoricalCoverageOnly cannot gate")
-        if life == "UntilGate" and not n["gates"].strip():
+        if life == "UntilGate" and (not posture.strip() or posture == "GateIndependent"):
             out.append(f"{n['id']} UntilGate names no gate")
         if life == "UntilSuccessor" and n["id"] not in superseded:
             out.append(f"{n['id']} UntilSuccessor names no resolvable typed successor relation")
-        if life == "Permanent" and kind in PERMANENT_WITNESS_KINDS and not n["witness"].strip():
+        if life == "Permanent" and kind in PERMANENT_WITNESS_KINDS \
+                and n["witness"] == "NoFamilyWitness":
             out.append(f"{n['id']} Permanent {kind} names no witness")
         if n["family"] == "LEG":
             meta = leg_meta.get(n["id"], {})
@@ -653,7 +795,7 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], ed
                 out.append(f"{n['id']} Active LEG projects as ClosedEvidence")
             if meta.get("status") == "Closed" and life != "ClosedEvidence":
                 out.append(f"{n['id']} Closed LEG does not project as ClosedEvidence")
-            if meta.get("status") == "Closed" and n["gates"].strip():
+            if meta.get("status") == "Closed" and posture.strip() and posture != "GateIndependent":
                 out.append(f"{n['id']} Closed LEG still names an implementation gate")
             if life == "Permanent":
                 out.append(f"{n['id']} LEG projects as Permanent; DeletionCondition::Never must not force Permanent")
@@ -2143,17 +2285,23 @@ def guarantee_index(root: Path) -> dict[str, dict]:
     for r in decision_rows(root):
         out[r["id"]] = {"family": "DEC", "gates": gate_render(r["gate_names"], root)}
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    # ARCH declares no gates, and QUAL's typed row carries a compilation target
-    # ("std", "no_std + alloc", "wasm32 host"), not a GateId list. Neither yields
-    # a gate list today; see D4B3B0_UNGATED_FAMILIES.
+    # ARCH and QUAL now carry typed gate postures (5.5D4b): ARCH from its declared
+    # family policy, QUAL from its own row. Neither invents a list, and a
+    # qualification target never stands in for one.
+    pol = guarantee_family_policies(root)
+    arch_rule, arch_const = pol["ARCH"]["gate_posture"]
+    arch_gates = gate_render(gate_list(arch_const), root) if arch_rule == "FamilyConstant" else None
     for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
-        out[f"ARCH-{pkg}"] = {"family": "ARCH", "gates": None}
-    for pkg, profile, _target in G_QUAL_ROW.findall(arch):
-        out[f"QUAL-{pkg}-{profile}"] = {"family": "QUAL", "gates": None}
+        out[f"ARCH-{pkg}"] = {"family": "ARCH", "gates": arch_gates}
+    for pkg, profile, _target, qgates in G_QUAL_ROW.findall(arch):
+        out[f"QUAL-{pkg}-{profile}"] = {"family": "QUAL",
+                                        "gates": gate_render(gate_list(qgates), root)}
     return out
 
 
-D4B3B0_UNGATED_FAMILIES = ("ARCH", "QUAL")
+# Every accepted family now resolves a typed gate posture. A family that
+# cannot is a finding, never an invented empty list.
+D4B3B0_UNGATED_FAMILIES: tuple[str, ...] = ()
 
 
 def guarantee_gates(root: Path, ref: str) -> str | None:
@@ -2333,7 +2481,8 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
         findings.append("missing spec/guarantees.rs")
         return
     seed_rows = guarantee_seed_rows(root)
-    nodes, edges = guarantee_derive(root)
+    nodes, edges, admission = guarantee_derive(root)
+    findings.extend(admission)
     leg_meta = guarantee_leg_meta(root)
     node_ids = {n["id"] for n in nodes}
     findings.extend(gate_inventory_findings(root))
@@ -2383,14 +2532,15 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     node_rows = _md_section_rows(graph, "Nodes")
     # Every row must be full width. A width change that silently drops rows would
     # make this comparison pass against an empty set.
-    malformed = [r for r in node_rows if len(r) != 7]
+    malformed = [r for r in node_rows if len(r) != 9]
     if malformed or not node_rows:
         findings.append(
             f"Guarantee Graph node table has {len(malformed)} malformed row(s) of {len(node_rows)}"
         )
-    file_nodes = {(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in node_rows if len(r) == 7}
+    file_nodes = {tuple(r[:9]) for r in node_rows if len(r) == 9}
     derived_nodes = {
-        (n["id"], n["family"], n["kind"], n["lifetime"], n.get("dclass", "-"), n["owner"], n["gates"])
+        (n["id"], n["family"], n["kind"], n["lifetime"], n.get("dclass", "-"), n["owner"],
+         n["gate_posture"], n["target"] or "-", n["witness"])
         for n in nodes
     }
     if len(file_nodes) != len(nodes):
@@ -2471,14 +2621,15 @@ def check_architecture(root: Path, findings: list[str]) -> None:
             break
 
     profile_rows = re.findall(
-        r"QualificationProfile\s*\{\s*package:\s*\"([^\"]+)\",\s*profile:\s*\"([^\"]+)\",\s*target:\s*\"([^\"]+)\",\s*requirement:\s*\"([^\"]+)\",\s*\}",
+        r"QualificationProfile\s*\{\s*package:\s*\"([^\"]+)\",\s*profile:\s*\"([^\"]+)\","
+        r"\s*target:\s*\"([^\"]+)\",\s*gates:\s*&\[([^\]]*)\],\s*requirement:\s*\"([^\"]+)\",\s*\}",
         source,
         re.S,
     )
     identities: set[tuple[str, str]] = set()
-    for package, profile, target, requirement in profile_rows:
+    for package, profile, target, gates, requirement in profile_rows:
         identity = (package, profile)
-        if package not in package_set or not profile or not target or not requirement:
+        if package not in package_set or not profile or not target or not requirement or not gates:
             findings.append(f"spec/architecture.rs: incomplete qualification {package}:{profile}")
         if identity in identities:
             findings.append(f"spec/architecture.rs: duplicate qualification {package}:{profile}")

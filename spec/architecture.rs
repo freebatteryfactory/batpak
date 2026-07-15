@@ -26,11 +26,22 @@ pub enum EdgeClass {
     DevOnly,
 }
 
+/// One target-specific qualification requirement.
+///
+/// `target` names the ENVIRONMENT qualified against; `gates` names WHEN that
+/// qualification is scheduled. They are different dimensions and neither may
+/// stand in for the other: "std" is not a GateId. The schedule is stated here
+/// because it is row-specific and cannot be derived from a compilation target or
+/// from neighbouring SEED vocabulary.
+///
+/// The requirement stays Permanent after a gate passes; the receipt is
+/// gate/run-specific evidence, not the lifetime of the law.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QualificationProfile {
     pub package: &'static str,
     pub profile: &'static str,
     pub target: &'static str,
+    pub gates: &'static [GateId],
     pub requirement: &'static str,
 }
 
@@ -122,30 +133,35 @@ pub const QUALIFICATION_PROFILES: &[QualificationProfile] = &[
         package: "batpak",
         profile: "semantic",
         target: "no_std + alloc",
+        gates: &[GateId::G0, GateId::G5],
         requirement: "contracts, schemas, codecs, image values, deterministic parsing, and storage-port law compile without std",
     },
     QualificationProfile {
         package: "syncbat",
         profile: "semantic",
         target: "no_std + alloc",
+        gates: &[GateId::G0, GateId::G5],
         requirement: "runtime transition core, PakVM validation/interpreter, Bvisor admission state, world values, and port protocols compile without std host adapters",
     },
     QualificationProfile {
         package: "batpak",
         profile: "native",
         target: "std",
+        gates: &[GateId::G0, GateId::G5],
         requirement: "native filesystem, mapping, clock, entropy, and threaded storage adapters are explicit std mechanisms",
     },
     QualificationProfile {
         package: "syncbat",
         profile: "native",
         target: "std",
+        gates: &[GateId::G0, GateId::G5],
         requirement: "threaded driver and native host-port adapters are explicit std mechanisms",
     },
     QualificationProfile {
         package: "syncbat",
         profile: "browser",
         target: "wasm32 host",
+        gates: &[GateId::G0, GateId::G5],
         requirement: "browser adapters preserve semantic result, receipt, bounds, and recovery contracts without OS-backend normalization",
     },
 ];

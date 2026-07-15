@@ -1,6 +1,7 @@
 //! Frozen clean-room architecture decision facts.
 
 use crate::gates::GateId;
+use crate::guarantees::GuaranteeLifetime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Disposition {
@@ -12,6 +13,32 @@ pub enum Disposition {
     Defer,
     OpenImplementation,
     RetainAsEvidence,
+}
+
+impl Disposition {
+    /// The one lawful DEC lifetime derivation (5.5D4b authority closure).
+    ///
+    /// A DecisionSpec declares no lifetime field, so a lifetime is DERIVED from
+    /// the authored disposition here — in the typed owner — and nowhere else. No
+    /// projector may supply it.
+    ///
+    /// `Kill` is Permanent, not historical: a prohibition stays active permanent
+    /// law even though the rejected mechanism is dead. `Defer` is Permanent
+    /// policy excluding the subject from V1 until a new ruling reopens it, not an
+    /// unfinished construction obligation.
+    pub const fn guarantee_lifetime(self) -> GuaranteeLifetime {
+        match self {
+            Disposition::Lock
+            | Disposition::Keep
+            | Disposition::Kill
+            | Disposition::Defer => GuaranteeLifetime::Permanent,
+            Disposition::OpenImplementation => GuaranteeLifetime::UntilGate,
+            Disposition::Demote => GuaranteeLifetime::UntilCompatibilityExpiry,
+            Disposition::Supersede | Disposition::RetainAsEvidence => {
+                GuaranteeLifetime::HistoricalCoverageOnly
+            }
+        }
+    }
 }
 
 /// The semantic contexts in which a retired vocabulary term may still appear.
