@@ -2337,40 +2337,42 @@ def test_proof_target_resolver(audit) -> list[str]:
           "Required witnesses (proof owner TestPak; gates G2/G7), also carried by `LEG-028`:")
 
     # Structural discovery: heading text is not the parser API.
-    cands = audit.candidate_fences(root)
-    unbound = [c for c in cands if c["kind"] == "UnboundCandidate"]
-    # Phase-local assertion, not a durable registry: the current sweep finds all 23.
-    if len(unbound) != 2 or sum(len(c["ids"]) for c in unbound) != 23:
-        fail("structural_sweep_finds_the_current_23_candidates_in_2_blocks "
-             f"(got {sum(len(c['ids']) for c in unbound)} in {len(unbound)})")
-    labels = [c["label"] for c in unbound]
-    if not any("implemented at G3" in l for l in labels):
-        fail("sweep_finds_the_block_that_states_no_proof_owner")
-    if not any("Hostile fixture obligations" in l for l in labels):
-        fail("sweep_finds_the_block_with_a_different_heading_noun")
+    #
+    # These plant synthetic blocks rather than asserting against whichever
+    # unnormalized block still happens to exist. The earlier form read the label
+    # of a real docs/12 candidate, so normalizing that block would have broken the
+    # probe -- the test measured the debt instead of the parser, and would have
+    # had nothing to stand on once D4d drives the candidate count to zero.
+    PLANT = "docs/12_TESTPAK.md"
+    IDS = "planted_fixture_alpha_is_rejected\nplanted_fixture_beta_is_rejected"
 
-    with isolated_tree() as tmp:
-        p = tmp / "docs/12_TESTPAK.md"
-        p.write_text(must_replace(p.read_text(encoding="utf-8"),
-                     "Named hostile fixtures (implemented at G3):",
-                     "Completely different authored label (implemented at G3):",
-                     "docs/12 heading"), encoding="utf-8")
-        ub = [c for c in audit.candidate_fences(tmp) if c["kind"] == "UnboundCandidate"]
-        if sum(len(c["ids"]) for c in ub) != 23:
-            fail("exact_heading_variation_does_not_hide_a_proof_block")
+    def plant(label: str) -> list[dict]:
+        with isolated_tree() as tmp:
+            p = tmp / PLANT
+            p.write_text(p.read_text(encoding="utf-8")
+                         + f"\n\n{label}\n\n```text\n{IDS}\n```\n", encoding="utf-8")
+            return [c for c in audit.candidate_fences(tmp) if c["doc"] == PLANT]
 
-    with isolated_tree() as tmp:
-        p = tmp / "docs/12_TESTPAK.md"
-        p.write_text(must_replace(p.read_text(encoding="utf-8"),
-                     "Named hostile fixtures (implemented at G3):",
-                     "Illustrative scenarios:", "docs/12 metadata"), encoding="utf-8")
-        kinds = {(c["doc"], c["line"]): c["kind"] for c in audit.candidate_fences(tmp)}
-        if "DescriptiveEvidence" not in [k for (d, _), k in kinds.items() if d == "docs/12_TESTPAK.md"]:
-            fail("fence_without_executable_metadata_is_descriptive_not_promoted")
+    base = len([c for c in audit.candidate_fences(root) if c["doc"] == PLANT])
+    # A block naming a proof owner is a candidate whatever noun its label uses.
+    for label in ("Named hostile fixtures (proof owner TestPak; gates G3):",
+                  "Hostile fixture obligations (proof owner: TestPak; gates G3)",
+                  "Completely different authored label (proof owner TestPak; gates G3):"):
+        got = plant(label)
+        if len(got) != base + 1:
+            fail(f"planted_block_is_discovered_structurally ({label!r})")
+        if got[-1]["kind"] != "UnboundCandidate":
+            fail(f"planted_block_with_a_proof_owner_is_an_unbound_candidate ({label!r})")
+    # A gate token alone is executable metadata: no proof-owner noun required.
+    if plant("Implemented at G3:")[-1]["kind"] != "UnboundCandidate":
+        fail("planted_block_naming_only_a_gate_is_an_unbound_candidate")
+    # Prose with no executable metadata is evidence, never a promotable obligation.
+    if plant("Illustrative scenarios:")[-1]["kind"] != "DescriptiveEvidence":
+        fail("fence_without_executable_metadata_is_descriptive_not_promoted")
 
     # Transitional expectation clause.
     ids, blocks, pending = audit.candidate_summary(root)
-    if (ids, blocks, pending) != (23, 2, 29):
+    if (ids, blocks, pending) != (13, 1, 29):
         fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
     W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
     probe("expectation_clause_without_disposition_is_rejected", GA, W28M,

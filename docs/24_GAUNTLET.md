@@ -856,6 +856,140 @@ attempt_receipt_records_exact_kernel_implementation
       the qualified interface is incomplete evidence, not an alternative form
 ```
 
+## AST enforcement-gate witnesses (DEC-068)
+
+Canonical proof-row identity and meaning for the TestPak AST enforcement gate. `docs/12_TESTPAK.md` owns the detector inventory, the required-behavior table, and the defense-in-depth posture; it projects these IDs and states no per-row executable meaning. These rows prove the DETECTOR: that the gate classifies a source pattern as it must. The semantic behaviors the patterns endanger are owned elsewhere and witnessed there — `hash_map_iteration_in_canonical_encoder_is_rejected` proves the gate rejects the source construct, while `hash_map_iteration_cannot_influence_canonical_observables` (DEC-065) proves the runtime observables do not move. Neither substitutes for the other.
+
+Required witnesses (proof owner TestPak; gates G1/G3), also carried by `DEC-068`:
+
+```text
+local_domain_type_inside_function_is_rejected
+local_domain_type_inside_closure_is_rejected
+test_local_nonsemantic_fixture_type_is_allowed
+production_expect_is_rejected
+test_expect_with_context_is_allowed
+unledgered_unsafe_fn_is_rejected
+unledgered_pointer_cast_is_rejected
+public_flume_receiver_is_rejected
+hash_map_iteration_in_canonical_encoder_is_rejected
+drawer_module_name_requires_explicit_disposition
+```
+
+Authoritative meanings:
+
+```text
+local_domain_type_inside_function_is_rejected
+    A domain type declared inside a function body is a hard finding in production
+    code. Domain vocabulary belongs to a module an owner can name; a type hidden
+    in a function body escapes the ownership, review, and reuse rules that apply
+    to every other domain type.
+    expects: the AST gate reports a hard finding for a domain type declared in a
+      production function body
+    disposition: a hard finding naming the enclosing function; a lint suppression
+      at the site does not clear it
+
+local_domain_type_inside_closure_is_rejected
+    The same law inside a closure body. A closure is not a loophole: nesting the
+    declaration one scope deeper does not change the ownership question, and an
+    AST gate that inspects only function bodies would miss it.
+    expects: the AST gate reports a hard finding for a domain type declared in a
+      production closure body, including a closure nested inside another closure
+    disposition: a hard finding naming the enclosing closure; depth of nesting
+      does not attenuate it
+
+test_local_nonsemantic_fixture_type_is_allowed
+    A test-local type carrying no domain semantics is permitted. The gate
+    distinguishes a fixture that exists to stage a test from a domain type that
+    happens to be declared in a test: the first is allowed, the second is a
+    finding wherever it sits.
+    expects: a non-semantic fixture type in a test yields no finding, while a
+      domain type declared in a test still yields one
+    disposition: no finding for the fixture; the permission is decided by the
+      absence of domain semantics, never by the file being a test
+
+production_expect_is_rejected
+    `expect` in production code is a hard finding, as are panic, unwrap, and dbg.
+    A production path states its failure in a typed result rather than terminating
+    the process with a message.
+    expects: the AST gate reports a hard finding for expect, unwrap, panic, and
+      dbg on a production path
+    disposition: a hard finding at the call site; a message argument, however
+      descriptive, does not make the call permitted
+
+test_expect_with_context_is_allowed
+    A contextual `expect` in a test is permitted. A test asserts; terminating the
+    test process on a violated assumption is the intended behavior, so the
+    production rule does not extend to it.
+    expects: a contextual expect in a test yields no finding while the same call
+      on a production path yields a hard finding
+    disposition: no finding in the test; the permission is scoped to test code and
+      is not inherited by production code a test happens to call
+
+unledgered_unsafe_fn_is_rejected
+    An `unsafe fn` without an exact compiler-assumption ledger entry is a hard
+    finding. The mechanism is not forbidden; the unrecorded assumption is. What
+    the unsafe block assumes about the compiler must be written where a reviewer
+    can find it.
+    expects: an unsafe fn with no matching compiler-assumption ledger entry yields
+      a hard finding, and one with an exact matching entry does not
+    disposition: a hard finding naming the unledgered site; a nearby comment is
+      not a ledger entry
+
+unledgered_pointer_cast_is_rejected
+    A pointer cast or a narrowing cast without an exact compiler-assumption ledger
+    entry is a hard finding, under the same law as `unsafe fn`. A cast that
+    silently discards range or provenance is a dangerous mechanism whether or not
+    it appears inside an unsafe block.
+    expects: a pointer or narrowing cast with no matching compiler-assumption
+      ledger entry yields a hard finding
+    disposition: a hard finding naming the unledgered cast; being outside an
+      unsafe block does not exempt it
+
+public_flume_receiver_is_rejected
+    A dependency-owned type in an ordinary public API is a hard finding; this row
+    names the instance the gate proves. A public signature naming a foreign type
+    exports that dependency's contract and version as though it were ours.
+    expects: a public API exposing a dependency-owned type yields a hard finding,
+      while the same type used internally does not
+    disposition: a hard finding naming the leaked type and its owning dependency;
+      a re-export does not launder it
+
+hash_map_iteration_in_canonical_encoder_is_rejected
+    Canonical-order dependence on hash-map iteration is a hard finding at the
+    source level. This row proves the DETECTOR fires on the construct; DEC-065
+    separately owns the runtime law that iteration never influences canonical
+    observables. A passing detector is not evidence about the runtime, and passing
+    runtime observables are not evidence the detector works.
+    expects: an encoder deriving canonical order from hash-map iteration yields a
+      hard finding, while one deriving it from an ordered structure does not
+    disposition: a hard finding naming the iteration site; a stable-in-practice
+      iteration order is not a defence
+
+drawer_module_name_requires_explicit_disposition
+    A drawer module name — utils, common, helpers, manager, processor, misc —
+    requires an explicit disposition. The name is not banned outright: it must be
+    justified where the module is declared, so that a drawer is a decision someone
+    made rather than a place things accumulated.
+    expects: a drawer-named module with no explicit disposition yields a finding,
+      and one carrying an explicit disposition does not
+    disposition: a finding naming the module and the absent disposition; renaming
+      the drawer to an unlisted synonym does not resolve the ownership question
+```
+
+<!-- HISTORICAL-MIGRATION:BEGIN -->
+### Historical migration note (5.5D4b-3b, DEC-068)
+
+`docs/12_TESTPAK.md` carried `test_local_fixture_type_is_classified_correctly`. The name stated a verdict without stating the claim: "correctly" names no observable, so the row would have passed against any classification the implementation happened to produce, including the opposite one. That is the shape of a fixture that cannot fail. The word is one the expectation-clause falsifiability scan already rejects in a clause; it cannot be lawful in the row identity itself.
+
+DEC-068 states that test-only material is permitted while production violations are hard findings. The successor names that claim and the condition it depends on: the type is allowed because it carries no domain semantics, not because it sits in a test file.
+
+```text
+retired    test_local_fixture_type_is_classified_correctly
+successor  test_local_nonsemantic_fixture_type_is_allowed
+aliased    0
+```
+<!-- HISTORICAL-MIGRATION:END -->
+
 ## Substrate proof families (5.5D1)
 
 Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.

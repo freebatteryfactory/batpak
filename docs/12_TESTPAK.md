@@ -109,12 +109,14 @@ bootstrap lexical result       defense in depth
 TestPak AST result             authoritative Rust classification
 ```
 
-Named hostile fixtures (implemented at G3):
+This document owns the detector inventory, the required-behavior table, and the defense-in-depth posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+
+Required proof rows, projected from docs/24 (qualification target: `DEC-068`; canonical proof-row owner: docs/24 Gauntlet):
 
 ```text
 local_domain_type_inside_function_is_rejected
 local_domain_type_inside_closure_is_rejected
-test_local_fixture_type_is_classified_correctly
+test_local_nonsemantic_fixture_type_is_allowed
 production_expect_is_rejected
 test_expect_with_context_is_allowed
 unledgered_unsafe_fn_is_rejected
