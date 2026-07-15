@@ -76,6 +76,10 @@ Dependencies leave only after proof, never because the gate name says “cleanup
 
 Deliver repository command WorldImages where useful, independent seedcheck parity, context packets, release seal, issue/legacy closure receipts, and exact published artifacts.
 
+## Numeric gate ownership (DEC-069 / docs/37)
+
+The numeric contract in `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md` is owned across gates: G2 fixes the durable Fixed128 format constants and wire encoding (exact format tags and raw bits preserved, no normalization), G5 admits qualified numeric kernels and profiles, and TestPak realizes the numeric proof families (`24_GAUNTLET.md`). Bootstrap enforces only the numeric contract, never executed arithmetic.
+
 ## GJ: Integrated final tree
 
 Refuse the gate if any of these remain:

@@ -82,3 +82,7 @@ Native, browser, embedded, and in-memory adapters qualify only the guarantees th
 A release receipt binds source tree, toolchain, dependency graph, generated facts, compatibility corpus, test/mutation/fuzz/benchmark dispositions, unsafe/dependency ledgers, package contents, public API, and proof freshness.
 
 A release with an unclassified denominator row is refused.
+
+## Numeric proof obligations (DEC-069 / docs/37)
+
+The numeric proof families declared in `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md` section 13 are gauntlet obligations: decimal-to-coefficient exactness, exact-ratio canonicalization, dimensional legality, raw-bit preservation, finite dyadic decomposition, NaN and infinity refusals, interval well-formedness and the six IntervalDecision truth tables, quantization containment and receipt completeness, rounding-boundary and mode-specific laws, and wide-exact-to-Fixed128 conversion. Their executable TestPak and Muterprater ownership lands in 5.5D (`12_TESTPAK.md`). Bootstrap enforces the numeric contract only; it never evaluates or quantizes actual numbers.

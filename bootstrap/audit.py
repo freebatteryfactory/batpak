@@ -137,12 +137,13 @@ BATQL_OP_ROW = re.compile(
     r'associativity: Associativity::(\w+), input_sorts: "([^"]*)", '
     r'result_sort: "([^"]*)", exactness: Exactness::(\w+), overflow: "([^"]*)", '
     r'exception: "([^"]*)", formatting: "([^"]*)", spoken: "([^"]*)", '
-    r'mutation_classes: "([^"]*)" \}'
+    r'mutation_classes: "([^"]*)", numeric_support: NumericSupport::(\w+) \}'
 )
 BATQL_OP_FIELDS = (
     "id", "class", "word", "symbol", "semantic_op", "arity", "fixity",
     "precedence", "associativity", "input_sorts", "result_sort", "exactness",
     "overflow", "exception", "formatting", "spoken", "mutation_classes",
+    "numeric_support",
 )
 BATQL_CLASS_RANK = {"Arithmetic": 0, "Comparison": 1, "Logical": 2}
 BATQL_PROOF_DISPOSITIONS = ["VERIFIED", "LEGACY_WEAK", "UNVERIFIED", "PROOF_UNAVAILABLE", "PROOF_INVALID"]
@@ -201,6 +202,16 @@ def batql_render_projection(ops: list[dict[str, str]]) -> str:
     return "\n".join(out)
 
 
+def batql_render_numeric(ops: list[dict[str, str]]) -> str:
+    out = [
+        "| OperatorId | Class | Numeric support |",
+        "| --- | --- | --- |",
+    ]
+    for op in _batql_canonical(ops):
+        out.append(f"| {op['id']} | {op['class']} | {op['numeric_support']} |")
+    return "\n".join(out)
+
+
 def batql_extract_block(text: str, name: str) -> str | None:
     match = re.search(
         r"<!-- " + re.escape(name) + r":BEGIN[^>]*-->\n(.*?)\n<!-- " + re.escape(name) + r":END -->",
@@ -231,6 +242,13 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
         for field in required:
             if not op.get(field, "").strip():
                 out.append(f"spec/operators.rs: operator {op.get('id', '?')} missing field {field}")
+    valid_support = {"ExactSupported", "QualifiedProfileOnly", "Unsupported", "NotApplicable"}
+    for op in ops:
+        support = op.get("numeric_support", "")
+        if support and support not in valid_support:
+            out.append(f"spec/operators.rs: operator {op['id']} has unknown numeric_support {support}")
+        if op.get("class") in ("Arithmetic", "Comparison") and support in ("", "NotApplicable"):
+            out.append(f"spec/operators.rs: {op.get('class')} operator {op['id']} lacks an approximate-support posture")
     return out
 
 
@@ -309,18 +327,22 @@ def check_batql(root: Path, findings: list[str]) -> None:
     if not ops:
         findings.append("spec/operators.rs: no OperatorSpec rows parsed")
     findings.extend(batql_operator_fact_findings(ops))
-    for name, expected in (
-        ("OPERATORS-CATALOG", batql_render_catalog(ops)),
-        ("OPERATORS-GRAMMAR", batql_render_grammar(ops)),
-        ("OPERATORS-PROJECTION", batql_render_projection(ops)),
-    ):
-        actual = batql_extract_block(companion, name)
+    block_specs = (
+        ("OPERATORS-CATALOG", "companion/BATQL_LANGUAGE.md", batql_render_catalog(ops)),
+        ("OPERATORS-GRAMMAR", "companion/BATQL_LANGUAGE.md", batql_render_grammar(ops)),
+        ("OPERATORS-PROJECTION", "companion/BATQL_LANGUAGE.md", batql_render_projection(ops)),
+        ("OPERATORS-NUMERIC", "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md", batql_render_numeric(ops)),
+    )
+    block_text: dict[str, str] = {}
+    for name, rel, expected in block_specs:
+        if rel not in block_text:
+            block_path = root / rel
+            block_text[rel] = block_path.read_text(encoding="utf-8") if block_path.is_file() else ""
+        actual = batql_extract_block(block_text[rel], name)
         if actual is None:
-            findings.append(f"companion/BATQL_LANGUAGE.md: missing generated block {name}")
+            findings.append(f"{rel}: missing generated block {name}")
         elif actual != expected:
-            findings.append(
-                f"companion/BATQL_LANGUAGE.md: generated block {name} does not match the spec/operators.rs projection"
-            )
+            findings.append(f"{rel}: generated block {name} does not match the spec/operators.rs projection")
     grammar_findings, _defined, _undefined = batql_grammar_closure_findings(batql_grammar_fences(companion))
     findings.extend(grammar_findings)
     findings.extend(batql_proof_disposition_findings(batql_proof_disposition_states(companion)))
@@ -332,6 +354,68 @@ def check_batql(root: Path, findings: list[str]) -> None:
     receipts_path = root / "docs/14_RECEIPTS_AND_EXPLANATION.md"
     if receipts_path.is_file() and "LegacyWeak" not in receipts_path.read_text(encoding="utf-8"):
         findings.append("docs/14_RECEIPTS_AND_EXPLANATION.md: LegacyWeak proof state missing")
+
+
+# --- Numeric semantics (DEC-069 / docs/37) -----------------------------------
+# Bootstrap enforces the numeric CONTRACT only. It never evaluates, quantizes,
+# fuzzes, or interval-checks actual numbers; those are future executable gates.
+NUMERIC_LAW_MARKERS = (
+    ("approximate_value_marked_ordinary_authority", "does not make its approximate numeric meaning an authority value"),
+    ("implicit_approximate_to_fixed_coercion", "no direct cast"),
+    ("quantize_without_receipt", "produces a `QuantizationReceipt`"),
+    ("nan_collapsed_into_missing", "Known(ApproximateBinary::NaN)"),
+    ("nan_collapsed_into_pending", "Approximate does not imply"),
+    ("signed_zero_evidence_identity_collapsed", "PositiveZero and NegativeZero remain distinct"),
+    ("raw_bits_normalized_on_observation", "must not normalize observed raw bits"),
+    ("non_finite_declared_quantizable", "infinity-to-fixed quantize"),
+    ("interval_lower_greater_than_upper", "lower > upper"),
+    ("interval_decision_lacking_pending_overlap", "overlaps the decision boundary"),
+    ("default_rounding_on_authority_conversion", "default rounding mode"),
+    ("wide_exact_made_ordinary_inline_authority", "ordinary inline EventFrame values"),
+)
+NUMERIC_ROUNDING_MODES = ("HalfEven", "HalfAwayFromZero", "TowardZero", "AwayFromZero", "Floor", "Ceiling")
+NUMERIC_INTERVAL_OPERATORS = ("IS (equal)", "IS NOT", "IS LESS THAN", "IS AT MOST", "IS MORE THAN", "IS AT LEAST")
+NUMERIC_SHARED_SORTS = (
+    "ExactInteger", "FixedDecimal", "ExactRatio", "WideExact", "ApproximateBinary",
+    "Interval", "ProofDisposition", "TypedMargin",
+)
+
+
+def numeric_law_findings(doc37: str) -> list[str]:
+    # Match whitespace-insensitively so a law that wraps across lines still counts.
+    flat = re.sub(r"\s+", " ", doc37)
+    out: list[str] = []
+    for name, marker in NUMERIC_LAW_MARKERS:
+        if re.sub(r"\s+", " ", marker) not in flat:
+            out.append(f"docs/37: numeric law absent ({name})")
+    return out
+
+
+def check_numeric(root: Path, findings: list[str]) -> None:
+    doc_path = root / "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
+    if not doc_path.is_file():
+        findings.append("missing docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md")
+        return
+    doc37 = doc_path.read_text(encoding="utf-8")
+    flat = re.sub(r"\s+", " ", doc37)
+    findings.extend(numeric_law_findings(doc37))
+    for mode in NUMERIC_ROUNDING_MODES:
+        if mode not in flat:
+            findings.append(f"docs/37: canonical rounding mode {mode} missing")
+    for operator in NUMERIC_INTERVAL_OPERATORS:
+        if operator not in flat:
+            findings.append(f"docs/37: IntervalDecision table missing comparison operator {operator!r}")
+    layout_path = root / "docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md"
+    if layout_path.is_file():
+        layout = layout_path.read_text(encoding="utf-8")
+        for sort in NUMERIC_SHARED_SORTS:
+            if sort not in layout:
+                findings.append(f"docs/04: shared semantic sort {sort} does not resolve")
+    companion_path = root / "companion/BATQL_LANGUAGE.md"
+    if companion_path.is_file():
+        companion = companion_path.read_text(encoding="utf-8")
+        if "Type-vocabulary record (BatQL V1)" not in companion:
+            findings.append("companion/BATQL_LANGUAGE.md: numeric Type-vocabulary record (BatQL V1) missing")
 
 
 def check_architecture(root: Path, findings: list[str]) -> None:
@@ -711,6 +795,7 @@ def main() -> int:
     check_seed_ids(root, findings)
     check_stale_vocabulary(root, findings)
     check_batql(root, findings)
+    check_numeric(root, findings)
 
     manifest = root / "SPEC.sha256"
     actual_files = frozen_files(root)

@@ -98,10 +98,47 @@ Truth:        True | False | Pending
 Decision:     Allow | Deny | Defer
 Completeness: Complete | Incomplete(reason)
 Freshness:    Current | Stale(bound) | UnknownFreshness
-Proof:        Verified | Unverified | ProofUnavailable | ProofInvalid
+Proof:        Verified | LegacyWeak | Unverified | ProofUnavailable | ProofInvalid
 ```
 
-The axes remain independent. A result may be current but incomplete, complete but unverified, or verified at an older source cut.
+The axes remain independent. A result may be current but incomplete, complete but unverified, or verified at an older source cut. `LegacyWeak` is a distinct proof disposition, not a synonym for `Unverified` (see `14_RECEIPTS_AND_EXPLANATION.md` and companion 4.5).
+
+## Shared semantic sorts (DEC-069)
+
+The numeric and evaluation model shares one closed, orthogonal set of semantic sorts. These are semantic sorts, not necessarily one Rust enum variant each; the axes stay orthogonal and there is no universal status enum. The canonical numeric law is owned by `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md`.
+
+```text
+ExactInteger
+FixedDecimal
+ExactRatio
+WideExact
+ApproximateBinary
+FiniteDyadicObservation
+Interval
+Availability
+Truth
+Decision
+Completeness
+ProofDisposition
+Freshness
+TypedMargin
+Evidence
+WorkObservation
+Explanation
+```
+
+No public universal `Category`, `Functor`, `Monad`, or `Lattice` trait is exposed. Capability sets may use lattice laws where those laws genuinely apply; there is no higher-kinded-type imitation, no unsafe coercion, and no lint suppression used as a design tool.
+
+Executable phases stay distinct:
+
+```text
+ParsedProgram
+TypedProgram
+AdmittedProgram
+ExecutedResult
+```
+
+`SpecializedPlan` is a derived future phase whose exact identity and lifecycle are frozen in 5.5D; its mechanics are not defined here.
 
 ## Time and order
 

@@ -215,6 +215,35 @@ def test_batql(audit, project) -> list[str]:
     return findings
 
 
+def test_numeric(audit) -> list[str]:
+    """Named hostile fixtures for the numeric authority contract (docs/37)."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    markers = [marker for _name, marker in audit.NUMERIC_LAW_MARKERS]
+    if audit.numeric_law_findings("\n".join(markers)):
+        fail("all_numeric_laws_present_passes")
+    for name, marker in audit.NUMERIC_LAW_MARKERS:
+        reduced = "\n".join(m for m in markers if m != marker)
+        if not any(name in item for item in audit.numeric_law_findings(reduced)):
+            fail(f"numeric_law_{name}_absence_is_rejected")
+
+    # OperatorSpec arithmetic row lacking an approximate-support posture is rejected
+    arith_no_posture = [{
+        "id": "OP-ADD", "class": "Arithmetic", "word": "+", "symbol": "",
+        "semantic_op": "s", "arity": "Binary", "fixity": "Infix", "precedence": "60",
+        "associativity": "Left", "input_sorts": "a", "result_sort": "b", "exactness": "Exact",
+        "overflow": "o", "exception": "e", "formatting": "+", "spoken": "plus",
+        "mutation_classes": "m", "numeric_support": "NotApplicable",
+    }]
+    if not any("lacks an approximate-support posture" in x for x in audit.batql_operator_fact_findings(arith_no_posture)):
+        fail("operatorspec_arithmetic_row_lacking_approx_support_is_rejected")
+
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -226,12 +255,13 @@ def main() -> int:
     findings += test_stale_derivation(audit, HERE.parent)
     findings += test_legacy_manifest_parity(audit)
     findings += test_batql(audit, project)
+    findings += test_numeric(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL operator/grammar/proof hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric hostile fixtures)")
     return 0
 
 

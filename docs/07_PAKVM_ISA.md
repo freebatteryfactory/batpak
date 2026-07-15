@@ -152,3 +152,7 @@ bounded structural decode
 ```
 
 No program runs from merely parsed bytes.
+
+## Numeric execution (DEC-069 / docs/37)
+
+PakVM reference execution consumes the shared numeric sorts frozen in `04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md` and the numeric law in `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md`: exact authority arithmetic, `Quantize` and `IntervalDecision` crossings, and typed numeric refusals for non-finite inputs. The reference interpreter is the numeric authority; residual specialization and optimized kernels are deferred to 5.5D and must prove equivalence to it.

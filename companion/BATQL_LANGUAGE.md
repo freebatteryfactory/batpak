@@ -1352,9 +1352,36 @@ Typed paths likewise preserve distinctions between signed numbers, unsigned numb
 
 Financial quantities and declared decimals use fixed-point arithmetic.
 
-Floating-point values are not part of the default semantic core.
+Ordinary unqualified floating-point values are never authority values. First-class Qualified Approximation is available but quarantined from implicit authority, and it crosses into exact authority only through a receipted `Quantize` or `IntervalDecision`. The full numeric law is owned by `docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md` (DEC-069).
 
 Probabilistic built-in kernels may return a typed `Probability`, but their arithmetic, precision, and reproducibility contract must be declared.
+
+### Type-vocabulary record (BatQL V1)
+
+Qualified approximation and exact authority enter BatQL through the existing `type_name` mechanism (typed parameters, schema fields, event or projection values, qualified kernel results, explicitly typed imported observations). No new type grammar is introduced. The following canonical built-in numeric type names are added additively as a BatQL V1 type-vocabulary extension — this is a recorded public type-vocabulary change, not "no public language change":
+
+```text
+new built-in type names:
+    FixedDecimal
+    ExactRatio
+    ApproximateBinary
+    Interval
+
+format identities (used as generic arguments):
+    Binary32
+    Binary64
+
+compatibility:
+    additive type vocabulary only
+    no existing valid expression changes meaning
+    no new structural syntax; type_name already expresses e.g.
+    ApproximateBinary<Binary64>, FixedDecimal<USD>, Interval<Money<USD>>
+
+authority:
+    DEC-069 plus this type-vocabulary record
+```
+
+No unqualified `FLOAT`, `F32`, `F64`, `NaN`, or `Infinity` literal forms exist. A qualified approximate value carries its format identity, classification, provenance, and interval or error evidence; it never enters as a bare numeric literal.
 
 ## 5.2a Typed arithmetic legality (DEC-060)
 

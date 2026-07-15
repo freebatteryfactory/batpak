@@ -78,6 +78,9 @@ no unresolved architecture marker in authoritative docs
 no operator relationship defined in two places (spec/operators.rs is the one operator authority; grammar/precedence/formatting/spoken tables are generated and independently re-audited)
 no undefined grammar nonterminal referenced by a normative fence (grammar 15/15.2/15.3 is closed)
 no proof disposition collapsed on projection (the five states VERIFIED, LEGACY_WEAK, UNVERIFIED, PROOF_UNAVAILABLE, PROOF_INVALID pass through unchanged)
+no approximate value granted silent numeric authority (crossings require a receipted Quantize or IntervalDecision; DEC-069, docs/37)
+no numeric classification collapsed into availability (a known NaN is not Missing or Pending; the axes stay orthogonal)
+no exact/approximate authority boundary flattened into one universal numeric type
 ```
 
 ## Remaining implementation work is not architecture ambiguity

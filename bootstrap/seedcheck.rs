@@ -291,6 +291,12 @@ fn check_unique_ids(findings: &mut Vec<String>) {
         match op.exactness {
             operators::Exactness::Exact | operators::Exactness::NotApplicable => {}
         }
+        match op.numeric_support {
+            operators::NumericSupport::ExactSupported
+            | operators::NumericSupport::QualifiedProfileOnly
+            | operators::NumericSupport::Unsupported
+            | operators::NumericSupport::NotApplicable => {}
+        }
     }
 }
 

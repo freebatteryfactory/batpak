@@ -112,3 +112,7 @@ Receipts are canonicalized before hashing. The hash commits to semantic structur
 ## Offline verification
 
 Verification may occur without opening the live store when the receipt bundle carries the required contracts, digests, keys, proof references, and source commitments. The verifier reports exactly which claims it established.
+
+## Numeric receipts (DEC-069 / docs/37)
+
+`QuantizationReceipt` records every approximation-to-authority crossing: source interval, target profile, rounding mode, exact/inexact disposition, and discarded-remainder loss evidence. Approximation evidence — format identity, raw bits, classification, provenance — and typed margins (unit, direction, distance interval, and whether zero lies inside the margin) project through the receipt and explanation surfaces and never upgrade or collapse the recorded proof disposition.

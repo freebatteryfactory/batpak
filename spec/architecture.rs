@@ -213,6 +213,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "docs/34_LEGACY_INVARIANT_COVERAGE.md",
     "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md",
     "docs/36_PUBLIC_API_CI_AND_RELEASE.md",
+    "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md",
     "companion/BATQL_LANGUAGE.md",
     "spec/architecture.rs",
     "spec/invariants.rs",

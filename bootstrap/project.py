@@ -35,12 +35,13 @@ OPERATOR_ROW = re.compile(
     r'associativity: Associativity::(\w+), input_sorts: "([^"]*)", '
     r'result_sort: "([^"]*)", exactness: Exactness::(\w+), overflow: "([^"]*)", '
     r'exception: "([^"]*)", formatting: "([^"]*)", spoken: "([^"]*)", '
-    r'mutation_classes: "([^"]*)" \}'
+    r'mutation_classes: "([^"]*)", numeric_support: NumericSupport::(\w+) \}'
 )
 FIELDS = (
     "id", "class", "word", "symbol", "semantic_op", "arity", "fixity",
     "precedence", "associativity", "input_sorts", "result_sort", "exactness",
     "overflow", "exception", "formatting", "spoken", "mutation_classes",
+    "numeric_support",
 )
 
 
@@ -110,10 +111,28 @@ def render_projection(ops: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-BLOCKS = {
+def render_numeric(ops: list[dict[str, str]]) -> str:
+    lines = [
+        "| OperatorId | Class | Numeric support |",
+        "| --- | --- | --- |",
+    ]
+    for op in canonical(ops):
+        lines.append(f"| {op['id']} | {op['class']} | {op['numeric_support']} |")
+    return "\n".join(lines)
+
+
+NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
+BLOCK_RENDER = {
     "OPERATORS-CATALOG": render_catalog,
     "OPERATORS-GRAMMAR": render_grammar,
     "OPERATORS-PROJECTION": render_projection,
+    "OPERATORS-NUMERIC": render_numeric,
+}
+BLOCK_FILE = {
+    "OPERATORS-CATALOG": COMPANION,
+    "OPERATORS-GRAMMAR": COMPANION,
+    "OPERATORS-PROJECTION": COMPANION,
+    "OPERATORS-NUMERIC": NUMERIC_DOC,
 }
 
 
@@ -124,12 +143,12 @@ def block_pattern(name: str) -> re.Pattern[str]:
     )
 
 
-def apply_blocks(text: str, ops: list[dict[str, str]]) -> tuple[str, list[str]]:
-    """Return (rewritten_text, missing_block_names)."""
+def apply_blocks(text: str, ops: list[dict[str, str]], names: list[str]) -> tuple[str, list[str]]:
+    """Return (rewritten_text, missing_block_names) for the named blocks."""
     missing: list[str] = []
-    for name, render in BLOCKS.items():
+    for name in names:
         pattern = block_pattern(name)
-        body = render(ops)
+        body = BLOCK_RENDER[name](ops)
         if not pattern.search(text):
             missing.append(name)
             continue
@@ -147,28 +166,36 @@ def main() -> int:
     findings: list[str] = []
     if not ops:
         findings.append("spec/operators.rs: no OperatorSpec rows parsed")
-    path = root / COMPANION
-    original = path.read_text(encoding="utf-8")
-    rewritten, missing = apply_blocks(original, ops)
-    for name in missing:
-        findings.append(f"{COMPANION}: missing generated block markers for {name}")
+    by_file: dict[str, list[str]] = {}
+    for name, rel in BLOCK_FILE.items():
+        by_file.setdefault(rel, []).append(name)
+    plans: list[tuple[Path, str, str]] = []
+    for rel, names in sorted(by_file.items()):
+        path = root / rel
+        original = path.read_text(encoding="utf-8")
+        rewritten, missing = apply_blocks(original, ops, names)
+        for name in missing:
+            findings.append(f"{rel}: missing generated block markers for {name}")
+        plans.append((path, original, rewritten))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
     if mode == "--write":
-        if rewritten != original:
-            path.write_bytes(rewritten.encode("utf-8"))
-            print(f"project: WROTE {len(BLOCKS)} operator blocks ({len(ops)} operators)")
-        else:
-            print(f"project: OK ({len(BLOCKS)} operator blocks already current)")
+        changed = sum(1 for path, original, rewritten in plans if rewritten != original)
+        for path, original, rewritten in plans:
+            if rewritten != original:
+                path.write_bytes(rewritten.encode("utf-8"))
+        verb = "WROTE" if changed else "OK"
+        print(f"project: {verb} {len(BLOCK_RENDER)} operator blocks across {len(by_file)} files ({len(ops)} operators)")
         return 0
     # --check
-    if rewritten != original:
-        print("project: FAIL (generated operator blocks are stale; run project.py --write)", file=sys.stderr)
+    stale = [path.name for path, original, rewritten in plans if rewritten != original]
+    if stale:
+        print(f"project: FAIL (generated operator blocks stale in {stale}; run project.py --write)", file=sys.stderr)
         return 1
-    print(f"project: PASS ({len(BLOCKS)} operator blocks current; {len(ops)} operators)")
+    print(f"project: PASS ({len(BLOCK_RENDER)} operator blocks current; {len(ops)} operators)")
     return 0
 
 

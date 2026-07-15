@@ -129,3 +129,7 @@ A pure built-in kernel is content-identified, typed, deterministic where declare
 ## Language change law
 
 The conceptual grammar is locked. A syntax or semantic change requires a demonstrated parser/type/conformance defect, a compatibility disposition, updated canonical formatter, spoken projection, fuzz grammar, and goldens. Fashion is not a defect.
+
+## Numeric typing (DEC-069 / docs/37)
+
+BatQL values type into the shared numeric sorts (exact authority, `ApproximateBinary`, `Interval`) through the existing `type_name` mechanism; the additive numeric type-vocabulary is recorded in the companion. Qualified approximation never becomes authority except through a receipted `Quantize` or `IntervalDecision`. The canonical numeric law is owned by `37_NUMERIC_SEMANTICS_AND_AUTHORITY.md`.
