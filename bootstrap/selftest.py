@@ -312,6 +312,10 @@ def test_guarantees(audit, project) -> list[str]:
         fail("untilsuccessor_without_typed_successor_is_rejected")
     if audit.guarantee_lifetime_findings([node("X", life="UntilSuccessor")], {}, [("Y", "Supersedes", "X")]):
         fail("untilsuccessor_with_resolvable_successor_passes")
+    if not audit.guarantee_relation_findings({"LEG-1"}, [("LEG-1", "Supersedes", "G2")]):
+        fail("gate_name_cannot_become_successor_edge")
+    if not audit.guarantee_relation_findings({"LEG-1"}, [("LEG-1", "Supersedes", "batpak::store")]):
+        fail("clean_owner_text_cannot_become_successor_edge")
 
     def legnode(life, gates="G2"):
         return node("LEG-1", family="LEG", kind="LegacyObligation", life=life, gates=gates, witness="")
@@ -319,6 +323,12 @@ def test_guarantees(audit, project) -> list[str]:
     active_never = {"LEG-1": {"owner": "o", "gate": "G2", "compat": "None", "deletion": "Never", "status": "Active"}}
     if not any("must not force Permanent" in x for x in audit.guarantee_lifetime_findings([legnode("Permanent")], active_never, [])):
         fail("deletion_never_forcing_permanent_is_rejected")
+    if not any("no resolvable typed successor" in x
+               for x in audit.guarantee_lifetime_findings([legnode("UntilSuccessor")], active_never, [])):
+        fail("gated_leg_without_typed_successor_cannot_project_untilsuccessor")
+    closed_never = {"LEG-1": {"owner": "o", "gate": "G2", "compat": "None", "deletion": "Never", "status": "Closed"}}
+    if audit.guarantee_lifetime_findings([legnode("ClosedEvidence", gates="")], closed_never, []):
+        fail("deletion_never_closed_leg_projects_closedevidence")
     if not any("Active LEG projects as ClosedEvidence" in x
                for x in audit.guarantee_lifetime_findings([legnode("ClosedEvidence")], active_never, [])):
         fail("closedevidence_marked_active_is_rejected")
