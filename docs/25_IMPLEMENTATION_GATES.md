@@ -105,6 +105,17 @@ G9  differential qualification and release seal
 
 The reference interpreter is complete at G5 without any specializer. No gate may accept a residual path as the semantic authority or the sole oracle. Bootstrap enforces only the specialization contract; it never executes PakVM, specializes a program, runs a scan, or measures a benchmark.
 
+## Proof-policy and mutation gate ownership (DEC-015, DEC-074)
+
+```text
+G3  TestPak seed: mutation lanes, activation evidence, result algebra,
+    denominator truth, candidate promotion, and the anti-weakening detector
+G9  release seal: proof-policy change receipts, weakening disclosure, and
+    release-visible qualification
+```
+
+Bootstrap proves the typed and documentary structure only. It compiles no mutant, activates no slot, runs no nextest, invokes no rustc, compares no cargo-mutants run, kills nothing, proves no equivalence, promotes no candidate, and classifies no real diff semantically.
+
 ## GJ: Integrated final tree
 
 Refuse the gate if any of these remain:

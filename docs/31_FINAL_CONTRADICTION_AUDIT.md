@@ -99,6 +99,14 @@ no authenticated-history claim exceeding the selected profile and verified witne
 no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
 no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance
 no authenticated-history profile, witness, claim-posture, or gate node in the Guarantee Graph (decision class and gates are node metadata, never synthetic nodes or edges)
+no unclassified proof-policy change, and no Weakening without DEC or supersession authority, affected guarantees, old and new boundary, replacement or accepted-risk disposition, hostile qualification, release visibility, and a receipt (DEC-074); weakening the anti-weakening gate itself needs the same package
+no proof-policy Neutral claimed without parity evidence (a refactor is not automatically neutral), and no apparently stronger policy that narrows the tested domain or drops denominator units escaping the Weakening class
+no mutation result collapsed into pass/fail or killed/not-killed, and no NotActivated, Refused, Unbuildable, TimedOut, or InfrastructureFailure counted as Killed or Survived (DEC-015)
+no planned mutation leaving the denominator silently, and no mutation score published without its full result distribution
+no Survived without activation evidence, no Killed without a qualified baseline, and no EquivalentCandidate excluded without an independent equivalence witness
+no Muterprater as a standalone product, second semantic authority, replacement compiler, or replacement test runner; nextest executes and never owns semantic authority, and compiler-backed tooling is not retired without a qualification receipt
+no candidate written directly into src/, tests/, spec/, docs/, or companion/, and no generated candidate grading the evidence that judges it; generation and promotion stay separate admitted actions with separate receipts
+no promotion without an independent oracle, a named obligation, a killed mutant or equivalent hostile evidence, and a proof receipt; no production implementation serving as its own sole oracle, and no second full PakVM required to supply independence
 no residual SpecializedPlan treated as program authority, canonical source, a ProgramImage, a replacement ISA, a second VM, or the sole oracle (the reference interpreter is the executable semantic authority; DEC-073, docs/07)
 no specialization cache whose deletion changes value, availability, truth, decision, completeness, ProofDisposition, effects, effect ordering, authority meaning, or required receipts (it may change performance and WorkObservation only)
 no residual reused under a different specialization key, and no key silently omitting a component that can influence the plan or binding a dynamic fact as static

@@ -425,6 +425,198 @@ pub const OPTIONAL_WITNESS_REFUSAL_SET: &[WitnessDisposition] = &[
     WitnessDisposition::AccumulatorMismatch,
 ];
 
+// --- TestPak proof policy and mutation (DEC-015, DEC-074) -------------------
+// Typed facts only. Bootstrap compiles no mutant, activates no slot, runs no
+// nextest, invokes no rustc, kills nothing, proves no equivalence, promotes
+// nothing, and classifies no real diff semantically. It proves the contract.
+
+/// The three frozen mutation lanes. Muterprater is a TestPak plane, never a
+/// standalone product, a second semantic authority, or a replacement compiler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MutationLane {
+    /// Mutates BatPak-owned semantic structures. No per-candidate Rust compile;
+    /// the reference interpreter executes the mutant and an independent evidence
+    /// route judges it.
+    SemanticIr,
+    /// One test-profile shard holds many candidate slots; one stable mutation
+    /// identity selects one slot per isolated process. Slots never enter an
+    /// ordinary production artifact.
+    SelectableCompiled,
+    /// Implementation-sensitive material whose truth depends on real compiler
+    /// and platform behavior. Runs under real rustc semantics.
+    CompilerBacked,
+}
+
+/// Every planned mutation reaches exactly one of these. They stay distinct
+/// because collapsing them into pass/fail is how a denominator quietly shrinks:
+/// an unbuildable candidate is not a detected fault, and a timeout is not a kill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MutationResult {
+    /// Activated, baseline and selected tests qualified, and one or more
+    /// qualified witnesses reject the mutant.
+    Killed,
+    /// Activated, selected tests qualified, and no selected witness rejected it.
+    Survived,
+    /// Not observed as reached or selected. This is never Survived.
+    NotActivated,
+    /// Admission or policy refused the candidate or run. This is never Killed.
+    Refused,
+    /// Could not produce the required executable or admitted semantic artifact.
+    /// A compiler error from an invalid mutation is not detection. Never Killed.
+    Unbuildable,
+    /// Exceeded its declared deadline. Neither Killed nor Survived.
+    TimedOut,
+    /// The runner, compiler, environment, or proof mechanism failed. Neither
+    /// Killed nor Survived.
+    InfrastructureFailure,
+    /// May be equivalent under the named semantic scope. This is a candidate
+    /// classification pending an independent equivalence witness, not proof.
+    EquivalentCandidate,
+}
+
+/// How a proof-policy change moves the boundary. An unclassified change is
+/// refused (DEC-074).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProofPolicyChangeClass {
+    /// Adds or raises proof obligations, increases hostile coverage, reduces
+    /// unjustified waiver scope, or improves freshness or denominator
+    /// visibility, without silently removing a proof unit or terminal
+    /// disposition.
+    Strengthening,
+    /// Changes representation while preserving denominator, selection meaning,
+    /// terminal dispositions, activation, freshness, blocking posture,
+    /// promotion requirements, and documentary meaning. Requires parity
+    /// evidence: "refactor" is not automatically Neutral.
+    Neutral,
+    /// Removes a proof unit, lowers a threshold, widens a waiver, makes a
+    /// required proof optional, reduces hostile coverage or activation
+    /// requirements, weakens freshness, turns a blocking failure into a
+    /// warning, shrinks selected tests without equivalent qualification, lets a
+    /// candidate promote on less evidence, drops units from the denominator, or
+    /// retires an independent oracle. An apparently stronger policy that
+    /// narrows the tested domain is also Weakening.
+    Weakening,
+}
+
+/// The surfaces the anti-weakening gate owns. A change declaration names the
+/// affected surfaces explicitly; the gate never infers one from a filename or
+/// keyword.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProofPolicySurface {
+    MutationThreshold,
+    WaiverLogic,
+    EquivalentMutantRule,
+    HostileFixture,
+    CandidatePromotion,
+    ProofReceiptSchema,
+    ProofFreshness,
+    ReleaseBlocking,
+    TestSelection,
+    AssuranceRequirement,
+    GateQualification,
+}
+
+/// One lane and what it may assume. Not a TestPak product catalog: three rows,
+/// frozen, enforcing the lane contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MutationLaneSpec {
+    pub lane: MutationLane,
+    /// Whether a candidate requires its own Rust compilation.
+    pub requires_per_candidate_rust_compile: bool,
+    /// Whether execution requires real rustc semantics.
+    pub requires_real_rustc_semantics: bool,
+    /// Whether a candidate must carry activation evidence before a Survived or
+    /// Killed verdict is admissible.
+    pub requires_activation_evidence: bool,
+    /// Whether mutation slots may exist in an ordinary production artifact.
+    pub permits_production_profile_slots: bool,
+    /// Whether an independent (non-self-calling) evidence route is required.
+    pub requires_independent_evidence_route: bool,
+    pub gates: &'static [GateId],
+}
+
+pub const MUTATION_LANES: &[MutationLaneSpec] = &[
+    MutationLaneSpec {
+        lane: MutationLane::SemanticIr,
+        requires_per_candidate_rust_compile: false,
+        requires_real_rustc_semantics: false,
+        requires_activation_evidence: true,
+        permits_production_profile_slots: false,
+        requires_independent_evidence_route: true,
+        gates: &[GateId::G3],
+    },
+    MutationLaneSpec {
+        lane: MutationLane::SelectableCompiled,
+        requires_per_candidate_rust_compile: false,
+        requires_real_rustc_semantics: true,
+        requires_activation_evidence: true,
+        permits_production_profile_slots: false,
+        requires_independent_evidence_route: true,
+        gates: &[GateId::G3],
+    },
+    MutationLaneSpec {
+        lane: MutationLane::CompilerBacked,
+        requires_per_candidate_rust_compile: true,
+        requires_real_rustc_semantics: true,
+        requires_activation_evidence: true,
+        permits_production_profile_slots: false,
+        requires_independent_evidence_route: true,
+        gates: &[GateId::G3],
+    },
+];
+
+/// Results that may never be counted as a kill. An invalid mutation that fails
+/// to compile proves nothing about the test suite.
+pub const NEVER_KILLED: &[MutationResult] = &[
+    MutationResult::NotActivated,
+    MutationResult::Refused,
+    MutationResult::Unbuildable,
+    MutationResult::TimedOut,
+    MutationResult::InfrastructureFailure,
+];
+
+/// Results that may never be counted as survival. A mutant that was never
+/// reached did not survive the test suite; it was never tested.
+pub const NEVER_SURVIVED: &[MutationResult] = &[
+    MutationResult::NotActivated,
+    MutationResult::Refused,
+    MutationResult::Unbuildable,
+    MutationResult::TimedOut,
+    MutationResult::InfrastructureFailure,
+];
+
+/// Every planned mutation terminates in one of these, and every one appears in
+/// the reported denominator. Nothing leaves silently to improve a score.
+pub const TERMINAL_MUTATION_RESULTS: &[MutationResult] = &[
+    MutationResult::Killed,
+    MutationResult::Survived,
+    MutationResult::NotActivated,
+    MutationResult::Refused,
+    MutationResult::Unbuildable,
+    MutationResult::TimedOut,
+    MutationResult::InfrastructureFailure,
+    MutationResult::EquivalentCandidate,
+];
+
+/// Candidate material is disposable and derived. It is never durable proof
+/// truth, and there is no canonical direct-write path from generation into
+/// tracked source.
+pub const CANDIDATE_OUTPUT_ROOT: &str = "target/muterprater/candidates/";
+
+/// Tracked surfaces a generated candidate may never write directly. Promotion
+/// is a separate admitted action with its own receipt.
+pub const CANDIDATE_FORBIDDEN_WRITE_ROOTS: &[&str] =
+    &["src/", "tests/", "spec/", "docs/", "companion/"];
+
+/// No oracle, no promotion. No named obligation, no promotion. No killed mutant
+/// or equivalent hostile evidence, no promotion. No proof receipt, no trust.
+pub const PROMOTION_REQUIREMENTS: &[&str] = &[
+    "independent evidence or oracle identity",
+    "named invariant, guarantee, obligation, or documented proof gap",
+    "killed real semantic mutant or equivalent hostile evidence",
+    "auditable proof and promotion receipt",
+];
+
 pub const EDGES: &[EdgeSpec] = &[
     EdgeSpec { importer: "macbat", importee: "macbat-compiler", class: EdgeClass::Required, profile: "compile" },
     EdgeSpec { importer: "batpak", importee: "macbat", class: EdgeClass::Required, profile: "derive" },

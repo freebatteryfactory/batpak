@@ -1283,6 +1283,78 @@ DOC_LAW_MARKERS = {
         ("hand-authored raw dispatch is not the canonical path",
          "Applications do not hand-author raw `kind integer + byte payload + switch` dispatch"),
     ],
+    "docs/12_TESTPAK.md": [
+        ("Muterprater is not a standalone product",
+         "It is not a standalone product package, a second semantic authority"),
+        ("Lane A needs no per-candidate Rust compile", "No per-candidate Rust compile"),
+        ("Lane B slots are test-profile only",
+         "never enter an ordinary production artifact"),
+        ("Lane B records activation", "Activation is evidence, never an assumption"),
+        ("Lane C runs under real rustc semantics",
+         "Candidates execute under real rustc semantics"),
+        ("no homegrown evaluator equals rustc",
+         "never claims a homegrown Rust evaluator equals rustc"),
+        ("nextest executes and is not semantic authority",
+         "Nextest executes; it is never semantic authority"),
+        ("compiler-backed tooling is not retired by prose",
+         "No coronation by architecture prose"),
+        ("Survived requires activation", "A `Survived` verdict without activation evidence is invalid"),
+        ("Killed requires baseline and activation",
+         "A `Killed` verdict without a qualified baseline and activation evidence is invalid"),
+        ("a timeout is not a kill", "A timeout is not a kill"),
+        ("an unbuildable candidate is not a kill",
+         "a compiler error produced by an invalid mutation is not evidence"),
+        ("EquivalentCandidate is not equivalence proof",
+         "a classification pending its witness, never equivalence proof"),
+        ("nothing leaves the denominator silently",
+         "Nothing silently leaves the denominator"),
+        ("the full result distribution is published",
+         "A mutation score exposes the full result distribution"),
+        ("activation evidence distinguishes reached from selected",
+         "mutant reached, mutant changed the executed semantic path"),
+        ("an independent evidence route is required",
+         "no independent evidence route          -> no semantic mutation qualification"),
+        ("self-calling production code is not an oracle",
+         "passing production evaluator against itself -> not an independent oracle"),
+        ("no second full PakVM is required for independence",
+         "Building a second full PakVM merely to call it independent is not independence"),
+        ("candidates land outside tracked source",
+         "It may not write candidates directly into `src/`, `tests/`, `spec/`, `docs/`, or `companion/`"),
+        ("generation and promotion are separate",
+         "Generation and promotion are two different operations with two different receipts"),
+        ("no oracle, no promotion", "No oracle, no promotion."),
+        ("no named obligation, no promotion", "No invariant or named proof obligation, no promotion."),
+        ("no killed mutant, no promotion",
+         "No killed mutant or equivalent hostile evidence, no promotion."),
+        ("no proof receipt, no trust", "No proof receipt, no trust."),
+        ("an unclassified proof-policy change is refused",
+         "An unclassified proof-policy change is refused"),
+        ("Neutral requires parity evidence",
+         'Requires parity evidence: "refactor" is not automatically Neutral'),
+        ("a narrowed domain is Weakening",
+         "narrows the tested domain or silently removes denominator units is Weakening"),
+        ("a Weakening carries the full authority package",
+         "hostile qualification proving the new boundary is enforced"),
+        ("an issue link is not authority", "A generic issue link is not decision authority"),
+        ("a commit message is not a receipt", "A commit message is not a weakening receipt"),
+        ("the gate defends itself", "or the anti-weakening gate itself"),
+        ("a disableable gate is not a gate",
+         "A proof-policy gate that can be disabled as unclassified cleanup is not an anti-weakening gate"),
+        ("bootstrap does not infer semantic diffs",
+         "Bootstrap does not understand arbitrary semantic diffs and never claims to"),
+    ],
+    "docs/24_GAUNTLET.md": [
+        ("D1 publication proof family is owned",
+         "committed is never reported as an ordinary operation failure"),
+        ("D1 attempt proof family is owned", "CancelledAfterAdmission does not prove non-commit"),
+        ("D1 traversal proof family is owned",
+         "valid pages concatenate to the one-shot reference traversal"),
+        ("D1 routing proof family is owned", "every declared route is present exactly once"),
+        ("D1 deadline proof family is owned", "retry does not reset the overall deadline"),
+        ("the D2 specialization square is assigned", "Specialization proof square (DEC-073)"),
+        ("the square routes to the lanes", "semantic mutation                                    Lane SemanticIr"),
+        ("no lane is the sole proof route", "No lane is the sole proof route"),
+    ],
     "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md": [
         ("docs/35 does not own whole-store history",
          "It does not own whole-store authenticated history"),
@@ -1407,6 +1479,94 @@ def specialization_findings(root: Path) -> list[str]:
     # The execution path never changes program meaning, so no public syntax.
     grammar = (root / "companion/BATQL_LANGUAGE.md").read_text(encoding="utf-8")
     for token in D2_FORBIDDEN_PUBLIC_SYNTAX:
+        if re.search(r"^\s*\|?\s*\"" + token + r"\"", grammar, re.M):
+            out.append(f"public BatQL syntax introduced for {token}")
+    return out
+
+
+# --- 5.5D3 proof-policy anti-weakening and mutation (DEC-015, DEC-074) ------
+# Bootstrap proves typed and documentary structure. It compiles no mutant,
+# activates no slot, runs no nextest, invokes no rustc, compares no
+# cargo-mutants run, kills nothing, proves no equivalence, promotes nothing, and
+# classifies no real diff semantically. It must never claim to.
+D3_LANES = ["SemanticIr", "SelectableCompiled", "CompilerBacked"]
+D3_RESULTS = [
+    "Killed", "Survived", "NotActivated", "Refused", "Unbuildable",
+    "TimedOut", "InfrastructureFailure", "EquivalentCandidate",
+]
+D3_CHANGE_CLASSES = ["Strengthening", "Neutral", "Weakening"]
+D3_POLICY_SURFACES = [
+    "MutationThreshold", "WaiverLogic", "EquivalentMutantRule", "HostileFixture",
+    "CandidatePromotion", "ProofReceiptSchema", "ProofFreshness", "ReleaseBlocking",
+    "TestSelection", "AssuranceRequirement", "GateQualification",
+]
+# Never a kill and never a survival: an invalid mutation that fails to compile
+# proves nothing about the suite, and an unreached mutant was never tested.
+D3_NEVER_KILLED = ["NotActivated", "Refused", "Unbuildable", "TimedOut", "InfrastructureFailure"]
+D3_FORBIDDEN_CANDIDATE_ROOTS = ["src/", "tests/", "spec/", "docs/", "companion/"]
+D3_BANNED_RESULT_WORDS = ("pass/fail", "killed/not-killed", "success/error")
+
+
+def _arch_enum(root: Path, name: str) -> list[str]:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
+    return re.findall(r"^\s{4}(\w+),", m.group(1), re.M) if m else []
+
+
+def proof_policy_findings(root: Path) -> list[str]:
+    """DEC-074 identity plus the frozen mutation and policy vocabularies."""
+    out: list[str] = []
+    rows = {r["id"]: r for r in decision_rows(root)}
+    dec = rows.get("DEC-074")
+    if dec is None:
+        out.append("DEC-074 is absent from spec/dispositions.rs")
+    else:
+        if dec["class"] != "Enforcement":
+            out.append(f"DEC-074 class {dec['class']} is not Enforcement")
+        for gate in ("G3", "G9"):
+            if gate not in dec["gate_names"]:
+                out.append(f"DEC-074 does not name gate {gate}")
+    d15 = rows.get("DEC-015")
+    if d15 is None or "Mutation testing only inside TestPak" not in d15["subject"] + str(d15):
+        src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+        if "Mutation testing only inside TestPak" not in src:
+            out.append("DEC-015 no longer confines mutation testing to TestPak")
+    for name, want in (("MutationLane", D3_LANES), ("MutationResult", D3_RESULTS),
+                       ("ProofPolicyChangeClass", D3_CHANGE_CLASSES),
+                       ("ProofPolicySurface", D3_POLICY_SURFACES)):
+        got = _arch_enum(root, name)
+        if not got:
+            out.append(f"spec/architecture.rs declares no {name}")
+        elif got != want:
+            out.append(f"{name} variants {got} != frozen {want}")
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    lanes = re.findall(r"lane: MutationLane::(\w+),", src)
+    if lanes != D3_LANES:
+        out.append(f"MUTATION_LANES rows {lanes} != frozen three lanes {D3_LANES}")
+    for const, want in (("NEVER_KILLED", D3_NEVER_KILLED), ("NEVER_SURVIVED", D3_NEVER_KILLED)):
+        m = re.search(r"pub const " + const + r":[^=]*=\s*&\[(.*?)\];", src, re.S)
+        got = re.findall(r"MutationResult::(\w+)", m.group(1)) if m else []
+        if sorted(got) != sorted(want):
+            out.append(f"{const} {sorted(got)} != frozen {sorted(want)}")
+    m = re.search(r"pub const TERMINAL_MUTATION_RESULTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
+    terminal = re.findall(r"MutationResult::(\w+)", m.group(1)) if m else []
+    if sorted(terminal) != sorted(D3_RESULTS):
+        out.append(f"TERMINAL_MUTATION_RESULTS {sorted(terminal)} != all eight categories")
+    if "target/muterprater/candidates/" not in src:
+        out.append("no candidate output root is declared outside tracked source")
+    m = re.search(r"pub const CANDIDATE_FORBIDDEN_WRITE_ROOTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
+    forbidden = re.findall(r'"([^"]+)"', m.group(1)) if m else []
+    for rootdir in D3_FORBIDDEN_CANDIDATE_ROOTS:
+        if rootdir not in forbidden:
+            out.append(f"candidate generation is not forbidden from writing {rootdir}")
+    m = re.search(r"pub const PROMOTION_REQUIREMENTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
+    reqs = " ".join(re.findall(r'"([^"]+)"', m.group(1))) if m else ""
+    for needed in ("oracle", "named invariant", "killed real semantic mutant", "receipt"):
+        if needed not in reqs:
+            out.append(f"promotion requirements omit {needed}")
+    # No YAML proof-policy language, no public BatQL mutation syntax.
+    grammar = (root / "companion/BATQL_LANGUAGE.md").read_text(encoding="utf-8")
+    for token in ("MUTATE", "PROMOTE"):
         if re.search(r"^\s*\|?\s*\"" + token + r"\"", grammar, re.M):
             out.append(f"public BatQL syntax introduced for {token}")
     return out
@@ -1876,6 +2036,7 @@ def main() -> int:
     findings.extend(d1_substrate_findings(root))
     findings.extend(specialization_findings(root))
     findings.extend(specialization_key_findings(root))
+    findings.extend(proof_policy_findings(root))
     findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"

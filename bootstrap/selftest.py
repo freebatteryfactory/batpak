@@ -652,8 +652,8 @@ def test_decisions(audit, project) -> list[str]:
     for profile in ("InternalConsistency", "SignedHistory", "ExternallyAnchoredHistory"):
         if profile in node_ids:
             fail(f"authenticated-history profile added as a graph node: {profile}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 73:
-        fail("decision node count is not 73")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 74:
+        fail("decision node count is not 74")
 
     if [(n["id"], n.get("dclass"), n["gates"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
        [(n["id"], n.get("dclass"), n["gates"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
@@ -1318,9 +1318,9 @@ def test_specialization(audit, project) -> list[str]:
                       "SpecializationKey", "WorkObservation"):
         if synthetic in ids:
             fail(f"synthetic specialization node introduced: {synthetic}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 73:
-        fail("decision_node_count_is_not_73")
-    if len(nodes) != 196 or len(edges) != 9:
+    if len([n for n in nodes if n["family"] == "DEC"]) != 74:
+        fail("decision_node_count_is_not_74")
+    if len(nodes) != 197 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     return findings
 
@@ -1329,10 +1329,214 @@ def test_delivery_notes_d2(audit) -> list[str]:
     """The delivery inventory tracks the live decision count."""
     findings: list[str] = []
     text = (HERE.parent / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
-    if "72 architectural decision/disposition rows" in text:
-        findings.append("delivery_notes_remaining_at_72_decisions FAILED")
-    if "73 architectural decision/disposition rows" not in text:
-        findings.append("delivery_notes_states_73_decisions FAILED")
+    if "73 architectural decision/disposition rows" in text:
+        findings.append("delivery_notes_remaining_at_73_decisions FAILED")
+    if "74 architectural decision/disposition rows" not in text:
+        findings.append("delivery_notes_states_74_decisions FAILED")
+    return findings
+
+
+def test_proof_policy(audit) -> list[str]:
+    """Named hostile fixtures for mutation lanes and proof-policy anti-weakening.
+
+    Structural only. Bootstrap compiles no mutant, activates no slot, runs no
+    nextest, invokes no rustc, compares no cargo-mutants run, kills nothing,
+    proves no equivalence, promotes nothing, and classifies no real diff
+    semantically. These fixtures claim none of that.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def doc_findings(tmp):
+        out: list[str] = []
+        audit.check_document_law(tmp, out)
+        return out
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        tmp = gate_sandbox([(rel, old, new)])
+        try:
+            expect(name, (validator or doc_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    ARCH = "spec/architecture.rs"
+    DISP = "spec/dispositions.rs"
+    TP = "docs/12_TESTPAK.md"
+    GA = "docs/24_GAUNTLET.md"
+    pp = audit.proof_policy_findings
+
+    if pp(root):
+        fail("proof_policy_contract_passes")
+
+    # --- DEC-074 identity ---------------------------------------------------
+    probe("dec074_missing_is_rejected", DISP,
+          'id: "DEC-074", class: DecisionClass::Enforcement',
+          "DEC-074 is absent", 'id: "DEC-0740", class: DecisionClass::Enforcement', validator=pp)
+    probe("dec074_wrong_class_is_rejected", DISP,
+          'id: "DEC-074", class: DecisionClass::Enforcement',
+          "is not Enforcement", 'id: "DEC-074", class: DecisionClass::Naming', validator=pp)
+    probe("dec074_missing_g3_is_rejected", DISP,
+          'id: "DEC-074", class: DecisionClass::Enforcement, gates: &[GateId::G3, GateId::G9]',
+          "DEC-074 does not name gate G3",
+          'id: "DEC-074", class: DecisionClass::Enforcement, gates: &[GateId::G9]', validator=pp)
+    probe("dec074_missing_g9_is_rejected", DISP,
+          'id: "DEC-074", class: DecisionClass::Enforcement, gates: &[GateId::G3, GateId::G9]',
+          "DEC-074 does not name gate G9",
+          'id: "DEC-074", class: DecisionClass::Enforcement, gates: &[GateId::G3]', validator=pp)
+    probe("dec015_losing_testpak_confinement_is_rejected", DISP,
+          "Mutation testing only inside TestPak", "no longer confines mutation testing to TestPak",
+          "Mutation testing anywhere", validator=pp)
+
+    # --- lane and result vocabularies ---------------------------------------
+    probe("fourth_mutation_lane_is_rejected", ARCH,
+          "    CompilerBacked,\n}", "MutationLane variants", "    CompilerBacked,\n    NativeLane,\n}",
+          validator=pp)
+    probe("removed_mutation_lane_is_rejected", ARCH,
+          "    /// Implementation-sensitive material whose truth depends on real compiler\n"
+          "    /// and platform behavior. Runs under real rustc semantics.\n    CompilerBacked,\n",
+          "MutationLane variants", "", validator=pp)
+    for variant in ("NotActivated", "Refused", "TimedOut", "InfrastructureFailure", "EquivalentCandidate"):
+        probe(f"mutation_result_{variant.lower()}_removed_is_rejected", ARCH,
+              f"    {variant},\n", "MutationResult variants", "", validator=pp)
+    probe("never_killed_dropping_unbuildable_is_rejected", ARCH,
+          "pub const NEVER_KILLED: &[MutationResult] = &[\n    MutationResult::NotActivated,",
+          "NEVER_KILLED", "pub const NEVER_KILLED: &[MutationResult] = &[", validator=pp)
+    probe("never_survived_dropping_notactivated_is_rejected", ARCH,
+          "pub const NEVER_SURVIVED: &[MutationResult] = &[\n    MutationResult::NotActivated,",
+          "NEVER_SURVIVED", "pub const NEVER_SURVIVED: &[MutationResult] = &[", validator=pp)
+    probe("denominator_dropping_a_terminal_result_is_rejected", ARCH,
+          "pub const TERMINAL_MUTATION_RESULTS: &[MutationResult] = &[\n    MutationResult::Killed,",
+          "!= all eight categories",
+          "pub const TERMINAL_MUTATION_RESULTS: &[MutationResult] = &[", validator=pp)
+    probe("change_class_collapsed_is_rejected", ARCH,
+          "    Neutral,\n", "ProofPolicyChangeClass variants", "", validator=pp)
+    probe("proof_policy_surface_removed_is_rejected", ARCH,
+          "    WaiverLogic,\n", "ProofPolicySurface variants", "", validator=pp)
+
+    # --- candidate and promotion boundary -----------------------------------
+    for rootdir in ("src/", "tests/", "spec/", "docs/", "companion/"):
+        probe(f"candidate_write_into_{rootdir.strip('/')}_permitted_is_rejected", ARCH,
+              f'"{rootdir}"', f"not forbidden from writing {rootdir}", '"__none__"', validator=pp)
+    probe("candidate_root_moved_into_tracked_source_is_rejected", ARCH,
+          "target/muterprater/candidates/", "no candidate output root is declared", "tests/generated/",
+          validator=pp)
+    for needed, token in (("oracle", "independent evidence or oracle identity"),
+                          ("named invariant", "named invariant, guarantee, obligation, or documented proof gap"),
+                          ("killed real semantic mutant", "killed real semantic mutant or equivalent hostile evidence"),
+                          ("receipt", "auditable proof and promotion receipt")):
+        probe(f"promotion_without_{needed.split()[0]}_is_rejected", ARCH,
+              f'    "{token}",\n', f"promotion requirements omit {needed}", "", validator=pp)
+
+    # --- documentary law ----------------------------------------------------
+    for name, rel, old, needle in (
+        ("survived_without_activation_is_rejected", TP,
+         "A `Survived` verdict without activation evidence is invalid", "Survived requires activation"),
+        ("killed_without_baseline_is_rejected", TP,
+         "A `Killed` verdict without a qualified baseline and activation evidence is invalid",
+         "Killed requires baseline and activation"),
+        ("timeout_counted_as_kill_is_rejected", TP, "A timeout is not a kill", "a timeout is not a kill"),
+        ("unbuildable_counted_as_kill_is_rejected", TP,
+         "a compiler error produced by an invalid mutation is not evidence",
+         "an unbuildable candidate is not a kill"),
+        ("equivalent_candidate_without_witness_is_rejected", TP,
+         "a classification pending its witness, never equivalence proof",
+         "EquivalentCandidate is not equivalence proof"),
+        ("denominator_silently_shrunk_is_rejected", TP,
+         "Nothing silently leaves the denominator", "nothing leaves the denominator silently"),
+        ("score_without_distribution_is_rejected", TP,
+         "A mutation score exposes the full result distribution",
+         "the full result distribution is published"),
+        ("lane_a_requiring_rustc_is_rejected", TP, "No per-candidate Rust compile. The reference interpreter",
+         "Lane A needs no per-candidate Rust compile"),
+        ("lane_b_slots_in_production_is_rejected", TP, "ordinary production artifact. A release artifact",
+         "Lane B slots are test-profile only"),
+        ("lane_b_without_activation_is_rejected", TP, "Activation is evidence, never an assumption",
+         "Lane B records activation"),
+        ("lane_c_replacing_rustc_is_rejected", TP, "never claims a homegrown Rust evaluator equals rustc",
+         "no homegrown evaluator equals rustc"),
+        ("nextest_as_semantic_authority_is_rejected", TP, "Nextest executes; it is never semantic authority",
+         "nextest executes and is not semantic authority"),
+        ("differential_tool_retired_by_prose_is_rejected", TP, "No coronation by architecture prose",
+         "compiler-backed tooling is not retired by prose"),
+        ("muterprater_as_standalone_product_is_rejected", TP,
+         "It is not a standalone product package, a second semantic authority",
+         "Muterprater is not a standalone product"),
+        ("production_code_as_own_oracle_is_rejected", TP,
+         "passing production evaluator against itself -> not an independent oracle",
+         "self-calling production code is not an oracle"),
+        ("second_pakvm_mandated_is_rejected", TP,
+         "Building a second full PakVM merely to call it independent is not independence",
+         "no second full PakVM is required for independence"),
+        ("direct_tracked_write_path_is_rejected", TP,
+         "It may not write candidates directly into `src/`, `tests/`, `spec/`, `docs/`, or `companion/`",
+         "candidates land outside tracked source"),
+        ("generation_and_promotion_merged_is_rejected", TP,
+         "Generation and promotion are two different operations with two different receipts",
+         "generation and promotion are separate"),
+        ("unclassified_policy_change_accepted_is_rejected", TP,
+         "An unclassified proof-policy change is refused",
+         "an unclassified proof-policy change is refused"),
+        ("neutral_without_parity_is_rejected", TP,
+         "and documentary and receipt meaning. Requires parity evidence:",
+         "Neutral requires parity evidence"),
+        ("narrowed_domain_escaping_weakening_is_rejected", TP,
+         "narrows the tested domain or silently removes denominator units is Weakening",
+         "a narrowed domain is Weakening"),
+        ("weakening_without_hostile_qualification_is_rejected", TP,
+         "hostile qualification proving the new boundary is enforced",
+         "a Weakening carries the full authority package"),
+        ("issue_link_as_authority_is_rejected", TP, "A generic issue link is not decision authority",
+         "an issue link is not authority"),
+        ("commit_message_as_receipt_is_rejected", TP, "A commit message is not a weakening receipt",
+         "a commit message is not a receipt"),
+        ("gate_disabling_itself_as_cleanup_is_rejected", TP,
+         "A proof-policy gate that can be disabled as unclassified cleanup is not an anti-weakening gate",
+         "a disableable gate is not a gate"),
+        ("bootstrap_claiming_diff_inference_is_rejected", TP,
+         "Bootstrap does not understand arbitrary semantic diffs and never claims to",
+         "bootstrap does not infer semantic diffs"),
+        ("d1_publication_proof_ownership_removed_is_rejected", GA,
+         "committed is never reported as an ordinary operation failure",
+         "D1 publication proof family is owned"),
+        ("d1_attempt_proof_ownership_removed_is_rejected", GA,
+         "CancelledAfterAdmission does not prove non-commit", "D1 attempt proof family is owned"),
+        ("d1_traversal_proof_ownership_removed_is_rejected", GA,
+         "valid pages concatenate to the one-shot reference traversal",
+         "D1 traversal proof family is owned"),
+        ("d1_routing_proof_ownership_removed_is_rejected", GA,
+         "every declared route is present exactly once", "D1 routing proof family is owned"),
+        ("d1_deadline_proof_ownership_removed_is_rejected", GA,
+         "retry does not reset the overall deadline", "D1 deadline proof family is owned"),
+        ("d2_specialization_square_removed_is_rejected", GA,
+         "Specialization proof square (DEC-073)", "the D2 specialization square is assigned"),
+        ("one_lane_made_sole_proof_route_is_rejected", GA, "No lane is the sole proof route",
+         "no lane is the sole proof route"),
+    ):
+        probe(name, rel, old, needle)
+
+    # --- graph conservation -------------------------------------------------
+    nodes, edges = audit.guarantee_derive(root)
+    ids = {n["id"] for n in nodes}
+    if "DEC-074" not in ids:
+        fail("guarantee_graph_missing_dec074")
+    for synthetic in ("SemanticIr", "SelectableCompiled", "CompilerBacked", "MutationLane",
+                      "MutationResult", "ProofPolicySurface", "Killed", "Survived"):
+        if synthetic in ids:
+            fail(f"synthetic mutation node introduced: {synthetic}")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 74:
+        fail("decision_node_count_is_not_74")
+    if len(nodes) != 197 or len(edges) != 9:
+        fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
+    text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
+    if "74 architectural decision/disposition rows" not in text:
+        fail("delivery_notes_states_74_decisions")
     return findings
 
 
@@ -1357,13 +1561,14 @@ def main() -> int:
     findings += test_substrate(audit)
     findings += test_specialization(audit, project)
     findings += test_delivery_notes_d2(audit)
+    findings += test_proof_policy(audit)
     findings += test_control_characters(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy hostile fixtures)")
     return 0
 
 

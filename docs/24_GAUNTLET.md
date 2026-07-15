@@ -49,17 +49,19 @@ A structural rule is accepted only after a conforming fixture passes, a violatin
 
 ## Mutation lanes
 
-### Semantic IR
+Exactly three, frozen (DEC-015). The typed names are `MutationLane` in `spec/architecture.rs`; the contract, result algebra, activation evidence, and promotion law live in `12_TESTPAK.md`.
 
-Mutate Contract IR, schemas, availability rules, BatQL AST, ProgramImage, decision nodes, query plans, capabilities, and proof facts without compiling Rust.
+### Semantic IR (`MutationLane::SemanticIr`)
 
-### Generated selectable
+Mutate Contract IR, schemas, availability rules, BatQL AST, ProgramImage, decision nodes, query plans, capabilities, and proof facts without compiling Rust. The reference interpreter executes the mutant; an independent evidence route judges it.
 
-Compile generated alternatives once per shard and select one mutation site at runtime. Activation is observed.
+### Generated selectable (`MutationLane::SelectableCompiled`)
 
-### Kernel source
+Compile generated alternatives once per shard and select one mutation site at runtime. Activation is observed, never assumed. Slots live only in a test or mutation profile.
 
-Use compiler-backed mutation only for narrow handwritten mechanisms such as codec, journal recovery, concurrency, crypto-domain plumbing, or optimized tile kernels.
+### Kernel source (`MutationLane::CompilerBacked`)
+
+Use compiler-backed mutation only for narrow handwritten mechanisms such as codec, journal recovery, concurrency, crypto-domain plumbing, or optimized tile kernels. Candidates run under real rustc semantics.
 
 ## Semantic fuzzing
 
@@ -107,4 +109,67 @@ reference(semantic mutant) == residual(semantic mutant)
 
 Where a residual-level mutation corresponds to a semantic mutation, the residual mutation route agrees with the specialize-the-semantic-mutant route. This proves the specialization transformation is meaning preserving. It does not replace the independent semantic oracle (SEED-INDEPENDENT-ORACLE).
 
-Executable mutation routing and promotion law are owned by a later pass, not by this record.
+Execution routes bind to the mutation lanes (DEC-015):
+
+```text
+semantic mutation                                    Lane SemanticIr
+selectable residual or generated route mutation      Lane SelectableCompiled
+handwritten specializer, cache, kernel, mechanism    Lane CompilerBacked
+```
+
+No lane is the sole proof route. A semantic mutant that changes meaning must be observable through the reference path and the specialized path. A residual-only mutation either maps to a semantic counterpart or is classified as an implementation/mechanism mutation; it never pretends to be a semantic mutant.
+
+## Substrate proof families (5.5D1)
+
+Future TestPak owns these executable properties. Bootstrap verifies only that they are named, owned, and assigned; it does not execute them.
+
+### Publication and reconciliation (LEG-037, docs/05)
+
+```text
+committed is never reported as an ordinary operation failure
+committed with an incomplete receipt remains committed
+outcome unknown is not treated as known non-commit
+reconciliation appends evidence and never rewrites the original durable observation
+admitted atomic publication produces all or none of its durable group
+```
+
+### Logical operation and attempt (DEC-028, LEG-042)
+
+```text
+retry retains LogicalOperationId
+retry receives a new AttemptId
+CancelledBeforeAdmission proves no admission
+CancelledAfterAdmission does not prove non-commit
+```
+
+### Bounded traversal (LEG-028, LEG-029)
+
+```text
+valid pages concatenate to the one-shot reference traversal
+no gaps, no duplicates, no reordering
+stale, cross-store, cross-generation, cross-source-cut, cross-direction,
+  cross-selector, and cross-filter cursors fail closed
+pre-decode limit and work budget bound discovery
+```
+
+### Generated typed routing (LEG-046)
+
+```text
+every declared route is present exactly once
+unknown route refuses
+duplicate route refuses
+decoder, capability, handler, and receipt bindings remain aligned
+```
+
+### Absolute deadline (LEG-066, docs/10)
+
+```text
+retry does not reset the overall deadline
+per-attempt deadline cannot exceed the overall deadline
+lower repeating mechanisms cannot outlive the remaining deadline
+expiry before and after admission preserve attempt and commit distinctions
+```
+
+## Proof-policy anti-weakening (DEC-074)
+
+TestPak owns the gate. Every change to an owned proof-policy surface declares one `ProofPolicyChangeClass`; an unclassified change is refused; a Weakening carries the complete authority package, including a Weakening of the gate itself. The contract is in `12_TESTPAK.md`. Bootstrap proves the contract and the detector rule, never arbitrary semantic diff inference.
