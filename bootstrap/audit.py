@@ -493,11 +493,14 @@ def guarantee_leg_meta(root: Path) -> dict[str, dict]:
 
 
 def _leg_lifetime(meta: dict) -> str:
+    # A LEG row names a clean owner and gates but no typed successor GuaranteeRef,
+    # so an active gate-closed obligation is UntilGate. UntilSuccessor requires a
+    # resolved typed successor, which the LEG schema does not provide.
     if meta["status"] == "Closed":
         return "ClosedEvidence"
     if meta["deletion"] == "OnCompatibilityWindowExpiry":
         return "UntilCompatibilityExpiry"
-    return "UntilSuccessor"
+    return "UntilGate"
 
 
 def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple]]:
@@ -517,7 +520,8 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple]]:
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
     for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
         nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
-                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "", "witness": ""})
+                      "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "",
+                      "witness": "spec/architecture.rs; audit.py architecture checks"})
     for pkg, profile, target in G_QUAL_ROW.findall(arch):
         nodes.append({"id": f"QUAL-{pkg}-{profile}", "family": "QUAL", "kind": "QualificationRequirement",
                       "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": target, "witness": ""})
@@ -557,6 +561,8 @@ def guarantee_relation_findings(node_ids: set[str], edges: list[tuple]) -> list[
         seen.add((s, k, t))
         if t not in node_ids:
             out.append(f"guarantee relation target {t} does not resolve ({s} {k})")
+        if k in ("Discharges", "Closes"):
+            out.append(f"guarantee {k} edge {s}->{t} requires qualifying evidence or a closure receipt, absent before Gate 0")
     for fam in ("DerivesFrom", "Refines", "Supersedes", "Discharges"):
         adj: dict[str, list[str]] = {}
         for s, k, t in edges:
@@ -567,7 +573,16 @@ def guarantee_relation_findings(node_ids: set[str], edges: list[tuple]) -> list[
     return out
 
 
-def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict]) -> list[str]:
+# Kind-aware Permanent-witness enforcement. Decision witnessing (gate binding) is
+# deferred to 5.5C2; QualificationRequirement is itself a qualification contract.
+PERMANENT_WITNESS_KINDS = {"SemanticLaw", "BootstrapAssertion", "ArchitectureConstraint"}
+
+
+def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], edges: list[tuple]) -> list[str]:
+    node_ids = {n["id"] for n in nodes}
+    # A guarantee is validly UntilSuccessor only if a resolvable typed successor
+    # supersedes it. clean_owner text and gate names are never successor edges.
+    superseded = {t for s, k, t in edges if k == "Supersedes" and t in node_ids}
     out = []
     for n in nodes:
         life, kind = n["lifetime"], n["kind"]
@@ -575,8 +590,10 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict]) ->
             out.append(f"{n['id']} HistoricalCoverageOnly cannot gate")
         if life == "UntilGate" and not n["gates"].strip():
             out.append(f"{n['id']} UntilGate names no gate")
-        if life == "Permanent" and kind == "SemanticLaw" and not n["witness"].strip():
-            out.append(f"{n['id']} Permanent SemanticLaw names no witness")
+        if life == "UntilSuccessor" and n["id"] not in superseded:
+            out.append(f"{n['id']} UntilSuccessor names no resolvable typed successor relation")
+        if life == "Permanent" and kind in PERMANENT_WITNESS_KINDS and not n["witness"].strip():
+            out.append(f"{n['id']} Permanent {kind} names no witness")
         if n["family"] == "LEG":
             meta = leg_meta.get(n["id"], {})
             if meta.get("status") == "Active" and life == "ClosedEvidence":
@@ -589,8 +606,6 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict]) ->
                 out.append(f"{n['id']} LEG projects as Permanent; DeletionCondition::Never must not force Permanent")
             if life == "UntilCompatibilityExpiry" and meta.get("compat") == "None":
                 out.append(f"{n['id']} UntilCompatibilityExpiry names no compatibility condition")
-            if life == "UntilSuccessor" and not meta.get("owner", "").strip():
-                out.append(f"{n['id']} UntilSuccessor names no successor owner")
     return out
 
 
@@ -638,7 +653,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     node_ids = {n["id"] for n in nodes}
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
-    findings.extend(guarantee_lifetime_findings(nodes, leg_meta))
+    findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
     if len(node_ids) != len(nodes):
         findings.append("duplicate guarantee id across source families")
     # duplicate-prose structural smell (SEED only; exact normalized text + owner, no relation)

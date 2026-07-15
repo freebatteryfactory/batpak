@@ -47,7 +47,7 @@ unresolved references: 0
 | --- | --- |
 | Permanent | 109 |
 | UntilCompatibilityExpiry | 5 |
-| UntilSuccessor | 79 |
+| UntilGate | 79 |
 
 ## Active versus closed
 
@@ -69,7 +69,7 @@ historical coverage only: 0
 | SEED-NO-DUAL-PRODUCT | ArchitectureConstraint | Permanent | docs/02_SYSTEM_MODEL.md | G0 | stale-vocabulary scan; docs/31 | - |
 | SEED-NO-AMBIENT-AUTHORITY | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G5 | LEG-066; BP-GAUNTLET-1 capability enforcement | - |
 | SEED-SEMANTIC-ZERO-LEAKAGE | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0 | seedcheck production-token scan; DEC-068 AST gate | DerivesFrom DEC-068 |
-| SEED-SYNC-FIRST | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | LEG-080; seedcheck no-tokio | Discharges LEG-080 |
+| SEED-SYNC-FIRST | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | LEG-080; seedcheck no-tokio | Refines LEG-080 |
 | SEED-NO-STD-SEMANTIC-PROFILES | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0/G5 | DEC-065 qualification matrix | DerivesFrom DEC-065 |
 | SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068 AST gate; seedcheck | DerivesFrom DEC-068 |
 | SEED-NO-INLINE-DOMAIN-TYPES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G1/G3 | DEC-068 AST gate | DerivesFrom DEC-068 |
@@ -116,90 +116,90 @@ historical coverage only: 0
 | SEED-SYNC-FIRST | SEED | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 |
 | SEED-SYNCBAT-ONE-HEARTBEAT | SEED | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 |
 | SEED-TIME-AXES | SEED | SemanticLaw | Permanent | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | G2 |
-| LEG-001 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
+| LEG-001 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
 | LEG-002 | LEG | LegacyObligation | UntilCompatibilityExpiry | batpak::event | G2 |
-| LEG-003 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
-| LEG-004 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
-| LEG-005 | LEG | LegacyObligation | UntilSuccessor | batpak::frontier | G2 |
-| LEG-006 | LEG | LegacyObligation | UntilSuccessor | batpak::visibility | G2 |
-| LEG-007 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
-| LEG-008 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
-| LEG-009 | LEG | LegacyObligation | UntilSuccessor | batpak::compaction | G2 |
-| LEG-010 | LEG | LegacyObligation | UntilSuccessor | batpak::recovery | G2/G3 |
-| LEG-011 | LEG | LegacyObligation | UntilSuccessor | batpak::lifecycle | G2 |
-| LEG-012 | LEG | LegacyObligation | UntilSuccessor | batpak::lifecycle | G2 |
-| LEG-013 | LEG | LegacyObligation | UntilSuccessor | batpak::lifecycle | G2 |
-| LEG-014 | LEG | LegacyObligation | UntilSuccessor | batpak::recovery | G2 |
-| LEG-015 | LEG | LegacyObligation | UntilSuccessor | batpak::secret | G2 |
-| LEG-016 | LEG | LegacyObligation | UntilSuccessor | batpak::storage_port | G2/G3 |
-| LEG-017 | LEG | LegacyObligation | UntilSuccessor | batpak::tile | G2/G8 |
-| LEG-018 | LEG | LegacyObligation | UntilSuccessor | batpak::tile | G8 |
-| LEG-019 | LEG | LegacyObligation | UntilSuccessor | batpak::integrity | G2/G3 |
-| LEG-020 | LEG | LegacyObligation | UntilSuccessor | testpak::bench | G3/G8 |
-| LEG-021 | LEG | LegacyObligation | UntilSuccessor | batpak::coordinate | G2 |
-| LEG-022 | LEG | LegacyObligation | UntilSuccessor | batpak::navigation | G2 |
-| LEG-023 | LEG | LegacyObligation | UntilSuccessor | batpak::integrity | G2/G3 |
-| LEG-024 | LEG | LegacyObligation | UntilSuccessor | batpak::event | G1/G2 |
-| LEG-025 | LEG | LegacyObligation | UntilSuccessor | batpak::time | G2 |
-| LEG-026 | LEG | LegacyObligation | UntilSuccessor | batpak::projection | G2 |
+| LEG-003 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
+| LEG-004 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
+| LEG-005 | LEG | LegacyObligation | UntilGate | batpak::frontier | G2 |
+| LEG-006 | LEG | LegacyObligation | UntilGate | batpak::visibility | G2 |
+| LEG-007 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
+| LEG-008 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
+| LEG-009 | LEG | LegacyObligation | UntilGate | batpak::compaction | G2 |
+| LEG-010 | LEG | LegacyObligation | UntilGate | batpak::recovery | G2/G3 |
+| LEG-011 | LEG | LegacyObligation | UntilGate | batpak::lifecycle | G2 |
+| LEG-012 | LEG | LegacyObligation | UntilGate | batpak::lifecycle | G2 |
+| LEG-013 | LEG | LegacyObligation | UntilGate | batpak::lifecycle | G2 |
+| LEG-014 | LEG | LegacyObligation | UntilGate | batpak::recovery | G2 |
+| LEG-015 | LEG | LegacyObligation | UntilGate | batpak::secret | G2 |
+| LEG-016 | LEG | LegacyObligation | UntilGate | batpak::storage_port | G2/G3 |
+| LEG-017 | LEG | LegacyObligation | UntilGate | batpak::tile | G2/G8 |
+| LEG-018 | LEG | LegacyObligation | UntilGate | batpak::tile | G8 |
+| LEG-019 | LEG | LegacyObligation | UntilGate | batpak::integrity | G2/G3 |
+| LEG-020 | LEG | LegacyObligation | UntilGate | testpak::bench | G3/G8 |
+| LEG-021 | LEG | LegacyObligation | UntilGate | batpak::coordinate | G2 |
+| LEG-022 | LEG | LegacyObligation | UntilGate | batpak::navigation | G2 |
+| LEG-023 | LEG | LegacyObligation | UntilGate | batpak::integrity | G2/G3 |
+| LEG-024 | LEG | LegacyObligation | UntilGate | batpak::event | G1/G2 |
+| LEG-025 | LEG | LegacyObligation | UntilGate | batpak::time | G2 |
+| LEG-026 | LEG | LegacyObligation | UntilGate | batpak::projection | G2 |
 | LEG-027 | LEG | LegacyObligation | UntilCompatibilityExpiry | batpak::path | G2 |
-| LEG-028 | LEG | LegacyObligation | UntilSuccessor | batpak::projection | G2 |
-| LEG-029 | LEG | LegacyObligation | UntilSuccessor | batpak::projection_query | G2/G6/G7 |
-| LEG-030 | LEG | LegacyObligation | UntilSuccessor | batpak::projection | G2/G3 |
-| LEG-031 | LEG | LegacyObligation | UntilSuccessor | batpak::projection | G8 |
-| LEG-032 | LEG | LegacyObligation | UntilSuccessor | batpak::delivery | G2/G6 |
-| LEG-033 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G6 |
-| LEG-034 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G6 |
-| LEG-035 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G3/G6 |
-| LEG-036 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G6 |
-| LEG-037 | LEG | LegacyObligation | UntilSuccessor | batpak::effect | G2/G6 |
-| LEG-038 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G5/G6 |
-| LEG-039 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G6 |
+| LEG-028 | LEG | LegacyObligation | UntilGate | batpak::projection | G2 |
+| LEG-029 | LEG | LegacyObligation | UntilGate | batpak::projection_query | G2/G6/G7 |
+| LEG-030 | LEG | LegacyObligation | UntilGate | batpak::projection | G2/G3 |
+| LEG-031 | LEG | LegacyObligation | UntilGate | batpak::projection | G8 |
+| LEG-032 | LEG | LegacyObligation | UntilGate | batpak::delivery | G2/G6 |
+| LEG-033 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G6 |
+| LEG-034 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G6 |
+| LEG-035 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G3/G6 |
+| LEG-036 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G6 |
+| LEG-037 | LEG | LegacyObligation | UntilGate | batpak::effect | G2/G6 |
+| LEG-038 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G5/G6 |
+| LEG-039 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G6 |
 | LEG-040 | LEG | LegacyObligation | UntilCompatibilityExpiry | batpak::schema | G2/G5 |
-| LEG-041 | LEG | LegacyObligation | UntilSuccessor | batpak::world | G5 |
-| LEG-042 | LEG | LegacyObligation | UntilSuccessor | syncbat::bvisor | G5 |
-| LEG-043 | LEG | LegacyObligation | UntilSuccessor | syncbat::bvisor | G5 |
-| LEG-044 | LEG | LegacyObligation | UntilSuccessor | syncbat::pakvm | G3/G5 |
-| LEG-045 | LEG | LegacyObligation | UntilSuccessor | netbat | G7 |
-| LEG-046 | LEG | LegacyObligation | UntilSuccessor | macbat-compiler | G1 |
-| LEG-047 | LEG | LegacyObligation | UntilSuccessor | macbat-compiler | G1/G2 |
-| LEG-048 | LEG | LegacyObligation | UntilSuccessor | testpak::repo | G3 |
-| LEG-049 | LEG | LegacyObligation | UntilSuccessor | testpak::gauntlet | G3/G9 |
-| LEG-050 | LEG | LegacyObligation | UntilSuccessor | batpak::event | G2/G3 |
-| LEG-051 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
-| LEG-052 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2/G3 |
+| LEG-041 | LEG | LegacyObligation | UntilGate | batpak::world | G5 |
+| LEG-042 | LEG | LegacyObligation | UntilGate | syncbat::bvisor | G5 |
+| LEG-043 | LEG | LegacyObligation | UntilGate | syncbat::bvisor | G5 |
+| LEG-044 | LEG | LegacyObligation | UntilGate | syncbat::pakvm | G3/G5 |
+| LEG-045 | LEG | LegacyObligation | UntilGate | netbat | G7 |
+| LEG-046 | LEG | LegacyObligation | UntilGate | macbat-compiler | G1 |
+| LEG-047 | LEG | LegacyObligation | UntilGate | macbat-compiler | G1/G2 |
+| LEG-048 | LEG | LegacyObligation | UntilGate | testpak::repo | G3 |
+| LEG-049 | LEG | LegacyObligation | UntilGate | testpak::gauntlet | G3/G9 |
+| LEG-050 | LEG | LegacyObligation | UntilGate | batpak::event | G2/G3 |
+| LEG-051 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
+| LEG-052 | LEG | LegacyObligation | UntilGate | batpak::store | G2/G3 |
 | LEG-053 | LEG | LegacyObligation | UntilCompatibilityExpiry | batpak::compatibility | G2/G3 |
-| LEG-054 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G2/G6 |
-| LEG-055 | LEG | LegacyObligation | UntilSuccessor | batpak::time | G2/G3 |
-| LEG-056 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2/G8 |
-| LEG-057 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2/G6 |
-| LEG-058 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G6 |
-| LEG-059 | LEG | LegacyObligation | UntilSuccessor | batpak::receipt | G2/G6 |
-| LEG-060 | LEG | LegacyObligation | UntilSuccessor | syncbat::runtime | G6/G7 |
-| LEG-061 | LEG | LegacyObligation | UntilSuccessor | syncbat::bvisor | G5/G6 |
-| LEG-062 | LEG | LegacyObligation | UntilSuccessor | syncbat::world | G6 |
-| LEG-063 | LEG | LegacyObligation | UntilSuccessor | batpak::navigation | G2/G7 |
+| LEG-054 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G2/G6 |
+| LEG-055 | LEG | LegacyObligation | UntilGate | batpak::time | G2/G3 |
+| LEG-056 | LEG | LegacyObligation | UntilGate | batpak::store | G2/G8 |
+| LEG-057 | LEG | LegacyObligation | UntilGate | batpak::store | G2/G6 |
+| LEG-058 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G6 |
+| LEG-059 | LEG | LegacyObligation | UntilGate | batpak::receipt | G2/G6 |
+| LEG-060 | LEG | LegacyObligation | UntilGate | syncbat::runtime | G6/G7 |
+| LEG-061 | LEG | LegacyObligation | UntilGate | syncbat::bvisor | G5/G6 |
+| LEG-062 | LEG | LegacyObligation | UntilGate | syncbat::world | G6 |
+| LEG-063 | LEG | LegacyObligation | UntilGate | batpak::navigation | G2/G7 |
 | LEG-064 | LEG | LegacyObligation | UntilCompatibilityExpiry | testpak::oracle | G2/G7 |
-| LEG-065 | LEG | LegacyObligation | UntilSuccessor | testpak::repo | G0/G3 |
-| LEG-066 | LEG | LegacyObligation | UntilSuccessor | batpak::port | G2/G5/G7 |
-| LEG-067 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2/G3 |
-| LEG-068 | LEG | LegacyObligation | UntilSuccessor | batpak::tile | G2/G8 |
-| LEG-069 | LEG | LegacyObligation | UntilSuccessor | batpak::time | G2/G3 |
-| LEG-070 | LEG | LegacyObligation | UntilSuccessor | batpak::frontier | G2/G3 |
-| LEG-071 | LEG | LegacyObligation | UntilSuccessor | batpak::frontier | G2/G3 |
-| LEG-072 | LEG | LegacyObligation | UntilSuccessor | batpak::frontier | G2/G6 |
-| LEG-073 | LEG | LegacyObligation | UntilSuccessor | batpak::time | G2/G3 |
-| LEG-074 | LEG | LegacyObligation | UntilSuccessor | batpak::lifecycle | G2/G3 |
-| LEG-075 | LEG | LegacyObligation | UntilSuccessor | batpak::lifecycle | G2/G3 |
-| LEG-076 | LEG | LegacyObligation | UntilSuccessor | macbat-compiler | G1 |
-| LEG-077 | LEG | LegacyObligation | UntilSuccessor | batpak::event | G2/G3 |
-| LEG-078 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2/G8 |
-| LEG-079 | LEG | LegacyObligation | UntilSuccessor | testpak::oracle | G3/G8 |
-| LEG-080 | LEG | LegacyObligation | UntilSuccessor | syncbat::port | G0/G5/G7 |
-| LEG-081 | LEG | LegacyObligation | UntilSuccessor | batpak::secret | G2/G3 |
-| LEG-082 | LEG | LegacyObligation | UntilSuccessor | batpak::compaction | G2 |
-| LEG-083 | LEG | LegacyObligation | UntilSuccessor | batpak::store | G2 |
-| LEG-084 | LEG | LegacyObligation | UntilSuccessor | batpak::event | G1/G2 |
+| LEG-065 | LEG | LegacyObligation | UntilGate | testpak::repo | G0/G3 |
+| LEG-066 | LEG | LegacyObligation | UntilGate | batpak::port | G2/G5/G7 |
+| LEG-067 | LEG | LegacyObligation | UntilGate | batpak::store | G2/G3 |
+| LEG-068 | LEG | LegacyObligation | UntilGate | batpak::tile | G2/G8 |
+| LEG-069 | LEG | LegacyObligation | UntilGate | batpak::time | G2/G3 |
+| LEG-070 | LEG | LegacyObligation | UntilGate | batpak::frontier | G2/G3 |
+| LEG-071 | LEG | LegacyObligation | UntilGate | batpak::frontier | G2/G3 |
+| LEG-072 | LEG | LegacyObligation | UntilGate | batpak::frontier | G2/G6 |
+| LEG-073 | LEG | LegacyObligation | UntilGate | batpak::time | G2/G3 |
+| LEG-074 | LEG | LegacyObligation | UntilGate | batpak::lifecycle | G2/G3 |
+| LEG-075 | LEG | LegacyObligation | UntilGate | batpak::lifecycle | G2/G3 |
+| LEG-076 | LEG | LegacyObligation | UntilGate | macbat-compiler | G1 |
+| LEG-077 | LEG | LegacyObligation | UntilGate | batpak::event | G2/G3 |
+| LEG-078 | LEG | LegacyObligation | UntilGate | batpak::store | G2/G8 |
+| LEG-079 | LEG | LegacyObligation | UntilGate | testpak::oracle | G3/G8 |
+| LEG-080 | LEG | LegacyObligation | UntilGate | syncbat::port | G0/G5/G7 |
+| LEG-081 | LEG | LegacyObligation | UntilGate | batpak::secret | G2/G3 |
+| LEG-082 | LEG | LegacyObligation | UntilGate | batpak::compaction | G2 |
+| LEG-083 | LEG | LegacyObligation | UntilGate | batpak::store | G2 |
+| LEG-084 | LEG | LegacyObligation | UntilGate | batpak::event | G1/G2 |
 | DEC-001 | DEC | Decision | Permanent | docs/30_DECISION_AND_REJECTION_LEDGER.md |  |
 | DEC-002 | DEC | Decision | Permanent | docs/30_DECISION_AND_REJECTION_LEDGER.md |  |
 | DEC-003 | DEC | Decision | Permanent | docs/30_DECISION_AND_REJECTION_LEDGER.md |  |
@@ -296,5 +296,5 @@ historical coverage only: 0
 | SEED-NO-INLINE-DOMAIN-TYPES | DerivesFrom | DEC-068 |
 | SEED-NO-STD-SEMANTIC-PROFILES | DerivesFrom | DEC-065 |
 | SEED-SEMANTIC-ZERO-LEAKAGE | DerivesFrom | DEC-068 |
-| SEED-SYNC-FIRST | Discharges | LEG-080 |
+| SEED-SYNC-FIRST | Refines | LEG-080 |
 | SEED-TIME-AXES | DerivesFrom | DEC-061 |

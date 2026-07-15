@@ -84,6 +84,8 @@ no exact/approximate authority boundary flattened into one universal numeric typ
 no universal hand-authored guarantee ledger (SEED/LEG/DEC/architecture/qualification keep native authority; the Guarantee Graph is derived, DEC-070)
 no guarantee lifetime conflated with deletion condition or active/closed status (DeletionCondition::Never never forces Permanent or Active)
 no guarantee relation inferred from prose similarity, shared owner, or document section
+no clean_owner text or gate name treated as a successor guarantee edge (UntilSuccessor requires a resolvable typed successor; a gate-closed active obligation is UntilGate)
+no bare SEED, DEC, or architecture law Discharges or Closes an active obligation before its qualifying evidence or closure receipt exists at Gate 0
 ```
 
 ## Remaining implementation work is not architecture ambiguity

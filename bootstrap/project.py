@@ -180,12 +180,15 @@ def guarantee_nodes(root):
                       "failure": f"Seed({s['failure']})"})
     leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
     for lid, owner, gate, deletion, status in _LEG_ROW.findall(leg):
+        # A LEG row names a clean owner and gates but no typed successor
+        # GuaranteeRef, so an active gate-closed obligation is UntilGate, not
+        # UntilSuccessor. UntilSuccessor requires a resolved typed successor.
         if status == "Closed":
             life = "ClosedEvidence"
         elif deletion == "OnCompatibilityWindowExpiry":
             life = "UntilCompatibilityExpiry"
         else:
-            life = "UntilSuccessor"
+            life = "UntilGate"
         nodes.append({"id": lid, "family": "LEG", "kind": "LegacyObligation", "lifetime": life,
                       "owner": owner, "gates": gate, "witness": "", "failure": f"Legacy({gate})"})
     dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
@@ -197,7 +200,8 @@ def guarantee_nodes(root):
     for pkg, cls, layer in _PKG_ROW.findall(arch):
         nodes.append({"id": f"ARCH-{pkg}", "family": "ARCH", "kind": "ArchitectureConstraint",
                       "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": "",
-                      "witness": "", "failure": f"Architecture(L{layer} {cls})"})
+                      "witness": "spec/architecture.rs; audit.py architecture checks",
+                      "failure": f"Architecture(L{layer} {cls})"})
     for pkg, profile, target in _QUAL_ROW.findall(arch):
         nodes.append({"id": f"QUAL-{pkg}-{profile}", "family": "QUAL", "kind": "QualificationRequirement",
                       "lifetime": "Permanent", "owner": "spec/architecture.rs", "gates": target,
