@@ -1138,9 +1138,81 @@ DOC_LAW_MARKERS = {
         ("no formatter upgrades or collapses a claim", "may upgrade or collapse a claim"),
     ],
     "docs/05_STORAGE_FBAT_AND_TILES.md": [
+        ("commit knowledge is distinct from receipt completeness and reconciliation",
+         "commit knowledge        KnownAbsent | KnownCommitted | Unknown"),
+        ("receipt completeness axis", "receipt completeness    Complete | Incomplete"),
+        ("reconciliation posture axis", "reconciliation posture  NotRequired | Pending"),
+        ("post-commit publication is not an ordinary failure", "committed                        is NOT failed"),
+        ("committed with an incomplete receipt is not failure or unknown",
+         "committed, receipt incomplete    is NOT failed, and is NOT outcome unknown"),
+        ("outcome unknown is not proof of non-commit",
+         "outcome unknown                  is NOT proof of non-commit"),
+        ("cancelled after admission is not proof of non-commit",
+         "cancelled after admission        is NOT proof of non-commit"),
+        ("reconciliation appends evidence and never rewrites durable history",
+         "It never rewrites the original durable event"),
+        ("no generic untyped publication envelope",
+         "There is no `GenericPublicationCommand { kind: String, payload: Vec<u8> }`"),
+
         ("storage owns segment seals", "segment seal"),
         ("storage owns the history commitment", "global append accumulator"),
         ("coherence is not freshness", "Coherence is not freshness"),
+    ],
+    "docs/08_SYNCBAT_RUNTIME.md": [
+        ("typed batch atomicity is capability-bounded",
+         "only where the owning capability explicitly admits joint atomic publication"),
+        ("a typed batch is not a distributed transaction",
+         "not an arbitrary distributed transaction across unrelated ports or services"),
+        ("input order and receipt order correspond",
+         "Input order and receipt order correspond exactly"),
+        ("an atomic group never publishes a partial durable subset",
+         "partial durable subset   forbidden"),
+        ("logical operation identity is stable across retries",
+         "LogicalOperationId   stable across retries of the same requested operation"),
+        ("AttemptId is unique per physical admission",
+         "AttemptId            unique for every physical admission attempt"),
+        ("attempt state, logical outcome, commit knowledge, and receipt completeness stay separate",
+         "never collapse into one `Outcome`, boolean, or success/failure field"),
+    ],
+    "docs/09_BVISOR.md": [
+        ("cancellation before admission is distinct",
+         "CancelledBeforeAdmission   no physical execution was admitted"),
+        ("cancellation after admission is not proof of non-commit",
+         "`CancelledAfterAdmission` is never proof of non-commit"),
+    ],
+    "docs/10_WORLD_IMAGES_AND_PORTS.md": [
+        ("port deadlines are absolute and monotonic",
+         "accepts an absolute monotonic deadline"),
+        ("a relative inactivity timeout is not a deadline",
+         "A relative inactivity timeout is not an overall operation deadline"),
+        ("the lowest extending mechanism enforces the remaining deadline",
+         "The lowest mechanism capable of internally extending work enforces the remaining absolute deadline"),
+        ("retry does not reset the overall deadline", "retry does not reset the overall deadline"),
+        ("a per-attempt deadline stays bounded by the overall deadline",
+         "remains bounded by the overall operation deadline"),
+    ],
+    "docs/16_IDENTITY_TIME_AND_NAVIGATION.md": [
+        ("the cursor binds generation", "A cursor binds to its traversal identity, including store lineage, generation"),
+        ("the cursor binds the source cut", "source cut, direction, selector, and filters"),
+        ("a transplanted cursor fails closed", "fails closed rather than resuming against a traversal it never described"),
+        ("the page carries a completeness posture", "page completeness or partiality posture"),
+        ("the page carries a source stamp and work observation", "WorkObservation"),
+    ],
+    "docs/13_BATQL_CONTRACT.md": [
+        ("GET lowers to a bounded seek", "GET           -> bounded seek"),
+        ("CHILDREN OF lowers to one level", "CHILDREN OF   -> bounded one-level traversal"),
+        ("SCAN UNDER lowers to a bounded subtree", "SCAN UNDER    -> bounded subtree traversal"),
+        ("the limit applies before decode", "constrain discovery **before** unbounded decode"),
+        ("scan-then-truncate is not bounded traversal",
+         "scan everything -> decode everything -> truncate the returned vector"),
+    ],
+    "docs/06_MACBAT.md": [
+        ("generated routing is exhaustive and typed", "exhaustive type-id dispatch"),
+        ("generated routing fails closed", "Generated routing fails closed when a declared variant has no route"),
+        ("route discovery is never ambient", "never ambient linker registration, startup constructors"),
+        ("the application owns domain transition logic", "domain transition logic"),
+        ("hand-authored raw dispatch is not the canonical path",
+         "Applications do not hand-author raw `kind integer + byte payload + switch` dispatch"),
     ],
     "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md": [
         ("docs/35 does not own whole-store history",
@@ -1160,6 +1232,62 @@ def check_document_law(root: Path, findings: list[str]) -> None:
         for label, marker in markers:
             if re.sub(r"\s+", " ", marker) not in text:
                 findings.append(f"{rel}: {label} is absent")
+
+
+# --- 5.5D1 substrate law: sharpened LEG statements may not be weakened -------
+# Each phrase is the load-bearing clause of its obligation. Losing one silently
+# returns the substrate to the ambiguity higher layers had to work around.
+D1_LEG_CLAUSES = {
+    "LEG-028": [
+        "constrain discovery before decode",
+        "bind store lineage generation source cut direction selector and filters",
+        "fails closed",
+    ],
+    "LEG-029": [
+        "WorkObservation",
+        "concatenated valid pages equal a one-shot reference traversal",
+        "no page claims completeness merely by filling its requested size",
+    ],
+    "LEG-037": [
+        "only where the admitting capability owns their common authority boundary",
+        "input order and receipt order correspond exactly",
+        "never publishes a partial durable subset",
+        "not an arbitrary distributed transaction",
+    ],
+    "LEG-042": [
+        "distinguishes cancellation before admission from cancellation after admission",
+        "never read as proof of non-commit",
+        "receives a new AttemptId without erasing prior attempt evidence",
+    ],
+    "LEG-046": [
+        "closed and exhaustive",
+        "fails closed",
+        "never ambient linker registration startup constructors or process-global registries",
+        "owns structure and glue rather than application domain transition logic",
+    ],
+    "LEG-066": [
+        "deadline",
+        "a relative inactivity timeout never substitutes for an absolute monotonic deadline",
+        "the lowest mechanism able to extend work enforces the remaining absolute deadline",
+        "a retry never resets the overall deadline",
+    ],
+}
+
+
+def d1_substrate_findings(root: Path) -> list[str]:
+    """The sharpened substrate clauses survive in their owning LEG rows."""
+    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    laws = dict(re.findall(r'LegacyObligation \{ id: "(LEG-\d+)", law: "([^"]+)"', src))
+    out = []
+    for lid, clauses in D1_LEG_CLAUSES.items():
+        law = laws.get(lid)
+        if law is None:
+            out.append(f"{lid} is absent from spec/legacy_obligations.rs")
+            continue
+        for clause in clauses:
+            if clause not in law:
+                out.append(f"{lid} law no longer states: {clause}")
+    return out
 
 
 def check_guarantees(root: Path, findings: list[str]) -> None:
@@ -1623,6 +1751,7 @@ def main() -> int:
     check_numeric(root, findings)
     check_guarantees(root, findings)
     check_document_law(root, findings)
+    findings.extend(d1_substrate_findings(root))
     findings.extend(control_character_findings(root))
 
     manifest = root / "SPEC.sha256"

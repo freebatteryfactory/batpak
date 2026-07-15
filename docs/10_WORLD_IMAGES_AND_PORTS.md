@@ -186,6 +186,35 @@ CompilerPort   development/TestPak only
 
 Requests and responses bind world, generation, attempt, capability slot, limits, and schema identity.
 
+## Absolute monotonic deadlines (LEG-066)
+
+A port operation accepting a deadline accepts an absolute monotonic deadline (`MonotonicDeadline`, `16_IDENTITY_TIME_AND_NAVIGATION.md`) or an equivalent type whose semantics are absolute and monotonic. A relative inactivity timeout is not an overall operation deadline, and an adapter may not substitute one for the other.
+
+The lowest mechanism capable of internally extending work enforces the remaining absolute deadline:
+
+```text
+raw socket reads and writes below TLS
+retry loops below a client adapter
+incremental decoders
+poll loops
+buffer refill loops
+streaming request or response bodies
+```
+
+A higher wrapper cannot claim deadline compliance while a lower repeating mechanism continues indefinitely. Ten consecutive 30-second "inactivity timeouts" are not a 30-second deadline.
+
+### Retries
+
+```text
+retry does not reset the overall deadline
+attempt N cannot extend the logical operation beyond its absolute deadline
+wall-clock adjustment cannot extend a monotonic deadline
+```
+
+Retries consume the same overall deadline unless the contract explicitly declares a per-attempt deadline, and an explicit per-attempt deadline remains bounded by the overall operation deadline.
+
+Deadline expiry before admission and after admission preserve the attempt and commit distinctions in `09_BVISOR.md` and `05_STORAGE_FBAT_AND_TILES.md`.
+
 ## Sans-I/O execution
 
 ```text

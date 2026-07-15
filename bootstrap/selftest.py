@@ -977,6 +977,189 @@ def test_control_characters(audit) -> list[str]:
     return findings
 
 
+def test_substrate(audit) -> list[str]:
+    """Named hostile fixtures for the 5.5D1 substrate primitives.
+
+    Structural only. Bootstrap performs no storage commit, traversal, network
+    call, generated dispatch, cancellation, or reconciliation, and these fixtures
+    do not claim executable semantics were tested.
+    """
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def doc_findings(tmp):
+        out: list[str] = []
+        audit.check_document_law(tmp, out)
+        return out
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        tmp = gate_sandbox([(rel, old, new)])
+        try:
+            expect(name, (validator or doc_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    LEG = "spec/legacy_obligations.rs"
+
+    # --- publication algebra: the three axes stay orthogonal ---------------
+    probe("post_commit_result_changed_to_generic_failure_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "committed                        is NOT failed",
+          "post-commit publication is not an ordinary failure")
+    probe("committed_receipt_incomplete_collapsed_into_failure_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "committed, receipt incomplete    is NOT failed, and is NOT outcome unknown",
+          "committed with an incomplete receipt is not failure or unknown")
+    probe("outcome_unknown_collapsed_into_not_committed_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "outcome unknown                  is NOT proof of non-commit",
+          "outcome unknown is not proof of non-commit")
+    probe("cancelled_after_admission_treated_as_non_commit_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "cancelled after admission        is NOT proof of non-commit",
+          "cancelled after admission is not proof of non-commit")
+    probe("reconciliation_rewriting_durable_evidence_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "It never rewrites the original durable event",
+          "reconciliation appends evidence and never rewrites durable history")
+    probe("commit_knowledge_axis_removed_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "commit knowledge        KnownAbsent | KnownCommitted | Unknown",
+          "commit knowledge is distinct from receipt completeness and reconciliation")
+    probe("generic_kind_plus_bytes_publication_made_canonical_is_rejected",
+          "docs/05_STORAGE_FBAT_AND_TILES.md",
+          "There is no `GenericPublicationCommand { kind: String, payload: Vec<u8> }`",
+          "no generic untyped publication envelope")
+
+    # --- typed batch atomicity --------------------------------------------
+    probe("atomic_batch_allowing_partial_durable_publication_is_rejected",
+          "docs/08_SYNCBAT_RUNTIME.md", "partial durable subset   forbidden",
+          "an atomic group never publishes a partial durable subset")
+    probe("arbitrary_cross_port_atomic_transaction_is_rejected",
+          "docs/08_SYNCBAT_RUNTIME.md",
+          "not an arbitrary distributed transaction across unrelated ports or services",
+          "a typed batch is not a distributed transaction")
+    probe("batch_receipt_order_decoupled_from_input_order_is_rejected",
+          "docs/08_SYNCBAT_RUNTIME.md", "Input order and receipt order correspond exactly",
+          "input order and receipt order correspond")
+    probe("leg037_capability_bound_atomicity_weakened_is_rejected",
+          LEG, "only where the admitting capability owns their common authority boundary",
+          "LEG-037 law no longer states", validator=audit.d1_substrate_findings)
+    probe("leg037_partial_durable_subset_permitted_is_rejected",
+          LEG, "never publishes a partial durable subset",
+          "LEG-037 law no longer states", validator=audit.d1_substrate_findings)
+
+    # --- logical operation versus physical attempt ------------------------
+    probe("logical_operation_identity_and_attemptid_collapsed_is_rejected",
+          "docs/08_SYNCBAT_RUNTIME.md",
+          "LogicalOperationId   stable across retries of the same requested operation",
+          "logical operation identity is stable across retries")
+    probe("attempt_state_and_commit_knowledge_merged_into_one_outcome_is_rejected",
+          "docs/08_SYNCBAT_RUNTIME.md",
+          "never collapse into one `Outcome`, boolean, or success/failure field",
+          "attempt state, logical outcome, commit knowledge, and receipt completeness stay separate")
+    probe("cancelled_before_admission_distinction_removed_is_rejected",
+          "docs/09_BVISOR.md", "CancelledBeforeAdmission   no physical execution was admitted",
+          "cancellation before admission is distinct")
+    probe("leg042_cancellation_split_weakened_is_rejected",
+          LEG, "distinguishes cancellation before admission from cancellation after admission",
+          "LEG-042 law no longer states", validator=audit.d1_substrate_findings)
+    probe("leg042_retry_erasing_prior_attempt_evidence_is_rejected",
+          LEG, "receives a new AttemptId without erasing prior attempt evidence",
+          "LEG-042 law no longer states", validator=audit.d1_substrate_findings)
+
+    # --- bounded traversal --------------------------------------------------
+    probe("cursor_losing_generation_binding_is_rejected",
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md",
+          "A cursor binds to its traversal identity, including store lineage, generation",
+          "the cursor binds generation")
+    probe("cursor_losing_source_cut_binding_is_rejected",
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md", "source cut, direction, selector, and filters",
+          "the cursor binds the source cut")
+    probe("cursor_transplant_across_selector_accepted_is_rejected",
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md",
+          "fails closed rather than resuming against a traversal it never described",
+          "a transplanted cursor fails closed")
+    probe("page_completeness_omitted_is_rejected",
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md", "page completeness or partiality posture",
+          "the page carries a completeness posture")
+    probe("work_observation_omitted_is_rejected",
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md", "WorkObservation",
+          "the page carries a source stamp and work observation")
+    probe("limit_applied_after_decode_is_rejected",
+          "docs/13_BATQL_CONTRACT.md", "constrain discovery **before** unbounded decode",
+          "the limit applies before decode")
+    probe("scan_then_truncate_called_bounded_is_rejected",
+          "docs/13_BATQL_CONTRACT.md",
+          "scan everything -> decode everything -> truncate the returned vector",
+          "scan-then-truncate is not bounded traversal")
+    probe("leg028_limit_before_decode_weakened_is_rejected",
+          LEG, "constrain discovery before decode",
+          "LEG-028 law no longer states", validator=audit.d1_substrate_findings)
+    probe("leg029_one_shot_equivalence_weakened_is_rejected",
+          LEG, "concatenated valid pages equal a one-shot reference traversal",
+          "LEG-029 law no longer states", validator=audit.d1_substrate_findings)
+
+    # --- lowerings stay distinct -------------------------------------------
+    probe("get_lowered_to_scan_is_rejected",
+          "docs/13_BATQL_CONTRACT.md", "GET           -> bounded seek",
+          "GET lowers to a bounded seek")
+    probe("children_of_lowered_to_subtree_scan_is_rejected",
+          "docs/13_BATQL_CONTRACT.md", "CHILDREN OF   -> bounded one-level traversal",
+          "CHILDREN OF lowers to one level")
+    probe("scan_under_lowered_to_one_level_is_rejected",
+          "docs/13_BATQL_CONTRACT.md", "SCAN UNDER    -> bounded subtree traversal",
+          "SCAN UNDER lowers to a bounded subtree")
+
+    # --- generated typed effect routing ------------------------------------
+    probe("application_raw_effect_dispatcher_made_canonical_is_rejected",
+          "docs/06_MACBAT.md",
+          "Applications do not hand-author raw `kind integer + byte payload + switch` dispatch",
+          "hand-authored raw dispatch is not the canonical path")
+    probe("missing_or_duplicate_generated_route_accepted_is_rejected",
+          "docs/06_MACBAT.md", "Generated routing fails closed when a declared variant has no route",
+          "generated routing fails closed")
+    probe("ambient_route_discovery_accepted_is_rejected",
+          "docs/06_MACBAT.md", "never ambient linker registration, startup constructors",
+          "route discovery is never ambient")
+    probe("leg046_closed_exhaustive_routing_weakened_is_rejected",
+          LEG, "closed and exhaustive", "LEG-046 law no longer states",
+          validator=audit.d1_substrate_findings)
+    probe("leg046_router_absorbing_domain_logic_is_rejected",
+          LEG, "owns structure and glue rather than application domain transition logic",
+          "LEG-046 law no longer states", validator=audit.d1_substrate_findings)
+
+    # --- absolute monotonic deadline ---------------------------------------
+    probe("relative_inactivity_timeout_called_absolute_deadline_is_rejected",
+          "docs/10_WORLD_IMAGES_AND_PORTS.md",
+          "A relative inactivity timeout is not an overall operation deadline",
+          "a relative inactivity timeout is not a deadline")
+    probe("retry_resets_overall_deadline_is_rejected",
+          "docs/10_WORLD_IMAGES_AND_PORTS.md", "retry does not reset the overall deadline",
+          "retry does not reset the overall deadline")
+    probe("per_attempt_deadline_exceeding_overall_is_rejected",
+          "docs/10_WORLD_IMAGES_AND_PORTS.md", "remains bounded by the overall operation deadline",
+          "a per-attempt deadline stays bounded by the overall deadline")
+    probe("lower_repeating_mechanism_outliving_deadline_is_rejected",
+          "docs/10_WORLD_IMAGES_AND_PORTS.md",
+          "The lowest mechanism capable of internally extending work enforces the remaining absolute deadline",
+          "the lowest extending mechanism enforces the remaining deadline")
+    probe("leg066_deadline_meaning_removed_is_rejected",
+          LEG, "a relative inactivity timeout never substitutes for an absolute monotonic deadline",
+          "LEG-066 law no longer states", validator=audit.d1_substrate_findings)
+    probe("leg066_retry_resetting_deadline_permitted_is_rejected",
+          LEG, "a retry never resets the overall deadline",
+          "LEG-066 law no longer states", validator=audit.d1_substrate_findings)
+
+    return findings
+
+
 def main() -> int:
     freeze = load("freeze")
     audit = load("audit")
@@ -996,13 +1179,14 @@ def main() -> int:
     findings += test_document_law(audit)
     findings += test_claim_receipt_law(audit)
     findings += test_delivery_notes(audit)
+    findings += test_substrate(audit)
     findings += test_control_characters(audit)
     if findings:
         print(f"selftest: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character hostile fixtures)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate hostile fixtures)")
     return 0
 
 

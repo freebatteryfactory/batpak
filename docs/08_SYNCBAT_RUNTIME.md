@@ -140,6 +140,64 @@ NonReplayable
 
 Runtime uses that contract and durable evidence to decide whether another attempt is legal.
 
+## Typed batch publication (LEG-037)
+
+A first-class typed batch effect may carry heterogeneous typed publication commands **only where the owning capability explicitly admits joint atomic publication under one authority boundary**. It is not an arbitrary distributed transaction across unrelated ports or services, and nothing here implies that every heterogeneous effect can be made jointly atomic.
+
+The batch contract exposes:
+
+```text
+logical operation identity
+physical attempt identity
+ordered typed commands
+declared atomic group or fence
+admission result
+commit knowledge
+ordered command receipts
+batch receipt
+cancellation posture
+reconciliation posture
+```
+
+Input order and receipt order correspond exactly. For an admitted atomic group:
+
+```text
+failure before commit    publishes none of the atomic group
+after commit             every committed command has an ordered receipt entry
+                         or an explicit receipt-incomplete disposition
+partial durable subset   forbidden
+```
+
+Cross-port or cross-authority effects remain separate operations unless an explicit capability owns their common transaction boundary.
+
+### Ordinary and fenced publication
+
+A batch may contain ordinary publication and fenced publication. A fence is a typed ordering or authority boundary, never application business logic. The contract states which commands are inside the atomic group, which observations occur only after the fence, and how ordered receipts bind to commands and fences.
+
+No public BatQL syntax is introduced for batches.
+
+## Logical operation versus physical attempt (DEC-028)
+
+The runtime owns the logical operation and its logical effect outcome; `09_BVISOR.md` owns physical admission and the attempt lifecycle; `14_RECEIPTS_AND_EXPLANATION.md` joins them for explanation.
+
+```text
+LogicalOperationId   stable across retries of the same requested operation
+AttemptId            unique for every physical admission attempt
+```
+
+A retry of the same logical operation retains its logical operation identity, receives a new `AttemptId`, retains idempotency and authority bindings, and does not erase prior attempt evidence.
+
+These four never collapse into one `Outcome`, boolean, or success/failure field:
+
+```text
+physical attempt state
+logical operation outcome
+commit knowledge
+receipt completeness
+```
+
+A receipt or explanation must be able to state all four together.
+
 ## Resource exhaustion (DEC-066)
 
 Two distinct semantic outcomes, never collapsed into each other, into a string, or into `INVALID`:

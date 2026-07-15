@@ -93,6 +93,45 @@ PageCursor       one query/source/generation continuation
 
 They may share a segment algebra while remaining distinct contracts.
 
+## Bounded traversal identity (LEG-028, LEG-029)
+
+This document owns traversal request identity, selector, direction, source cut, and cursor binding. `05_STORAGE_FBAT_AND_TILES.md` owns execution, durable visibility, work bounds, and storage complexity. `13_BATQL_CONTRACT.md` owns lowering.
+
+One general bounded directional traversal primitive. The request carries at minimum:
+
+```text
+NavigationId                traversal identity
+store lineage or entity/region scope
+lane
+typed selector
+optional event kind or category filter
+direction
+pre-decode item limit
+generation-bound cursor      when continuing
+frozen source cut
+work budget
+proof or evidence request
+```
+
+### Cursor binding
+
+A cursor binds to its traversal identity, including store lineage, generation, source cut, direction, selector, and filters. A cursor cannot be transplanted across a different store, generation, source cut, selector, filter set, direction, or contract: each of those fails closed rather than resuming against a traversal it never described.
+
+A cursor is not a general-purpose offset. It is evidence of where one specific bounded traversal stopped.
+
+### Page result
+
+```text
+ordered entries
+page completeness or partiality posture
+next cursor              when continuation is lawful
+source stamp
+WorkObservation
+proof or evidence result
+```
+
+`MonotonicDeadline` remains the absolute deadline type for port operations (`10_WORLD_IMAGES_AND_PORTS.md`); HLC remains forbidden for cursor resume and deadline measurement (DEC-061).
+
 ## Time and order
 
 ```text

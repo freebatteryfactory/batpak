@@ -112,6 +112,30 @@ Saved queries name an explicit source cut. Interactive omission is captured as `
 
 Typed arithmetic legality (same-unit add/subtract, dimensionless multiply, ratio-producing divide, rejected cross-currency and Money×Money, mandatory named rounding modes, typed `INVALID` on overflow/divide-by-zero) is frozen in the language companion (DEC-060). The concrete operator facts — spelling, arity, fixity, precedence, associativity, exactness, and the six canonical rounding modes with their surface aliases — are owned by `spec/operators.rs` (OperatorSpec) and projected into the companion's generated operator blocks; OperatorSpec is the one operator authority and does not own the function, MATCH, declaration, or lexical grammar. `ORDER BY HLC` is not a bare HLC sort: it lowers to a total key — `HLC, GlobalSequence` within a journal and `HLC, StoreId, GlobalSequence` across journals — with half-open `[start, end)` ranges; the full law and forbidden uses live in `16_IDENTITY_TIME_AND_NAVIGATION.md` (DEC-061).
 
+## Bounded traversal lowering (LEG-028)
+
+Three surface forms lower to three distinct bounded primitives. Collapsing any pair is a defect, not an optimization:
+
+```text
+GET           -> bounded seek
+CHILDREN OF   -> bounded one-level traversal
+SCAN UNDER    -> bounded subtree traversal
+```
+
+`GET` never lowers to a full scan. `CHILDREN OF` never lowers to an unbounded subtree walk. `SCAN UNDER` never lowers to a single level.
+
+Internal ISA nodes may include seek, bounded one-level scan, and bounded subtree scan. These are internal: no storage implementation detail becomes public BatQL syntax, and this lowering adds no syntax.
+
+### Limit before decode
+
+The item limit and work budget constrain discovery **before** unbounded decode, allocation, or materialization. This is not bounded traversal:
+
+```text
+scan everything -> decode everything -> truncate the returned vector
+```
+
+The `WorkObservation` states enough to prove which resource boundary was consumed. No page claims completeness merely because its returned vector reached the requested size.
+
 ## Partial evaluation
 
 The compiler folds constants, eliminates unreachable branches, resolves schemas/fields/capability closure, prunes selectors, determines required columns, calculates bounds, prepares explanation templates, and records tile eligibility.

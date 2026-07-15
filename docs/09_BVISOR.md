@@ -86,6 +86,20 @@ Planned
 
 Each physical execution receives a fresh AttemptId. A report or response from one attempt cannot satisfy another, even when world, program, turn, or request identities match.
 
+## Cancellation and admission (LEG-042)
+
+The attempt vocabulary distinguishes cancellation across the admission boundary:
+
+```text
+CancelledBeforeAdmission   no physical execution was admitted
+CancelledAfterAdmission    execution was admitted; commit may or may not have
+                           occurred; reconciliation may be required
+```
+
+`CancelledAfterAdmission` is never proof of non-commit. A cancelled admitted attempt whose acknowledgement was lost carries `Unknown` commit knowledge (`05_STORAGE_FBAT_AND_TILES.md`), and only reconciliation settles it.
+
+Deadline expiry obeys the same split: expiry before admission and expiry after admission are different facts, and neither collapses into a generic timeout error claiming nothing was committed.
+
 ## Postcondition honesty
 
 A witness type appears only after its postcondition is established:

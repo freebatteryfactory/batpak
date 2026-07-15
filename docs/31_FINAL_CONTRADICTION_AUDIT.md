@@ -99,6 +99,14 @@ no authenticated-history claim exceeding the selected profile and verified witne
 no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
 no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance
 no authenticated-history profile, witness, claim-posture, or gate node in the Guarantee Graph (decision class and gates are node metadata, never synthetic nodes or edges)
+no durable publication reported as an ordinary operation failure, and no commit knowledge, receipt completeness, or reconciliation posture collapsed into one status (LEG-037, docs/05)
+no outcome-unknown or cancelled-after-admission treated as proof of non-commit, and no reconciliation rewriting the original durable event or attempt observation
+no atomic typed batch publishing a partial durable subset, and no generic kind-plus-bytes publication envelope as the canonical route (LEG-037)
+no logical operation identity collapsed into AttemptId, and no physical attempt state, logical outcome, commit knowledge, and receipt completeness merged into one Outcome (DEC-028, LEG-042)
+no cursor unbound from store lineage, generation, source cut, direction, selector, or filters, and no item limit applied after decode or materialization (LEG-028, LEG-029)
+no GET lowered to a scan, CHILDREN OF lowered to a subtree walk, or SCAN UNDER lowered to one level
+no Contract IR-owned effect family routed by hand-authored kind-plus-bytes dispatch, and no ambient linker, startup-constructor, or process-global route discovery (LEG-046)
+no relative inactivity timeout presented as an absolute monotonic deadline, no retry resetting the overall deadline, and no lower repeating mechanism outliving it (LEG-066)
 no invisible C0 control character in tracked specification, bootstrap, or contract text (LF and TAB only; a backspace impersonating a word boundary once made a rule unmatchable)
 ```
 

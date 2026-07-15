@@ -76,6 +76,38 @@ TestPak Repo IR facts
 
 Lowerings are demand-driven. MacBat never scans the repository from a proc macro to discover consumers.
 
+## Generated typed effect routing (LEG-046)
+
+One Contract IR declaration mechanically determines the closed typed routing relationship for an admitted effect family. Applications do not hand-author raw `kind integer + byte payload + switch` dispatch for a Contract IR-owned family.
+
+MacBat generates:
+
+```text
+typed route identity
+exhaustive type-id dispatch
+typed decode binding
+effect-capability binding
+handler binding
+receipt projection binding
+unknown-type refusal
+duplicate or collision refusal
+```
+
+The application owns:
+
+```text
+domain transition logic
+coordinate derivation
+business validation
+domain-specific handler behavior
+```
+
+BatPak and MacBat do not absorb application domain decisions. Higher-layer pressure to strengthen these primitives is evidence the substrate was thin; it is not authority to import anyone's domain furniture.
+
+Generated routing fails closed when a declared variant has no route, two variants claim the same route identity, a decoder does not match the declared type, an effect capability is missing, a receipt projection is missing, or an unknown route identity is observed.
+
+Route discovery is never ambient linker registration, startup constructors, process-global mutable registries, or inventory-style hidden discovery. The generated router owns structure and glue; it never generates or owns storage, cryptographic, concurrency, or application algorithms.
+
 ## Partial evaluation
 
 MacBat specializes runtime work where contracts close the choices:

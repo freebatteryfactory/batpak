@@ -188,6 +188,51 @@ A restored older generation may satisfy every local commitment and every signatu
 
 No byte layout is frozen here. The seal and accumulator encodings, the signature algorithm, and the witness protocol are G2 implementation and G9 qualification constants, not spec bytes.
 
+## Shared publication algebra
+
+Every durable publication in the system crosses one irreversible boundary. This document owns that boundary and its outcome vocabulary; `08_SYNCBAT_RUNTIME.md`, `09_BVISOR.md`, `10_WORLD_IMAGES_AND_PORTS.md`, `14_RECEIPTS_AND_EXPLANATION.md`, and `35_CRYPTO_AND_SECRET_AUTHORITY.md` consume it rather than re-inventing it.
+
+Three axes stay orthogonal. Collapsing them is what forces higher layers to build corrective exoskeletons around ambiguous commit outcomes:
+
+```text
+commit knowledge        KnownAbsent | KnownCommitted | Unknown
+receipt completeness    Complete | Incomplete
+reconciliation posture  NotRequired | Pending | ReconciledCommitted |
+                        ReconciledNotCommitted
+```
+
+A publication is `KnownCommitted` with an `Incomplete` receipt and `Pending` reconciliation, all at once. No single status enum can say that, so none is used.
+
+### Irreversible boundary law
+
+Before the durable commit boundary an operation may be refused, fail, be cancelled, or expire before admission. After it:
+
+```text
+committed                        is NOT failed
+committed, receipt incomplete    is NOT failed, and is NOT outcome unknown
+outcome unknown                  is NOT proof of non-commit
+cancelled after admission        is NOT proof of non-commit
+```
+
+A durable publication that crossed the boundary is never reported as an ordinary operation failure. Lost acknowledgement leaves the caller with `Unknown`, which is an absence of knowledge, not evidence of absence.
+
+Later reconciliation **appends or references new evidence**. It never rewrites the original durable event or falsifies the original attempt observation. A reconciliation record that edited history would destroy the only evidence that the ambiguity existed.
+
+### Purpose-specific commands
+
+The algebra owns the boundary and the outcome vocabulary. It does not own a universal command envelope. There is no `GenericPublicationCommand { kind: String, payload: Vec<u8> }`, and no other untyped payload drawer.
+
+These stay distinct typed commands sharing only boundary semantics:
+
+```text
+event append
+typed effect batch
+artifact publication
+checkpoint intent
+authority-image publication
+secret-authority publication
+```
+
 ## Storage ports
 
 The store depends on a BatPak-owned handle/transaction interface that can be implemented by native filesystems, in-memory models, embedded flash adapters, or browser persistence adapters.

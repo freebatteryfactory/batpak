@@ -101,6 +101,26 @@ Completeness describes required source coverage. Freshness describes the reflect
 
 Crypto-shredded or unavailable required inputs produce explicit incompleteness. A fresh result over replayable remnants is not relabeled complete relative to original accepted history.
 
+## Publication and attempt projection (LEG-037, LEG-042)
+
+A receipt joins the logical and physical views without merging them. It must be able to state all of these at once:
+
+```text
+LogicalOperationId       stable across retries
+AttemptId                unique per physical admission attempt
+attempt state            including CancelledBeforeAdmission or CancelledAfterAdmission
+logical operation outcome
+commit knowledge         KnownAbsent | KnownCommitted | Unknown
+receipt completeness     Complete | Incomplete
+reconciliation posture   NotRequired | Pending | ReconciledCommitted |
+                         ReconciledNotCommitted
+ordered command receipts when the operation published a typed batch
+```
+
+None of these is derivable from another. A committed publication with an incomplete receipt is not a failure. `Unknown` is not `KnownAbsent`. `CancelledAfterAdmission` is not proof of non-commit.
+
+A reconciliation record appends or references new evidence. It never rewrites the original durable event or falsifies the original attempt observation.
+
 ## Outcome uncertainty
 
 External effects may end with `OutcomeUnknown` after a crash or lost observation. That is not failure and not success. Reconciliation follows the effect's recovery class and durable evidence.
