@@ -103,18 +103,19 @@ pub enum GatePosture {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QualificationTarget(pub &'static str);
 
-/// The outcome of RESOLVING a gate posture from an authored fact. This is
-/// deliberately a separate type from `GatePosture`: "the law intentionally has no
-/// gate" and "nobody specified one" must never share a drawer. An empty value
-/// cannot mean no gates, gate-independent, unresolved, and not-applicable at once.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GateResolution {
-    Resolved(GatePosture),
-    /// The owning fact declares nothing where a posture is required.
-    Missing,
-    /// The owning fact declares something that is not a lawful posture.
-    Malformed,
-}
+// GateResolution { Resolved, Missing, Malformed } stood here from 954d24b7 until
+// the D4c2 smell sweep. It was declared to keep "the law intentionally has no
+// gate" apart from "nobody specified one" — a real distinction, which the very
+// same pass then solved a different way: GatePosture gained Scheduled,
+// HistoricalAssociation, and GateIndependent, and admission raises AdmissionFailure
+// for the missing and malformed cases. The type was orphaned the moment its job
+// was done elsewhere, and nothing ever constructed, read, or enforced it.
+//
+// Deleted rather than kept. A type that no code builds and no rule consults is
+// vocabulary claiming to be law: it reads as a guarantee during review and
+// guarantees nothing at runtime. That is the same species as a refusal branch
+// nothing can reach and a fixture whose mutation never applied — this campaign
+// has now found all three.
 
 /// How a family's guarantees are witnessed. Declared once per family; an absent
 /// witness column is not a witness policy.
