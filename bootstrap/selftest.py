@@ -3184,6 +3184,59 @@ def test_syncbat_firewall(audit, project) -> list[str]:
     return findings
 
 
+def test_reconciliation(audit, project) -> list[str]:
+    """DEC-075 single-writer dual-axis reconciliation: the auditor's half
+    (5.5E1d). The four-signal retry fence itself is executed Rust inside
+    seedcheck; here the composition's structure, carriers, and projections are
+    attacked through the auditor.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    if audit.recon_findings(root):
+        fail(f"reconciliation_contract_passes (got {audit.recon_findings(root)!r})")
+    RS = "spec/reconciliation.rs"
+    # A role bound twice is one name owning two authorities -- the HlcPoint
+    # disease this decision exists to prevent.
+    with isolated_tree() as tmp:
+        p = tmp / RS
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"),
+            "        role: ReconciliationRole::PhysicalIdentity,",
+            "        role: ReconciliationRole::LogicalIdentity,",
+            "rebind a role"), encoding="utf-8")
+        got = audit.recon_findings(tmp)
+        if not any("five distinct roles" in f for f in got):
+            fail(f"a_rebound_reconciliation_role_is_refused (got {got!r})")
+    # A hand-edited projection is drift, not authority.
+    with isolated_tree() as tmp:
+        p = tmp / "docs/02_SYSTEM_MODEL.md"
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"),
+            "| PhysicalIdentity | AttemptId |",
+            "| PhysicalIdentity | AttemptId, Hlc |",
+            "drift the coordinates block"), encoding="utf-8")
+        if not any("drifted" in f for f in audit.recon_findings(tmp)):
+            fail("a_drifted_reconciliation_block_is_caught")
+    # A chronology carrier the time contract does not own would be a second
+    # time authority minted by the composition.
+    with isolated_tree() as tmp:
+        p = tmp / RS
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"),
+            '"Hlc", "ObservedWallTime"', '"Hlc", "WallStamp"',
+            "invent a carrier"), encoding="utf-8")
+        got = audit.recon_findings(tmp)
+        if not any("not owned by docs/16" in f for f in got):
+            fail(f"an_invented_chronology_carrier_is_refused (got {got!r})")
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def test_syncbat_requiredness(audit, project) -> list[str]:
     """SyncBat crossing requiredness: liveness, not just safety (5.5D4c2f).
 
@@ -3429,6 +3482,21 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "gates: &[]",
           "names no gate")
 
+    # DEC-075's retry fence is executed law, not a comment: reclassifying
+    # elapsed wall time as an admissible retry signal must redden the running
+    # seedcheck through the real admissible() function.
+    probe("weakened_retry_classification_is_refused",
+          "spec/reconciliation.rs",
+          "            | RetrySignal::OverallMonotonicDeadline\n"
+          "            | RetrySignal::RuntimeRestartAuthorization => true,\n"
+          "            RetrySignal::ElapsedWallTime\n"
+          "            | RetrySignal::ProcessDeath",
+          "            | RetrySignal::OverallMonotonicDeadline\n"
+          "            | RetrySignal::ElapsedWallTime\n"
+          "            | RetrySignal::RuntimeRestartAuthorization => true,\n"
+          "            RetrySignal::ProcessDeath",
+          "elapsed wall time may not authorize retry")
+
     # Candidate containment is one law across two constants: an output root
     # relocated under a forbidden write surface must redden seedcheck, not wait
     # for Phase 6 to write a candidate into tracked source.
@@ -3643,6 +3711,7 @@ def main() -> int:
     findings += test_pakvm_semantic_isa(audit, project)
     findings += test_syncbat_firewall(audit, project)
     findings += test_syncbat_requiredness(audit, project)
+    findings += test_reconciliation(audit, project)
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
@@ -3668,6 +3737,7 @@ def main() -> int:
                "guarantee-authority hostile fixtures", "PakVM semantic ISA",
                "SyncBat authority firewall",
                "SyncBat crossing requiredness",
+               "DEC-075 reconciliation",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

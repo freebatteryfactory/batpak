@@ -19,6 +19,9 @@ mod dispositions;
 #[path = "../spec/legacy_obligations.rs"]
 mod legacy_obligations;
 #[allow(dead_code)] // declarative spec surface; not this binary's program
+#[path = "../spec/reconciliation.rs"]
+mod reconciliation;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/legacy_invariant_coverage.rs"]
 mod legacy_invariant_coverage;
 #[allow(dead_code)] // declarative spec surface; not this binary's program
@@ -86,10 +89,75 @@ fn inspect(root: &Path) -> Vec<String> {
     check_syncbat_origin_law(&mut findings);
     check_unique_ids(&mut findings);
     check_candidate_containment(&mut findings);
+    check_reconciliation(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+/// DEC-075: the reconciliation composition stays closed, total, and honest.
+/// The fence assertions at the end are the law's teeth: they exercise the
+/// real `admissible()` the way production would, so weakening the
+/// classification reddens an executed check, not a comment.
+fn check_reconciliation(findings: &mut Vec<String>) {
+    use reconciliation::{ReconciliationRole, RetrySignal};
+    let mut roles = BTreeSet::new();
+    for c in reconciliation::RECONCILIATION_COORDINATES {
+        // Exhaustive: a new role must be classified here, not defaulted.
+        match c.role {
+            ReconciliationRole::DurableOrderWitness
+            | ReconciliationRole::ChronologyWitness
+            | ReconciliationRole::LogicalIdentity
+            | ReconciliationRole::PhysicalIdentity
+            | ReconciliationRole::BalancingEvidence => {}
+        }
+        if !roles.insert(format!("{:?}", c.role)) {
+            findings.push(format!("reconciliation role {:?} is bound twice", c.role));
+        }
+        if c.carriers.is_empty() {
+            findings.push(format!("reconciliation role {:?} names no carrier", c.role));
+        }
+        if c.law.trim().is_empty() {
+            findings.push(format!("reconciliation role {:?} states no law", c.role));
+        }
+    }
+    if roles.len() != 5 {
+        findings.push(format!("a reconciliation role is unbound ({} of 5)", roles.len()));
+    }
+    let mut axes = BTreeSet::new();
+    for a in reconciliation::DOUBLE_ENTRY_AXES {
+        if !axes.insert(format!("{a:?}")) {
+            findings.push(format!("double-entry axis {a:?} is listed twice"));
+        }
+    }
+    if axes.len() != 10 {
+        findings.push(format!("a double-entry axis is missing from DOUBLE_ENTRY_AXES ({} of 10)", axes.len()));
+    }
+    let mut sigs = BTreeSet::new();
+    for s in reconciliation::RETRY_SIGNALS {
+        if !sigs.insert(format!("{s:?}")) {
+            findings.push(format!("retry signal {s:?} is listed twice"));
+        }
+    }
+    if sigs.len() != 11 {
+        findings.push(format!("a retry signal is missing from RETRY_SIGNALS ({} of 11)", sigs.len()));
+    }
+    if !reconciliation::RETRY_SIGNALS.iter().any(|s| s.admissible()) {
+        findings.push("no retry signal is admissible; retry would be impossible".into());
+    }
+    if RetrySignal::ElapsedWallTime.admissible() {
+        findings.push("elapsed wall time may not authorize retry (DEC-075)".into());
+    }
+    if RetrySignal::ProcessDeath.admissible() {
+        findings.push("process death may not authorize retry (DEC-075)".into());
+    }
+    if RetrySignal::MissingAcknowledgement.admissible() {
+        findings.push("a missing acknowledgement requires reconciliation, not retry (DEC-075)".into());
+    }
+    if RetrySignal::MissingInMemoryWaiter.admissible() {
+        findings.push("a missing in-memory waiter may not authorize retry (DEC-075)".into());
+    }
 }
 
 /// Candidate material stays disposable (spec/architecture.rs): the declared

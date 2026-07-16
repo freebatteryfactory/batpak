@@ -290,6 +290,89 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
     return out
 
 
+# --- DEC-075 reconciliation composition (5.5E1d) ----------------------------
+# AUDITOR half: independent parse, independent render, plus the cross-document
+# laws the generator cannot see. Shares no parsing with project.py.
+A_RECON_SRC = "spec/reconciliation.rs"
+A_RECON_DOC = "docs/02_SYSTEM_MODEL.md"
+A_RECON_ROW = re.compile(
+    r"ReconciliationCoordinate \{\s*role: ReconciliationRole::(\w+),\s*"
+    r"carriers: &\[([^\]]*)\],\s*law: \"((?:[^\"\\]|\\.)*)\"", re.S)
+
+
+def recon_views(root: Path) -> dict:
+    src = (root / A_RECON_SRC).read_text(encoding="utf-8")
+    start = src.index("pub const RECONCILIATION_COORDINATES")
+    coords = [
+        {"role": m.group(1),
+         "carriers": re.findall(r'"([^"]+)"', m.group(2)),
+         "law": re.sub(r"\\\n\s*", "", m.group(3))}
+        for m in A_RECON_ROW.finditer(src[start: src.index("\n];", start)])
+    ]
+    fn = src[src.index("pub const fn admissible"):]
+    fn = fn[: fn.index("\n    }")]
+    adm: list[str] = []
+    inadm: list[str] = []
+    for arm, verdict in re.findall(r"((?:RetrySignal::\w+\s*\|?\s*)+)=>\s*(true|false)", fn):
+        (adm if verdict == "true" else inadm).extend(re.findall(r"RetrySignal::(\w+)", arm))
+    listing = re.findall(r"RetrySignal::(\w+)",
+                         src[src.index("pub const RETRY_SIGNALS"):])
+    return {"coords": coords, "admissible": adm, "inadmissible": inadm,
+            "listing": listing}
+
+
+def recon_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    try:
+        v = recon_views(root)
+    except (ValueError, KeyError) as exc:
+        return [f"spec/reconciliation.rs is unreadable: {exc}"]
+    roles = [c["role"] for c in v["coords"]]
+    if sorted(set(roles)) != sorted(roles) or len(roles) != 5:
+        out.append(f"reconciliation coordinates do not bind five distinct roles ({roles})")
+    for c in v["coords"]:
+        if not c["carriers"]:
+            out.append(f"reconciliation role {c['role']} names no carrier")
+    if not v["admissible"] or not v["inadmissible"]:
+        out.append("retry classification does not partition the signals")
+    classified = set(v["admissible"]) | set(v["inadmissible"])
+    if set(v["listing"]) != classified:
+        out.append("RETRY_SIGNALS and the admissible() classification disagree "
+                   f"({sorted(set(v['listing']) ^ classified)})")
+    # Chronology carriers must be vocabulary docs/16 owns: a chronology witness
+    # this composition invents would be a second time authority.
+    d16 = (root / "docs/16_IDENTITY_TIME_AND_NAVIGATION.md").read_text(encoding="utf-8")
+    for c in v["coords"]:
+        if c["role"] in ("ChronologyWitness", "DurableOrderWitness"):
+            for carrier in c["carriers"]:
+                if not re.search(r"\b" + re.escape(carrier) + r"\b", d16):
+                    out.append(f"reconciliation carrier {carrier} is not owned by docs/16")
+    # Projection parity: the generated docs/02 blocks must match this parse.
+    doc = (root / A_RECON_DOC).read_text(encoding="utf-8")
+    m = re.search(r"RECONCILIATION-COORDINATES:BEGIN[^>]*-->\n(.*?)\n<!-- "
+                  r"RECONCILIATION-COORDINATES:END", doc, re.S)
+    if m is None:
+        out.append("docs/02 carries no generated reconciliation-coordinates block")
+    else:
+        want = ["| Role | Carriers | Law |", "| --- | --- | --- |"] + [
+            f"| {c['role']} | {', '.join(c['carriers'])} | {c['law']} |"
+            for c in v["coords"]]
+        if m.group(1) != "\n".join(want):
+            out.append("docs/02 reconciliation-coordinates block drifted from spec/reconciliation.rs")
+    m = re.search(r"RECONCILIATION-RETRY:BEGIN[^>]*-->\n(.*?)\n<!-- "
+                  r"RECONCILIATION-RETRY:END", doc, re.S)
+    if m is None:
+        out.append("docs/02 carries no generated reconciliation-retry block")
+    else:
+        want = (["```text", "admissible for retry, resume, compensation, or refusal:"]
+                + [f"    {n}" for n in v["admissible"]]
+                + ["", "never sufficient on their own:"]
+                + [f"    {n}" for n in v["inadmissible"]] + ["```"])
+        if m.group(1) != "\n".join(want):
+            out.append("docs/02 reconciliation-retry block drifted from spec/reconciliation.rs")
+    return out
+
+
 # Two phantom sorts were born in the hand-authored arithmetic matrix and owned
 # by nothing: `DecimalMoney` (Money*Percent needs no new sort) and
 # `SignedDuration` (the signed observation difference is `TimeDelta`, docs/16).
@@ -3248,6 +3331,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(retired_claim_vocabulary_findings(root))
     findings.extend(retired_proof_row_findings(root))
     findings.extend(pakvm_isa_findings(root))
+    findings.extend(recon_findings(root))
     findings.extend(syncbat_firewall_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))

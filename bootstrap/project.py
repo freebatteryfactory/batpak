@@ -500,6 +500,63 @@ def render_stale_vocabulary(root: Path) -> str:
     return "\n".join(lines)
 
 
+SYSTEM_DOC = "docs/02_SYSTEM_MODEL.md"
+RECON_SPEC = "spec/reconciliation.rs"
+
+
+def recon_coordinates(root: Path) -> list[tuple[str, list[str], str]]:
+    """(role, carriers, law) rows from the typed DEC-075 composition owner.
+    Serializes admitted facts only; invents nothing."""
+    src = (root / RECON_SPEC).read_text(encoding="utf-8")
+    start = src.index("pub const RECONCILIATION_COORDINATES")
+    block = src[start: src.index("\n];", start) + 3]
+    rows: list[tuple[str, list[str], str]] = []
+    for m in re.finditer(
+            r"ReconciliationCoordinate \{\s*role: ReconciliationRole::(\w+),\s*"
+            r"carriers: &\[([^\]]*)\],\s*law: \"((?:[^\"\\]|\\.)*)\"", block, re.S):
+        carriers = re.findall(r'"([^"]+)"', m.group(2))
+        law = re.sub(r"\\\n\s*", "", m.group(3))
+        if not carriers or not law.strip():
+            raise Unadmitted(f"reconciliation role {m.group(1)} is incomplete")
+        rows.append((m.group(1), carriers, law))
+    if len(rows) != 5:
+        raise Unadmitted(f"expected 5 reconciliation coordinates, parsed {len(rows)}")
+    return rows
+
+
+def render_recon_coordinates(root: Path) -> str:
+    lines = ["| Role | Carriers | Law |", "| --- | --- | --- |"]
+    for role, carriers, law in recon_coordinates(root):
+        lines.append(f"| {role} | {', '.join(carriers)} | {law} |")
+    return "\n".join(lines)
+
+
+def recon_retry(root: Path) -> tuple[list[str], list[str]]:
+    """(admissible, inadmissible) retry signals from the typed classification."""
+    src = (root / RECON_SPEC).read_text(encoding="utf-8")
+    start = src.index("pub const fn admissible")
+    body = src[start: src.index("\n    }", start)]
+    adm: list[str] = []
+    inadm: list[str] = []
+    for arm, verdict in re.findall(
+            r"((?:RetrySignal::\w+\s*\|?\s*)+)=>\s*(true|false)", body):
+        names = re.findall(r"RetrySignal::(\w+)", arm)
+        (adm if verdict == "true" else inadm).extend(names)
+    if not adm or not inadm:
+        raise Unadmitted("retry classification does not partition the signals")
+    return adm, inadm
+
+
+def render_recon_retry(root: Path) -> str:
+    adm, inadm = recon_retry(root)
+    lines = ["```text", "admissible for retry, resume, compensation, or refusal:"]
+    lines += [f"    {name}" for name in adm]
+    lines += ["", "never sufficient on their own:"]
+    lines += [f"    {name}" for name in inadm]
+    lines.append("```")
+    return "\n".join(lines)
+
+
 def render_gate_inventory(root: Path) -> str:
     """The docs/25 gate inventory, projected from spec/gates.rs."""
     rows = ["| GateId | Token | Title |", "| --- | --- | --- |"]
@@ -959,6 +1016,22 @@ def main() -> int:
             continue
         fw_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), fw_rewritten)
     plans.append((fw_path, fw_original, fw_rewritten))
+    recon_path = root / SYSTEM_DOC
+    recon_original = recon_path.read_text(encoding="utf-8")
+    recon_rewritten = recon_original
+    for name, render in (("RECONCILIATION-COORDINATES", render_recon_coordinates),
+                         ("RECONCILIATION-RETRY", render_recon_retry)):
+        pat = block_pattern(name)
+        if not pat.search(recon_rewritten):
+            findings.append(f"{SYSTEM_DOC}: missing generated block markers for {name}")
+            continue
+        try:
+            body = render(root)
+        except Unadmitted as exc:
+            findings.append(f"{SYSTEM_DOC}: {name} does not admit: {exc}")
+            continue
+        recon_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), recon_rewritten)
+    plans.append((recon_path, recon_original, recon_rewritten))
     gates_path = root / GATES_DOC
     gates_original = gates_path.read_text(encoding="utf-8")
     for rel in STALE_DOCS:
