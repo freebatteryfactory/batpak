@@ -829,6 +829,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/gates.rs",
     "spec/pakvm_isa.rs",
     "spec/syncbat_firewall.rs",
+    "spec/lib.rs",
     "spec/reconciliation.rs",
     "spec/proof.rs",
     "bootstrap/README.md",

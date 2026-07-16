@@ -1,14 +1,9 @@
 #![deny(warnings)]
 
-// architecture.rs resolves `crate::gates::GateId`, so the gate identity module
-// must be declared alongside it. This was missed when spec/gates.rs arrived in
-// 5.5C2a and no compiler was available to catch it.
-#[allow(dead_code)] // declarative spec surface; not this binary's program
-#[path = "../spec/gates.rs"]
-mod gates;
-#[allow(dead_code)] // declarative spec surface; not this binary's program
-#[path = "../spec/architecture.rs"]
-mod architecture;
+// The typed specification is a LIBRARY (spec/lib.rs, 5.5E2): this binary
+// links it instead of textually mounting modules, which also retires the
+// module-resolution trap the old #[path] mounts carried.
+use spec::architecture;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;

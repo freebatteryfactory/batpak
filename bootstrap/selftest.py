@@ -94,7 +94,7 @@ def _tree_digest(root: Path) -> str:
 
 def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
                    expect: str, extra: tuple = (),
-                   run_args: tuple | None = None) -> list[str]:
+                   run_args: tuple | None = None, link_spec: bool = True) -> list[str]:
     """Compile, link, and RUN one bootstrap binary, artifact-bound.
 
     The binding exists because honest individual facts can still assemble into a
@@ -117,8 +117,21 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
         return [f"{name}: artifact path was not unique to this run"]
     built = None
     for target in (None, "x86_64-pc-windows-gnu"):
-        cmd = [rustc, "--edition", "2021", "--crate-name", name.replace("-", "_"),
-               *extra, "-o", str(exe), str(root / src)]
+        # The spec is linked as a real rlib (5.5E2); it is built per attempted
+        # target so the binary and its library always share one triple. The
+        # spec's own test harness cannot extern itself: link_spec=False.
+        externs: list[str] = []
+        if link_spec:
+            rlib = exe.parent / f"libspec-{target or 'host'}.rlib"
+            lib_cmd = [rustc, "--edition", "2024", "--crate-type", "rlib",
+                       "--crate-name", "spec", "-o", str(rlib), str(root / "spec/lib.rs")]
+            if target:
+                lib_cmd[1:1] = ["--target", target]
+            if subprocess.run(lib_cmd, capture_output=True, text=True).returncode != 0:
+                continue
+            externs = ["--extern", f"spec={rlib}"]
+        cmd = [rustc, "--edition", "2024", "--crate-name", name.replace("-", "_"),
+               *externs, *extra, "-o", str(exe), str(root / src)]
         if target:
             cmd[1:1] = ["--target", target]
         if subprocess.run(cmd, capture_output=True, text=True).returncode == 0 and exe.is_file():
@@ -3439,24 +3452,42 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
         return findings
 
     def run_seedcheck(tree: Path) -> tuple[int, str]:
-        # seedcheck bakes the typed tables in at COMPILE time via #[path], so a
-        # mutated spec/ is only tested by compiling from the mutated tree. The
-        # real seedcheck.rs is copied in rather than reproduced: a hand-written
-        # stand-in would drift from the gate it claims to test.
+        # seedcheck links the typed tables at COMPILE time through the tree's
+        # spec rlib (5.5E2), so a mutated spec/ is only tested by building the
+        # library from the mutated tree. The real seedcheck.rs is copied in
+        # rather than reproduced: a hand-written stand-in would drift from the
+        # gate it claims to test. A mutation the COMPILER refuses is a refusal,
+        # not linker unavailability: its rustc output is returned so a probe
+        # can assert the exact reason instead of silently skipping.
         (tree / "bootstrap").mkdir(exist_ok=True)
         if not (tree / "bootstrap/seedcheck.rs").is_file():
             shutil.copy2(root / "bootstrap/seedcheck.rs", tree / "bootstrap/seedcheck.rs")
         tmp = Path(tempfile.mkdtemp(prefix="batpak-tier0-"))
         try:
             exe = tmp / ("sc" + (".exe" if os.name == "nt" else ""))
+            built = None
             for target in (None, "x86_64-pc-windows-gnu"):
-                cmd = [rustc, "--edition", "2021", "--crate-name", "sc",
+                rlib = tmp / f"libspec-{target or 'host'}.rlib"
+                lib_cmd = [rustc, "--edition", "2024", "--crate-type", "rlib",
+                           "--crate-name", "spec", "-o", str(rlib),
+                           str(tree / "spec/lib.rs")]
+                if target:
+                    lib_cmd[1:1] = ["--target", target]
+                lib_built = subprocess.run(lib_cmd, capture_output=True, text=True)
+                if lib_built.returncode != 0:
+                    if "linking with" not in lib_built.stderr:
+                        return (lib_built.returncode, lib_built.stderr)
+                    continue
+                cmd = [rustc, "--edition", "2024", "--crate-name", "sc",
+                       "--extern", f"spec={rlib}",
                        "-o", str(exe), str(tree / "bootstrap/seedcheck.rs")]
                 if target:
                     cmd[1:1] = ["--target", target]
                 built = subprocess.run(cmd, capture_output=True, text=True)
                 if built.returncode == 0:
                     break
+                if "linking with" not in built.stderr:
+                    return (built.returncode, built.stderr)
             else:
                 return (-1, "unavailable")
             if not exe.is_file():
@@ -3591,20 +3622,27 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         return findings
     tmp = Path(tempfile.mkdtemp(prefix="batpak-rustc-"))
     try:
-        # The spec is a LIBRARY: every pub item is API, so nothing is dead code.
-        lib = tmp / "spec_probe.rs"
-        mods = sorted(p.stem for p in (root / "spec").glob("*.rs"))
-        lib.write_text("\n".join(
-            f'#[path = "{(root / "spec" / (m + ".rs")).as_posix()}"] pub mod {m};'
-            for m in mods) + "\n", encoding="utf-8")
-        for name, src, extra in (
-            ("batpak_spec", lib, ["--crate-type", "lib"]),
-            ("seedcheck", root / "bootstrap/seedcheck.rs", []),
-            ("materialize", root / "bootstrap/materialize.rs", []),
+        # The spec is a real LIBRARY (spec/lib.rs, 5.5E2): one rlib boundary,
+        # edition 2024, zero suppressions. The binaries LINK it; nothing mounts
+        # spec modules textually anymore, so the visibility the probes below
+        # attack is the exact boundary production uses.
+        spec_meta = tmp / "libspec.rmeta"
+        proc = subprocess.run(
+            [rustc, "--edition", "2024", "--crate-type", "lib", "--emit=metadata",
+             "--crate-name", "spec", "-o", str(spec_meta), str(root / "spec/lib.rs")],
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            head = "\n".join(proc.stderr.splitlines()[:6])
+            findings.append(f"rust specification surface does not compile (spec):\n{head}")
+            return findings
+        for name, src in (
+            ("seedcheck", root / "bootstrap/seedcheck.rs"),
+            ("materialize", root / "bootstrap/materialize.rs"),
         ):
             proc = subprocess.run(
-                [rustc, "--edition", "2021", "--emit=metadata", "--crate-name", name,
-                 "-o", str(tmp / (name + ".rmeta")), str(src)] + extra,
+                [rustc, "--edition", "2024", "--emit=metadata", "--crate-name", name,
+                 "--extern", f"spec={spec_meta}",
+                 "-o", str(tmp / (name + ".rmeta")), str(src)],
                 capture_output=True, text=True)
             if proc.returncode != 0:
                 head = "\n".join(proc.stderr.splitlines()[:6])
@@ -3644,52 +3682,39 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         findings.extend(qualify_binary(
             rustc, root, tmp, "tier0-seedcheck-tests", "bootstrap/seedcheck.rs",
             f"test result: ok. {n_tests} passed", extra=("--test",), run_args=()))
-        # The admission desk has no public bypass, and the admitted witness cannot
-        # be forged. Both are proven by COMPILING against the real
-        # spec/pakvm_isa.rs through a normal (non-test) module boundary — the same
-        # visibility configuration production uses. A copied or hand-written stub
-        # would drift from the real file the moment either changed, and would then
-        # be proving a property of the stub.
-        for name, body, want in (
+        # The spec's OWN tests (5.5E2): the ISA admission refusals moved into
+        # spec/pakvm_isa.rs where the seam they exercise lives — a downstream
+        # crate's test cfg no longer reaches across the boundary, which is the
+        # boundary working. Qualified with the same artifact binding.
+        n_spec_tests = sum(p.read_text(encoding="utf-8").count("#[test]")
+                           for p in sorted((root / "spec").glob("*.rs")))
+        if n_spec_tests == 0:
+            findings.append(
+                "the spec declares no #[test] refusal tests; the harness was emptied")
+        findings.extend(qualify_binary(
+            rustc, root, tmp, "tier0-spec-tests", "spec/lib.rs",
+            f"test result: ok. {n_spec_tests} passed", extra=("--test",),
+            run_args=(), link_spec=False))
+        # The admission desks have no public bypass and the sealed witnesses
+        # cannot be forged or fabricated — proven by COMPILING a hostile
+        # consumer against the REAL crate boundary (--extern spec), the exact
+        # visibility configuration production uses since the 5.5E2 bake. Each
+        # probe must fail for ITS reason: a probe red for an unrelated compile
+        # error would certify a boundary nobody tested.
+        for name, uses, body, want in (
             ("isa_seam_is_absent_from_production",
+             "use spec::pakvm_isa::*;",
              "let ap = algebra_policy(PakVmAlgebra::QueryDataflow).unwrap();\n"
              "    let cp = class_policy(PakVmNodeClass::RowTransform).unwrap();\n"
              "    let _ = admit_candidate_policy(PakVmNodeId::Filter, ap, cp);",
              "cannot find function `admit_candidate_policy`"),
             ("isa_admission_witness_cannot_be_forged",
+             "use spec::pakvm_isa::*;",
              "let _ = AdmittedAsPublicSemanticNode(());",
              "cannot initialize a tuple struct which contains private fields"),
-        ):
-            src = tmp / f"{name}.rs"
-            src.write_text(
-                f'#[path = "{(root / "spec/pakvm_isa.rs").as_posix()}"] mod pakvm_isa;\n'
-                "use pakvm_isa::*;\n"
-                f"pub fn probe() {{\n    {body}\n}}\n", encoding="utf-8")
-            proc = subprocess.run(
-                [rustc, "--edition", "2021", "--crate-type", "lib", "--emit=metadata",
-                 "--crate-name", name, "-o", str(tmp / (name + ".rmeta")), str(src)],
-                capture_output=True, text=True)
-            if proc.returncode == 0:
-                findings.append(
-                    f"{name}: production code reached a test-only or sealed ISA item")
-            elif want not in proc.stderr:
-                # It must fail for THIS reason. A probe red for an unrelated
-                # compile error would certify a boundary nobody tested.
-                head = "\n".join(proc.stderr.splitlines()[:4])
-                findings.append(
-                    f"{name}: compile failed, but not with {want!r}:\n{head}")
-        # The firewall's sealed witness and its ISA-only origin, proven the same
-        # way and against the real spec files. An admitted crossing that any
-        # caller could assemble by hand would be a struct literal claiming to be
-        # a firewall decision.
-        mounts = "".join(
-            f'#[allow(dead_code)] #[path = "{(root / "spec" / m).as_posix()}"] mod {m[:-3]};\n'
-            for m in ("gates.rs", "architecture.rs", "guarantees.rs", "invariants.rs",
-                      "dispositions.rs", "legacy_obligations.rs",
-                      "legacy_invariant_coverage.rs", "operators.rs", "pakvm_isa.rs",
-                      "syncbat_firewall.rs"))
-        for name, body, want in (
             ("firewall_admitted_crossing_cannot_be_forged",
+             "use spec::architecture::SyncBatPlane;\n"
+             "use spec::pakvm_isa::PakVmNodeId;\nuse spec::syncbat_firewall::*;",
              "let _ = AdmittedCrossing {\n"
              "        from: SyncBatPlane::Bvisor, to: SyncBatPlane::Runtime,\n"
              "        carries: SyncBatAuthority::RetryRestartAuthority,\n"
@@ -3698,23 +3723,24 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "    };",
              "field `seal` of struct"),
             ("firewall_origin_cannot_be_fabricated",
+             "use spec::architecture::SyncBatPlane;\n"
+             "use spec::pakvm_isa::PakVmNodeId;\nuse spec::syncbat_firewall::*;",
              "let _ = admit_crossing(SyncBatPlane::PakVm, SyncBatPlane::Bvisor,\n"
              "        SyncBatAuthority::TypedEffectRequest, Some(PakVmNodeId::ReachTheHost));",
              "named `ReachTheHost` found for enum `PakVmNodeId`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
-                mounts
-                + "use architecture::SyncBatPlane;\nuse pakvm_isa::PakVmNodeId;\n"
-                + "use syncbat_firewall::*;\n"
-                + f"pub fn probe() {{\n    {body}\n}}\n", encoding="utf-8")
+                uses + f"\npub fn probe() {{\n    {body}\n}}\n", encoding="utf-8")
             proc = subprocess.run(
-                [rustc, "--edition", "2021", "--crate-type", "lib", "--emit=metadata",
+                [rustc, "--edition", "2024", "--crate-type", "lib", "--emit=metadata",
+                 "--extern", f"spec={spec_meta}",
                  "--crate-name", name, "-o", str(tmp / (name + ".rmeta")), str(src)],
                 capture_output=True, text=True)
             if proc.returncode == 0:
                 findings.append(
-                    f"{name}: production code minted a sealed or fabricated firewall value")
+                    f"{name}: production code reached a sealed, test-only, or "
+                    f"fabricated spec item across the crate boundary")
             elif want not in proc.stderr:
                 head = "\n".join(proc.stderr.splitlines()[:4])
                 findings.append(
