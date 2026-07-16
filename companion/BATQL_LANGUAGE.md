@@ -2902,11 +2902,16 @@ batpak batql compact   Emit compact comparison syntax.
 batpak batql speak     Narrate the typed query deterministically.
 batpak batql plan      Show selectors, folds, bounds, and estimated work.
 batpak batql explain   Show structured decision and formula derivation.
-batpak query           Execute an ASK.
-batpak do              Execute a named DO entrypoint.
+batpak query           Execute an ASK ProgramImage.
+batpak run             Invoke a declared WorldImage entrypoint; its program may be ASK or DO.
 batpak verify          Verify a result or transaction receipt.
-batpak repl            Run interactive questions.
+batpak repl            Interactive authoring/query shell.
 ```
+
+`DO` is a BatQL source-language mode, never a competing top-level product
+command (5.5E1 ruling): effectful programs enter through declared WorldImage
+entrypoints via `batpak run` (DEC-049). The product command inventory is
+owned by `26_COMMAND_PLANE.md`; this section shows the BatQL-facing subset.
 
 The `batql` package supplies the compiler library. `batpak-cli` projects that library through one product binary. All views consume the same typed query.
 

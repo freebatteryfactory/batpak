@@ -30,7 +30,14 @@ query     execute an ASK program
 serve     expose declared NetBat entrypoints
 inspect   inspect image, schema, program, world, capability, result, receipt
 verify    verify package, result, receipt, proof bundle
+repl      interactive authoring/query shell
 ```
+
+Three command namespaces stay distinct (5.5E1): product commands above, BatQL
+source modes (`ASK`, `DO` -- language law, owned by the companion, never
+product commands), and the TestPak repository commands below. `batpak run`
+invokes a declared WorldImage entrypoint whose program may be ASK or DO;
+`DO` is not a top-level command.
 
 ## TestPak commands
 
