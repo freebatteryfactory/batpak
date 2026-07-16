@@ -35,7 +35,7 @@ fn materialize(root: &Path) -> io::Result<()> {
     write_checked(root.join("justfile"), justfile())?;
 
     for package in architecture::PACKAGES {
-        let package_root = root.join(package.path);
+        let package_root = root.join(package.id.workspace_path());
         fs::create_dir_all(package_root.join("src"))?;
         write_checked(package_root.join("Cargo.toml"), &package_manifest(package))?;
         write_checked(package_root.join("README.md"), &package_readme(package))?;
@@ -70,38 +70,38 @@ fn validate_seed(root: &Path) -> io::Result<()> {
         }
     }
 
-    let packages: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.package).collect();
-    let layers: BTreeMap<&str, u8> = architecture::PACKAGES.iter().map(|p| (p.package, p.layer)).collect();
+    let packages: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.id.cargo_name()).collect();
+    let layers: BTreeMap<&str, u8> = architecture::PACKAGES.iter().map(|p| (p.id.cargo_name(), p.layer)).collect();
     if packages.len() != architecture::PACKAGES.len() {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "duplicate package name"));
     }
     for edge in architecture::EDGES {
-        if !packages.contains(edge.importer) || !packages.contains(edge.importee) {
+        if !packages.contains(edge.importer.cargo_name()) || !packages.contains(edge.importee.cargo_name()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("unknown package in edge {} -> {}", edge.importer, edge.importee),
+                format!("unknown package in edge {} -> {}", edge.importer.cargo_name(), edge.importee.cargo_name()),
             ));
         }
         if edge.profile.trim().is_empty() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "empty edge profile"));
         }
-        if let (Some(importer_layer), Some(importee_layer)) = (layers.get(edge.importer), layers.get(edge.importee)) {
+        if let (Some(importer_layer), Some(importee_layer)) = (layers.get(edge.importer.cargo_name()), layers.get(edge.importee.cargo_name())) {
             if importer_layer <= importee_layer {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("dependency direction violation {}(L{}) -> {}(L{})", edge.importer, importer_layer, edge.importee, importee_layer),
+                    format!("dependency direction violation {}(L{}) -> {}(L{})", edge.importer.cargo_name(), importer_layer, edge.importee.cargo_name(), importee_layer),
                 ));
             }
         }
     }
     for profile in architecture::QUALIFICATION_PROFILES {
-        if !packages.contains(profile.package)
+        if !packages.contains(profile.package.cargo_name())
             || profile.profile.trim().is_empty()
             || profile.requirement.trim().is_empty()
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("invalid qualification profile {}:{}", profile.package, profile.profile),
+                format!("invalid qualification profile {}:{}", profile.package.cargo_name(), profile.profile),
             ));
         }
     }
@@ -120,7 +120,7 @@ fn workspace_manifest() -> String {
         toolchain::TOOLCHAIN.cargo_resolver.spelling()
     );
     for package in architecture::PACKAGES {
-        let _ = writeln!(out, "  \"{}\",", package.path);
+        let _ = writeln!(out, "  \"{}\",", package.id.workspace_path());
     }
     out.push_str("]\n\n[workspace.package]\n");
     let _ = writeln!(out, "version = \"{}\"", architecture::WORKSPACE_VERSION);
@@ -133,7 +133,7 @@ fn workspace_manifest() -> String {
     out.push_str("license = \"MIT OR Apache-2.0\"\nrepository = \"https://github.com/freebatteryfactory/batpak\"\n\n");
     out.push_str("[workspace.dependencies]\n");
     for package in architecture::PACKAGES {
-        let _ = writeln!(out, "{} = {{ path = \"{}\" }}", package.package, package.path);
+        let _ = writeln!(out, "{} = {{ path = \"{}\" }}", package.id.cargo_name(), package.id.workspace_path());
     }
     out.push_str("\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\nunused_must_use = \"deny\"\n\n");
     // expect_used is deliberately NOT globally denied: TestPak tests use
@@ -149,7 +149,7 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
     let mut out = String::new();
     out.push_str("# Gate-0 skeleton generated from the signed architecture seed.\n");
     out.push_str("[package]\n");
-    let _ = writeln!(out, "name = \"{}\"", package.package);
+    let _ = writeln!(out, "name = \"{}\"", package.id.cargo_name());
     out.push_str("version.workspace = true\nedition.workspace = true\nrust-version.workspace = true\nlicense.workspace = true\nrepository.workspace = true\n");
     if package.class == architecture::PackageClass::DevOnly
         || package.class == architecture::PackageClass::Example
@@ -157,7 +157,7 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
         out.push_str("publish = false\n");
     }
 
-    if package.package == "macbat" {
+    if package.id == architecture::PackageId::MacBat {
         out.push_str("\n[lib]\nproc-macro = true\n");
     } else if package.class == architecture::PackageClass::BinaryAdapter {
         out.push_str("\n[[bin]]\nname = \"batpak\"\npath = \"src/main.rs\"\n");
@@ -166,7 +166,7 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
     let mut required = Vec::new();
     let mut optional = Vec::new();
     let mut dev = Vec::new();
-    for edge in architecture::EDGES.iter().filter(|edge| edge.importer == package.package) {
+    for edge in architecture::EDGES.iter().filter(|edge| edge.importer == package.id) {
         match edge.class {
             architecture::EdgeClass::Required => required.push(edge),
             architecture::EdgeClass::OptionalProfile => optional.push(edge),
@@ -174,40 +174,40 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
         }
     }
 
-    if package.package == "batpak" || package.package == "syncbat" {
+    if package.id == architecture::PackageId::BatPak || package.id == architecture::PackageId::SyncBat {
         // Default profile is usable native std (DEC-047). no_std consumers opt
         // out with default-features = false. std must not become a junk drawer:
         // the threaded/browser/encryption/mapping/interop adapters stay behind
         // their own explicit opt-in profiles, added at their owning gate.
         out.push_str("\n[features]\ndefault = [\"std\"]\nstd = []\n");
-        if package.package == "syncbat" {
+        if package.id == architecture::PackageId::SyncBat {
             out.push_str("browser = []\n");
         }
     } else if !optional.is_empty() {
         out.push_str("\n[features]\ndefault = []\n");
         for edge in &optional {
-            let _ = writeln!(out, "{} = [\"dep:{}\"]", edge.profile, edge.importee);
+            let _ = writeln!(out, "{} = [\"dep:{}\"]", edge.profile, edge.importee.cargo_name());
         }
     }
 
     if !required.is_empty() || !optional.is_empty() || (package.class == architecture::PackageClass::DevOnly && !dev.is_empty()) {
         out.push_str("\n[dependencies]\n");
         for edge in required {
-            let _ = writeln!(out, "{} = {{ workspace = true }}", edge.importee);
+            let _ = writeln!(out, "{} = {{ workspace = true }}", edge.importee.cargo_name());
         }
         for edge in optional {
-            let _ = writeln!(out, "{} = {{ workspace = true, optional = true }}", edge.importee);
+            let _ = writeln!(out, "{} = {{ workspace = true, optional = true }}", edge.importee.cargo_name());
         }
         if package.class == architecture::PackageClass::DevOnly {
             for edge in &dev {
-                let _ = writeln!(out, "{} = {{ workspace = true }}", edge.importee);
+                let _ = writeln!(out, "{} = {{ workspace = true }}", edge.importee.cargo_name());
             }
         }
     }
     if package.class != architecture::PackageClass::DevOnly && !dev.is_empty() {
         out.push_str("\n[dev-dependencies]\n");
         for edge in dev {
-            let _ = writeln!(out, "{} = {{ workspace = true }}", edge.importee);
+            let _ = writeln!(out, "{} = {{ workspace = true }}", edge.importee.cargo_name());
         }
     }
     out.push_str("\n[lints]\nworkspace = true\n");
@@ -217,31 +217,31 @@ fn package_manifest(package: &architecture::PackageSpec) -> String {
 fn package_readme(package: &architecture::PackageSpec) -> String {
     format!(
         "# {}\n\nGate-0 package skeleton.\n\n**Authority:** {}\n\nThe normative owner and dependency facts live in `spec/architecture.rs`. This file does not widen that role.\n",
-        package.package, package.role
+        package.id.cargo_name(), package.role
     )
 }
 
 fn library_source(package: &architecture::PackageSpec) -> String {
-    let crate_name = package.package.replace('-', "_");
-    if package.package == "batpak" {
+    let crate_name = package.id.cargo_name().replace('-', "_");
+    if package.id == architecture::PackageId::BatPak {
         return format!(
             "#![cfg_attr(not(feature = \"std\"), no_std)]\n#![deny(missing_docs)]\n//! Semantic and durable BatPak core.\n\nextern crate alloc;\n\n/// Gate-0 marker for the `{crate_name}` package skeleton.\npub const PACKAGE_ID: &str = \"{}\";\n",
-            package.package
+            package.id.cargo_name()
         );
     }
-    if package.package == "syncbat" {
+    if package.id == architecture::PackageId::SyncBat {
         return "#![cfg_attr(not(feature = \"std\"), no_std)]\n#![deny(missing_docs)]\n//! SyncBat runtime, PakVM, Bvisor, world, and port planes.\n\nextern crate alloc;\n\npub mod bvisor;\npub mod pakvm;\npub mod port;\npub mod runtime;\npub mod world;\n".to_owned();
     }
     format!(
         "#![deny(missing_docs)]\n//! Gate-0 package skeleton for `{}`.\n\n/// Stable package identity used only by the bootstrap skeleton.\npub const PACKAGE_ID: &str = \"{}\";\n",
-        package.package, package.package
+        package.id.cargo_name(), package.id.cargo_name()
     )
 }
 
 fn binary_source(package: &architecture::PackageSpec) -> String {
     format!(
         "//! Thin product command adapter for `{}`.\n\nfn main() {{}}\n",
-        package.package
+        package.id.cargo_name()
     )
 }
 
@@ -250,7 +250,7 @@ fn example_source(package: &architecture::PackageSpec) -> String {
     // observable output and depend only on public production APIs.
     format!(
         "//! Gate-0 placeholder example for `{}`.\n\nfn main() {{\n    println!(\"batpak-examples: gate-0 placeholder\");\n}}\n",
-        package.package
+        package.id.cargo_name()
     )
 }
 

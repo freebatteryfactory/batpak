@@ -200,10 +200,21 @@ _DEC_ROW = re.compile(
     r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+), subject: "[^"]+"'
 )
 _PKG_ROW = re.compile(
-    r'PackageSpec \{\s*package: "([^"]+)",\s*path: "[^"]+",\s*role: "[^"]+",\s*'
+    r'PackageSpec \{\s*id: PackageId::(\w+),\s*role: "[^"]+",\s*'
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
+
+
+def _package_cargo_names(root):
+    """PackageId variant -> cargo name, parsed from the projection the typed
+    owner authors. The projector renders through this map and never carries a
+    hand-maintained copy of the package list."""
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    body = re.search(
+        r"pub const fn cargo_name\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
+        src, re.S)
+    return dict(re.findall(r'PackageId::(\w+) => "([^"]+)",', body.group(1))) if body else {}
 _QUAL_ROW = re.compile(
-    r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
+    r'QualificationProfile \{\s*package: PackageId::(\w+),\s*profile: "([^"]+)",\s*'
     r'environment: QualificationEnvironment::(\w+),\s*gates: &\[([^\]]*)\],\s*'
     r'requirement: "[^"]+",\s*\}', re.S)
 # The documentary spelling of each environment variant, mirrored by the
@@ -388,13 +399,18 @@ def guarantee_nodes(root):
         node["dclass"] = dcls
         nodes.append(node)
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    for pkg, cls, layer in _PKG_ROW.findall(arch):
-        nodes.append(admit(root, "ARCH", f"ARCH-{pkg}", {}, f"Architecture(L{layer} {cls})"))
-    for pkg, profile, environment, qgates in _QUAL_ROW.findall(arch):
+    # The rendered node id is a PROJECTION of the typed identity: the graph
+    # keeps its byte-identical "ARCH-batpak" form, but the id is derived
+    # through the cargo_name arms the typed owner authors.
+    cargo = _package_cargo_names(root)
+    for variant, cls, layer in _PKG_ROW.findall(arch):
+        nodes.append(admit(root, "ARCH", f"ARCH-{cargo.get(variant, '')}", {},
+                           f"Architecture(L{layer} {cls})"))
+    for variant, profile, environment, qgates in _QUAL_ROW.findall(arch):
         # environment is the SEMANTIC dimension; qgates is the SCHEDULE.
         # Never interchanged. The node projects the canonical spelling.
         spelling = _ENVIRONMENT_SPELLING.get(environment, "")
-        nodes.append(admit(root, "QUAL", f"QUAL-{pkg}-{profile}", {
+        nodes.append(admit(root, "QUAL", f"QUAL-{cargo.get(variant, '')}-{profile}", {
             "gates": gate_tokens(qgates, root), "target": spelling,
         }, f"Qualification({spelling})"))
     nodes.sort(key=lambda n: (FAMILY_RANK[n["family"]], n["id"]))

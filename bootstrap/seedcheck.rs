@@ -256,7 +256,7 @@ fn guarantee_ref_resolves(reference: guarantees::GuaranteeRef) -> bool {
             dispositions::DECISIONS.iter().any(|r| r.id == id.raw())
         }
         guarantees::GuaranteeRef::Architecture(id) => {
-            architecture::PACKAGES.iter().any(|p| p.package == id.package())
+            architecture::PACKAGES.iter().any(|p| p.id == id.package())
         }
         guarantees::GuaranteeRef::Qualification(id) => architecture::QUALIFICATION_PROFILES
             .iter()
@@ -889,66 +889,106 @@ fn check_version(findings: &mut Vec<String>) {
 }
 
 fn check_graph(findings: &mut Vec<String>) {
-    let packages: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.package).collect();
-    let layers: BTreeMap<&str, u8> = architecture::PACKAGES.iter().map(|p| (p.package, p.layer)).collect();
-    if packages.len() != architecture::PACKAGES.len() { findings.push("duplicate package name".into()); }
-    let paths: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.path).collect();
-    if paths.len() != architecture::PACKAGES.len() { findings.push("duplicate package path".into()); }
+    // The package CATALOG law (5.5E3b): the variant is the identity, and the
+    // declared inventory equals the authored rows exactly, in canonical
+    // order. Counts are derived from the typed inventory, never hardcoded.
+    let ids: Vec<architecture::PackageId> =
+        architecture::PACKAGES.iter().map(|p| p.id).collect();
+    if ids.as_slice() != architecture::PackageId::ALL {
+        findings.push(
+            "PACKAGES does not declare exactly PackageId::ALL in canonical order".into(),
+        );
+    }
+    for id in architecture::PackageId::ALL {
+        // Exhaustive: a new package variant must be classified here, must
+        // join ALL, and must gain a PackageSpec row — not default.
+        match id {
+            architecture::PackageId::MacBatCompiler
+            | architecture::PackageId::MacBat
+            | architecture::PackageId::BatPak
+            | architecture::PackageId::SyncBat
+            | architecture::PackageId::BatQl
+            | architecture::PackageId::NetBat
+            | architecture::PackageId::TestPak
+            | architecture::PackageId::BatPakCli
+            | architecture::PackageId::BatPakExamples => {}
+        }
+        if id.cargo_name().trim().is_empty() {
+            findings.push(format!("{id:?} projects an empty cargo name"));
+        }
+        if id.display_name().trim().is_empty() {
+            findings.push(format!("{id:?} projects an empty display name"));
+        }
+        let path = id.workspace_path();
+        if path.trim().is_empty()
+            || path.starts_with('/')
+            || path.contains(':')
+            || path.split('/').any(|part| part == "..")
+        {
+            findings.push(format!(
+                "{id:?} projects workspace path {path:?}, which is not relative and contained"
+            ));
+        }
+    }
+    let packages: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.id.cargo_name()).collect();
+    let layers: BTreeMap<&str, u8> = architecture::PACKAGES.iter().map(|p| (p.id.cargo_name(), p.layer)).collect();
+    if packages.len() != architecture::PACKAGES.len() { findings.push("two package identities project the same cargo name".into()); }
+    let paths: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.id.workspace_path()).collect();
+    if paths.len() != architecture::PACKAGES.len() { findings.push("two package identities project the same workspace path".into()); }
     for package in architecture::PACKAGES {
-        if package.role.trim().is_empty() { findings.push(format!("empty role for {}", package.package)); }
-        if package.path.trim().is_empty() { findings.push(format!("empty path for {}", package.package)); }
+        if package.role.trim().is_empty() { findings.push(format!("empty role for {}", package.id.cargo_name())); }
     }
     let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for edge in architecture::EDGES {
-        if !packages.contains(edge.importer) { findings.push(format!("unknown importer {}", edge.importer)); }
-        if !packages.contains(edge.importee) { findings.push(format!("unknown importee {}", edge.importee)); }
-        if edge.importer == edge.importee { findings.push(format!("self dependency {}", edge.importer)); }
-        if edge.profile.is_empty() { findings.push(format!("edge has empty profile {} -> {}", edge.importer, edge.importee)); }
-        if let (Some(importer_layer), Some(importee_layer)) = (layers.get(edge.importer), layers.get(edge.importee)) {
+        if !packages.contains(edge.importer.cargo_name()) { findings.push(format!("unknown importer {}", edge.importer.cargo_name())); }
+        if !packages.contains(edge.importee.cargo_name()) { findings.push(format!("unknown importee {}", edge.importee.cargo_name())); }
+        if edge.importer == edge.importee { findings.push(format!("self dependency {}", edge.importer.cargo_name())); }
+        if edge.profile.is_empty() { findings.push(format!("edge has empty profile {} -> {}", edge.importer.cargo_name(), edge.importee.cargo_name())); }
+        if let (Some(importer_layer), Some(importee_layer)) = (layers.get(edge.importer.cargo_name()), layers.get(edge.importee.cargo_name())) {
             if importer_layer <= importee_layer {
-                findings.push(format!("dependency direction violation {}(L{}) -> {}(L{})", edge.importer, importer_layer, edge.importee, importee_layer));
+                findings.push(format!("dependency direction violation {}(L{}) -> {}(L{})", edge.importer.cargo_name(), importer_layer, edge.importee.cargo_name(), importee_layer));
             }
         }
-        if edge.importer == "testpak" && edge.class != architecture::EdgeClass::DevOnly {
-            findings.push(format!("testpak edge must be dev-only: {}", edge.importee));
+        if edge.importer == architecture::PackageId::TestPak && edge.class != architecture::EdgeClass::DevOnly {
+            findings.push(format!("testpak edge must be dev-only: {}", edge.importee.cargo_name()));
         }
-        if edge.importee == "batpak-examples" {
-            findings.push(format!("nothing may depend on the examples package: {} -> batpak-examples", edge.importer));
+        if edge.importee == architecture::PackageId::BatPakExamples {
+            findings.push(format!("nothing may depend on the examples package: {} -> batpak-examples", edge.importer.cargo_name()));
         }
-        if edge.importer == "batpak-examples" && edge.importee == "testpak" {
+        if edge.importer == architecture::PackageId::BatPakExamples && edge.importee == architecture::PackageId::TestPak {
             findings.push("batpak-examples must not depend on dev tooling (testpak)".to_string());
         }
-        if edge.importer == "batpak-cli" && edge.class == architecture::EdgeClass::DevOnly {
-            findings.push(format!("CLI edge cannot be dev-only: {}", edge.importee));
+        if edge.importer == architecture::PackageId::BatPakCli && edge.class == architecture::EdgeClass::DevOnly {
+            findings.push(format!("CLI edge cannot be dev-only: {}", edge.importee.cargo_name()));
         }
-        graph.entry(edge.importer).or_default().push(edge.importee);
+        graph.entry(edge.importer.cargo_name()).or_default().push(edge.importee.cargo_name());
     }
     for package in architecture::PACKAGES {
         let mut visiting = BTreeSet::new();
         let mut visited = BTreeSet::new();
-        if cycle(package.package, &graph, &mut visiting, &mut visited) {
-            findings.push(format!("dependency cycle reaches {}", package.package));
+        if cycle(package.id.cargo_name(), &graph, &mut visiting, &mut visited) {
+            findings.push(format!("dependency cycle reaches {}", package.id.cargo_name()));
         }
     }
 }
 
 fn check_profiles(findings: &mut Vec<String>) {
-    let packages: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.package).collect();
+    let packages: BTreeSet<&str> = architecture::PACKAGES.iter().map(|p| p.id.cargo_name()).collect();
     let mut identities = BTreeSet::new();
     for profile in architecture::QUALIFICATION_PROFILES {
-        if !packages.contains(profile.package) {
-            findings.push(format!("unknown qualification package {}", profile.package));
+        if !packages.contains(profile.package.cargo_name()) {
+            findings.push(format!("unknown qualification package {}", profile.package.cargo_name()));
         }
         if profile.profile.trim().is_empty() || profile.requirement.trim().is_empty() {
-            findings.push(format!("incomplete qualification profile {}:{}", profile.package, profile.profile));
+            findings.push(format!("incomplete qualification profile {}:{}", profile.package.cargo_name(), profile.profile));
         }
-        if !identities.insert((profile.package, profile.profile)) {
-            findings.push(format!("duplicate qualification profile {}:{}", profile.package, profile.profile));
+        if !identities.insert((profile.package.cargo_name(), profile.profile)) {
+            findings.push(format!("duplicate qualification profile {}:{}", profile.package.cargo_name(), profile.profile));
         }
     }
-    for package in ["batpak", "syncbat"] {
+    for package in [architecture::PackageId::BatPak, architecture::PackageId::SyncBat] {
         if !architecture::QUALIFICATION_PROFILES.iter().any(|p| p.package == package && p.profile == "semantic" && p.environment == architecture::QualificationEnvironment::NoStdAlloc) {
-            findings.push(format!("missing no_std + alloc semantic profile for {package}"));
+            findings.push(format!("missing no_std + alloc semantic profile for {}", package.cargo_name()));
         }
     }
 }
@@ -1712,8 +1752,8 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
         if !SYNCBAT_AUTHORITIES.iter().any(|a| a.owner() == plane) {
             findings.push(format!("SyncBat plane {plane:?} owns no authority"));
         }
-        if plane.package() != "syncbat" {
-            findings.push(format!("SyncBat plane {plane:?} claims package {}", plane.package()));
+        if plane.package() != architecture::PackageId::SyncBat {
+            findings.push(format!("SyncBat plane {plane:?} claims package {}", plane.package().cargo_name()));
         }
         if plane.authored_ownership().is_empty() {
             findings.push(format!("SyncBat plane {plane:?} names no authored ownership"));

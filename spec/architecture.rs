@@ -40,13 +40,14 @@ impl SyncBatPlane {
     /// a crate is exactly why the firewall has to be typed rather than
     /// structural, because no module boundary separates them (docs/08: "Sharing a
     /// crate does not permit one plane to perform another's transition").
-    pub const fn package(self) -> &'static str {
+    /// Typed since 5.5E3b: the plane cites the identity, not a raw name.
+    pub const fn package(self) -> PackageId {
         match self {
             SyncBatPlane::Runtime
             | SyncBatPlane::PakVm
             | SyncBatPlane::Bvisor
             | SyncBatPlane::World
-            | SyncBatPlane::Port => "syncbat",
+            | SyncBatPlane::Port => PackageId::SyncBat,
         }
     }
 
@@ -71,10 +72,93 @@ pub const SYNCBAT_PLANES: &[SyncBatPlane] = &[
     SyncBatPlane::Port,
 ];
 
+/// The closed identity of an admitted workspace package (5.5E3b). The
+/// VARIANT is the identity; the Cargo package name, the workspace path, and
+/// the display label are deterministic projections of it — never additional
+/// identities, and never flattened into one another: BatPakCli's Cargo
+/// package is `batpak-cli`, its binary target is `batpak`, and its path is
+/// `apps/batpak-cli`, three related facts about one identity. A package that
+/// is not a variant here has no spelling in any typed relationship.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PackageId {
+    MacBatCompiler,
+    MacBat,
+    BatPak,
+    SyncBat,
+    BatQl,
+    NetBat,
+    TestPak,
+    BatPakCli,
+    BatPakExamples,
+}
+
+impl PackageId {
+    /// Every admitted package, in canonical workspace order. The catalog law
+    /// requires PACKAGES to declare exactly these, in this order; counts are
+    /// DERIVED from this inventory, never hardcoded.
+    pub const ALL: &'static [PackageId] = &[
+        PackageId::MacBatCompiler,
+        PackageId::MacBat,
+        PackageId::BatPak,
+        PackageId::SyncBat,
+        PackageId::BatQl,
+        PackageId::NetBat,
+        PackageId::TestPak,
+        PackageId::BatPakCli,
+        PackageId::BatPakExamples,
+    ];
+
+    /// The Cargo package name this identity projects.
+    pub const fn cargo_name(self) -> &'static str {
+        match self {
+            PackageId::MacBatCompiler => "macbat-compiler",
+            PackageId::MacBat => "macbat",
+            PackageId::BatPak => "batpak",
+            PackageId::SyncBat => "syncbat",
+            PackageId::BatQl => "batql",
+            PackageId::NetBat => "netbat",
+            PackageId::TestPak => "testpak",
+            PackageId::BatPakCli => "batpak-cli",
+            PackageId::BatPakExamples => "batpak-examples",
+        }
+    }
+
+    /// The workspace-relative path this identity projects.
+    pub const fn workspace_path(self) -> &'static str {
+        match self {
+            PackageId::MacBatCompiler => "crates/macbat/compiler",
+            PackageId::MacBat => "crates/macbat/macros",
+            PackageId::BatPak => "crates/batpak",
+            PackageId::SyncBat => "crates/syncbat",
+            PackageId::BatQl => "crates/batql",
+            PackageId::NetBat => "crates/netbat",
+            PackageId::TestPak => "crates/testpak",
+            PackageId::BatPakCli => "apps/batpak-cli",
+            PackageId::BatPakExamples => "examples",
+        }
+    }
+
+    /// The human display label this identity projects.
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            PackageId::MacBatCompiler => "MacBat compiler",
+            PackageId::MacBat => "MacBat",
+            PackageId::BatPak => "BatPak",
+            PackageId::SyncBat => "SyncBat",
+            PackageId::BatQl => "BatQL",
+            PackageId::NetBat => "NetBat",
+            PackageId::TestPak => "TestPak",
+            PackageId::BatPakCli => "BatPak CLI",
+            PackageId::BatPakExamples => "BatPak examples",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PackageSpec {
-    pub package: &'static str,
-    pub path: &'static str,
+    /// The typed identity. Cargo name and workspace path are projections of
+    /// it and are not repeated here.
+    pub id: PackageId,
     pub role: &'static str,
     pub class: PackageClass,
     pub layer: u8,
@@ -134,7 +218,7 @@ impl QualificationEnvironment {
 /// gate/run-specific evidence, not the lifetime of the law.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QualificationProfile {
-    pub package: &'static str,
+    pub package: PackageId,
     pub profile: &'static str,
     pub environment: QualificationEnvironment,
     pub gates: &'static [GateId],
@@ -143,8 +227,8 @@ pub struct QualificationProfile {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EdgeSpec {
-    pub importer: &'static str,
-    pub importee: &'static str,
+    pub importer: PackageId,
+    pub importee: PackageId,
     pub class: EdgeClass,
     pub profile: &'static str,
 }
@@ -160,64 +244,55 @@ pub const WORKSPACE_VERSION: &str = "1.0.0-alpha.1";
 
 pub const PACKAGES: &[PackageSpec] = &[
     PackageSpec {
-        package: "macbat-compiler",
-        path: "crates/macbat/compiler",
+        id: PackageId::MacBatCompiler,
         role: "pure Rust contract compiler",
         class: PackageClass::Production,
         layer: 0,
     },
     PackageSpec {
-        package: "macbat",
-        path: "crates/macbat/macros",
+        id: PackageId::MacBat,
         role: "proc-macro front door",
         class: PackageClass::Production,
         layer: 1,
     },
     PackageSpec {
-        package: "batpak",
-        path: "crates/batpak",
+        id: PackageId::BatPak,
         role: "semantic and durable core, including .fbat",
         class: PackageClass::Production,
         layer: 2,
     },
     PackageSpec {
-        package: "syncbat",
-        path: "crates/syncbat",
+        id: PackageId::SyncBat,
         role: "runtime crate containing runtime, PakVM, Bvisor, world, and port planes",
         class: PackageClass::Production,
         layer: 3,
     },
     PackageSpec {
-        package: "batql",
-        path: "crates/batql",
+        id: PackageId::BatQl,
         role: "BatQL parser, type checker, planner, partial evaluator, and ProgramImage compiler",
         class: PackageClass::Production,
         layer: 3,
     },
     PackageSpec {
-        package: "netbat",
-        path: "crates/netbat",
+        id: PackageId::NetBat,
         role: "bounded typed transport over declared SyncBat world entrypoints",
         class: PackageClass::Production,
         layer: 4,
     },
     PackageSpec {
-        package: "testpak",
-        path: "crates/testpak",
+        id: PackageId::TestPak,
         role: "repository proof, forge, gauntlet, benchmark, and mutation battery",
         class: PackageClass::DevOnly,
         layer: 6,
     },
     PackageSpec {
-        package: "batpak-cli",
-        path: "apps/batpak-cli",
+        id: PackageId::BatPakCli,
         role: "thin product command adapter; owns no semantic law",
         class: PackageClass::BinaryAdapter,
         layer: 5,
     },
     PackageSpec {
-        package: "batpak-examples",
-        path: "examples",
+        id: PackageId::BatPakExamples,
         role: "public-surface witness; runnable demos over production APIs only; owns no semantic law and depends on no dev tooling",
         class: PackageClass::Example,
         layer: 5,
@@ -226,42 +301,42 @@ pub const PACKAGES: &[PackageSpec] = &[
 
 pub const QUALIFICATION_PROFILES: &[QualificationProfile] = &[
     QualificationProfile {
-        package: "batpak",
+        package: PackageId::BatPak,
         profile: "semantic",
         environment: QualificationEnvironment::NoStdAlloc,
         gates: &[GateId::G0, GateId::G5],
         requirement: "contracts, schemas, codecs, image values, deterministic parsing, and storage-port law compile without std",
     },
     QualificationProfile {
-        package: "syncbat",
+        package: PackageId::SyncBat,
         profile: "semantic",
         environment: QualificationEnvironment::NoStdAlloc,
         gates: &[GateId::G0, GateId::G5],
         requirement: "runtime transition core, PakVM validation/interpreter, Bvisor admission state, world values, and port protocols compile without std host adapters",
     },
     QualificationProfile {
-        package: "batpak",
+        package: PackageId::BatPak,
         profile: "native",
         environment: QualificationEnvironment::NativeStd,
         gates: &[GateId::G0, GateId::G5],
         requirement: "native filesystem, mapping, clock, entropy, and threaded storage adapters are explicit std mechanisms",
     },
     QualificationProfile {
-        package: "syncbat",
+        package: PackageId::SyncBat,
         profile: "native",
         environment: QualificationEnvironment::NativeStd,
         gates: &[GateId::G0, GateId::G5],
         requirement: "threaded driver and native host-port adapters are explicit std mechanisms",
     },
     QualificationProfile {
-        package: "syncbat",
+        package: PackageId::SyncBat,
         profile: "browser",
         environment: QualificationEnvironment::WasmHost,
         gates: &[GateId::G0, GateId::G5],
         requirement: "browser adapters preserve semantic result, receipt, bounds, and recovery contracts without OS-backend normalization",
     },
     QualificationProfile {
-        package: "batpak",
+        package: PackageId::BatPak,
         profile: "browser-storage",
         environment: QualificationEnvironment::WasmHost,
         gates: &[GateId::G2, GateId::G5, GateId::G7],
@@ -834,25 +909,25 @@ pub const PROMOTION_REQUIREMENTS: &[&str] = &[
 ];
 
 pub const EDGES: &[EdgeSpec] = &[
-    EdgeSpec { importer: "macbat", importee: "macbat-compiler", class: EdgeClass::Required, profile: "compile" },
-    EdgeSpec { importer: "batpak", importee: "macbat", class: EdgeClass::Required, profile: "derive" },
-    EdgeSpec { importer: "syncbat", importee: "batpak", class: EdgeClass::Required, profile: "runtime" },
-    EdgeSpec { importer: "batql", importee: "batpak", class: EdgeClass::Required, profile: "compiler" },
-    EdgeSpec { importer: "netbat", importee: "batpak", class: EdgeClass::Required, profile: "transport-contract" },
-    EdgeSpec { importer: "netbat", importee: "syncbat", class: EdgeClass::Required, profile: "runtime-entrypoints" },
-    EdgeSpec { importer: "batpak-cli", importee: "batpak", class: EdgeClass::Required, profile: "core" },
-    EdgeSpec { importer: "batpak-cli", importee: "syncbat", class: EdgeClass::Required, profile: "runtime" },
-    EdgeSpec { importer: "batpak-cli", importee: "batql", class: EdgeClass::Required, profile: "compiler" },
-    EdgeSpec { importer: "batpak-cli", importee: "netbat", class: EdgeClass::OptionalProfile, profile: "serve" },
-    EdgeSpec { importer: "testpak", importee: "macbat-compiler", class: EdgeClass::DevOnly, profile: "proof" },
-    EdgeSpec { importer: "testpak", importee: "macbat", class: EdgeClass::DevOnly, profile: "proof" },
-    EdgeSpec { importer: "testpak", importee: "batpak", class: EdgeClass::DevOnly, profile: "proof" },
-    EdgeSpec { importer: "testpak", importee: "syncbat", class: EdgeClass::DevOnly, profile: "proof" },
-    EdgeSpec { importer: "testpak", importee: "batql", class: EdgeClass::DevOnly, profile: "proof" },
-    EdgeSpec { importer: "testpak", importee: "netbat", class: EdgeClass::DevOnly, profile: "proof" },
-    EdgeSpec { importer: "batpak-examples", importee: "batpak", class: EdgeClass::Required, profile: "example" },
-    EdgeSpec { importer: "batpak-examples", importee: "syncbat", class: EdgeClass::Required, profile: "example" },
-    EdgeSpec { importer: "batpak-examples", importee: "batql", class: EdgeClass::Required, profile: "example" },
+    EdgeSpec { importer: PackageId::MacBat, importee: PackageId::MacBatCompiler, class: EdgeClass::Required, profile: "compile" },
+    EdgeSpec { importer: PackageId::BatPak, importee: PackageId::MacBat, class: EdgeClass::Required, profile: "derive" },
+    EdgeSpec { importer: PackageId::SyncBat, importee: PackageId::BatPak, class: EdgeClass::Required, profile: "runtime" },
+    EdgeSpec { importer: PackageId::BatQl, importee: PackageId::BatPak, class: EdgeClass::Required, profile: "compiler" },
+    EdgeSpec { importer: PackageId::NetBat, importee: PackageId::BatPak, class: EdgeClass::Required, profile: "transport-contract" },
+    EdgeSpec { importer: PackageId::NetBat, importee: PackageId::SyncBat, class: EdgeClass::Required, profile: "runtime-entrypoints" },
+    EdgeSpec { importer: PackageId::BatPakCli, importee: PackageId::BatPak, class: EdgeClass::Required, profile: "core" },
+    EdgeSpec { importer: PackageId::BatPakCli, importee: PackageId::SyncBat, class: EdgeClass::Required, profile: "runtime" },
+    EdgeSpec { importer: PackageId::BatPakCli, importee: PackageId::BatQl, class: EdgeClass::Required, profile: "compiler" },
+    EdgeSpec { importer: PackageId::BatPakCli, importee: PackageId::NetBat, class: EdgeClass::OptionalProfile, profile: "serve" },
+    EdgeSpec { importer: PackageId::TestPak, importee: PackageId::MacBatCompiler, class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: PackageId::TestPak, importee: PackageId::MacBat, class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: PackageId::TestPak, importee: PackageId::BatPak, class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: PackageId::TestPak, importee: PackageId::SyncBat, class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: PackageId::TestPak, importee: PackageId::BatQl, class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: PackageId::TestPak, importee: PackageId::NetBat, class: EdgeClass::DevOnly, profile: "proof" },
+    EdgeSpec { importer: PackageId::BatPakExamples, importee: PackageId::BatPak, class: EdgeClass::Required, profile: "example" },
+    EdgeSpec { importer: PackageId::BatPakExamples, importee: PackageId::SyncBat, class: EdgeClass::Required, profile: "example" },
+    EdgeSpec { importer: PackageId::BatPakExamples, importee: PackageId::BatQl, class: EdgeClass::Required, profile: "example" },
 ];
 
 pub const REQUIRED_DOCS: &[&str] = &[
