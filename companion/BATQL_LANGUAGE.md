@@ -1385,39 +1385,54 @@ No unqualified `FLOAT`, `F32`, `F64`, `NaN`, or `Infinity` literal forms exist. 
 
 ## 5.2a Typed arithmetic legality (DEC-060)
 
-BatQL cannot claim strict typing while leaving operator meaning underdetermined. The legal operator matrix is frozen. Anything not listed is a compile-time type error.
+BatQL cannot claim strict typing while leaving operator meaning underdetermined. The legal operator matrix below is a generated projection of each operator's typed legality rules (`spec/operators.rs`, `OperatorTypingRule`); anything not derivable from those rules is a compile-time type error. Rules match in declaration order, so `Percent - Percent` is a `PercentagePoints` difference, never a bare same-unit result. `ObservedWallTime - ObservedWallTime` yields `TimeDelta`, a signed diagnostic observation difference that is never `Duration` or any ordering, budget, or deadline authority (docs/16). `Money * Percent` stays `Money` — exact by scale increase, with scale reduction through an explicit named rounding mode; a percentage of money is money, not a new one-off sort.
 
-### Addition and subtraction
-
-Same dimension and unit only:
-
-```text
-Money<USD> + Money<USD>       → Money<USD>
-Money<USD> + Money<EUR>       → rejected
-Percent - Percent            → PercentagePoints
-Percent + PercentagePoints   → Percent
-ObservedWallTime - ObservedWallTime → SignedDuration
-```
-
-### Multiplication
-
-At least one operand must be dimensionless (`Integer`, `Decimal`, `Ratio`, `Percent`); the result keeps the dimensional operand:
+<!-- OPERATORS-TYPING:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+### Addition (`+`)
 
 ```text
-Money<USD> * Decimal   → Money<USD>
-Money<USD> * Percent   → DecimalMoney<USD>
-Duration * Integer     → Duration
-Money * Money          → rejected
+Percent + PercentagePoints       -> Percent
+PercentagePoints + Percent       -> Percent
+Money<USD> + Money<USD>       -> Money<USD>
+Money<USD> + Money<EUR>       -> rejected
 ```
 
-### Division
+### Division (`/`)
 
 ```text
-Money<USD> / Money<USD>   → Ratio
-Duration / Duration       → Ratio
-Money<USD> / Money<EUR>   → rejected
-dimensional / dimensionless → same dimension
+Money<USD> / Money<USD>       -> Ratio
+Duration / Duration           -> Ratio
+Money<USD> / Money<EUR>       -> rejected
+dimensional / dimensionless      -> same dimension
 ```
+
+### Multiplication (`*`)
+
+```text
+Money<USD> * Decimal          -> Money<USD>
+Money<USD> * Percent          -> Money<USD>
+Duration * Integer            -> Duration
+Money * Money                 -> rejected
+```
+
+### Subtraction (`-`)
+
+```text
+Percent - Percent             -> PercentagePoints
+Percent - PercentagePoints    -> Percent
+ObservedWallTime - ObservedWallTime -> TimeDelta
+Money<USD> - Money<USD>       -> Money<USD>
+Money<USD> - Money<EUR>       -> rejected
+```
+
+### Comparison and truth
+
+```text
+comparisons        exact same-sort pair -> Truth with TypedMargin
+NOT                Truth -> Truth (K3 total)
+AND / OR           Truth x Truth -> Truth (K3 total)
+```
+<!-- OPERATORS-TYPING:END -->
 
 ### Rounding is explicit
 

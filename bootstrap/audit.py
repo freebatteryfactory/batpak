@@ -137,16 +137,16 @@ BATQL_OP_ROW = re.compile(
     r'OperatorSpec \{ id: "([^"]*)", class: OperatorClass::(\w+), '
     r'word_surface: "([^"]*)", symbol_surface: "([^"]*)", semantic_op: "([^"]*)", '
     r'arity: Arity::(\w+), fixity: Fixity::(\w+), precedence: (\d+), '
-    r'associativity: Associativity::(\w+), input_sorts: "([^"]*)", '
+    r'associativity: Associativity::(\w+), typing: &\[([^\]]*)\], input_sorts: "([^"]*)", '
     r'result_sort: "([^"]*)", exactness: Exactness::(\w+), overflow: "([^"]*)", '
     r'exception: "([^"]*)", formatting: "([^"]*)", spoken: "([^"]*)", '
     r'mutation_classes: "([^"]*)", numeric_support: NumericSupport::(\w+) \}'
 )
 BATQL_OP_FIELDS = (
     "id", "class", "word", "symbol", "semantic_op", "arity", "fixity",
-    "precedence", "associativity", "input_sorts", "result_sort", "exactness",
-    "overflow", "exception", "formatting", "spoken", "mutation_classes",
-    "numeric_support",
+    "precedence", "associativity", "typing", "input_sorts", "result_sort",
+    "exactness", "overflow", "exception", "formatting", "spoken",
+    "mutation_classes", "numeric_support",
 )
 BATQL_CLASS_RANK = {"Arithmetic": 0, "Comparison": 1, "Logical": 2}
 BATQL_PROOF_DISPOSITIONS = ["VERIFIED", "LEGACY_WEAK", "UNVERIFIED", "PROOF_UNAVAILABLE", "PROOF_INVALID"]
@@ -259,7 +259,101 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
                 f"spec/operators.rs: operator {op['id']} admits approximate operands (QualifiedProfileOnly) "
                 f"but no qualified numeric profile exists in V1"
             )
+    # The typed legality rules (5.5E1). Placement is law, not decoration: a
+    # wall-observation difference anywhere but subtraction would let wall
+    # arithmetic leak past the TimeDelta fence (docs/16), and a percent
+    # difference is subtraction by meaning.
+    for op in ops:
+        rules = re.findall(r"OperatorTypingRule::(\w+)", op.get("typing", ""))
+        if not rules:
+            out.append(f"spec/operators.rs: operator {op['id']} declares no typing rules")
+            continue
+        sem = op.get("semantic_op", "")
+        if "WallObservationDifference" in rules and sem != "subtract":
+            out.append(f"spec/operators.rs: {op['id']} claims WallObservationDifference; "
+                       f"only subtraction of two observations yields TimeDelta")
+        if "PercentDifference" in rules and sem != "subtract":
+            out.append(f"spec/operators.rs: {op['id']} claims PercentDifference; "
+                       f"a rate difference is subtraction")
+        if "PercentAdjustment" in rules and sem not in ("add", "subtract"):
+            out.append(f"spec/operators.rs: {op['id']} claims PercentAdjustment "
+                       f"outside addition and subtraction")
+        if op["class"] == "Comparison" and rules != ["SameSortComparison"]:
+            out.append(f"spec/operators.rs: comparison {op['id']} must carry exactly "
+                       f"SameSortComparison")
+        if op["class"] == "Logical" and not set(rules) <= {"TruthUnary", "TruthBinary"}:
+            out.append(f"spec/operators.rs: logical {op['id']} carries a non-Truth typing rule")
+        if op["class"] == "Arithmetic" and set(rules) & {
+                "TruthUnary", "TruthBinary", "SameSortComparison"}:
+            out.append(f"spec/operators.rs: arithmetic {op['id']} carries a "
+                       f"comparison/truth typing rule")
     return out
+
+
+# Two phantom sorts were born in the hand-authored arithmetic matrix and owned
+# by nothing: `DecimalMoney` (Money*Percent needs no new sort) and
+# `SignedDuration` (the signed observation difference is `TimeDelta`, docs/16).
+# Deleted by the 5.5E1 ruling; any tracked prose resurrecting either is a
+# finding, not a style choice.
+PHANTOM_SORTS = ("DecimalMoney", "SignedDuration")
+
+
+def phantom_sort_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    for rel in sorted(list((root / "docs").glob("*.md")) + list((root / "companion").glob("*.md"))):
+        text = rel.read_text(encoding="utf-8")
+        for sort in PHANTOM_SORTS:
+            if re.search(r"\b" + sort + r"\b", text):
+                out.append(f"{rel.relative_to(root).as_posix()}: names the phantom sort "
+                           f"{sort}, which no authority owns (5.5E1)")
+    return out
+
+
+def _batql_typing_rows(rule: str, word: str) -> list[str]:
+    """The auditor's own rendering of one typing rule's projected rows. Must
+    agree byte-for-byte with the generator's block, by independent code."""
+    if rule == "SameUnit":
+        return [f"Money<USD> {word} Money<USD>       -> Money<USD>",
+                f"Money<USD> {word} Money<EUR>       -> rejected"]
+    if rule == "DimensionalByDimensionless":
+        if word == "/":
+            return ["dimensional / dimensionless      -> same dimension"]
+        return [f"Money<USD> {word} Decimal          -> Money<USD>",
+                f"Money<USD> {word} Percent          -> Money<USD>",
+                f"Duration {word} Integer            -> Duration",
+                f"Money {word} Money                 -> rejected"]
+    if rule == "LikeDimensionRatio":
+        return [f"Money<USD> {word} Money<USD>       -> Ratio",
+                f"Duration {word} Duration           -> Ratio",
+                f"Money<USD> {word} Money<EUR>       -> rejected"]
+    if rule == "PercentDifference":
+        return [f"Percent {word} Percent             -> PercentagePoints"]
+    if rule == "PercentAdjustment":
+        if word == "+":
+            return ["Percent + PercentagePoints       -> Percent",
+                    "PercentagePoints + Percent       -> Percent"]
+        return [f"Percent {word} PercentagePoints    -> Percent"]
+    if rule == "WallObservationDifference":
+        return [f"ObservedWallTime {word} ObservedWallTime -> TimeDelta"]
+    return [f"UNKNOWN TYPING RULE {rule}"]
+
+
+def batql_render_typing(ops: list[dict[str, str]]) -> str:
+    titles = {"OP-ADD": "Addition", "OP-SUB": "Subtraction",
+              "OP-MUL": "Multiplication", "OP-DIV": "Division"}
+    lines: list[str] = []
+    for op in _batql_canonical(ops):
+        if op["id"] not in titles:
+            continue
+        lines += [f"### {titles[op['id']]} (`{op['word']}`)", "", "```text"]
+        for rule in re.findall(r"OperatorTypingRule::(\w+)", op.get("typing", "")):
+            lines += _batql_typing_rows(rule, op["word"])
+        lines += ["```", ""]
+    lines += ["### Comparison and truth", "", "```text",
+              "comparisons        exact same-sort pair -> Truth with TypedMargin",
+              "NOT                Truth -> Truth (K3 total)",
+              "AND / OR           Truth x Truth -> Truth (K3 total)", "```"]
+    return "\n".join(lines)
 
 
 def batql_grammar_fences(companion: str) -> list[str]:
@@ -337,11 +431,13 @@ def check_batql(root: Path, findings: list[str]) -> None:
     if not ops:
         findings.append("spec/operators.rs: no OperatorSpec rows parsed")
     findings.extend(batql_operator_fact_findings(ops))
+    findings.extend(phantom_sort_findings(root))
     block_specs = (
         ("OPERATORS-CATALOG", "companion/BATQL_LANGUAGE.md", batql_render_catalog(ops)),
         ("OPERATORS-GRAMMAR", "companion/BATQL_LANGUAGE.md", batql_render_grammar(ops)),
         ("OPERATORS-PROJECTION", "companion/BATQL_LANGUAGE.md", batql_render_projection(ops)),
         ("OPERATORS-NUMERIC", "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md", batql_render_numeric(ops)),
+        ("OPERATORS-TYPING", "companion/BATQL_LANGUAGE.md", batql_render_typing(ops)),
     )
     block_text: dict[str, str] = {}
     for name, rel, expected in block_specs:

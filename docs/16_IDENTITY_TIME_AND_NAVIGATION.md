@@ -138,6 +138,7 @@ proof or evidence result
 
 ```text
 ObservedWallTime     external observation
+TimeDelta            signed difference between two observations (diagnostic)
 MonotonicDeadline    local elapsed-time deadline
 Hlc                  causally monotone approximate chronology
 GlobalSequence       physical journal commit order
@@ -147,6 +148,24 @@ DagPosition          explicit predecessor topology
 ```
 
 HLC enables temporal range pruning, approximate chronology, lag observation, and tile min/max bounds. It does not prove durability, replace causation edges, measure elapsed time, or supersede commit sequence.
+
+## TimeDelta (5.5E1)
+
+`ObservedWallTime - ObservedWallTime` yields `TimeDelta`: a signed diagnostic
+difference between two physical observations. A negative value is lawful
+evidence of wall-clock regression or differing observers, never an error to
+normalize away. The typed operator rule is owned by `spec/operators.rs`
+(`OperatorTypingRule::WallObservationDifference`).
+
+`TimeDelta` is observation evidence, not authority. It is never `Duration`,
+`MonotonicDeadline`, journal progress, stream position, causal authority,
+`Hlc`, commit identity, cursor authority, or durability evidence. There is no
+implicit conversion between `TimeDelta` and `Duration` or into any of the
+types above; `TimeDelta` satisfies no budget or timeout law; no generic
+operation silently chooses wall order where journal or causal order is
+required. Any future conversion is explicitly named and justified by its own
+semantic contract. This is the same fence that keeps `ObservedWallTime` from
+being promoted into `Hlc`: the physical book never forges the logical book.
 
 ## HLC query ordering and range (DEC-061)
 

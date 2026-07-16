@@ -37,6 +37,10 @@ TypedMargin
 other explicitly unit-bearing exact values admitted by schema
 ```
 
+`TimeDelta` (docs/16) is exact-valued but deliberately absent from this list:
+a signed difference between two wall observations is diagnostic evidence and
+never authority-capable. It satisfies no budget, deadline, or ordering law.
+
 The canonical ordinary fixed semantic shape is:
 
 ```text

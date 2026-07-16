@@ -277,10 +277,12 @@ def _sample_operators() -> list[dict[str, str]]:
     }
     return [
         {**base, "id": "OP-ADD", "class": "Arithmetic", "word": "+", "symbol": "",
-         "arity": "Binary", "fixity": "Infix", "precedence": "60",
+         "arity": "Binary", "fixity": "Infix", "precedence": "60", "semantic_op": "add",
+         "typing": "OperatorTypingRule::PercentAdjustment, OperatorTypingRule::SameUnit",
          "associativity": "Left", "exactness": "Exact", "formatting": "+", "spoken": "plus"},
         {**base, "id": "OP-EQ", "class": "Comparison", "word": "IS", "symbol": "=",
          "arity": "Binary", "fixity": "Infix", "precedence": "50",
+         "typing": "OperatorTypingRule::SameSortComparison",
          "associativity": "NonAssociative", "exactness": "Exact", "formatting": "IS", "spoken": "is"},
     ]
 
@@ -340,6 +342,34 @@ def test_batql(audit, project) -> list[str]:
     # 13: canonical order is independent of source array order
     if audit.batql_render_catalog(ops) != audit.batql_render_catalog(list(reversed(ops))):
         fail("source_fact_reorder_leaves_generated_output_unchanged")
+
+    # Typed legality rules (5.5E1): the rules are the operand/result authority,
+    # their placement is law, and the two phantom sorts stay dead.
+    if not any("declares no typing rules" in x
+               for x in audit.batql_operator_fact_findings([{**ops[0], "typing": ""}])):
+        fail("operator_without_typing_rules_is_rejected")
+    if not any("only subtraction" in x for x in audit.batql_operator_fact_findings(
+            [{**ops[0], "typing": "OperatorTypingRule::WallObservationDifference"}])):
+        fail("wall_difference_outside_subtraction_is_rejected")
+    if not any("must carry exactly" in x for x in audit.batql_operator_fact_findings(
+            [{**ops[1], "typing": "OperatorTypingRule::TruthUnary"}])):
+        fail("comparison_with_foreign_typing_rule_is_rejected")
+    if audit.phantom_sort_findings(HERE.parent):
+        fail("phantom_sort_baseline_is_silent")
+    with isolated_tree() as tmp:
+        p = tmp / "companion/BATQL_LANGUAGE.md"
+        p.write_text(p.read_text(encoding="utf-8")
+                     + "\nDecimalMoney is back.\n", encoding="utf-8")
+        if not any("phantom sort" in x for x in audit.phantom_sort_findings(tmp)):
+            fail("a_phantom_sort_cannot_reenter_the_corpus")
+    # A mutated rule regenerates a DIFFERENT matrix: the block is semantic, not
+    # decorative. Dropping the percent-difference rule must change the render.
+    stripped = {**ops[0], "id": "OP-SUB", "word": "-", "semantic_op": "subtract",
+                "typing": "OperatorTypingRule::SameUnit"}
+    ruled = {**stripped,
+             "typing": "OperatorTypingRule::PercentDifference, OperatorTypingRule::SameUnit"}
+    if audit.batql_render_typing([stripped]) == audit.batql_render_typing([ruled]):
+        fail("typing_rule_mutation_changes_the_generated_matrix")
 
     # 14: the independent generator and auditor projections must agree
     if (

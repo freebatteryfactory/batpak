@@ -578,6 +578,51 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             | operators::OperatorClass::Comparison
             | operators::OperatorClass::Logical => {}
         }
+        // Typed legality rules (5.5E1): placement is law. A wall-observation
+        // difference anywhere but subtraction would leak wall arithmetic past
+        // the TimeDelta fence (docs/16); a rate difference IS subtraction.
+        if op.typing.is_empty() {
+            findings.push(format!("operator {} declares no typing rules", op.id));
+        }
+        for rule in op.typing {
+            // Exhaustive: a new rule must be classified here, not defaulted.
+            match rule {
+                operators::OperatorTypingRule::WallObservationDifference
+                | operators::OperatorTypingRule::PercentDifference => {
+                    if op.semantic_op != "subtract" {
+                        findings.push(format!(
+                            "operator {} claims a difference typing rule but is not subtraction", op.id));
+                    }
+                }
+                operators::OperatorTypingRule::PercentAdjustment => {
+                    if op.semantic_op != "add" && op.semantic_op != "subtract" {
+                        findings.push(format!(
+                            "operator {} claims PercentAdjustment outside add/subtract", op.id));
+                    }
+                }
+                operators::OperatorTypingRule::SameSortComparison => {
+                    if !matches!(op.class, operators::OperatorClass::Comparison) {
+                        findings.push(format!(
+                            "operator {} claims SameSortComparison outside the comparison class", op.id));
+                    }
+                }
+                operators::OperatorTypingRule::TruthUnary
+                | operators::OperatorTypingRule::TruthBinary => {
+                    if !matches!(op.class, operators::OperatorClass::Logical) {
+                        findings.push(format!(
+                            "operator {} claims a Truth typing rule outside the logical class", op.id));
+                    }
+                }
+                operators::OperatorTypingRule::SameUnit
+                | operators::OperatorTypingRule::DimensionalByDimensionless
+                | operators::OperatorTypingRule::LikeDimensionRatio => {
+                    if !matches!(op.class, operators::OperatorClass::Arithmetic) {
+                        findings.push(format!(
+                            "operator {} claims an arithmetic typing rule outside the arithmetic class", op.id));
+                    }
+                }
+            }
+        }
         match op.arity {
             operators::Arity::Unary | operators::Arity::Binary => {}
         }

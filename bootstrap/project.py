@@ -32,17 +32,22 @@ OPERATOR_ROW = re.compile(
     r'OperatorSpec \{ id: "([^"]*)", class: OperatorClass::(\w+), '
     r'word_surface: "([^"]*)", symbol_surface: "([^"]*)", semantic_op: "([^"]*)", '
     r'arity: Arity::(\w+), fixity: Fixity::(\w+), precedence: (\d+), '
-    r'associativity: Associativity::(\w+), input_sorts: "([^"]*)", '
+    r'associativity: Associativity::(\w+), typing: &\[([^\]]*)\], input_sorts: "([^"]*)", '
     r'result_sort: "([^"]*)", exactness: Exactness::(\w+), overflow: "([^"]*)", '
     r'exception: "([^"]*)", formatting: "([^"]*)", spoken: "([^"]*)", '
     r'mutation_classes: "([^"]*)", numeric_support: NumericSupport::(\w+) \}'
 )
 FIELDS = (
     "id", "class", "word", "symbol", "semantic_op", "arity", "fixity",
-    "precedence", "associativity", "input_sorts", "result_sort", "exactness",
-    "overflow", "exception", "formatting", "spoken", "mutation_classes",
-    "numeric_support",
+    "precedence", "associativity", "typing", "input_sorts", "result_sort",
+    "exactness", "overflow", "exception", "formatting", "spoken",
+    "mutation_classes", "numeric_support",
 )
+
+
+def typing_rules(op: dict[str, str]) -> list[str]:
+    """The operator's closed legality rules, in authored match order."""
+    return re.findall(r"OperatorTypingRule::(\w+)", op["typing"])
 
 
 CLASS_RANK = {"Arithmetic": 0, "Comparison": 1, "Logical": 2}
@@ -503,17 +508,72 @@ def render_gate_inventory(root: Path) -> str:
     return "\n".join(rows)
 
 
+# The §5.2a legality matrix, projected from each operator's typed rules
+# (OperatorTypingRule, 5.5E1). Rendering is keyed on (rule, surface): the rows
+# an enum variant projects are fixed here, so a new legality shape requires a
+# new typed rule, never a hand-authored exception line. `DecimalMoney` and
+# `SignedDuration` were born in the hand matrix this replaces.
+def _typing_rows(rule: str, word: str) -> list[str]:
+    if rule == "SameUnit":
+        return [f"Money<USD> {word} Money<USD>       -> Money<USD>",
+                f"Money<USD> {word} Money<EUR>       -> rejected"]
+    if rule == "DimensionalByDimensionless":
+        if word == "/":
+            return ["dimensional / dimensionless      -> same dimension"]
+        return [f"Money<USD> {word} Decimal          -> Money<USD>",
+                f"Money<USD> {word} Percent          -> Money<USD>",
+                f"Duration {word} Integer            -> Duration",
+                f"Money {word} Money                 -> rejected"]
+    if rule == "LikeDimensionRatio":
+        return [f"Money<USD> {word} Money<USD>       -> Ratio",
+                f"Duration {word} Duration           -> Ratio",
+                f"Money<USD> {word} Money<EUR>       -> rejected"]
+    if rule == "PercentDifference":
+        return [f"Percent {word} Percent             -> PercentagePoints"]
+    if rule == "PercentAdjustment":
+        if word == "+":
+            return ["Percent + PercentagePoints       -> Percent",
+                    "PercentagePoints + Percent       -> Percent"]
+        return [f"Percent {word} PercentagePoints    -> Percent"]
+    if rule == "WallObservationDifference":
+        return [f"ObservedWallTime {word} ObservedWallTime -> TimeDelta"]
+    raise Unadmitted(f"no projection is defined for typing rule {rule}")
+
+
+def render_typing(ops: list[dict[str, str]]) -> str:
+    titles = {"OP-ADD": "Addition", "OP-SUB": "Subtraction",
+              "OP-MUL": "Multiplication", "OP-DIV": "Division"}
+    lines: list[str] = []
+    for op in canonical(ops):
+        if op["id"] not in titles:
+            continue
+        rules = typing_rules(op)
+        if not rules:
+            raise Unadmitted(f"{op['id']} declares no typing rules")
+        lines += [f"### {titles[op['id']]} (`{op['word']}`)", "", "```text"]
+        for rule in rules:
+            lines += _typing_rows(rule, op["word"])
+        lines += ["```", ""]
+    lines += ["### Comparison and truth", "", "```text",
+              "comparisons        exact same-sort pair -> Truth with TypedMargin",
+              "NOT                Truth -> Truth (K3 total)",
+              "AND / OR           Truth x Truth -> Truth (K3 total)", "```"]
+    return "\n".join(lines)
+
+
 BLOCK_RENDER = {
     "OPERATORS-CATALOG": render_catalog,
     "OPERATORS-GRAMMAR": render_grammar,
     "OPERATORS-PROJECTION": render_projection,
     "OPERATORS-NUMERIC": render_numeric,
+    "OPERATORS-TYPING": render_typing,
 }
 BLOCK_FILE = {
     "OPERATORS-CATALOG": COMPANION,
     "OPERATORS-GRAMMAR": COMPANION,
     "OPERATORS-PROJECTION": COMPANION,
     "OPERATORS-NUMERIC": NUMERIC_DOC,
+    "OPERATORS-TYPING": COMPANION,
 }
 
 
