@@ -48,18 +48,14 @@ jobs:
       - name: freeze --check
         run: python bootstrap/freeze.py --check
 
-      # One run: the suite must pass AND its receipts must name the MSVC
-      # triple explicitly. A green run whose receipts fell back to another
-      # target is not the authoritative receipt.
+      # One run: the suite must pass AND every receipt in the canonical Tier 0
+      # denominator (REQUIRED_TIER0_RECEIPTS in selftest.py) must be executed,
+      # passed, artifact-bound where the receipt binds an artifact, and bound
+      # to the MSVC triple. The denominator lives in ONE place — selftest —
+      # and --require-receipts turns any unearned or misbound receipt into a
+      # nonzero exit, so this lane cannot stay green when a receipt disappears,
+      # never executes, or falls back to another target. The prior shape — a
+      # PowerShell loop over a copied three-receipt list — went green while
+      # tier0-law-fixtures and tier0-spec-tests were never required at all.
       - name: selftest (Tier 0 receipts on MSVC)
-        shell: pwsh
-        run: |
-          $out = python bootstrap/selftest.py 2>&1 | Out-String
-          Write-Output $out
-          if ($LASTEXITCODE -ne 0) { Write-Error "selftest failed"; exit 1 }
-          foreach ($r in "tier0-seedcheck", "tier0-materialize", "tier0-seedcheck-tests") {
-            if ($out -notmatch "receipt $($r): available, compiled, executed, passed, target x86_64-pc-windows-msvc artifact sha256:[0-9a-f]+ source sha256:[0-9a-f]+") {
-              Write-Error "receipt $r is not an executed, passed, artifact-bound MSVC receipt"
-              exit 1
-            }
-          }
+        run: python bootstrap/selftest.py --require-receipts x86_64-pc-windows-msvc

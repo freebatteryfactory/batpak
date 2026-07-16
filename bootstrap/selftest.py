@@ -78,6 +78,45 @@ def executed_and_passed() -> list[str]:
     """Only a check that actually ran AND passed may be claimed by the banner."""
     return [r["name"] for r in QUALIFICATION_RECEIPTS
             if r["available"] and r["executed"] and r["passed"]]
+
+
+# The canonical Tier 0 receipt denominator, in one place (5.5E2c). Each entry
+# is (name, artifact_bound): an artifact-bound receipt must carry the exact
+# "<triple> artifact sha256:... source sha256:..." binding qualify_binary
+# records; the law-fixture suite runs many short-lived binaries and binds the
+# triple only. The authoritative hosted lane passes --require-receipts
+# <triple>, and then EVERY receipt named here must be available, compiled,
+# executed, passed, and bound to that exact triple or selftest exits nonzero:
+# a zero exit plus a "NOT QUALIFIED LOCALLY" line never satisfies the
+# authoritative profile, and the hosted workflow consumes this inventory
+# through the flag instead of owning a copied list.
+REQUIRED_TIER0_RECEIPTS = (
+    ("tier0-law-fixtures", False),
+    ("tier0-seedcheck", True),
+    ("tier0-materialize", True),
+    ("tier0-seedcheck-tests", True),
+    ("tier0-spec-tests", True),
+)
+
+
+def unearned_required_receipts(required_target: str) -> list[str]:
+    """Every required receipt that did NOT earn its place for this target."""
+    problems: list[str] = []
+    for name, artifact_bound in REQUIRED_TIER0_RECEIPTS:
+        rows = [r for r in QUALIFICATION_RECEIPTS if r["name"] == name]
+        if not rows:
+            problems.append(f"{name}: no receipt was recorded")
+            continue
+        binding = (re.escape(required_target)
+                   + (r" artifact sha256:[0-9a-f]+ source sha256:[0-9a-f]+"
+                      if artifact_bound else ""))
+        if not any(r["available"] and r["executed"] and r["passed"]
+                   and r["target"] and re.fullmatch(binding, str(r["target"]))
+                   for r in rows):
+            got = "; ".join(str(r["target"] or r["reason"] or "unearned") for r in rows)
+            problems.append(f"{name}: no executed, passed receipt bound to "
+                            f"{required_target} (got: {got})")
+    return problems
 def _tree_digest(root: Path) -> str:
     """A digest of the typed source snapshot a qualification represents."""
     h = hashlib.sha256()
@@ -3451,6 +3490,8 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
         receipt("tier0-law-fixtures", available=False, reason="rustc absent")
         return findings
 
+    used_triples: set[str] = set()
+
     def run_seedcheck(tree: Path) -> tuple[int, str]:
         # seedcheck links the typed tables at COMPILE time through the tree's
         # spec rlib (5.5E2), so a mutated spec/ is only tested by building the
@@ -3485,6 +3526,17 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
                     cmd[1:1] = ["--target", target]
                 built = subprocess.run(cmd, capture_output=True, text=True)
                 if built.returncode == 0:
+                    # The receipt names the real triple, never "host default"
+                    # (5.5E2c): on the hosted MSVC runner the default-target
+                    # build IS the authoritative qualification, and a
+                    # law-fixture receipt that hides its triple can never
+                    # enter the required-receipt denominator.
+                    if target is None:
+                        m = re.search(r"host: (\S+)",
+                                      subprocess.run([rustc, "-vV"], capture_output=True,
+                                                     text=True).stdout)
+                        target = m.group(1) if m else "host default"
+                    used_triples.add(target)
                     break
                 if "linking with" not in built.stderr:
                     return (built.returncode, built.stderr)
@@ -3601,7 +3653,8 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "missing generated_from: in docs/GUARANTEE_GRAPH.generated.md")
 
     receipt("tier0-law-fixtures", available=True, compiled=True, executed=True,
-            passed=not findings, target="local host or gnu fallback")
+            passed=not findings,
+            target=", ".join(sorted(used_triples)) or "no triple resolved")
     return findings
 
 
@@ -3751,6 +3804,18 @@ def test_rust_specification_compiles(_audit) -> list[str]:
 
 
 def main() -> int:
+    # --require-receipts <triple>: the authoritative-lane posture (5.5E2c).
+    # Without it, receipts render honestly but an unearned one is a printed
+    # "NOT QUALIFIED LOCALLY" line and exit zero — correct for a machine with
+    # no linker, never sufficient for the authoritative profile.
+    require_target = None
+    argv = sys.argv[1:]
+    if len(argv) == 2 and argv[0] == "--require-receipts":
+        require_target = argv[1]
+    elif argv:
+        print(f"selftest: unknown arguments {argv!r} "
+              "(usage: selftest.py [--require-receipts <triple>])", file=sys.stderr)
+        return 2
     freeze = load("freeze")
     audit = load("audit")
     project = load("project")
@@ -3819,6 +3884,16 @@ def main() -> int:
     if unearned:
         # A passing aggregate must never absorb a check that did not run.
         print("selftest: NOT QUALIFIED LOCALLY: " + ", ".join(unearned))
+    if require_target:
+        problems = unearned_required_receipts(require_target)
+        if problems:
+            print("selftest: REQUIRED RECEIPTS NOT EARNED "
+                  f"(--require-receipts {require_target}):", file=sys.stderr)
+            for p in problems:
+                print(f"- {p}", file=sys.stderr)
+            return 1
+        print(f"selftest: receipts-qualified target={require_target} "
+              f"receipts={len(REQUIRED_TIER0_RECEIPTS)}/{len(REQUIRED_TIER0_RECEIPTS)}")
     return 0
 
 

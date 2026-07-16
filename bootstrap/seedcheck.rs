@@ -81,117 +81,149 @@ fn inspect(root: &Path) -> Vec<String> {
 /// refusals are exercised with hostile sources so the reachable-refusal
 /// question has an executed answer, not a plausible one.
 fn check_guarantee_admission(findings: &mut Vec<String>) {
-    use guarantees::{admit, GuaranteeSource, QualificationTarget, SourceFailure};
+    use guarantees::{admit, GuaranteeAdmissionRule, GuaranteeSource};
     let mut admitted = 0usize;
-    let push_err = |findings: &mut Vec<String>, id: &str, law: &str| {
-        findings.push(format!("guarantee {id} does not admit: {law}"));
+    let refuse = |findings: &mut Vec<String>, e: guarantees::GuaranteeAdmissionFailure| {
+        findings.push(format!(
+            "guarantee {:?} does not admit: {} (owner: {}; repair: {})",
+            e.id,
+            e.rule.law(),
+            e.rule.owner(),
+            e.rule.repair()
+        ));
     };
+    // Rows are carried WHOLE under their family variant (5.5E2c): the driver
+    // no longer copies fields into an option bag, so it cannot mis-wire one,
+    // and ARCH/QUAL identity is structural — the leaked "ARCH-{package}"
+    // format strings died with the flat source.
     for row in invariants::INVARIANTS {
-        match admit(&GuaranteeSource {
-            family: "SEED", id: row.id, row_kind: Some(row.kind),
-            row_lifetime: Some(row.lifetime), row_owner: Some(row.owner),
-            row_gates: Some(row.gates), legacy_status: None, legacy_deletion: None,
-            decision_disposition: None, decision_class: None,
-            qualification_target: None,
-            failure: SourceFailure::Seed(row.failure_disposition),
-        }) {
+        match admit(GuaranteeSource::Seed(row)) {
             Ok(_) => admitted += 1,
-            Err(e) => push_err(findings, row.id, e.law),
+            Err(e) => refuse(findings, e),
         }
     }
     for row in legacy_obligations::OBLIGATIONS {
-        match admit(&GuaranteeSource {
-            family: "LEG", id: row.id, row_kind: None, row_lifetime: None,
-            row_owner: Some(row.clean_owner), row_gates: Some(row.gates),
-            legacy_status: Some(row.active_or_closed_status),
-            legacy_deletion: Some(row.deletion_condition),
-            decision_disposition: None, decision_class: None,
-            qualification_target: None, failure: SourceFailure::Legacy(row.law),
-        }) {
+        match admit(GuaranteeSource::Legacy(row)) {
             Ok(_) => admitted += 1,
-            Err(e) => push_err(findings, row.id, e.law),
+            Err(e) => refuse(findings, e),
         }
     }
     for row in dispositions::DECISIONS {
-        match admit(&GuaranteeSource {
-            family: "DEC", id: row.id, row_kind: None, row_lifetime: None,
-            row_owner: None, row_gates: Some(row.gates),
-            legacy_status: None, legacy_deletion: None,
-            decision_disposition: Some(row.disposition),
-            decision_class: Some(row.class),
-            qualification_target: None, failure: SourceFailure::Decision(row.subject),
-        }) {
+        match admit(GuaranteeSource::Decision(row)) {
             Ok(_) => admitted += 1,
-            Err(e) => push_err(findings, row.id, e.law),
+            Err(e) => refuse(findings, e),
         }
     }
     for pkg in architecture::PACKAGES {
-        let id: &'static str = Box::leak(format!("ARCH-{}", pkg.package).into_boxed_str());
-        match admit(&GuaranteeSource {
-            family: "ARCH", id, row_kind: None, row_lifetime: None,
-            row_owner: None, row_gates: None, legacy_status: None,
-            legacy_deletion: None, decision_disposition: None, decision_class: None,
-            qualification_target: None, failure: SourceFailure::Architecture(pkg.role),
-        }) {
+        match admit(GuaranteeSource::Architecture(pkg)) {
             Ok(_) => admitted += 1,
-            Err(e) => push_err(findings, id, e.law),
+            Err(e) => refuse(findings, e),
         }
     }
     for q in architecture::QUALIFICATION_PROFILES {
-        let id: &'static str =
-            Box::leak(format!("QUAL-{}-{}", q.package, q.profile).into_boxed_str());
-        match admit(&GuaranteeSource {
-            family: "QUAL", id, row_kind: None, row_lifetime: None,
-            row_owner: None, row_gates: Some(q.gates), legacy_status: None,
-            legacy_deletion: None, decision_disposition: None, decision_class: None,
-            qualification_target: Some(QualificationTarget(q.target)),
-            failure: SourceFailure::Qualification(q.requirement),
-        }) {
+        match admit(GuaranteeSource::Qualification(q)) {
             Ok(_) => admitted += 1,
-            Err(e) => push_err(findings, id, e.law),
+            Err(e) => refuse(findings, e),
         }
     }
-    if admitted == 0 {
-        findings.push("guarantee admission admitted nothing; the desk is closed".into());
+    let expected = invariants::INVARIANTS.len()
+        + legacy_obligations::OBLIGATIONS.len()
+        + dispositions::DECISIONS.len()
+        + architecture::PACKAGES.len()
+        + architecture::QUALIFICATION_PROFILES.len();
+    if admitted != expected {
+        findings.push(format!(
+            "guarantee admission admitted {admitted} of {expected} native rows"
+        ));
     }
     // Reachable refusals, exercised through the production door. Each hostile
-    // source must fail for ITS reason.
-    let hostile = GuaranteeSource {
-        family: "DEC", id: "DEC-000-HOSTILE", row_kind: None, row_lifetime: None,
-        row_owner: None, row_gates: Some(&[]), legacy_status: None,
-        legacy_deletion: None,
-        decision_disposition: Some(dispositions::Disposition::Lock),
-        decision_class: Some(dispositions::DecisionClass::Enforcement),
-        qualification_target: None, failure: SourceFailure::Decision("hostile"),
-    };
-    match admit(&hostile) {
-        Ok(_) => findings.push(
-            "an implementation-bearing decision with no gates was admitted".into()),
-        Err(e) => {
-            if e.law != "an implementation-bearing decision names at least one gate" {
-                findings.push(format!(
-                    "the gateless-decision refusal fired for the wrong law: {}", e.law));
-            }
+    // row must refuse for ITS OWN typed rule — `is_err()` alone would let an
+    // unrelated earlier refusal turn the fixture green for free. The
+    // UNKNOWN-family and agreeing-duplicate hostiles from the first bake are
+    // gone because they became UNREPRESENTABLE: a GuaranteeSource is one of
+    // five family variants, so an undeclared family or a second author for a
+    // family-owned field no longer has a spelling.
+    let hostile = |findings: &mut Vec<String>,
+                       name: &str,
+                       source: GuaranteeSource,
+                       rule: GuaranteeAdmissionRule| {
+        match admit(source) {
+            Ok(_) => findings.push(format!("hostile row was admitted: {name}")),
+            Err(e) if e.rule != rule => findings.push(format!(
+                "the {name} refusal fired for the wrong rule: {} (wanted: {})",
+                e.rule.law(),
+                rule.law()
+            )),
+            Err(_) => {}
         }
-    }
-    let hostile = GuaranteeSource {
-        family: "QUAL", id: "QUAL-HOSTILE", row_kind: None, row_lifetime: None,
-        row_owner: None, row_gates: Some(&[gates::GateId::G0]), legacy_status: None,
-        legacy_deletion: None, decision_disposition: None, decision_class: None,
-        qualification_target: None, failure: SourceFailure::Qualification("hostile"),
     };
-    if admit(&hostile).is_ok() {
-        findings.push("a qualification requirement without a target was admitted".into());
-    }
-    let hostile = GuaranteeSource {
-        family: "UNKNOWN", id: "X-HOSTILE", row_kind: None, row_lifetime: None,
-        row_owner: None, row_gates: None, legacy_status: None, legacy_deletion: None,
-        decision_disposition: None, decision_class: None,
-        qualification_target: None, failure: SourceFailure::Seed("hostile"),
+    static GATELESS_ENFORCEMENT_DEC: dispositions::DecisionSpec = dispositions::DecisionSpec {
+        id: "DEC-000-HOSTILE",
+        class: dispositions::DecisionClass::Enforcement,
+        gates: &[],
+        disposition: dispositions::Disposition::Lock,
+        subject: "hostile",
+        successor: "hostile",
+        stale_aliases: &[],
+        stale_allowed_contexts: &[],
+        replacement_contract: None,
     };
-    if admit(&hostile).is_ok() {
-        findings.push("an undeclared family was admitted".into());
-    }
+    hostile(
+        findings,
+        "gateless implementation-bearing decision",
+        GuaranteeSource::Decision(&GATELESS_ENFORCEMENT_DEC),
+        GuaranteeAdmissionRule::ImplementationBearingDecisionNamesGate,
+    );
+    static TARGETLESS_QUAL: architecture::QualificationProfile =
+        architecture::QualificationProfile {
+            package: "hostile",
+            profile: "hostile",
+            target: "",
+            gates: &[gates::GateId::G0],
+            requirement: "hostile",
+        };
+    hostile(
+        findings,
+        "qualification requirement without a target environment",
+        GuaranteeSource::Qualification(&TARGETLESS_QUAL),
+        GuaranteeAdmissionRule::QualificationNamesTargetEnvironment,
+    );
+    static OWNERLESS_LEG: legacy_obligations::LegacyObligation =
+        legacy_obligations::LegacyObligation {
+            id: "LEG-000-HOSTILE",
+            law: "hostile",
+            clean_owner: "  ",
+            gates: &[gates::GateId::G2],
+            compatibility_disposition: legacy_obligations::CompatibilityDisposition::None,
+            deletion_condition: legacy_obligations::DeletionCondition::Never,
+            active_or_closed_status: legacy_obligations::ObligationStatus::Active,
+        };
+    hostile(
+        findings,
+        "legacy obligation with a blank owner",
+        GuaranteeSource::Legacy(&OWNERLESS_LEG),
+        GuaranteeAdmissionRule::NonEmptyOwner,
+    );
+    static UNSCHEDULED_SEED: invariants::InvariantSpec = invariants::InvariantSpec {
+        id: "SEED-HOSTILE",
+        statement: "hostile",
+        kind: guarantees::GuaranteeKind::SemanticLaw,
+        lifetime: guarantees::GuaranteeLifetime::Permanent,
+        owner: "docs/00_CONSTITUTION.md",
+        gates: &[],
+        witness: "hostile",
+        failure_disposition: "hostile",
+        derives_from: &[],
+        refines: &[],
+        discharges: &[],
+        supersedes: &[],
+    };
+    hostile(
+        findings,
+        "seed row scheduling no gate",
+        GuaranteeSource::Seed(&UNSCHEDULED_SEED),
+        GuaranteeAdmissionRule::RowNamesScheduledGates,
+    );
 }
 
 /// SEED-AUDITED-DENOMINATOR (5.5E1): the proof-terminal vocabulary is typed
