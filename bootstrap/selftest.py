@@ -2829,6 +2829,28 @@ def test_guarantee_authority(audit, project) -> list[str]:
           "undeclared relation constructor GuaranteeRef::arch",
           'derives_from: &[GuaranteeRef::arch("DEC-065")]', validator=rel_validator)
 
+    # 7c. Witness citations are typed and resolve (5.5E2): a bare string, an
+    # unknown contract id, and a mistagged family are each refused by the
+    # auditor; the dangling-guarantee case is seedcheck's executed law and is
+    # proven in the Tier 0 fixtures.
+    def wit_validator(tmp):
+        return audit.guarantee_typed_witness_findings(tmp, audit.guarantee_seed_rows(tmp))
+
+    probe("bare_string_witness_is_rejected", IN,
+          'witnesses: &[WitnessRef::dec("DEC-015")]',
+          "not a canonical typed WitnessRef",
+          'witnesses: &["DEC-015"]', validator=wit_validator)
+    probe("unknown_contract_witness_is_rejected", IN,
+          'WitnessRef::contract("BP-GAUNTLET-1")',
+          "which no document declares",
+          'WitnessRef::contract("BP-NOPE-1")', validator=wit_validator)
+    probe("mistagged_witness_family_is_rejected", IN,
+          'witnesses: &[WitnessRef::leg("LEG-080"), '
+          'WitnessRef::BootstrapTool(BootstrapToolId::Seedcheck)]',
+          "whose family owns the LEG- prefix",
+          'witnesses: &[WitnessRef::leg("DEC-080"), '
+          'WitnessRef::BootstrapTool(BootstrapToolId::Seedcheck)]', validator=wit_validator)
+
     # 8. Parity passes while provenance fails: mutate the SAME constant in both
     #    paths. This is the exact hole -- before the closure the graph regenerated,
     #    parity passed, and every gate stayed green.
@@ -3661,6 +3683,15 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     probe("dangling_typed_relation_is_rejected", IN,
           'derives_from: &[GuaranteeRef::dec("DEC-068")]',
           'derives_from: &[GuaranteeRef::dec("DEC-999")]',
+          "which no declared row owns")
+
+    # The same existence law for witness citations (5.5E2): a witness naming
+    # an undeclared obligation reddens the running binary.
+    probe("dangling_witness_citation_is_rejected", IN,
+          'witnesses: &[WitnessRef::leg("LEG-066"), '
+          'WitnessRef::contract("BP-GAUNTLET-1")]',
+          'witnesses: &[WitnessRef::leg("LEG-999"), '
+          'WitnessRef::contract("BP-GAUNTLET-1")]',
           "which no declared row owns")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired

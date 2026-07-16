@@ -150,6 +150,93 @@ impl GuaranteeRef {
     }
 }
 
+/// One typed witness citation (5.5E2): WHICH owned evidence obligation a law
+/// depends on. The human explanation lives in the row's `witness_note`, never
+/// inside the reference — the typed portion answers "which obligation", the
+/// note answers "how a human should read that evidence". Every reference must
+/// RESOLVE: a witness citing an undeclared guarantee, an unknown contract id,
+/// or a tool that does not exist on disk is refused by executed seedcheck law.
+///
+/// `ProofRow(ProofRowId)` and `Qualification(QualificationId)` join this enum
+/// with their first authored citation — the proof-row registry bake is
+/// expected to author the first `ProofRow` witness when it binds refusal
+/// families to typed proof rows. Declaring them before any witness cites one
+/// would be the deleted-`TestFixture` defect wearing a new name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WitnessRef {
+    /// Another guarantee whose obligation witnesses this law.
+    Guarantee(GuaranteeRef),
+    /// A contract document, by its declared `contract_id` front matter.
+    Contract(ContractId),
+    /// A bootstrap tool whose executed checks witness this law.
+    BootstrapTool(BootstrapToolId),
+}
+
+/// A contract document's declared identity. Sealed like the per-family
+/// guarantee ids: the spec's own tables author citations, a consumer reads
+/// them through `raw()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContractId(pub(crate) &'static str);
+
+impl ContractId {
+    pub const fn raw(self) -> &'static str {
+        self.0
+    }
+}
+
+/// The closed inventory of bootstrap tools a witness may cite. Closed by the
+/// factory's actual tools, not by citation: seedcheck consumes every variant
+/// by requiring `path()` to exist in the tree it checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootstrapToolId {
+    ProjectPy,
+    AuditPy,
+    FreezePy,
+    SelftestPy,
+    Seedcheck,
+    Materialize,
+}
+
+impl BootstrapToolId {
+    /// The repository path the identity names.
+    pub const fn path(self) -> &'static str {
+        match self {
+            BootstrapToolId::ProjectPy => "bootstrap/project.py",
+            BootstrapToolId::AuditPy => "bootstrap/audit.py",
+            BootstrapToolId::FreezePy => "bootstrap/freeze.py",
+            BootstrapToolId::SelftestPy => "bootstrap/selftest.py",
+            BootstrapToolId::Seedcheck => "bootstrap/seedcheck.rs",
+            BootstrapToolId::Materialize => "bootstrap/materialize.rs",
+        }
+    }
+
+    /// The short rendering the generated projections use.
+    pub const fn display(self) -> &'static str {
+        match self {
+            BootstrapToolId::ProjectPy => "project.py",
+            BootstrapToolId::AuditPy => "audit.py",
+            BootstrapToolId::FreezePy => "freeze.py",
+            BootstrapToolId::SelftestPy => "selftest.py",
+            BootstrapToolId::Seedcheck => "seedcheck",
+            BootstrapToolId::Materialize => "materialize",
+        }
+    }
+}
+
+impl WitnessRef {
+    /// Authoring shorthands, `pub(crate)` for the same reason as the
+    /// relation shorthands: only the spec's own tables mint citations.
+    pub(crate) const fn leg(raw: &'static str) -> WitnessRef {
+        WitnessRef::Guarantee(GuaranteeRef::leg(raw))
+    }
+    pub(crate) const fn dec(raw: &'static str) -> WitnessRef {
+        WitnessRef::Guarantee(GuaranteeRef::dec(raw))
+    }
+    pub(crate) const fn contract(raw: &'static str) -> WitnessRef {
+        WitnessRef::Contract(ContractId(raw))
+    }
+}
+
 /// Source-qualified failure disposition. The derived view preserves the native
 /// meaning per family rather than flattening every failure into one generic
 /// severity ladder. The `&str` payload is the family-native disposition.

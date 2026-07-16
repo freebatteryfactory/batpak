@@ -741,10 +741,36 @@ G_FAMILY_RANK = {"SEED": 0, "LEG": 1, "DEC": 2, "ARCH": 3, "QUAL": 4}
 G_SEED_ROW = re.compile(
     r'InvariantSpec \{ id: "([^"]+)", statement: "(?:[^"\\]|\\.)*", '
     r'kind: GuaranteeKind::(\w+), lifetime: GuaranteeLifetime::(\w+), '
-    r'owner: "([^"]*)", gates: &\[([^\]]*)\], witness: "([^"]*)", '
+    r'owner: "([^"]*)", gates: &\[([^\]]*)\], witnesses: &\[([^\]]*)\], '
+    r'witness_note: "([^"]*)", '
     r'failure_disposition: "([^"]*)", derives_from: &\[([^\]]*)\], '
     r'refines: &\[([^\]]*)\], discharges: &\[([^\]]*)\], supersedes: &\[([^\]]*)\] \}'
 )
+# The canonical authored witness forms (5.5E2). This auditor recognizes ONLY
+# these; anything else in a witnesses slice is a citation trying to bypass
+# the typed vocabulary and is refused by guarantee_typed_witness_findings.
+G_WITNESS_TAGGED = re.compile(r'WitnessRef::(leg|dec|contract)\("([^"]+)"\)')
+G_WITNESS_TOOL = re.compile(r"WitnessRef::BootstrapTool\(BootstrapToolId::(\w+)\)")
+G_WITNESS_TOOL_NAMES = {
+    "ProjectPy": "project.py", "AuditPy": "audit.py", "FreezePy": "freeze.py",
+    "SelftestPy": "selftest.py", "Seedcheck": "seedcheck", "Materialize": "materialize",
+}
+
+
+def g_witness_render(refs_raw: str, note: str) -> str:
+    """The auditor's own rendering of a witness column, compared byte-for-byte
+    against the generator's projection."""
+    parts: list[str] = []
+    for m in re.finditer(r"WitnessRef::\w+", refs_raw):
+        tagged = G_WITNESS_TAGGED.match(refs_raw, m.start())
+        if tagged:
+            parts.append(tagged.group(2))
+            continue
+        tool = G_WITNESS_TOOL.match(refs_raw, m.start())
+        if tool and tool.group(1) in G_WITNESS_TOOL_NAMES:
+            parts.append(G_WITNESS_TOOL_NAMES[tool.group(1)])
+    text = "; ".join(parts)
+    return f"{text} -- {note}" if note else text
 G_LEG_ROW = re.compile(
     r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
     r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::(\w+), '
@@ -776,11 +802,13 @@ def guarantee_seed_rows(root: Path) -> list[dict]:
     for m in G_SEED_ROW.findall(src):
         rows.append({
             "id": m[0], "kind": m[1], "lifetime": m[2], "owner": m[3],
-            "gate_names": gate_list(m[4]), "witness": m[5], "failure": m[6],
-            "rel": {"DerivesFrom": _g_ids(m[7]), "Refines": _g_ids(m[8]),
-                    "Discharges": _g_ids(m[9]), "Supersedes": _g_ids(m[10])},
-            "rel_raw": {"DerivesFrom": m[7], "Refines": m[8],
-                        "Discharges": m[9], "Supersedes": m[10]},
+            "gate_names": gate_list(m[4]),
+            "witness": g_witness_render(m[5], m[6]),
+            "witness_raw": m[5], "failure": m[7],
+            "rel": {"DerivesFrom": _g_ids(m[8]), "Refines": _g_ids(m[9]),
+                    "Discharges": _g_ids(m[10]), "Supersedes": _g_ids(m[11])},
+            "rel_raw": {"DerivesFrom": m[8], "Refines": m[9],
+                        "Discharges": m[10], "Supersedes": m[11]},
         })
     return rows
 
@@ -816,6 +844,57 @@ def guarantee_typed_relation_findings(rows: list[dict]) -> list[str]:
                     out.append(f"{r['id']} {rel} tags {ident!r} as "
                                f"GuaranteeRef::{tag}, whose family owns the "
                                f"{want} prefix")
+    return out
+
+
+def declared_contract_ids(root: Path) -> set[str]:
+    """Every contract_id declared by a document's front matter."""
+    out: set[str] = set()
+    for path in sorted(root.rglob("*.md")):
+        rel = path.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        text = path.read_text(encoding="utf-8")
+        cid = frontmatter(text).get("contract_id")
+        if cid:
+            out.add(cid)
+    return out
+
+
+def guarantee_typed_witness_findings(root: Path, rows: list[dict]) -> list[str]:
+    """Witness citations are canonical typed constructors that RESOLVE: a
+    bare string, a mistagged family, an unknown contract id, or an undeclared
+    tool is a citation trying to bypass the typed vocabulary."""
+    out: list[str] = []
+    contract_ids = declared_contract_ids(root)
+    for r in rows:
+        raw = r.get("witness_raw", "")
+        refs = re.findall(r"WitnessRef::\w+", raw)
+        tagged = G_WITNESS_TAGGED.findall(raw)
+        tools = G_WITNESS_TOOL.findall(raw)
+        quoted = re.findall(r'"([^"]+)"', raw)
+        # Precedence matters for refusal identity: content that is not a
+        # canonical constructor (a bare string, a malformed call) is "not
+        # canonical"; only a genuinely EMPTY slice is "no citation".
+        if len(tagged) + len(tools) != len(refs) or len(quoted) != len(tagged):
+            out.append(f"{r['id']} carries a witness that is not a canonical typed WitnessRef")
+            continue
+        if not refs:
+            out.append(f"{r['id']} declares no typed witness citation")
+            continue
+        for tag, ident in tagged:
+            if tag == "leg" and not ident.startswith("LEG-"):
+                out.append(f"{r['id']} witness tags {ident!r} as WitnessRef::leg, "
+                           "whose family owns the LEG- prefix")
+            elif tag == "dec" and not ident.startswith("DEC-"):
+                out.append(f"{r['id']} witness tags {ident!r} as WitnessRef::dec, "
+                           "whose family owns the DEC- prefix")
+            elif tag == "contract" and ident not in contract_ids:
+                out.append(f"{r['id']} witness cites contract {ident}, "
+                           "which no document declares")
+        for tool in tools:
+            if tool not in G_WITNESS_TOOL_NAMES:
+                out.append(f"{r['id']} witness cites undeclared bootstrap tool {tool}")
     return out
 
 
@@ -3450,10 +3529,19 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
         return
     seed_rows = guarantee_seed_rows(root)
     findings.extend(guarantee_typed_relation_findings(seed_rows))
+    findings.extend(guarantee_typed_witness_findings(root, seed_rows))
     nodes, edges, admission = guarantee_derive(root)
     findings.extend(admission)
     leg_meta = guarantee_leg_meta(root)
     node_ids = {n["id"] for n in nodes}
+    # A witness's guarantee citation resolves against the derived node set:
+    # the type carries the family, this law carries existence on the Python
+    # side (seedcheck executes the same law through the sealed accessors).
+    for r in seed_rows:
+        for tag, ident in G_WITNESS_TAGGED.findall(r.get("witness_raw", "")):
+            if tag in ("leg", "dec") and ident not in node_ids:
+                findings.append(
+                    f"{r['id']} witness references {ident}, which no declared row owns")
     findings.extend(gate_inventory_findings(root))
     findings.extend(gate_doc_findings(root))
     findings.extend(gate_reference_findings(root))

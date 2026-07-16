@@ -69,6 +69,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_proof_terminals(&mut findings);
     check_guarantee_admission(&mut findings);
     check_frontmatter(root, &mut findings);
+    check_witness_citations(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -140,9 +141,6 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
     // — a decision cited as a legacy obligation has no spelling — and this
     // law carries existence: a reference to an undeclared row is refused at
     // runtime, every run, through the sealed accessors.
-    let seed_ids: BTreeSet<&str> = invariants::INVARIANTS.iter().map(|r| r.id).collect();
-    let leg_ids: BTreeSet<&str> = legacy_obligations::OBLIGATIONS.iter().map(|r| r.id).collect();
-    let dec_ids: BTreeSet<&str> = dispositions::DECISIONS.iter().map(|r| r.id).collect();
     for row in invariants::INVARIANTS {
         for (rel, refs) in [
             ("derives_from", row.derives_from),
@@ -151,21 +149,7 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
             ("supersedes", row.supersedes),
         ] {
             for reference in refs {
-                // Exhaustive: a new family must be resolved here, not defaulted.
-                let resolved = match reference {
-                    guarantees::GuaranteeRef::Seed(id) => seed_ids.contains(id.raw()),
-                    guarantees::GuaranteeRef::Legacy(id) => leg_ids.contains(id.raw()),
-                    guarantees::GuaranteeRef::Decision(id) => dec_ids.contains(id.raw()),
-                    guarantees::GuaranteeRef::Architecture(id) => architecture::PACKAGES
-                        .iter()
-                        .any(|p| p.package == id.package()),
-                    guarantees::GuaranteeRef::Qualification(id) => {
-                        architecture::QUALIFICATION_PROFILES
-                            .iter()
-                            .any(|q| q.package == id.package() && q.profile == id.profile())
-                    }
-                };
-                if !resolved {
+                if !guarantee_ref_resolves(*reference) {
                     findings.push(format!(
                         "{} {rel} references {reference:?}, which no declared row owns",
                         row.id
@@ -249,7 +233,8 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
         lifetime: guarantees::GuaranteeLifetime::Permanent,
         owner: "docs/00_CONSTITUTION.md",
         gates: &[],
-        witness: "hostile",
+        witnesses: &[],
+        witness_note: "hostile",
         failure_disposition: "hostile",
         derives_from: &[],
         refines: &[],
@@ -262,6 +247,92 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
         GuaranteeSource::Seed(&UNSCHEDULED_SEED),
         GuaranteeAdmissionRule::RowNamesScheduledGates,
     );
+}
+
+/// Whether a typed reference names a DECLARED row of its family. The type
+/// carries the family; this function carries existence. Exhaustive: a new
+/// family must be resolved here, not defaulted.
+fn guarantee_ref_resolves(reference: guarantees::GuaranteeRef) -> bool {
+    match reference {
+        guarantees::GuaranteeRef::Seed(id) => {
+            invariants::INVARIANTS.iter().any(|r| r.id == id.raw())
+        }
+        guarantees::GuaranteeRef::Legacy(id) => {
+            legacy_obligations::OBLIGATIONS.iter().any(|r| r.id == id.raw())
+        }
+        guarantees::GuaranteeRef::Decision(id) => {
+            dispositions::DECISIONS.iter().any(|r| r.id == id.raw())
+        }
+        guarantees::GuaranteeRef::Architecture(id) => {
+            architecture::PACKAGES.iter().any(|p| p.package == id.package())
+        }
+        guarantees::GuaranteeRef::Qualification(id) => architecture::QUALIFICATION_PROFILES
+            .iter()
+            .any(|q| q.package == id.package() && q.profile == id.profile()),
+    }
+}
+
+/// Typed witness citations RESOLVE (5.5E2). A witness names WHICH owned
+/// evidence obligation a law depends on; a citation of an undeclared
+/// guarantee, an unknown contract id, or a tool that does not exist in the
+/// checked tree is refused at runtime, every run. The note carries the human
+/// reading and carries no law.
+fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {
+    use guarantees::WitnessRef;
+    // The declared contract ids, read from the same inventory the
+    // front-matter law walks.
+    let mut contract_ids = BTreeSet::new();
+    for relative in architecture::REQUIRED_DOCS {
+        if !relative.ends_with(".md") {
+            continue;
+        }
+        if let Ok(text) = fs::read_to_string(root.join(relative)) {
+            for line in text.lines().take(16) {
+                if let Some(id) = line.strip_prefix("contract_id:") {
+                    contract_ids.insert(id.trim().to_string());
+                }
+            }
+        }
+    }
+    for row in invariants::INVARIANTS {
+        // SEED's witness posture is RowDeclared: an empty citation list is an
+        // omission, never a policy.
+        if row.witnesses.is_empty() {
+            findings.push(format!("{} declares no witness citation", row.id));
+        }
+        for witness in row.witnesses {
+            // Exhaustive: a new witness kind must be resolved here.
+            match witness {
+                WitnessRef::Guarantee(reference) => {
+                    if !guarantee_ref_resolves(*reference) {
+                        findings.push(format!(
+                            "{} witness references {reference:?}, which no declared row owns",
+                            row.id
+                        ));
+                    }
+                }
+                WitnessRef::Contract(id) => {
+                    if !contract_ids.contains(id.raw()) {
+                        findings.push(format!(
+                            "{} witness cites contract {}, which no document declares",
+                            row.id,
+                            id.raw()
+                        ));
+                    }
+                }
+                WitnessRef::BootstrapTool(tool) => {
+                    if !root.join(tool.path()).is_file() {
+                        findings.push(format!(
+                            "{} witness cites {}, which does not exist at {}",
+                            row.id,
+                            tool.display(),
+                            tool.path()
+                        ));
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// SEED-AUDITED-DENOMINATOR (5.5E1): the proof-terminal vocabulary is typed
@@ -724,7 +795,7 @@ fn check_unique_ids(findings: &mut Vec<String>) {
 
     for value in invariants::INVARIANTS {
         if value.statement.trim().is_empty() { findings.push(format!("empty invariant statement {}", value.id)); }
-        if value.owner.trim().is_empty() || value.witness.trim().is_empty() {
+        if value.owner.trim().is_empty() || value.witnesses.is_empty() {
             findings.push(format!("unclassified invariant {} (missing owner or witness)", value.id));
         }
         match value.kind {

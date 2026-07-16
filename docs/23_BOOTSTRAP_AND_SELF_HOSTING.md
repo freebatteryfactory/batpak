@@ -89,29 +89,29 @@ Each SEED fact carries its own guarantee classification (DEC-070); `spec/invaria
 <!-- SEED-CLASSIFICATION:BEGIN generated from spec/invariants.rs by bootstrap/project.py; do not edit -->
 | GuaranteeId | Kind | Lifetime | Owner | Gates | Witness | Relations |
 | --- | --- | --- | --- | --- | --- | --- |
-| SEED-ONE-OWNER | SemanticLaw | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py contract-id uniqueness; docs/28 self-explaining repository | - |
-| SEED-SYNCBAT-ONE-HEARTBEAT | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | spec/architecture.rs SYNCBAT_REQUIRED_PLANES; audit.py | - |
-| SEED-NO-STANDALONE-VM | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | spec/architecture.rs PACKAGES; audit.py forbidden paths | - |
-| SEED-FBAT-CORE | ArchitectureConstraint | Permanent | docs/05_STORAGE_FBAT_AND_TILES.md | G2 | stale-vocabulary scan; audit.py | - |
-| SEED-PAKVM-NAME | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G0/G5 | stale-vocabulary scan; audit.py | - |
-| SEED-NO-DUAL-PRODUCT | ArchitectureConstraint | Permanent | docs/02_SYSTEM_MODEL.md | G0 | stale-vocabulary scan; docs/31 | - |
-| SEED-NO-AMBIENT-AUTHORITY | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G5 | LEG-066; BP-GAUNTLET-1 capability enforcement | - |
-| SEED-SEMANTIC-ZERO-LEAKAGE | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0 | seedcheck production-token scan; DEC-068 AST gate | DerivesFrom DEC-068 |
-| SEED-SYNC-FIRST | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | LEG-080; seedcheck no-tokio | Refines LEG-080 |
-| SEED-NO-STD-SEMANTIC-PROFILES | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0/G5 | DEC-065 qualification matrix | DerivesFrom DEC-065 |
-| SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068 AST gate; seedcheck | DerivesFrom DEC-068 |
-| SEED-NO-INLINE-DOMAIN-TYPES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G1/G3 | DEC-068 AST gate | DerivesFrom DEC-068 |
+| SEED-ONE-OWNER | SemanticLaw | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py; BP-SELF-EXPLAINING-1 -- contract-id uniqueness scan; the self-explaining-repository law | - |
+| SEED-SYNCBAT-ONE-HEARTBEAT | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | seedcheck; audit.py -- SYNCBAT_REQUIRED_PLANES plane checks in both independent derivations | - |
+| SEED-NO-STANDALONE-VM | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | seedcheck; audit.py -- PACKAGES inventory; forbidden-path scan | - |
+| SEED-FBAT-CORE | ArchitectureConstraint | Permanent | docs/05_STORAGE_FBAT_AND_TILES.md | G2 | audit.py -- stale-vocabulary scan | - |
+| SEED-PAKVM-NAME | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G0/G5 | audit.py -- stale-vocabulary scan | - |
+| SEED-NO-DUAL-PRODUCT | ArchitectureConstraint | Permanent | docs/02_SYSTEM_MODEL.md | G0 | audit.py; BP-FINAL-AUDIT-1 -- stale-vocabulary scan; final contradiction audit | - |
+| SEED-NO-AMBIENT-AUTHORITY | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G5 | LEG-066; BP-GAUNTLET-1 -- capability enforcement | - |
+| SEED-SEMANTIC-ZERO-LEAKAGE | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0 | seedcheck; DEC-068 -- production-token scan; the AST gate | DerivesFrom DEC-068 |
+| SEED-SYNC-FIRST | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | LEG-080; seedcheck -- no-tokio scan | Refines LEG-080 |
+| SEED-NO-STD-SEMANTIC-PROFILES | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0/G5 | DEC-065 -- qualification matrix | DerivesFrom DEC-065 |
+| SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068; seedcheck -- the AST gate | DerivesFrom DEC-068 |
+| SEED-NO-INLINE-DOMAIN-TYPES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G1/G3 | DEC-068 -- the AST gate | DerivesFrom DEC-068 |
 | SEED-EXPLICIT-EFFECTS | SemanticLaw | Permanent | docs/08_SYNCBAT_RUNTIME.md | G6 | LEG-036; LEG-061; BP-GAUNTLET-1 | - |
 | SEED-INDEPENDENT-ORACLE | SemanticLaw | Permanent | docs/24_GAUNTLET.md | G3/G8 | LEG-079; LEG-049 | - |
-| SEED-AUDITED-DENOMINATOR | SemanticLaw | Permanent | docs/24_GAUNTLET.md | G3/G9 | LEG-049; docs/34 coverage; audit.py declaration parity | - |
+| SEED-AUDITED-DENOMINATOR | SemanticLaw | Permanent | docs/24_GAUNTLET.md | G3/G9 | LEG-049; BP-LEGACY-INVARIANT-COVERAGE-1; audit.py -- coverage table; declaration parity | - |
 | SEED-MUTERPRATER-SCOPE | ArchitectureConstraint | Permanent | docs/12_TESTPAK.md | G3 | DEC-015 | DerivesFrom DEC-015 |
 | SEED-BOUNDED-PUSH | SemanticLaw | Permanent | docs/17_DELIVERY_AND_CONCURRENCY.md | G6 | LEG-032; LEG-060 | - |
-| SEED-AVAILABILITY-AXES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G2 | DEC-030; docs/37 | DerivesFrom DEC-030 |
+| SEED-AVAILABILITY-AXES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G2 | DEC-030; BP-NUMERIC-1 | DerivesFrom DEC-030 |
 | SEED-TIME-AXES | SemanticLaw | Permanent | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | G2 | DEC-061; LEG-025; LEG-073 | DerivesFrom DEC-061 |
-| SEED-DOC-STATUS | BootstrapAssertion | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py front-matter check | - |
-| SEED-NO-PLACEHOLDER-LAW | BootstrapAssertion | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py placeholder scan | - |
-| SEED-LEGACY-OBLIGATION | SemanticLaw | Permanent | docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md | G0/G9 | docs/34 coverage; audit.py LEG parity | - |
-| SEED-ECS-NOT-ONTOLOGY | ArchitectureConstraint | Permanent | docs/18_DATA_ORIENTED_ECS.md | G8 | docs/18; docs/31 | - |
+| SEED-DOC-STATUS | BootstrapAssertion | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py -- front-matter check | - |
+| SEED-NO-PLACEHOLDER-LAW | BootstrapAssertion | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py -- placeholder scan | - |
+| SEED-LEGACY-OBLIGATION | SemanticLaw | Permanent | docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md | G0/G9 | BP-LEGACY-INVARIANT-COVERAGE-1; audit.py -- coverage table; LEG declaration parity | - |
+| SEED-ECS-NOT-ONTOLOGY | ArchitectureConstraint | Permanent | docs/18_DATA_ORIENTED_ECS.md | G8 | BP-ECS-1; BP-FINAL-AUDIT-1 | - |
 | SEED-BVISOR-HONESTY | SemanticLaw | Permanent | docs/09_BVISOR.md | G5 | LEG-042; LEG-043 | - |
-| SEED-BATQL-FROZEN | SemanticLaw | Permanent | companion/BATQL_LANGUAGE.md | G4 | companion 13 language-change law; DEC-060 | DerivesFrom DEC-060 |
+| SEED-BATQL-FROZEN | SemanticLaw | Permanent | companion/BATQL_LANGUAGE.md | G4 | BP-BATQL-LANGUAGE-1; DEC-060 -- section 13 language-change law | DerivesFrom DEC-060 |
 <!-- SEED-CLASSIFICATION:END -->

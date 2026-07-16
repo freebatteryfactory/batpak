@@ -169,10 +169,27 @@ def gate_tokens(expr: str, root: Path) -> str:
 _SEED_ROW = re.compile(
     r'InvariantSpec \{ id: "([^"]+)", statement: "((?:[^"\\]|\\.)*)", '
     r'kind: GuaranteeKind::(\w+), lifetime: GuaranteeLifetime::(\w+), '
-    r'owner: "([^"]*)", gates: &\[([^\]]*)\], witness: "([^"]*)", '
+    r'owner: "([^"]*)", gates: &\[([^\]]*)\], witnesses: &\[([^\]]*)\], '
+    r'witness_note: "([^"]*)", '
     r'failure_disposition: "([^"]*)", derives_from: &\[([^\]]*)\], '
     r'refines: &\[([^\]]*)\], discharges: &\[([^\]]*)\], supersedes: &\[([^\]]*)\] \}'
 )
+# Typed witness citations (5.5E2): the projector renders the canonical forms
+# and never invents one. A citation it does not recognize renders as nothing,
+# which the block-parity comparison then catches.
+_WITNESS_REF = re.compile(
+    r'WitnessRef::(?:leg|dec|contract)\("([^"]+)"\)'
+    r'|WitnessRef::BootstrapTool\(BootstrapToolId::(\w+)\)')
+_TOOL_DISPLAY = {"ProjectPy": "project.py", "AuditPy": "audit.py",
+                 "FreezePy": "freeze.py", "SelftestPy": "selftest.py",
+                 "Seedcheck": "seedcheck", "Materialize": "materialize"}
+
+
+def _witness_column(refs_raw, note):
+    parts = [_TOOL_DISPLAY.get(tool, "") if tool else ident
+             for ident, tool in _WITNESS_REF.findall(refs_raw)]
+    text = "; ".join(p for p in parts if p)
+    return f"{text} -- {note}" if note else text
 _LEG_ROW = re.compile(
     r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
     r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::\w+, '
@@ -200,9 +217,10 @@ def guarantee_seed(root):
     for m in _SEED_ROW.findall(src):
         out.append({
             "id": m[0], "statement": m[1], "kind": m[2], "lifetime": m[3],
-            "owner": m[4], "gates": gate_tokens(m[5], root), "witness": m[6], "failure": m[7],
-            "DerivesFrom": _ids(m[8]), "Refines": _ids(m[9]),
-            "Discharges": _ids(m[10]), "Supersedes": _ids(m[11]),
+            "owner": m[4], "gates": gate_tokens(m[5], root),
+            "witness": _witness_column(m[6], m[7]), "failure": m[8],
+            "DerivesFrom": _ids(m[9]), "Refines": _ids(m[10]),
+            "Discharges": _ids(m[11]), "Supersedes": _ids(m[12]),
         })
     return out
 
