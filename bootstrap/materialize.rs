@@ -97,7 +97,6 @@ fn validate_seed(root: &Path) -> io::Result<()> {
     for profile in architecture::QUALIFICATION_PROFILES {
         if !packages.contains(profile.package)
             || profile.profile.trim().is_empty()
-            || profile.target.trim().is_empty()
             || profile.requirement.trim().is_empty()
         {
             return Err(io::Error::new(
@@ -118,7 +117,7 @@ fn workspace_manifest() -> String {
     let _ = writeln!(
         out,
         "[workspace]\nresolver = \"{}\"\nmembers = [",
-        toolchain::TOOLCHAIN.cargo_resolver
+        toolchain::TOOLCHAIN.cargo_resolver.spelling()
     );
     for package in architecture::PACKAGES {
         let _ = writeln!(out, "  \"{}\",", package.path);
@@ -128,8 +127,8 @@ fn workspace_manifest() -> String {
     let _ = writeln!(
         out,
         "edition = \"{}\"\nrust-version = \"{}\"",
-        toolchain::TOOLCHAIN.edition,
-        toolchain::TOOLCHAIN.rust_version_floor
+        toolchain::TOOLCHAIN.edition.spelling(),
+        toolchain::TOOLCHAIN.rust_version_floor.render()
     );
     out.push_str("license = \"MIT OR Apache-2.0\"\nrepository = \"https://github.com/freebatteryfactory/batpak\"\n\n");
     out.push_str("[workspace.dependencies]\n");

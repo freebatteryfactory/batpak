@@ -87,13 +87,48 @@ pub enum EdgeClass {
     DevOnly,
 }
 
-/// One target-specific qualification requirement.
+/// The semantic assumptions a qualification holds under (5.5E3a1). These
+/// are capability profiles, NOT Rust target triples: an environment answers
+/// WHAT a build may assume, a triple answers WHERE an artifact compiled and
+/// ran. A triple has no spelling here — the collapse the old string field
+/// merely policed is now unrepresentable. The physical axis arrives as its
+/// own type with the receipt-binding work; the two must never merge into a
+/// generalized "build coordinate".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QualificationEnvironment {
+    /// Core semantic profiles: no_std with the alloc crate.
+    NoStdAlloc,
+    /// Full standard library on a native host.
+    NativeStd,
+    /// Browser/wasm host mechanisms behind explicit adapters.
+    WasmHost,
+}
+
+impl QualificationEnvironment {
+    /// Every environment, in declaration order.
+    pub const ALL: &'static [QualificationEnvironment] = &[
+        QualificationEnvironment::NoStdAlloc,
+        QualificationEnvironment::NativeStd,
+        QualificationEnvironment::WasmHost,
+    ];
+
+    /// The canonical documentary spelling.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            QualificationEnvironment::NoStdAlloc => "no_std + alloc",
+            QualificationEnvironment::NativeStd => "std",
+            QualificationEnvironment::WasmHost => "wasm32 host",
+        }
+    }
+}
+
+/// One environment-specific qualification requirement.
 ///
-/// `target` names the ENVIRONMENT qualified against; `gates` names WHEN that
-/// qualification is scheduled. They are different dimensions and neither may
-/// stand in for the other: "std" is not a GateId. The schedule is stated here
-/// because it is row-specific and cannot be derived from a compilation target or
-/// from neighbouring SEED vocabulary.
+/// `environment` names the semantic assumptions qualified under; `gates`
+/// names WHEN that qualification is scheduled. They are different dimensions
+/// and neither may stand in for the other: an environment is not a GateId.
+/// The schedule is stated here because it is row-specific and cannot be
+/// derived from an environment or from neighbouring SEED vocabulary.
 ///
 /// The requirement stays Permanent after a gate passes; the receipt is
 /// gate/run-specific evidence, not the lifetime of the law.
@@ -101,7 +136,7 @@ pub enum EdgeClass {
 pub struct QualificationProfile {
     pub package: &'static str,
     pub profile: &'static str,
-    pub target: &'static str,
+    pub environment: QualificationEnvironment,
     pub gates: &'static [GateId],
     pub requirement: &'static str,
 }
@@ -193,42 +228,42 @@ pub const QUALIFICATION_PROFILES: &[QualificationProfile] = &[
     QualificationProfile {
         package: "batpak",
         profile: "semantic",
-        target: "no_std + alloc",
+        environment: QualificationEnvironment::NoStdAlloc,
         gates: &[GateId::G0, GateId::G5],
         requirement: "contracts, schemas, codecs, image values, deterministic parsing, and storage-port law compile without std",
     },
     QualificationProfile {
         package: "syncbat",
         profile: "semantic",
-        target: "no_std + alloc",
+        environment: QualificationEnvironment::NoStdAlloc,
         gates: &[GateId::G0, GateId::G5],
         requirement: "runtime transition core, PakVM validation/interpreter, Bvisor admission state, world values, and port protocols compile without std host adapters",
     },
     QualificationProfile {
         package: "batpak",
         profile: "native",
-        target: "std",
+        environment: QualificationEnvironment::NativeStd,
         gates: &[GateId::G0, GateId::G5],
         requirement: "native filesystem, mapping, clock, entropy, and threaded storage adapters are explicit std mechanisms",
     },
     QualificationProfile {
         package: "syncbat",
         profile: "native",
-        target: "std",
+        environment: QualificationEnvironment::NativeStd,
         gates: &[GateId::G0, GateId::G5],
         requirement: "threaded driver and native host-port adapters are explicit std mechanisms",
     },
     QualificationProfile {
         package: "syncbat",
         profile: "browser",
-        target: "wasm32 host",
+        environment: QualificationEnvironment::WasmHost,
         gates: &[GateId::G0, GateId::G5],
         requirement: "browser adapters preserve semantic result, receipt, bounds, and recovery contracts without OS-backend normalization",
     },
     QualificationProfile {
         package: "batpak",
         profile: "browser-storage",
-        target: "wasm32 host",
+        environment: QualificationEnvironment::WasmHost,
         gates: &[GateId::G2, GateId::G5, GateId::G7],
         requirement: "the browser persistence adapter proves its own atomicity, ordering, durability, quota, crash/reload, authority-generation, and bounded-size behavior without borrowing native filesystem claims",
     },

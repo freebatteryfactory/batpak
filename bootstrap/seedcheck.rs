@@ -198,20 +198,10 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
         GuaranteeSource::Decision(&GATELESS_ENFORCEMENT_DEC),
         GuaranteeAdmissionRule::ImplementationBearingDecisionNamesGate,
     );
-    static TARGETLESS_QUAL: architecture::QualificationProfile =
-        architecture::QualificationProfile {
-            package: "hostile",
-            profile: "hostile",
-            target: "",
-            gates: &[gates::GateId::G0],
-            requirement: "hostile",
-        };
-    hostile(
-        findings,
-        "qualification requirement without a target environment",
-        GuaranteeSource::Qualification(&TARGETLESS_QUAL),
-        GuaranteeAdmissionRule::QualificationNamesTargetEnvironment,
-    );
+    // The TARGETLESS_QUAL hostile died in 5.5E3a1: a QualificationProfile
+    // carries a closed QualificationEnvironment, so a missing or empty
+    // environment has no spelling — the refusal it exercised became a
+    // compile error, which is the strongest form of the fixture.
     static OWNERLESS_LEG: legacy_obligations::LegacyObligation =
         legacy_obligations::LegacyObligation {
             id: "LEG-000-HOSTILE",
@@ -275,55 +265,46 @@ fn guarantee_ref_resolves(reference: guarantees::GuaranteeRef) -> bool {
 }
 
 /// The typed toolchain owner is coherent and its tracked projection is
-/// byte-exact (5.5E3a). Every refusal names the violated field, the typed
-/// owner, the observed value, the required value, and the repair direction —
-/// and no law here hardcodes a version: the laws are structural, the values
-/// live once in `spec/toolchain.rs`.
+/// byte-exact (5.5E3a, type-baked in 5.5E3a1). The string-shape validators
+/// died with the strings: a malformed edition or resolver has no spelling
+/// now. What remains executable is what construction cannot say — the
+/// exact-release/floor relation, component uniqueness, the tracked
+/// projection's byte equality, and the environment spellings staying
+/// capability profiles rather than target triples. Every refusal names the
+/// violated field, the typed owner, the observed and required values, and
+/// the repair direction.
 fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
     let t = toolchain::TOOLCHAIN;
     let refuse = |findings: &mut Vec<String>, field: &str, observed: &str, required: &str,
                   repair: &str| {
         findings.push(format!(
-            "toolchain {field} violated (owner: spec/toolchain.rs ToolchainProfile; \
-             observed: {observed}; required: {required}; repair: {repair})"
+            "toolchain {field} violated (owner: spec/toolchain.rs ToolchainProfile;              observed: {observed}; required: {required}; repair: {repair})"
         ));
     };
-    if !t.exact_rust_release.starts_with(t.rust_version_floor)
-        || !t.exact_rust_release[t.rust_version_floor.len()..].starts_with('.')
-    {
+    // The exact qualifying release and the MSRV floor answer DIFFERENT
+    // questions. The law is exact >= floor — a newer qualifying compiler
+    // that preserves the floor is ordinary; one below the floor would
+    // qualify a foundation its own consumers may lawfully refuse.
+    if !t.exact_rust_release.satisfies_floor(t.rust_version_floor) {
         refuse(
             findings,
-            "exact_rust_release/rust_version_floor",
-            t.exact_rust_release,
-            &format!("a patch release of {}", t.rust_version_floor),
-            "the exact qualifying compiler must be a release of the declared MSRV floor",
+            "exact_rust_release",
+            &t.exact_rust_release.render(),
+            &format!("at least the declared MSRV floor {}", t.rust_version_floor.render()),
+            "qualify with a compiler at or above the floor the generated              workspace claims",
         );
-    }
-    if t.rust_version_floor.split('.').count() != 2
-        || !t.rust_version_floor.split('.').all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
-    {
-        refuse(findings, "rust_version_floor", t.rust_version_floor, "MAJOR.MINOR",
-               "declare the MSRV floor as MAJOR.MINOR; the exact release carries the patch");
-    }
-    if t.edition.len() != 4 || !t.edition.bytes().all(|b| b.is_ascii_digit()) {
-        refuse(findings, "edition", t.edition, "a four-digit Rust edition year",
-               "author the edition year the whole foundation compiles under");
-    }
-    if t.cargo_resolver.is_empty() || !t.cargo_resolver.bytes().all(|b| b.is_ascii_digit()) {
-        refuse(findings, "cargo_resolver", t.cargo_resolver, "a numeric Cargo resolver version",
-               "author the resolver version the generated workspace declares");
-    }
-    if t.rustup_profile.trim().is_empty() {
-        refuse(findings, "rustup_profile", t.rustup_profile, "a named rustup profile",
-               "author the profile the toolchain selection installs");
     }
     if t.required_components.is_empty() {
         refuse(findings, "required_components", "[]", "at least one component",
                "author the components qualification depends on");
     }
-    if t.required_components.windows(2).any(|w| w[0] >= w[1]) {
-        refuse(findings, "required_components", "unsorted or duplicated", "sorted unique names",
-               "keep the component list in canonical sorted order");
+    let mut seen_components = BTreeSet::new();
+    for component in t.required_components {
+        if !seen_components.insert(component.spelling()) {
+            refuse(findings, "required_components", component.spelling(),
+                   "each component once",
+                   "a duplicated component is a copy, not a requirement");
+        }
     }
     // The tracked root selection is a PROJECTION: byte-equal or refused.
     let want = t.root_toolchain_toml();
@@ -341,32 +322,19 @@ fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
             "tracked rust-toolchain.toml",
             "absent",
             "the deterministic projection of ToolchainProfile",
-            "the tracked toolchain projection selects the compiler before the \
-             spec can compile; restore it from the typed owner",
+            "the tracked toolchain projection selects the compiler before the              spec can compile; restore it from the typed owner",
         ),
     }
-    // Semantic qualification environments are not physical target triples,
-    // in either direction: a capability profile names WHAT must hold, a
-    // triple names WHERE a binary ran.
-    for target in toolchain::SEMANTIC_QUALIFICATION_TARGETS {
-        // Exhaustive shape law rather than a variant match: the closed
-        // vocabulary is a slice until the CompilationTarget enum lands.
-        if target.contains("-") && target.split('-').count() >= 3 {
-            refuse(findings, "SEMANTIC_QUALIFICATION_TARGETS", target,
+    // Environment membership dissolved into construction (a triple has no
+    // QualificationEnvironment spelling). What remains checkable is the
+    // authored SPELLINGS themselves: a capability profile must never be
+    // renamed into a target triple.
+    for environment in architecture::QualificationEnvironment::ALL {
+        let spelling = environment.spelling();
+        if spelling.contains('-') && spelling.split('-').count() >= 3 {
+            refuse(findings, "QualificationEnvironment::spelling", spelling,
                    "a capability environment, never a target triple",
                    "qualification environments answer WHAT holds, not WHERE it ran");
-        }
-    }
-    for profile in architecture::QUALIFICATION_PROFILES {
-        if !toolchain::SEMANTIC_QUALIFICATION_TARGETS.contains(&profile.target) {
-            refuse(
-                findings,
-                "QualificationProfile::target",
-                profile.target,
-                "one of the declared semantic qualification environments",
-                "a physical triple or an undeclared environment cannot inhabit a \
-                 semantic qualification target",
-            );
         }
     }
 }
@@ -966,7 +934,7 @@ fn check_profiles(findings: &mut Vec<String>) {
         if !packages.contains(profile.package) {
             findings.push(format!("unknown qualification package {}", profile.package));
         }
-        if profile.profile.trim().is_empty() || profile.target.trim().is_empty() || profile.requirement.trim().is_empty() {
+        if profile.profile.trim().is_empty() || profile.requirement.trim().is_empty() {
             findings.push(format!("incomplete qualification profile {}:{}", profile.package, profile.profile));
         }
         if !identities.insert((profile.package, profile.profile)) {
@@ -974,7 +942,7 @@ fn check_profiles(findings: &mut Vec<String>) {
         }
     }
     for package in ["batpak", "syncbat"] {
-        if !architecture::QUALIFICATION_PROFILES.iter().any(|p| p.package == package && p.profile == "semantic" && p.target == "no_std + alloc") {
+        if !architecture::QUALIFICATION_PROFILES.iter().any(|p| p.package == package && p.profile == "semantic" && p.environment == architecture::QualificationEnvironment::NoStdAlloc) {
             findings.push(format!("missing no_std + alloc semantic profile for {package}"));
         }
     }

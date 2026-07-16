@@ -785,7 +785,12 @@ G_PKG_ROW = re.compile(
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
 G_QUAL_ROW = re.compile(
     r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
-    r'target: "([^"]+)",\s*gates: &\[([^\]]*)\],\s*requirement: "[^"]+",\s*\}', re.S)
+    r'environment: QualificationEnvironment::(\w+),\s*gates: &\[([^\]]*)\],\s*'
+    r'requirement: "[^"]+",\s*\}', re.S)
+# The auditor's own spelling of each environment variant, compared
+# byte-for-byte against the generator's projection through the blocks.
+G_ENVIRONMENT_SPELLING = {"NoStdAlloc": "no_std + alloc", "NativeStd": "std",
+                          "WasmHost": "wasm32 host"}
 GUARANTEE_KINDS = {"SemanticLaw", "ArchitectureConstraint", "BootstrapAssertion",
                    "LegacyObligation", "QualificationRequirement", "Decision"}
 GUARANTEE_LIFETIMES = {"Permanent", "UntilGate", "UntilCompatibilityExpiry",
@@ -1080,11 +1085,13 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple], list[str]]:
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
     for pkg, cls, layer in G_PKG_ROW.findall(arch):
         nodes.append(_admit("ARCH", f"ARCH-{pkg}", {}, f"Architecture(L{layer} {cls})"))
-    for pkg, profile, target, qgates in G_QUAL_ROW.findall(arch):
-        # target is the ENVIRONMENT; qgates is the SCHEDULE. Never interchanged.
+    for pkg, profile, variant, qgates in G_QUAL_ROW.findall(arch):
+        # environment is the SEMANTIC dimension; qgates is the SCHEDULE.
+        # Never interchanged. The node projects the canonical spelling.
+        spelling = G_ENVIRONMENT_SPELLING.get(variant, "")
         nodes.append(_admit("QUAL", f"QUAL-{pkg}-{profile}", {
-            "gates": gate_render(gate_list(qgates), root), "target": target,
-        }, f"Qualification({target})"))
+            "gates": gate_render(gate_list(qgates), root), "target": spelling,
+        }, f"Qualification({spelling})"))
     nodes = [n for n in nodes if n is not None]
     nodes.sort(key=lambda n: (G_FAMILY_RANK[n["family"]], n["id"]))
     edges = []
@@ -3731,23 +3738,37 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
 A_TRIPLE_SHAPE = re.compile(r"[a-z0-9_]+(-[a-z0-9_]+){2,}")
 
 
+A_TC_PROFILE_SPELLING = {"Minimal": "minimal"}
+A_TC_COMPONENT_SPELLING = {"Clippy": "clippy", "Rustfmt": "rustfmt"}
+
+
 def toolchain_profile(root: Path) -> dict:
     src = _uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
-
-    def field(name):
-        m = re.search(name + r': "([^"]+)"', src)
-        return m.group(1) if m else ""
-
+    release = re.search(
+        r"exact_rust_release: RustRelease \{ major: (\d+), minor: (\d+), patch: (\d+) \}", src)
+    floor = re.search(
+        r"rust_version_floor: RustVersionFloor \{ major: (\d+), minor: (\d+) \}", src)
+    edition = re.search(r"edition: RustEdition::Rust(\d+)", src)
+    resolver = re.search(r"cargo_resolver: CargoResolver::V(\d+)", src)
+    profile = re.search(r"rustup_profile: RustupProfile::(\w+)", src)
     comps = re.search(r"required_components: &\[([^\]]*)\]", src)
-    sem = re.search(r"SEMANTIC_QUALIFICATION_TARGETS: &\[&str\] =\s*&\[([^\]]*)\]", src)
+    # The semantic environments live on the typed enum in architecture.rs;
+    # the auditor reads the authored spelling arms, never a copied list.
+    arch = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    spellings = re.findall(
+        r'QualificationEnvironment::(\w+) => "([^"]+)",', arch)
     return {
-        "exact": field("exact_rust_release"),
-        "floor": field("rust_version_floor"),
-        "edition": field("edition"),
-        "resolver": field("cargo_resolver"),
-        "profile": field("rustup_profile"),
-        "components": re.findall(r'"([^"]+)"', comps.group(1)) if comps else [],
-        "semantic": re.findall(r'"([^"]+)"', sem.group(1)) if sem else [],
+        "exact_parts": tuple(int(x) for x in release.groups()) if release else None,
+        "floor_parts": tuple(int(x) for x in floor.groups()) if floor else None,
+        "exact": ".".join(release.groups()) if release else "",
+        "floor": ".".join(floor.groups()) if floor else "",
+        "edition": edition.group(1) if edition else "",
+        "resolver": resolver.group(1) if resolver else "",
+        "profile": A_TC_PROFILE_SPELLING.get(profile.group(1), "") if profile else "",
+        "components": [A_TC_COMPONENT_SPELLING.get(v, "")
+                       for v in re.findall(r"RustupComponent::(\w+)", comps.group(1))]
+                      if comps else [],
+        "environment_spellings": dict(spellings),
     }
 
 
@@ -3759,13 +3780,16 @@ def toolchain_findings(root: Path) -> list[str]:
             out.append(f"spec/toolchain.rs authors no toolchain {key}")
     if not t["components"]:
         out.append("spec/toolchain.rs authors no required components")
-    if not t["semantic"]:
-        out.append("spec/toolchain.rs declares no semantic qualification targets")
-    if t["exact"] and t["floor"] and not t["exact"].startswith(t["floor"] + "."):
+    if not t["environment_spellings"]:
+        out.append("spec/architecture.rs declares no qualification environments")
+    # exact >= floor, never "same minor": a newer qualifying compiler that
+    # preserves the MSRV floor is ordinary; one below the floor would qualify
+    # a foundation its own consumers may lawfully refuse.
+    if t["exact_parts"] and t["floor_parts"] and t["exact_parts"][:2] < t["floor_parts"]:
         out.append(
-            f"exact_rust_release {t['exact']} is not a patch release of the "
-            f"declared rust_version_floor {t['floor']}; the two answer "
-            "different questions and may not drift apart")
+            f"exact_rust_release {t['exact']} is below the declared MSRV "
+            f"floor {t['floor']}; the qualifying compiler must satisfy the "
+            "floor the generated workspace claims")
     want = ('[toolchain]\nchannel = "{}"\nprofile = "{}"\ncomponents = [{}]\n'
             .format(t["exact"], t["profile"],
                     ", ".join(f'"{c}"' for c in t["components"])))
@@ -3789,17 +3813,20 @@ def toolchain_findings(root: Path) -> list[str]:
     if re.search(r'"--edition", "[0-9]', harness):
         out.append("bootstrap/selftest.py hardcodes a rustc edition; "
                    "spec/toolchain.rs ToolchainProfile is the owner")
-    for target in t["semantic"]:
-        if A_TRIPLE_SHAPE.fullmatch(target):
-            out.append(f"semantic qualification target {target!r} is shaped "
-                       "like a physical target triple; environments answer "
-                       "WHAT holds, never WHERE a binary ran")
+    # Environment membership dissolved into construction (5.5E3a1): a QUAL
+    # row carries a closed QualificationEnvironment variant, so the auditor
+    # checks the authored SPELLINGS and that rows name declared variants.
+    for variant, spelling in t["environment_spellings"].items():
+        if A_TRIPLE_SHAPE.fullmatch(spelling):
+            out.append(f"QualificationEnvironment::{variant} spells {spelling!r}, "
+                       "which is shaped like a physical target triple; "
+                       "environments answer WHAT holds, never WHERE a binary ran")
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    for pkg, profile, target, _gates in G_QUAL_ROW.findall(arch):
-        if t["semantic"] and target not in t["semantic"]:
-            out.append(f"QualificationProfile {pkg}:{profile} names target "
-                       f"{target!r}, which is not a declared semantic "
-                       "qualification environment")
+    for pkg, profile, variant, _gates in G_QUAL_ROW.findall(arch):
+        if t["environment_spellings"] and variant not in t["environment_spellings"]:
+            out.append(f"QualificationProfile {pkg}:{profile} names environment "
+                       f"{variant}, which the QualificationEnvironment enum "
+                       "does not declare")
     return out
 
 
@@ -3872,21 +3899,22 @@ def check_architecture(root: Path, findings: list[str]) -> None:
 
     profile_rows = re.findall(
         r"QualificationProfile\s*\{\s*package:\s*\"([^\"]+)\",\s*profile:\s*\"([^\"]+)\","
-        r"\s*target:\s*\"([^\"]+)\",\s*gates:\s*&\[([^\]]*)\],\s*requirement:\s*\"([^\"]+)\",\s*\}",
+        r"\s*environment:\s*QualificationEnvironment::(\w+),"
+        r"\s*gates:\s*&\[([^\]]*)\],\s*requirement:\s*\"([^\"]+)\",\s*\}",
         source,
         re.S,
     )
     identities: set[tuple[str, str]] = set()
-    for package, profile, target, gates, requirement in profile_rows:
+    for package, profile, environment, gates, requirement in profile_rows:
         identity = (package, profile)
-        if package not in package_set or not profile or not target or not requirement or not gates:
+        if package not in package_set or not profile or not environment or not requirement or not gates:
             findings.append(f"spec/architecture.rs: incomplete qualification {package}:{profile}")
         if identity in identities:
             findings.append(f"spec/architecture.rs: duplicate qualification {package}:{profile}")
         identities.add(identity)
     for package in ("batpak", "syncbat"):
         if (package, "semantic") not in identities or not any(
-            row[0] == package and row[1] == "semantic" and row[2] == "no_std + alloc" for row in profile_rows
+            row[0] == package and row[1] == "semantic" and row[2] == "NoStdAlloc" for row in profile_rows
         ):
             findings.append(f"spec/architecture.rs: missing no_std + alloc semantic profile for {package}")
 

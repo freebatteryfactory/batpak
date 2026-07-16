@@ -39,7 +39,7 @@ def _toolchain_edition() -> str:
     A literal here would be a hidden Python owner; the audit refuses a
     hardcoded edition argument anywhere in bootstrap (5.5E3a)."""
     src = (HERE.parent / "spec/toolchain.rs").read_text(encoding="utf-8")
-    m = re.search(r'edition: "(\d+)"', src)
+    m = re.search(r"edition: RustEdition::Rust(\d+)", src)
     return m.group(1) if m else "0"
 
 
@@ -2897,9 +2897,11 @@ def test_guarantee_authority(audit, project) -> list[str]:
 
     # 5. A qualification target may never enter a gate field.
     probe("qualification_target_in_a_gate_field_is_rejected", AR,
-          "target: \"std\",\n        gates: &[GateId::G0, GateId::G5],",
+          "environment: QualificationEnvironment::NativeStd,\n"
+          "        gates: &[GateId::G0, GateId::G5],",
           "names a value that is not a declared GateId",
-          "target: \"std\",\n        gates: &[GateId::std],")
+          "environment: QualificationEnvironment::NativeStd,\n"
+          "        gates: &[GateId::std],")
     if any(audit.guarantee_gates(root, f"QUAL-{p}") in ("std", "no_std + alloc", "wasm32 host")
            for p in ("batpak-native", "batpak-semantic", "syncbat-browser")):
         fail("qualification_target_cannot_be_read_as_a_gate_posture")
@@ -3863,11 +3865,15 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'channel = "1.97.0"',
           'channel = "1.96.0"',
           "toolchain tracked rust-toolchain.toml violated")
+    # 5.5E3a1: the environment is a closed enum, so a triple in the field is
+    # a COMPILE refusal — the strongest form. run_seedcheck returns the rustc
+    # output for a compile-refused mutation, and the probe asserts the exact
+    # type error rather than a runtime finding.
     probe("physical_triple_cannot_substitute_for_semantic_profile",
           "spec/architecture.rs",
-          'target: "wasm32 host",',
-          'target: "wasm32-unknown-unknown",',
-          "cannot inhabit a semantic qualification target")
+          'environment: QualificationEnvironment::WasmHost,',
+          'environment: "wasm32-unknown-unknown",',
+          "expected `QualificationEnvironment`")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().
@@ -4126,16 +4132,44 @@ def test_toolchain(audit) -> list[str]:
           '"--edition", TOOLCHAIN_EDITION,',
           '"--edition", ' + '"2021",',
           "hardcodes a rustc edition")
-    # Flattening the two version questions into one string is refused.
-    probe("exact_release_and_msrv_floor_cannot_drift", "spec/toolchain.rs",
-          'rust_version_floor: "1.97",',
-          'rust_version_floor: "1.96",',
-          "is not a patch release of the declared rust_version_floor")
-    # Dimension substitution, semantic side: a triple cannot inhabit the
-    # declared environments.
-    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/toolchain.rs",
-          '&["no_std + alloc", "std", "wasm32 host"]',
-          '&["no_std + alloc", "std", "x86_64-unknown-linux-gnu"]',
+    # exact >= floor, never "same minor" (5.5E3a1). A NEWER qualifying
+    # compiler that preserves the MSRV floor is lawful — the tracked
+    # projection moves with it and NO finding fires; one BELOW the floor is
+    # the contradiction. The tracked file is mutated in lockstep so only the
+    # law under test can fire.
+    with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+        tc = tmp / "spec/toolchain.rs"
+        tc.write_text(must_replace(
+            tc.read_text(encoding="utf-8"),
+            "RustRelease { major: 1, minor: 97, patch: 0 }",
+            "RustRelease { major: 1, minor: 98, patch: 0 }",
+            "newer_qualifying_compiler"), encoding="utf-8")
+        rt = tmp / "rust-toolchain.toml"
+        rt.write_text(must_replace(rt.read_text(encoding="utf-8"),
+                      'channel = "1.97.0"', 'channel = "1.98.0"',
+                      "newer channel"), encoding="utf-8")
+        got = audit.toolchain_findings(tmp)
+        if got:
+            fail(f"newer_qualifying_compiler_may_preserve_msrv (got {got!r})")
+    with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+        tc = tmp / "spec/toolchain.rs"
+        tc.write_text(must_replace(
+            tc.read_text(encoding="utf-8"),
+            "RustRelease { major: 1, minor: 97, patch: 0 }",
+            "RustRelease { major: 1, minor: 96, patch: 0 }",
+            "older_qualifying_compiler"), encoding="utf-8")
+        rt = tmp / "rust-toolchain.toml"
+        rt.write_text(must_replace(rt.read_text(encoding="utf-8"),
+                      'channel = "1.97.0"', 'channel = "1.96.0"',
+                      "older channel"), encoding="utf-8")
+        got = audit.toolchain_findings(tmp)
+        if not any("below the declared MSRV floor" in f for f in got):
+            fail(f"qualifying_compiler_below_msrv_is_rejected (got {got!r})")
+    # Dimension substitution, semantic side: renaming an environment spelling
+    # into a triple is refused at the enum's own spelling arm.
+    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/architecture.rs",
+          'QualificationEnvironment::WasmHost => "wasm32 host",',
+          'QualificationEnvironment::WasmHost => "wasm32-unknown-unknown",',
           "is shaped like a physical target triple")
     # Hand-editing or losing the tracked projection is refused.
     probe("root_toolchain_channel_mismatch_is_rejected", "rust-toolchain.toml",

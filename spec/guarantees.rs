@@ -267,12 +267,14 @@ pub enum GatePosture {
     GateIndependent,
 }
 
-/// The environment a qualification requirement is qualified against, such as
-/// `no_std + alloc`, `std`, or `wasm32 host`. A target is NOT a gate: it names
-/// where the requirement holds, not when it is scheduled. It never inhabits a
-/// gate field.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct QualificationTarget(pub &'static str);
+// QualificationTarget(&'static str) stood here from 5.5D4b until 5.5E3a1. It
+// wrapped free prose ("std", "no_std + alloc") that only convention kept from
+// becoming a target triple or a typo, so seedcheck grew a membership law to
+// police what the type could not say. Replaced by the closed
+// `architecture::QualificationEnvironment`, where a triple has no spelling
+// and the membership law dissolved into construction. An environment is NOT
+// a gate: it names the semantic assumptions the requirement holds under, not
+// when it is scheduled, and it never inhabits a gate field.
 
 // GateResolution { Resolved, Missing, Malformed } stood here from 954d24b7 until
 // the D4c2 smell sweep. It was declared to keep "the law intentionally has no
@@ -440,7 +442,7 @@ pub struct GuaranteeView {
     pub owner: &'static str,
     pub gate_posture: GatePosture,
     /// Present only for families that qualify against an environment.
-    pub qualification_target: Option<QualificationTarget>,
+    pub qualification_target: Option<crate::architecture::QualificationEnvironment>,
     pub witness: WitnessPosture,
     pub failure: SourceFailure,
 }
@@ -486,9 +488,12 @@ pub enum GuaranteeAdmissionRule {
     RowNamesScheduledGates,
     /// An implementation-bearing decision names at least one gate (DEC-072).
     ImplementationBearingDecisionNamesGate,
-    /// A qualification requirement names its target environment.
-    QualificationNamesTargetEnvironment,
 }
+
+// GuaranteeAdmissionRule::QualificationNamesTargetEnvironment died in 5.5E3a1
+// when QualificationProfile::environment became the closed typed enum: an
+// empty or absent environment no longer has a spelling, so the refusal it
+// guarded became unrepresentable. Same law as the UNKNOWN-family hostile.
 
 impl GuaranteeAdmissionRule {
     /// The violated law, stated as the requirement.
@@ -509,9 +514,6 @@ impl GuaranteeAdmissionRule {
             Self::ImplementationBearingDecisionNamesGate => {
                 "an implementation-bearing decision names at least one gate"
             }
-            Self::QualificationNamesTargetEnvironment => {
-                "a qualification requirement names its target environment"
-            }
         }
     }
 
@@ -525,9 +527,6 @@ impl GuaranteeAdmissionRule {
             Self::RowNamesScheduledGates => "spec/guarantees.rs GatePostureRule::RowDeclared",
             Self::ImplementationBearingDecisionNamesGate => {
                 "spec/dispositions.rs DecisionClass::requires_gate"
-            }
-            Self::QualificationNamesTargetEnvironment => {
-                "spec/architecture.rs QualificationProfile::target"
             }
         }
     }
@@ -548,9 +547,6 @@ impl GuaranteeAdmissionRule {
             Self::ImplementationBearingDecisionNamesGate => {
                 "name the implementation gate or reclassify the decision as \
                  HistoricalReceipt or Naming"
-            }
-            Self::QualificationNamesTargetEnvironment => {
-                "author the environment the requirement qualifies against"
             }
         }
     }
@@ -675,13 +671,11 @@ pub fn admit(source: GuaranteeSource) -> Result<AdmittedGuarantee, GuaranteeAdmi
         }
         _ => return Err(refuse(Rule::PolicyMatchesNativeRowShape)),
     };
+    // A QUAL row's environment is structural (5.5E3a1): the closed enum has
+    // no empty spelling, so the presence refusal that once lived here became
+    // unrepresentable.
     let qualification_target = match source {
-        GuaranteeSource::Qualification(q) => {
-            if q.target.trim().is_empty() {
-                return Err(refuse(Rule::QualificationNamesTargetEnvironment));
-            }
-            Some(QualificationTarget(q.target))
-        }
+        GuaranteeSource::Qualification(q) => Some(q.environment),
         _ => None,
     };
     // The witness/target pairing is a TABLE fact the structure cannot carry:

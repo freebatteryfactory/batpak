@@ -204,7 +204,12 @@ _PKG_ROW = re.compile(
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
 _QUAL_ROW = re.compile(
     r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
-    r'target: "([^"]+)",\s*gates: &\[([^\]]*)\],\s*requirement: "[^"]+",\s*\}', re.S)
+    r'environment: QualificationEnvironment::(\w+),\s*gates: &\[([^\]]*)\],\s*'
+    r'requirement: "[^"]+",\s*\}', re.S)
+# The documentary spelling of each environment variant, mirrored by the
+# auditor's own map and compared byte-for-byte through the generated blocks.
+_ENVIRONMENT_SPELLING = {"NoStdAlloc": "no_std + alloc", "NativeStd": "std",
+                         "WasmHost": "wasm32 host"}
 
 
 def _ids(raw):
@@ -385,11 +390,13 @@ def guarantee_nodes(root):
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
     for pkg, cls, layer in _PKG_ROW.findall(arch):
         nodes.append(admit(root, "ARCH", f"ARCH-{pkg}", {}, f"Architecture(L{layer} {cls})"))
-    for pkg, profile, target, qgates in _QUAL_ROW.findall(arch):
-        # target is the ENVIRONMENT; qgates is the SCHEDULE. Never interchanged.
+    for pkg, profile, environment, qgates in _QUAL_ROW.findall(arch):
+        # environment is the SEMANTIC dimension; qgates is the SCHEDULE.
+        # Never interchanged. The node projects the canonical spelling.
+        spelling = _ENVIRONMENT_SPELLING.get(environment, "")
         nodes.append(admit(root, "QUAL", f"QUAL-{pkg}-{profile}", {
-            "gates": gate_tokens(qgates, root), "target": target,
-        }, f"Qualification({target})"))
+            "gates": gate_tokens(qgates, root), "target": spelling,
+        }, f"Qualification({spelling})"))
     nodes.sort(key=lambda n: (FAMILY_RANK[n["family"]], n["id"]))
     return nodes
 
@@ -489,21 +496,29 @@ GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
 # --- Toolchain projection (5.5E3a) -------------------------------------------
 # spec/toolchain.rs owns the values; this projector serializes the tracked
 # root rust-toolchain.toml and never completes a missing field.
+_TOOLCHAIN_PROFILE_SPELLING = {"Minimal": "minimal"}
+_TOOLCHAIN_COMPONENT_SPELLING = {"Clippy": "clippy", "Rustfmt": "rustfmt"}
+
+
 def parse_toolchain(root):
     src = (root / "spec/toolchain.rs").read_text(encoding="utf-8")
-
-    def field(name):
-        m = re.search(name + r': "([^"]+)"', src)
-        return m.group(1) if m else ""
-
+    release = re.search(
+        r"exact_rust_release: RustRelease \{ major: (\d+), minor: (\d+), patch: (\d+) \}", src)
+    floor = re.search(
+        r"rust_version_floor: RustVersionFloor \{ major: (\d+), minor: (\d+) \}", src)
+    edition = re.search(r"edition: RustEdition::Rust(\d+)", src)
+    resolver = re.search(r"cargo_resolver: CargoResolver::V(\d+)", src)
+    profile = re.search(r"rustup_profile: RustupProfile::(\w+)", src)
     comps = re.search(r"required_components: &\[([^\]]*)\]", src)
     return {
-        "exact": field("exact_rust_release"),
-        "floor": field("rust_version_floor"),
-        "edition": field("edition"),
-        "resolver": field("cargo_resolver"),
-        "profile": field("rustup_profile"),
-        "components": re.findall(r'"([^"]+)"', comps.group(1)) if comps else [],
+        "exact": ".".join(release.groups()) if release else "",
+        "floor": ".".join(floor.groups()) if floor else "",
+        "edition": edition.group(1) if edition else "",
+        "resolver": resolver.group(1) if resolver else "",
+        "profile": _TOOLCHAIN_PROFILE_SPELLING.get(profile.group(1), "") if profile else "",
+        "components": [_TOOLCHAIN_COMPONENT_SPELLING.get(v, "")
+                       for v in re.findall(r"RustupComponent::(\w+)", comps.group(1))]
+                      if comps else [],
     }
 
 
