@@ -131,6 +131,33 @@ pub const SYNCBAT_AUTHORITIES: &[SyncBatAuthority] = &[
     SyncBatAuthority::TypedHostResponse,
 ];
 
+/// Whether a lawful crossing is part of the accepted machine or merely allowed.
+///
+/// Permission and requiredness are orthogonal. Permission answers "may this
+/// crossing legally exist"; requiredness answers "must it exist for the accepted
+/// V1 machine to be realizable at all". A firewall that proved only the first
+/// would be safe the way a vault welded shut is safe: no unauthorized door
+/// opens, and no authorized one does either. Deleting a required route preserves
+/// safety by destroying liveness, and that is still a specification failure --
+/// it just lands on the liveness side.
+///
+/// This is a narrow posture, not a loose flag. There is no default: every row
+/// states its posture, because an absent posture silently reading as `Optional`
+/// is exactly how a required door gets quietly bricked over. Today every V1 row
+/// is `Required`; the variant `Optional` earns its place because the two
+/// dimensions are genuinely independent and a future legal-but-optional crossing
+/// may exist, not as aesthetic furniture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossingPosture {
+    /// The accepted machine cannot complete its turn without this route: some
+    /// plane owner could not discharge or return a responsibility already
+    /// assigned to it. It must be present, legal, and direction-preserving.
+    Required,
+    /// The machine functions without it. If present it must still be legal, but
+    /// its absence is not a contradiction.
+    Optional,
+}
+
 /// One lawful boundary crossing.
 ///
 /// A crossing TRANSPORTS an already-owned value. It never transfers ownership:
@@ -138,59 +165,82 @@ pub const SYNCBAT_AUTHORITIES: &[SyncBatAuthority] = &[
 /// evidence and Runtime still cannot mint any. This is why the table is keyed by
 /// the authority rather than by a generic message: the value moves, the authority
 /// does not.
+///
+/// The row is the single owner of all of its facts: source plane, destination
+/// plane, carried authority, direction, and requiredness posture. There is no
+/// separate required-crossing registry to drift against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SyncBatCrossing {
     pub from: SyncBatPlane,
     pub to: SyncBatPlane,
     pub carries: SyncBatAuthority,
-    /// The authored law this crossing realizes.
+    /// Whether the accepted machine requires this route or merely permits it.
+    pub posture: CrossingPosture,
+    /// The authored law this crossing realizes. For a `Required` crossing this
+    /// prose states the producer/consumer obligation the route discharges; the
+    /// executable proof that the obligation stays connected lives in seedcheck
+    /// and audit.py, not here.
     pub law: &'static str,
 }
 
 /// Every lawful crossing. Anything absent is forbidden — the table is a
 /// whitelist, because a blacklist of bad crossings is a list someone has to keep
 /// imagining new entries for.
+///
+/// Every V1 crossing is `Required`: the accepted end-to-end turn cannot complete
+/// if any one is deleted, because one of the five plane owners would then have no
+/// lawful route by which to discharge or return a responsibility already assigned
+/// to it. That is not asserted as a count of seven -- the required set is
+/// whatever the posture column declares, and the connectivity proof in seedcheck
+/// and audit.py recomputes it. Seven is merely today's derived inventory.
 pub const SYNCBAT_LEGAL_CROSSINGS: &[SyncBatCrossing] = &[
     SyncBatCrossing {
         from: SyncBatPlane::World,
         to: SyncBatPlane::Runtime,
         carries: SyncBatAuthority::CompositionAndInstanceIdentity,
+        posture: CrossingPosture::Required,
         law: "world supplies admitted composition and instance identity to the turn",
     },
     SyncBatCrossing {
         from: SyncBatPlane::Runtime,
         to: SyncBatPlane::PakVm,
         carries: SyncBatAuthority::SemanticAuthorization,
+        posture: CrossingPosture::Required,
         law: "runtime authorizes a semantic operation it has found legal",
     },
     SyncBatCrossing {
         from: SyncBatPlane::PakVm,
         to: SyncBatPlane::Runtime,
         carries: SyncBatAuthority::SemanticNodeInterpretation,
+        posture: CrossingPosture::Required,
         law: "pakvm returns what an admitted node means",
     },
     SyncBatCrossing {
         from: SyncBatPlane::PakVm,
         to: SyncBatPlane::Bvisor,
         carries: SyncBatAuthority::TypedEffectRequest,
+        posture: CrossingPosture::Required,
         law: "an effectful node emits a typed request for physical admission",
     },
     SyncBatCrossing {
         from: SyncBatPlane::Bvisor,
         to: SyncBatPlane::Port,
         carries: SyncBatAuthority::PhysicalAttempt,
+        posture: CrossingPosture::Required,
         law: "bvisor executes an admitted attempt through the typed host boundary",
     },
     SyncBatCrossing {
         from: SyncBatPlane::Port,
         to: SyncBatPlane::Bvisor,
         carries: SyncBatAuthority::TypedHostResponse,
+        posture: CrossingPosture::Required,
         law: "the port returns a typed host response to the attempt that made it",
     },
     SyncBatCrossing {
         from: SyncBatPlane::Bvisor,
         to: SyncBatPlane::Runtime,
         carries: SyncBatAuthority::AttemptEvidence,
+        posture: CrossingPosture::Required,
         law: "bvisor reports what the attempt did; runtime decides what it means",
     },
 ];
@@ -205,6 +255,7 @@ pub struct AdmittedCrossing {
     pub from: SyncBatPlane,
     pub to: SyncBatPlane,
     pub carries: SyncBatAuthority,
+    pub posture: CrossingPosture,
     pub origin: Option<PakVmNodeId>,
     pub law: &'static str,
     seal: (),
@@ -314,6 +365,7 @@ pub fn admit_crossing(
         from,
         to,
         carries,
+        posture: declared.posture,
         origin,
         law: declared.law,
         seal: (),

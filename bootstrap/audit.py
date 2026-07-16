@@ -2514,7 +2514,8 @@ def syncbat_firewall_views(root: Path) -> dict:
         got = dict(re.findall(r"(\w+):\s*(?:\w+::)?(\w+|\"[^\"]*\")", chunk))
         crossings.append({
             "from": got.get("from", ""), "to": got.get("to", ""),
-            "carries": got.get("carries", ""), "law": got.get("law", "").strip('"'),
+            "carries": got.get("carries", ""), "posture": got.get("posture", ""),
+            "law": got.get("law", "").strip('"'),
         })
     return {"planes": planes, "listed_planes": listed_planes, "sentences": sentences,
             "authorities": authorities, "listed": listed, "owners": owners,
@@ -2631,10 +2632,66 @@ def syncbat_firewall_findings(root: Path) -> list[str]:
     # regenerates to match, and every gate stays green while an execution route
     # the ISA depends on stops existing.
     for name in sorted(v["semantic"]):
-        if name in authorities and not [c for c in v["crossings"] if c["carries"] == name]:
-            out.append(f"{A_FW_SRC}: {name} must name a PakVM origin but no crossing carries "
-                       f"it off {v['owners'].get(name)}, so admitted node meaning has no lawful "
-                       f"route out of the plane that owns it")
+        carried_required = [c for c in v["crossings"]
+                            if c["carries"] == name and c["posture"] == "Required"]
+        if name in authorities and not carried_required:
+            out.append(f"{A_FW_SRC}: {name} must name a PakVM origin but no required crossing "
+                       f"carries it off {v['owners'].get(name)}, so admitted node meaning has no "
+                       f"lawful route out of the plane that owns it")
+    # Requiredness as connectivity. Permission says a door may exist; requiredness
+    # says the accepted machine cannot complete its turn if this door is bricked
+    # over. The turn is a round trip: the logical decider authorizes work outward
+    # and every plane returns its result or evidence back to that decider. Both
+    # roots are DERIVED from authored ownership, never named here as policy.
+    posture_values = {c["posture"] for c in v["crossings"]}
+    if posture_values - {"Required", "Optional"}:
+        out.append(f"{A_FW_SRC}: a crossing states no requiredness posture; absence is not "
+                   f"silently optional")
+    # Only LEGAL required edges carry connectivity. An illegal substitute -- a
+    # crossing whose sender does not own what it carries -- is flagged by the
+    # ownership rule and must not be allowed to launder a missing required route
+    # by appearing to reconnect the graph.
+    required = [c for c in v["crossings"]
+                if c["posture"] == "Required" and v["owners"].get(c["carries"]) == c["from"]]
+    logical_root = v["owners"].get("LogicalResult")
+    source = v["owners"].get("CompositionAndInstanceIdentity")
+    if not logical_root:
+        out.append(f"{A_FW_SRC}: no plane owns LogicalResult, so the firewall has no logical "
+                   f"root to require routes toward")
+    elif not source:
+        out.append(f"{A_FW_SRC}: no plane owns CompositionAndInstanceIdentity, so the firewall "
+                   f"has no composition source to exempt from inbound authorization")
+    else:
+        def reaches(start: str, goal: str) -> bool:
+            seen = {start}
+            changed = True
+            while changed:
+                changed = False
+                for c in required:
+                    if c["from"] in seen and c["to"] not in seen:
+                        seen.add(c["to"])
+                        changed = True
+            return goal in seen
+        for plane in planes:
+            if not reaches(plane, logical_root):
+                out.append(f"{A_FW_SRC}: plane {plane} cannot reach the logical root "
+                           f"{logical_root} by required crossings, so its result or evidence has "
+                           f"no lawful route home; a required route is missing or was downgraded "
+                           f"to optional")
+            if plane != source and not reaches(logical_root, plane):
+                out.append(f"{A_FW_SRC}: the logical root {logical_root} cannot reach plane "
+                           f"{plane} by required crossings, so it cannot authorize the work that "
+                           f"plane owns; a required route is missing or was downgraded to optional")
+    # An Optional crossing must be genuinely optional: some alternate required
+    # route must carry the same authority. The sole carrier of an authority can
+    # never be optional, because its absence severs the delivery outright.
+    for c in v["crossings"]:
+        if c["posture"] == "Optional" and not [
+                o for o in v["crossings"] if o is not c
+                and o["carries"] == c["carries"] and o["posture"] == "Required"]:
+            out.append(f"{A_FW_SRC}: the {c['from']} -> {c['to']} crossing is optional but is "
+                       f"the sole route carrying {c['carries']}; deleting it would sever the "
+                       f"machine, so it cannot be optional")
     # The projections carry exactly the admitted facts.
     doc = (root / A_FW_DOC).read_text(encoding="utf-8")
     own = _a_fw_block(doc, "SYNCBAT-PLANE-OWNERSHIP")
@@ -2661,7 +2718,8 @@ def syncbat_firewall_findings(root: Path) -> list[str]:
     else:
         rows = [r for r in cross.splitlines() if r.startswith("| ")
                 and "| ---" not in r and not r.startswith("| From ")]
-        want = [f"| {c['from']} | {c['to']} | {c['carries']} | {c['law']} |" for c in v["crossings"]]
+        want = [f"| {c['from']} | {c['to']} | {c['carries']} | {c['posture']} | {c['law']} |"
+                for c in v["crossings"]]
         if rows != want:
             out.append(f"{A_FW_DOC}: the projected crossing whitelist drifted from {A_FW_SRC}")
     # A hand-authored copy of a projected inventory is not documentation; it is a

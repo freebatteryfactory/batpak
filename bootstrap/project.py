@@ -774,6 +774,7 @@ def syncbat_firewall_facts(root: Path) -> dict:
         frm = row.get("from", "").split("::")[-1]
         to = row.get("to", "").split("::")[-1]
         carries = row.get("carries", "").split("::")[-1]
+        posture = row.get("posture", "").split("::")[-1]
         law = row.get("law", "").strip().strip('"')
         for plane in (frm, to):
             if plane not in order:
@@ -781,9 +782,14 @@ def syncbat_firewall_facts(root: Path) -> dict:
         if carries not in listed:
             raise Unadmitted(f"{FIREWALL_SPEC}: a crossing carries {carries!r}, "
                              f"which SYNCBAT_AUTHORITIES does not author")
+        # No default. An absent posture is not silently Optional; it is a refusal.
+        if posture not in ("Required", "Optional"):
+            raise Unadmitted(f"{FIREWALL_SPEC}: the {frm} -> {to} crossing states no "
+                             f"requiredness posture (got {posture!r})")
         if not law:
             raise Unadmitted(f"{FIREWALL_SPEC}: the {frm} -> {to} crossing states no law")
-        crossings.append({"from": frm, "to": to, "carries": carries, "law": law})
+        crossings.append({"from": frm, "to": to, "carries": carries,
+                          "posture": posture, "law": law})
     if not crossings:
         raise Unadmitted(f"{FIREWALL_SPEC}: SYNCBAT_LEGAL_CROSSINGS lists no crossing")
     return {"order": order, "sentences": sentences,
@@ -803,9 +809,9 @@ def render_syncbat_authorities(root) -> str:
 
 
 def render_syncbat_crossings(root) -> str:
-    out = ["| From | To | Carries | Law |", "| --- | --- | --- | --- |"]
+    out = ["| From | To | Carries | Posture | Law |", "| --- | --- | --- | --- | --- |"]
     for c in syncbat_firewall_facts(root)["crossings"]:
-        out.append(f"| {c['from']} | {c['to']} | {c['carries']} | {c['law']} |")
+        out.append(f"| {c['from']} | {c['to']} | {c['carries']} | {c['posture']} | {c['law']} |")
     return "\n".join(out)
 
 

@@ -1049,18 +1049,24 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
     // loop above iterates the whitelist, so removing an entry does not fail
     // them -- it simply gives them less to say, which is exactly how a law
     // disappears while its proofs stay green.
+    // The carrier must be REQUIRED, not merely present. A semantic route that is
+    // deleted OR quietly downgraded to Optional both fail here: the ISA depends
+    // on the route existing in the accepted machine, and Optional means "may be
+    // absent".
     for &authority in SYNCBAT_AUTHORITIES {
         if authority.requires_semantic_origin()
-            && !SYNCBAT_LEGAL_CROSSINGS
-                .iter()
-                .any(|c| c.carries == authority)
+            && !SYNCBAT_LEGAL_CROSSINGS.iter().any(|c| {
+                c.carries == authority && c.posture == CrossingPosture::Required
+            })
         {
             findings.push(format!(
-                "{authority:?} must name a PakVM origin but no crossing carries it off {:?}, \
-                 so admitted node meaning has no lawful route out of its own plane",
+                "{authority:?} must name a PakVM origin but no required crossing carries it off \
+                 {:?}, so admitted node meaning has no lawful route out of its own plane",
                 authority.owner()));
         }
     }
+
+    check_syncbat_requiredness(findings);
 
     // docs/08 names five forbidden crossings by example. Each must be refused
     // through the production API, and the refusal must be the intended one.
@@ -1110,6 +1116,93 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
             CrossingAdmission::Refused(why) if why != want => findings.push(format!(
                 "{what} is refused, but for the wrong reason: {why:?} rather than {want:?}")),
             CrossingAdmission::Refused(_) => {}
+        }
+    }
+}
+
+/// Requiredness as connectivity, recomputed rather than trusted.
+///
+/// A Required crossing must be needed, and "needed" is not a stamp: it is that
+/// the accepted turn cannot complete without it. The turn is a round trip. The
+/// logical decider (the plane owning `LogicalResult`) authorizes work outward to
+/// the execution planes and every plane returns its result or evidence back to
+/// that same decider. So two obligations, both derived from authored ownership
+/// rather than from any second policy table:
+///
+///   - every plane can reach the logical root by Required crossings (its work
+///     returns), and
+///   - the logical root can reach every plane except the composition source (the
+///     plane owning `CompositionAndInstanceIdentity`, which precedes the turn).
+///
+/// Deleting a Required crossing, or downgrading one to Optional, drops it from
+/// the Required graph and severs one of those reaches. Optional crossings are
+/// excluded on purpose: "may be absent" means the machine must stand without
+/// them, so relying on one for connectivity would be the very confusion this
+/// posture exists to prevent.
+fn check_syncbat_requiredness(findings: &mut Vec<String>) {
+    use architecture::{SyncBatPlane, SYNCBAT_PLANES};
+    use syncbat_firewall::*;
+
+    let owner_of = |a: SyncBatAuthority| a.owner();
+    let root = owner_of(SyncBatAuthority::LogicalResult);
+    let source = owner_of(SyncBatAuthority::CompositionAndInstanceIdentity);
+
+    // Reachability over Required crossings only. Small fixed graph; a linear
+    // relaxation to a fixed point needs no allocation beyond a bitset.
+    let reaches = |start: SyncBatPlane, goal: SyncBatPlane| -> bool {
+        let mut seen = [false; 5];
+        let idx = |p: SyncBatPlane| SYNCBAT_PLANES.iter().position(|&q| q == p).unwrap();
+        seen[idx(start)] = true;
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for c in SYNCBAT_LEGAL_CROSSINGS {
+                // Only legal required edges carry connectivity: an illegal
+                // substitute is flagged elsewhere and must not reconnect a graph
+                // a deleted required route left broken.
+                if c.posture == CrossingPosture::Required
+                    && c.carries.owner() == c.from
+                    && seen[idx(c.from)]
+                    && !seen[idx(c.to)]
+                {
+                    seen[idx(c.to)] = true;
+                    changed = true;
+                }
+            }
+        }
+        seen[idx(goal)]
+    };
+
+    for &plane in SYNCBAT_PLANES {
+        if !reaches(plane, root) {
+            findings.push(format!(
+                "SyncBat plane {plane:?} cannot reach the logical root {root:?} by required \
+                 crossings, so its result or evidence has no lawful route home; a required \
+                 route is missing or was downgraded to optional"));
+        }
+        if plane != source && !reaches(root, plane) {
+            findings.push(format!(
+                "the logical root {root:?} cannot reach SyncBat plane {plane:?} by required \
+                 crossings, so it cannot authorize the work that plane owns; a required route \
+                 is missing or was downgraded to optional"));
+        }
+    }
+
+    // An Optional crossing must be genuinely optional: there must be an alternate
+    // required route delivering the same authority. If it is the sole carrier,
+    // its absence would sever the machine, so "Optional" is a misclassification.
+    for c in SYNCBAT_LEGAL_CROSSINGS {
+        if c.posture == CrossingPosture::Optional
+            && !SYNCBAT_LEGAL_CROSSINGS.iter().any(|o| {
+                !core::ptr::eq(o, c)
+                    && o.carries == c.carries
+                    && o.posture == CrossingPosture::Required
+            })
+        {
+            findings.push(format!(
+                "the {:?} -> {:?} crossing is optional but is the sole route carrying {:?}; \
+                 deleting it would sever the machine, so it cannot be optional",
+                c.from, c.to, c.carries));
         }
     }
 }

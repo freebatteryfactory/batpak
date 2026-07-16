@@ -2971,6 +2971,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
         "        from: SyncBatPlane::PakVm,\n"
         "        to: SyncBatPlane::Bvisor,\n"
         "        carries: SyncBatAuthority::TypedEffectRequest,\n"
+        "        posture: CrossingPosture::Required,\n"
         '        law: "an effectful node emits a typed request for physical admission",\n'
         "    },\n")
 
@@ -3067,6 +3068,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
           "        from: SyncBatPlane::Bvisor,\n"
           "        to: SyncBatPlane::Runtime,\n"
           "        carries: SyncBatAuthority::RetryRestartAuthority,\n"
+          "        posture: CrossingPosture::Required,\n"
           '        law: "bvisor mints semantic restart authorization",\n'
           "    },\n")
     # Deleting a lawful crossing is the quiet one. Every other rule iterates the
@@ -3075,7 +3077,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
     # origin now has nowhere to carry it.
     probe("a_deleted_semantic_route_is_rejected_after_regeneration", FW,
           EFFECT_ROUTE,
-          "TypedEffectRequest must name a PakVM origin but no crossing carries it off PakVm",
+          "TypedEffectRequest must name a PakVM origin but no required crossing carries it off PakVm",
           "")
     probe("a_noncanonical_plane_identity_is_rejected", FW,
           "        from: SyncBatPlane::World,\n        to: SyncBatPlane::Runtime,",
@@ -3124,6 +3126,163 @@ def test_syncbat_firewall(audit, project) -> list[str]:
                                 "        if False:") as neutered:
             if any("which Port owns" in f for f in neutered.syncbat_firewall_findings(tmp)):
                 fail("neutering_the_ownership_rule_silences_it")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
+def test_syncbat_requiredness(audit, project) -> list[str]:
+    """SyncBat crossing requiredness: liveness, not just safety (5.5D4c2f).
+
+    Safety proves no unauthorized door exists. Requiredness proves the authorized
+    doors have not been bricked over. A stricter firewall that deletes a required
+    execution path preserves safety by destroying liveness, and that is still a
+    specification failure. Every probe mutates the authoritative source, proves
+    the bytes moved, REGENERATES the projection, refuses a drift alibi, and
+    requires the exact semantic finding -- deletion of a required route must
+    survive a perfectly current document.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    FW = "spec/syncbat_firewall.rs"
+    D08 = "docs/08_SYNCBAT_RUNTIME.md"
+    ff = audit.syncbat_firewall_findings
+
+    import re as _re
+    fwsrc = (root / FW).read_text(encoding="utf-8")
+    const = fwsrc[fwsrc.index("pub const SYNCBAT_LEGAL_CROSSINGS"):]
+    const = const[: const.index("\n];") + 3]
+    rows = _re.findall(r"    SyncBatCrossing \{.*?\n    \},\n", const, _re.S)
+    if len(rows) != 7:
+        fail(f"the_firewall_declares_the_expected_crossing_rows (found {len(rows)})")
+    crossings = []
+    for b in rows:
+        crossings.append({
+            "block": b,
+            "from": _re.search(r"from: SyncBatPlane::(\w+)", b).group(1),
+            "to": _re.search(r"to: SyncBatPlane::(\w+)", b).group(1),
+            "carries": _re.search(r"carries: SyncBatAuthority::(\w+)", b).group(1),
+        })
+
+    def regenerate(tmp) -> bool:
+        d = tmp / D08
+        text = d.read_text(encoding="utf-8")
+        try:
+            for marker, render in (
+                    ("SYNCBAT-PLANE-OWNERSHIP", project.render_syncbat_plane_ownership),
+                    ("SYNCBAT-AUTHORITIES", project.render_syncbat_authorities),
+                    ("SYNCBAT-CROSSINGS", project.render_syncbat_crossings)):
+                body = render(tmp)
+                text = project.block_pattern(marker).sub(
+                    lambda m: m.group(1) + body + m.group(3), text)
+        except project.Unadmitted:
+            return False
+        d.write_text(text, encoding="utf-8")
+        return True
+
+    def semantic_probe(name, new_fwsrc, needle):
+        """Apply a whole-file firewall mutation, regenerate, require a NON-drift
+        finding matching needle."""
+        with isolated_tree() as tmp:
+            path = tmp / FW
+            cur = path.read_text(encoding="utf-8")
+            if new_fwsrc == cur:
+                fail(f"{name} (mutation changed no bytes)")
+                return
+            path.write_text(new_fwsrc, encoding="utf-8")
+            regenerate(tmp)
+            produced = ff(tmp)
+            semantic = [f for f in produced if "drifted" not in f]
+            if not any(needle in f for f in semantic):
+                fail(f"{name} (wanted non-drift {needle!r}, got {produced!r})")
+
+    # The premise: today the firewall admits and every route is Required.
+    if ff(root):
+        fail(f"syncbat_requiredness_contract_passes (got {ff(root)!r})")
+
+    # --- 1 & 2: deleting each Required crossing is a semantic finding, not drift
+    for c in crossings:
+        semantic_probe(
+            f"deleting_the_{c['carries']}_route_is_a_semantic_finding",
+            fwsrc.replace(c["block"], "", 1),
+            "required")  # every deletion message names a missing/downgraded required route
+
+    # --- 3: Required -> Optional is caught when no alternate route exists -------
+    for c in crossings:
+        downgraded = c["block"].replace(
+            "posture: CrossingPosture::Required,", "posture: CrossingPosture::Optional,")
+        semantic_probe(
+            f"downgrading_the_{c['carries']}_route_to_optional_is_caught",
+            fwsrc.replace(c["block"], downgraded, 1),
+            "required")
+
+    # --- 5: swapping a crossing's direction is refused -------------------------
+    # World -> Runtime becomes Runtime -> World; World no longer owns what it now
+    # purports to send, and the ownership rule refuses it.
+    swap = crossings[0]
+    swapped = (swap["block"]
+               .replace(f"from: SyncBatPlane::{swap['from']}", "from: SyncBatPlane::__TMP__")
+               .replace(f"to: SyncBatPlane::{swap['to']}", f"to: SyncBatPlane::{swap['from']}")
+               .replace("from: SyncBatPlane::__TMP__", f"from: SyncBatPlane::{swap['to']}"))
+    semantic_probe("swapping_a_crossing_direction_is_refused",
+                   fwsrc.replace(swap["block"], swapped, 1),
+                   f"lets {swap['to']} exercise {swap['carries']}")
+
+    # --- 6: keeping the endpoints but changing the carried authority is refused -
+    c1 = crossings[1]  # Runtime -> PakVm, SemanticAuthorization
+    reauth = c1["block"].replace(
+        "carries: SyncBatAuthority::SemanticAuthorization,",
+        "carries: SyncBatAuthority::AttemptEvidence,")
+    semantic_probe("changing_the_carried_authority_is_refused",
+                   fwsrc.replace(c1["block"], reauth, 1),
+                   "lets Runtime exercise AttemptEvidence")
+
+    # --- 7: a required route cannot be laundered by a similar-looking receipt ---
+    # Delete the AttemptEvidence return, then add a Bvisor -> Runtime crossing
+    # carrying SemanticReceipt -- a superficially similar "receipt". Bvisor does
+    # not own SemanticReceipt, so the substitute is refused AND the connectivity
+    # graph counts only legal edges, so it cannot reconnect Bvisor to the root.
+    evidence = next(c for c in crossings if c["carries"] == "AttemptEvidence")
+    substitute = (
+        "    SyncBatCrossing {\n"
+        "        from: SyncBatPlane::Bvisor,\n"
+        "        to: SyncBatPlane::Runtime,\n"
+        "        carries: SyncBatAuthority::SemanticReceipt,\n"
+        "        posture: CrossingPosture::Required,\n"
+        '        law: "a receipt that looks like evidence",\n'
+        "    },\n")
+    laundered = fwsrc.replace(evidence["block"], substitute, 1)
+    with isolated_tree() as tmp:
+        (tmp / FW).write_text(laundered, encoding="utf-8")
+        regenerate(tmp)
+        produced = ff(tmp)
+        if not any("lets Bvisor exercise SemanticReceipt" in f for f in produced):
+            fail(f"a_similar_receipt_cannot_launder_a_required_route:substitute_refused "
+                 f"(got {produced!r})")
+        if not any("Bvisor cannot reach the logical root" in f for f in produced):
+            fail(f"a_similar_receipt_cannot_launder_a_required_route:route_still_missing "
+                 f"(got {produced!r})")
+
+    # --- 8: neutering the requiredness detector must not leave a green suite ----
+    deleted = fwsrc.replace(
+        next(c for c in crossings if c["carries"] == "PhysicalAttempt")["block"], "", 1)
+    with isolated_tree() as tmp:
+        (tmp / FW).write_text(deleted, encoding="utf-8")
+        regenerate(tmp)
+        if not any("cannot reach plane Port" in f for f in ff(tmp)):
+            fail("the_requiredness_rule_bites_before_it_is_neutered")
+        with neutered_validator(
+                "audit",
+                "            if plane != source and not reaches(logical_root, plane):",
+                "            if False:") as neutered:
+            if any("cannot reach plane Port" in f
+                   for f in neutered.syncbat_firewall_findings(tmp)):
+                fail("neutering_the_requiredness_rule_silences_it")
 
     findings.extend(canonical_drift(before))
     return findings
@@ -3342,6 +3501,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "let _ = AdmittedCrossing {\n"
              "        from: SyncBatPlane::Bvisor, to: SyncBatPlane::Runtime,\n"
              "        carries: SyncBatAuthority::RetryRestartAuthority,\n"
+             "        posture: CrossingPosture::Required,\n"
              '        origin: None, law: "minted by hand", seal: (),\n'
              "    };",
              "field `seal` of struct"),
@@ -3406,6 +3566,7 @@ def main() -> int:
     findings += test_guarantee_authority(audit, project)
     findings += test_pakvm_semantic_isa(audit, project)
     findings += test_syncbat_firewall(audit, project)
+    findings += test_syncbat_requiredness(audit, project)
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
@@ -3430,6 +3591,7 @@ def main() -> int:
                "LEG-081 authority", "proof-target resolver",
                "guarantee-authority hostile fixtures", "PakVM semantic ISA",
                "SyncBat authority firewall",
+               "SyncBat crossing requiredness",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

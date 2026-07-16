@@ -124,15 +124,15 @@ A crossing transports an already-owned value; it never transfers ownership. Afte
 This table is a whitelist. Any crossing absent from it is forbidden, because a blacklist of bad crossings is a list someone has to keep imagining new entries for.
 
 <!-- SYNCBAT-CROSSINGS:BEGIN generated from spec/syncbat_firewall.rs by bootstrap/project.py; do not edit -->
-| From | To | Carries | Law |
-| --- | --- | --- | --- |
-| World | Runtime | CompositionAndInstanceIdentity | world supplies admitted composition and instance identity to the turn |
-| Runtime | PakVm | SemanticAuthorization | runtime authorizes a semantic operation it has found legal |
-| PakVm | Runtime | SemanticNodeInterpretation | pakvm returns what an admitted node means |
-| PakVm | Bvisor | TypedEffectRequest | an effectful node emits a typed request for physical admission |
-| Bvisor | Port | PhysicalAttempt | bvisor executes an admitted attempt through the typed host boundary |
-| Port | Bvisor | TypedHostResponse | the port returns a typed host response to the attempt that made it |
-| Bvisor | Runtime | AttemptEvidence | bvisor reports what the attempt did; runtime decides what it means |
+| From | To | Carries | Posture | Law |
+| --- | --- | --- | --- | --- |
+| World | Runtime | CompositionAndInstanceIdentity | Required | world supplies admitted composition and instance identity to the turn |
+| Runtime | PakVm | SemanticAuthorization | Required | runtime authorizes a semantic operation it has found legal |
+| PakVm | Runtime | SemanticNodeInterpretation | Required | pakvm returns what an admitted node means |
+| PakVm | Bvisor | TypedEffectRequest | Required | an effectful node emits a typed request for physical admission |
+| Bvisor | Port | PhysicalAttempt | Required | bvisor executes an admitted attempt through the typed host boundary |
+| Port | Bvisor | TypedHostResponse | Required | the port returns a typed host response to the attempt that made it |
+| Bvisor | Runtime | AttemptEvidence | Required | bvisor reports what the attempt did; runtime decides what it means |
 <!-- SYNCBAT-CROSSINGS:END -->
 
 Forbidden examples:
