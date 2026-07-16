@@ -85,10 +85,28 @@ fn inspect(root: &Path) -> Vec<String> {
     check_syncbat_firewall(&mut findings);
     check_syncbat_origin_law(&mut findings);
     check_unique_ids(&mut findings);
+    check_candidate_containment(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+/// Candidate material stays disposable (spec/architecture.rs): the declared
+/// output root must live in the untracked target/ tree and may never sit under
+/// a surface candidates are forbidden to write. The two constants state one
+/// law, and until this check existed no executing code consumed the output
+/// root at all — the containment relation between them was never enforced.
+fn check_candidate_containment(findings: &mut Vec<String>) {
+    let out = architecture::CANDIDATE_OUTPUT_ROOT;
+    if !out.starts_with("target/") {
+        findings.push(format!("candidate output root {out} escapes the untracked target/ tree"));
+    }
+    for forbidden in architecture::CANDIDATE_FORBIDDEN_WRITE_ROOTS {
+        if out.starts_with(forbidden) {
+            findings.push(format!("candidate output root {out} sits under forbidden write root {forbidden}"));
+        }
+    }
 }
 
 /// The authenticated-history claim contract (DEC-071).

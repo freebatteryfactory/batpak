@@ -50,18 +50,18 @@ pub enum GuaranteeLifetime {
     ClosedEvidence,
 }
 
-/// Explicit, declared relations between guarantees. A relation exists only when
-/// declared by an owning fact or a deterministic adapter rule — never inferred
-/// from similar wording, shared nouns, shared owner, document section, or fuzzy
-/// similarity. There is no confidence score and no prose archaeology.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GuaranteeEdgeKind {
-    DerivesFrom,
-    Refines,
-    Discharges,
-    Supersedes,
-    Closes,
-}
+// GuaranteeEdgeKind { DerivesFrom, Refines, Discharges, Supersedes, Closes }
+// stood here from 5.5C1 until the D4d saturation audit. The edge vocabulary it
+// duplicated already lives in the relation FIELDS of the owning facts —
+// derives_from, refines, discharges, supersedes — and both independent graph
+// derivations consume those field names directly. Nothing ever constructed or
+// matched the enum, and it quietly disagreed with the authority it shadowed:
+// five kinds where the authored facts declare four (no fact carries a `closes`
+// relation). Deleted rather than kept, same law as GateResolution below: a
+// second vocabulary for an owned semantic space is a duplicate authority the
+// moment it exists, and an unconsumed one guarantees nothing. The law the doc
+// comment stated — relations exist only when declared by an owning fact, never
+// inferred from wording — is stated and enforced at the relation fields.
 
 /// A reference to another guarantee by its stable id.
 pub type GuaranteeRef = &'static str;

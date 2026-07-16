@@ -92,7 +92,8 @@ def _tree_digest(root: Path) -> str:
 
 
 def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
-                   expect: str) -> list[str]:
+                   expect: str, extra: tuple = (),
+                   run_args: tuple | None = None) -> list[str]:
     """Compile, link, and RUN one bootstrap binary, artifact-bound.
 
     The binding exists because honest individual facts can still assemble into a
@@ -116,7 +117,7 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
     built = None
     for target in (None, "x86_64-pc-windows-gnu"):
         cmd = [rustc, "--edition", "2021", "--crate-name", name.replace("-", "_"),
-               "-o", str(exe), str(root / src)]
+               *extra, "-o", str(exe), str(root / src)]
         if target:
             cmd[1:1] = ["--target", target]
         if subprocess.run(cmd, capture_output=True, text=True).returncode == 0 and exe.is_file():
@@ -132,7 +133,12 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
         receipt(name, available=True, compiled=True, executed=False,
                 reason="the artifact changed between compilation and execution")
         return [f"{name}: the executed artifact is not the one this run compiled"]
-    proc = subprocess.run([str(exe), str(root)], capture_output=True, text=True)
+    # A libtest harness reads a positional argument as a test FILTER, so the
+    # root path would silently filter out every test: run_args exists so a
+    # harness binary can run with none.
+    proc = subprocess.run(
+        [str(exe), *(run_args if run_args is not None else (str(root),))],
+        capture_output=True, text=True)
     out = proc.stdout + proc.stderr
     # The exit code and the disposition must agree. Either alone is forgeable: a
     # banner is a string, and an exit code says nothing about what was checked.
@@ -512,10 +518,6 @@ def must_replace(text: str, old: str, new: str, what: str) -> str:
     if out == text:
         raise ProbeError(f"probe mutation changed no bytes: {what}")
     return out
-
-
-def must_remove(text: str, old: str, what: str) -> str:
-    return must_replace(text, old, "", what)
 
 
 def gate_sandbox(edits):
@@ -3370,6 +3372,15 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "gates: &[]",
           "names no gate")
 
+    # Candidate containment is one law across two constants: an output root
+    # relocated under a forbidden write surface must redden seedcheck, not wait
+    # for Phase 6 to write a candidate into tracked source.
+    probe("candidate_output_root_under_a_forbidden_root_is_rejected",
+          "spec/architecture.rs",
+          'pub const CANDIDATE_OUTPUT_ROOT: &str = "target/muterprater/candidates/";',
+          'pub const CANDIDATE_OUTPUT_ROOT: &str = "spec/candidates/";',
+          "sits under forbidden write root")
+
     # A generated projection is classified by its MARKER, not its filename. An
     # authored document cannot shed its frontmatter duties by looking generated,
     # and a projection that drops its marker takes the authored duties back.
@@ -3446,6 +3457,20 @@ def test_rust_specification_compiles(_audit) -> list[str]:
             ("tier0-materialize", "bootstrap/materialize.rs", "materialize: PASS"),
         ):
             findings.extend(qualify_binary(rustc, root, tmp, name, src, expect))
+        # The #[cfg(test)] refusal tests inside seedcheck are claims too, and a
+        # plain compile STRIPS them: until D4d they had never executed or even
+        # type-checked -- the same species as materialize, wearing test syntax.
+        # The expected count derives from the authored source at run time, so a
+        # deleted test shrinks the expectation and an emptied harness is a
+        # finding, never a quiet "ok. 0 passed".
+        n_tests = (root / "bootstrap/seedcheck.rs").read_text(
+            encoding="utf-8").count("#[test]")
+        if n_tests == 0:
+            findings.append(
+                "seedcheck declares no #[test] refusal tests; the harness was emptied")
+        findings.extend(qualify_binary(
+            rustc, root, tmp, "tier0-seedcheck-tests", "bootstrap/seedcheck.rs",
+            f"test result: ok. {n_tests} passed", extra=("--test",), run_args=()))
         # The admission desk has no public bypass, and the admitted witness cannot
         # be forged. Both are proven by COMPILING against the real
         # spec/pakvm_isa.rs through a normal (non-test) module boundary — the same

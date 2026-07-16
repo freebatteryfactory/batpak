@@ -33,7 +33,7 @@ def files(root: Path) -> list[tuple[str, Path]]:
         if not path.is_file():
             continue
         relative = path.relative_to(root)
-        rel = relative.as_posix()
+        rel = canonical_path(root, path)
         if any(part in EXCLUDE_DIRS for part in relative.parts):
             continue
         if rel in EXCLUDE or any(rel.endswith(suffix) for suffix in EXCLUDE_SUFFIXES):
