@@ -4069,6 +4069,29 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::guarantees::{GuaranteeRef, SeedId};",
              'let _ = GuaranteeRef::Seed(SeedId("SEED-FORGED"));',
              "cannot initialize a tuple struct which contains private fields"),
+            # 5.5E3b: the package identity is the variant; strings cannot
+            # mint the guarantee identities and typed relationships cannot
+            # be read as raw names.
+            ("architecture_guarantee_id_cannot_be_minted_from_a_string",
+             "use spec::guarantees::ArchitectureGuaranteeId;",
+             'let _ = ArchitectureGuaranteeId("batpak");',
+             "cannot initialize a tuple struct which contains private fields"),
+            ("qualification_id_cannot_carry_a_string_package",
+             "use spec::guarantees::QualificationId;",
+             'let _ = QualificationId { package: "batpak", profile: "semantic" };',
+             "field `package` of struct"),
+            ("dependency_endpoint_is_package_typed",
+             "use spec::architecture::EDGES;",
+             "let _: &str = EDGES[0].importer;",
+             "expected `&str`, found `PackageId`"),
+            ("qualification_package_is_package_typed",
+             "use spec::architecture::QUALIFICATION_PROFILES;",
+             "let _: &str = QUALIFICATION_PROFILES[0].package;",
+             "expected `&str`, found `PackageId`"),
+            ("syncbat_plane_package_is_package_typed",
+             "use spec::architecture::SyncBatPlane;",
+             "let _: &str = SyncBatPlane::Runtime.package();",
+             "expected `&str`, found `PackageId`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -4206,6 +4229,67 @@ def test_toolchain(audit) -> list[str]:
     return findings
 
 
+def test_package_identity(audit) -> list[str]:
+    """Named hostile fixtures for the typed package identity (5.5E3b). The
+    variant is the identity; cargo names and workspace paths are projections;
+    every catalog defect must be refused for ITS law."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, old, new, needle):
+        with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+            path = tmp / "spec/architecture.rs"
+            path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
+                            encoding="utf-8")
+            got: list[str] = []
+            audit.check_architecture(tmp, got)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+
+    clean: list[str] = []
+    audit.check_architecture(root, clean)
+    if clean:
+        fail(f"package_catalog_passes_on_the_real_seed (got {clean!r})")
+
+    probe("package_variant_missing_from_all_is_rejected",
+          "        PackageId::NetBat,\n        PackageId::TestPak,",
+          "        PackageId::TestPak,",
+          "PackageId::NetBat is omitted from PackageId::ALL")
+    probe("package_id_missing_from_package_specs_is_rejected",
+          "    PackageSpec {\n        id: PackageId::NetBat,",
+          "    PackageSpec {\n        id: PackageId::TestPak,",
+          "PACKAGES does not declare exactly PackageId::ALL in canonical order")
+    probe("package_spec_duplicate_id_is_rejected",
+          "    PackageSpec {\n        id: PackageId::MacBat,",
+          "    PackageSpec {\n        id: PackageId::MacBatCompiler,",
+          "PACKAGES does not declare exactly PackageId::ALL in canonical order")
+    probe("two_package_ids_cannot_project_the_same_cargo_name",
+          'PackageId::BatQl => "batql",',
+          'PackageId::BatQl => "batpak",',
+          "two package identities project the same cargo name")
+    probe("two_package_ids_cannot_project_the_same_workspace_path",
+          'PackageId::BatQl => "crates/batql",',
+          'PackageId::BatQl => "crates/batpak",',
+          "two package identities project the same workspace path")
+
+    # The materializer may not select behavior by raw package name.
+    with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+        path = tmp / "bootstrap/materialize.rs"
+        path.write_text(must_replace(
+            path.read_text(encoding="utf-8"),
+            "package.id == architecture::PackageId::MacBat",
+            'package.id.cargo_name() == "macbat"',
+            "raw-name selection"), encoding="utf-8")
+        got: list[str] = []
+        audit.check_architecture(tmp, got)
+        if not any("selects behavior by raw package name" in f for f in got):
+            fail(f"materializer_cannot_select_package_behavior_by_raw_name (got {got!r})")
+    return findings
+
+
 def test_required_receipt_denominator() -> list[str]:
     """Dishonest receipt shapes must refuse the authoritative denominator.
 
@@ -4314,6 +4398,7 @@ def main() -> int:
     findings += test_syncbat_requiredness(audit, project)
     findings += test_reconciliation(audit, project)
     findings += test_toolchain(audit)
+    findings += test_package_identity(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
@@ -4342,6 +4427,7 @@ def main() -> int:
                "SyncBat crossing requiredness",
                "DEC-075 reconciliation",
                "toolchain authority",
+               "package identity",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

@@ -781,10 +781,24 @@ G_DEC_ROW = re.compile(
     r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+),'
 )
 G_PKG_ROW = re.compile(
-    r'PackageSpec \{\s*package: "([^"]+)",\s*path: "[^"]+",\s*role: "[^"]+",\s*'
+    r'PackageSpec \{\s*id: PackageId::(\w+),\s*role: "[^"]+",\s*'
     r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
+
+
+def g_package_projection(root: Path, fn: str) -> dict[str, str]:
+    """PackageId variant -> projected value, parsed from the owning const fn
+    (cargo_name or workspace_path). This auditor reconstructs the projections
+    independently; it carries no hand-maintained package map."""
+    src = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    body = re.search(
+        r"pub const fn " + re.escape(fn)
+        + r"\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
+        src, re.S)
+    return dict(re.findall(r'PackageId::(\w+) => "([^"]+)",', body.group(1))) if body else {}
+
+
 G_QUAL_ROW = re.compile(
-    r'QualificationProfile \{\s*package: "([^"]+)",\s*profile: "([^"]+)",\s*'
+    r'QualificationProfile \{\s*package: PackageId::(\w+),\s*profile: "([^"]+)",\s*'
     r'environment: QualificationEnvironment::(\w+),\s*gates: &\[([^\]]*)\],\s*'
     r'requirement: "[^"]+",\s*\}', re.S)
 # The auditor's own spelling of each environment variant, compared
@@ -1083,13 +1097,14 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple], list[str]]:
             node["dclass"] = dcls
         nodes.append(node)
     arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    cargo = g_package_projection(root, "cargo_name")
     for pkg, cls, layer in G_PKG_ROW.findall(arch):
-        nodes.append(_admit("ARCH", f"ARCH-{pkg}", {}, f"Architecture(L{layer} {cls})"))
+        nodes.append(_admit("ARCH", f"ARCH-{cargo.get(pkg, '')}", {}, f"Architecture(L{layer} {cls})"))
     for pkg, profile, variant, qgates in G_QUAL_ROW.findall(arch):
         # environment is the SEMANTIC dimension; qgates is the SCHEDULE.
         # Never interchanged. The node projects the canonical spelling.
         spelling = G_ENVIRONMENT_SPELLING.get(variant, "")
-        nodes.append(_admit("QUAL", f"QUAL-{pkg}-{profile}", {
+        nodes.append(_admit("QUAL", f"QUAL-{cargo.get(pkg, '')}-{profile}", {
             "gates": gate_render(gate_list(qgates), root), "target": spelling,
         }, f"Qualification({spelling})"))
     nodes = [n for n in nodes if n is not None]
@@ -3441,10 +3456,11 @@ def guarantee_index(root: Path) -> dict[str, dict]:
     pol = guarantee_family_policies(root)
     arch_rule, arch_const = pol["ARCH"]["gate_posture"]
     arch_gates = gate_render(gate_list(arch_const), root) if arch_rule == "FamilyConstant" else None
+    cargo = g_package_projection(root, "cargo_name")
     for pkg, _cls, _layer in G_PKG_ROW.findall(arch):
-        out[f"ARCH-{pkg}"] = {"family": "ARCH", "gates": arch_gates}
+        out[f"ARCH-{cargo.get(pkg, '')}"] = {"family": "ARCH", "gates": arch_gates}
     for pkg, profile, _target, qgates in G_QUAL_ROW.findall(arch):
-        out[f"QUAL-{pkg}-{profile}"] = {"family": "QUAL",
+        out[f"QUAL-{cargo.get(pkg, '')}-{profile}"] = {"family": "QUAL",
                                         "gates": gate_render(gate_list(qgates), root)}
     return out
 
@@ -3855,30 +3871,52 @@ def check_architecture(root: Path, findings: list[str]) -> None:
         return
     findings.extend(toolchain_findings(root))
     source = path.read_text(encoding="utf-8")
+    # The variant is the identity (5.5E3b); cargo names and workspace paths
+    # are projections this auditor reconstructs from the owning const fns.
+    cargo = g_package_projection(root, "cargo_name")
+    wpaths = g_package_projection(root, "workspace_path")
+    enum_body = re.search(r"pub enum PackageId \{(.*?)\n\}", _uncomment(source), re.S)
+    variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
+    all_body = re.search(
+        r"pub const ALL: &'static \[PackageId\] = &\[(.*?)\];", source, re.S)
+    inventory = re.findall(r"PackageId::(\w+)", all_body.group(1)) if all_body else []
+    for missing in sorted(set(variants) - set(inventory)):
+        findings.append(f"spec/architecture.rs: PackageId::{missing} is omitted "
+                        "from PackageId::ALL, the one package inventory")
+    for phantom in sorted(set(inventory) - set(variants)):
+        findings.append(f"spec/architecture.rs: PackageId::ALL names {phantom}, "
+                        "which the enum does not declare")
     package_rows = re.findall(
-        r"PackageSpec\s*\{\s*package:\s*\"([^\"]+)\",\s*path:\s*\"([^\"]+)\",\s*role:\s*\"([^\"]+)\",\s*class:\s*PackageClass::([A-Za-z]+),\s*layer:\s*([0-9]+),\s*\}",
+        r"PackageSpec\s*\{\s*id:\s*PackageId::(\w+),\s*role:\s*\"([^\"]+)\",\s*class:\s*PackageClass::([A-Za-z]+),\s*layer:\s*([0-9]+),\s*\}",
         source,
         re.S,
     )
     if not package_rows:
         findings.append("spec/architecture.rs: no package rows parsed")
         return
-    packages = [row[0] for row in package_rows]
-    paths = [row[1] for row in package_rows]
-    layers = {row[0]: int(row[4]) for row in package_rows}
+    if [row[0] for row in package_rows] != inventory:
+        findings.append("spec/architecture.rs: PACKAGES does not declare exactly "
+                        "PackageId::ALL in canonical order")
+    packages = [cargo.get(row[0], "") for row in package_rows]
+    paths = [wpaths.get(row[0], "") for row in package_rows]
+    layers = {cargo.get(row[0], ""): int(row[3]) for row in package_rows}
     if len(packages) != len(set(packages)):
-        findings.append("spec/architecture.rs: duplicate package name")
+        findings.append("spec/architecture.rs: two package identities project the same cargo name")
     if len(paths) != len(set(paths)):
-        findings.append("spec/architecture.rs: duplicate package path")
-    for package, package_path, role, package_class, layer in package_rows:
-        if not package_path or not role or package_class not in {"Production", "BinaryAdapter", "DevOnly", "Example"} or not layer.isdigit():
-            findings.append(f"spec/architecture.rs: incomplete package {package}")
+        findings.append("spec/architecture.rs: two package identities project the same workspace path")
+    for variant, role, package_class, layer in package_rows:
+        wp = wpaths.get(variant, "")
+        if (not cargo.get(variant) or not wp or wp.startswith("/") or ".." in wp.split("/")
+                or not role or package_class not in {"Production", "BinaryAdapter", "DevOnly", "Example"}
+                or not layer.isdigit()):
+            findings.append(f"spec/architecture.rs: incomplete package {variant}")
 
     edge_rows = re.findall(
-        r"EdgeSpec\s*\{\s*importer:\s*\"([^\"]+)\",\s*importee:\s*\"([^\"]+)\",\s*class:\s*EdgeClass::([A-Za-z]+),\s*profile:\s*\"([^\"]+)\"\s*\}",
+        r"EdgeSpec\s*\{\s*importer:\s*PackageId::(\w+),\s*importee:\s*PackageId::(\w+),\s*class:\s*EdgeClass::([A-Za-z]+),\s*profile:\s*\"([^\"]+)\"\s*\}",
         source,
         re.S,
     )
+    edge_rows = [(cargo.get(a, a), cargo.get(b, b), c, p) for a, b, c, p in edge_rows]
     graph: dict[str, list[str]] = {package: [] for package in packages}
     package_set = set(packages)
     for importer, importee, edge_class, profile in edge_rows:
@@ -3916,12 +3954,13 @@ def check_architecture(root: Path, findings: list[str]) -> None:
             break
 
     profile_rows = re.findall(
-        r"QualificationProfile\s*\{\s*package:\s*\"([^\"]+)\",\s*profile:\s*\"([^\"]+)\","
+        r"QualificationProfile\s*\{\s*package:\s*PackageId::(\w+),\s*profile:\s*\"([^\"]+)\","
         r"\s*environment:\s*QualificationEnvironment::(\w+),"
         r"\s*gates:\s*&\[([^\]]*)\],\s*requirement:\s*\"([^\"]+)\",\s*\}",
         source,
         re.S,
     )
+    profile_rows = [(cargo.get(v, v), *rest) for v, *rest in profile_rows]
     identities: set[tuple[str, str]] = set()
     for package, profile, environment, gates, requirement in profile_rows:
         identity = (package, profile)
@@ -3935,6 +3974,17 @@ def check_architecture(root: Path, findings: list[str]) -> None:
             row[0] == package and row[1] == "semantic" and row[2] == "NoStdAlloc" for row in profile_rows
         ):
             findings.append(f"spec/architecture.rs: missing no_std + alloc semantic profile for {package}")
+
+    # The materializer selects behavior by PackageId, never by raw name: a
+    # cargo-name string comparison is identity laundering (5.5E3b).
+    mat_path = root / "bootstrap/materialize.rs"
+    if mat_path.is_file():
+        mat = mat_path.read_text(encoding="utf-8")
+        for name in sorted(set(cargo.values())):
+            if re.search(r'== "' + re.escape(name) + '"', mat):
+                findings.append(
+                    f"bootstrap/materialize.rs selects behavior by raw package "
+                    f"name {name!r}; PackageId is the identity")
 
     for relative in string_array(source, "REQUIRED_DOCS"):
         if not (root / relative).is_file():

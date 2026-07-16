@@ -95,14 +95,17 @@ pub struct LegacyId(pub(crate) &'static str);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DecisionId(pub(crate) &'static str);
 
-/// ARCH guarantee identity IS the package name.
+/// ARCH guarantee identity IS the package identity (5.5E3b): a string
+/// cannot mint one, and a package that is not a PackageId variant has no
+/// ARCH guarantee to claim.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ArchitectureGuaranteeId(pub(crate) &'static str);
+pub struct ArchitectureGuaranteeId(pub(crate) crate::architecture::PackageId);
 
-/// QUAL guarantee identity IS the (package, profile) pair.
+/// QUAL guarantee identity IS the (package identity, profile) pair
+/// (package typed since 5.5E3b: a string cannot carry the package half).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QualificationId {
-    pub(crate) package: &'static str,
+    pub(crate) package: crate::architecture::PackageId,
     pub(crate) profile: &'static str,
 }
 
@@ -122,12 +125,12 @@ impl DecisionId {
     }
 }
 impl ArchitectureGuaranteeId {
-    pub const fn package(self) -> &'static str {
+    pub const fn package(self) -> crate::architecture::PackageId {
         self.0
     }
 }
 impl QualificationId {
-    pub const fn package(self) -> &'static str {
+    pub const fn package(self) -> crate::architecture::PackageId {
         self.package
     }
     pub const fn profile(self) -> &'static str {
@@ -599,7 +602,7 @@ pub fn admit(source: GuaranteeSource) -> Result<AdmittedGuarantee, GuaranteeAdmi
         GuaranteeSource::Decision(r) => ("DEC", GuaranteeRef::Decision(DecisionId(r.id))),
         GuaranteeSource::Architecture(p) => (
             "ARCH",
-            GuaranteeRef::Architecture(ArchitectureGuaranteeId(p.package)),
+            GuaranteeRef::Architecture(ArchitectureGuaranteeId(p.id)),
         ),
         GuaranteeSource::Qualification(q) => (
             "QUAL",
