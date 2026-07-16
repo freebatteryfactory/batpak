@@ -396,6 +396,120 @@ close_reopen_reimport_returns_zero_new_events
       a duplicated source event fails the witness
 ```
 
+## Single-writer dual-axis reconciliation witnesses (DEC-075)
+
+The composition law's executable denominator. `docs/02_SYSTEM_MODEL.md` owns
+the end-to-end law and `spec/reconciliation.rs` owns the closed bindings;
+these rows own the executable meanings. Bootstrap proves their names, owner
+binding, documentary meaning, and cross-surface agreement only: it executes
+no turn, commits no effect, and drives no port.
+
+Required witnesses (proof owner TestPak; gates G2/G5/G6; future executable: yes; bootstrap executed: no), also carried by `DEC-075`:
+
+```text
+paired_result_and_receipt_share_one_turn_evaluation
+hlc_cannot_substitute_for_commit_sequence
+receipt_binds_chronology_and_commit_without_collapsing_them
+replay_reconstructs_same_turn_and_returns_original_receipts
+lost_acknowledgement_requires_reconciliation_before_retry
+port_response_cannot_cross_attempts
+driver_await_and_cooperative_drive_produce_equivalent_logical_trace
+checkpoint_gap_does_not_duplicate_committed_effect
+reconciliation_appends_evidence_without_rewriting_original_observation
+```
+
+Authoritative meanings:
+
+```text
+paired_result_and_receipt_share_one_turn_evaluation
+    The semantic projection and the evidence projection of one turn derive
+    from one admitted evaluation over one frozen input cut. Production never
+    re-evaluates the expression to construct its receipt; TestPak's
+    independent references are computed outside the paired implementation.
+    expects: instrumented execution of one turn records exactly one admitted
+      evaluation producing both the semantic result and its receipt; a second
+      production evaluation performed to construct the receipt fails the
+      witness
+    disposition: one paired-evaluation trace with both projections bound to
+      one TurnId, judged against independent semantic and evidence references
+
+hlc_cannot_substitute_for_commit_sequence
+    No commit, durability, checkpoint, cursor, or retry decision accepts an
+    Hlc value or wall observation where GlobalSequence or CommitPoint is
+    required. Chronology is evidence, never the ledger.
+    expects: an operation offered chronology evidence in place of a required
+      commit coordinate is refused with a typed error naming the required
+      coordinate
+    disposition: a typed coordinate-substitution refusal; chronology remains
+      admissible for pruning, lag, and temporal filtering only
+
+receipt_binds_chronology_and_commit_without_collapsing_them
+    A receipt for one durable operation carries the chronology evidence and
+    the commit coordinate as distinct bound fields. The two books never merge
+    into one timestamp.
+    expects: altering either the chronology field or the commit field of a
+      receipt changes receipt identity independently of the other
+    disposition: one receipt with both books present and separately bound; a
+      projection collapsing them into one value fails the witness
+
+replay_reconstructs_same_turn_and_returns_original_receipts
+    Replay after output commit but before checkpoint advance reconstructs the
+    identical TurnId over the same frozen cuts and returns the original
+    receipts rather than duplicating work.
+    expects: replaying such a turn yields the identical TurnId and the
+      original receipts, and the count of newly executed work for that turn
+      is exactly zero
+    disposition: the original receipts, unchanged; a duplicated effect or a
+      fresh receipt for already-committed work fails the witness
+
+lost_acknowledgement_requires_reconciliation_before_retry
+    An effect whose acknowledgement is lost surfaces OutcomeUnknown and
+    admits no retry until reconciliation consults durable intent and attempt
+    evidence. A missing acknowledgement is ambiguity, not permission.
+    expects: after an injected acknowledgement loss the operation reports
+      OutcomeUnknown and a retry attempted before reconciliation is refused
+    disposition: a typed reconciliation outcome first; retry proceeds only
+      under the declared recovery class with commit knowledge resolved
+
+port_response_cannot_cross_attempts
+    A port response is bound to exactly one AttemptId. Offering it to any
+    other attempt, including a retry of the same logical operation, is
+    refused.
+    expects: a response constructed for one attempt is refused when delivered
+      to a different attempt, and the suspended attempt resumes only with its
+      own response
+    disposition: a typed attempt-binding refusal; no cross-attempt resume
+
+driver_await_and_cooperative_drive_produce_equivalent_logical_trace
+    Driver strategy is physical, never semantic. One program under a blocking
+    driver, a cooperative driver, and an awaiting host produces the same
+    logical behavior.
+    expects: one program over one input yields identical logical traces,
+      identities, receipts, and recovery dispositions under each admitted
+      driver strategy
+    disposition: per-driver trace and receipt sets that compare equal; a
+      divergence is a driver defect reported against the adapter, never a
+      semantic difference
+
+checkpoint_gap_does_not_duplicate_committed_effect
+    A crash between effect commit and checkpoint advance recovers without a
+    second physical execution of the committed intent.
+    expects: recovery after an injected crash in the gap emits no second
+      physical effect for the committed intent and advances the checkpoint
+    disposition: the committed effect stands exactly once; recovery returns
+      the original outcome rather than re-executing
+
+reconciliation_appends_evidence_without_rewriting_original_observation
+    Reconciliation settles ambiguity by appending or referencing new
+    evidence. The original event, attempt observation, and receipt remain
+    exactly as first recorded.
+    expects: reconciling an ambiguous attempt leaves the original event,
+      attempt observation, and receipt byte-identical while an appended
+      reconciliation record links them to the new evidence
+    disposition: an appended reconciliation record referencing the originals;
+      any mutation of the original evidence fails the witness
+```
+
 ## Secret-authority shred witnesses (LEG-081)
 
 Canonical proof-row identity and meaning for `LEG-081`. `docs/35_CRYPTO_AND_SECRET_AUTHORITY.md` owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions; it projects these IDs and states no per-row executable meaning. The typed law in `spec/legacy_obligations.rs` is unchanged by this pass: its owner, gates, status, compatibility disposition, deletion condition, and lifetime all stand.
