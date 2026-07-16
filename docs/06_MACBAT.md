@@ -38,22 +38,22 @@ MacBat knows what one declaration means locally. TestPak resolves global ownersh
 
 ## Contract IR
 
-Contract kinds are closed and exhaustive. A kind enters only when one declaration becomes canonical, a real adopter exists, and every lowering/proof surface is named.
+Contract kinds are closed and exhaustive. A kind enters only when one declaration becomes canonical, a real adopter exists, and every lowering/proof surface is named. `spec/contracts.rs` is the typed owner of the admitted set; each kind cites the guarantee that admits it, and the citation resolves or the kind is refused.
 
-Expected families include:
+The admitted kinds, each with its admitting law:
 
 ```text
-Error and ErrorContract
-Event
-Schema and Codec
-Projection
-Subscription
-Operation and Effect
-StateMachine
-Process
-EvidenceBody
-Module/Composition facts
+Error            LEG-047   error class and public shape never drift into side tables
+Event            LEG-002   accepted event bytes are immutable; shape evolves on read
+SchemaCodec      LEG-040   language-neutral identity, versions, canonical bytes, goldens
+Projection       LEG-029   projection query authority binds contract through proof
+Subscription     LEG-060   explicit open/receive/close/overrun terminals
+OperationEffect  LEG-036   declared effect rows contain observed effects and receipts
+Process          DEC-009   ProcessContract + Coordinate + ProcessGeneration
+Composition      LEG-041   deterministic composition identity
 ```
+
+StateMachine and EvidenceBody appeared in an earlier expectation list and nowhere else in the corpus: no owning law, no adopter, no proof surface. They are NOT admitted kinds. Either enters later through exactly the entry law above — a brochure name is not a border crossing.
 
 Each contract carries local identity, version, schema references, capabilities, effects, lowering descriptors, origin map, proof obligations, and mutation facts.
 

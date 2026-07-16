@@ -4,7 +4,7 @@
 // links it instead of textually mounting its modules, so no tracked
 // suppression exists and every pub spec item is API by construction.
 use spec::{
-    architecture, dispositions, gates, guarantees, invariants,
+    architecture, contracts, dispositions, gates, guarantees, invariants,
     legacy_invariant_coverage, legacy_obligations, operators, pakvm_isa,
     proof, reconciliation, syncbat_firewall, toolchain,
 };
@@ -72,6 +72,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_witness_citations(root, &mut findings);
     check_proof_rows(root, &mut findings);
     check_toolchain(root, &mut findings);
+    check_contract_kinds(&mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -239,6 +240,45 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
         GuaranteeSource::Seed(&UNSCHEDULED_SEED),
         GuaranteeAdmissionRule::RowNamesScheduledGates,
     );
+}
+
+/// The admitted contract kinds are coherent (5.5E3c): every variant is
+/// classified, spellings are unique and nonempty, and every kind's
+/// admitting guarantee RESOLVES through the same law the relations and
+/// witnesses use — a kind whose admitting law is deleted or mistyped
+/// reddens the running binary instead of surviving as a label.
+fn check_contract_kinds(findings: &mut Vec<String>) {
+    let mut seen = BTreeSet::new();
+    for kind in contracts::ContractKind::ALL {
+        // Exhaustive: a new kind must be classified here, must join ALL, and
+        // must cite the guarantee that admits it — not default.
+        match kind {
+            contracts::ContractKind::Error
+            | contracts::ContractKind::Event
+            | contracts::ContractKind::SchemaCodec
+            | contracts::ContractKind::Projection
+            | contracts::ContractKind::Subscription
+            | contracts::ContractKind::OperationEffect
+            | contracts::ContractKind::Process
+            | contracts::ContractKind::Composition => {}
+        }
+        if kind.spelling().trim().is_empty() {
+            findings.push(format!("{kind:?} projects an empty spelling"));
+        }
+        if !seen.insert(kind.spelling()) {
+            findings.push(format!(
+                "two contract kinds project the spelling {}",
+                kind.spelling()
+            ));
+        }
+        let admitting = kind.admitting_guarantee();
+        if !guarantee_ref_resolves(admitting) {
+            findings.push(format!(
+                "{kind:?} cites admitting guarantee {admitting:?}, which resolves \
+                 to no declared row"
+            ));
+        }
+    }
 }
 
 /// Whether a typed reference names a DECLARED row of its family. The type

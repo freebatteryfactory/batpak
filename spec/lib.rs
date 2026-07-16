@@ -11,6 +11,7 @@
 //! library facts.
 
 pub mod architecture;
+pub mod contracts;
 pub mod dispositions;
 pub mod gates;
 pub mod guarantees;

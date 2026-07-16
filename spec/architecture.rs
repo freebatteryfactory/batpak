@@ -990,6 +990,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/reconciliation.rs",
     "spec/proof.rs",
     "spec/toolchain.rs",
+    "spec/contracts.rs",
     "rust-toolchain.toml",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",

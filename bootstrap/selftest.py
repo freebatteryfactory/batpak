@@ -3832,6 +3832,14 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'WitnessRef::contract("BP-GAUNTLET-1")]',
           "which no declared row owns")
 
+    # A contract kind's admitting law resolves or the running binary reddens:
+    # a kind whose law was deleted survives as nothing (5.5E3c).
+    probe("contract_kind_with_dangling_admitting_law_is_rejected",
+          "spec/contracts.rs",
+          'ContractKind::Error => GuaranteeRef::leg("LEG-047"),',
+          'ContractKind::Error => GuaranteeRef::leg("LEG-999"),',
+          "resolves to no declared row")
+
     # Retirement is supersession with a forwarding address that must point at
     # the LIVING CENSUS (5.5E2j): a successor resolves inside the typed
     # catalog or the running binary reddens.
@@ -4290,6 +4298,60 @@ def test_package_identity(audit) -> list[str]:
     return findings
 
 
+def test_contract_kinds(audit) -> list[str]:
+    """Named hostile fixtures for the admitted contract kinds (5.5E3c). The
+    enum is the admitted border crossing: a kind without an admitting law is
+    a brochure entry, and the doc fence and the enum may not disagree."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.contract_kind_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.contract_kind_findings(root):
+        fail("contract_kinds_pass_on_the_real_seed")
+
+    CK = "spec/contracts.rs"
+    # A kind with no admitting law is speculation wearing a variant: adding
+    # StateMachine to the enum, the inventory, and the spelling map without a
+    # citation is refused for exactly that absence.
+    probe("speculative_contract_kind_is_rejected",
+          [(CK, "    Composition,\n}", "    Composition,\n    StateMachine,\n}"),
+           (CK, "        ContractKind::Composition,\n    ];",
+                "        ContractKind::Composition,\n        ContractKind::StateMachine,\n    ];"),
+           (CK, 'ContractKind::Composition => "Composition",',
+                'ContractKind::Composition => "Composition",\n            '
+                'ContractKind::StateMachine => "StateMachine",')],
+          "ContractKind::StateMachine cites no admitting guarantee")
+    probe("contract_kind_missing_from_all_is_rejected",
+          [(CK, "        ContractKind::Composition,\n    ];", "    ];")],
+          "ContractKind::Composition is omitted from ContractKind::ALL")
+    probe("docs06_omitting_an_admitted_kind_is_rejected",
+          [("docs/06_MACBAT.md",
+            "Composition      LEG-041   deterministic composition identity\n", "")],
+          "docs/06 omits admitted contract kind Composition")
+    probe("docs06_admitting_an_undeclared_kind_is_rejected",
+          [("docs/06_MACBAT.md",
+            "Composition      LEG-041   deterministic composition identity",
+            "Composition      LEG-041   deterministic composition identity\n"
+            "StateMachine     LEG-999   speculative")],
+          "docs/06 admits StateMachine, which ContractKind does not declare")
+    probe("mistagged_admitting_guarantee_is_rejected",
+          [(CK, 'ContractKind::Error => GuaranteeRef::leg("LEG-047"),',
+                'ContractKind::Error => GuaranteeRef::leg("DEC-047"),')],
+          "whose family owns the LEG- prefix")
+    return findings
+
+
 def test_required_receipt_denominator() -> list[str]:
     """Dishonest receipt shapes must refuse the authoritative denominator.
 
@@ -4399,6 +4461,7 @@ def main() -> int:
     findings += test_reconciliation(audit, project)
     findings += test_toolchain(audit)
     findings += test_package_identity(audit)
+    findings += test_contract_kinds(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
@@ -4428,6 +4491,7 @@ def main() -> int:
                "DEC-075 reconciliation",
                "toolchain authority",
                "package identity",
+               "contract kinds",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

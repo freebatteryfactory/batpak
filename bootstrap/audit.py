@@ -3678,6 +3678,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(retired_claim_vocabulary_findings(root))
     findings.extend(retired_proof_row_findings(root))
     findings.extend(proof_row_catalog_findings(root))
+    findings.extend(contract_kind_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -3861,6 +3862,63 @@ def toolchain_findings(root: Path) -> list[str]:
             out.append(f"QualificationProfile {pkg}:{profile} names environment "
                        f"{variant}, which the QualificationEnvironment enum "
                        "does not declare")
+    return out
+
+
+# --- Admitted contract kinds (5.5E3c) ----------------------------------------
+# spec/contracts.rs owns the admitted set; docs/06 projects it. A kind whose
+# admitting citation dangles, and a doc fence that admits more or fewer kinds
+# than the enum, are both refused.
+A_CONTRACT_KIND_FENCE = re.compile(
+    r"The admitted kinds, each with its admitting law:\s*\n+```text\n(.*?)\n```", re.S)
+
+
+def contract_kind_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    src_path = root / "spec/contracts.rs"
+    if not src_path.is_file():
+        return ["missing spec/contracts.rs"]
+    src = _uncomment(src_path.read_text(encoding="utf-8"))
+    enum_body = re.search(r"pub enum ContractKind \{(.*?)\n\}", src, re.S)
+    variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
+    all_body = re.search(r"pub const ALL: &'static \[ContractKind\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"ContractKind::(\w+)", all_body.group(1)) if all_body else []
+    if not variants:
+        out.append("spec/contracts.rs declares no ContractKind variants")
+    for missing in sorted(set(variants) - set(inventory)):
+        out.append(f"ContractKind::{missing} is omitted from ContractKind::ALL")
+    for phantom in sorted(set(inventory) - set(variants)):
+        out.append(f"ContractKind::ALL names {phantom}, which the enum does not declare")
+    # tag/prefix agreement and resolution against the declared tables
+    tagged = re.findall(r'ContractKind::(\w+) => GuaranteeRef::(leg|dec)\("([^"]+)"\)', src)
+    leg_ids = {m[0] for m in G_LEG_ROW.findall(
+        (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8"))}
+    dec_ids = {m[0] for m in G_DEC_ROW.findall(
+        (root / "spec/dispositions.rs").read_text(encoding="utf-8"))}
+    for kind, tag, ident in tagged:
+        if tag == "leg" and not ident.startswith("LEG-"):
+            out.append(f"ContractKind::{kind} tags {ident!r} as leg, whose family "
+                       "owns the LEG- prefix")
+        elif tag == "dec" and not ident.startswith("DEC-"):
+            out.append(f"ContractKind::{kind} tags {ident!r} as dec, whose family "
+                       "owns the DEC- prefix")
+        elif ident not in (leg_ids | dec_ids):
+            out.append(f"ContractKind::{kind} cites admitting guarantee {ident}, "
+                       "which no declared row owns")
+    for kind in set(variants) - {k for k, _, _ in tagged}:
+        out.append(f"ContractKind::{kind} cites no admitting guarantee")
+    # docs/06 projects EXACTLY the admitted kinds: first token per fence line.
+    doc = (root / "docs/06_MACBAT.md").read_text(encoding="utf-8")
+    fence = A_CONTRACT_KIND_FENCE.search(doc)
+    if not fence:
+        out.append("docs/06 carries no admitted-kinds fence")
+        return out
+    listed = [line.split()[0] for line in fence.group(1).splitlines() if line.strip()]
+    spellings = re.findall(r'ContractKind::\w+ => "(\w+)",', src)
+    for missing in sorted(set(spellings) - set(listed)):
+        out.append(f"docs/06 omits admitted contract kind {missing}")
+    for phantom in sorted(set(listed) - set(spellings)):
+        out.append(f"docs/06 admits {phantom}, which ContractKind does not declare")
     return out
 
 
