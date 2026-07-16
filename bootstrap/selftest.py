@@ -2389,6 +2389,45 @@ def test_leg081_authority(audit) -> list[str]:
           '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
           'state: ProofRowState::Retired { successors: '
           '&[ProofRowId("event_reorder_is_rejected")] } },\n', validator=cat)
+    # E3 preflight: succession terminates. A two-node cycle satisfies
+    # existence and non-self-succession while owning no living obligation;
+    # a multi-hop chain through a retired row that reaches an Active identity
+    # is lawful.
+    RETIRED_PAIR = (
+        '    ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"), '
+        'state: ProofRowState::Retired { successors: '
+        '&[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")] } },\n'
+        '    ProofRowRecord { id: ProofRowId("shredded_and_keyset_missing_remain_distinct"), '
+        'state: ProofRowState::Retired { successors: '
+        '&[ProofRowId("shredded_unavailable_and_keyset_missing_remain_distinct")] } },\n')
+    RETIRED_CYCLE = (
+        '    ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"), '
+        'state: ProofRowState::Retired { successors: '
+        '&[ProofRowId("shredded_and_keyset_missing_remain_distinct")] } },\n'
+        '    ProofRowRecord { id: ProofRowId("shredded_and_keyset_missing_remain_distinct"), '
+        'state: ProofRowState::Retired { successors: '
+        '&[ProofRowId("pre_shred_keyset_restore_is_rejected")] } },\n')
+    probe("two_retired_rows_cannot_succeed_each_other_cyclically", PR,
+          RETIRED_PAIR, "retirement succession is cyclic",
+          RETIRED_CYCLE, validator=cat)
+    probe("retirement_component_with_no_active_leaf_is_rejected", PR,
+          RETIRED_PAIR, "retirement path terminates in no Active identity",
+          RETIRED_CYCLE, validator=cat)
+    # A GREEN fixture: the lawful multi-hop chain must produce no finding.
+    tmp = gate_sandbox([(PR,
+        'ProofRowId("pre_shred_keyset_restore_is_rejected"), '
+        'state: ProofRowState::Retired { successors: '
+        '&[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")] } },',
+        'ProofRowId("pre_shred_keyset_restore_is_rejected"), '
+        'state: ProofRowState::Retired { successors: '
+        '&[ProofRowId("shredded_and_keyset_missing_remain_distinct")] } },')])
+    try:
+        got = cat(tmp)
+        if got:
+            fail(f"multi_hop_retirement_chain_terminates_in_active_identity (got {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     probe("proof_row_state_variants_are_constructed", PR,
           '    ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"), '
           'state: ProofRowState::Retired { successors: '

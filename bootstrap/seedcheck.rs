@@ -376,6 +376,53 @@ fn check_proof_rows(root: &Path, findings: &mut Vec<String>) {
             }
         }
     }
+    // Succession TERMINATES (E3 preflight, a permanent re-entry guard). The
+    // per-edge laws above cannot see a two-node cycle: retired A naming
+    // retired B while B names A satisfies existence and non-self-succession
+    // while owning no living obligation. Every retirement path must reach at
+    // least one Active identity, and the retired-to-retired succession graph
+    // must be acyclic.
+    let mut successors_of: Vec<(&str, &[proof::ProofRowId])> = Vec::new();
+    for record in PROOF_ROWS {
+        if let ProofRowState::Retired { successors } = record.state {
+            successors_of.push((record.id.raw(), successors));
+        }
+    }
+    let edges = |id: &str| -> &[proof::ProofRowId] {
+        successors_of
+            .iter()
+            .find(|(from, _)| *from == id)
+            .map(|(_, s)| *s)
+            .unwrap_or(&[])
+    };
+    for (start, _) in &successors_of {
+        let mut frontier = vec![*start];
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        let mut reaches_active = false;
+        let mut cyclic = false;
+        while let Some(id) = frontier.pop() {
+            for successor in edges(id) {
+                let s = successor.raw();
+                if active.contains(s) {
+                    reaches_active = true;
+                } else if s == *start {
+                    cyclic = true;
+                } else if seen.insert(s) {
+                    frontier.push(s);
+                }
+            }
+        }
+        if cyclic {
+            findings.push(format!(
+                "retirement succession is cyclic: {start} participates in a cycle"
+            ));
+        }
+        if !reaches_active {
+            findings.push(format!(
+                "{start} retirement path terminates in no Active identity"
+            ));
+        }
+    }
     let doc = fs::read_to_string(root.join("docs/24_GAUNTLET.md")).unwrap_or_default();
     let canonical = docs24_active_rows(&doc);
     for missing in canonical.iter().filter(|id| !active.contains(**id)) {

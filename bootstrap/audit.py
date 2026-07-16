@@ -2532,6 +2532,26 @@ def proof_row_catalog_findings(root: Path) -> list[str]:
             elif s not in active and s not in retired:
                 out.append(f"{rid} names successor {s}, which resolves to no "
                            "typed catalog identity")
+    # Succession terminates (E3 preflight): the per-edge laws cannot see a
+    # two-node cycle, which satisfies existence and non-self-succession while
+    # owning no living obligation. Acyclic, and every path reaches Active.
+    succ_map = {rid: succ for rid, state, succ in catalog if state == "Retired"}
+    for start in sorted(succ_map):
+        frontier, seen = [start], set()
+        reaches_active = cyclic = False
+        while frontier:
+            for s in succ_map.get(frontier.pop(), ()):
+                if s in active:
+                    reaches_active = True
+                elif s == start:
+                    cyclic = True
+                elif s not in seen:
+                    seen.add(s)
+                    frontier.append(s)
+        if cyclic:
+            out.append(f"retirement succession is cyclic: {start} participates in a cycle")
+        if not reaches_active:
+            out.append(f"{start} retirement path terminates in no Active identity")
     canonical = set(witness_rows(root))
     for missing in sorted(canonical - active):
         out.append(f"docs/24 declares active proof row {missing}, which the "
