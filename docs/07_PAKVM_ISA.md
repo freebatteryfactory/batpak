@@ -63,30 +63,204 @@ Live capability slots are opaque, instance-scoped, generation-scoped, and non-se
 
 ## Three instruction algebras
 
-### Formula and decision
+`spec/pakvm_isa.rs` is the typed authority for what a PakVM semantic node MEANS: its algebra, class, effect posture, operand and result sorts, boundedness, capability requirement, work-formula family, and independent evidence class. This document does not author those facts and states no per-node meaning of its own; the inventory below is generated from ADMITTED node specs and changes there or nowhere.
 
-```text
-literal, binding, field, let, compare, all, any, not,
-case, allow, deny, defer, require, margin, explain,
-built-in kernel call
-```
-
-### Query and dataflow
-
-```text
-scan, seek, select, filter, project, fold, group,
-aggregate, join, sequence match, sort, page, limit,
-materialize tile
-```
-
-### Effects
-
-```text
-append, append batch, request effect, stage artifact,
-emit result, advance checkpoint intent
-```
+A node that does not admit is not in the semantic ISA and does not appear here. Exact opcode numbers and the ISA version value remain G5 implementation constants: no numeric opcode is assigned by the typed authority, and the order below is reading order, not encoding.
 
 A pure query image cannot contain Effect instructions. The validator rejects the image before execution.
+
+<!-- PAKVM-SEMANTIC-ISA:BEGIN generated from spec/pakvm_isa.rs by bootstrap/project.py; do not edit -->
+| Node | Algebra | Class | Effect | Capability | Boundedness | WorkFormula | WorkUnits | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| literal | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| binding | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| field | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| let | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| compare | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| all | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| any | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| not | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| case | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| allow | FormulaDecision | DecisionOutcome | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| deny | FormulaDecision | DecisionOutcome | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| defer | FormulaDecision | DecisionOutcome | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| require | FormulaDecision | DecisionGuard | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| margin | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| explain | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
+| built-in kernel call | FormulaDecision | KernelInvocation | DeclaredByKernelContract | DeclaredByKernelContract | BoundedByKernelContract | KernelCostContract | Instructions/CallDepth | KernelQualificationReceipt |
+| scan | QueryDataflow | SourceTraversal | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | RowsAndDecodedBytes | Rows/DecodedBytes | ReferenceInterpreterModel |
+| seek | QueryDataflow | SourceTraversal | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | RowsAndDecodedBytes | Rows/DecodedBytes | ReferenceInterpreterModel |
+| select | QueryDataflow | RowTransform | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| filter | QueryDataflow | RowTransform | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| project | QueryDataflow | RowTransform | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| fold | QueryDataflow | RowReduction | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| group | QueryDataflow | Grouping | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | RowsIntoGroups | Rows/Groups | ReferenceInterpreterModel |
+| aggregate | QueryDataflow | RowReduction | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| join | QueryDataflow | Joining | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| sequence match | QueryDataflow | SequenceMatching | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | RowsIntoMatches | Rows/Matches | ReferenceInterpreterModel |
+| sort | QueryDataflow | Ordering | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| page | QueryDataflow | Windowing | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| limit | QueryDataflow | Windowing | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | Rows | Rows | ReferenceInterpreterModel |
+| materialize tile | QueryDataflow | TileMaterialization | ObservationalOnly | ReadOnlySourceEnvelope | BoundedIteration | RowsIntoTileBytes | Rows/TileBytes | ReferenceInterpreterModel |
+| append | Effect | DurableAppend | Effectful | DeclaredEffectCapability | BoundedByDeclaredEffect | DeclaredEffects | Effects | DurablePlaneObservation |
+| append batch | Effect | DurableAppend | Effectful | DeclaredEffectCapability | BoundedByDeclaredEffect | DeclaredEffects | Effects | DurablePlaneObservation |
+| request effect | Effect | PortEffectRequest | Effectful | DeclaredEffectCapability | BoundedByDeclaredEffect | DeclaredEffects | Effects | PortMediationObservation |
+| stage artifact | Effect | ArtifactStaging | Effectful | DeclaredEffectCapability | BoundedByDeclaredEffect | StagedArtifacts | Artifacts | DurablePlaneObservation |
+| emit result | Effect | ResultEmission | Effectful | DeclaredEffectCapability | BoundedByDeclaredEffect | EmittedOutputs | Outputs | ReferenceInterpreterModel |
+| advance checkpoint intent | Effect | CheckpointIntent | Effectful | DeclaredEffectCapability | BoundedByDeclaredEffect | DeclaredEffects | Effects | DurablePlaneObservation |
+<!-- PAKVM-SEMANTIC-ISA:END -->
+
+Each algebra accounts its work on its own plane, and the three planes partition the authored work-accounting vocabulary: no unit belongs to two algebras, and none belongs to none. This scopes to the public semantic ISA above; internal lowering identities and specialized plans are a different layer with their own accounting.
+
+Node signatures, in the closed value algebra. No generic host object or `Any` value crosses the boundary:
+
+<!-- PAKVM-SIGNATURES:BEGIN generated from spec/pakvm_isa.rs by bootstrap/project.py; do not edit -->
+```text
+literal
+    operands  none; a constant-pool reference
+    results   one value
+
+binding
+    operands  none; a validated frame slot reference
+    results   one value
+
+field
+    operands  record or enum value, plus a declared field reference
+    results   one value
+
+let
+    operands  value, plus a frame slot to bind
+    results   unit; the frame slot is bound
+
+compare
+    operands  two values of one comparable sort
+    results   Truth with TypedMargin
+
+all
+    operands  bounded list of Truth
+    results   Truth
+
+any
+    operands  bounded list of Truth
+    results   Truth
+
+not
+    operands  Truth
+    results   Truth
+
+case
+    operands  scrutinee value, plus bounded declared arms
+    results   the selected arm's value
+
+allow
+    operands  none; a decision terminal
+    results   Decision
+
+deny
+    operands  none; a decision terminal
+    results   Decision
+
+defer
+    operands  declared deferral reason
+    results   Decision
+
+require
+    operands  Truth, plus a declared refusal reason
+    results   Truth, or a typed refusal
+
+margin
+    operands  two comparable values
+    results   TypedMargin
+
+explain
+    operands  origin reference, plus explanation-dictionary reference
+    results   explanation reference
+
+built-in kernel call
+    operands  declared by the KernelInterfaceHash
+    results   declared by the KernelInterfaceHash
+
+scan
+    operands  declared source reference, selector, and bounds
+    results   row stream, plus a source stamp
+
+seek
+    operands  declared source reference, key, and bounds
+    results   row stream, plus a source stamp
+
+select
+    operands  row stream, plus declared field selection
+    results   row stream
+
+filter
+    operands  row stream, plus a Truth-valued predicate
+    results   row stream
+
+project
+    operands  row stream, plus declared field selection
+    results   row stream
+
+fold
+    operands  row stream, seed value, and a declared step
+    results   one accumulated value
+
+group
+    operands  row stream, plus a declared grouping key
+    results   group stream
+
+aggregate
+    operands  row or group stream, plus a declared aggregation
+    results   one aggregated value per group
+
+join
+    operands  two row streams, plus a declared join key
+    results   row stream
+
+sequence match
+    operands  row stream, plus a declared bounded pattern
+    results   match stream
+
+sort
+    operands  row stream, plus a declared total sort key
+    results   row stream
+
+page
+    operands  row stream, plus a declared page limit and cursor
+    results   page: ordered entries, completeness, next cursor, source stamp, WorkObservation, proof result
+
+limit
+    operands  row stream, plus a declared limit
+    results   row stream
+
+materialize tile
+    operands  row stream, plus a declared typed layout
+    results   tile reference
+
+append
+    operands  declared event value
+    results   durable append outcome
+
+append batch
+    operands  bounded list of declared event values
+    results   durable append outcome
+
+request effect
+    operands  declared PortRequest value
+    results   suspension; resumed under the same AttemptId
+
+stage artifact
+    operands  bounded artifact content
+    results   ArtifactRef, only on completion
+
+emit result
+    operands  semantic result value, plus its orthogonal axes
+    results   ExecutedResult
+
+advance checkpoint intent
+    operands  declared checkpoint position
+    results   checkpoint-advance outcome
+```
+<!-- PAKVM-SIGNATURES:END -->
 
 ## Built-in kernels
 

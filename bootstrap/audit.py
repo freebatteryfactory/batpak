@@ -2165,6 +2165,237 @@ D4B2C_D35_PROJECTION = re.compile(
 )
 
 
+# --- PakVM semantic ISA lineage audit (D4c1) --------------------------------
+# AUDITOR half. This re-derives the admitted node specs from spec/pakvm_isa.rs
+# INDEPENDENTLY of bootstrap/project.py and compares against the generated
+# docs/07 projection. It shares no parsing, admission, rendering, or comparison
+# code with the generator, and it authors no node semantics of its own: a policy
+# constant living in both scripts would be common-mode invention, and parity
+# between two copies of the same guess is not evidence.
+
+A_ISA_SRC = "spec/pakvm_isa.rs"
+A_ISA_DOC = "docs/07_PAKVM_ISA.md"
+A_ISA_TABLE = re.compile(
+    r"<!-- PAKVM-SEMANTIC-ISA:BEGIN[^>]*-->\n(.*?)\n<!-- PAKVM-SEMANTIC-ISA:END -->", re.S)
+A_ISA_SIGS = re.compile(
+    r"<!-- PAKVM-SIGNATURES:BEGIN[^>]*-->\n(.*?)\n<!-- PAKVM-SIGNATURES:END -->", re.S)
+
+
+class IsaAdmissionFailure(Exception):
+    pass
+
+
+def _a_isa_method(src: str, method: str) -> str:
+    head = src.find("pub const fn " + method + "(")
+    if head < 0:
+        raise IsaAdmissionFailure(f"spec/pakvm_isa.rs declares no {method}()")
+    tail = src.find("\n    pub const fn ", head + 1)
+    return src[head:] if tail < 0 else src[head:tail]
+
+
+def _a_isa_dispatch(src: str, method: str, value_re: str) -> dict[str, str]:
+    """node variant -> arm value, for a total match over PakVmNodeId."""
+    text = _a_isa_method(src, method)
+    table: dict[str, str] = {}
+    for arm in re.finditer(r"((?:PakVmNodeId::\w+(?:\s*\|\s*)?\s*)+)=>\s*\{?\s*(" + value_re + ")",
+                           text, re.S):
+        for node in re.findall(r"PakVmNodeId::(\w+)", arm.group(1)):
+            if node in table:
+                raise IsaAdmissionFailure(f"{node} is matched twice by {method}()")
+            table[node] = arm.group(2)
+    return table
+
+
+def _a_isa_block(src: str, marker: str) -> str:
+    start = src.find(marker)
+    if start < 0:
+        raise IsaAdmissionFailure(f"spec/pakvm_isa.rs declares no {marker}")
+    end = src.find("\n];", start)
+    return src[start:end]
+
+
+def _a_isa_policy(src: str, const: str, key: str) -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {}
+    for entry in re.split(r"\n    \w+Policy \{", "\n" + _a_isa_block(src, const)):
+        fields = dict(re.findall(r"^\s{8}(\w+):\s*(.+?),?$", entry, re.M))
+        name = fields.get(key, "")
+        if name:
+            out[name.split("::")[-1]] = fields
+    return out
+
+
+def _a_isa_rule(rule: str, declared: str, node: str, field: str) -> str:
+    """One owner, never zero and never two. The auditor decides this from the
+    same authored text the generator reads, by its own reading."""
+    fixed = re.search(r"AlgebraConstant\(\s*\w+::(\w+)\s*\)", rule or "")
+    given = re.search(r"Some\(\s*\w+::(\w+)\s*\)", declared or "")
+    if fixed and given:
+        raise IsaAdmissionFailure(f"{node}: {field} is declared by both its algebra and its class")
+    if fixed:
+        return fixed.group(1)
+    if given:
+        return given.group(1)
+    raise IsaAdmissionFailure(f"{node}: {field} is declared by neither its algebra nor its class")
+
+
+def pakvm_isa_views(root: Path) -> list[dict]:
+    """Independently admitted PakVM node views, or IsaAdmissionFailure."""
+    src = (root / A_ISA_SRC).read_text(encoding="utf-8")
+    listing = _a_isa_block(src, "pub const PAKVM_NODES")
+    order = re.findall(r"PakVmNodeId::(\w+)", listing)
+    if not order:
+        raise IsaAdmissionFailure("spec/pakvm_isa.rs lists no PakVM nodes")
+    algebras = _a_isa_dispatch(src, "algebra", r"PakVmAlgebra::\w+")
+    classes = _a_isa_dispatch(src, "class", r"PakVmNodeClass::\w+")
+    names = _a_isa_dispatch(src, "authored_name", r'"(?:[^"\\]|\\.)*"')
+    operands = _a_isa_dispatch(src, "operand_sorts", r'"(?:[^"\\]|\\.)*"')
+    results = _a_isa_dispatch(src, "result_sorts", r'"(?:[^"\\]|\\.)*"')
+    algebra_pol = _a_isa_policy(src, "pub const PAKVM_ALGEBRA_POLICIES", "algebra")
+    class_pol = _a_isa_policy(src, "pub const PAKVM_NODE_CLASS_POLICIES", "class")
+    family_units: dict[str, list[str]] = {}
+    for fam, arm in re.findall(r"WorkFormulaFamily::(\w+)\s*=>\s*\{?\s*&\[([^\]]*)\]",
+                               _a_isa_block(src, "pub const fn units(self)") + "\n];", re.S):
+        family_units[fam] = re.findall(r"WorkUnit::(\w+)", arm)
+    plane_src = src[src.find("pub const fn work_plane"): src.find("pub const fn mandatory_work_unit")]
+    planes = {alg: re.findall(r"WorkUnit::(\w+)", arm) for alg, arm in
+              re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*&\[([^\]]*)\]", plane_src, re.S)}
+    mand_src = _a_isa_method(src, "mandatory_work_unit")
+    mandatory = {alg: (re.search(r"WorkUnit::(\w+)", val).group(1)
+                       if "WorkUnit::" in val else None)
+                 for alg, val in re.findall(
+                     r"PakVmAlgebra::(\w+)\s*=>\s*(Some\([^)]*\)|None)", mand_src)}
+    origins = dict(re.findall(r'PakVmAlgebra::(\w+)\s*=>\s*"([^"]*)"',
+                              _a_isa_method(src, "source_origin")))
+    views: list[dict] = []
+    for node in order:
+        alg = algebras.get(node, "").split("::")[-1]
+        cls = classes.get(node, "").split("::")[-1]
+        if not alg:
+            raise IsaAdmissionFailure(f"{node}: algebra() states no authored algebra")
+        if not cls:
+            raise IsaAdmissionFailure(f"{node}: class() states no authored family")
+        ap = algebra_pol.get(alg)
+        cp = class_pol.get(cls)
+        if ap is None:
+            raise IsaAdmissionFailure(f"{node}: algebra {alg} declares no policy")
+        if cp is None:
+            raise IsaAdmissionFailure(f"{node}: class {cls} declares no policy")
+        if cp.get("algebra", "").split("::")[-1] != alg:
+            raise IsaAdmissionFailure(f"{node}: class {cls} is filed under a foreign algebra")
+        view = {"node": node, "algebra": alg, "class": cls}
+        for field in ("effect", "capability", "evidence"):
+            view[field] = _a_isa_rule(ap.get(field, ""), cp.get(field, "None"), node, field)
+        lowering = _a_isa_rule(ap.get("lowering", ""), "None", node, "lowering")
+        if lowering != "PublicSemanticIdentity":
+            raise IsaAdmissionFailure(f"{node}: proposes the non-semantic lowering {lowering}")
+        view["lowering"] = lowering
+        family = cp.get("work_formula", "").split("::")[-1]
+        units = family_units.get(family)
+        if not units:
+            raise IsaAdmissionFailure(f"{node}: work family {family} accounts in no authored unit")
+        plane = planes.get(alg, [])
+        stray = [u for u in units if u not in plane]
+        if stray:
+            raise IsaAdmissionFailure(
+                f"{node}: work family {family} accounts in {stray[0]}, off the {alg} plane")
+        need = mandatory.get(alg)
+        if need and need not in units:
+            raise IsaAdmissionFailure(f"{node}: work family {family} omits {need}")
+        view["work_formula"] = family
+        view["units"] = units
+        view["boundedness"] = cp.get("boundedness", "").split("::")[-1]
+        for field, table in (("name", names), ("operands", operands), ("results", results)):
+            raw = table.get(node)
+            if raw is None:
+                raise IsaAdmissionFailure(f"{node}: states no authored {field}")
+            text = raw[1:-1]
+            if not text.strip():
+                raise IsaAdmissionFailure(f"{node}: states an empty {field}")
+            view[field] = text
+        view["origin"] = origins.get(alg, "")
+        if not view["origin"]:
+            raise IsaAdmissionFailure(f"{node}: {alg} names no source origin")
+        views.append(view)
+    return views
+
+
+def pakvm_isa_findings(root: Path) -> list[str]:
+    """Lineage, partition, and projection-drift findings. Never a crash: a
+    hostile edit must produce a diagnostic, not a traceback."""
+    out: list[str] = []
+    try:
+        views = pakvm_isa_views(root)
+    except IsaAdmissionFailure as exc:
+        return [f"spec/pakvm_isa.rs: PakVM node does not admit: {exc}"]
+    except (ValueError, KeyError, AttributeError) as exc:
+        return [f"spec/pakvm_isa.rs: PakVM semantic ISA is unreadable: {exc}"]
+    ids = [v["node"] for v in views]
+    if len(set(ids)) != len(ids):
+        out.append("spec/pakvm_isa.rs: a PakVM node id is listed more than once")
+    seen: dict[str, str] = {}
+    for v in views:
+        if v["name"] in seen:
+            out.append(f"spec/pakvm_isa.rs: PakVM nodes {seen[v['name']]} and {v['node']} "
+                       f"share the authored name {v['name']!r}")
+        seen[v["name"]] = v["node"]
+    # The work planes partition the authored unit vocabulary. Derived from the
+    # spec's own plane declarations: this states no plane membership of its own.
+    src = (A_ISA_SRC and (root / A_ISA_SRC).read_text(encoding="utf-8"))
+    plane_src = src[src.find("pub const fn work_plane"): src.find("pub const fn mandatory_work_unit")]
+    planes = {alg: re.findall(r"WorkUnit::(\w+)", arm) for alg, arm in
+              re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*&\[([^\]]*)\]", plane_src, re.S)}
+    declared = re.findall(r"^    (\w+),$",
+                          src[src.find("pub enum WorkUnit"): src.find("\n}", src.find("pub enum WorkUnit"))],
+                          re.M)
+    for unit in declared:
+        owners = [a for a, us in planes.items() if unit in us]
+        if len(owners) > 1:
+            out.append(f"work unit {unit} sits on more than one algebra plane: {', '.join(sorted(owners))}")
+        elif not owners:
+            out.append(f"work unit {unit} sits on no algebra plane and no node can account in it")
+    for unit in declared:
+        if not any(unit in v["units"] for v in views):
+            out.append(f"authored work unit {unit} is accounted by no admitted PakVM node")
+    # An opcode never enters the semantic layer, by any route.
+    if re.search(r"#\[repr\(", src):
+        out.append("spec/pakvm_isa.rs: a #[repr] fixes a semantic node's representation")
+    body = src[src.find("pub enum PakVmNodeId"): src.find("\n}", src.find("pub enum PakVmNodeId"))]
+    if re.search(r"=\s*-?\d+", body):
+        out.append("spec/pakvm_isa.rs: PakVmNodeId assigns an explicit discriminant")
+    if re.search(r"PakVmNodeId[^\n]*\bas\s+[iu](8|16|32|64|size)\b", src):
+        out.append("spec/pakvm_isa.rs: a PakVmNodeId is cast to an integer")
+    # The generated projection carries exactly the admitted views.
+    doc = (root / A_ISA_DOC).read_text(encoding="utf-8")
+    table = A_ISA_TABLE.search(doc)
+    if not table:
+        out.append(f"{A_ISA_DOC}: no generated PAKVM-SEMANTIC-ISA block")
+    else:
+        rows = [r for r in table.group(1).splitlines() if r.startswith("| ") and "| ---" not in r]
+        rows = [r for r in rows if not r.startswith("| Node ")]
+        if len(rows) != len(views):
+            out.append(f"{A_ISA_DOC}: projects {len(rows)} PakVM nodes, {len(views)} admit")
+        for row, v in zip(rows, views):
+            cells = [c.strip() for c in row.strip().strip("|").split("|")]
+            want = [v["name"], v["algebra"], v["class"], v["effect"], v["capability"],
+                    v["boundedness"], v["work_formula"], "/".join(v["units"]), v["evidence"]]
+            if cells != want:
+                out.append(f"{A_ISA_DOC}: projected row for {v['name']!r} drifted from its admitted spec")
+                break
+    sigs = A_ISA_SIGS.search(doc)
+    if not sigs:
+        out.append(f"{A_ISA_DOC}: no generated PAKVM-SIGNATURES block")
+    else:
+        text = sigs.group(1)
+        for v in views:
+            if f"    operands  {v['operands']}" not in text:
+                out.append(f"{A_ISA_DOC}: signature projection omits the operand sorts of {v['name']!r}")
+                break
+            if f"    results   {v['results']}" not in text:
+                out.append(f"{A_ISA_DOC}: signature projection omits the result sorts of {v['name']!r}")
+                break
+    return out
+
+
 def retired_proof_row_findings(root: Path) -> list[str]:
     """A retired proof-row id returns nowhere but a marked historical note.
 
@@ -2555,6 +2786,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(authenticated_history_findings(root))
     findings.extend(retired_claim_vocabulary_findings(root))
     findings.extend(retired_proof_row_findings(root))
+    findings.extend(pakvm_isa_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))

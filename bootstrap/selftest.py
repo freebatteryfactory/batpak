@@ -2579,6 +2579,208 @@ def test_guarantee_authority(audit, project) -> list[str]:
     return findings
 
 
+# Multi-line Rust fragments the ISA probes mutate. Named once: repeating them
+# inline invites a transcription drift that would make a probe miss its target
+# and pass for the wrong reason.
+def _isa_class_row(cls: str, algebra: str, family: str) -> str:
+    return (
+        f"        class: PakVmNodeClass::{cls},\n"
+        f"        algebra: PakVmAlgebra::{algebra},\n"
+        f"        work_formula: WorkFormulaFamily::{family},"
+    )
+
+
+WINDOWING_ROWS = _isa_class_row("Windowing", "QueryDataflow", "Rows")
+WINDOWING_OUTPUTS = _isa_class_row("Windowing", "QueryDataflow", "EmittedOutputs")
+QD_EVIDENCE = ("        evidence: PakVmRule::AlgebraConstant"
+               "(EvidenceClass::ReferenceInterpreterModel),\n")
+PUBLIC_LOWERING = ("        lowering: PakVmRule::AlgebraConstant"
+                   "(CandidateLoweringPosture::PublicSemanticIdentity),")
+INTERNAL_LOWERING = ("        lowering: PakVmRule::AlgebraConstant"
+                     "(CandidateLoweringPosture::InternalLoweringIdentity),")
+
+
+def test_pakvm_semantic_isa(audit, project) -> list[str]:
+    """PakVM semantic ISA lineage, projection, and provenance (5.5D4c1).
+
+    Every probe must reach and trip the refusal it names. A probe that goes red
+    on an earlier unrelated rule proves the wrong wire was cut, so each mutation
+    below is chosen to clear the checks that precede its target.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    ISA = "spec/pakvm_isa.rs"
+    D07 = "docs/07_PAKVM_ISA.md"
+    pf = audit.pakvm_isa_findings
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            text = path.read_text(encoding="utf-8")
+            path.write_text(must_replace(text, old, new, name), encoding="utf-8")
+            produced = (validator or pf)(tmp)
+            if not any(needle in f for f in produced):
+                fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    # The premise: the ISA admits cleanly today, through BOTH independent
+    # derivations. Without this every probe below could be red for free.
+    if pf(root):
+        fail(f"pakvm_isa_contract_passes (got {pf(root)!r})")
+    try:
+        auditor = audit.pakvm_isa_views(root)
+        generator = project.pakvm_specs(root)
+    except Exception as exc:  # noqa: BLE001 - a crash here is itself the finding
+        auditor, generator = [], []
+        fail(f"both_derivations_admit_the_isa ({exc!r})")
+    if len(auditor) != 36 or len(generator) != 36:
+        fail(f"both_derivations_admit_36_nodes (auditor {len(auditor)}, generator {len(generator)})")
+    # Independence is only worth something if the two agree on the ANSWER while
+    # sharing no code to compute it.
+    if [v["node"] for v in auditor] != [s["node"] for s in generator]:
+        fail("independent_derivations_agree_on_the_node_inventory")
+    for a, g in zip(auditor, generator):
+        if (a["algebra"], a["class"], a["effect"], a["capability"], a["work_formula"],
+                a["units"], a["evidence"], a["boundedness"]) != (
+                g["algebra"], g["class"], g["effect"], g["capability"], g["work_formula"],
+                g["units"], g["evidence"], g["boundedness"]):
+            fail(f"independent_derivations_agree_on_{a['node']}")
+            break
+
+    # --- admission is complete or the node is not in the ISA -------------------
+    probe("node_with_no_authored_class_does_not_admit", ISA,
+          "            PakVmNodeId::Require => PakVmNodeClass::DecisionGuard,",
+          "Require: class() states no authored family",
+          "")
+    probe("field_with_two_owners_does_not_admit", ISA,
+          "        class: PakVmNodeClass::RowTransform,\n        algebra: PakVmAlgebra::QueryDataflow,\n        work_formula: WorkFormulaFamily::Rows,\n        boundedness: BoundednessPosture::BoundedIteration,\n        effect: None,",
+          "effect is declared by both its algebra and its class",
+          "        class: PakVmNodeClass::RowTransform,\n        algebra: PakVmAlgebra::QueryDataflow,\n        work_formula: WorkFormulaFamily::Rows,\n        boundedness: BoundednessPosture::BoundedIteration,\n        effect: Some(EffectPosture::ObservationalOnly),")
+    probe("field_with_no_owner_does_not_admit", ISA,
+          "        effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),",
+          "effect is declared by neither its algebra nor its class",
+          "        effect: PakVmRule::ClassDeclared,")
+
+    # --- work-formula lineage, not coverage -----------------------------------
+    # Coverage cannot catch these: the wrong family still claims its unit.
+    probe("windowing_accounted_by_returned_output_does_not_admit", ISA,
+          "        class: PakVmNodeClass::Windowing,\n        algebra: PakVmAlgebra::QueryDataflow,\n        work_formula: WorkFormulaFamily::Rows,",
+          "accounts in Outputs, off the QueryDataflow plane",
+          "        class: PakVmNodeClass::Windowing,\n        algebra: PakVmAlgebra::QueryDataflow,\n        work_formula: WorkFormulaFamily::EmittedOutputs,")
+    probe("effect_node_with_a_query_cost_law_does_not_admit", ISA,
+          "        class: PakVmNodeClass::DurableAppend,\n        algebra: PakVmAlgebra::Effect,\n        work_formula: WorkFormulaFamily::DeclaredEffects,",
+          "accounts in Rows, off the Effect plane",
+          "        class: PakVmNodeClass::DurableAppend,\n        algebra: PakVmAlgebra::Effect,\n        work_formula: WorkFormulaFamily::Rows,")
+    probe("query_node_with_an_unrelated_real_unit_does_not_admit", ISA,
+          "        class: PakVmNodeClass::RowTransform,\n        algebra: PakVmAlgebra::QueryDataflow,\n        work_formula: WorkFormulaFamily::Rows,",
+          "accounts in Artifacts, off the QueryDataflow plane",
+          "        class: PakVmNodeClass::RowTransform,\n        algebra: PakVmAlgebra::QueryDataflow,\n        work_formula: WorkFormulaFamily::StagedArtifacts,")
+    # A unit on two planes would let a family launder cost through whichever
+    # plane it likes; a unit on none could never be accounted at all.
+    probe("a_work_unit_on_two_planes_is_rejected", ISA,
+          "            PakVmAlgebra::Effect => &[WorkUnit::Effects, WorkUnit::Artifacts, WorkUnit::Outputs],",
+          "sits on more than one algebra plane",
+          "            PakVmAlgebra::Effect => &[WorkUnit::Effects, WorkUnit::Artifacts, WorkUnit::Outputs, WorkUnit::Rows],")
+
+    # --- the semantic layer never acquires an encoding -------------------------
+    probe("an_explicit_discriminant_is_rejected", ISA,
+          "pub enum PakVmNodeId {\n    // Formula and decision (docs/07: 16)\n    Literal,",
+          "assigns an explicit discriminant",
+          "pub enum PakVmNodeId {\n    // Formula and decision (docs/07: 16)\n    Literal = 0,")
+    probe("a_repr_on_the_semantic_node_is_rejected", ISA,
+          "#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum PakVmNodeId {",
+          "fixes a semantic node's representation",
+          "#[repr(u8)]\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum PakVmNodeId {")
+
+    # --- an internal lowering identity is not a semantic node ------------------
+    # The lowering line is byte-identical in all three algebra policies, so the
+    # anchor carries the unique line above it. must_replace rewrites the first
+    # match: an ambiguous anchor would mutate whichever policy happens to come
+    # first and the probe would drift silently the day the order changes.
+    probe("an_internal_lowering_identity_does_not_admit", ISA,
+          QD_EVIDENCE + PUBLIC_LOWERING,
+          "proposes the non-semantic lowering InternalLoweringIdentity",
+          QD_EVIDENCE + INTERNAL_LOWERING)
+
+    # --- provenance ------------------------------------------------------------
+    probe("a_node_with_an_empty_authored_name_does_not_admit", ISA,
+          '            PakVmNodeId::Literal => "literal",',
+          "states an empty name",
+          '            PakVmNodeId::Literal => "",')
+    probe("a_node_with_no_source_origin_does_not_admit", ISA,
+          '            PakVmAlgebra::Effect => "docs/07 Three instruction algebras: Effects",',
+          "names no source origin",
+          '            PakVmAlgebra::Effect => "",')
+
+    # --- projection drift ------------------------------------------------------
+    probe("a_projected_row_edited_by_hand_is_rejected", D07,
+          "| literal | FormulaDecision | ScalarComputation | Pure |",
+          "drifted from its admitted spec",
+          "| literal | FormulaDecision | ScalarComputation | Effectful |")
+    probe("a_projected_row_deleted_by_hand_is_rejected", D07,
+          "| binding | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |\n",
+          "projects 35 PakVM nodes, 36 admit",
+          "")
+    probe("a_signature_deleted_by_hand_is_rejected", D07,
+          "    operands  none; a constant-pool reference",
+          "signature projection omits the operand sorts",
+          "    operands  ")
+
+    # --- a test injection cannot enter the projection or gain provenance -------
+    with isolated_tree() as tmp:
+        d07 = tmp / D07
+        d07.write_text(d07.read_text(encoding="utf-8").replace(
+            "| literal | FormulaDecision |",
+            "| injected_micro_op | FormulaDecision | ScalarComputation | Pure | None | "
+            "ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |\n"
+            "| literal | FormulaDecision |", 1), encoding="utf-8")
+        if not any("PakVM nodes" in f or "drifted" in f for f in pf(tmp)):
+            fail("an_injected_projection_row_is_rejected")
+
+    # --- the generator refuses to project an unadmitted node -------------------
+    # A projector that completed a missing field would reintroduce the exact
+    # defect this pass exists to remove.
+    with isolated_tree() as tmp:
+        path = tmp / ISA
+        path.write_text(must_replace(
+            path.read_text(encoding="utf-8"),
+            "        effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),",
+            "        effect: PakVmRule::ClassDeclared,",
+            "generator refusal"), encoding="utf-8")
+        try:
+            project.pakvm_specs(tmp)
+            fail("the_generator_refuses_to_project_an_unadmitted_node")
+        except project.Unadmitted:
+            pass
+
+    # --- detector neutering ----------------------------------------------------
+    # Silencing the plane rule must not leave a green suite. Uses the canonical
+    # neutered_validator helper: the real audit.py is never opened for writing, so
+    # a probe that dies mid-mutation cannot leave a disabled rule behind.
+    with isolated_tree() as tmp:
+        p2 = tmp / ISA
+        p2.write_text(must_replace(
+            p2.read_text(encoding="utf-8"),
+            WINDOWING_ROWS, WINDOWING_OUTPUTS,
+            "cross-plane mutation"), encoding="utf-8")
+        # the live rule sees it...
+        if not any("off the QueryDataflow plane" in f for f in pf(tmp)):
+            fail("the_plane_rule_bites_before_it_is_neutered")
+        # ...and the neutered rule does not, which is what makes it a real rule.
+        with neutered_validator("audit", "        stray = [u for u in units if u not in plane]",
+                                "        stray = []") as neutered:
+            if any("off the QueryDataflow plane" in f
+                   for f in neutered.pakvm_isa_findings(tmp)):
+                fail("neutering_the_plane_rule_silences_it")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def test_rust_specification_compiles(_audit) -> list[str]:
     """The typed specification surface must actually compile (5.5D4b).
 
@@ -2615,6 +2817,40 @@ def test_rust_specification_compiles(_audit) -> list[str]:
                 head = "\n".join(proc.stderr.splitlines()[:6])
                 findings.append(
                     f"rust specification surface does not compile ({name}):\n{head}")
+        # The admission desk has no public bypass, and the admitted witness cannot
+        # be forged. Both are proven by COMPILING against the real
+        # spec/pakvm_isa.rs through a normal (non-test) module boundary — the same
+        # visibility configuration production uses. A copied or hand-written stub
+        # would drift from the real file the moment either changed, and would then
+        # be proving a property of the stub.
+        for name, body, want in (
+            ("isa_seam_is_absent_from_production",
+             "let ap = algebra_policy(PakVmAlgebra::QueryDataflow).unwrap();\n"
+             "    let cp = class_policy(PakVmNodeClass::RowTransform).unwrap();\n"
+             "    let _ = admit_candidate_policy(PakVmNodeId::Filter, ap, cp);",
+             "cannot find function `admit_candidate_policy`"),
+            ("isa_admission_witness_cannot_be_forged",
+             "let _ = AdmittedAsPublicSemanticNode(());",
+             "cannot initialize a tuple struct which contains private fields"),
+        ):
+            src = tmp / f"{name}.rs"
+            src.write_text(
+                f'#[path = "{(root / "spec/pakvm_isa.rs").as_posix()}"] mod pakvm_isa;\n'
+                "use pakvm_isa::*;\n"
+                f"pub fn probe() {{\n    {body}\n}}\n", encoding="utf-8")
+            proc = subprocess.run(
+                [rustc, "--edition", "2021", "--crate-type", "lib", "--emit=metadata",
+                 "--crate-name", name, "-o", str(tmp / (name + ".rmeta")), str(src)],
+                capture_output=True, text=True)
+            if proc.returncode == 0:
+                findings.append(
+                    f"{name}: production code reached a test-only or sealed ISA item")
+            elif want not in proc.stderr:
+                # It must fail for THIS reason. A probe red for an unrelated
+                # compile error would certify a boundary nobody tested.
+                head = "\n".join(proc.stderr.splitlines()[:4])
+                findings.append(
+                    f"{name}: compile failed, but not with {want!r}:\n{head}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return findings
@@ -2652,6 +2888,7 @@ def main() -> int:
     findings += test_leg081_authority(audit)
     findings += test_proof_target_resolver(audit)
     findings += test_guarantee_authority(audit, project)
+    findings += test_pakvm_semantic_isa(audit, project)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
@@ -2661,7 +2898,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures + rust specification compile)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures + PakVM semantic ISA + rust specification compile)")
     return 0
 
 

@@ -215,6 +215,14 @@ impl PakVmAlgebra {
     /// The work-accounting plane this algebra plays on: the only units a family
     /// of this algebra may account in.
     ///
+    /// SCOPE: this law governs the V1 PUBLIC semantic ISA — the 36 nodes admitted
+    /// here — and nothing else. It is not a claim about internal lowering
+    /// identities, `SpecializedPlan` micro-ops, physical attempts, or
+    /// implementation mechanisms: those are a different layer with their own
+    /// accounting, and they have no `PakVmNodeId` to admit. A future mechanism
+    /// that measures cost differently does not contradict this partition; it is
+    /// simply not governed by it.
+    ///
     /// The three planes PARTITION the authored unit vocabulary — every unit
     /// belongs to exactly one algebra, and no unit belongs to two. That is the
     /// lineage docs/07 already carries: `Groups`, `Matches`, `TileBytes`, and

@@ -517,6 +517,189 @@ BLOCK_FILE = {
 }
 
 
+# --- PakVM semantic ISA projection (D4c1) -----------------------------------
+# GENERATOR half. `bootstrap/audit.py` re-derives all of this independently and
+# compares; the two share no parsing or admission logic. Neither may author node
+# semantics: `spec/pakvm_isa.rs` owns them, this reads them, and a node whose
+# spec does not admit is not projected at all.
+
+ISA_SPEC = "spec/pakvm_isa.rs"
+ISA_DOC = "docs/07_PAKVM_ISA.md"
+P_ISA_ARM = re.compile(
+    r"((?:\|?\s*PakVmNodeId::\w+\s*)+)=>\s*\{?\s*"
+    r"(\"(?:[^\"\\]|\\.)*\"|[A-Za-z_][\w:]*)")
+P_ISA_NODES = re.compile(r"pub const PAKVM_NODES: &\[PakVmNodeId\] = &\[(.*?)\n\];", re.S)
+P_ISA_VARIANT = re.compile(r"PakVmNodeId::(\w+)")
+P_ISA_FIELD = re.compile(r"(\w+):\s*([^,\n]+?),?\s*$")
+
+
+def _isa_fn_body(src: str, name: str) -> str:
+    """The text of one `impl PakVmNodeId` method, start to the next method."""
+    start = src.index(f"pub const fn {name}(")
+    rest = src[start:]
+    nxt = rest.find("\n    pub const fn ", 1)
+    return rest if nxt < 0 else rest[:nxt]
+
+
+def _isa_arms(src: str, name: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for pattern, value in P_ISA_ARM.findall(_isa_fn_body(src, name)):
+        for variant in P_ISA_VARIANT.findall(pattern):
+            out[variant] = value[1:-1] if value.startswith('"') else value.split("::")[-1]
+    return out
+
+
+def _isa_struct_rows(src: str, const: str, kind: str) -> list[dict[str, str]]:
+    body = src[src.index(f"pub const {const}"):]
+    body = body[: body.index("\n];")]
+    rows = []
+    for chunk in re.findall(kind + r"\s*\{(.*?)\n    \},", body + "\n    },", re.S):
+        row: dict[str, str] = {}
+        depth = 0
+        field = ""
+        for ch in chunk:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            if ch == "," and depth == 0:
+                m = P_ISA_FIELD.search(field.strip())
+                if m:
+                    row[m.group(1)] = m.group(2).strip()
+                field = ""
+            else:
+                field += ch
+        m = P_ISA_FIELD.search(field.strip())
+        if m:
+            row[m.group(1)] = m.group(2).strip()
+        if row:
+            rows.append(row)
+    return rows
+
+
+def _isa_units(src: str) -> dict[str, list[str]]:
+    """WorkFormulaFamily -> the work units it accounts in."""
+    body = src[src.index("pub const fn units(self)"):]
+    body = body[: body.index("\n}")]
+    out: dict[str, list[str]] = {}
+    for fam, units in re.findall(
+            r"WorkFormulaFamily::(\w+)\s*=>\s*\{?\s*&\[([^\]]*)\]", body, re.S):
+        out[fam] = re.findall(r"WorkUnit::(\w+)", units)
+    return out
+
+
+def _isa_planes(src: str) -> tuple[dict[str, list[str]], dict[str, str]]:
+    body = src[src.index("pub const fn work_plane(self)"):]
+    body = body[: body.index("pub const fn mandatory_work_unit")]
+    planes = {a: re.findall(r"WorkUnit::(\w+)", u)
+              for a, u in re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*&\[([^\]]*)\]", body, re.S)}
+    body2 = src[src.index("pub const fn mandatory_work_unit(self)"):]
+    body2 = body2[: body2.index("\n}")]
+    mand = {}
+    for alg, val in re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*(Some\(WorkUnit::\w+\)|None)", body2):
+        m = re.search(r"WorkUnit::(\w+)", val)
+        mand[alg] = m.group(1) if m else ""
+    return planes, mand
+
+
+class Unadmitted(Exception):
+    pass
+
+
+def pakvm_specs(root: Path) -> list[dict]:
+    """Admitted PakVM node specs, derived independently of spec/pakvm_isa.rs's
+    own `admit`. A node that does not admit raises: a projector serializes an
+    admitted spec and may never complete one."""
+    src = (root / ISA_SPEC).read_text(encoding="utf-8")
+    m = P_ISA_NODES.search(src)
+    nodes = P_ISA_VARIANT.findall(m.group(1)) if m else []
+    algebra = _isa_arms(src, "algebra")
+    klass = _isa_arms(src, "class")
+    name = _isa_arms(src, "authored_name")
+    operands = _isa_arms(src, "operand_sorts")
+    results = _isa_arms(src, "result_sorts")
+    units = _isa_units(src)
+    planes, mandatory = _isa_planes(src)
+    apol = {r["algebra"].split("::")[-1]: r
+            for r in _isa_struct_rows(src, "PAKVM_ALGEBRA_POLICIES", "PakVmAlgebraPolicy")}
+    cpol = {r["class"].split("::")[-1]: r
+            for r in _isa_struct_rows(src, "PAKVM_NODE_CLASS_POLICIES", "PakVmNodeClassPolicy")}
+    origins = {}
+    body = _isa_fn_body(src, "source_origin")
+    for alg, val in re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*\"([^\"]*)\"", body):
+        origins[alg] = val
+    out = []
+    for n in nodes:
+        alg, cls = algebra.get(n), klass.get(n)
+        if not alg or not cls:
+            raise Unadmitted(f"{n}: no authored algebra or class")
+        ap, cp = apol.get(alg), cpol.get(cls)
+        if ap is None or cp is None:
+            raise Unadmitted(f"{n}: {alg}/{cls} declares no policy")
+        if cp["algebra"].split("::")[-1] != alg:
+            raise Unadmitted(f"{n}: class policy names a different algebra")
+        resolved = {}
+        for field in ("effect", "capability", "evidence", "lowering"):
+            rule = ap.get(field, "")
+            declared = cp.get(field, "None") if field != "lowering" else "None"
+            const = re.search(r"AlgebraConstant\((\w+::)?(\w+)\)", rule)
+            got = re.search(r"Some\((\w+::)?(\w+)\)", declared)
+            if const and got:
+                raise Unadmitted(f"{n}: {field} has no single owner")
+            if const:
+                resolved[field] = const.group(2)
+            elif got:
+                resolved[field] = got.group(2)
+            else:
+                raise Unadmitted(f"{n}: {field} has no single owner")
+        if resolved["lowering"] != "PublicSemanticIdentity":
+            raise Unadmitted(f"{n}: an internal lowering identity is not a semantic node")
+        fam = cp["work_formula"].split("::")[-1]
+        fu = units.get(fam)
+        if not fu:
+            raise Unadmitted(f"{n}: work formula {fam} accounts in no unit")
+        plane = planes.get(alg, [])
+        for u in fu:
+            if u not in plane:
+                raise Unadmitted(f"{n}: work unit {u} is outside the {alg} work plane")
+        need = mandatory.get(alg, "")
+        if need and need not in fu:
+            raise Unadmitted(f"{n}: work formula omits {need}")
+        out.append({
+            "node": n, "name": name.get(n, ""), "algebra": alg, "class": cls,
+            "effect": resolved["effect"], "capability": resolved["capability"],
+            "boundedness": cp["boundedness"].split("::")[-1], "work_formula": fam,
+            "units": fu, "evidence": resolved["evidence"],
+            "operands": operands.get(n, ""), "results": results.get(n, ""),
+            "origin": origins.get(alg, ""),
+        })
+    return out
+
+
+def render_pakvm_isa(root) -> str:
+    specs = pakvm_specs(root)
+    out = [
+        "| Node | Algebra | Class | Effect | Capability | Boundedness | WorkFormula | WorkUnits | Evidence |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for s in specs:
+        out.append(
+            f"| {s['name']} | {s['algebra']} | {s['class']} | {s['effect']} | "
+            f"{s['capability']} | {s['boundedness']} | {s['work_formula']} | "
+            f"{'/'.join(s['units'])} | {s['evidence']} |")
+    return "\n".join(out)
+
+
+def render_pakvm_signatures(root) -> str:
+    out = ["```text"]
+    for s in pakvm_specs(root):
+        out.append(s["name"])
+        out.append(f"    operands  {s['operands']}")
+        out.append(f"    results   {s['results']}")
+        out.append("")
+    return "\n".join(out).rstrip("\n") + "\n```"
+
+
 def block_pattern(name: str) -> re.Pattern[str]:
     return re.compile(
         r"(<!-- " + re.escape(name) + r":BEGIN[^>]*-->\n)(.*?)(\n<!-- " + re.escape(name) + r":END -->)",
@@ -569,6 +752,18 @@ def main() -> int:
         body = render_seed_classification(root)
         seed_rewritten = seed_pattern.sub(lambda m: m.group(1) + body + m.group(3), seed_original)
     plans.append((seed_path, seed_original, seed_rewritten))
+    isa_path = root / ISA_DOC
+    isa_original = isa_path.read_text(encoding="utf-8")
+    isa_rewritten = isa_original
+    for name, render in (("PAKVM-SEMANTIC-ISA", render_pakvm_isa),
+                         ("PAKVM-SIGNATURES", render_pakvm_signatures)):
+        pat = block_pattern(name)
+        if not pat.search(isa_rewritten):
+            findings.append(f"{ISA_DOC}: missing generated block markers for {name}")
+            continue
+        body = render(root)
+        isa_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), isa_rewritten)
+    plans.append((isa_path, isa_original, isa_rewritten))
     gates_path = root / GATES_DOC
     gates_original = gates_path.read_text(encoding="utf-8")
     for rel in STALE_DOCS:
