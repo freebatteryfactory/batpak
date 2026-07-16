@@ -141,30 +141,61 @@ Authoritative meanings:
 middle_event_deletion_is_rejected
     Removing a middle event cannot make the surviving neighbours verify as
     one intact chain.
+    expects: verifying a chain with one middle event removed terminates in a
+      typed refusal at the broken predecessor linkage; the surviving
+      neighbours never verify as one intact chain
+    disposition: a typed chain-verification failure; no acceptance of the
+      spliced remainder
 
 event_reorder_is_rejected
     Individually valid events in the wrong immediate-predecessor order fail
     verification.
+    expects: individually valid events presented out of immediate-predecessor
+      order fail verification at the first out-of-order commitment
+    disposition: a typed predecessor-mismatch refusal; no reordered stream is
+      reported verified
 
 duplicate_payload_splice_is_rejected
     Matching payload bytes or ContentDigest cannot substitute a different
     EventCommitment or predecessor position.
+    expects: an event whose payload bytes or ContentDigest match but whose
+      EventCommitment or predecessor position differs fails verification at
+      that event
+    disposition: a typed commitment-mismatch refusal; payload equality never
+      substitutes for commitment identity
 
 cross_lane_predecessor_is_rejected
     A predecessor from another lane cannot satisfy the expected stream
     predecessor. Lane isolation itself is owned by LEG-050.
+    expects: an event naming a predecessor from another lane fails
+      verification at the crossing event
+    disposition: a typed predecessor-mismatch refusal; lane-isolation law
+      itself stays owned by LEG-050
 
 cross_entity_predecessor_is_rejected
     A predecessor from another entity cannot satisfy the expected stream
     predecessor. Lane isolation itself is owned by LEG-050.
+    expects: an event naming a predecessor from another entity fails
+      verification at the crossing event
+    disposition: a typed predecessor-mismatch refusal; entity-isolation law
+      itself stays owned by LEG-050
 
 midstream_genesis_is_rejected
     A genesis marker cannot reset an already-started stream. Dense visible
     linearization itself is owned by LEG-067.
+    expects: a genesis marker appearing after a stream has started fails
+      verification at that marker and resets nothing
+    disposition: a typed refusal naming the illegal genesis position; the
+      established prefix keeps its own verification state
 
 forged_index_row_cannot_choose_and_authenticate_bytes
     Derived metadata cannot select authority bytes and bootstrap verification
     from the selection it supplied.
+    expects: verification steered by a forged index row terminates in a typed
+      refusal or verifies only against authoritative bytes the row did not
+      select; the row's own selection never becomes the verified authority
+    disposition: a typed refusal or an authoritative-storage verification
+      result; never an acceptance grounded solely in derived metadata
 ```
 
 These are future executable TestPak witnesses. Bootstrap proves their names, owner binding, documentary meaning, and cross-surface agreement only. It does not execute journal verification, read a real chain, or detect real event loss.
@@ -191,26 +222,56 @@ Authoritative meanings:
 forged_sibling_cannot_cause_false_loss
     One forged or contradictory derived sibling cannot make the system declare an
     authoritative event lost without checking authoritative storage.
+    expects: one forged or contradictory derived sibling yields at most a
+      suspicion outcome that names authoritative storage as the unfinished
+      check; it never yields a loss verdict by itself
+    disposition: a typed suspicion or corroboration-failure outcome; a loss
+      verdict issues only after authoritative storage is consulted
 
 agreeing_truncated_table_cannot_cause_false_safety
     A derived table whose present rows agree with authority cannot prove that
     omitted middle or trailing authoritative events do not exist.
+    expects: a derived table whose present rows all corroborate still yields
+      no completeness verdict; omitted middle or trailing authoritative
+      events remain undetermined until authority is consulted
+    disposition: a typed per-row corroboration result carrying no
+      table-completeness claim
 
 derived_row_cannot_authenticate_siblings
     Corroborating one row does not authenticate another row.
+    expects: corroborating one row leaves every other row's authentication
+      state unchanged
+    disposition: a typed single-row corroboration result scoped to that row
+      alone
 
 derived_row_cannot_authenticate_table_count
     Corroborating present rows does not establish the authoritative number of rows.
+    expects: corroborating every present row yields no authoritative row
+      count; the cardinality claim remains unproven
+    disposition: a typed corroboration result that carries no cardinality
+      authority
 
 derived_row_cannot_authenticate_order
     Corroborating row contents does not establish table ordering.
+    expects: corroborating row contents yields no ordering verdict; a
+      permuted table with identical row contents corroborates identically
+    disposition: a typed content-corroboration result that carries no
+      ordering authority
 
 derived_row_cannot_authenticate_tail_boundary
     A derived claimed tail is not authoritative merely because its final present
     row verifies.
+    expects: a verifying final present row yields no tail-boundary verdict;
+      a claimed tail authenticates only against authoritative storage
+    disposition: a typed row corroboration carrying no tail claim; tail
+      authority resolves against authoritative storage or not at all
 
 derived_row_cannot_prove_absence_or_loss
     An unauthenticated omission is not authoritative evidence of absence or loss.
+    expects: an omission in derived material yields no absence or loss
+      verdict while authoritative storage stands unconsulted
+    disposition: a typed suspicion outcome at most; absence and loss verdicts
+      issue only from authoritative evidence
 ```
 
 ## Bounded-discovery witness (LEG-028)
@@ -230,6 +291,12 @@ page_limit_bounds_discovery_work_not_only_output
     The page limit and work budget constrain discovery before unbounded decode,
     allocation, or materialization. Scanning or decoding the complete matched set
     and truncating only the returned output does not satisfy bounded traversal.
+    expects: discovery under a page limit and work budget observes decode,
+      allocation, and materialization work bounded by the declared budget
+      while the matched set grows far beyond the page
+    disposition: a page of results with within-budget work evidence, or a
+      typed budget refusal; a full-set scan truncated at output fails the
+      witness
 ```
 
 ## Bounded-allocation witness (LEG-020)
@@ -249,6 +316,13 @@ allocation_does_not_scale_with_full_matched_set
     Memory allocation and retained materialization do not scale with the complete
     matched set when the contract promises bounded paging or streaming. Small
     returned output is not proof of bounded discovery, allocation, or retained work.
+    expects: peak allocation and retained materialization observed under a
+      bounded paging or streaming contract stay within the declared bound
+      while the complete matched set grows; matched-set growth does not grow
+      retained memory
+    disposition: within-bound allocation evidence accompanying the result,
+      or a typed resource refusal; small returned output alone is not
+      accepted as the evidence
 ```
 
 ## Deferred native-postcondition witnesses (LEG-043)
@@ -269,14 +343,29 @@ Authoritative meanings:
 descriptor_postcondition_failure_is_not_reported_applied
     A requested descriptor postcondition is not reported as established,
     applied, or verified when the required postcondition verification fails.
+    expects: an injected postcondition-verification failure yields a typed
+      not-established result; no surface reports the postcondition as
+      established, applied, or verified
+    disposition: a typed postcondition failure; the descriptor state claim
+      stays at requested or attempted
 
 fcntl_getfd_failure_fails_closed
     Failure to read descriptor flags cannot produce a verified close-on-exec
     or equivalent descriptor postcondition.
+    expects: an injected flag-read failure yields a typed failure; no
+      verified close-on-exec or equivalent postcondition is reported from an
+      unread flag state
+    disposition: a typed descriptor-flag read failure that leaves the
+      postcondition unestablished
 
 fcntl_setfd_failure_fails_closed
     Failure to apply descriptor flags cannot produce an applied or verified
     descriptor postcondition.
+    expects: an injected flag-apply failure yields a typed failure; no
+      applied or verified postcondition is reported from a failed
+      application
+    disposition: a typed descriptor-flag apply failure that leaves the
+      postcondition unestablished
 ```
 
 ## Reopen and reimport idempotency witness (LEG-074)
@@ -300,6 +389,11 @@ close_reopen_reimport_returns_zero_new_events
     lineage, completed close state, reopened destination state, idempotency
     authority binding, the original established authority outcome, and a
     resulting new-event count of zero.
+    expects: retrying the same stable import identity after a durable close
+      and reopen admits no additional source event and returns the outcome
+      the first import established
+    disposition: the original outcome with a new-event count of exactly zero;
+      a duplicated source event fails the witness
 ```
 
 ## Secret-authority shred witnesses (LEG-081)
@@ -327,41 +421,81 @@ shred_ack_waits_for_backend_durability
     A shred acknowledgement is emitted only after the owning backend has durably
     established destruction of the relevant key authority. An accepted request or
     an attempted delete is not sufficient.
+    expects: no shred acknowledgement is observable before the owning
+      backend reports durable destruction of the relevant key authority; an
+      accepted request or attempted delete surfaces as unfinished or
+      refused, never acknowledged
+    disposition: an acknowledgement emitted only after durable destruction,
+      or a typed unfinished or refused posture
 
 crash_before_durable_key_delete_does_not_report_shred_success
     A crash before durable key destruction cannot leave a successful shred
     acknowledgement or a successful final shred result. Recovery preserves the
     incomplete or refused posture.
+    expects: a crash injected before durable key destruction recovers into
+      an incomplete or refused shred posture; no surface reports a
+      successful acknowledgement or final shred result
+    disposition: the recovered incomplete or refused posture; success
+      appears only once durable destruction completes
 
 reopen_after_ack_cannot_recover_shredded_plaintext
     After a valid durable shred acknowledgement, closing and reopening the store
     cannot recover plaintext through the shredded key scope.
+    expects: after a valid durable shred acknowledgement, close and reopen
+      followed by reads through the shredded key scope return no plaintext
+    disposition: a typed Shredded outcome for the shredded scope; never
+      recovered plaintext
 
 shred_transition_binding_mismatch_is_rejected
     The shred transition binds StoreId, AuthorityGeneration, KeyGeneration, key
     scope, and shred-transition identity. A mismatch in any bound component fails
     closed and cannot produce an acknowledged, applied, or verified shred
     transition.
+    expects: a shred transition presenting a mismatched StoreId,
+      AuthorityGeneration, KeyGeneration, key scope, or shred-transition
+      identity fails closed at the binding check
+    disposition: a typed binding refusal; no acknowledged, applied, or
+      verified transition from mismatched components
 
 stale_or_pre_shred_keyset_restore_is_rejected
     A stale keyset, or a keyset from before the acknowledged shred transition,
     cannot restore readability for the shredded scope.
+    expects: restoring a stale keyset, or one predating the acknowledged
+      shred transition, leaves the shredded scope unreadable
+    disposition: a typed restore refusal or an unreadable scope; readability
+      never returns through an out-of-date keyset
 
 foreign_keyset_generation_is_rejected
     A keyset from another store lineage, authority generation, key generation, or
     otherwise foreign authority context cannot restore readability for the
     shredded scope.
+    expects: a keyset originating outside the store's own lineage, authority
+      generation, key generation, and authority context leaves the shredded
+      scope unreadable
+    disposition: a typed foreign-keyset refusal; readability never returns
+      through a foreign authority context
 
 shredded_unavailable_and_keyset_missing_remain_distinct
     Shredded, Unavailable, and KeysetMissing remain distinct availability or
     authority outcomes in typed results, receipts, recovery, and explanations. No
     projection or formatter may collapse one into another.
+    expects: scenarios producing Shredded, Unavailable, and KeysetMissing
+      yield three distinct typed outcomes across results, receipts,
+      recovery, and explanations
+    disposition: the distinct typed outcome for each scenario; a projection
+      or formatter collapsing any two of them fails the witness
 
 snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
     Snapshot, fork, WorldImage, artifact-bundle, and ordinary receipt surfaces
     exclude raw key material by default. They may carry approved identities,
     commitments, encrypted or opaque references, and proof posture, but they may
     not export usable raw secret-key bytes through an ordinary projection.
+    expects: snapshot, fork, WorldImage, artifact-bundle, and ordinary
+      receipt exports produced over a keyed store contain no usable raw
+      secret-key bytes
+    disposition: exports carrying only approved identities, commitments,
+      encrypted or opaque references, and proof posture; raw key bytes on
+      any ordinary projection fail the witness
 
 external_key_backend_preserves_shred_semantics
     An external key backend must preserve the same acknowledgement durability,
@@ -369,6 +503,14 @@ external_key_backend_preserves_shred_semantics
     distinctions, raw-key export exclusions, and fail-closed behaviour as the
     in-process authority contract. Backend indirection may change mechanism,
     never semantics.
+    expects: every shred witness in this table observes the same outcome
+      when the key authority is served by an external backend:
+      acknowledgement durability, transition binding, restore rejection,
+      result-state distinctions, export exclusions, and fail-closed
+      behaviour are unchanged
+    disposition: the same typed outcomes as the in-process authority
+      contract; a backend-specific divergence is a witness failure, not an
+      alternative semantics
 ```
 
 Coverage is a property of the law, not of the prose around it. Every clause of the

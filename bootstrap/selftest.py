@@ -2494,54 +2494,48 @@ def test_proof_target_resolver(audit) -> list[str]:
     if plant("Illustrative scenarios:")[-1]["kind"] != "DescriptiveEvidence":
         fail("fence_without_executable_metadata_is_descriptive_not_promoted")
 
-    # Transitional expectation clause.
+    # Universal expectation-clause enforcement. The transitional ceiling is
+    # spent (D4d): every canonical row carries the clause, the baseline count is
+    # zero, and ANY row without one -- newly promoted or newly stripped -- is a
+    # finding. The probes therefore corrupt the authored clause on the LEG-028
+    # row instead of granting it one.
     ids, blocks, pending = audit.candidate_summary(root)
-    if (ids, blocks, pending) != (0, 0, 29):
+    if (ids, blocks, pending) != (0, 0, 0):
         fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
-    W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
-    probe("expectation_clause_without_disposition_is_rejected", GA, W28M,
-          f"proof row {W28} expectation clause states no disposition",
-          W28M + "\n    expects: refusal BudgetExceeded before decode.")
-    probe("expectation_clause_without_predicate_is_rejected", GA, W28M,
-          f"proof row {W28} expectation clause states no expects",
-          W28M + "\n    disposition: the AttemptReceipt records the refusal.")
-    probe("unfalsifiable_expectation_clause_is_rejected", GA, W28M,
+    W28E = ("    expects: discovery under a page limit and work budget observes decode,\n"
+            "      allocation, and materialization work bounded by the declared budget\n"
+            "      while the matched set grows far beyond the page")
+    W28D = ("    disposition: a page of results with within-budget work evidence, or a\n"
+            "      typed budget refusal; a full-set scan truncated at output fails the\n"
+            "      witness")
+    W28C = W28E + "\n" + W28D
+    probe("expectation_clause_without_disposition_is_rejected", GA, W28C,
+          f"proof row {W28} expectation clause states no disposition", W28E)
+    probe("expectation_clause_without_predicate_is_rejected", GA, W28C,
+          f"proof row {W28} expectation clause states no expects", W28D)
+    probe("unfalsifiable_expectation_clause_is_rejected", GA, W28E,
           "expectation clause expects is not falsifiable",
-          W28M + "\n    expects: TBD\n    disposition: the AttemptReceipt records the refusal.")
+          "    expects: TBD")
     probe("newly_promoted_row_without_an_expectation_clause_is_rejected", GA,
-          W28 + "\n```", "proof rows carry no expectation clause, above the transitional ceiling of 29",
+          W28 + "\n```", "proof rows carry no expectation clause, above the transitional ceiling of 0",
           W28 + "\nnewly_promoted_row_without_a_clause\n```")
+    # Enforcement is universal, not grandfathered: stripping the clause from a
+    # long-migrated row is refused exactly like omitting it on a new one.
+    probe("stripping_a_migrated_clause_is_rejected", GA, W28C,
+          "proof rows carry no expectation clause, above the transitional ceiling of 0")
     # A clause may wrap, so the scan must read the folded value. Before the fold
     # existed, this mutation passed: the vague qualifier sits on the continuation
     # line, and a first-line-only parser never saw it.
-    probe("unfalsifiable_expectation_clause_continuation_is_rejected", GA, W28M,
+    probe("unfalsifiable_expectation_clause_continuation_is_rejected", GA, W28E,
           "expectation clause expects is not falsifiable",
-          W28M + "\n    expects: refusal BudgetExceeded raised before decode,"
-                 "\n      as appropriate.\n    disposition: the AttemptReceipt records the refusal.")
-
-    # A complete clause is accepted and does not disturb the pending count.
-    with isolated_tree() as tmp:
-        p = tmp / GA
-        p.write_text(must_replace(p.read_text(encoding="utf-8"), W28M,
-                     W28M + "\n    expects: refusal BudgetExceeded raised before unbounded decode."
-                            "\n    disposition: the AttemptReceipt records the refusal and no page is published.",
-                     "add a complete clause"), encoding="utf-8")
-        silent("complete_expectation_clause_is_accepted", pt(tmp))
-        if audit.candidate_summary(tmp)[2] != 28:
-            fail("expectation_clause_decrements_the_pending_count")
-
-    # A wrapped clause carries its whole value, not its first line.
-    with isolated_tree() as tmp:
-        p = tmp / GA
-        p.write_text(must_replace(p.read_text(encoding="utf-8"), W28M,
-                     W28M + "\n    expects: refusal BudgetExceeded raised"
-                            "\n      before unbounded decode."
-                            "\n    disposition: the AttemptReceipt records the refusal.",
-                     "wrap a clause"), encoding="utf-8")
-        silent("wrapped_expectation_clause_is_accepted", pt(tmp))
-        got = audit.witness_expectations(tmp).get(W28, {}).get("expects", "")
-        if got != "refusal BudgetExceeded raised before unbounded decode.":
-            fail(f"expectation_clause_continuation_folds_into_its_value (got {got!r})")
+          W28E + ",\n      as appropriate")
+    # The authored clause is itself wrapped: the scan must return the whole
+    # folded value, not the first line it happens to see.
+    got = audit.witness_expectations(root).get(W28, {}).get("expects", "")
+    if got != ("discovery under a page limit and work budget observes decode, "
+               "allocation, and materialization work bounded by the declared budget "
+               "while the matched set grows far beyond the page"):
+        fail(f"expectation_clause_continuation_folds_into_its_value (got {got!r})")
 
     findings.extend(canonical_drift(before))
     return findings

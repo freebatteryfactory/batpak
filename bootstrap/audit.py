@@ -2935,17 +2935,17 @@ def guarantee_gates(root: Path, ref: str) -> str | None:
     return entry["gates"] if entry else None
 
 
-# Transitional expectation clause. A row may state, inside its authoritative
-# meaning:
+# Expectation clause. Every canonical proof row states, inside its
+# authoritative meaning:
 #
 #     expects: <source-native terminal result, refusal, or success predicate>
 #     disposition: <terminal receipt or disposition path>
 #
-# The 29 rows that predate this grammar remain valid and unedited. Absence is
-# tracked, never accepted as the permanent format: the pending count may shrink
-# but must not grow, so a newly promoted row cannot omit the clause. D4d migrates
-# the remainder and turns universal enforcement on.
-D4B3B0_PENDING_EXPECTATION_CEILING = 29
+# The transitional ceiling is spent: D4d migrated the 29 rows that predated the
+# grammar, so a ceiling of zero IS universal enforcement. A row without the
+# clause -- newly promoted or newly stripped -- is a finding, and the ceiling
+# never rises again without an architect ruling.
+D4B3B0_PENDING_EXPECTATION_CEILING = 0
 D4B3B0_VAGUE = ("tbd", "later", "eventually", "someday", "as appropriate",
                 "as needed", "correctly", "something", "n/a")
 # A clause may wrap. A continuation is a line indented DEEPER than the key that
@@ -3057,7 +3057,7 @@ def proof_target_findings(root: Path) -> list[str]:
     if len(pending) > D4B3B0_PENDING_EXPECTATION_CEILING:
         out.append(
             f"{len(pending)} proof rows carry no expectation clause, above the transitional "
-            f"ceiling of {D4B3B0_PENDING_EXPECTATION_CEILING}; a newly promoted row must carry it"
+            f"ceiling of {D4B3B0_PENDING_EXPECTATION_CEILING}; every canonical row must carry it"
         )
     return out
 
