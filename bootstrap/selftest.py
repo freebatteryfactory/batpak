@@ -18,6 +18,7 @@ import contextlib
 import hashlib
 import os
 import importlib.util
+import re
 import sys
 import shutil
 import subprocess
@@ -121,7 +122,16 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
         if target:
             cmd[1:1] = ["--target", target]
         if subprocess.run(cmd, capture_output=True, text=True).returncode == 0 and exe.is_file():
-            built = (target or "host default", hashlib.sha256(exe.read_bytes()).hexdigest())
+            # The receipt names the real triple, never "host default": on a
+            # hosted MSVC runner the default-target build IS the authoritative
+            # x86_64-pc-windows-msvc qualification, and a receipt that hides
+            # the triple cannot be that evidence.
+            if target is None:
+                m = re.search(r"host: (\S+)",
+                              subprocess.run([rustc, "-vV"], capture_output=True,
+                                             text=True).stdout)
+                target = m.group(1) if m else "host default"
+            built = (target, hashlib.sha256(exe.read_bytes()).hexdigest())
             break
     if built is None:
         receipt(name, available=True, compiled=True, executed=False,

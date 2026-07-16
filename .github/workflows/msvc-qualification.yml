@@ -1,0 +1,65 @@
+# Mandatory hosted Windows MSVC qualification (Phase 5.5 D4d).
+#
+# The authoritative Windows receipt for BatPak is x86_64-pc-windows-msvc:
+# compile, link, run, test, source binding, artifact binding. Local machines
+# hold only supplemental GNU receipts and never install MSVC Build Tools; this
+# hosted runner carries link.exe and the Windows SDK.
+#
+# A repository-caused failure here blocks Phase 6. A runner-infrastructure
+# failure is evidence of an unavailable runner, never converted into a pass.
+name: msvc-qualification
+
+on:
+  push:
+    branches: [cleanroom, main]
+  workflow_dispatch:
+
+jobs:
+  qualify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: toolchain evidence
+        shell: pwsh
+        run: |
+          rustc -vV
+          python --version
+          if ((rustc -vV | Select-String "host:").ToString() -notmatch "x86_64-pc-windows-msvc") {
+            Write-Error "runner host triple is not x86_64-pc-windows-msvc"
+            exit 1
+          }
+
+      # The four gates, in canonical order, against the exact checked-out tree.
+      # selftest's Tier 0 receipts compile, link, and RUN seedcheck,
+      # materialize, and the seedcheck --test harness on the MSVC host triple,
+      # artifact-bound and source-bound; the law fixtures exercise the
+      # compile-fail refusals through the same toolchain.
+      - name: project --check
+        run: python bootstrap/project.py --check
+
+      - name: audit
+        run: python bootstrap/audit.py
+
+      - name: freeze --check
+        run: python bootstrap/freeze.py --check
+
+      # One run: the suite must pass AND its receipts must name the MSVC
+      # triple explicitly. A green run whose receipts fell back to another
+      # target is not the authoritative receipt.
+      - name: selftest (Tier 0 receipts on MSVC)
+        shell: pwsh
+        run: |
+          $out = python bootstrap/selftest.py 2>&1 | Out-String
+          Write-Output $out
+          if ($LASTEXITCODE -ne 0) { Write-Error "selftest failed"; exit 1 }
+          foreach ($r in "tier0-seedcheck", "tier0-materialize", "tier0-seedcheck-tests") {
+            if ($out -notmatch "receipt $($r): available, compiled, executed, passed, target x86_64-pc-windows-msvc artifact sha256:[0-9a-f]+ source sha256:[0-9a-f]+") {
+              Write-Error "receipt $r is not an executed, passed, artifact-bound MSVC receipt"
+              exit 1
+            }
+          }
