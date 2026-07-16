@@ -779,8 +779,44 @@ def guarantee_seed_rows(root: Path) -> list[dict]:
             "gate_names": gate_list(m[4]), "witness": m[5], "failure": m[6],
             "rel": {"DerivesFrom": _g_ids(m[7]), "Refines": _g_ids(m[8]),
                     "Discharges": _g_ids(m[9]), "Supersedes": _g_ids(m[10])},
+            "rel_raw": {"DerivesFrom": m[7], "Refines": m[8],
+                        "Discharges": m[9], "Supersedes": m[10]},
         })
     return rows
+
+
+# Relations are typed GuaranteeRef constructors (5.5E2): the family tag lives
+# in the TYPE, and each tag owns exactly one id prefix. A bare string or a
+# mistagged reference is a relation trying to bypass the typed identity.
+G_REL_CONSTRUCTOR = re.compile(r"GuaranteeRef::(\w+)\(\"([^\"]+)\"\)")
+G_REL_TAG_PREFIX = {"leg": "LEG-", "dec": "DEC-"}
+
+
+def guarantee_typed_relation_findings(rows: list[dict]) -> list[str]:
+    """Constructor-form laws for authored relations. Distinct from
+    guarantee_relation_findings below, which owns the derived EDGE laws
+    (dangling, self-reference, duplicates, cycles) on the graph."""
+    out: list[str] = []
+    for r in rows:
+        for rel, raw in r.get("rel_raw", {}).items():
+            if not raw.strip():
+                continue
+            typed = G_REL_CONSTRUCTOR.findall(raw)
+            quoted = re.findall(r'"([^"]+)"', raw)
+            if len(typed) != len(quoted):
+                out.append(f"{r['id']} {rel} carries a relation that is not a "
+                           "typed GuaranteeRef constructor")
+                continue
+            for tag, ident in typed:
+                want = G_REL_TAG_PREFIX.get(tag)
+                if want is None:
+                    out.append(f"{r['id']} {rel} uses undeclared relation "
+                               f"constructor GuaranteeRef::{tag}")
+                elif not ident.startswith(want):
+                    out.append(f"{r['id']} {rel} tags {ident!r} as "
+                               f"GuaranteeRef::{tag}, whose family owns the "
+                               f"{want} prefix")
+    return out
 
 
 def guarantee_leg_meta(root: Path) -> dict[str, dict]:
@@ -3413,6 +3449,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
         findings.append("missing spec/guarantees.rs")
         return
     seed_rows = guarantee_seed_rows(root)
+    findings.extend(guarantee_typed_relation_findings(seed_rows))
     nodes, edges, admission = guarantee_derive(root)
     findings.extend(admission)
     leg_meta = guarantee_leg_meta(root)

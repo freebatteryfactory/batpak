@@ -64,19 +64,90 @@ pub enum GuaranteeLifetime {
 // inferred from wording — is stated and enforced at the relation fields.
 
 /// A typed reference to a guarantee: the family is the discriminant and the
-/// payload is the family-native identity. ARCH and QUAL identity is STRUCTURAL
-/// — the package name, the (package, profile) pair — never a formatted string:
-/// composing "ARCH-{package}" at a call site was an allocation pretending to be
-/// an identity law, and the projectors that need a rendered form own their own
-/// rendering. Sealed per-family id newtypes arrive with the relation/witness
-/// bake (5.5E2d); the shape is law now.
+/// payload is a SEALED per-family identity. ARCH and QUAL identity is
+/// STRUCTURAL — the package name, the (package, profile) pair — never a
+/// formatted string: composing "ARCH-{package}" at a call site was an
+/// allocation pretending to be an identity law, and the projectors that need
+/// a rendered form own their own rendering.
+///
+/// The id newtypes carry private fields with `pub(crate)` construction, so
+/// the crate boundary IS the seal: the spec's own tables author references
+/// and `admit` derives them, while a bootstrap binary or fixture can only
+/// RECEIVE one — reading it through `raw()` — never mint one that claims a
+/// family it did not come from. A reference is a name, not a witness:
+/// whether the name resolves to a declared row is an executed seedcheck law,
+/// not a construction-time promise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuaranteeRef {
-    Seed(&'static str),
-    Legacy(&'static str),
-    Decision(&'static str),
-    Architecture { package: &'static str },
-    Qualification { package: &'static str, profile: &'static str },
+    Seed(SeedId),
+    Legacy(LegacyId),
+    Decision(DecisionId),
+    Architecture(ArchitectureGuaranteeId),
+    Qualification(QualificationId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SeedId(pub(crate) &'static str);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LegacyId(pub(crate) &'static str);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DecisionId(pub(crate) &'static str);
+
+/// ARCH guarantee identity IS the package name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArchitectureGuaranteeId(pub(crate) &'static str);
+
+/// QUAL guarantee identity IS the (package, profile) pair.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QualificationId {
+    pub(crate) package: &'static str,
+    pub(crate) profile: &'static str,
+}
+
+impl SeedId {
+    pub const fn raw(self) -> &'static str {
+        self.0
+    }
+}
+impl LegacyId {
+    pub const fn raw(self) -> &'static str {
+        self.0
+    }
+}
+impl DecisionId {
+    pub const fn raw(self) -> &'static str {
+        self.0
+    }
+}
+impl ArchitectureGuaranteeId {
+    pub const fn package(self) -> &'static str {
+        self.0
+    }
+}
+impl QualificationId {
+    pub const fn package(self) -> &'static str {
+        self.package
+    }
+    pub const fn profile(self) -> &'static str {
+        self.profile
+    }
+}
+
+impl GuaranteeRef {
+    /// Authoring shorthands for the relation fields on native rows. They are
+    /// `pub(crate)` — only the spec's own tables mint references. Only the
+    /// families a relation actually cites today have a shorthand; a seed,
+    /// ARCH, or QUAL constructor appears when an authored relation first
+    /// needs one, not before — an unconsumed constructor is vocabulary
+    /// claiming to be law.
+    pub(crate) const fn leg(raw: &'static str) -> GuaranteeRef {
+        GuaranteeRef::Legacy(LegacyId(raw))
+    }
+    pub(crate) const fn dec(raw: &'static str) -> GuaranteeRef {
+        GuaranteeRef::Decision(DecisionId(raw))
+    }
 }
 
 /// Source-qualified failure disposition. The derived view preserves the native
@@ -440,15 +511,19 @@ pub struct AdmittedGuarantee {
 pub fn admit(source: GuaranteeSource) -> Result<AdmittedGuarantee, GuaranteeAdmissionFailure> {
     use GuaranteeAdmissionRule as Rule;
     let (family, id) = match source {
-        GuaranteeSource::Seed(r) => ("SEED", GuaranteeRef::Seed(r.id)),
-        GuaranteeSource::Legacy(r) => ("LEG", GuaranteeRef::Legacy(r.id)),
-        GuaranteeSource::Decision(r) => ("DEC", GuaranteeRef::Decision(r.id)),
-        GuaranteeSource::Architecture(p) => {
-            ("ARCH", GuaranteeRef::Architecture { package: p.package })
-        }
+        GuaranteeSource::Seed(r) => ("SEED", GuaranteeRef::Seed(SeedId(r.id))),
+        GuaranteeSource::Legacy(r) => ("LEG", GuaranteeRef::Legacy(LegacyId(r.id))),
+        GuaranteeSource::Decision(r) => ("DEC", GuaranteeRef::Decision(DecisionId(r.id))),
+        GuaranteeSource::Architecture(p) => (
+            "ARCH",
+            GuaranteeRef::Architecture(ArchitectureGuaranteeId(p.package)),
+        ),
         GuaranteeSource::Qualification(q) => (
             "QUAL",
-            GuaranteeRef::Qualification { package: q.package, profile: q.profile },
+            GuaranteeRef::Qualification(QualificationId {
+                package: q.package,
+                profile: q.profile,
+            }),
         ),
     };
     let refuse = |rule: Rule| GuaranteeAdmissionFailure { id, rule };

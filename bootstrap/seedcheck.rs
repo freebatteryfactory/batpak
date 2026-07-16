@@ -136,6 +136,44 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
             "guarantee admission admitted {admitted} of {expected} native rows"
         ));
     }
+    // Typed relations RESOLVE (5.5E2). The reference type carries the family
+    // — a decision cited as a legacy obligation has no spelling — and this
+    // law carries existence: a reference to an undeclared row is refused at
+    // runtime, every run, through the sealed accessors.
+    let seed_ids: BTreeSet<&str> = invariants::INVARIANTS.iter().map(|r| r.id).collect();
+    let leg_ids: BTreeSet<&str> = legacy_obligations::OBLIGATIONS.iter().map(|r| r.id).collect();
+    let dec_ids: BTreeSet<&str> = dispositions::DECISIONS.iter().map(|r| r.id).collect();
+    for row in invariants::INVARIANTS {
+        for (rel, refs) in [
+            ("derives_from", row.derives_from),
+            ("refines", row.refines),
+            ("discharges", row.discharges),
+            ("supersedes", row.supersedes),
+        ] {
+            for reference in refs {
+                // Exhaustive: a new family must be resolved here, not defaulted.
+                let resolved = match reference {
+                    guarantees::GuaranteeRef::Seed(id) => seed_ids.contains(id.raw()),
+                    guarantees::GuaranteeRef::Legacy(id) => leg_ids.contains(id.raw()),
+                    guarantees::GuaranteeRef::Decision(id) => dec_ids.contains(id.raw()),
+                    guarantees::GuaranteeRef::Architecture(id) => architecture::PACKAGES
+                        .iter()
+                        .any(|p| p.package == id.package()),
+                    guarantees::GuaranteeRef::Qualification(id) => {
+                        architecture::QUALIFICATION_PROFILES
+                            .iter()
+                            .any(|q| q.package == id.package() && q.profile == id.profile())
+                    }
+                };
+                if !resolved {
+                    findings.push(format!(
+                        "{} {rel} references {reference:?}, which no declared row owns",
+                        row.id
+                    ));
+                }
+            }
+        }
+    }
     // Reachable refusals, exercised through the production door. Each hostile
     // row must refuse for ITS OWN typed rule — `is_err()` alone would let an
     // unrelated earlier refusal turn the fixture green for free. The

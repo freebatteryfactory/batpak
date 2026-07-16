@@ -2802,6 +2802,28 @@ def test_guarantee_authority(audit, project) -> list[str]:
           "gate posture is RowDeclared but the row declares none",
           "gate_posture: GatePostureRule::RowDeclared,")
 
+    # 7b. Relations are typed constructors (5.5E2): the auditor refuses a bare
+    # string, a mistagged family, and an undeclared constructor. Existence of
+    # the referenced row is seedcheck's executed law, proven in the Tier 0
+    # fixtures with a dangling reference.
+    IN = "spec/invariants.rs"
+
+    def rel_validator(tmp):
+        return audit.guarantee_typed_relation_findings(audit.guarantee_seed_rows(tmp))
+
+    probe("bare_string_relation_is_rejected", IN,
+          'derives_from: &[GuaranteeRef::dec("DEC-068")]',
+          "not a typed GuaranteeRef constructor",
+          'derives_from: &["DEC-068"]', validator=rel_validator)
+    probe("mistagged_relation_family_is_rejected", IN,
+          'refines: &[GuaranteeRef::leg("LEG-080")]',
+          "whose family owns the LEG- prefix",
+          'refines: &[GuaranteeRef::leg("DEC-080")]', validator=rel_validator)
+    probe("undeclared_relation_constructor_is_rejected", IN,
+          'derives_from: &[GuaranteeRef::dec("DEC-065")]',
+          "undeclared relation constructor GuaranteeRef::arch",
+          'derives_from: &[GuaranteeRef::arch("DEC-065")]', validator=rel_validator)
+
     # 8. Parity passes while provenance fails: mutate the SAME constant in both
     #    paths. This is the exact hole -- before the closure the graph regenerated,
     #    parity passed, and every gate stayed green.
@@ -3628,6 +3650,14 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "gates: &[]",
           "names no gate")
 
+    # A typed relation carries its family in the TYPE; existence is this
+    # executed law. A reference to an undeclared decision must redden the
+    # running seedcheck, not merely fail to render an edge.
+    probe("dangling_typed_relation_is_rejected", IN,
+          'derives_from: &[GuaranteeRef::dec("DEC-068")]',
+          'derives_from: &[GuaranteeRef::dec("DEC-999")]',
+          "which no declared row owns")
+
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().
     probe("expired_proof_counting_green_is_refused",
@@ -3815,6 +3845,13 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "let _ = admit_crossing(SyncBatPlane::PakVm, SyncBatPlane::Bvisor,\n"
              "        SyncBatAuthority::TypedEffectRequest, Some(PakVmNodeId::ReachTheHost));",
              "named `ReachTheHost` found for enum `PakVmNodeId`"),
+            # 5.5E2: per-family guarantee identity is sealed at the crate
+            # boundary. A consumer can RECEIVE a GuaranteeRef and read it, but
+            # cannot mint one claiming a family it did not come from.
+            ("guarantee_identity_cannot_be_minted",
+             "use spec::guarantees::{GuaranteeRef, SeedId};",
+             'let _ = GuaranteeRef::Seed(SeedId("SEED-FORGED"));',
+             "cannot initialize a tuple struct which contains private fields"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
