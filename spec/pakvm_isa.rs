@@ -211,6 +211,54 @@ impl WorkFormulaFamily {
     }
 }
 
+impl PakVmAlgebra {
+    /// The work-accounting plane this algebra plays on: the only units a family
+    /// of this algebra may account in.
+    ///
+    /// The three planes PARTITION the authored unit vocabulary — every unit
+    /// belongs to exactly one algebra, and no unit belongs to two. That is the
+    /// lineage docs/07 already carries: `Groups`, `Matches`, `TileBytes`, and
+    /// `DecodedBytes` exist because query/dataflow nodes produce them; `Effects`
+    /// and `Artifacts` because effect nodes do; `CallDepth` because kernel call is
+    /// the only call form V1 admits.
+    ///
+    /// This is what makes a work-formula family CHECKABLE rather than merely
+    /// non-empty. Proving every unit is claimed by some family proves coverage,
+    /// not correctness: a family in the wrong plane still claims its unit. Page
+    /// and Limit accounted in `Outputs` would satisfy coverage perfectly while
+    /// being the exact defect LEG-028's
+    /// `page_limit_bounds_discovery_work_not_only_output` exists to reject.
+    pub const fn work_plane(self) -> &'static [WorkUnit] {
+        match self {
+            PakVmAlgebra::FormulaDecision => &[WorkUnit::Instructions, WorkUnit::CallDepth],
+            PakVmAlgebra::QueryDataflow => &[
+                WorkUnit::Rows,
+                WorkUnit::DecodedBytes,
+                WorkUnit::Groups,
+                WorkUnit::Matches,
+                WorkUnit::TileBytes,
+            ],
+            PakVmAlgebra::Effect => &[WorkUnit::Effects, WorkUnit::Artifacts, WorkUnit::Outputs],
+        }
+    }
+
+    /// The unit every family of this algebra MUST account in.
+    ///
+    /// A formula/decision node costs interpreted instructions. A query/dataflow
+    /// node costs discovery over rows: LEG-028 states the bound constrains
+    /// discovery before decode, allocation, or materialization, so a query family
+    /// that does not count rows is not bounded traversal whatever else it counts.
+    /// An effect node has no single mandatory unit: a durable append, a staged
+    /// artifact, and an emitted result are counted on their own planes.
+    pub const fn mandatory_work_unit(self) -> Option<WorkUnit> {
+        match self {
+            PakVmAlgebra::FormulaDecision => Some(WorkUnit::Instructions),
+            PakVmAlgebra::QueryDataflow => Some(WorkUnit::Rows),
+            PakVmAlgebra::Effect => None,
+        }
+    }
+}
+
 /// Whether a node performs an effect. docs/07: "A pure query image cannot contain
 /// Effect instructions. The validator rejects the image before execution."
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,22 +330,32 @@ pub enum EvidenceClass {
     PortMediationObservation,
 }
 
-/// Whether an identity belongs to the PUBLIC semantic ISA or to an internal
-/// lowering.
-///
-/// This table admits ONLY public semantic nodes. Internal lowering identities —
-/// `SpecializedPlan` micro-ops (DEC-073, D2) and decision-circuit gates — are not
-/// PakVM semantic nodes: they have no `PakVmNodeId`, carry no semantic meaning,
-/// and never appear here. The variant exists so that admission can REJECT it
-/// rather than the boundary resting on nobody having tried; `bootstrap/seedcheck.rs`
-/// constructs one and proves the refusal fires.
+/// What a policy may PROPOSE about an identity's lowering posture. This is
+/// CANDIDATE vocabulary: admission may encounter `InternalLoweringIdentity` and
+/// must reject it. It is deliberately expressible here so that the refusal has
+/// something to refuse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LoweringPosture {
+pub enum CandidateLoweringPosture {
     /// Appears in a ProgramImage; the reference interpreter evaluates it.
-    PublicSemanticNode,
-    /// An internal execution identity. Never admissible as a semantic node.
+    PublicSemanticIdentity,
+    /// A `SpecializedPlan` micro-op (DEC-073, D2) or a decision-circuit gate.
+    /// An execution identity, never a meaning.
     InternalLoweringIdentity,
 }
+
+/// Proof that admission classified a node as a public semantic node.
+///
+/// The unit field is private, so this is constructible ONLY inside this module
+/// and only by `admit`. No generator, auditor, projector, runtime, or fixture can
+/// mint one. `PakVmNodeSpec` therefore cannot represent an internal lowering
+/// identity AT ALL: the forbidden state is unrepresentable after admission rather
+/// than merely promised absent by a validator everyone is trusted to have called.
+///
+/// The weaker shape — carrying the candidate enum into the admitted struct —
+/// would mean the valid-state type contains a state the system says can never be
+/// valid, and every reader downstream would have to take admission's word for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AdmittedAsPublicSemanticNode(());
 
 /// Where one `PakVmNodeSpec` field legitimately comes from. Every admitted field
 /// resolves through exactly one of these.
@@ -321,7 +379,7 @@ pub struct PakVmAlgebraPolicy {
     pub effect: PakVmRule<EffectPosture>,
     pub capability: PakVmRule<CapabilityRequirement>,
     pub evidence: PakVmRule<EvidenceClass>,
-    pub lowering: PakVmRule<LoweringPosture>,
+    pub lowering: PakVmRule<CandidateLoweringPosture>,
 }
 
 /// The three authored algebras and what each fixes for every node inside it.
@@ -333,14 +391,14 @@ pub const PAKVM_ALGEBRA_POLICIES: &[PakVmAlgebraPolicy] = &[
         effect: PakVmRule::ClassDeclared,
         capability: PakVmRule::ClassDeclared,
         evidence: PakVmRule::ClassDeclared,
-        lowering: PakVmRule::AlgebraConstant(LoweringPosture::PublicSemanticNode),
+        lowering: PakVmRule::AlgebraConstant(CandidateLoweringPosture::PublicSemanticIdentity),
     },
     PakVmAlgebraPolicy {
         algebra: PakVmAlgebra::QueryDataflow,
         effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),
         capability: PakVmRule::AlgebraConstant(CapabilityRequirement::ReadOnlySourceEnvelope),
         evidence: PakVmRule::AlgebraConstant(EvidenceClass::ReferenceInterpreterModel),
-        lowering: PakVmRule::AlgebraConstant(LoweringPosture::PublicSemanticNode),
+        lowering: PakVmRule::AlgebraConstant(CandidateLoweringPosture::PublicSemanticIdentity),
     },
     PakVmAlgebraPolicy {
         algebra: PakVmAlgebra::Effect,
@@ -350,7 +408,7 @@ pub const PAKVM_ALGEBRA_POLICIES: &[PakVmAlgebraPolicy] = &[
         // judged on different planes; one evidence route for all three would
         // certify none of them.
         evidence: PakVmRule::ClassDeclared,
-        lowering: PakVmRule::AlgebraConstant(LoweringPosture::PublicSemanticNode),
+        lowering: PakVmRule::AlgebraConstant(CandidateLoweringPosture::PublicSemanticIdentity),
     },
 ];
 
@@ -828,7 +886,9 @@ pub struct PakVmNodeSpec {
     pub capability: CapabilityRequirement,
     pub work_formula: WorkFormulaFamily,
     pub evidence: EvidenceClass,
-    pub lowering: LoweringPosture,
+    /// Positive proof of admission. Not a per-node value: every admitted node is
+    /// a public semantic node, and nothing else can become one.
+    pub lowering: AdmittedAsPublicSemanticNode,
     pub source_origin: &'static str,
 }
 
@@ -894,17 +954,33 @@ pub fn admit(id: PakVmNodeId) -> PakVmAdmission {
         Some(p) => p,
         None => return PakVmAdmission::Refused("node class declares no policy"),
     };
-    admit_with(id, ap, cp)
+    admit_resolved(id, ap, cp)
 }
 
-/// Admit one node against SUPPLIED policy.
+/// Hand admission a policy the canonical tables do not contain.
 ///
-/// `admit` resolves the real policy and delegates here. The seam exists so a
-/// hostile fixture can hand admission a policy the tables do not contain and
-/// prove each refusal actually fires. Without it, every refusal below would be
-/// unfalsifiable: the branches would be reachable only by editing the
-/// specification, and a rule nothing can trip is decoration.
-pub fn admit_with(
+/// TEST-ONLY, and absent from every production build: without `cfg(test)` this
+/// function does not exist, so no runtime, generator, auditor, or projector can
+/// call it even by mistake. It cannot mint canonical provenance either — it
+/// returns whatever `admit_resolved` decides, and a node's `source_origin` still
+/// comes from its own authored lineage.
+///
+/// The seam exists because every refusal below would otherwise be unfalsifiable:
+/// reachable only by editing the specification, which means a rule nothing can
+/// trip. A hostile fixture needs to construct the forbidden proposal; production
+/// must never be able to.
+#[cfg(test)]
+pub(crate) fn admit_candidate_policy(
+    id: PakVmNodeId,
+    ap: &PakVmAlgebraPolicy,
+    cp: &PakVmNodeClassPolicy,
+) -> PakVmAdmission {
+    admit_resolved(id, ap, cp)
+}
+
+/// The admission decision itself. PRIVATE: the only public route in is `admit`,
+/// which supplies the canonical authored tables and nothing else.
+fn admit_resolved(
     id: PakVmNodeId,
     ap: &PakVmAlgebraPolicy,
     cp: &PakVmNodeClassPolicy,
@@ -942,9 +1018,12 @@ pub fn admit_with(
     // The semantic ISA holds public semantic nodes only. A SpecializedPlan
     // micro-op or a decision-circuit gate is an execution identity, not a
     // meaning, and cannot acquire one by being listed here.
-    if let LoweringPosture::InternalLoweringIdentity = lowering {
-        return PakVmAdmission::Refused("an internal lowering identity is not a semantic node");
-    }
+    let lowering = match lowering {
+        CandidateLoweringPosture::PublicSemanticIdentity => AdmittedAsPublicSemanticNode(()),
+        CandidateLoweringPosture::InternalLoweringIdentity => {
+            return PakVmAdmission::Refused("an internal lowering identity is not a semantic node")
+        }
+    };
     // docs/07: "A pure query image cannot contain Effect instructions." The two
     // directions are both real. An Effect-algebra node that claimed a pure
     // posture would pass the validator that rejects Effect images; a node outside
@@ -962,6 +1041,42 @@ pub fn admit_with(
     if matches!(effect, EffectPosture::Pure)
         && !matches!(capability, CapabilityRequirement::None) {
         return PakVmAdmission::Refused("a pure node requires a capability");
+    }
+    // Work-formula LINEAGE. A family must play on its algebra's plane, and must
+    // account in the unit that algebra's semantics turn on. Coverage — every unit
+    // claimed by someone — cannot catch a family in the wrong plane, because the
+    // wrong family still claims its unit perfectly well.
+    let plane = algebra.work_plane();
+    let units = cp.work_formula.units();
+    let mut u = 0;
+    while u < units.len() {
+        let mut on_plane = false;
+        let mut p = 0;
+        while p < plane.len() {
+            if plane[p] == units[u] {
+                on_plane = true;
+            }
+            p += 1;
+        }
+        if !on_plane {
+            return PakVmAdmission::Refused(
+                "work formula accounts in a unit outside its algebra's work plane");
+        }
+        u += 1;
+    }
+    if let Some(required) = algebra.mandatory_work_unit() {
+        let mut found = false;
+        let mut u = 0;
+        while u < units.len() {
+            if units[u] == required {
+                found = true;
+            }
+            u += 1;
+        }
+        if !found {
+            return PakVmAdmission::Refused(
+                "work formula omits the unit its algebra's cost law turns on");
+        }
     }
     // Work accounting must agree with iteration. A node that iterates cannot cost
     // one instruction, and a node that does not iterate cannot be bounded by an
