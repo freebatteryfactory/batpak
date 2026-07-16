@@ -47,7 +47,7 @@ RETAIN-AS-EVIDENCE   historical material may be consulted, never treated as law
 | DEC-020 | DEMOTE | Compatibility | G2 | Serde/MessagePack | Interop and historical readers, not new semantic authority |
 | DEC-021 | DEMOTE | ImplementationPosture | G6 | Flume | Private reference mechanism during topology-by-topology succession |
 | DEC-022 | DEMOTE | ImplementationPosture | G2 | UUID crate | Differential oracle until owned generator closes |
-| DEC-023 | DEFER | ImplementationPosture | G5 | Arbitrary native/Wasm guest execution | Future external-effect adapter only after real adopter |
+| DEC-023 | DEFER | ImplementationPosture | G5 | Arbitrary native/Wasm guest execution | Future external-effect adapter only after real adopter; reopening requires all of: an exact exec-time descriptor set with one declared lifecycle per descriptor and no best-effort bucket; no best-effort authority-bearing setup transition; argv and environment are never launcher authority; an authenticated launcher descriptor topology; bounded content-addressed capture with atomic publication that honestly states which streams were published; capture and report reconciliation after ambiguity; and no ambient argv env or descriptor widening (issues #218 #231 #232, superseded with full mapping) |
 | DEC-024 | KEEP | Capability | G5 | Artifact/content plane | Concern and port; no public bundle extension yet |
 | DEC-025 | KEEP | Architecture | G7 | Thin CLI package | Binary adapter only, no semantic ownership |
 | DEC-040 | LOCK | Architecture | G0/G5 | BatPak and SyncBat semantic profiles | `no_std + alloc`; host mechanisms stay in explicit std/browser adapters |
