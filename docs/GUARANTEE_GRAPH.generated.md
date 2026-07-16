@@ -17,7 +17,7 @@ navigation only; the owning fact is authoritative. Do not edit.
 | Family | Nodes |
 | --- | --- |
 | SEED | 25 |
-| LEG | 84 |
+| LEG | 87 |
 | DEC | 75 |
 | ARCH | 9 |
 | QUAL | 5 |
@@ -25,7 +25,7 @@ navigation only; the owning fact is authoritative. Do not edit.
 ## Totals
 
 ```text
-nodes: 198
+nodes: 201
 edges: 9
 unresolved references: 0
 ```
@@ -37,7 +37,7 @@ unresolved references: 0
 | ArchitectureConstraint | 19 |
 | BootstrapAssertion | 2 |
 | Decision | 75 |
-| LegacyObligation | 84 |
+| LegacyObligation | 87 |
 | QualificationRequirement | 5 |
 | SemanticLaw | 13 |
 
@@ -48,12 +48,12 @@ unresolved references: 0
 | HistoricalCoverageOnly | 4 |
 | Permanent | 102 |
 | UntilCompatibilityExpiry | 8 |
-| UntilGate | 84 |
+| UntilGate | 87 |
 
 ## Active versus closed
 
 ```text
-active (gating): 194
+active (gating): 197
 closed evidence: 0
 historical coverage only: 4
 ```
@@ -207,6 +207,9 @@ admission and never reaches this table.
 | LEG-082 | LEG | LegacyObligation | UntilGate | - | batpak::compaction | G2 | - | NoFamilyWitness |
 | LEG-083 | LEG | LegacyObligation | UntilGate | - | batpak::store | G2 | - | NoFamilyWitness |
 | LEG-084 | LEG | LegacyObligation | UntilGate | - | batpak::event | G1/G2 | - | NoFamilyWitness |
+| LEG-085 | LEG | LegacyObligation | UntilGate | - | batpak::store | G2/G8 | - | NoFamilyWitness |
+| LEG-086 | LEG | LegacyObligation | UntilGate | - | batpak::projection | G2/G3 | - | NoFamilyWitness |
+| LEG-087 | LEG | LegacyObligation | UntilGate | - | batpak::storage_port | G2/G3 | - | NoFamilyWitness |
 | DEC-001 | DEC | Decision | Permanent | HistoricalReceipt | docs/30_DECISION_AND_REJECTION_LEDGER.md | GateIndependent | - | NoFamilyWitness |
 | DEC-002 | DEC | Decision | HistoricalCoverageOnly | HistoricalReceipt | docs/30_DECISION_AND_REJECTION_LEDGER.md | GateIndependent | - | NoFamilyWitness |
 | DEC-003 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G2 | - | NoFamilyWitness |

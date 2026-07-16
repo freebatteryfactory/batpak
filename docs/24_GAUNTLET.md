@@ -400,6 +400,100 @@ close_reopen_reimport_returns_zero_new_events
       a duplicated source event fails the witness
 ```
 
+## Proof-carrying compaction witnesses (LEG-085)
+
+Required witnesses (proof owner TestPak; gates G2/G8; future executable: yes; bootstrap executed: no), also carried by `LEG-085`:
+
+```text
+signed_compaction_preserves_or_commits_the_removed_set
+compaction_inputs_survive_until_replacement_evidence_is_durable
+```
+
+Authoritative meanings:
+
+```text
+signed_compaction_preserves_or_commits_the_removed_set
+    Under a signed-history profile, a compaction from one physical segment set
+    to another is either a proof-preserving rewrite of the same ordered
+    logical commitments or an authorized retention transition that binds the
+    prior and resulting roots, the retained and removed commitment sets, the
+    retention policy, and the replacement seals. No third shape exists.
+    expects: a compaction that alters the committed logical set without an
+      authorized retention transition is refused; an authorized transition
+      binds every named component and verifies against both roots
+    disposition: a proof-preserving rewrite receipt or a retention-transition
+      record; a segment-set change carrying neither fails the witness
+
+compaction_inputs_survive_until_replacement_evidence_is_durable
+    Compaction inputs are not retired before the transition record and the
+    replacement evidence are durably recoverable. Recovery at any crash point
+    finds the old set, the new set, or both -- never neither.
+    expects: a crash injected at every compaction boundary recovers a readable
+      history whose commitments verify under the old or the new seal set
+    disposition: an old-or-new recovery outcome; an unreadable window between
+      retirement and durable replacement fails the witness
+```
+
+## Typed projection-replay failure witnesses (LEG-086)
+
+Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-086`:
+
+```text
+matched_kind_decode_failure_is_a_typed_terminal
+replay_routes_agree_on_first_failure_and_class
+```
+
+Authoritative meanings:
+
+```text
+matched_kind_decode_failure_is_a_typed_terminal
+    A wrong event kind is a normal filter. A matched kind whose bytes fail to
+    decode, or whose application fails, is a typed replay terminal -- never a
+    panic, never a silent skip, and never laundered into a cache miss that
+    continues producing apparently-valid state.
+    expects: replay over a matched event with malformed bytes terminates in a
+      typed decode failure naming the event; replay over a failing apply
+      terminates in a typed apply failure; no route skips the event and
+      continues
+    disposition: a typed replay terminal carrying the failing event identity
+      and failure class; silent continuation fails the witness
+
+replay_routes_agree_on_first_failure_and_class
+    Full replay, incremental replay, cache rebuild, and checkpoint restore
+    reach the same first failing event and the same failure class over the
+    same history.
+    expects: every replay route over one failing history reports the identical
+      first failing event identity and failure class
+    disposition: agreeing typed terminals across all routes; a route that
+      diverges or downgrades the failure to a miss fails the witness
+```
+
+## Injected-storage isolation witness (LEG-087)
+
+Mirrors the injected-clock doctrine (LEG-055): an injected backend excludes
+the ambient host resource it replaces, including diagnostics.
+
+Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-087`:
+
+```text
+trapping_host_filesystem_remains_unreached_under_injected_storage
+```
+
+Authoritative meanings:
+
+```text
+trapping_host_filesystem_remains_unreached_under_injected_storage
+    Under an injected non-host storage backend, no code path -- including
+    diagnostics, evidence probes, and fallbacks -- touches the ambient host
+    filesystem.
+    expects: a store driven end to end over an injected backend with a
+      trapping host filesystem completes every exercised operation with the
+      trap recording zero host-filesystem calls
+    disposition: a zero-contact trap report accompanying the conformance run;
+      any host-filesystem touch, including from a diagnostic, fails the
+      witness
+```
+
 ## Single-writer dual-axis reconciliation witnesses (DEC-075)
 
 The composition law's executable denominator. `docs/02_SYSTEM_MODEL.md` owns
