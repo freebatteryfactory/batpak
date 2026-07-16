@@ -4079,7 +4079,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
             ("qualification_id_cannot_carry_a_string_package",
              "use spec::guarantees::QualificationId;",
              'let _ = QualificationId { package: "batpak", profile: "semantic" };',
-             "field `package` of struct"),
+             "expected `PackageId`, found `&str`"),
             ("dependency_endpoint_is_package_typed",
              "use spec::architecture::EDGES;",
              "let _: &str = EDGES[0].importer;",
