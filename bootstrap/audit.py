@@ -2356,17 +2356,35 @@ def pakvm_isa_findings(root: Path) -> list[str]:
     for unit in declared:
         if not any(unit in v["units"] for v in views):
             out.append(f"authored work unit {unit} is accounted by no admitted PakVM node")
-    # query_program_with_effect_instruction_is_rejected (DEC-050) binds its
-    # predicate to the typed effect posture rather than to a prose list of
-    # instruction names. That only means something if the posture is inhabited: a
-    # rule quantified over an empty set is vacuously true and can never fire, so
-    # the proof row would pass forever while proving nothing.
-    effectful = [v["node"] for v in views if v["effect"] == "Effectful"]
-    if not effectful:
+    # The effect-posture partition, verified INDEPENDENTLY of the Rust admission
+    # that also enforces it. Until this rule existed the biconditional lived only
+    # in spec/pakvm_isa.rs: an algebra policy declaring an effectful query
+    # dataflow was caught here as projection drift, and regenerating the
+    # projection made the auditor accept it outright. Drift is not a law, and a
+    # finding that disappears when someone reruns the generator was never
+    # enforcing anything.
+    #
+    # This states no posture of its own. The typed ISA owns which posture each
+    # algebra carries; the auditor checks that the biconditional it implies holds
+    # and that both sides are inhabited.
+    for v in views:
+        effectful = v["effect"] == "Effectful"
+        in_effect_algebra = v["algebra"] == "Effect"
+        if effectful and not in_effect_algebra:
+            out.append(f"PakVM node {v['node']} admits as Effectful outside the Effect "
+                       f"algebra, so an effect could enter a pure query image")
+        if in_effect_algebra and not effectful:
+            out.append(f"PakVM node {v['node']} is an Effect-algebra node that does not "
+                       f"admit as Effectful, so it would pass the pure-query validator")
+    # Binding a predicate to a typed set only means something if the set is
+    # inhabited. A rule quantified over an empty set is vacuously true and can
+    # never fire, so query_program_with_effect_instruction_is_rejected (DEC-050)
+    # would pass forever while proving nothing. Both sides must exist; neither
+    # count is policy, and no number is asserted here.
+    if not [v for v in views if v["effect"] == "Effectful"]:
         out.append("no PakVM node admits with the Effectful posture, so "
                    "query_program_with_effect_instruction_is_rejected is vacuous")
-    pure = [v["node"] for v in views if v["effect"] != "Effectful"]
-    if not pure:
+    if not [v for v in views if v["effect"] != "Effectful"]:
         out.append("every PakVM node admits as Effectful, so a pure query image "
                    "could contain no node at all")
     # An opcode never enters the semantic layer, by any route.

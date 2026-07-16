@@ -2686,6 +2686,39 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
           "sits on more than one algebra plane",
           "            PakVmAlgebra::Effect => &[WorkUnit::Effects, WorkUnit::Artifacts, WorkUnit::Outputs, WorkUnit::Rows],")
 
+    # --- the effect-posture biconditional --------------------------------------
+    # These mutate the ISA and then REGENERATE the projection before auditing.
+    # Auditing the stale projection would only prove drift detection works, which
+    # is what this rule's absence already looked like: before it existed, an
+    # effectful query algebra was reported as a drifted row and vanished entirely
+    # the moment someone reran the generator.
+    def law_probe(name, old, new, needle):
+        with isolated_tree() as tmp:
+            path = tmp / ISA
+            path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
+                            encoding="utf-8")
+            d07 = tmp / D07
+            text = d07.read_text(encoding="utf-8")
+            for marker, render in (("PAKVM-SEMANTIC-ISA", project.render_pakvm_isa),
+                                   ("PAKVM-SIGNATURES", project.render_pakvm_signatures)):
+                pat = project.block_pattern(marker)
+                text = pat.sub(lambda m: m.group(1) + render(tmp) + m.group(3), text)
+            d07.write_text(text, encoding="utf-8")
+            produced = pf(tmp)
+            if any("drifted" in f for f in produced):
+                fail(f"{name} (regeneration left drift; the probe is testing the wrong rule)")
+            if not any(needle in f for f in produced):
+                fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    law_probe("an_effectful_query_algebra_is_rejected_after_regeneration",
+              "        effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),",
+              "        effect: PakVmRule::AlgebraConstant(EffectPosture::Effectful),",
+              "admits as Effectful outside the Effect algebra")
+    law_probe("a_pure_effect_algebra_is_rejected_after_regeneration",
+              "        effect: PakVmRule::AlgebraConstant(EffectPosture::Effectful),\n        capability",
+              "        effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),\n        capability",
+              "does not admit as Effectful, so it would pass the pure-query validator")
+
     # --- the semantic layer never acquires an encoding -------------------------
     probe("an_explicit_discriminant_is_rejected", ISA,
           "pub enum PakVmNodeId {\n    // Formula and decision (docs/07: 16)\n    Literal,",
