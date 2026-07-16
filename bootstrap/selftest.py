@@ -110,7 +110,12 @@ def unearned_required_receipts(required_target: str) -> list[str]:
         binding = (re.escape(required_target)
                    + (r" artifact sha256:[0-9a-f]+ source sha256:[0-9a-f]+"
                       if artifact_bound else ""))
-        if not any(r["available"] and r["executed"] and r["passed"]
+        # Every claimed stage, explicitly — including compiled. Execution
+        # normally implies compilation in reality, but the law refuses a
+        # contradictory receipt shape (executed yet compiled=False) instead
+        # of relying on a reader to repair it mentally (5.5E2g).
+        if not any(r["available"] and r["compiled"] is True and r["executed"]
+                   and r["passed"]
                    and r["target"] and re.fullmatch(binding, str(r["target"]))
                    for r in rows):
             got = "; ".join(str(r["target"] or r["reason"] or "unearned") for r in rows)
@@ -3874,6 +3879,59 @@ def test_rust_specification_compiles(_audit) -> list[str]:
     return findings
 
 
+def test_required_receipt_denominator() -> list[str]:
+    """Dishonest receipt shapes must refuse the authoritative denominator.
+
+    The earned predicate claims available + compiled + executed + passed +
+    target-bound. Each stage is checked explicitly: a receipt whose fields
+    contradict reality — executed and passed yet compiled=False — is a
+    contradictory shape the law refuses, never a gap a reader repairs
+    mentally. Runs against fabricated receipts and restores the live list on
+    every exit path."""
+    findings: list[str] = []
+    saved = list(QUALIFICATION_RECEIPTS)
+    triple = "x86_64-pc-windows-msvc"
+
+    def earned(name, bound):
+        binding = f"{triple} artifact sha256:{'a' * 12} source sha256:{'b' * 12}"
+        return {"name": name, "available": True, "compiled": True,
+                "executed": True, "passed": True, "reason": None,
+                "target": binding if bound else triple}
+
+    def full_set():
+        return [earned(n, b) for n, b in REQUIRED_TIER0_RECEIPTS]
+
+    def case(name, receipts, expect_refusal):
+        QUALIFICATION_RECEIPTS[:] = receipts
+        got = unearned_required_receipts(triple)
+        if bool(got) != expect_refusal:
+            findings.append(f"required_receipt_{name} FAILED (got {got!r})")
+
+    try:
+        case("all_earned_passes", full_set(), False)
+        rs = full_set()
+        rs[1] = dict(rs[1], compiled=False)
+        case("uncompiled_yet_executed_receipt_is_refused", rs, True)
+        rs = full_set()
+        rs[0] = dict(rs[0], executed=False, passed=None)
+        case("unexecuted_receipt_is_refused", rs, True)
+        rs = full_set()
+        rs[2] = dict(rs[2], passed=False)
+        case("failed_receipt_is_refused", rs, True)
+        case("missing_receipt_is_refused",
+             [r for r in full_set() if r["name"] != "tier0-spec-tests"], True)
+        rs = full_set()
+        rs[3] = dict(rs[3], target=str(rs[3]["target"]).replace(
+            triple, "x86_64-pc-windows-gnu"))
+        case("wrong_triple_receipt_is_refused", rs, True)
+        rs = full_set()
+        rs[4] = dict(rs[4], target=triple)
+        case("unbound_artifact_receipt_is_refused", rs, True)
+    finally:
+        QUALIFICATION_RECEIPTS[:] = saved
+    return findings
+
+
 def main() -> int:
     # --require-receipts <triple>: the authoritative-lane posture (5.5E2c).
     # Without it, receipts render honestly but an unearned one is a printed
@@ -3922,6 +3980,7 @@ def main() -> int:
     findings += test_syncbat_firewall(audit, project)
     findings += test_syncbat_requiredness(audit, project)
     findings += test_reconciliation(audit, project)
+    findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)

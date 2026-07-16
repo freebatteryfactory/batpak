@@ -1,7 +1,9 @@
-# Clean-room construction locks. These untracked directories must never be
-# swept into the orphan branch. /bpk-lib/ is legacy working-tree residue whose
-# tracked source is preserved on branch legacy/main; remove this ignore once the
-# directory is physically deleted.
-/.cursor/
-/bpk-lib/
+# Clean-room construction lock. Only derived build output may be invisible
+# here. The /.cursor/ and /bpk-lib/ entries died in 5.5E2g when their
+# directories left the cleanroom: /bpk-lib/ was legacy working-tree residue
+# (tracked source preserved on branch legacy/main) and was physically deleted
+# as its own ignore comment instructed; the parallel Gate-2 implementation
+# material moved to a sibling directory outside this working tree. Foreign
+# material in the cleanroom must be VISIBLE contamination — an ignore entry
+# that hides a parallel organism is worse than the organism.
 /target/
