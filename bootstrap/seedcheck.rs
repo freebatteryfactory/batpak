@@ -378,48 +378,40 @@ fn check_authenticated_history(findings: &mut Vec<String>) {
         AuthenticatedHistoryProfile, AuthenticityClaim, FreshnessClaim, IntegrityClaim,
         RollbackResistanceClaim, WitnessDisposition, WitnessPolicy,
     };
-    let profiles = architecture::AUTHENTICATED_HISTORY_PROFILES;
-    if profiles.len() != 3 {
-        findings.push(format!("expected 3 authenticated-history profiles, found {}", profiles.len()));
-    }
-    let mut seen = BTreeSet::new();
-    for spec in profiles {
+    // 5.5E2: the profile table dissolved into const fns on the profile enum,
+    // and most of the ladder policing that stood here dissolved with it —
+    // duplicate rows, row counts, an always-true bool, and per-row gate
+    // presence have no spelling once every fact is a total function of the
+    // variant. What remains is the AUTHORED semantics, executed through the
+    // real fns so a mutated arm reddens the running binary.
+    for profile in AuthenticatedHistoryProfile::ALL {
+        let profile = *profile;
         // Exhaustive: a new profile must be classified here, not defaulted.
-        match spec.profile {
+        match profile {
             AuthenticatedHistoryProfile::InternalConsistency
             | AuthenticatedHistoryProfile::SignedHistory
             | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => {}
         }
-        if !seen.insert(format!("{:?}", spec.profile)) {
-            findings.push(format!("duplicate authenticated-history profile {:?}", spec.profile));
-        }
-        if !spec.requires_local_commitment_verification {
-            findings.push(format!("{:?} does not require local commitment verification", spec.profile));
-        }
-        for policy in spec.permitted_witness_policies {
+        for policy in profile.permitted_witness_policies() {
             match policy {
                 WitnessPolicy::None | WitnessPolicy::Optional | WitnessPolicy::Required => {}
             }
             if *policy == WitnessPolicy::Required
-                && spec.profile != AuthenticatedHistoryProfile::ExternallyAnchoredHistory
+                && profile != AuthenticatedHistoryProfile::ExternallyAnchoredHistory
             {
                 findings.push(format!(
-                    "{:?} permits WitnessPolicy::Required outside ExternallyAnchoredHistory",
-                    spec.profile
+                    "{profile:?} permits WitnessPolicy::Required outside ExternallyAnchoredHistory"
                 ));
             }
         }
-        if spec.implementation_gates.is_empty() {
-            findings.push(format!("{:?} names no implementation gate", spec.profile));
-        }
-        if spec.release_qualification_gates.is_empty() {
-            findings.push(format!("{:?} names no release qualification gate", spec.profile));
-        }
         // A success bundle states all four axes. Every success verifies
         // integrity, and freshness never drifts from rollback resistance.
-        for bundle in [spec.unanchored_success_claims, spec.verified_witness_success_claims]
-            .into_iter()
-            .flatten()
+        for bundle in [
+            profile.unanchored_success_claims(),
+            profile.verified_witness_success_claims(),
+        ]
+        .into_iter()
+        .flatten()
         {
             match bundle.integrity {
                 IntegrityClaim::InternalConsistencyVerified => {}
@@ -435,34 +427,33 @@ fn check_authenticated_history(findings: &mut Vec<String>) {
                 | RollbackResistanceClaim::ScopedToVerifiedWitness => {}
             }
             let fresh = bundle.freshness == FreshnessClaim::WitnessedGenerationVerified;
-            let scoped = bundle.rollback_resistance == RollbackResistanceClaim::ScopedToVerifiedWitness;
+            let scoped =
+                bundle.rollback_resistance == RollbackResistanceClaim::ScopedToVerifiedWitness;
             if fresh != scoped {
                 findings.push(format!(
-                    "{:?} lets freshness and rollback resistance drift apart",
-                    spec.profile
+                    "{profile:?} lets freshness and rollback resistance drift apart"
                 ));
             }
         }
         // An unanchored success never claims freshness or scoped rollback
         // resistance: a restored older validly signed history satisfies it.
-        if let Some(bundle) = spec.unanchored_success_claims {
+        if let Some(bundle) = profile.unanchored_success_claims() {
             if bundle.freshness != FreshnessClaim::NotClaimed
                 || bundle.rollback_resistance != RollbackResistanceClaim::Unavailable
             {
                 findings.push(format!(
-                    "{:?} unanchored success claims freshness or rollback resistance",
-                    spec.profile
+                    "{profile:?} unanchored success claims freshness or rollback resistance"
                 ));
             }
-            if spec.profile == AuthenticatedHistoryProfile::InternalConsistency
+            if profile == AuthenticatedHistoryProfile::InternalConsistency
                 && bundle.authenticity != AuthenticityClaim::NotClaimed
             {
                 findings.push("InternalConsistency unanchored success claims signed authenticity".into());
             }
         }
         // `None` here means NO SUCCESSFUL UNANCHORED RESULT IS ADMITTED.
-        if spec.profile == AuthenticatedHistoryProfile::ExternallyAnchoredHistory
-            && spec.unanchored_success_claims.is_some()
+        if profile == AuthenticatedHistoryProfile::ExternallyAnchoredHistory
+            && profile.unanchored_success_claims().is_some()
         {
             findings.push(
                 "ExternallyAnchoredHistory admits an unanchored success bundle; an absent or invalid \
@@ -470,10 +461,40 @@ fn check_authenticated_history(findings: &mut Vec<String>) {
                     .into(),
             );
         }
-        if spec.profile != AuthenticatedHistoryProfile::InternalConsistency
-            && spec.verified_witness_success_claims.is_none()
+        if profile != AuthenticatedHistoryProfile::InternalConsistency
+            && profile.verified_witness_success_claims().is_none()
         {
-            findings.push(format!("{:?} admits no witnessed success bundle", spec.profile));
+            findings.push(format!("{profile:?} admits no witnessed success bundle"));
+        }
+        // The requirement fns and the policy matrix may not disagree: a
+        // profile requiring an independent witness admits only Required, and
+        // a profile requiring signed history is never InternalConsistency.
+        if profile.requires_independent_witness_verification()
+            != matches!(
+                profile.permitted_witness_policies(),
+                [WitnessPolicy::Required]
+            )
+        {
+            findings.push(format!(
+                "{profile:?} witness requirement disagrees with its permitted policies"
+            ));
+        }
+        if !profile.requires_local_commitment_verification() {
+            findings.push(format!(
+                "{profile:?} does not require local commitment verification"
+            ));
+        }
+        if profile.requires_signed_history_verification()
+            != (profile != AuthenticatedHistoryProfile::InternalConsistency)
+        {
+            findings.push(format!(
+                "{profile:?} signed-history requirement disagrees with the frozen family"
+            ));
+        }
+        if profile.implementation_gates().is_empty()
+            || profile.release_qualification_gates().is_empty()
+        {
+            findings.push(format!("{profile:?} names no implementation or release gate"));
         }
     }
     // A required witness fails closed on every frozen failure class, including

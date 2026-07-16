@@ -1218,17 +1218,12 @@ def decision_class_findings(root: Path) -> list[str]:
 # --- Authenticated history (DEC-071) ----------------------------------------
 # Structural contract checks only. Bootstrap performs no signature, accumulator,
 # witness, freshness, or cryptographic verification and must never claim to.
-A_AH_PROFILE_ROW = re.compile(
-    r'AuthenticatedHistoryProfileSpec \{\s*'
-    r'profile: AuthenticatedHistoryProfile::(\w+),\s*'
-    r'permitted_witness_policies: &\[([^\]]*)\],\s*'
-    r'requires_local_commitment_verification: (\w+),\s*'
-    r'requires_signed_history_verification: (\w+),\s*'
-    r'requires_independent_witness_verification: (\w+),\s*'
-    r'implementation_gates: &\[([^\]]*)\],\s*'
-    r'release_qualification_gates: &\[([^\]]*)\],\s*'
-    r'(?:\s*//[^\n]*\n)*\s*unanchored_success_claims: (None|Some\(\w+\)),'
-    r'(?:\s*//[^\n]*\n)*\s*verified_witness_success_claims: (None|Some\(\w+\)),\s*\}',
+# The profile TABLE dissolved in 5.5E2: every authenticated-history fact is a
+# const fn on AuthenticatedHistoryProfile, so the auditor parses the match arms
+# of the fn that owns each fact — the same posture as decision_lifetime_map.
+A_AH_FN_ARM = re.compile(
+    r"((?:AuthenticatedHistoryProfile::\w+\s*\|?\s*)+)=>\s*"
+    r"(\{.*?\}|&\[[^\]]*\]|\w+(?:\([^)]*\))?)",
     re.S,
 )
 A_WITNESS_VARIANT = re.compile(r'WitnessPolicy::(\w+)')
@@ -1289,22 +1284,47 @@ A_RETIRED_CLAIM_VOCAB = ("HistoryClaimPosture", "claim_posture", "unanchored_cla
 A_CLAIM_LADDER_NAMES = ("SecurityPosture", "VerificationLevel", "AssuranceLevel", "SecurityLevel")
 
 
-def authenticated_history_rows(root: Path) -> list[dict]:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    out = []
-    for m in A_AH_PROFILE_ROW.findall(src):
-        out.append({
-            "profile": m[0],
-            "policies": A_WITNESS_VARIANT.findall(m[1]),
-            "local": m[2] == "true",
-            "signed": m[3] == "true",
-            "witness": m[4] == "true",
-            "impl_gates": gate_list(m[5]),
-            "release_gates": gate_list(m[6]),
-            "unanchored": m[7],
-            "verified_witness": m[8],
-        })
+def ah_fn_arms(root: Path, name: str) -> dict[str, str]:
+    """AuthenticatedHistoryProfile variant -> that profile's value expression,
+    parsed from the const fn that owns the fact."""
+    src = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    body = re.search(
+        r"pub const fn " + re.escape(name) + r"\(self\)[^{]*\{\s*match self \{(.*?)\n    \}",
+        src, re.S)
+    out: dict[str, str] = {}
+    if not body:
+        return out
+    for arm in A_AH_FN_ARM.finditer(body.group(1)):
+        value = arm.group(2).strip()
+        if value.startswith("{") and value.endswith("}"):
+            value = value[1:-1].strip()
+        for p in re.findall(r"AuthenticatedHistoryProfile::(\w+)", arm.group(1)):
+            out[p] = value
     return out
+
+
+def authenticated_history_rows(root: Path) -> list[dict]:
+    """One derived row per profile, joined across the owning const fns. A
+    profile absent from ANY fn simply lacks that key's fact and is reported by
+    the findings, never defaulted."""
+    facts = {
+        "policies": {p: A_WITNESS_VARIANT.findall(v)
+                     for p, v in ah_fn_arms(root, "permitted_witness_policies").items()},
+        "local": {p: v == "true"
+                  for p, v in ah_fn_arms(root, "requires_local_commitment_verification").items()},
+        "signed": {p: v == "true"
+                   for p, v in ah_fn_arms(root, "requires_signed_history_verification").items()},
+        "witness": {p: v == "true"
+                    for p, v in ah_fn_arms(root, "requires_independent_witness_verification").items()},
+        "impl_gates": {p: gate_list(v)
+                       for p, v in ah_fn_arms(root, "implementation_gates").items()},
+        "release_gates": {p: gate_list(v)
+                          for p, v in ah_fn_arms(root, "release_qualification_gates").items()},
+        "unanchored": dict(ah_fn_arms(root, "unanchored_success_claims")),
+        "verified_witness": dict(ah_fn_arms(root, "verified_witness_success_claims")),
+    }
+    profiles = sorted(set().union(*[set(m) for m in facts.values()]) if any(facts.values()) else set())
+    return [{"profile": p, **{k: m.get(p) for k, m in facts.items()}} for p in profiles]
 
 
 def claim_bundles(root: Path) -> dict[str, tuple[str, str, str, str]]:
@@ -1372,13 +1392,17 @@ def authenticated_history_findings(root: Path) -> list[str]:
     rows = authenticated_history_rows(root)
     out: list[str] = list(claim_axis_findings(root))
     if not rows:
-        return out + ["spec/architecture.rs declares no AUTHENTICATED_HISTORY_PROFILES"]
+        return out + ["spec/architecture.rs derives no authenticated-history profile facts"]
     names = [r["profile"] for r in rows]
-    if len(names) != len(set(names)):
-        out.append("duplicate authenticated-history profile name")
     if set(names) != set(A_FROZEN_MATRIX):
         out.append(f"authenticated-history profile set {sorted(names)} != frozen {sorted(A_FROZEN_MATRIX)}")
     for r in rows:
+        # Every owning fn classifies every profile; a missing arm is a
+        # missing fact, never a default.
+        missing = [k for k, v in r.items() if v is None]
+        if missing:
+            out.append(f"{r['profile']} has no authored fact for {missing}")
+            continue
         want = A_FROZEN_MATRIX.get(r["profile"])
         if want is None:
             continue

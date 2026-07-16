@@ -959,13 +959,13 @@ def test_authenticated_history(audit) -> list[str]:
           "generic security ladder SecurityLevel")
 
     # --- no fallback success for a required witness ------------------------
+    # The profile table dissolved (5.5E2): the mutation now attacks the arm of
+    # the const fn that owns the fact, exactly where a real weakening would land.
     probe("externally_anchored_given_unanchored_success_is_rejected",
-          "        // No successful unanchored result is admitted. An absent or invalid\n"
-          "        // required witness refuses; it never falls back to a weaker success.\n"
-          "        unanchored_success_claims: None,\n"
-          "        verified_witness_success_claims: Some(WITNESSED_SUCCESS),",
-          "        unanchored_success_claims: Some(SIGNED_UNANCHORED_SUCCESS),\n"
-          "        verified_witness_success_claims: Some(WITNESSED_SUCCESS),",
+          "            AuthenticatedHistoryProfile::SignedHistory => Some(SIGNED_UNANCHORED_SUCCESS),\n"
+          "            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => None,",
+          "            AuthenticatedHistoryProfile::SignedHistory => Some(SIGNED_UNANCHORED_SUCCESS),\n"
+          "            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => Some(SIGNED_UNANCHORED_SUCCESS),",
           "must refuse, not fall back to a weaker success")
 
     # --- per-axis claim ceilings -------------------------------------------
@@ -1026,20 +1026,19 @@ def test_authenticated_history(audit) -> list[str]:
 
     # --- invalid profile/policy pairs are refused, never normalized --------
     probe("internal_consistency_with_optional_witness_is_rejected",
-          "        permitted_witness_policies: &[WitnessPolicy::None],\n"
-          "        requires_local_commitment_verification: true,\n"
-          "        requires_signed_history_verification: false,",
-          "        permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],\n"
-          "        requires_local_commitment_verification: true,\n"
-          "        requires_signed_history_verification: false,",
+          "            AuthenticatedHistoryProfile::InternalConsistency => &[WitnessPolicy::None],",
+          "            AuthenticatedHistoryProfile::InternalConsistency => "
+          "&[WitnessPolicy::None, WitnessPolicy::Optional],",
           "frozen matrix says")
     probe("signed_history_with_required_witness_is_rejected",
-          "        permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],",
-          "        permitted_witness_policies: &[WitnessPolicy::Required],",
+          "            AuthenticatedHistoryProfile::SignedHistory => {\n"
+          "                &[WitnessPolicy::None, WitnessPolicy::Optional]\n"
+          "            }",
+          "            AuthenticatedHistoryProfile::SignedHistory => &[WitnessPolicy::Required],",
           "permits WitnessPolicy::Required outside ExternallyAnchoredHistory")
     probe("externally_anchored_with_optional_witness_is_rejected",
-          "        permitted_witness_policies: &[WitnessPolicy::Required],",
-          "        permitted_witness_policies: &[WitnessPolicy::Optional],",
+          "            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => &[WitnessPolicy::Required],",
+          "            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => &[WitnessPolicy::Optional],",
           "permits a non-Required witness policy")
 
     # --- witness axes stay distinct ---------------------------------------

@@ -388,71 +388,118 @@ pub const WITNESSED_SUCCESS: AuthenticatedHistoryClaims = AuthenticatedHistoryCl
     rollback_resistance: RollbackResistanceClaim::ScopedToVerifiedWitness,
 };
 
-/// One authenticated-history profile: what it admits, where it is implemented,
-/// where it is qualified, and exactly which success bundles it can reach.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AuthenticatedHistoryProfileSpec {
-    pub profile: AuthenticatedHistoryProfile,
-    /// The frozen valid pairings. Anything absent here is refused.
-    pub permitted_witness_policies: &'static [WitnessPolicy],
-    /// Local authoritative commitments and authority generations verify.
-    pub requires_local_commitment_verification: bool,
+// AuthenticatedHistoryProfileSpec { profile, permitted_witness_policies,
+// requires_local_commitment_verification, requires_signed_history_verification,
+// requires_independent_witness_verification, implementation_gates,
+// release_qualification_gates, unanchored_success_claims,
+// verified_witness_success_claims } and its three-row
+// AUTHENTICATED_HISTORY_PROFILES table stood here from 5.5C2c until the 5.5E2
+// bake. Every field was a pure function of the profile variant — the table
+// restated per row what the enum determines, and three checkers (seedcheck,
+// audit, selftest) then policed the copies back into agreement: duplicate-row
+// checks, row-count checks, an always-true bool, Required-outside-EAH scans.
+// A table whose every cell is derivable is not a fact family; it is a ladder
+// of invitations to drift. Deleted rather than kept: the authorship moved
+// into the const fns below, where an invalid pairing has no row to live in.
+
+impl AuthenticatedHistoryProfile {
+    /// The three profiles, in ascending claim order (for iteration, not as a
+    /// ladder type: the CLAIMS stay four independent axes).
+    pub const ALL: &'static [AuthenticatedHistoryProfile] = &[
+        AuthenticatedHistoryProfile::InternalConsistency,
+        AuthenticatedHistoryProfile::SignedHistory,
+        AuthenticatedHistoryProfile::ExternallyAnchoredHistory,
+    ];
+
+    /// The frozen valid pairings. Anything absent here is refused, never
+    /// normalized into a neighbour: `SignedHistory + Required` is not
+    /// silently upgraded to `ExternallyAnchoredHistory` — the caller selects
+    /// the stronger profile. `Required` exists only here, in the
+    /// `ExternallyAnchoredHistory` arm.
+    pub const fn permitted_witness_policies(self) -> &'static [WitnessPolicy] {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency => &[WitnessPolicy::None],
+            AuthenticatedHistoryProfile::SignedHistory => {
+                &[WitnessPolicy::None, WitnessPolicy::Optional]
+            }
+            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => &[WitnessPolicy::Required],
+        }
+    }
+
+    /// Local authoritative commitments and authority generations verify under
+    /// EVERY profile. This is a law of the family, not a per-profile choice:
+    /// there is no profile that skips local coherence.
+    pub const fn requires_local_commitment_verification(self) -> bool {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency
+            | AuthenticatedHistoryProfile::SignedHistory
+            | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => true,
+        }
+    }
+
     /// Signed seals and a signed whole-history commitment verify.
-    pub requires_signed_history_verification: bool,
+    pub const fn requires_signed_history_verification(self) -> bool {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency => false,
+            AuthenticatedHistoryProfile::SignedHistory
+            | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => true,
+        }
+    }
+
     /// An independent monotonic witness verifies.
-    pub requires_independent_witness_verification: bool,
-    pub implementation_gates: &'static [GateId],
-    pub release_qualification_gates: &'static [GateId],
+    pub const fn requires_independent_witness_verification(self) -> bool {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency
+            | AuthenticatedHistoryProfile::SignedHistory => false,
+            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => true,
+        }
+    }
+
+    /// Where the profile's mechanism is implemented. One gate for the family:
+    /// authenticated history is storage-core work.
+    pub const fn implementation_gates(self) -> &'static [GateId] {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency
+            | AuthenticatedHistoryProfile::SignedHistory
+            | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => &[GateId::G2],
+        }
+    }
+
+    /// Where the profile's release qualification is scheduled.
+    pub const fn release_qualification_gates(self) -> &'static [GateId] {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency
+            | AuthenticatedHistoryProfile::SignedHistory
+            | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => &[GateId::G9],
+        }
+    }
+
     /// The success bundle when no verified external anchor is present.
     ///
-    /// `None` means NO SUCCESSFUL UNANCHORED RESULT IS ADMITTED. It does not
-    /// mean unknown, not configured, posture unavailable, or fallback success.
-    pub unanchored_success_claims: Option<AuthenticatedHistoryClaims>,
-    /// The success bundle when an independent witness verifies. `None` means the
-    /// profile admits no witness at all.
-    pub verified_witness_success_claims: Option<AuthenticatedHistoryClaims>,
-}
+    /// `None` means NO SUCCESSFUL UNANCHORED RESULT IS ADMITTED — it does not
+    /// mean unknown, not configured, posture unavailable, or fallback
+    /// success. An absent or invalid required witness refuses; it never falls
+    /// back to a weaker success.
+    pub const fn unanchored_success_claims(self) -> Option<AuthenticatedHistoryClaims> {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency => {
+                Some(INTERNAL_CONSISTENCY_SUCCESS)
+            }
+            AuthenticatedHistoryProfile::SignedHistory => Some(SIGNED_UNANCHORED_SUCCESS),
+            AuthenticatedHistoryProfile::ExternallyAnchoredHistory => None,
+        }
+    }
 
-/// The frozen matrix. `SignedHistory + Required` is not silently upgraded to
-/// `ExternallyAnchoredHistory`: the caller selects the stronger profile.
-pub const AUTHENTICATED_HISTORY_PROFILES: &[AuthenticatedHistoryProfileSpec] = &[
-    AuthenticatedHistoryProfileSpec {
-        profile: AuthenticatedHistoryProfile::InternalConsistency,
-        permitted_witness_policies: &[WitnessPolicy::None],
-        requires_local_commitment_verification: true,
-        requires_signed_history_verification: false,
-        requires_independent_witness_verification: false,
-        implementation_gates: &[GateId::G2],
-        release_qualification_gates: &[GateId::G9],
-        unanchored_success_claims: Some(INTERNAL_CONSISTENCY_SUCCESS),
-        // Admits no witness, so no witnessed success exists.
-        verified_witness_success_claims: None,
-    },
-    AuthenticatedHistoryProfileSpec {
-        profile: AuthenticatedHistoryProfile::SignedHistory,
-        permitted_witness_policies: &[WitnessPolicy::None, WitnessPolicy::Optional],
-        requires_local_commitment_verification: true,
-        requires_signed_history_verification: true,
-        requires_independent_witness_verification: false,
-        implementation_gates: &[GateId::G2],
-        release_qualification_gates: &[GateId::G9],
-        unanchored_success_claims: Some(SIGNED_UNANCHORED_SUCCESS),
-        verified_witness_success_claims: Some(WITNESSED_SUCCESS),
-    },
-    AuthenticatedHistoryProfileSpec {
-        profile: AuthenticatedHistoryProfile::ExternallyAnchoredHistory,
-        permitted_witness_policies: &[WitnessPolicy::Required],
-        requires_local_commitment_verification: true,
-        requires_signed_history_verification: true,
-        requires_independent_witness_verification: true,
-        implementation_gates: &[GateId::G2],
-        release_qualification_gates: &[GateId::G9],
-        // No successful unanchored result is admitted. An absent or invalid
-        // required witness refuses; it never falls back to a weaker success.
-        unanchored_success_claims: None,
-        verified_witness_success_claims: Some(WITNESSED_SUCCESS),
-    },
-];
+    /// The success bundle when an independent witness verifies. `None` means
+    /// the profile admits no witness at all.
+    pub const fn verified_witness_success_claims(self) -> Option<AuthenticatedHistoryClaims> {
+        match self {
+            AuthenticatedHistoryProfile::InternalConsistency => None,
+            AuthenticatedHistoryProfile::SignedHistory
+            | AuthenticatedHistoryProfile::ExternallyAnchoredHistory => Some(WITNESSED_SUCCESS),
+        }
+    }
+}
 
 /// A refusal is not a weaker success.
 ///
