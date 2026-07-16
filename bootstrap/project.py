@@ -533,7 +533,7 @@ P_ISA_VARIANT = re.compile(r"PakVmNodeId::(\w+)")
 P_ISA_FIELD = re.compile(r"(\w+):\s*([^,\n]+?),?\s*$")
 
 
-def _isa_fn_body(src: str, name: str) -> str:
+def _const_fn_body(src: str, name: str) -> str:
     """The text of one `impl PakVmNodeId` method, start to the next method."""
     start = src.index(f"pub const fn {name}(")
     rest = src[start:]
@@ -543,13 +543,13 @@ def _isa_fn_body(src: str, name: str) -> str:
 
 def _isa_arms(src: str, name: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    for pattern, value in P_ISA_ARM.findall(_isa_fn_body(src, name)):
+    for pattern, value in P_ISA_ARM.findall(_const_fn_body(src, name)):
         for variant in P_ISA_VARIANT.findall(pattern):
             out[variant] = value[1:-1] if value.startswith('"') else value.split("::")[-1]
     return out
 
 
-def _isa_struct_rows(src: str, const: str, kind: str) -> list[dict[str, str]]:
+def _struct_rows(src: str, const: str, kind: str) -> list[dict[str, str]]:
     body = src[src.index(f"pub const {const}"):]
     body = body[: body.index("\n];")]
     rows = []
@@ -621,11 +621,11 @@ def pakvm_specs(root: Path) -> list[dict]:
     units = _isa_units(src)
     planes, mandatory = _isa_planes(src)
     apol = {r["algebra"].split("::")[-1]: r
-            for r in _isa_struct_rows(src, "PAKVM_ALGEBRA_POLICIES", "PakVmAlgebraPolicy")}
+            for r in _struct_rows(src, "PAKVM_ALGEBRA_POLICIES", "PakVmAlgebraPolicy")}
     cpol = {r["class"].split("::")[-1]: r
-            for r in _isa_struct_rows(src, "PAKVM_NODE_CLASS_POLICIES", "PakVmNodeClassPolicy")}
+            for r in _struct_rows(src, "PAKVM_NODE_CLASS_POLICIES", "PakVmNodeClassPolicy")}
     origins = {}
-    body = _isa_fn_body(src, "source_origin")
+    body = _const_fn_body(src, "source_origin")
     for alg, val in re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*\"([^\"]*)\"", body):
         origins[alg] = val
     out = []
@@ -700,6 +700,115 @@ def render_pakvm_signatures(root) -> str:
     return "\n".join(out).rstrip("\n") + "\n```"
 
 
+FIREWALL_SPEC = "spec/syncbat_firewall.rs"
+ARCH_SPEC = "spec/architecture.rs"
+SYNCBAT_DOC = "docs/08_SYNCBAT_RUNTIME.md"
+P_COMMENT = re.compile(r"//[^\n]*")
+
+
+def _method_body(src: str, name: str, where: str) -> str:
+    """One `fn name(self)` body, bounded by its own closing brace. Bounding by
+    the brace rather than by the next method matters: the last method in an impl
+    would otherwise swallow the rest of the file, and a table parsed from that
+    text would read as if every constant below it were part of the match."""
+    m = re.search(r"fn " + re.escape(name) + r"\(self\)[^{]*\{(.*?)\n    \}", src, re.S)
+    if not m:
+        raise Unadmitted(f"{where}: declares no {name}()")
+    return P_COMMENT.sub("", m.group(1))
+
+
+def _const_list(src: str, const: str, variant: str, where: str) -> list[str]:
+    try:
+        body = src[src.index(f"pub const {const}"):]
+    except ValueError:
+        raise Unadmitted(f"{where}: declares no {const}") from None
+    return re.findall(variant + r"::(\w+)", body[: body.index("\n];")])
+
+
+def syncbat_firewall_facts(root: Path) -> dict:
+    """Admitted SyncBat firewall facts, read from their typed owners.
+
+    This serializes. It states no plane ownership, no legal crossing, no
+    semantic default, and completes nothing: a fact the spec does not author
+    raises `Unadmitted` rather than being filled in here. That restraint is the
+    whole point — a generator that can supply a missing policy is a second
+    authority no matter what its docstring claims."""
+    arch = (root / ARCH_SPEC).read_text(encoding="utf-8")
+    src = (root / FIREWALL_SPEC).read_text(encoding="utf-8")
+    # Plane identity and the ownership sentences: spec/architecture.rs owns both.
+    order = _const_list(arch, "SYNCBAT_PLANES", "SyncBatPlane", ARCH_SPEC)
+    if not order:
+        raise Unadmitted(f"{ARCH_SPEC}: SYNCBAT_PLANES lists no plane")
+    sentences = dict(re.findall(
+        r'SyncBatPlane::(\w+)\s*=>\s*"([^"]*)"',
+        _method_body(arch, "authored_ownership", ARCH_SPEC)))
+    for plane in order:
+        if not sentences.get(plane):
+            raise Unadmitted(f"{ARCH_SPEC}: plane {plane} authors no ownership sentence")
+    # Authority ownership: spec/syncbat_firewall.rs owns it.
+    listed = _const_list(src, "SYNCBAT_AUTHORITIES", "SyncBatAuthority", FIREWALL_SPEC)
+    if not listed:
+        raise Unadmitted(f"{FIREWALL_SPEC}: SYNCBAT_AUTHORITIES lists no authority")
+    owner_body = _method_body(src, "owner", FIREWALL_SPEC)
+    owners: dict[str, str] = {}
+    for pattern, plane in re.findall(
+            r"((?:\|?\s*SyncBatAuthority::\w+\s*)+)=>\s*SyncBatPlane::(\w+)", owner_body):
+        for variant in re.findall(r"SyncBatAuthority::(\w+)", pattern):
+            if variant in owners:
+                raise Unadmitted(f"{FIREWALL_SPEC}: owner() answers twice for {variant}")
+            owners[variant] = plane
+    semantic = set(re.findall(
+        r"SyncBatAuthority::(\w+)",
+        _method_body(src, "requires_semantic_origin", FIREWALL_SPEC)))
+    authorities = []
+    for name in listed:
+        plane = owners.get(name)
+        if not plane:
+            raise Unadmitted(f"{FIREWALL_SPEC}: authority {name} names no owning plane")
+        if plane not in order:
+            raise Unadmitted(f"{FIREWALL_SPEC}: authority {name} names {plane}, which is no plane")
+        authorities.append({"authority": name, "owner": plane, "origin": name in semantic})
+    # The legal-crossing whitelist: spec/syncbat_firewall.rs owns it.
+    crossings = []
+    for row in _struct_rows(src, "SYNCBAT_LEGAL_CROSSINGS", "SyncBatCrossing"):
+        frm = row.get("from", "").split("::")[-1]
+        to = row.get("to", "").split("::")[-1]
+        carries = row.get("carries", "").split("::")[-1]
+        law = row.get("law", "").strip().strip('"')
+        for plane in (frm, to):
+            if plane not in order:
+                raise Unadmitted(f"{FIREWALL_SPEC}: a crossing names {plane!r}, which is no plane")
+        if carries not in listed:
+            raise Unadmitted(f"{FIREWALL_SPEC}: a crossing carries {carries!r}, "
+                             f"which SYNCBAT_AUTHORITIES does not author")
+        if not law:
+            raise Unadmitted(f"{FIREWALL_SPEC}: the {frm} -> {to} crossing states no law")
+        crossings.append({"from": frm, "to": to, "carries": carries, "law": law})
+    if not crossings:
+        raise Unadmitted(f"{FIREWALL_SPEC}: SYNCBAT_LEGAL_CROSSINGS lists no crossing")
+    return {"order": order, "sentences": sentences,
+            "authorities": authorities, "crossings": crossings}
+
+
+def render_syncbat_plane_ownership(root) -> str:
+    facts = syncbat_firewall_facts(root)
+    return "\n".join(["```text"] + [facts["sentences"][p] for p in facts["order"]] + ["```"])
+
+
+def render_syncbat_authorities(root) -> str:
+    out = ["| Authority | Owning plane | Names a PakVM origin |", "| --- | --- | --- |"]
+    for a in syncbat_firewall_facts(root)["authorities"]:
+        out.append(f"| {a['authority']} | {a['owner']} | {'yes' if a['origin'] else 'no'} |")
+    return "\n".join(out)
+
+
+def render_syncbat_crossings(root) -> str:
+    out = ["| From | To | Carries | Law |", "| --- | --- | --- | --- |"]
+    for c in syncbat_firewall_facts(root)["crossings"]:
+        out.append(f"| {c['from']} | {c['to']} | {c['carries']} | {c['law']} |")
+    return "\n".join(out)
+
+
 def block_pattern(name: str) -> re.Pattern[str]:
     return re.compile(
         r"(<!-- " + re.escape(name) + r":BEGIN[^>]*-->\n)(.*?)(\n<!-- " + re.escape(name) + r":END -->)",
@@ -764,6 +873,26 @@ def main() -> int:
         body = render(root)
         isa_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), isa_rewritten)
     plans.append((isa_path, isa_original, isa_rewritten))
+    fw_path = root / SYNCBAT_DOC
+    fw_original = fw_path.read_text(encoding="utf-8")
+    fw_rewritten = fw_original
+    for name, render in (("SYNCBAT-PLANE-OWNERSHIP", render_syncbat_plane_ownership),
+                         ("SYNCBAT-AUTHORITIES", render_syncbat_authorities),
+                         ("SYNCBAT-CROSSINGS", render_syncbat_crossings)):
+        pat = block_pattern(name)
+        if not pat.search(fw_rewritten):
+            findings.append(f"{SYNCBAT_DOC}: missing generated block markers for {name}")
+            continue
+        try:
+            body = render(root)
+        except Unadmitted as exc:
+            # Fail closed and say why. The alternative — a traceback — is a
+            # projector refusing to answer, which reads to a fixture exactly like
+            # a projector that has nothing to report.
+            findings.append(f"{SYNCBAT_DOC}: {name} does not admit: {exc}")
+            continue
+        fw_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), fw_rewritten)
+    plans.append((fw_path, fw_original, fw_rewritten))
     gates_path = root / GATES_DOC
     gates_original = gates_path.read_text(encoding="utf-8")
     for rel in STALE_DOCS:

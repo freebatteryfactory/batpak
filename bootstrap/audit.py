@@ -2427,6 +2427,258 @@ def pakvm_isa_findings(root: Path) -> list[str]:
     return out
 
 
+A_FW_SRC = "spec/syncbat_firewall.rs"
+A_FW_ARCH = "spec/architecture.rs"
+A_FW_DOC = "docs/08_SYNCBAT_RUNTIME.md"
+
+
+def _a_fw_block(doc: str, name: str) -> str | None:
+    m = re.search(r"<!-- " + name + r":BEGIN[^>]*-->\n(.*?)\n<!-- " + name + r":END -->", doc, re.S)
+    return m.group(1) if m else None
+
+
+class FirewallAdmissionFailure(Exception):
+    pass
+
+
+def _a_fw_variants(src: str, enum: str, where: str) -> list[str]:
+    """The authored variants of one enum.
+
+    This is the reading rustc cannot perform for us. A variant omitted from the
+    `&[...]` listing below compiles perfectly and disappears from every law that
+    iterates the listing: seedcheck would go on proving things about the
+    authorities it was handed, and never mention the one it was not."""
+    head = src.find(f"pub enum {enum} {{")
+    if head < 0:
+        raise FirewallAdmissionFailure(f"{where}: declares no {enum}")
+    return re.findall(r"^\s{4}(\w+),$", src[head: src.find("\n}", head)], re.M)
+
+
+def _a_fw_listing(src: str, const: str, variant: str, where: str) -> list[str]:
+    head = src.find(f"pub const {const}")
+    if head < 0:
+        raise FirewallAdmissionFailure(f"{where}: declares no {const}")
+    return re.findall(variant + r"::(\w+)", src[head: src.find("\n];", head)])
+
+
+def _a_fw_method(src: str, name: str, where: str) -> str:
+    head = src.find(f"pub const fn {name}(self)")
+    if head < 0:
+        raise FirewallAdmissionFailure(f"{where}: declares no {name}()")
+    end = src.find("\n    }", head)
+    return re.sub(r"//[^\n]*", "", src[head: end if end > 0 else len(src)])
+
+
+def syncbat_firewall_views(root: Path) -> dict:
+    """The firewall as this auditor reads it, from the typed owners alone.
+
+    Independently derived: it shares no parsing, no table, and no constant with
+    `project.py`. It carries no plane ownership map and no crossing whitelist of
+    its own, because a checker holding its own copy of the answer agrees with
+    itself and calls that verification."""
+    arch = (root / A_FW_ARCH).read_text(encoding="utf-8")
+    src = (root / A_FW_SRC).read_text(encoding="utf-8")
+    planes = _a_fw_variants(arch, "SyncBatPlane", A_FW_ARCH)
+    if not planes:
+        raise FirewallAdmissionFailure(f"{A_FW_ARCH}: SyncBatPlane authors no plane")
+    listed_planes = _a_fw_listing(arch, "SYNCBAT_PLANES", "SyncBatPlane", A_FW_ARCH)
+    sentences: dict[str, str] = {}
+    for arm in _a_fw_method(arch, "authored_ownership", A_FW_ARCH).split("\n"):
+        m = re.search(r'SyncBatPlane::(\w+)\s*=>\s*"([^"]*)"', arm)
+        if m:
+            sentences[m.group(1)] = m.group(2)
+    authorities = _a_fw_variants(src, "SyncBatAuthority", A_FW_SRC)
+    if not authorities:
+        raise FirewallAdmissionFailure(f"{A_FW_SRC}: SyncBatAuthority authors no authority")
+    listed = _a_fw_listing(src, "SYNCBAT_AUTHORITIES", "SyncBatAuthority", A_FW_SRC)
+    owners: dict[str, str] = {}
+    for arm in _a_fw_method(src, "owner", A_FW_SRC).split(","):
+        if "=>" not in arm:
+            continue
+        left, right = arm.split("=>", 1)
+        plane = re.search(r"SyncBatPlane::(\w+)", right)
+        if not plane:
+            continue
+        for name in re.findall(r"SyncBatAuthority::(\w+)", left):
+            if name in owners:
+                raise FirewallAdmissionFailure(f"owner() answers twice for {name}")
+            owners[name] = plane.group(1)
+    semantic = set(re.findall(
+        r"SyncBatAuthority::(\w+)",
+        _a_fw_method(src, "requires_semantic_origin", A_FW_SRC)))
+    head = src.find("pub const SYNCBAT_LEGAL_CROSSINGS")
+    if head < 0:
+        raise FirewallAdmissionFailure(f"{A_FW_SRC}: declares no SYNCBAT_LEGAL_CROSSINGS")
+    crossings = []
+    for chunk in src[head: src.find("\n];", head)].split("SyncBatCrossing {")[1:]:
+        got = dict(re.findall(r"(\w+):\s*(?:\w+::)?(\w+|\"[^\"]*\")", chunk))
+        crossings.append({
+            "from": got.get("from", ""), "to": got.get("to", ""),
+            "carries": got.get("carries", ""), "law": got.get("law", "").strip('"'),
+        })
+    return {"planes": planes, "listed_planes": listed_planes, "sentences": sentences,
+            "authorities": authorities, "listed": listed, "owners": owners,
+            "semantic": semantic, "crossings": crossings}
+
+
+def syncbat_firewall_findings(root: Path) -> list[str]:
+    """Firewall closure, ownership, crossing legality, and projection findings.
+
+    Every rule below reads the typed owner. None reads the projection to decide
+    a semantic question, which is why regenerating docs/08 cannot quiet one of
+    them: that failure mode is not hypothetical here, it is the exact defect
+    this campaign found in the PakVM effect biconditional, where an unlawful
+    algebra policy was reported as drift and a rerun of the generator turned the
+    auditor green."""
+    out: list[str] = []
+    try:
+        v = syncbat_firewall_views(root)
+    except FirewallAdmissionFailure as exc:
+        return [f"{A_FW_SRC}: the SyncBat firewall does not admit: {exc}"]
+    except (ValueError, KeyError, AttributeError, IndexError) as exc:
+        return [f"{A_FW_SRC}: the SyncBat firewall is unreadable: {exc}"]
+    planes, authorities = v["planes"], v["authorities"]
+    # Closure. The listings must name exactly the authored variants: an omission
+    # is invisible to rustc and silently narrows every law that iterates them.
+    for name in planes:
+        if name not in v["listed_planes"]:
+            out.append(f"{A_FW_ARCH}: plane {name} is authored but SYNCBAT_PLANES omits it, "
+                       f"so no law that walks the planes can see it")
+    for name in v["listed_planes"]:
+        if name not in planes:
+            out.append(f"{A_FW_ARCH}: SYNCBAT_PLANES lists {name}, which SyncBatPlane does not author")
+    for name in authorities:
+        if name not in v["listed"]:
+            out.append(f"{A_FW_SRC}: authority {name} is authored but SYNCBAT_AUTHORITIES omits it, "
+                       f"so every law that walks the authorities skips it")
+    for name in v["listed"]:
+        if name not in authorities:
+            out.append(f"{A_FW_SRC}: SYNCBAT_AUTHORITIES lists {name}, "
+                       f"which SyncBatAuthority does not author")
+    if len(set(v["listed"])) != len(v["listed"]):
+        out.append(f"{A_FW_SRC}: SYNCBAT_AUTHORITIES lists an authority more than once")
+    # Every plane authors its sentence, and every sentence is its own.
+    for name in planes:
+        if not v["sentences"].get(name):
+            out.append(f"{A_FW_ARCH}: plane {name} authors no ownership sentence")
+    said: dict[str, str] = {}
+    for name in planes:
+        text = v["sentences"].get(name, "")
+        if text and text in said:
+            out.append(f"{A_FW_ARCH}: planes {said[text]} and {name} author the same "
+                       f"ownership sentence, so the firewall cannot tell them apart")
+        said[text] = name
+    # One owner per authority, and that owner is a plane.
+    for name in authorities:
+        owner = v["owners"].get(name)
+        if not owner:
+            out.append(f"{A_FW_SRC}: authority {name} names no owning plane, so nobody "
+                       f"can refuse its misuse")
+        elif owner not in planes:
+            out.append(f"{A_FW_SRC}: authority {name} is owned by {owner}, which is no SyncBat plane")
+    # Inhabitance. A plane that owns nothing is a name in a document, and its
+    # ownership sentence enforces nothing. No count is asserted here.
+    for name in planes:
+        if not [a for a in authorities if v["owners"].get(a) == name]:
+            out.append(f"{A_FW_SRC}: plane {name} owns no authority, so its authored "
+                       f"ownership sentence constrains nothing")
+    # Crossing legality, recomputed rather than consulted.
+    seen: set[tuple[str, str, str]] = set()
+    for c in v["crossings"]:
+        frm, to, carries = c["from"], c["to"], c["carries"]
+        where = f"the {frm} -> {to} crossing"
+        for plane in (frm, to):
+            if plane not in planes:
+                out.append(f"{A_FW_SRC}: {where} names {plane!r}, which is no SyncBat plane")
+        if frm == to:
+            out.append(f"{A_FW_SRC}: {where} does not leave its plane; that is an internal transition")
+        if carries not in authorities:
+            out.append(f"{A_FW_SRC}: {where} carries {carries!r}, which is no authored authority")
+            continue
+        owner = v["owners"].get(carries)
+        if owner and owner != frm:
+            out.append(f"{A_FW_SRC}: {where} lets {frm} exercise {carries}, which {owner} owns")
+        if not c["law"]:
+            out.append(f"{A_FW_SRC}: {where} states no authored law")
+        key = (frm, to, carries)
+        if key in seen:
+            out.append(f"{A_FW_SRC}: {where} carrying {carries} is declared twice")
+        seen.add(key)
+    if not v["crossings"]:
+        out.append(f"{A_FW_SRC}: no lawful crossing is declared, so the firewall admits nothing "
+                   f"and every crossing rule is vacuous")
+    # ISA-only execution. Semantics has one owner, so every authority that must
+    # name a PakVM origin answers to the same plane. Which plane that is stays
+    # the spec's business: reading it out of the ownership prose would be the
+    # archaeology this file refuses to do.
+    origin_owners = {v["owners"].get(a) for a in v["semantic"] if a in authorities}
+    if len(origin_owners) > 1:
+        out.append(f"{A_FW_SRC}: authorities requiring a PakVM origin answer to more than one "
+                   f"plane ({', '.join(sorted(str(o) for o in origin_owners))}), so semantic "
+                   f"execution has no single owner")
+    if not v["semantic"]:
+        out.append(f"{A_FW_SRC}: no authority requires a PakVM origin, so ISA-only execution "
+                   f"is a sentence rather than a condition on a value")
+    for name in v["semantic"]:
+        if name not in authorities:
+            out.append(f"{A_FW_SRC}: requires_semantic_origin() names {name}, "
+                       f"which is no authored authority")
+    # A semantic authority must name its PakVM origin BECAUSE it leaves the plane
+    # that owns the ISA. One that crosses nothing requires an origin for a value
+    # no other plane can ever receive, which makes the requirement ceremony and
+    # the carrier a dead end. This is the rule that notices a lawful crossing
+    # being deleted: without it the whitelist can quietly shrink, the projection
+    # regenerates to match, and every gate stays green while an execution route
+    # the ISA depends on stops existing.
+    for name in sorted(v["semantic"]):
+        if name in authorities and not [c for c in v["crossings"] if c["carries"] == name]:
+            out.append(f"{A_FW_SRC}: {name} must name a PakVM origin but no crossing carries "
+                       f"it off {v['owners'].get(name)}, so admitted node meaning has no lawful "
+                       f"route out of the plane that owns it")
+    # The projections carry exactly the admitted facts.
+    doc = (root / A_FW_DOC).read_text(encoding="utf-8")
+    own = _a_fw_block(doc, "SYNCBAT-PLANE-OWNERSHIP")
+    if own is None:
+        out.append(f"{A_FW_DOC}: no generated SYNCBAT-PLANE-OWNERSHIP block")
+    else:
+        want = ["```text"] + [v["sentences"].get(p, "") for p in v["listed_planes"]] + ["```"]
+        if own.splitlines() != want:
+            out.append(f"{A_FW_DOC}: the projected ownership sentences drifted from "
+                       f"{A_FW_ARCH}")
+    auth = _a_fw_block(doc, "SYNCBAT-AUTHORITIES")
+    if auth is None:
+        out.append(f"{A_FW_DOC}: no generated SYNCBAT-AUTHORITIES block")
+    else:
+        rows = [r for r in auth.splitlines() if r.startswith("| ")
+                and "| ---" not in r and not r.startswith("| Authority ")]
+        want = [f"| {a} | {v['owners'].get(a, '')} | {'yes' if a in v['semantic'] else 'no'} |"
+                for a in v["listed"]]
+        if rows != want:
+            out.append(f"{A_FW_DOC}: the projected authority inventory drifted from {A_FW_SRC}")
+    cross = _a_fw_block(doc, "SYNCBAT-CROSSINGS")
+    if cross is None:
+        out.append(f"{A_FW_DOC}: no generated SYNCBAT-CROSSINGS block")
+    else:
+        rows = [r for r in cross.splitlines() if r.startswith("| ")
+                and "| ---" not in r and not r.startswith("| From ")]
+        want = [f"| {c['from']} | {c['to']} | {c['carries']} | {c['law']} |" for c in v["crossings"]]
+        if rows != want:
+            out.append(f"{A_FW_DOC}: the projected crossing whitelist drifted from {A_FW_SRC}")
+    # A hand-authored copy of a projected inventory is not documentation; it is a
+    # second answer that no generator maintains and no reader can distinguish
+    # from the first.
+    outside = doc
+    for name in ("SYNCBAT-PLANE-OWNERSHIP", "SYNCBAT-AUTHORITIES", "SYNCBAT-CROSSINGS"):
+        outside = re.sub(r"<!-- " + name + r":BEGIN[^>]*-->\n.*?\n<!-- " + name + r":END -->",
+                         "", outside, flags=re.S)
+    for plane in planes:
+        text = v["sentences"].get(plane, "")
+        if text and text in outside:
+            out.append(f"{A_FW_DOC}: the ownership sentence for {plane} is also hand-authored "
+                       f"outside the generated block, competing with the projection")
+    return out
+
+
 def retired_proof_row_findings(root: Path) -> list[str]:
     """A retired proof-row id returns nowhere but a marked historical note.
 
@@ -2818,6 +3070,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(retired_claim_vocabulary_findings(root))
     findings.extend(retired_proof_row_findings(root))
     findings.extend(pakvm_isa_findings(root))
+    findings.extend(syncbat_firewall_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))

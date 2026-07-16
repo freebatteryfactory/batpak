@@ -2938,6 +2938,197 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     return findings
 
 
+def test_syncbat_firewall(audit, project) -> list[str]:
+    """SyncBat authority firewall: ownership, crossing legality, projection (5.5D4c2).
+
+    Every probe runs the full sequence: mutate the authoritative source, prove
+    the bytes moved, REGENERATE the projection, refuse a drift alibi, then
+    require the exact finding the rule names. Auditing a stale projection would
+    only prove drift detection works -- and drift detection working is precisely
+    what the PakVM effect biconditional looked like right before it turned out to
+    be enforcing nothing at all.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    FW = "spec/syncbat_firewall.rs"
+    D08 = "docs/08_SYNCBAT_RUNTIME.md"
+    ff = audit.syncbat_firewall_findings
+
+    OWNS_COMPOSITION = (
+        "            SyncBatAuthority::CompositionAndInstanceIdentity => SyncBatPlane::World,")
+    STEALS_COMPOSITION = (
+        "            SyncBatAuthority::CompositionAndInstanceIdentity => SyncBatPlane::Port,")
+    RETRY_ARM = (
+        "            | SyncBatAuthority::RetryRestartAuthority => SyncBatPlane::Runtime,")
+    OWNERLESS_ARM = "            => SyncBatPlane::Runtime,"
+    EFFECT_ROUTE = (
+        "    SyncBatCrossing {\n"
+        "        from: SyncBatPlane::PakVm,\n"
+        "        to: SyncBatPlane::Bvisor,\n"
+        "        carries: SyncBatAuthority::TypedEffectRequest,\n"
+        '        law: "an effectful node emits a typed request for physical admission",\n'
+        "    },\n")
+
+    def regenerate(tmp) -> bool:
+        """Make docs/08 current with the mutated spec. False when the generator
+        refuses, which is itself lawful: a projector that completed a broken fact
+        would be the defect. The caller then knows drift is expected."""
+        d = tmp / D08
+        text = d.read_text(encoding="utf-8")
+        try:
+            for marker, render in (
+                    ("SYNCBAT-PLANE-OWNERSHIP", project.render_syncbat_plane_ownership),
+                    ("SYNCBAT-AUTHORITIES", project.render_syncbat_authorities),
+                    ("SYNCBAT-CROSSINGS", project.render_syncbat_crossings)):
+                body = render(tmp)
+                text = project.block_pattern(marker).sub(
+                    lambda m: m.group(1) + body + m.group(3), text)
+        except project.Unadmitted:
+            return False
+        d.write_text(text, encoding="utf-8")
+        return True
+
+    def probe(name, rel, old, needle, new="", regen=True):
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
+                            encoding="utf-8")
+            regenerated = regenerate(tmp) if regen else False
+            produced = ff(tmp)
+            if regenerated and any("drifted" in f for f in produced):
+                fail(f"{name} (regeneration left drift; the probe is testing the wrong rule)")
+            if not any(needle in f for f in produced):
+                fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    # The premise. Without it every probe below could be red for free.
+    if ff(root):
+        fail(f"syncbat_firewall_contract_passes (got {ff(root)!r})")
+    try:
+        auditor = audit.syncbat_firewall_views(root)
+        generator = project.syncbat_firewall_facts(root)
+    except Exception as exc:  # noqa: BLE001 - a crash here is itself the finding
+        auditor, generator = {}, {}
+        fail(f"both_derivations_admit_the_firewall ({exc!r})")
+    if auditor and generator:
+        # Independence is only worth something if the two agree on the ANSWER
+        # while sharing no code to compute it.
+        if auditor["listed_planes"] != generator["order"]:
+            fail("independent_derivations_agree_on_the_plane_inventory")
+        if auditor["listed"] != [a["authority"] for a in generator["authorities"]]:
+            fail("independent_derivations_agree_on_the_authority_inventory")
+        for a in generator["authorities"]:
+            if auditor["owners"].get(a["authority"]) != a["owner"]:
+                fail(f"independent_derivations_agree_on_the_owner_of_{a['authority']}")
+                break
+        if ([(c["from"], c["to"], c["carries"]) for c in auditor["crossings"]]
+                != [(c["from"], c["to"], c["carries"]) for c in generator["crossings"]]):
+            fail("independent_derivations_agree_on_the_crossing_whitelist")
+        # A rule quantified over an empty set is vacuously true forever. No count
+        # is asserted here; the sets must merely be inhabited.
+        if not auditor["crossings"] or not auditor["semantic"] or not auditor["planes"]:
+            fail("the_firewall_is_inhabited")
+
+    # --- one owner per authority, never two and never none --------------------
+    probe("an_authority_with_two_owners_does_not_admit", FW,
+          "            SyncBatAuthority::CapabilityAdmission\n"
+          "            | SyncBatAuthority::PhysicalAdmission",
+          "owner() answers twice for LogicalLegality",
+          "            SyncBatAuthority::LogicalLegality\n"
+          "            | SyncBatAuthority::CapabilityAdmission\n"
+          "            | SyncBatAuthority::PhysicalAdmission")
+    probe("an_ownerless_authority_does_not_admit", FW,
+          RETRY_ARM,
+          "authority RetryRestartAuthority names no owning plane",
+          OWNERLESS_ARM)
+    # The reading rustc cannot perform. An authority left out of the listing
+    # compiles perfectly and vanishes from every law that walks the listing:
+    # seedcheck goes on proving things about the authorities it was handed and
+    # never mentions the one it was not.
+    probe("an_authority_missing_from_the_listing_is_found", FW,
+          "    SyncBatAuthority::RetryRestartAuthority,\n"
+          "    SyncBatAuthority::SemanticNodeInterpretation,",
+          "is authored but SYNCBAT_AUTHORITIES omits it",
+          "    SyncBatAuthority::SemanticNodeInterpretation,")
+
+    # --- crossing legality, surviving regeneration ----------------------------
+    # docs/08's own forbidden example: "Bvisor minting semantic restart
+    # authorization". The projection is made perfectly current first; the finding
+    # must still be there, because the rule reads the spec and not the document.
+    probe("a_forbidden_crossing_is_rejected_after_regeneration", FW,
+          "pub const SYNCBAT_LEGAL_CROSSINGS: &[SyncBatCrossing] = &[\n",
+          "lets Bvisor exercise RetryRestartAuthority, which Runtime owns",
+          "pub const SYNCBAT_LEGAL_CROSSINGS: &[SyncBatCrossing] = &[\n"
+          "    SyncBatCrossing {\n"
+          "        from: SyncBatPlane::Bvisor,\n"
+          "        to: SyncBatPlane::Runtime,\n"
+          "        carries: SyncBatAuthority::RetryRestartAuthority,\n"
+          '        law: "bvisor mints semantic restart authorization",\n'
+          "    },\n")
+    # Deleting a lawful crossing is the quiet one. Every other rule iterates the
+    # whitelist, so a removal does not fail them -- it gives them less to say.
+    # Only the carrier rule notices that an authority which must name a PakVM
+    # origin now has nowhere to carry it.
+    probe("a_deleted_semantic_route_is_rejected_after_regeneration", FW,
+          EFFECT_ROUTE,
+          "TypedEffectRequest must name a PakVM origin but no crossing carries it off PakVm",
+          "")
+    probe("a_noncanonical_plane_identity_is_rejected", FW,
+          "        from: SyncBatPlane::World,\n        to: SyncBatPlane::Runtime,",
+          "names 'Kernel', which is no SyncBat plane",
+          "        from: SyncBatPlane::Kernel,\n        to: SyncBatPlane::Runtime,")
+
+    # --- a stale projection is not an alibi, and a fresh one is not absolution -
+    # The same mutation, audited both ways. Before regeneration the semantic
+    # finding must already be present rather than hiding behind a drift report;
+    # after regeneration it must still be present rather than vanishing with it.
+    for name, regen in (("a_stale_projection_does_not_mask_an_ownership_transfer", False),
+                        ("a_regenerated_projection_does_not_launder_an_ownership_transfer", True)):
+        probe(name, FW, OWNS_COMPOSITION,
+              "lets World exercise CompositionAndInstanceIdentity, which Port owns",
+              STEALS_COMPOSITION, regen=regen)
+
+    # --- a hand-authored copy is a second answer ------------------------------
+    probe("a_hand_authored_inventory_competing_with_the_projection_is_found", D08,
+          "Forbidden examples:",
+          "is also hand-authored outside the generated block",
+          "```text\nruntime owns logical legality\n```\n\nForbidden examples:")
+
+    # --- the generator refuses; it never completes -----------------------------
+    # A projector that could supply a missing owner would be a second authority
+    # wearing a serializer's name.
+    with isolated_tree() as tmp:
+        path = tmp / FW
+        path.write_text(must_replace(path.read_text(encoding="utf-8"), RETRY_ARM,
+                                     OWNERLESS_ARM, "generator refusal"), encoding="utf-8")
+        try:
+            project.syncbat_firewall_facts(tmp)
+            fail("the_generator_refuses_to_project_an_ownerless_authority")
+        except project.Unadmitted:
+            pass
+
+    # --- detector neutering ----------------------------------------------------
+    # Silencing the ownership rule must not leave a green suite. Without this the
+    # probes above prove only that SOMETHING returned a string.
+    with isolated_tree() as tmp:
+        p2 = tmp / FW
+        p2.write_text(must_replace(p2.read_text(encoding="utf-8"), OWNS_COMPOSITION,
+                                   STEALS_COMPOSITION, "ownership mutation"), encoding="utf-8")
+        if not any("which Port owns" in f for f in ff(tmp)):
+            fail("the_ownership_rule_bites_before_it_is_neutered")
+        with neutered_validator("audit", "        if owner and owner != frm:",
+                                "        if False:") as neutered:
+            if any("which Port owns" in f for f in neutered.syncbat_firewall_findings(tmp)):
+                fail("neutering_the_ownership_rule_silences_it")
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -3136,6 +3327,46 @@ def test_rust_specification_compiles(_audit) -> list[str]:
                 head = "\n".join(proc.stderr.splitlines()[:4])
                 findings.append(
                     f"{name}: compile failed, but not with {want!r}:\n{head}")
+        # The firewall's sealed witness and its ISA-only origin, proven the same
+        # way and against the real spec files. An admitted crossing that any
+        # caller could assemble by hand would be a struct literal claiming to be
+        # a firewall decision.
+        mounts = "".join(
+            f'#[allow(dead_code)] #[path = "{(root / "spec" / m).as_posix()}"] mod {m[:-3]};\n'
+            for m in ("gates.rs", "architecture.rs", "guarantees.rs", "invariants.rs",
+                      "dispositions.rs", "legacy_obligations.rs",
+                      "legacy_invariant_coverage.rs", "operators.rs", "pakvm_isa.rs",
+                      "syncbat_firewall.rs"))
+        for name, body, want in (
+            ("firewall_admitted_crossing_cannot_be_forged",
+             "let _ = AdmittedCrossing {\n"
+             "        from: SyncBatPlane::Bvisor, to: SyncBatPlane::Runtime,\n"
+             "        carries: SyncBatAuthority::RetryRestartAuthority,\n"
+             '        origin: None, law: "minted by hand", seal: (),\n'
+             "    };",
+             "field `seal` of struct"),
+            ("firewall_origin_cannot_be_fabricated",
+             "let _ = admit_crossing(SyncBatPlane::PakVm, SyncBatPlane::Bvisor,\n"
+             "        SyncBatAuthority::TypedEffectRequest, Some(PakVmNodeId::ReachTheHost));",
+             "named `ReachTheHost` found for enum `PakVmNodeId`"),
+        ):
+            src = tmp / f"{name}.rs"
+            src.write_text(
+                mounts
+                + "use architecture::SyncBatPlane;\nuse pakvm_isa::PakVmNodeId;\n"
+                + "use syncbat_firewall::*;\n"
+                + f"pub fn probe() {{\n    {body}\n}}\n", encoding="utf-8")
+            proc = subprocess.run(
+                [rustc, "--edition", "2021", "--crate-type", "lib", "--emit=metadata",
+                 "--crate-name", name, "-o", str(tmp / (name + ".rmeta")), str(src)],
+                capture_output=True, text=True)
+            if proc.returncode == 0:
+                findings.append(
+                    f"{name}: production code minted a sealed or fabricated firewall value")
+            elif want not in proc.stderr:
+                head = "\n".join(proc.stderr.splitlines()[:4])
+                findings.append(
+                    f"{name}: compile failed, but not with {want!r}:\n{head}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return findings
@@ -3174,6 +3405,7 @@ def main() -> int:
     findings += test_proof_target_resolver(audit)
     findings += test_guarantee_authority(audit, project)
     findings += test_pakvm_semantic_isa(audit, project)
+    findings += test_syncbat_firewall(audit, project)
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
@@ -3197,6 +3429,7 @@ def main() -> int:
                "integrity-witness", "derived-material", "deferred-witness",
                "LEG-081 authority", "proof-target resolver",
                "guarantee-authority hostile fixtures", "PakVM semantic ISA",
+               "SyncBat authority firewall",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

@@ -83,6 +83,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_version(&mut findings);
     check_pakvm_isa(&mut findings);
     check_syncbat_firewall(&mut findings);
+    check_syncbat_origin_law(&mut findings);
     check_unique_ids(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
@@ -1039,6 +1040,28 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
         }
     }
 
+    // A semantic authority names its PakVM origin BECAUSE it leaves the plane
+    // that owns the ISA. One that no crossing carries would require an origin
+    // for a value no other plane can ever receive: the requirement becomes
+    // ceremony and the execution route the ISA depends on stops existing.
+    //
+    // This is the only rule that notices a lawful crossing being deleted. Every
+    // loop above iterates the whitelist, so removing an entry does not fail
+    // them -- it simply gives them less to say, which is exactly how a law
+    // disappears while its proofs stay green.
+    for &authority in SYNCBAT_AUTHORITIES {
+        if authority.requires_semantic_origin()
+            && !SYNCBAT_LEGAL_CROSSINGS
+                .iter()
+                .any(|c| c.carries == authority)
+        {
+            findings.push(format!(
+                "{authority:?} must name a PakVM origin but no crossing carries it off {:?}, \
+                 so admitted node meaning has no lawful route out of its own plane",
+                authority.owner()));
+        }
+    }
+
     // docs/08 names five forbidden crossings by example. Each must be refused
     // through the production API, and the refusal must be the intended one.
     for (what, from, to, carries, want) in [
@@ -1080,6 +1103,44 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
         } else {
             None
         };
+        match admit_crossing(from, to, carries, origin) {
+            CrossingAdmission::Admitted(_) => {
+                findings.push(format!("the firewall admits a forbidden crossing: {what}"))
+            }
+            CrossingAdmission::Refused(why) if why != want => findings.push(format!(
+                "{what} is refused, but for the wrong reason: {why:?} rather than {want:?}")),
+            CrossingAdmission::Refused(_) => {}
+        }
+    }
+}
+
+/// Origin law, exercised where the origin must be chosen rather than derived.
+///
+/// The forbidden-example loop above computes each origin from
+/// `requires_semantic_origin()`, so it can never propose a MISMATCHED one. These
+/// cases are exactly the mismatches, and they are the ones that matter: a pure
+/// node emitting an effect request is an effect appearing inside a program the
+/// validator cleared as pure.
+fn check_syncbat_origin_law(findings: &mut Vec<String>) {
+    use architecture::SyncBatPlane;
+    use pakvm_isa::PakVmNodeId;
+    use syncbat_firewall::*;
+
+    for (what, from, to, carries, origin, want) in [
+        // A pure node may not emit an effect request. Literal computes a value
+        // and admits as Pure, so the effect posture is the only thing refusing.
+        ("a pure node emits an effect request", SyncBatPlane::PakVm, SyncBatPlane::Bvisor,
+         SyncBatAuthority::TypedEffectRequest, Some(PakVmNodeId::Literal),
+         "a node that does not admit as Effectful emits an effect request"),
+        // A semantic authority must carry its origin, not travel anonymously.
+        ("an interpretation names no origin", SyncBatPlane::PakVm, SyncBatPlane::Runtime,
+         SyncBatAuthority::SemanticNodeInterpretation, None,
+         "a semantic authority names no PakVM origin"),
+        // A physical authority cannot borrow an origin to look semantic.
+        ("attempt evidence wears a semantic origin", SyncBatPlane::Bvisor,
+         SyncBatPlane::Runtime, SyncBatAuthority::AttemptEvidence, Some(PakVmNodeId::Append),
+         "a non-semantic authority names a PakVM origin it cannot have"),
+    ] {
         match admit_crossing(from, to, carries, origin) {
             CrossingAdmission::Admitted(_) => {
                 findings.push(format!("the firewall admits a forbidden crossing: {what}"))

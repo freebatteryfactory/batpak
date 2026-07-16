@@ -78,15 +78,62 @@ The `std` profile adds native threaded drivers and host adapters. The browser pr
 
 ## Ownership firewall
 
+All five planes live in one crate, so no module boundary separates them. Sharing a crate does not permit one plane to perform another's transition. Nothing structural stops the runtime from reaching a socket; only the law below does, and it is typed so that it refuses rather than reminds.
+
+`spec/architecture.rs` owns the plane identities and the ownership sentences. `spec/syncbat_firewall.rs` owns which plane holds which authority and which authorities may lawfully cross which boundary. Every inventory in this section is projected from those two files.
+
+<!-- SYNCBAT-PLANE-OWNERSHIP:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
 ```text
 runtime owns logical legality
 pakvm owns program semantics
 bvisor owns attempt admission and physical evidence
 world owns composition and instance identity
-port owns explicit host requests/responses
+port owns explicit host requests and responses
 ```
+<!-- SYNCBAT-PLANE-OWNERSHIP:END -->
 
-Sharing a crate does not permit one plane to perform another's transition.
+### Authorities
+
+Each authority has exactly one owning plane, so "who decides this" never has two answers. These stay separate on purpose: collapsing them into one status, one receipt, or one message envelope is how a physical attempt receipt comes to satisfy a logical semantic receipt — not through a decision anyone made, but because one type was convenient enough to carry both meanings.
+
+A semantic authority must name the admitted PakVM node it came from. That is what makes "the ISA is the only execution route" a condition on a value rather than a sentence in this document.
+
+<!-- SYNCBAT-AUTHORITIES:BEGIN generated from spec/syncbat_firewall.rs by bootstrap/project.py; do not edit -->
+| Authority | Owning plane | Names a PakVM origin |
+| --- | --- | --- |
+| LogicalLegality | Runtime | no |
+| SemanticAuthorization | Runtime | no |
+| LogicalResult | Runtime | no |
+| SemanticReceipt | Runtime | no |
+| RetryRestartAuthority | Runtime | no |
+| SemanticNodeInterpretation | PakVm | yes |
+| TypedEffectRequest | PakVm | yes |
+| CapabilityAdmission | Bvisor | no |
+| PhysicalAdmission | Bvisor | no |
+| PhysicalAttempt | Bvisor | no |
+| AttemptEvidence | Bvisor | no |
+| CompositionAndInstanceIdentity | World | no |
+| TypedHostRequest | Port | no |
+| TypedHostResponse | Port | no |
+<!-- SYNCBAT-AUTHORITIES:END -->
+
+### Legal crossings
+
+A crossing transports an already-owned value; it never transfers ownership. After `Bvisor -> Runtime` carries attempt evidence, Bvisor still owns attempt evidence and Runtime still cannot mint any.
+
+This table is a whitelist. Any crossing absent from it is forbidden, because a blacklist of bad crossings is a list someone has to keep imagining new entries for.
+
+<!-- SYNCBAT-CROSSINGS:BEGIN generated from spec/syncbat_firewall.rs by bootstrap/project.py; do not edit -->
+| From | To | Carries | Law |
+| --- | --- | --- | --- |
+| World | Runtime | CompositionAndInstanceIdentity | world supplies admitted composition and instance identity to the turn |
+| Runtime | PakVm | SemanticAuthorization | runtime authorizes a semantic operation it has found legal |
+| PakVm | Runtime | SemanticNodeInterpretation | pakvm returns what an admitted node means |
+| PakVm | Bvisor | TypedEffectRequest | an effectful node emits a typed request for physical admission |
+| Bvisor | Port | PhysicalAttempt | bvisor executes an admitted attempt through the typed host boundary |
+| Port | Bvisor | TypedHostResponse | the port returns a typed host response to the attempt that made it |
+| Bvisor | Runtime | AttemptEvidence | bvisor reports what the attempt did; runtime decides what it means |
+<!-- SYNCBAT-CROSSINGS:END -->
 
 Forbidden examples:
 
@@ -97,6 +144,8 @@ runtime bypassing Bvisor to execute a program
 PakVM calling filesystem/network/clock directly
 world redefining BatPak-owned IDs or schema law
 ```
+
+These are illustrations, not a sixth inventory, and they are deliberately not projected. The first four each reduce to one plane exercising an authority another plane owns, which `admit_crossing` refuses by the ownership rule above; they are the same defect wearing four coats. The fifth is not a plane crossing at all — it is package topology, owned by `spec/architecture.rs`, because BatPak owns `.fbat` identity and schema law no matter which SyncBat plane reaches for it. Deriving these five sentences from the typed tables would mean authoring an example-to-authority mapping inside the generator, which is the invention the firewall exists to prevent.
 
 ## Logical process
 
