@@ -240,7 +240,7 @@ A native driver may block synchronously. A browser driver may await OPFS, Indexe
 
 `batpak` and `syncbat` must compile their semantic profiles with `#![no_std]` plus `alloc`. PakVM instruction semantics, Bvisor admission state, logical runtime transitions, WorldImage values, and port protocols therefore cannot depend on host filesystem, process, socket, thread, wall-clock, or entropy APIs.
 
-Host drivers live behind explicit `std`, browser, or embedded adapter profiles. A mechanism profile may suspend and resume execution differently, but it must preserve the same request identity, result type, receipt fields, bounds, and recovery disposition.
+Host drivers live behind explicit `std`, browser, or embedded adapter profiles. A mechanism profile may suspend and resume execution differently, but it must preserve the same request identity, result type, receipt fields, bounds, and recovery disposition. This is the port dimension of DEC-075's composition (`02_SYSTEM_MODEL.md`): a response binds to exactly one attempt and never crosses attempts.
 
 ## Portability profiles
 

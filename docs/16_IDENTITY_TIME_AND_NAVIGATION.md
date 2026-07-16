@@ -184,7 +184,7 @@ DURING HLC start THROUGH HLC end   →   [start, end)
 
 HLC remains valid for chronology, temporal filtering, tile pruning, and lag observation. It remains forbidden for durability coverage, cursor resume, frontier advancement, commit identity, deadline measurement, and implicit causation. When causal HLC evidence is absent, the result is `Unavailable`; `ObservedWallTime` is never silently promoted into `Hlc`.
 
-This document owns the HLC ordering rule, the range law, and the forbidden-use list. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+This document owns the HLC ordering rule, the range law, and the forbidden-use list. In DEC-075's composition (`02_SYSTEM_MODEL.md`) these identities are the ChronologyWitness and DurableOrderWitness coordinates; the composition binds them and owns none of their law. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
 Required proof rows, projected from docs/24 (qualification target: `DEC-061`; canonical proof-row owner: docs/24 Gauntlet):
 

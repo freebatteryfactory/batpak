@@ -119,7 +119,7 @@ ordered command receipts when the operation published a typed batch
 
 None of these is derivable from another. A committed publication with an incomplete receipt is not a failure. `Unknown` is not `KnownAbsent`. `CancelledAfterAdmission` is not proof of non-commit.
 
-A reconciliation record appends or references new evidence. It never rewrites the original durable event or falsifies the original attempt observation.
+A reconciliation record appends or references new evidence. It never rewrites the original durable event or falsifies the original attempt observation. The receipt this document owns is the BalancingEvidence coordinate of DEC-075's composition (`02_SYSTEM_MODEL.md`): it joins the logical and physical books without collapsing them.
 
 ## Specialization manifest (DEC-073)
 

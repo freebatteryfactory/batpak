@@ -208,6 +208,8 @@ cancellation posture
 reconciliation posture
 ```
 
+TurnId is the LogicalIdentity coordinate of DEC-075's composition (`02_SYSTEM_MODEL.md`): stable over the frozen input cuts and identical on replay, while every physical execution carries a fresh AttemptId.
+
 Input order and receipt order correspond exactly. For an admitted atomic group:
 
 ```text

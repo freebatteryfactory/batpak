@@ -117,7 +117,7 @@ Bvisor reports observations, not intentions.
 
 ## Recovery and reconciliation
 
-At startup Bvisor reconciles nonterminal attempts against durable event/effect evidence, port receipts, and runtime-provided restart authorization.
+At startup Bvisor reconciles nonterminal attempts against durable event/effect evidence, port receipts, and runtime-provided restart authorization. Attempt identity is the PhysicalIdentity coordinate of DEC-075's composition (`02_SYSTEM_MODEL.md`); the retry-evidence law there binds what this recovery may consult.
 
 Bvisor may execute an authorized retry, resume, compensation, or terminal refusal. It may not infer semantic safety from process death or elapsed time.
 

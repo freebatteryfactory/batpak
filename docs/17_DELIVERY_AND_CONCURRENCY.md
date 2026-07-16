@@ -74,7 +74,7 @@ Information can flow both directions without reverse Cargo ownership.
 
 ## No hidden async runtime
 
-Production semantic libraries require no Tokio or ambient executor. Browser and async hosts adapt typed suspension/resume at the port boundary. Native hosts may block or drive cooperatively.
+Production semantic libraries require no Tokio or ambient executor. Browser and async hosts adapt typed suspension/resume at the port boundary. Native hosts may block or drive cooperatively. This is DEC-075's driver law (`02_SYSTEM_MODEL.md`): strategy is physical, and the reconciliation protocol is the semantics under every driver.
 
 ## Work observations
 

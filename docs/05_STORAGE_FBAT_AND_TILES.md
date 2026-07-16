@@ -218,7 +218,7 @@ cancelled after admission        is NOT proof of non-commit
 
 A durable publication that crossed the boundary is never reported as an ordinary operation failure. Lost acknowledgement leaves the caller with `Unknown`, which is an absence of knowledge, not evidence of absence.
 
-Later reconciliation **appends or references new evidence**. It never rewrites the original durable event or falsifies the original attempt observation. A reconciliation record that edited history would destroy the only evidence that the ambiguity existed.
+Later reconciliation **appends or references new evidence**. It never rewrites the original durable event or falsifies the original attempt observation. A reconciliation record that edited history would destroy the only evidence that the ambiguity existed. The durable order this document owns is the DurableOrderWitness coordinate of DEC-075's composition (`02_SYSTEM_MODEL.md`); this document owns the law, the composition only binds it.
 
 ### Purpose-specific commands
 
