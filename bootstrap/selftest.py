@@ -33,6 +33,19 @@ HERE = Path(__file__).resolve().parent
 # gate that was only ever compiled came to sit beside one that actually ran and
 # passed. A receipt records each separately, plus the target it holds for and
 # the exact reason when something did not happen.
+def _toolchain_edition() -> str:
+    """The edition every rustc invocation uses, read from the typed owner.
+
+    A literal here would be a hidden Python owner; the audit refuses a
+    hardcoded edition argument anywhere in bootstrap (5.5E3a)."""
+    src = (HERE.parent / "spec/toolchain.rs").read_text(encoding="utf-8")
+    m = re.search(r'edition: "(\d+)"', src)
+    return m.group(1) if m else "0"
+
+
+TOOLCHAIN_EDITION = _toolchain_edition()
+
+
 QUALIFICATION_RECEIPTS: list[dict] = []
 
 
@@ -102,6 +115,13 @@ REQUIRED_TIER0_RECEIPTS = (
 def unearned_required_receipts(required_target: str) -> list[str]:
     """Every required receipt that did NOT earn its place for this target."""
     problems: list[str] = []
+    # A receipt binds WHERE a binary ran — a physical target triple. A
+    # semantic qualification environment ("std", "no_std + alloc") answers a
+    # different question and cannot substitute (5.5E3a).
+    if not re.fullmatch(r"[a-z0-9_]+(-[a-z0-9_]+){2,}", required_target):
+        return [f"required target {required_target!r} is not a physical target "
+                "triple; a semantic qualification environment answers WHAT must "
+                "hold, never WHERE a binary ran"]
     for name, artifact_bound in REQUIRED_TIER0_RECEIPTS:
         rows = [r for r in QUALIFICATION_RECEIPTS if r["name"] == name]
         if not rows:
@@ -167,14 +187,14 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
         externs: list[str] = []
         if link_spec:
             rlib = exe.parent / f"libspec-{target or 'host'}.rlib"
-            lib_cmd = [rustc, "--edition", "2024", "--crate-type", "rlib",
+            lib_cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "rlib",
                        "--crate-name", "spec", "-o", str(rlib), str(root / "spec/lib.rs")]
             if target:
                 lib_cmd[1:1] = ["--target", target]
             if subprocess.run(lib_cmd, capture_output=True, text=True).returncode != 0:
                 continue
             externs = ["--extern", f"spec={rlib}"]
-        cmd = [rustc, "--edition", "2024", "--crate-name", name.replace("-", "_"),
+        cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-name", name.replace("-", "_"),
                *externs, *extra, "-o", str(exe), str(root / src)]
         if target:
             cmd[1:1] = ["--target", target]
@@ -665,6 +685,11 @@ def gate_sandbox(edits):
         src = root / sub
         if src.is_dir():
             shutil.copytree(src, tmp / sub)
+    # The tracked toolchain projection is part of every tree (5.5E3a): it
+    # selects the compiler before the spec compiles, and its absence is a
+    # refusal, not a sandbox convenience.
+    if (root / "rust-toolchain.toml").is_file():
+        shutil.copy2(root / "rust-toolchain.toml", tmp / "rust-toolchain.toml")
     for rel, old, new in edits:
         path = tmp / rel
         text = path.read_text(encoding="utf-8")
@@ -1855,6 +1880,8 @@ def isolated_tree(subdirs=("spec", "docs", "companion")):
             src = root / sub
             if src.is_dir():
                 shutil.copytree(src, tmp / sub)
+        if (root / "rust-toolchain.toml").is_file():
+            shutil.copy2(root / "rust-toolchain.toml", tmp / "rust-toolchain.toml")
         yield tmp
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -3701,7 +3728,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
             built = None
             for target in (None, "x86_64-pc-windows-gnu"):
                 rlib = tmp / f"libspec-{target or 'host'}.rlib"
-                lib_cmd = [rustc, "--edition", "2024", "--crate-type", "rlib",
+                lib_cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "rlib",
                            "--crate-name", "spec", "-o", str(rlib),
                            str(tree / "spec/lib.rs")]
                 if target:
@@ -3711,7 +3738,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
                     if "linking with" not in lib_built.stderr:
                         return (lib_built.returncode, lib_built.stderr)
                     continue
-                cmd = [rustc, "--edition", "2024", "--crate-name", "sc",
+                cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-name", "sc",
                        "--extern", f"spec={rlib}",
                        "-o", str(exe), str(tree / "bootstrap/seedcheck.rs")]
                 if target:
@@ -3829,6 +3856,19 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "typed Active identity stale_or_pre_shred_keyset_restore_is_rejected "
           "appears as no canonical docs/24 active row")
 
+    # The RUNNING binary refuses a hand-edited toolchain projection and a
+    # physical triple sitting in a semantic qualification target (5.5E3a).
+    probe("hand_edited_toolchain_projection_reddens_seedcheck",
+          "rust-toolchain.toml",
+          'channel = "1.97.0"',
+          'channel = "1.96.0"',
+          "toolchain tracked rust-toolchain.toml violated")
+    probe("physical_triple_cannot_substitute_for_semantic_profile",
+          "spec/architecture.rs",
+          'target: "wasm32 host",',
+          'target: "wasm32-unknown-unknown",',
+          "cannot inhabit a semantic qualification target")
+
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().
     probe("expired_proof_counting_green_is_refused",
@@ -3916,7 +3956,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         # attack is the exact boundary production uses.
         spec_meta = tmp / "libspec.rmeta"
         proc = subprocess.run(
-            [rustc, "--edition", "2024", "--crate-type", "lib", "--emit=metadata",
+            [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "lib", "--emit=metadata",
              "--crate-name", "spec", "-o", str(spec_meta), str(root / "spec/lib.rs")],
             capture_output=True, text=True)
         if proc.returncode != 0:
@@ -3928,7 +3968,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
             ("materialize", root / "bootstrap/materialize.rs"),
         ):
             proc = subprocess.run(
-                [rustc, "--edition", "2024", "--emit=metadata", "--crate-name", name,
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--emit=metadata", "--crate-name", name,
                  "--extern", f"spec={spec_meta}",
                  "-o", str(tmp / (name + ".rmeta")), str(src)],
                 capture_output=True, text=True)
@@ -4028,7 +4068,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
             src.write_text(
                 uses + f"\npub fn probe() {{\n    {body}\n}}\n", encoding="utf-8")
             proc = subprocess.run(
-                [rustc, "--edition", "2024", "--crate-type", "lib", "--emit=metadata",
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "lib", "--emit=metadata",
                  "--extern", f"spec={spec_meta}",
                  "--crate-name", name, "-o", str(tmp / (name + ".rmeta")), str(src)],
                 capture_output=True, text=True)
@@ -4042,6 +4082,73 @@ def test_rust_specification_compiles(_audit) -> list[str]:
                     f"{name}: compile failed, but not with {want!r}:\n{head}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
+def test_toolchain(audit) -> list[str]:
+    """Named hostile fixtures for the typed toolchain owner (5.5E3a).
+
+    spec/toolchain.rs owns every value; the tracked root projection, the
+    materializer, and the harness derive. Each fixture plants a hidden owner
+    or a substituted dimension and must be refused for ITS law."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, rel, old, new, needle, subdirs=("spec", "docs", "companion", "bootstrap")):
+        with isolated_tree(subdirs=subdirs) as tmp:
+            path = tmp / rel
+            path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
+                            encoding="utf-8")
+            got = audit.toolchain_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+
+    if audit.toolchain_findings(root):
+        fail("toolchain_authority_passes_on_the_real_seed")
+
+    # Hidden owners: a literal in the materializer or the harness is a second
+    # authority the moment it exists.
+    probe("materialized_resolver_mismatch_is_rejected", "bootstrap/materialize.rs",
+          'resolver = \\"{}\\"',
+          'resolver = \\"2\\"',
+          "hardcodes a resolver literal")
+    probe("workspace_msrv_mismatch_is_rejected", "bootstrap/materialize.rs",
+          'rust-version = \\"{}\\"',
+          'rust-version = \\"1.96\\"',
+          "hardcodes a rust-version literal")
+    # The planted literal is assembled at run time: written contiguously it
+    # would sit in THIS file's source and the hidden-owner scan would fire on
+    # its own fixture — the phantom ban catching its author again.
+    probe("rustc_edition_mismatch_is_rejected", "bootstrap/selftest.py",
+          '"--edition", TOOLCHAIN_EDITION,',
+          '"--edition", ' + '"2021",',
+          "hardcodes a rustc edition")
+    # Flattening the two version questions into one string is refused.
+    probe("exact_release_and_msrv_floor_cannot_drift", "spec/toolchain.rs",
+          'rust_version_floor: "1.97",',
+          'rust_version_floor: "1.96",',
+          "is not a patch release of the declared rust_version_floor")
+    # Dimension substitution, semantic side: a triple cannot inhabit the
+    # declared environments.
+    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/toolchain.rs",
+          '&["no_std + alloc", "std", "wasm32 host"]',
+          '&["no_std + alloc", "std", "x86_64-unknown-linux-gnu"]',
+          "is shaped like a physical target triple")
+    # Hand-editing or losing the tracked projection is refused.
+    probe("root_toolchain_channel_mismatch_is_rejected", "rust-toolchain.toml",
+          'channel = "1.97.0"', 'channel = "1.96.0"',
+          "does not equal the deterministic projection")
+    probe("root_toolchain_component_omission_is_rejected", "rust-toolchain.toml",
+          'components = ["clippy", "rustfmt"]', 'components = ["clippy"]',
+          "does not equal the deterministic projection")
+    with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+        (tmp / "rust-toolchain.toml").unlink()
+        got = audit.toolchain_findings(tmp)
+        if not any("absent" in f for f in got):
+            fail(f"tracked_toolchain_projection_cannot_be_missing (got {got!r})")
     return findings
 
 
@@ -4093,6 +4200,12 @@ def test_required_receipt_denominator() -> list[str]:
         rs = full_set()
         rs[4] = dict(rs[4], target=triple)
         case("unbound_artifact_receipt_is_refused", rs, True)
+        # A semantic environment where a triple is required (5.5E3a).
+        QUALIFICATION_RECEIPTS[:] = full_set()
+        if not unearned_required_receipts("std"):
+            findings.append(
+                "required_receipt_semantic_target_cannot_substitute_for_"
+                "physical_triple FAILED")
     finally:
         QUALIFICATION_RECEIPTS[:] = saved
     return findings
@@ -4146,6 +4259,7 @@ def main() -> int:
     findings += test_syncbat_firewall(audit, project)
     findings += test_syncbat_requiredness(audit, project)
     findings += test_reconciliation(audit, project)
+    findings += test_toolchain(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
@@ -4173,6 +4287,7 @@ def main() -> int:
                "SyncBat authority firewall",
                "SyncBat crossing requiredness",
                "DEC-075 reconciliation",
+               "toolchain authority",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

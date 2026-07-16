@@ -22,3 +22,4 @@ pub mod pakvm_isa;
 pub mod proof;
 pub mod reconciliation;
 pub mod syncbat_firewall;
+pub mod toolchain;

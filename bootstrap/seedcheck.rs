@@ -6,7 +6,7 @@
 use spec::{
     architecture, dispositions, gates, guarantees, invariants,
     legacy_invariant_coverage, legacy_obligations, operators, pakvm_isa,
-    proof, reconciliation, syncbat_firewall,
+    proof, reconciliation, syncbat_firewall, toolchain,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,6 +71,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_frontmatter(root, &mut findings);
     check_witness_citations(root, &mut findings);
     check_proof_rows(root, &mut findings);
+    check_toolchain(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -270,6 +271,103 @@ fn guarantee_ref_resolves(reference: guarantees::GuaranteeRef) -> bool {
         guarantees::GuaranteeRef::Qualification(id) => architecture::QUALIFICATION_PROFILES
             .iter()
             .any(|q| q.package == id.package() && q.profile == id.profile()),
+    }
+}
+
+/// The typed toolchain owner is coherent and its tracked projection is
+/// byte-exact (5.5E3a). Every refusal names the violated field, the typed
+/// owner, the observed value, the required value, and the repair direction —
+/// and no law here hardcodes a version: the laws are structural, the values
+/// live once in `spec/toolchain.rs`.
+fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
+    let t = toolchain::TOOLCHAIN;
+    let refuse = |findings: &mut Vec<String>, field: &str, observed: &str, required: &str,
+                  repair: &str| {
+        findings.push(format!(
+            "toolchain {field} violated (owner: spec/toolchain.rs ToolchainProfile; \
+             observed: {observed}; required: {required}; repair: {repair})"
+        ));
+    };
+    if !t.exact_rust_release.starts_with(t.rust_version_floor)
+        || !t.exact_rust_release[t.rust_version_floor.len()..].starts_with('.')
+    {
+        refuse(
+            findings,
+            "exact_rust_release/rust_version_floor",
+            t.exact_rust_release,
+            &format!("a patch release of {}", t.rust_version_floor),
+            "the exact qualifying compiler must be a release of the declared MSRV floor",
+        );
+    }
+    if t.rust_version_floor.split('.').count() != 2
+        || !t.rust_version_floor.split('.').all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        refuse(findings, "rust_version_floor", t.rust_version_floor, "MAJOR.MINOR",
+               "declare the MSRV floor as MAJOR.MINOR; the exact release carries the patch");
+    }
+    if t.edition.len() != 4 || !t.edition.bytes().all(|b| b.is_ascii_digit()) {
+        refuse(findings, "edition", t.edition, "a four-digit Rust edition year",
+               "author the edition year the whole foundation compiles under");
+    }
+    if t.cargo_resolver.is_empty() || !t.cargo_resolver.bytes().all(|b| b.is_ascii_digit()) {
+        refuse(findings, "cargo_resolver", t.cargo_resolver, "a numeric Cargo resolver version",
+               "author the resolver version the generated workspace declares");
+    }
+    if t.rustup_profile.trim().is_empty() {
+        refuse(findings, "rustup_profile", t.rustup_profile, "a named rustup profile",
+               "author the profile the toolchain selection installs");
+    }
+    if t.required_components.is_empty() {
+        refuse(findings, "required_components", "[]", "at least one component",
+               "author the components qualification depends on");
+    }
+    if t.required_components.windows(2).any(|w| w[0] >= w[1]) {
+        refuse(findings, "required_components", "unsorted or duplicated", "sorted unique names",
+               "keep the component list in canonical sorted order");
+    }
+    // The tracked root selection is a PROJECTION: byte-equal or refused.
+    let want = t.root_toolchain_toml();
+    match fs::read_to_string(root.join("rust-toolchain.toml")) {
+        Ok(tracked) if tracked == want => {}
+        Ok(_) => refuse(
+            findings,
+            "tracked rust-toolchain.toml",
+            "hand-edited or stale bytes",
+            "the deterministic projection of ToolchainProfile",
+            "regenerate the tracked file from the typed owner; never edit it by hand",
+        ),
+        Err(_) => refuse(
+            findings,
+            "tracked rust-toolchain.toml",
+            "absent",
+            "the deterministic projection of ToolchainProfile",
+            "the tracked toolchain projection selects the compiler before the \
+             spec can compile; restore it from the typed owner",
+        ),
+    }
+    // Semantic qualification environments are not physical target triples,
+    // in either direction: a capability profile names WHAT must hold, a
+    // triple names WHERE a binary ran.
+    for target in toolchain::SEMANTIC_QUALIFICATION_TARGETS {
+        // Exhaustive shape law rather than a variant match: the closed
+        // vocabulary is a slice until the CompilationTarget enum lands.
+        if target.contains("-") && target.split('-').count() >= 3 {
+            refuse(findings, "SEMANTIC_QUALIFICATION_TARGETS", target,
+                   "a capability environment, never a target triple",
+                   "qualification environments answer WHAT holds, not WHERE it ran");
+        }
+    }
+    for profile in architecture::QUALIFICATION_PROFILES {
+        if !toolchain::SEMANTIC_QUALIFICATION_TARGETS.contains(&profile.target) {
+            refuse(
+                findings,
+                "QualificationProfile::target",
+                profile.target,
+                "one of the declared semantic qualification environments",
+                "a physical triple or an undeclared environment cannot inhabit a \
+                 semantic qualification target",
+            );
+        }
     }
 }
 

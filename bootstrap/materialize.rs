@@ -3,7 +3,7 @@
 // The typed specification is a LIBRARY (spec/lib.rs, 5.5E2): this binary
 // links it instead of textually mounting modules, which also retires the
 // module-resolution trap the old #[path] mounts carried.
-use spec::architecture;
+use spec::{architecture, toolchain};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -31,7 +31,7 @@ fn main() {
 fn materialize(root: &Path) -> io::Result<()> {
     validate_seed(root)?;
     write_checked(root.join("Cargo.toml"), &workspace_manifest())?;
-    write_checked(root.join("rust-toolchain.toml"), toolchain_manifest())?;
+    write_checked(root.join("rust-toolchain.toml"), &toolchain_manifest())?;
     write_checked(root.join("justfile"), justfile())?;
 
     for package in architecture::PACKAGES {
@@ -112,13 +112,25 @@ fn validate_seed(root: &Path) -> io::Result<()> {
 fn workspace_manifest() -> String {
     let mut out = String::new();
     out.push_str("# Generated once from spec/architecture.rs by bootstrap/materialize.rs.\n");
-    out.push_str("[workspace]\nresolver = \"3\"\nmembers = [\n");
+    // The resolver, edition, and MSRV floor come from the typed toolchain
+    // owner (5.5E3a). A literal here would be a second authority the audit
+    // scans for and refuses.
+    let _ = writeln!(
+        out,
+        "[workspace]\nresolver = \"{}\"\nmembers = [",
+        toolchain::TOOLCHAIN.cargo_resolver
+    );
     for package in architecture::PACKAGES {
         let _ = writeln!(out, "  \"{}\",", package.path);
     }
     out.push_str("]\n\n[workspace.package]\n");
     let _ = writeln!(out, "version = \"{}\"", architecture::WORKSPACE_VERSION);
-    out.push_str("edition = \"2024\"\nrust-version = \"1.97\"\n");
+    let _ = writeln!(
+        out,
+        "edition = \"{}\"\nrust-version = \"{}\"",
+        toolchain::TOOLCHAIN.edition,
+        toolchain::TOOLCHAIN.rust_version_floor
+    );
     out.push_str("license = \"MIT OR Apache-2.0\"\nrepository = \"https://github.com/freebatteryfactory/batpak\"\n\n");
     out.push_str("[workspace.dependencies]\n");
     for package in architecture::PACKAGES {
@@ -278,8 +290,10 @@ fn materialize_syncbat_planes(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn toolchain_manifest() -> &'static str {
-    "[toolchain]\nchannel = \"1.97.0\"\nprofile = \"minimal\"\ncomponents = [\"clippy\", \"rustfmt\"]\n"
+fn toolchain_manifest() -> String {
+    // The workspace toolchain selection is the SAME deterministic projection
+    // the tracked root file carries: one owner, two consumers.
+    toolchain::TOOLCHAIN.root_toolchain_toml()
 }
 
 fn justfile() -> &'static str {

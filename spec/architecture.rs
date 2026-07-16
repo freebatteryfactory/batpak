@@ -879,6 +879,8 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/lib.rs",
     "spec/reconciliation.rs",
     "spec/proof.rs",
+    "spec/toolchain.rs",
+    "rust-toolchain.toml",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",
     "bootstrap/materialize.rs",

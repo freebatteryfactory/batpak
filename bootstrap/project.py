@@ -486,6 +486,33 @@ NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
 
 
+# --- Toolchain projection (5.5E3a) -------------------------------------------
+# spec/toolchain.rs owns the values; this projector serializes the tracked
+# root rust-toolchain.toml and never completes a missing field.
+def parse_toolchain(root):
+    src = (root / "spec/toolchain.rs").read_text(encoding="utf-8")
+
+    def field(name):
+        m = re.search(name + r': "([^"]+)"', src)
+        return m.group(1) if m else ""
+
+    comps = re.search(r"required_components: &\[([^\]]*)\]", src)
+    return {
+        "exact": field("exact_rust_release"),
+        "floor": field("rust_version_floor"),
+        "edition": field("edition"),
+        "resolver": field("cargo_resolver"),
+        "profile": field("rustup_profile"),
+        "components": re.findall(r'"([^"]+)"', comps.group(1)) if comps else [],
+    }
+
+
+def render_root_toolchain(tc):
+    comps = ", ".join(f'"{c}"' for c in tc["components"])
+    return (f'[toolchain]\nchannel = "{tc["exact"]}"\n'
+            f'profile = "{tc["profile"]}"\ncomponents = [{comps}]\n')
+
+
 # --- Stale-vocabulary projection (5.5D4b) ------------------------------------
 # The alias set is a CONSEQUENCE of the decisions that retired vocabulary. It was
 # duplicated by hand in two documents and guarded by an equality check -- two
@@ -1139,6 +1166,18 @@ def main() -> int:
     graph_path = root / GUARANTEE_DOC
     graph_original = graph_path.read_text(encoding="utf-8") if graph_path.is_file() else ""
     plans.append((graph_path, graph_original, render_guarantee_graph(root)))
+    # The tracked root toolchain selection (5.5E3a): a bootstrap projection of
+    # spec/toolchain.rs ToolchainProfile, byte-deterministic. It must exist
+    # BEFORE the spec compiles, which makes it a tracked projection — never a
+    # second authority. The auditor reconstructs the same bytes independently
+    # and seedcheck compares them against the running type.
+    tc_path = root / "rust-toolchain.toml"
+    tc_original = tc_path.read_text(encoding="utf-8") if tc_path.is_file() else ""
+    tc = parse_toolchain(root)
+    if not all(tc.values()):
+        findings.append("spec/toolchain.rs: incomplete ToolchainProfile; the projection refuses")
+    else:
+        plans.append((tc_path, tc_original, render_root_toolchain(tc)))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:

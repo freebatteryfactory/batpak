@@ -3723,11 +3723,92 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
         findings.append("Guarantee Graph edge table does not equal the derived relations")
 
 
+# --- Toolchain authority (5.5E3a) --------------------------------------------
+# spec/toolchain.rs owns every toolchain value. This auditor independently
+# reconstructs the tracked projection's bytes and refuses any hidden owner: a
+# hardcoded resolver/edition/MSRV/channel literal in the materializer or a
+# hardcoded rustc edition in the harness is a second authority.
+A_TRIPLE_SHAPE = re.compile(r"[a-z0-9_]+(-[a-z0-9_]+){2,}")
+
+
+def toolchain_profile(root: Path) -> dict:
+    src = _uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
+
+    def field(name):
+        m = re.search(name + r': "([^"]+)"', src)
+        return m.group(1) if m else ""
+
+    comps = re.search(r"required_components: &\[([^\]]*)\]", src)
+    sem = re.search(r"SEMANTIC_QUALIFICATION_TARGETS: &\[&str\] =\s*&\[([^\]]*)\]", src)
+    return {
+        "exact": field("exact_rust_release"),
+        "floor": field("rust_version_floor"),
+        "edition": field("edition"),
+        "resolver": field("cargo_resolver"),
+        "profile": field("rustup_profile"),
+        "components": re.findall(r'"([^"]+)"', comps.group(1)) if comps else [],
+        "semantic": re.findall(r'"([^"]+)"', sem.group(1)) if sem else [],
+    }
+
+
+def toolchain_findings(root: Path) -> list[str]:
+    t = toolchain_profile(root)
+    out: list[str] = []
+    for key in ("exact", "floor", "edition", "resolver", "profile"):
+        if not t[key]:
+            out.append(f"spec/toolchain.rs authors no toolchain {key}")
+    if not t["components"]:
+        out.append("spec/toolchain.rs authors no required components")
+    if not t["semantic"]:
+        out.append("spec/toolchain.rs declares no semantic qualification targets")
+    if t["exact"] and t["floor"] and not t["exact"].startswith(t["floor"] + "."):
+        out.append(
+            f"exact_rust_release {t['exact']} is not a patch release of the "
+            f"declared rust_version_floor {t['floor']}; the two answer "
+            "different questions and may not drift apart")
+    want = ('[toolchain]\nchannel = "{}"\nprofile = "{}"\ncomponents = [{}]\n'
+            .format(t["exact"], t["profile"],
+                    ", ".join(f'"{c}"' for c in t["components"])))
+    tracked = root / "rust-toolchain.toml"
+    if not tracked.is_file():
+        out.append("tracked rust-toolchain.toml is absent; the toolchain "
+                   "projection selects the compiler before the spec compiles")
+    elif tracked.read_text(encoding="utf-8") != want:
+        out.append("tracked rust-toolchain.toml does not equal the "
+                   "deterministic projection of ToolchainProfile "
+                   "(owner: spec/toolchain.rs; repair: regenerate, never hand-edit)")
+    mat = (root / "bootstrap/materialize.rs").read_text(encoding="utf-8")
+    for pattern, what in ((r'resolver = \\"[0-9]', "resolver"),
+                          (r'edition = \\"[0-9]', "edition"),
+                          (r'rust-version = \\"[0-9]', "rust-version"),
+                          (r'channel = \\"[0-9]', "channel")):
+        if re.search(pattern, mat):
+            out.append(f"bootstrap/materialize.rs hardcodes a {what} literal; "
+                       "spec/toolchain.rs ToolchainProfile is the owner")
+    harness = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
+    if re.search(r'"--edition", "[0-9]', harness):
+        out.append("bootstrap/selftest.py hardcodes a rustc edition; "
+                   "spec/toolchain.rs ToolchainProfile is the owner")
+    for target in t["semantic"]:
+        if A_TRIPLE_SHAPE.fullmatch(target):
+            out.append(f"semantic qualification target {target!r} is shaped "
+                       "like a physical target triple; environments answer "
+                       "WHAT holds, never WHERE a binary ran")
+    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    for pkg, profile, target, _gates in G_QUAL_ROW.findall(arch):
+        if t["semantic"] and target not in t["semantic"]:
+            out.append(f"QualificationProfile {pkg}:{profile} names target "
+                       f"{target!r}, which is not a declared semantic "
+                       "qualification environment")
+    return out
+
+
 def check_architecture(root: Path, findings: list[str]) -> None:
     path = root / "spec/architecture.rs"
     if not path.is_file():
         findings.append("missing spec/architecture.rs")
         return
+    findings.extend(toolchain_findings(root))
     source = path.read_text(encoding="utf-8")
     package_rows = re.findall(
         r"PackageSpec\s*\{\s*package:\s*\"([^\"]+)\",\s*path:\s*\"([^\"]+)\",\s*role:\s*\"([^\"]+)\",\s*class:\s*PackageClass::([A-Za-z]+),\s*layer:\s*([0-9]+),\s*\}",
