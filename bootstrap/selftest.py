@@ -77,6 +77,79 @@ def executed_and_passed() -> list[str]:
     """Only a check that actually ran AND passed may be claimed by the banner."""
     return [r["name"] for r in QUALIFICATION_RECEIPTS
             if r["available"] and r["executed"] and r["passed"]]
+def _tree_digest(root: Path) -> str:
+    """A digest of the typed source snapshot a qualification represents."""
+    h = hashlib.sha256()
+    for rel in sorted(p.relative_to(root).as_posix()
+                      for p in (root / "spec").glob("*.rs")):
+        h.update(rel.encode())
+        h.update((root / rel).read_bytes())
+    for rel in ("bootstrap/seedcheck.rs", "bootstrap/materialize.rs"):
+        if (root / rel).is_file():
+            h.update(rel.encode())
+            h.update((root / rel).read_bytes())
+    return h.hexdigest()
+
+
+def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
+                   expect: str) -> list[str]:
+    """Compile, link, and RUN one bootstrap binary, artifact-bound.
+
+    The binding exists because honest individual facts can still assemble into a
+    dishonest composite: compile A paired with a stale or substituted binary B is
+    a receipt for work that never happened. So the artifact path is unique to this
+    run and must not pre-exist, its digest is taken from what THIS compile
+    produced, the digest is rechecked immediately before execution, and the source
+    snapshot is proven unchanged across the whole qualification.
+
+    Type-checking is not execution, and a matching PASS banner is not a result:
+    the process exit and the expected disposition must agree.
+    """
+    findings: list[str] = []
+    before = _tree_digest(root)
+    exe = workdir / f"{name}-{before[:12]}" / ("run" + (".exe" if os.name == "nt" else ""))
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    if exe.exists():
+        receipt(name, available=True, compiled=False,
+                reason="artifact path already existed; a prior run's binary could be reused")
+        return [f"{name}: artifact path was not unique to this run"]
+    built = None
+    for target in (None, "x86_64-pc-windows-gnu"):
+        cmd = [rustc, "--edition", "2021", "--crate-name", name.replace("-", "_"),
+               "-o", str(exe), str(root / src)]
+        if target:
+            cmd[1:1] = ["--target", target]
+        if subprocess.run(cmd, capture_output=True, text=True).returncode == 0 and exe.is_file():
+            built = (target or "host default", hashlib.sha256(exe.read_bytes()).hexdigest())
+            break
+    if built is None:
+        receipt(name, available=True, compiled=True, executed=False,
+                reason="no working linker for any attempted target; "
+                       "hosted MSVC owns the authoritative receipt")
+        return findings
+    target, digest = built
+    if not exe.is_file() or hashlib.sha256(exe.read_bytes()).hexdigest() != digest:
+        receipt(name, available=True, compiled=True, executed=False,
+                reason="the artifact changed between compilation and execution")
+        return [f"{name}: the executed artifact is not the one this run compiled"]
+    proc = subprocess.run([str(exe), str(root)], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    # The exit code and the disposition must agree. Either alone is forgeable: a
+    # banner is a string, and an exit code says nothing about what was checked.
+    ok = proc.returncode == 0 and expect in out
+    after = _tree_digest(root)
+    if after != before:
+        receipt(name, available=True, compiled=True, executed=True, passed=False,
+                target=target, reason="the source snapshot changed during qualification")
+        return [f"{name}: the source changed mid-qualification; the receipt binds nothing"]
+    receipt(name, available=True, compiled=True, executed=True, passed=ok,
+            target=f"{target} artifact sha256:{digest[:12]} source sha256:{before[:12]}")
+    if not ok:
+        head = "\n".join(out.splitlines()[:8])
+        findings.append(f"{name} executed and FAILED ({target}):\n{head}")
+    return findings
+
+
 def load(name: str):
     spec = importlib.util.spec_from_file_location(name, HERE / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
@@ -3022,27 +3095,13 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         # prerequisite. Report exactly one of executed-and-passed,
         # executed-and-failed, or unavailable. Never let unavailable wear the
         # green of a check that passed.
-        exe = tmp / ("seedcheck_run" + (".exe" if os.name == "nt" else ""))
-        linked = None
-        for target in (None, "x86_64-pc-windows-gnu"):
-            cmd = [rustc, "--edition", "2021", "--crate-name", "seedcheck_run",
-                   "-o", str(exe), str(root / "bootstrap/seedcheck.rs")]
-            if target:
-                cmd[1:1] = ["--target", target]
-            if subprocess.run(cmd, capture_output=True, text=True).returncode == 0:
-                linked = target or "host default"
-                break
-        if linked is None:
-            receipt("tier0-seedcheck", available=True, compiled=True, executed=False,
-                    reason="no working linker; hosted MSVC owns the authoritative receipt")
-        else:
-            run = subprocess.run([str(exe), str(root)], capture_output=True, text=True)
-            ok = run.returncode == 0
-            receipt("tier0-seedcheck", available=True, compiled=True, executed=True,
-                    passed=ok, target=linked)
-            if not ok:
-                head = "\n".join((run.stderr or run.stdout).splitlines()[:8])
-                findings.append(f"seedcheck executes and FAILS ({linked}):\n{head}")
+        # BOTH bootstrap binaries execute. materialize.rs was the same species as
+        # seedcheck: it existed, it type-checked, and it had never once run.
+        for name, src, expect in (
+            ("tier0-seedcheck", "bootstrap/seedcheck.rs", "seedcheck: PASS"),
+            ("tier0-materialize", "bootstrap/materialize.rs", "materialize: PASS"),
+        ):
+            findings.extend(qualify_binary(rustc, root, tmp, name, src, expect))
         # The admission desk has no public bypass, and the admitted witness cannot
         # be forged. Both are proven by COMPILING against the real
         # spec/pakvm_isa.rs through a normal (non-test) module boundary — the same
