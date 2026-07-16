@@ -107,21 +107,34 @@ anti-vacuous, and tied to the exact changed trust boundary.
 
 ## Release seal and refusal (DEC-058)
 
-A release receipt binds:
+A release receipt binds every field of the typed inventory
+(`spec/architecture.rs`, `ReleaseSealField`) — this list is a generated
+projection of it. `KernelQualificationSet` is mandatory even when empty: an
+empty set states "no kernels admitted" (KernelImplementationId +
+KernelQualificationReceiptId per admitted kernel), it never disappears from
+the schema.
 
+<!-- RELEASE-SEAL:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
 ```text
-source tree and toolchain
-dependency graph
-generated facts
-compatibility corpus
-test / mutation / fuzz / benchmark dispositions
-unsafe and dependency ledgers
-kernel qualification receipts (KernelImplementationId + KernelQualificationReceiptId)
-package contents
-public API
-SBOM and license evidence
-proof freshness
+SourceTree
+Toolchain
+DependencyGraph
+GeneratedFacts
+CompatibilityCorpus
+TestDispositions
+MutationDispositions
+FuzzDispositions
+BenchmarkDispositions
+CompilerAssumptionLedger
+DependencyLedger
+KernelQualificationSet
+PackageContents
+PublicApi
+Sbom
+LicenseEvidence
+ProofFreshness
 ```
+<!-- RELEASE-SEAL:END -->
 
 A release is refused when any of these holds:
 

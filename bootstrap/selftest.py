@@ -3233,6 +3233,35 @@ def test_reconciliation(audit, project) -> list[str]:
         got = audit.recon_findings(tmp)
         if not any("not owned by docs/16" in f for f in got):
             fail(f"an_invented_chronology_carrier_is_refused (got {got!r})")
+    # DEC-058's seal inventory (5.5E1e): one owner, projected, never restated.
+    if audit.release_seal_findings(root):
+        fail(f"release_seal_contract_passes (got {audit.release_seal_findings(root)!r})")
+    with isolated_tree() as tmp:
+        p = tmp / "spec/architecture.rs"
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"),
+            "    ReleaseSealField::KernelQualificationSet,\n", "",
+            "drop the kernel set"), encoding="utf-8")
+        got = audit.release_seal_findings(tmp)
+        if not any("never disappears" in f for f in got):
+            fail(f"dropping_the_kernel_set_from_the_seal_is_refused (got {got!r})")
+    with isolated_tree() as tmp:
+        p = tmp / "docs/36_PUBLIC_API_CI_AND_RELEASE.md"
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"), "\nSbom\n", "\n",
+            "hand-trim the projection"), encoding="utf-8")
+        if not any("drifted" in f for f in audit.release_seal_findings(tmp)):
+            fail("a_trimmed_seal_projection_is_caught")
+    with isolated_tree() as tmp:
+        p = tmp / "spec/dispositions.rs"
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"),
+            "binds every field of the typed ReleaseSealField inventory",
+            "binds source tree toolchain and SBOM",
+            "restate the list"), encoding="utf-8")
+        got = audit.release_seal_findings(tmp)
+        if not any("instead of naming the typed" in f for f in got):
+            fail(f"a_decision_restating_the_seal_list_is_refused (got {got!r})")
     findings.extend(canonical_drift(before))
     return findings
 

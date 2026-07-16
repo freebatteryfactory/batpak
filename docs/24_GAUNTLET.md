@@ -81,7 +81,11 @@ Native, browser, embedded, and in-memory adapters qualify only the guarantees th
 
 ## Release seal
 
-A release receipt binds source tree, toolchain, dependency graph, generated facts, compatibility corpus, test/mutation/fuzz/benchmark dispositions, unsafe/dependency ledgers, package contents, public API, and proof freshness.
+The release seal binds the typed `ReleaseSealField` inventory
+(`spec/architecture.rs`; full projection in `36_PUBLIC_API_CI_AND_RELEASE.md`,
+DEC-058). The gauntlet supplies its `TestDispositions`, `MutationDispositions`,
+`FuzzDispositions`, `BenchmarkDispositions`, and `ProofFreshness` inputs; this
+document restates no second copy of the list.
 
 A release with an unclassified denominator row is refused.
 

@@ -90,10 +90,40 @@ fn inspect(root: &Path) -> Vec<String> {
     check_unique_ids(&mut findings);
     check_candidate_containment(&mut findings);
     check_reconciliation(&mut findings);
+    check_release_seal(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+/// DEC-058 (5.5E1): the release seal binds one typed inventory. Three
+/// hand-authored lists disagreed about kernel receipts and SBOM evidence
+/// until this enum existed; the projections now derive from it.
+fn check_release_seal(findings: &mut Vec<String>) {
+    use architecture::ReleaseSealField as F;
+    let mut seen = BTreeSet::new();
+    for field in architecture::RELEASE_SEAL_FIELDS {
+        // Exhaustive: a new field must be classified here, not defaulted.
+        match field {
+            F::SourceTree | F::Toolchain | F::DependencyGraph | F::GeneratedFacts
+            | F::CompatibilityCorpus | F::TestDispositions | F::MutationDispositions
+            | F::FuzzDispositions | F::BenchmarkDispositions | F::CompilerAssumptionLedger
+            | F::DependencyLedger | F::KernelQualificationSet | F::PackageContents
+            | F::PublicApi | F::Sbom | F::LicenseEvidence | F::ProofFreshness => {}
+        }
+        if !seen.insert(format!("{field:?}")) {
+            findings.push(format!("release-seal field {field:?} is listed twice"));
+        }
+    }
+    if seen.len() != 17 {
+        findings.push(format!(
+            "a release-seal field is missing from RELEASE_SEAL_FIELDS ({} of 17)", seen.len()));
+    }
+    if !seen.contains("KernelQualificationSet") {
+        findings.push("the kernel qualification set left the seal; an empty set \
+                       states 'no kernels admitted', it never disappears".into());
+    }
 }
 
 /// DEC-075: the reconciliation composition stays closed, total, and honest.

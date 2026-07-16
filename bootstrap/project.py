@@ -557,6 +557,24 @@ def render_recon_retry(root: Path) -> str:
     return "\n".join(lines)
 
 
+RELEASE_DOC = "docs/36_PUBLIC_API_CI_AND_RELEASE.md"
+
+
+def release_seal_fields(root: Path) -> list[str]:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    start = src.index("pub const RELEASE_SEAL_FIELDS")
+    names = re.findall(r"ReleaseSealField::(\w+)",
+                       src[start: src.index("\n];", start)])
+    if not names:
+        raise Unadmitted("RELEASE_SEAL_FIELDS declares no fields")
+    return names
+
+
+def render_release_seal(root: Path) -> str:
+    lines = ["```text"] + release_seal_fields(root) + ["```"]
+    return "\n".join(lines)
+
+
 def render_gate_inventory(root: Path) -> str:
     """The docs/25 gate inventory, projected from spec/gates.rs."""
     rows = ["| GateId | Token | Title |", "| --- | --- | --- |"]
@@ -1032,6 +1050,21 @@ def main() -> int:
             continue
         recon_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), recon_rewritten)
     plans.append((recon_path, recon_original, recon_rewritten))
+    seal_path = root / RELEASE_DOC
+    seal_original = seal_path.read_text(encoding="utf-8")
+    seal_pattern = block_pattern("RELEASE-SEAL")
+    if not seal_pattern.search(seal_original):
+        findings.append(f"{RELEASE_DOC}: missing generated block markers for RELEASE-SEAL")
+        seal_rewritten = seal_original
+    else:
+        try:
+            body = render_release_seal(root)
+            seal_rewritten = seal_pattern.sub(
+                lambda m: m.group(1) + body + m.group(3), seal_original)
+        except Unadmitted as exc:
+            findings.append(f"{RELEASE_DOC}: RELEASE-SEAL does not admit: {exc}")
+            seal_rewritten = seal_original
+    plans.append((seal_path, seal_original, seal_rewritten))
     gates_path = root / GATES_DOC
     gates_original = gates_path.read_text(encoding="utf-8")
     for rel in STALE_DOCS:

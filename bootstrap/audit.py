@@ -373,6 +373,37 @@ def recon_findings(root: Path) -> list[str]:
     return out
 
 
+def release_seal_findings(root: Path) -> list[str]:
+    """DEC-058's seal binds ONE typed inventory (5.5E1). The auditor re-derives
+    the field list independently, checks the docs/36 projection, and refuses a
+    decision row that restates the list instead of naming the owner."""
+    out: list[str] = []
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    start = src.find("pub const RELEASE_SEAL_FIELDS")
+    if start < 0:
+        return ["spec/architecture.rs declares no RELEASE_SEAL_FIELDS"]
+    fields = re.findall(r"ReleaseSealField::(\w+)", src[start: src.index("\n];", start)])
+    if len(fields) != len(set(fields)):
+        out.append("a release-seal field is listed twice")
+    if "KernelQualificationSet" not in fields:
+        out.append("the kernel qualification set left the release seal; an empty "
+                   "set states 'no kernels admitted', it never disappears")
+    doc = (root / "docs/36_PUBLIC_API_CI_AND_RELEASE.md").read_text(encoding="utf-8")
+    m = re.search(r"RELEASE-SEAL:BEGIN[^>]*-->\n(.*?)\n<!-- RELEASE-SEAL:END", doc, re.S)
+    if m is None:
+        out.append("docs/36 carries no generated release-seal block")
+    elif m.group(1) != "\n".join(["```text"] + fields + ["```"]):
+        out.append("docs/36 release-seal block drifted from the typed inventory")
+    disp = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    row = re.search(r'DecisionSpec \{ id: "DEC-058".*?successor: "([^"]*)"', disp, re.S)
+    if row is None:
+        out.append("DEC-058 is missing from the decision ledger")
+    elif "ReleaseSealField" not in row.group(1):
+        out.append("DEC-058 restates a seal list instead of naming the typed "
+                   "ReleaseSealField owner")
+    return out
+
+
 # Two phantom sorts were born in the hand-authored arithmetic matrix and owned
 # by nothing: `DecimalMoney` (Money*Percent needs no new sort) and
 # `SignedDuration` (the signed observation difference is `TimeDelta`, docs/16).
@@ -3332,6 +3363,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(retired_proof_row_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
+    findings.extend(release_seal_findings(root))
     findings.extend(syncbat_firewall_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
