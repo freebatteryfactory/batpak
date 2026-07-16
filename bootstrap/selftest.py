@@ -836,8 +836,8 @@ def test_decisions(audit, project) -> list[str]:
     for profile in ("InternalConsistency", "SignedHistory", "ExternallyAnchoredHistory"):
         if profile in node_ids:
             fail(f"authenticated-history profile added as a graph node: {profile}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 74:
-        fail("decision node count is not 74")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 75:
+        fail("decision node count is not 75")
 
     if [(n["id"], n.get("dclass"), n["gate_posture"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
        [(n["id"], n.get("dclass"), n["gate_posture"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
@@ -1502,9 +1502,9 @@ def test_specialization(audit, project) -> list[str]:
                       "SpecializationKey", "WorkObservation"):
         if synthetic in ids:
             fail(f"synthetic specialization node introduced: {synthetic}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 74:
-        fail("decision_node_count_is_not_74")
-    if len(nodes) != 197 or len(edges) != 9:
+    if len([n for n in nodes if n["family"] == "DEC"]) != 75:
+        fail("decision_node_count_is_not_75")
+    if len(nodes) != 198 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     return findings
 
@@ -1513,10 +1513,10 @@ def test_delivery_notes_d2(audit) -> list[str]:
     """The delivery inventory tracks the live decision count."""
     findings: list[str] = []
     text = (HERE.parent / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
-    if "73 architectural decision/disposition rows" in text:
-        findings.append("delivery_notes_remaining_at_73_decisions FAILED")
-    if "74 architectural decision/disposition rows" not in text:
-        findings.append("delivery_notes_states_74_decisions FAILED")
+    if "74 architectural decision/disposition rows" in text:
+        findings.append("delivery_notes_remaining_at_74_decisions FAILED")
+    if "75 architectural decision/disposition rows" not in text:
+        findings.append("delivery_notes_states_75_decisions FAILED")
     return findings
 
 
@@ -1714,12 +1714,12 @@ def test_proof_policy(audit) -> list[str]:
                       "MutationResult", "ProofPolicySurface", "Killed", "Survived"):
         if synthetic in ids:
             fail(f"synthetic mutation node introduced: {synthetic}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 74:
-        fail("decision_node_count_is_not_74")
-    if len(nodes) != 197 or len(edges) != 9:
+    if len([n for n in nodes if n["family"] == "DEC"]) != 75:
+        fail("decision_node_count_is_not_75")
+    if len(nodes) != 198 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
-    if "74 architectural decision/disposition rows" not in text:
+    if "75 architectural decision/disposition rows" not in text:
         fail("delivery_notes_states_74_decisions")
     return findings
 
@@ -2408,7 +2408,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # The index resolves every declared guarantee, and only those.
     idx = audit.guarantee_index(root)
-    if len(idx) != 197:
+    if len(idx) != 198:
         fail(f"guarantee_index_covers_every_guarantee (got {len(idx)})")
     for ref, want in (("LEG-081", "G2/G3"), ("DEC-065", "G0/G5"), ("SEED-FBAT-CORE", "G2")):
         if audit.guarantee_gates(root, ref) != want:
