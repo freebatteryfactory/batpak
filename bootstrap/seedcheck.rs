@@ -70,7 +70,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_guarantee_admission(&mut findings);
     check_frontmatter(root, &mut findings);
     check_witness_citations(root, &mut findings);
-    check_proof_row_migrations(root, &mut findings);
+    check_proof_rows(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -273,54 +273,122 @@ fn guarantee_ref_resolves(reference: guarantees::GuaranteeRef) -> bool {
     }
 }
 
-/// The proof-identity migration registry is coherent (5.5E2). Retirement is
-/// supersession with a forwarding address, never deletion: every retired
-/// identity names at least one successor, never itself, and every successor
-/// either appears in the docs/24 proof inventory or carries its own explicit
-/// retirement entry. Executed through the sealed accessors on every run.
-fn check_proof_row_migrations(root: &Path, findings: &mut Vec<String>) {
-    use proof::{ProofRowState, PROOF_ROW_MIGRATIONS};
-    let inventory = fs::read_to_string(root.join("docs/24_GAUNTLET.md")).unwrap_or_default();
-    let retired: BTreeSet<&str> = PROOF_ROW_MIGRATIONS.iter().map(|m| m.id.raw()).collect();
-    if retired.len() != PROOF_ROW_MIGRATIONS.len() {
-        findings.push("duplicate retired proof-row identity in the migration registry".into());
+/// The canonical ACTIVE proof-row identities docs/24 declares, parsed
+/// STRUCTURALLY: only an id line inside the ```text fence that immediately
+/// follows a "Required witnesses (proof owner ...)" header counts. A name
+/// appearing in a migration note, an expectation paragraph, or any other
+/// prose is NOT an active row — the substring search this replaces would
+/// bless exactly the deletion the retention denominator exists to catch.
+fn docs24_active_rows(doc: &str) -> BTreeSet<&str> {
+    let mut out = BTreeSet::new();
+    let mut armed = false;
+    let mut in_fence = false;
+    for line in doc.lines() {
+        if in_fence {
+            if line.trim_end() == "```" {
+                in_fence = false;
+                continue;
+            }
+            let id = line.trim();
+            if !id.is_empty()
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            {
+                out.insert(id);
+            }
+            continue;
+        }
+        if armed {
+            if line.trim().is_empty() {
+                continue;
+            }
+            armed = false;
+            if line.trim_end() == "```text" {
+                in_fence = true;
+            }
+            continue;
+        }
+        if line.contains("Required witnesses (proof owner ") && line.trim_end().ends_with(':') {
+            armed = true;
+        }
     }
-    for entry in PROOF_ROW_MIGRATIONS {
+    out
+}
+
+/// The proof-identity catalog is the living census (5.5E2j). Executed laws:
+/// no identity is both active and retired (or declared twice at all); both
+/// lifecycle states are constructed; every retirement names at least one
+/// successor and never itself; every successor resolves INSIDE the catalog;
+/// and the catalog's active side equals the structurally parsed canonical
+/// docs/24 rows exactly, in both directions. A libtest count proves every
+/// currently declared test executed; this catalog proves no required proof
+/// identity disappeared — different axes, each with its own owner.
+fn check_proof_rows(root: &Path, findings: &mut Vec<String>) {
+    use proof::{ProofRowState, PROOF_ROWS};
+    let mut active: BTreeSet<&str> = BTreeSet::new();
+    let mut retired: BTreeSet<&str> = BTreeSet::new();
+    for record in PROOF_ROWS {
         // Exhaustive: a new state must be classified here, not defaulted.
-        match entry.state {
-            ProofRowState::Active => findings.push(format!(
-                "{} sits in the migration registry as Active; the registry holds \
-                 retirements, and the active inventory lives in docs/24 until the \
-                 documentary convergence pass lifts it",
-                entry.id.raw()
-            )),
-            ProofRowState::Retired { successors } => {
-                if successors.is_empty() {
+        let side = match record.state {
+            ProofRowState::Active => &mut active,
+            ProofRowState::Retired { .. } => &mut retired,
+        };
+        if !side.insert(record.id.raw()) {
+            findings.push(format!(
+                "{} is declared twice in the proof-identity catalog",
+                record.id.raw()
+            ));
+        }
+    }
+    for both in active.intersection(&retired) {
+        findings.push(format!(
+            "{both} is both active and retired; one identity carries one lifecycle"
+        ));
+    }
+    if active.is_empty() {
+        findings.push("the proof-identity catalog constructs no Active row; the census was deleted".into());
+    }
+    if retired.is_empty() {
+        findings.push("the proof-identity catalog constructs no Retired row; the retirement ledger was deleted".into());
+    }
+    for record in PROOF_ROWS {
+        if let ProofRowState::Retired { successors } = record.state {
+            if successors.is_empty() {
+                findings.push(format!(
+                    "{} is retired with no successor; retirement is supersession \
+                     with a forwarding address, never deletion",
+                    record.id.raw()
+                ));
+            }
+            for successor in successors {
+                if successor.raw() == record.id.raw() {
+                    findings.push(format!("{} names itself as its successor", record.id.raw()));
+                } else if !active.contains(successor.raw()) && !retired.contains(successor.raw())
+                {
                     findings.push(format!(
-                        "{} is retired with no successor; retirement is supersession \
-                         with a forwarding address, never deletion",
-                        entry.id.raw()
+                        "{} names successor {}, which resolves to no typed catalog \
+                         identity",
+                        record.id.raw(),
+                        successor.raw()
                     ));
-                }
-                for successor in successors {
-                    if successor.raw() == entry.id.raw() {
-                        findings.push(format!(
-                            "{} names itself as its successor",
-                            entry.id.raw()
-                        ));
-                    } else if !retired.contains(successor.raw())
-                        && !inventory.contains(successor.raw())
-                    {
-                        findings.push(format!(
-                            "{} names successor {}, which is neither in the docs/24 \
-                             proof inventory nor explicitly retired",
-                            entry.id.raw(),
-                            successor.raw()
-                        ));
-                    }
                 }
             }
         }
+    }
+    let doc = fs::read_to_string(root.join("docs/24_GAUNTLET.md")).unwrap_or_default();
+    let canonical = docs24_active_rows(&doc);
+    for missing in canonical.iter().filter(|id| !active.contains(**id)) {
+        findings.push(format!(
+            "docs/24 declares active proof row {missing}, which the typed catalog \
+             never learned"
+        ));
+    }
+    for phantom in active.iter().filter(|id| !canonical.contains(**id)) {
+        findings.push(format!(
+            "typed Active identity {phantom} appears as no canonical docs/24 \
+             active row"
+        ));
     }
 }
 

@@ -97,70 +97,127 @@ pub enum ProofRowState {
     Retired { successors: &'static [ProofRowId] },
 }
 
-/// One entry in the proof-identity migration registry.
+/// One entry in the proof-identity catalog.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ProofRowMigration {
+pub struct ProofRowRecord {
     pub id: ProofRowId,
     pub state: ProofRowState,
 }
 
-/// Every proof-row identity that ever stopped being authoritative, with its
-/// successors. This registry is the TYPED OWNER the retired-name scanner
-/// derives from: until the 5.5E2 bake it existed only as a Python dict
-/// inside the auditor, and the dict was already missing an entry — docs/24
-/// retired `test_local_fixture_type_is_classified_correctly` in a migration
-/// note the registry never learned, so the scanner guarded five of the six
-/// retirements while claiming to guard them all. A registry the auditor
-/// owns is a registry the auditor cannot be caught neglecting.
+/// The COMPLETE proof-identity catalog (5.5E2j): every canonical active
+/// proof-row identity docs/24 declares, in document order, followed by every
+/// identity that ever stopped being authoritative. The catalog owns identity,
+/// lifecycle, and succession ONLY — expectation prose, proof meaning, and
+/// receipt details stay in docs/24 until the documentary convergence pass.
 ///
-/// Identities here are RETIRED entries only: the active inventory lives in
-/// docs/24 until the documentary convergence pass lifts it, and every
-/// successor named below must either appear there or carry its own
-/// retirement entry.
-pub const PROOF_ROW_MIGRATIONS: &[ProofRowMigration] = &[
-    ProofRowMigration {
-        id: ProofRowId("pre_shred_keyset_restore_is_rejected"),
-        state: ProofRowState::Retired {
-            successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")],
-        },
-    },
-    ProofRowMigration {
-        id: ProofRowId("shredded_and_keyset_missing_remain_distinct"),
-        state: ProofRowState::Retired {
-            successors: &[ProofRowId(
-                "shredded_unavailable_and_keyset_missing_remain_distinct",
-            )],
-        },
-    },
-    ProofRowMigration {
-        id: ProofRowId("snapshot_and_fork_exclude_keys_by_default"),
-        state: ProofRowState::Retired {
-            successors: &[ProofRowId(
-                "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
-            )],
-        },
-    },
-    ProofRowMigration {
-        id: ProofRowId("hash_map_iteration_cannot_change_canonical_bytes"),
-        state: ProofRowState::Retired {
-            successors: &[ProofRowId(
-                "hash_map_iteration_cannot_influence_canonical_observables",
-            )],
-        },
-    },
-    ProofRowMigration {
-        id: ProofRowId("attempt_receipt_cannot_cross_invocation_classes"),
-        state: ProofRowState::Retired {
-            successors: &[
-                ProofRowId("entrypoint_receipt_cannot_satisfy_query_program_execution"),
-                ProofRowId("query_program_receipt_cannot_satisfy_entrypoint_invocation"),
-            ],
-        },
-    },
-    ProofRowMigration {
-        id: ProofRowId("test_local_fixture_type_is_classified_correctly"),
-        state: ProofRowState::Retired {
-            successors: &[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")],
-        },
-    },
+/// This replaced PROOF_ROW_MIGRATIONS, which held retirements alone and
+/// validated successors by substring search over the whole of docs/24 — so a
+/// successor whose canonical active row was deleted still "existed" as long
+/// as its name survived in a migration note or a prose paragraph. A
+/// forwarding address must point at the living census, not at a name painted
+/// on an old wall: successor resolution and the active/docs equality laws
+/// now run against this catalog and the structurally parsed canonical rows.
+pub const PROOF_ROWS: &[ProofRowRecord] = &[
+    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("event_reorder_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("duplicate_payload_splice_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("cross_lane_predecessor_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("cross_entity_predecessor_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("midstream_genesis_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("forged_index_row_cannot_choose_and_authenticate_bytes"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("forged_sibling_cannot_cause_false_loss"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("agreeing_truncated_table_cannot_cause_false_safety"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("derived_row_cannot_authenticate_siblings"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("derived_row_cannot_authenticate_table_count"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("derived_row_cannot_authenticate_order"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("derived_row_cannot_authenticate_tail_boundary"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("derived_row_cannot_prove_absence_or_loss"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("page_limit_bounds_discovery_work_not_only_output"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("allocation_does_not_scale_with_full_matched_set"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("descriptor_postcondition_failure_is_not_reported_applied"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("fcntl_getfd_failure_fails_closed"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("fcntl_setfd_failure_fails_closed"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("close_reopen_reimport_returns_zero_new_events"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("signed_compaction_preserves_or_commits_the_removed_set"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compaction_inputs_survive_until_replacement_evidence_is_durable"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("matched_kind_decode_failure_is_a_typed_terminal"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("replay_routes_agree_on_first_failure_and_class"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("trapping_host_filesystem_remains_unreached_under_injected_storage"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("paired_result_and_receipt_share_one_turn_evaluation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("hlc_cannot_substitute_for_commit_sequence"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("receipt_binds_chronology_and_commit_without_collapsing_them"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("replay_reconstructs_same_turn_and_returns_original_receipts"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("lost_acknowledgement_requires_reconciliation_before_retry"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("port_response_cannot_cross_attempts"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("driver_await_and_cooperative_drive_produce_equivalent_logical_trace"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("checkpoint_gap_does_not_duplicate_committed_effect"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("reconciliation_appends_evidence_without_rewriting_original_observation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("shred_ack_waits_for_backend_durability"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("crash_before_durable_key_delete_does_not_report_shred_success"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("reopen_after_ack_cannot_recover_shredded_plaintext"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("shred_transition_binding_mismatch_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("foreign_keyset_generation_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("shredded_unavailable_and_keyset_missing_remain_distinct"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("external_key_backend_preserves_shred_semantics"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compressed_fbat_authority_frame_is_rejected_in_v1"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compressed_vpak_semantic_section_is_rejected_in_v1"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compression_profile_requires_expansion_bound"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("future_format_version_fails_with_its_own_typed_disposition"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("program_image_id_is_independent_of_compiler_provenance"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("distinct_version_types_do_not_typecheck_when_substituted"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("netbat_version_does_not_upgrade_pakvm_isa"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("order_by_hlc_uses_commit_tiebreak"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("cross_store_hlc_order_is_total"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("hlc_range_is_half_open"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("frontier_progress_never_uses_hlc_order"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("observed_wall_time_is_not_promoted_to_hlc"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("no_std_batpak_has_no_std_dependency_route"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("no_std_syncbat_has_no_std_dependency_route"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("default_std_does_not_enable_threaded_or_browser_adapters"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("browser_and_native_profiles_preserve_program_semantics"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("hash_map_iteration_cannot_influence_canonical_observables"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("attacker_length_is_checked_before_reserve"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("allocation_failure_returns_resource_exhausted"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("declared_work_overrun_returns_budget_exceeded"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("resource_exhaustion_never_publishes_partial_event"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("resource_exhaustion_never_advances_checkpoint"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("artifact_staging_failure_publishes_no_artifact_ref"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("pakvm_arena_exhaustion_returns_typed_terminal_disposition"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("kernel_cannot_resolve_by_display_name"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("kernel_contract_and_implementation_ids_are_not_interchangeable"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("qualified_interface_requires_matching_qualification_receipt"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("exact_kernel_binding_rejects_another_implementation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("attempt_receipt_records_exact_kernel_implementation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("local_domain_type_inside_function_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("local_domain_type_inside_closure_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("test_local_nonsemantic_fixture_type_is_allowed"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("production_expect_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("test_expect_with_context_is_allowed"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("unledgered_unsafe_fn_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("unledgered_pointer_cast_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("public_flume_receiver_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("hash_map_iteration_in_canonical_encoder_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("drawer_module_name_requires_explicit_disposition"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("raw_batql_is_not_a_netbat_invocation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compiler_port_is_not_available_to_guest_programs"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compiler_port_is_absent_from_default_server_profile"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("compiler_output_still_requires_program_validation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("query_program_with_effect_instruction_is_rejected"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("query_program_cannot_install_process"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("query_program_cannot_request_write_capability"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("query_program_over_work_bound_is_denied_before_execution"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("query_program_result_binds_program_and_grant_identity"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("entrypoint_receipt_cannot_satisfy_query_program_execution"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("entrypoint_cannot_substitute_foreign_program_image"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("entrypoint_effect_must_be_declared_by_world_interface"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("query_program_receipt_cannot_satisfy_entrypoint_invocation"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("tls_does_not_upgrade_program_or_proof_authority"), state: ProofRowState::Active },
+    ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"), state: ProofRowState::Retired { successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")] } },
+    ProofRowRecord { id: ProofRowId("shredded_and_keyset_missing_remain_distinct"), state: ProofRowState::Retired { successors: &[ProofRowId("shredded_unavailable_and_keyset_missing_remain_distinct")] } },
+    ProofRowRecord { id: ProofRowId("snapshot_and_fork_exclude_keys_by_default"), state: ProofRowState::Retired { successors: &[ProofRowId("snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys")] } },
+    ProofRowRecord { id: ProofRowId("hash_map_iteration_cannot_change_canonical_bytes"), state: ProofRowState::Retired { successors: &[ProofRowId("hash_map_iteration_cannot_influence_canonical_observables")] } },
+    ProofRowRecord { id: ProofRowId("attempt_receipt_cannot_cross_invocation_classes"), state: ProofRowState::Retired { successors: &[ProofRowId("entrypoint_receipt_cannot_satisfy_query_program_execution"), ProofRowId("query_program_receipt_cannot_satisfy_entrypoint_invocation")] } },
+    ProofRowRecord { id: ProofRowId("test_local_fixture_type_is_classified_correctly"), state: ProofRowState::Retired { successors: &[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")] } },
 ];

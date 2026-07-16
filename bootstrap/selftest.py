@@ -2342,25 +2342,75 @@ def test_leg081_authority(audit) -> list[str]:
               f"reintroduces retired proof-row id {old} outside the historical migration note",
               LEAK + f" See {old}.", validator=rp)
 
-    # The registry is TYPED and must agree with the migration notes in both
+    # The catalog is TYPED and must agree with the migration notes in both
     # directions (5.5E2). The Python-dict era shipped exactly this defect: a
     # docs/24 note retired an id the dict never learned, so its scanner
     # guarded five of six retirements while claiming to guard them all.
-    probe("registry_missing_a_noted_retirement_is_rejected", "spec/proof.rs",
-          '    ProofRowMigration {\n'
-          '        id: ProofRowId("test_local_fixture_type_is_classified_correctly"),\n'
-          '        state: ProofRowState::Retired {\n'
-          '            successors: &[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")],\n'
-          '        },\n'
-          '    },\n',
-          "spec/proof.rs PROOF_ROW_MIGRATIONS never learned",
+    PR = "spec/proof.rs"
+    probe("registry_missing_a_noted_retirement_is_rejected", PR,
+          '    ProofRowRecord { id: ProofRowId("test_local_fixture_type_is_classified_correctly"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")] } },\n',
+          "spec/proof.rs PROOF_ROWS never learned",
           "", validator=rp)
-    probe("registry_retirement_without_a_note_is_rejected", "spec/proof.rs",
-          '    ProofRowMigration {\n'
-          '        id: ProofRowId("pre_shred_keyset_restore_is_rejected"),',
+    probe("registry_retirement_without_a_note_is_rejected", PR,
+          'ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"),',
           "no docs/24 migration note recording the retirement",
-          '    ProofRowMigration {\n'
-          '        id: ProofRowId("phantom_row_never_noted"),', validator=rp)
+          'ProofRowRecord { id: ProofRowId("phantom_row_never_noted"),', validator=rp)
+
+    # The catalog is the LIVING CENSUS (5.5E2j): active identities equal the
+    # structurally parsed canonical docs/24 rows in both directions, one
+    # identity carries one lifecycle, and both lifecycle states are
+    # constructed. A name surviving in a migration note or prose is not a row.
+    cat = audit.proof_row_catalog_findings
+    if cat(HERE.parent):
+        fail("proof_row_catalog_passes_on_the_real_seed")
+    probe("typed_active_row_missing_from_docs24_is_rejected", PR,
+          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+          'state: ProofRowState::Active },\n',
+          "typed Active identity row_invented_in_rust_only appears as no "
+          "canonical docs/24 active row",
+          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+          'state: ProofRowState::Active },\n'
+          '    ProofRowRecord { id: ProofRowId("row_invented_in_rust_only"), '
+          'state: ProofRowState::Active },\n', validator=cat)
+    probe("docs24_active_row_missing_from_typed_catalog_is_rejected", GA,
+          "raw_batql_is_not_a_netbat_invocation\n",
+          "docs/24 declares active proof row row_added_only_in_docs, which the "
+          "typed catalog never learned",
+          "raw_batql_is_not_a_netbat_invocation\nrow_added_only_in_docs\n",
+          validator=cat)
+    probe("same_identity_cannot_be_active_and_retired", PR,
+          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+          'state: ProofRowState::Active },\n',
+          "is declared twice in the proof-identity catalog",
+          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+          'state: ProofRowState::Active },\n'
+          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("event_reorder_is_rejected")] } },\n', validator=cat)
+    probe("proof_row_state_variants_are_constructed", PR,
+          '    ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")] } },\n'
+          '    ProofRowRecord { id: ProofRowId("shredded_and_keyset_missing_remain_distinct"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("shredded_unavailable_and_keyset_missing_remain_distinct")] } },\n'
+          '    ProofRowRecord { id: ProofRowId("snapshot_and_fork_exclude_keys_by_default"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys")] } },\n'
+          '    ProofRowRecord { id: ProofRowId("hash_map_iteration_cannot_change_canonical_bytes"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("hash_map_iteration_cannot_influence_canonical_observables")] } },\n'
+          '    ProofRowRecord { id: ProofRowId("attempt_receipt_cannot_cross_invocation_classes"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("entrypoint_receipt_cannot_satisfy_query_program_execution"), '
+          'ProofRowId("query_program_receipt_cannot_satisfy_entrypoint_invocation")] } },\n'
+          '    ProofRowRecord { id: ProofRowId("test_local_fixture_type_is_classified_correctly"), '
+          'state: ProofRowState::Retired { successors: '
+          '&[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")] } },\n',
+          "constructs no Retired row",
+          "", validator=cat)
 
     # docs/21 projects exactly the nine.
     probe("docs21_leg081_missing_projected_id_is_rejected", D21,
@@ -3714,13 +3764,31 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'WitnessRef::contract("BP-GAUNTLET-1")]',
           "which no declared row owns")
 
-    # Retirement is supersession with a forwarding address: a successor that
-    # neither exists in the docs/24 inventory nor carries its own retirement
-    # entry reddens the running binary.
+    # Retirement is supersession with a forwarding address that must point at
+    # the LIVING CENSUS (5.5E2j): a successor resolves inside the typed
+    # catalog or the running binary reddens.
     probe("dangling_proof_row_successor_is_rejected", "spec/proof.rs",
           'successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")]',
           'successors: &[ProofRowId("row_that_was_never_authored_anywhere")]',
-          "neither in the docs/24 proof inventory nor explicitly retired")
+          "resolves to no typed catalog identity")
+
+    # ...and a name that occurs in docs/24 PROSE is not a catalog identity:
+    # under the deleted substring search, "committed" (which opens a substrate
+    # prose line) satisfied existence.
+    probe("retired_successor_mentioned_only_in_prose_is_rejected", "spec/proof.rs",
+          'successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")]',
+          'successors: &[ProofRowId("committed")]',
+          "resolves to no typed catalog identity")
+
+    # The defect the census exists to catch: delete a canonical active row
+    # whose name survives in a historical migration note. The substring
+    # search blessed exactly this deletion; the structural parse refuses it.
+    probe("active_row_deleted_but_name_left_in_migration_note_is_rejected",
+          "docs/24_GAUNTLET.md",
+          "\nstale_or_pre_shred_keyset_restore_is_rejected\n",
+          "\n",
+          "typed Active identity stale_or_pre_shred_keyset_restore_is_rejected "
+          "appears as no canonical docs/24 active row")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().

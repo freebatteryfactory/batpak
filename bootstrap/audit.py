@@ -2478,19 +2478,67 @@ D4B2C_ROWS = [
 # auditor owns is a registry the auditor cannot be caught neglecting. This
 # auditor now PARSES the typed registry and independently verifies it agrees
 # with every historical migration note.
-A_PROOF_MIGRATION = re.compile(
-    r'ProofRowMigration \{\s*id: ProofRowId\("(\w+)"\),\s*'
-    r'state: ProofRowState::Retired \{\s*successors: &\[(.*?)\],?\s*\}',
-    re.S,
+A_PROOF_RECORD = re.compile(
+    r'ProofRowRecord \{ id: ProofRowId\("(\w+)"\), '
+    r'state: ProofRowState::(Active|Retired \{ successors: &\[([^\]]*)\] \}) \},'
 )
 
 
-def retired_proof_rows(root: Path) -> dict[str, tuple[str, ...]]:
-    """retired id -> successors, parsed from the typed registry."""
+def proof_row_catalog(root: Path) -> list[tuple[str, str, tuple[str, ...]]]:
+    """[(id, 'Active'|'Retired', successors)] from the typed catalog."""
     src = _uncomment((root / "spec/proof.rs").read_text(encoding="utf-8"))
-    out: dict[str, tuple[str, ...]] = {}
-    for m in A_PROOF_MIGRATION.finditer(src):
-        out[m.group(1)] = tuple(re.findall(r'ProofRowId\(\s*"(\w+)"', m.group(2)))
+    out: list[tuple[str, str, tuple[str, ...]]] = []
+    for m in A_PROOF_RECORD.finditer(src):
+        state = "Active" if m.group(2) == "Active" else "Retired"
+        succ = tuple(re.findall(r'ProofRowId\("(\w+)"\)', m.group(3) or ""))
+        out.append((m.group(1), state, succ))
+    return out
+
+
+def retired_proof_rows(root: Path) -> dict[str, tuple[str, ...]]:
+    """retired id -> successors, parsed from the typed catalog."""
+    return {rid: succ for rid, state, succ in proof_row_catalog(root)
+            if state == "Retired"}
+
+
+def proof_row_catalog_findings(root: Path) -> list[str]:
+    """The catalog is the living census: one lifecycle per identity, both
+    states constructed, successors resolving INSIDE the catalog, and exact
+    two-way equality between typed Active ids and the structurally parsed
+    canonical docs/24 rows. A name surviving in a migration note or prose is
+    not an active row."""
+    out: list[str] = []
+    catalog = proof_row_catalog(root)
+    if not catalog:
+        return ["spec/proof.rs declares no proof-identity catalog"]
+    ids = [rid for rid, _, _ in catalog]
+    for dup in sorted({i for i in ids if ids.count(i) > 1}):
+        out.append(f"{dup} is declared twice in the proof-identity catalog; "
+                   "one identity carries one lifecycle")
+    active = {rid for rid, state, _ in catalog if state == "Active"}
+    retired = {rid for rid, state, _ in catalog if state == "Retired"}
+    if not active:
+        out.append("the proof-identity catalog constructs no Active row")
+    if not retired:
+        out.append("the proof-identity catalog constructs no Retired row")
+    for rid, state, succ in catalog:
+        if state != "Retired":
+            continue
+        if not succ:
+            out.append(f"retired proof-row id {rid} names no successor")
+        for s in succ:
+            if s == rid:
+                out.append(f"{rid} names itself as its successor")
+            elif s not in active and s not in retired:
+                out.append(f"{rid} names successor {s}, which resolves to no "
+                           "typed catalog identity")
+    canonical = set(witness_rows(root))
+    for missing in sorted(canonical - active):
+        out.append(f"docs/24 declares active proof row {missing}, which the "
+                   "typed catalog never learned")
+    for phantom in sorted(active - canonical):
+        out.append(f"typed Active identity {phantom} appears as no canonical "
+                   "docs/24 active row")
     return out
 
 
@@ -3184,7 +3232,7 @@ def retired_proof_row_findings(root: Path) -> list[str]:
     for missing in sorted(noted - set(registry)):
         out.append(
             f"docs/24 retires proof-row id {missing} in a migration note that "
-            "spec/proof.rs PROOF_ROW_MIGRATIONS never learned"
+            "spec/proof.rs PROOF_ROWS never learned"
         )
     for phantom in sorted(set(registry) - noted):
         out.append(
@@ -3586,6 +3634,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(authenticated_history_findings(root))
     findings.extend(retired_claim_vocabulary_findings(root))
     findings.extend(retired_proof_row_findings(root))
+    findings.extend(proof_row_catalog_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
