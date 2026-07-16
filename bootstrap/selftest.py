@@ -1504,7 +1504,7 @@ def test_specialization(audit, project) -> list[str]:
             fail(f"synthetic specialization node introduced: {synthetic}")
     if len([n for n in nodes if n["family"] == "DEC"]) != 75:
         fail("decision_node_count_is_not_75")
-    if len(nodes) != 201 or len(edges) != 9:
+    if len(nodes) != 202 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     return findings
 
@@ -1716,7 +1716,7 @@ def test_proof_policy(audit) -> list[str]:
             fail(f"synthetic mutation node introduced: {synthetic}")
     if len([n for n in nodes if n["family"] == "DEC"]) != 75:
         fail("decision_node_count_is_not_75")
-    if len(nodes) != 201 or len(edges) != 9:
+    if len(nodes) != 202 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
     if "75 architectural decision/disposition rows" not in text:
@@ -2408,7 +2408,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # The index resolves every declared guarantee, and only those.
     idx = audit.guarantee_index(root)
-    if len(idx) != 201:
+    if len(idx) != 202:
         fail(f"guarantee_index_covers_every_guarantee (got {len(idx)})")
     for ref, want in (("LEG-081", "G2/G3"), ("DEC-065", "G0/G5"), ("SEED-FBAT-CORE", "G2")):
         if audit.guarantee_gates(root, ref) != want:

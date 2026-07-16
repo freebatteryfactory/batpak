@@ -225,6 +225,13 @@ pub const QUALIFICATION_PROFILES: &[QualificationProfile] = &[
         gates: &[GateId::G0, GateId::G5],
         requirement: "browser adapters preserve semantic result, receipt, bounds, and recovery contracts without OS-backend normalization",
     },
+    QualificationProfile {
+        package: "batpak",
+        profile: "browser-storage",
+        target: "wasm32 host",
+        gates: &[GateId::G2, GateId::G5, GateId::G7],
+        requirement: "the browser persistence adapter proves its own atomicity, ordering, durability, quota, crash/reload, authority-generation, and bounded-size behavior without borrowing native filesystem claims",
+    },
 ];
 
 // --- Authenticated history (DEC-071) ----------------------------------------

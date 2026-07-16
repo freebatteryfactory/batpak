@@ -20,12 +20,12 @@ navigation only; the owning fact is authoritative. Do not edit.
 | LEG | 87 |
 | DEC | 75 |
 | ARCH | 9 |
-| QUAL | 5 |
+| QUAL | 6 |
 
 ## Totals
 
 ```text
-nodes: 201
+nodes: 202
 edges: 9
 unresolved references: 0
 ```
@@ -38,7 +38,7 @@ unresolved references: 0
 | BootstrapAssertion | 2 |
 | Decision | 75 |
 | LegacyObligation | 87 |
-| QualificationRequirement | 5 |
+| QualificationRequirement | 6 |
 | SemanticLaw | 13 |
 
 ## Counts by lifetime
@@ -46,14 +46,14 @@ unresolved references: 0
 | GuaranteeLifetime | Nodes |
 | --- | --- |
 | HistoricalCoverageOnly | 4 |
-| Permanent | 102 |
+| Permanent | 103 |
 | UntilCompatibilityExpiry | 8 |
 | UntilGate | 87 |
 
 ## Active versus closed
 
 ```text
-active (gating): 197
+active (gating): 198
 closed evidence: 0
 historical coverage only: 4
 ```
@@ -294,6 +294,7 @@ admission and never reaches this table.
 | ARCH-netbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
 | ARCH-syncbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
 | ARCH-testpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
+| QUAL-batpak-browser-storage | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G2/G5/G7 | wasm32 host | QualificationReceipt |
 | QUAL-batpak-native | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | std | QualificationReceipt |
 | QUAL-batpak-semantic | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | no_std + alloc | QualificationReceipt |
 | QUAL-syncbat-browser | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | wasm32 host | QualificationReceipt |
