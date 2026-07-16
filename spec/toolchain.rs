@@ -107,6 +107,17 @@ pub enum RustupComponent {
 }
 
 impl RustupComponent {
+    /// The ONE component denominator (5.5E3 preflight): every declared
+    /// variant, in canonical projection order. The profile renders from this
+    /// inventory directly — a `required_components` field beside it would be
+    /// a second inventory the checkers must police back into agreement, and
+    /// dropping a component from such a field while the projection moved in
+    /// lockstep would leave a declared-but-unconsumed variant, the
+    /// TestFixture defect wearing a toolbelt. The auditor independently
+    /// compares the declared variants against this inventory.
+    pub const ALL: &'static [RustupComponent] =
+        &[RustupComponent::Clippy, RustupComponent::Rustfmt];
+
     pub const fn spelling(self) -> &'static str {
         match self {
             RustupComponent::Clippy => "clippy",
@@ -136,10 +147,10 @@ pub struct ToolchainProfile {
     pub edition: RustEdition,
     /// The Cargo dependency resolver the generated workspace declares.
     pub cargo_resolver: CargoResolver,
-    /// The rustup profile the toolchain selection installs.
+    /// The rustup profile the toolchain selection installs. The required
+    /// components are NOT a field: `RustupComponent::ALL` is the one
+    /// component denominator and the projection renders from it directly.
     pub rustup_profile: RustupProfile,
-    /// Required components, in canonical declaration order.
-    pub required_components: &'static [RustupComponent],
 }
 
 pub const TOOLCHAIN: ToolchainProfile = ToolchainProfile {
@@ -148,7 +159,6 @@ pub const TOOLCHAIN: ToolchainProfile = ToolchainProfile {
     edition: RustEdition::Rust2024,
     cargo_resolver: CargoResolver::V3,
     rustup_profile: RustupProfile::Minimal,
-    required_components: &[RustupComponent::Clippy, RustupComponent::Rustfmt],
 };
 
 impl ToolchainProfile {
@@ -159,8 +169,7 @@ impl ToolchainProfile {
     /// authority, and seedcheck compares the tracked bytes against this
     /// rendering on every run.
     pub fn root_toolchain_toml(&self) -> String {
-        let components = self
-            .required_components
+        let components = RustupComponent::ALL
             .iter()
             .map(|c| format!("\"{}\"", c.spelling()))
             .collect::<Vec<_>>()

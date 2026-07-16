@@ -3751,7 +3751,9 @@ def toolchain_profile(root: Path) -> dict:
     edition = re.search(r"edition: RustEdition::Rust(\d+)", src)
     resolver = re.search(r"cargo_resolver: CargoResolver::V(\d+)", src)
     profile = re.search(r"rustup_profile: RustupProfile::(\w+)", src)
-    comps = re.search(r"required_components: &\[([^\]]*)\]", src)
+    comps = re.search(
+        r"pub const ALL: &'static \[RustupComponent\] =\s*&\[([^\]]*)\]", src)
+    enum_body = re.search(r"pub enum RustupComponent \{(.*?)\n\}", src, re.S)
     # The semantic environments live on the typed enum in architecture.rs;
     # the auditor reads the authored spelling arms, never a copied list.
     arch = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
@@ -3768,6 +3770,10 @@ def toolchain_profile(root: Path) -> dict:
         "components": [A_TC_COMPONENT_SPELLING.get(v, "")
                        for v in re.findall(r"RustupComponent::(\w+)", comps.group(1))]
                       if comps else [],
+        "component_all": re.findall(r"RustupComponent::(\w+)", comps.group(1))
+                         if comps else [],
+        "component_variants": re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M)
+                              if enum_body else [],
         "environment_spellings": dict(spellings),
     }
 
@@ -3780,6 +3786,18 @@ def toolchain_findings(root: Path) -> list[str]:
             out.append(f"spec/toolchain.rs authors no toolchain {key}")
     if not t["components"]:
         out.append("spec/toolchain.rs authors no required components")
+    # RustupComponent::ALL is the ONE component denominator: every declared
+    # variant appears in it exactly once. Dropping a component from ALL while
+    # the projection moves in lockstep would leave a declared-but-unconsumed
+    # variant — the TestFixture defect wearing a toolbelt.
+    for missing in sorted(set(t["component_variants"]) - set(t["component_all"])):
+        out.append(f"declared toolchain component {missing} is omitted from "
+                   "RustupComponent::ALL, the one component inventory")
+    for phantom in sorted(set(t["component_all"]) - set(t["component_variants"])):
+        out.append(f"RustupComponent::ALL names {phantom}, which the enum "
+                   "does not declare")
+    if len(t["component_all"]) != len(set(t["component_all"])):
+        out.append("RustupComponent::ALL repeats a component")
     if not t["environment_spellings"]:
         out.append("spec/architecture.rs declares no qualification environments")
     # exact >= floor, never "same minor": a newer qualifying compiler that

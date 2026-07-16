@@ -509,7 +509,8 @@ def parse_toolchain(root):
     edition = re.search(r"edition: RustEdition::Rust(\d+)", src)
     resolver = re.search(r"cargo_resolver: CargoResolver::V(\d+)", src)
     profile = re.search(r"rustup_profile: RustupProfile::(\w+)", src)
-    comps = re.search(r"required_components: &\[([^\]]*)\]", src)
+    comps = re.search(
+        r"pub const ALL: &'static \[RustupComponent\] =\s*&\[([^\]]*)\]", src)
     return {
         "exact": ".".join(release.groups()) if release else "",
         "floor": ".".join(floor.groups()) if floor else "",

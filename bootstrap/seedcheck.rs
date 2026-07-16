@@ -294,14 +294,19 @@ fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
             "qualify with a compiler at or above the floor the generated              workspace claims",
         );
     }
-    if t.required_components.is_empty() {
-        refuse(findings, "required_components", "[]", "at least one component",
+    if toolchain::RustupComponent::ALL.is_empty() {
+        refuse(findings, "RustupComponent::ALL", "[]", "at least one component",
                "author the components qualification depends on");
     }
     let mut seen_components = BTreeSet::new();
-    for component in t.required_components {
+    for component in toolchain::RustupComponent::ALL {
+        // Exhaustive: a new component variant must join this classification
+        // (and the auditor separately requires it to join ALL), not default.
+        match component {
+            toolchain::RustupComponent::Clippy | toolchain::RustupComponent::Rustfmt => {}
+        }
         if !seen_components.insert(component.spelling()) {
-            refuse(findings, "required_components", component.spelling(),
+            refuse(findings, "RustupComponent::ALL", component.spelling(),
                    "each component once",
                    "a duplicated component is a copy, not a requirement");
         }

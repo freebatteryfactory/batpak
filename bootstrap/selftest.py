@@ -4171,6 +4171,26 @@ def test_toolchain(audit) -> list[str]:
           'QualificationEnvironment::WasmHost => "wasm32 host",',
           'QualificationEnvironment::WasmHost => "wasm32-unknown-unknown",',
           "is shaped like a physical target triple")
+    # RustupComponent::ALL is the one component denominator: dropping a
+    # declared component from it (with the projection moving in lockstep)
+    # must be refused, or Rustfmt becomes a declared-but-unconsumed variant.
+    with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
+        tc = tmp / "spec/toolchain.rs"
+        tc.write_text(must_replace(
+            tc.read_text(encoding="utf-8"),
+            "&[RustupComponent::Clippy, RustupComponent::Rustfmt]",
+            "&[RustupComponent::Clippy]",
+            "component inventory"), encoding="utf-8")
+        rt = tmp / "rust-toolchain.toml"
+        rt.write_text(must_replace(rt.read_text(encoding="utf-8"),
+                      'components = ["clippy", "rustfmt"]',
+                      'components = ["clippy"]',
+                      "component projection"), encoding="utf-8")
+        got = audit.toolchain_findings(tmp)
+        if not any("omitted from RustupComponent::ALL" in f for f in got):
+            fail("declared_toolchain_component_cannot_be_omitted_from_"
+                 f"required_inventory (got {got!r})")
+
     # Hand-editing or losing the tracked projection is refused.
     probe("root_toolchain_channel_mismatch_is_rejected", "rust-toolchain.toml",
           'channel = "1.97.0"', 'channel = "1.96.0"',
