@@ -2372,7 +2372,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # Transitional expectation clause.
     ids, blocks, pending = audit.candidate_summary(root)
-    if (ids, blocks, pending) != (1, 1, 29):
+    if (ids, blocks, pending) != (0, 0, 29):
         fail(f"candidate_summary_reports_current_state (got {(ids, blocks, pending)})")
     W28M = W28 + "\n    The page limit and work budget constrain discovery before unbounded decode,"
     probe("expectation_clause_without_disposition_is_rejected", GA, W28M,

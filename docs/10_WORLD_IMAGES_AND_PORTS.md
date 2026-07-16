@@ -147,6 +147,7 @@ raw_batql_is_not_a_netbat_invocation
 compiler_port_is_not_available_to_guest_programs
 compiler_port_is_absent_from_default_server_profile
 compiler_output_still_requires_program_validation
+query_program_with_effect_instruction_is_rejected
 query_program_cannot_install_process
 query_program_cannot_request_write_capability
 query_program_over_work_bound_is_denied_before_execution
@@ -158,13 +159,7 @@ query_program_receipt_cannot_satisfy_entrypoint_invocation
 tls_does_not_upgrade_program_or_proof_authority
 ```
 
-Blocked pending the typed PakVM semantic ISA (proof owner TestPak; DEC-050):
-
-```text
-query_program_with_effect_instruction_is_rejected
-```
-
-This row cannot be normalized yet. "Effect instruction" names a property of a PakVM node, and no typed authority states which nodes carry an effect posture: DEC-050 forbids effects to a query program but does not enumerate the instructions that have one. Writing a meaning now would invent that classification in prose, which is the defect this pass exists to remove. The row is promoted when `spec/pakvm_isa.rs` declares node effect posture (D4c1), and it stays visible here until then rather than being folded into the projection above.
+An effect instruction is not a name on a list. It is any node `spec/pakvm_isa.rs` admits with the `Effectful` effect posture, which admission binds to the Effect algebra in both directions. `query_program_with_effect_instruction_is_rejected` therefore covers a node from the day it is admitted; there is no enumeration here to fall out of date, and none anywhere else.
 
 Equivalence oracle: the same query compiled into the same canonical ProgramImage must produce equivalent PakVM semantics whether invoked as a pure declared entrypoint or an ephemeral `ExecuteQueryProgram`, given the same source cut, parameters, selectors, bounds, and proof posture. The receipts differ (authority and invocation identities differ); the query value and structured derivation do not.
 

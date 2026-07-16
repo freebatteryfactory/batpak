@@ -1053,6 +1053,7 @@ Canonical proof-row identity and meaning for ephemeral query-program invocation.
 Required witnesses (proof owner TestPak; gates G4/G5), also carried by `DEC-050`:
 
 ```text
+query_program_with_effect_instruction_is_rejected
 query_program_cannot_install_process
 query_program_cannot_request_write_capability
 query_program_over_work_bound_is_denied_before_execution
@@ -1063,6 +1064,25 @@ entrypoint_receipt_cannot_satisfy_query_program_execution
 Authoritative meanings:
 
 ```text
+query_program_with_effect_instruction_is_rejected
+    A query-only ProgramImage containing any node whose admitted `PakVmNodeSpec`
+    carries the `Effectful` effect posture is rejected at validation, before
+    execution. docs/07: "A pure query image cannot contain Effect instructions.
+    The validator rejects the image before execution."
+
+    The effect instructions are not enumerated here, or anywhere in prose. They
+    are exactly the nodes `spec/pakvm_isa.rs` admits with `EffectPosture::Effectful`,
+    which admission binds to the Effect algebra in both directions: an Effect-algebra
+    node cannot claim purity, and a node outside it cannot claim effectfulness. A
+    node admitted into that algebra is therefore covered on the day it is admitted,
+    with no list to update and no list to forget.
+    expects: validating a query ProgramImage that contains any node admitted with
+      the Effectful posture yields a typed rejection, with no execution performed
+      and no capability consulted
+    disposition: a typed pre-execution validation refusal naming the offending
+      node identity; a capability denial raised when the effect is attempted comes
+      too late and does not satisfy this row
+
 query_program_cannot_install_process
     An `ExecuteQueryProgram` invocation is ephemeral. Process installation and
     lifecycle hooks are forbidden to it: a query cannot leave anything behind that

@@ -2356,6 +2356,19 @@ def pakvm_isa_findings(root: Path) -> list[str]:
     for unit in declared:
         if not any(unit in v["units"] for v in views):
             out.append(f"authored work unit {unit} is accounted by no admitted PakVM node")
+    # query_program_with_effect_instruction_is_rejected (DEC-050) binds its
+    # predicate to the typed effect posture rather than to a prose list of
+    # instruction names. That only means something if the posture is inhabited: a
+    # rule quantified over an empty set is vacuously true and can never fire, so
+    # the proof row would pass forever while proving nothing.
+    effectful = [v["node"] for v in views if v["effect"] == "Effectful"]
+    if not effectful:
+        out.append("no PakVM node admits with the Effectful posture, so "
+                   "query_program_with_effect_instruction_is_rejected is vacuous")
+    pure = [v["node"] for v in views if v["effect"] != "Effectful"]
+    if not pure:
+        out.append("every PakVM node admits as Effectful, so a pure query image "
+                   "could contain no node at all")
     # An opcode never enters the semantic layer, by any route.
     if re.search(r"#\[repr\(", src):
         out.append("spec/pakvm_isa.rs: a #[repr] fixes a semantic node's representation")
