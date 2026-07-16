@@ -2815,6 +2815,109 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     return findings
 
 
+def test_seedcheck_executes_its_law(_audit) -> list[str]:
+    """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
+
+    Two rules were repaired in 5.5D4c2 after seedcheck was executed for the first
+    time. A repair with no adversary is indistinguishable from a nerf, so each one
+    is planted against here. These build and run the real binary: asserting on the
+    source text would prove the file contains a string, not that the gate bites.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    rustc = shutil.which("rustc")
+    if not rustc:
+        print("selftest: rustc unavailable; Tier 0 law fixtures NOT executed")
+        return findings
+
+    def run_seedcheck(tree: Path) -> tuple[int, str]:
+        # seedcheck bakes the typed tables in at COMPILE time via #[path], so a
+        # mutated spec/ is only tested by compiling from the mutated tree. The
+        # real seedcheck.rs is copied in rather than reproduced: a hand-written
+        # stand-in would drift from the gate it claims to test.
+        (tree / "bootstrap").mkdir(exist_ok=True)
+        if not (tree / "bootstrap/seedcheck.rs").is_file():
+            shutil.copy2(root / "bootstrap/seedcheck.rs", tree / "bootstrap/seedcheck.rs")
+        tmp = Path(tempfile.mkdtemp(prefix="batpak-tier0-"))
+        try:
+            exe = tmp / ("sc" + (".exe" if os.name == "nt" else ""))
+            for target in (None, "x86_64-pc-windows-gnu"):
+                cmd = [rustc, "--edition", "2021", "--crate-name", "sc",
+                       "-o", str(exe), str(tree / "bootstrap/seedcheck.rs")]
+                if target:
+                    cmd[1:1] = ["--target", target]
+                built = subprocess.run(cmd, capture_output=True, text=True)
+                if built.returncode == 0:
+                    break
+            else:
+                return (-1, "unavailable")
+            if not exe.is_file():
+                return (-1, "unavailable")
+            proc = subprocess.run([str(exe), str(tree)], capture_output=True, text=True)
+            return (proc.returncode, proc.stdout + proc.stderr)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def probe(name: str, rel: str, old: str, new: str, needle: str) -> None:
+        with isolated_tree() as tmp:
+            path = tmp / rel
+            path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
+                            encoding="utf-8")
+            code, out = run_seedcheck(tmp)
+            if code == -1:
+                print(f"selftest: {name} unavailable (no working linker)")
+                return
+            if code == 0:
+                findings.append(f"{name} FAILED (seedcheck admitted the mutation)")
+            elif needle not in out:
+                findings.append(f"{name} FAILED (wanted {needle!r}, got {out.strip()[:200]!r})")
+
+    # The premise: Tier 0 passes before any mutation. Without this every probe
+    # below could be red for free.
+    code, out = run_seedcheck(root)
+    if code == -1:
+        print("selftest: seedcheck unavailable; Tier 0 law fixtures NOT executed")
+        return findings
+    if code != 0:
+        findings.append(f"seedcheck_passes_before_mutation FAILED ({out.strip()[:200]!r})")
+        return findings
+
+    DI = "spec/dispositions.rs"
+    IN = "spec/invariants.rs"
+
+    # DEC-072: the CLASS decides. A class that requires a gate cannot be empty.
+    probe("gate_requiring_decision_class_with_no_gate_is_rejected", DI,
+          'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+          'gates: &[GateId::G2, GateId::G8],',
+          'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, gates: &[],',
+          "DEC-063 is implementation-bearing and names no gate")
+
+    # ...and the exception is DEC-specific. SEED declares no gate-independent
+    # class, so it must not inherit DEC's lawful emptiness. This is the probe that
+    # separates the repair from a nerf.
+    probe("seed_does_not_inherit_the_decision_gate_exception", IN,
+          "gates: &[GateId::G0, GateId::G5]",
+          "gates: &[]",
+          "names no gate")
+
+    # A generated projection is classified by its MARKER, not its filename. An
+    # authored document cannot shed its frontmatter duties by looking generated,
+    # and a projection that drops its marker takes the authored duties back.
+    probe("authored_document_cannot_evade_frontmatter_by_looking_generated",
+          "docs/GUARANTEE_GRAPH.generated.md",
+          "status: GENERATED", "status: AUTHORITATIVE",
+          "missing contract_id: in docs/GUARANTEE_GRAPH.generated.md")
+
+    # A generated projection must still name what produced it. Provenance is the
+    # price of not claiming authored authority.
+    probe("generated_projection_without_source_provenance_is_rejected",
+          "docs/GUARANTEE_GRAPH.generated.md",
+          "generated_from:", "produced_from:",
+          "missing generated_from: in docs/GUARANTEE_GRAPH.generated.md")
+
+    return findings
+
+
 def test_rust_specification_compiles(_audit) -> list[str]:
     """The typed specification surface must actually compile (5.5D4b).
 
@@ -2957,6 +3060,7 @@ def main() -> int:
     findings += test_proof_target_resolver(audit)
     findings += test_guarantee_authority(audit, project)
     findings += test_pakvm_semantic_isa(audit, project)
+    findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
     findings += canonical_drift(canonical_before)
@@ -2966,7 +3070,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures + PakVM semantic ISA + rust specification compile)")
+    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures + PakVM semantic ISA + Tier 0 execution + rust specification compile)")
     return 0
 
 
