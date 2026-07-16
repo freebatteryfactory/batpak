@@ -22,6 +22,9 @@ mod legacy_obligations;
 #[path = "../spec/reconciliation.rs"]
 mod reconciliation;
 #[allow(dead_code)] // declarative spec surface; not this binary's program
+#[path = "../spec/proof.rs"]
+mod proof;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/legacy_invariant_coverage.rs"]
 mod legacy_invariant_coverage;
 #[allow(dead_code)] // declarative spec surface; not this binary's program
@@ -91,10 +94,43 @@ fn inspect(root: &Path) -> Vec<String> {
     check_candidate_containment(&mut findings);
     check_reconciliation(&mut findings);
     check_release_seal(&mut findings);
+    check_proof_terminals(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+/// SEED-AUDITED-DENOMINATOR (5.5E1): the proof-terminal vocabulary is typed
+/// and only Passed counts green -- the fence is executed through the real
+/// counts_green(), so reclassifying a terminal reddens the running binary.
+fn check_proof_terminals(findings: &mut Vec<String>) {
+    use proof::ProofUnitTerminal as T;
+    let mut seen = BTreeSet::new();
+    for t in proof::PROOF_UNIT_TERMINALS {
+        // Exhaustive: a new terminal must be classified here, not defaulted.
+        match t {
+            T::Passed | T::Failed | T::Refused | T::Unsupported
+            | T::SkippedWithAuthority | T::Expired | T::Superseded => {}
+        }
+        if !seen.insert(format!("{t:?}")) {
+            findings.push(format!("proof terminal {t:?} is listed twice"));
+        }
+    }
+    if seen.len() != 7 {
+        findings.push(format!(
+            "a proof terminal is missing from PROOF_UNIT_TERMINALS ({} of 7)", seen.len()));
+    }
+    if !T::Passed.counts_green() {
+        findings.push("Passed no longer counts green; the denominator is vacuous".into());
+    }
+    for t in [T::Failed, T::Refused, T::Unsupported, T::SkippedWithAuthority,
+              T::Expired, T::Superseded] {
+        if t.counts_green() {
+            findings.push(format!(
+                "proof terminal {t:?} counts green; only Passed may (SEED-AUDITED-DENOMINATOR)"));
+        }
+    }
 }
 
 /// DEC-058 (5.5E1): the release seal binds one typed inventory. Three

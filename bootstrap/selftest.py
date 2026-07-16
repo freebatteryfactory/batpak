@@ -3511,6 +3511,25 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "gates: &[]",
           "names no gate")
 
+    # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
+    # as green must redden the running seedcheck through counts_green().
+    probe("expired_proof_counting_green_is_refused",
+          "spec/proof.rs",
+          "            ProofUnitTerminal::Passed => true,\n"
+          "            ProofUnitTerminal::Failed\n"
+          "            | ProofUnitTerminal::Refused\n"
+          "            | ProofUnitTerminal::Unsupported\n"
+          "            | ProofUnitTerminal::SkippedWithAuthority\n"
+          "            | ProofUnitTerminal::Expired\n"
+          "            | ProofUnitTerminal::Superseded => false,",
+          "            ProofUnitTerminal::Passed | ProofUnitTerminal::Expired => true,\n"
+          "            ProofUnitTerminal::Failed\n"
+          "            | ProofUnitTerminal::Refused\n"
+          "            | ProofUnitTerminal::Unsupported\n"
+          "            | ProofUnitTerminal::SkippedWithAuthority\n"
+          "            | ProofUnitTerminal::Superseded => false,",
+          "counts green; only Passed may")
+
     # DEC-075's retry fence is executed law, not a comment: reclassifying
     # elapsed wall time as an admissible retry signal must redden the running
     # seedcheck through the real admissible() function.

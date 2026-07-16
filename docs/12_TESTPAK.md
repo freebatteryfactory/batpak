@@ -324,8 +324,14 @@ A mutation site must be observed as activated. A green test with a dormant mutan
 
 ## Audited denominator
 
-Every planned proof unit ends as:
+Every planned proof unit ends in one semantic terminal of the typed
+vocabulary (`spec/proof.rs`, `ProofUnitTerminal`; this list is a generated
+projection). Only `Passed` counts green. Attempt outcomes -- not executed,
+timed out, infrastructure failed -- belong to the qualification-receipt
+algebra and never collapse into these terminals: a row whose attempt died has
+no semantic terminal and stays honestly unterminated in the denominator.
 
+<!-- PROOF-TERMINALS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
 ```text
 Passed
 Failed
@@ -335,6 +341,7 @@ SkippedWithAuthority
 Expired
 Superseded
 ```
+<!-- PROOF-TERMINALS:END -->
 
 Zero executed tests, missing fixture activation, stale corpus, or unqualified rule cannot silently count green.
 

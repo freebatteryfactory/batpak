@@ -557,6 +557,23 @@ def render_recon_retry(root: Path) -> str:
     return "\n".join(lines)
 
 
+TESTPAK_DOC = "docs/12_TESTPAK.md"
+
+
+def proof_terminals(root: Path) -> list[str]:
+    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    start = src.index("pub const PROOF_UNIT_TERMINALS")
+    names = re.findall(r"ProofUnitTerminal::(\w+)",
+                       src[start: src.index("\n];", start)])
+    if not names:
+        raise Unadmitted("PROOF_UNIT_TERMINALS declares no terminals")
+    return names
+
+
+def render_proof_terminals(root: Path) -> str:
+    return "\n".join(["```text"] + proof_terminals(root) + ["```"])
+
+
 RELEASE_DOC = "docs/36_PUBLIC_API_CI_AND_RELEASE.md"
 
 
@@ -1065,6 +1082,20 @@ def main() -> int:
             findings.append(f"{RELEASE_DOC}: RELEASE-SEAL does not admit: {exc}")
             seal_rewritten = seal_original
     plans.append((seal_path, seal_original, seal_rewritten))
+    pt_path = root / TESTPAK_DOC
+    pt_original = pt_path.read_text(encoding="utf-8")
+    pt_pattern = block_pattern("PROOF-TERMINALS")
+    if not pt_pattern.search(pt_original):
+        findings.append(f"{TESTPAK_DOC}: missing generated block markers for PROOF-TERMINALS")
+        pt_rewritten = pt_original
+    else:
+        try:
+            body = render_proof_terminals(root)
+            pt_rewritten = pt_pattern.sub(lambda m: m.group(1) + body + m.group(3), pt_original)
+        except Unadmitted as exc:
+            findings.append(f"{TESTPAK_DOC}: PROOF-TERMINALS does not admit: {exc}")
+            pt_rewritten = pt_original
+    plans.append((pt_path, pt_original, pt_rewritten))
     gates_path = root / GATES_DOC
     gates_original = gates_path.read_text(encoding="utf-8")
     for rel in STALE_DOCS:

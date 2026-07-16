@@ -373,6 +373,36 @@ def recon_findings(root: Path) -> list[str]:
     return out
 
 
+def proof_terminal_findings(root: Path) -> list[str]:
+    """SEED-AUDITED-DENOMINATOR (5.5E1): the proof-terminal vocabulary has one
+    typed owner; docs/12 projects it. The only-Passed-counts-green fence is
+    seedcheck's executed law; the auditor checks structure and parity."""
+    out: list[str] = []
+    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    start = src.find("pub const PROOF_UNIT_TERMINALS")
+    if start < 0:
+        return ["spec/proof.rs declares no PROOF_UNIT_TERMINALS"]
+    names = re.findall(r"ProofUnitTerminal::(\w+)", src[start: src.index("\n];", start)])
+    if len(names) != len(set(names)):
+        out.append("a proof terminal is listed twice")
+    fn = src[src.index("pub const fn counts_green"):]
+    fn = fn[: fn.index("\n    }")]
+    green = [n for arm, verdict in re.findall(
+        r"((?:ProofUnitTerminal::\w+\s*\|?\s*)+)=>\s*(true|false)", fn)
+        for n in re.findall(r"ProofUnitTerminal::(\w+)", arm) if verdict == "true"]
+    if not green or set(green) >= set(names):
+        out.append("the green classification is degenerate: the denominator "
+                   "would be vacuous or unreachable")
+    doc = (root / "docs/12_TESTPAK.md").read_text(encoding="utf-8")
+    m = re.search(r"PROOF-TERMINALS:BEGIN[^>]*-->\n(.*?)\n<!-- PROOF-TERMINALS:END",
+                  doc, re.S)
+    if m is None:
+        out.append("docs/12 carries no generated proof-terminals block")
+    elif m.group(1) != "\n".join(["```text"] + names + ["```"]):
+        out.append("docs/12 proof-terminals block drifted from spec/proof.rs")
+    return out
+
+
 def release_seal_findings(root: Path) -> list[str]:
     """DEC-058's seal binds ONE typed inventory (5.5E1). The auditor re-derives
     the field list independently, checks the docs/36 projection, and refuses a
@@ -3364,6 +3394,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
+    findings.extend(proof_terminal_findings(root))
     findings.extend(syncbat_firewall_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
