@@ -293,6 +293,41 @@ def test_stale_derivation(audit, root) -> list[str]:
         findings.append("FileBat alias is not derived to its killing decision DEC-003")
     if "made-up-stale-term" in amap:
         findings.append("alias_removed_from_decision_disappears_from_all_views FAILED")
+
+    # 5.5E2: the context vocabulary is closed in BOTH directions — the enum
+    # declares exactly what the scanner speaks, and the two never-permissive
+    # defaults cannot be allow-listed by a row.
+    def context_probe(name, old, new, needle):
+        tmp = gate_sandbox([("spec/dispositions.rs", old, new)])
+        try:
+            problems: list[str] = []
+            audit.parse_stale_vocabulary(tmp, problems)
+            if not any(needle in p for p in problems):
+                findings.append(f"{name} FAILED (wanted {needle!r}, got {problems!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    context_probe(
+        "allow_listing_production_source_is_rejected",
+        "stale_allowed_contexts: &[StaleContext::DecisionLedger, StaleContext::RejectionRecord, "
+        'StaleContext::SupersessionGuide, StaleContext::LegacyEvidence], replacement_contract: '
+        'Some(".fbat remains the BatPak-owned journal format")',
+        "stale_allowed_contexts: &[StaleContext::DecisionLedger, StaleContext::RejectionRecord, "
+        "StaleContext::SupersessionGuide, StaleContext::LegacyEvidence, "
+        'StaleContext::ProductionSource], replacement_contract: '
+        'Some(".fbat remains the BatPak-owned journal format")',
+        "allow-lists the default context ProductionSource")
+    context_probe(
+        "dropping_a_default_context_variant_is_rejected",
+        "    /// DEFAULT context for every other authoritative surface. Never permissive.\n"
+        "    OrdinaryAuthoritative,\n",
+        "",
+        "the scanner's closed vocabulary")
+    context_probe(
+        "reintroducing_a_dead_context_variant_is_rejected",
+        "    MigrationCompatibility,\n",
+        "    MigrationCompatibility,\n    TestFixture,\n",
+        "the scanner's closed vocabulary")
     return findings
 
 

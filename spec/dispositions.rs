@@ -41,9 +41,23 @@ impl Disposition {
     }
 }
 
-/// The semantic contexts in which a retired vocabulary term may still appear.
-/// Ordinary authoritative material and production/config source are NOT here:
-/// those require an inline `[STALE-REF: DEC-...]` marker to name a stale term.
+/// The CLOSED vocabulary of semantic contexts the stale-vocabulary scan
+/// speaks (5.5E2 completion). Two kinds of variant live here and the
+/// difference is law:
+///
+/// - the five PERMISSIVE contexts, which a retiring decision may name in
+///   `stale_allowed_contexts` so a retired term appears there without a
+///   marker (a ledger must be able to state what it retired);
+/// - the two DEFAULT contexts, `ProductionSource` and `OrdinaryAuthoritative`,
+///   which the scanner assigns to everything else. They are never permissive
+///   and may never appear in a row's `stale_allowed_contexts`: a stale term
+///   there requires an inline `[STALE-REF: DEC-...]` marker, always.
+///
+/// Before this completion the two defaults existed only as strings inside the
+/// auditor — the scanner spoke a vocabulary the typed owner could not name,
+/// and the enum carried `TestFixture` and `GeneratedProjection`, which no row,
+/// scanner, or document ever consumed. Dead variants deleted, spoken variants
+/// declared: a closed vocabulary is closed in both directions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaleContext {
     DecisionLedger,
@@ -51,8 +65,27 @@ pub enum StaleContext {
     SupersessionGuide,
     LegacyEvidence,
     MigrationCompatibility,
-    TestFixture,
-    GeneratedProjection,
+    /// DEFAULT context for production/config source. Never permissive.
+    ProductionSource,
+    /// DEFAULT context for every other authoritative surface. Never permissive.
+    OrdinaryAuthoritative,
+}
+
+impl StaleContext {
+    /// Whether a retiring decision may name this context in
+    /// `stale_allowed_contexts`. The defaults refuse: allow-listing them
+    /// would exempt production source or ordinary authoritative prose from
+    /// the inline-marker law wholesale.
+    pub const fn permissive(self) -> bool {
+        match self {
+            StaleContext::DecisionLedger
+            | StaleContext::RejectionRecord
+            | StaleContext::SupersessionGuide
+            | StaleContext::LegacyEvidence
+            | StaleContext::MigrationCompatibility => true,
+            StaleContext::ProductionSource | StaleContext::OrdinaryAuthoritative => false,
+        }
+    }
 }
 
 /// What a decision actually does. The class -- not the title, ID range, document

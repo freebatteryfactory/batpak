@@ -29,6 +29,15 @@ STALE_CONTEXT_BY_PATH = {
     "spec/dispositions.rs": "DecisionLedger",
 }
 STALE_PROJECTION_DOCS = ("docs/29_STATUS_AND_SUPERSESSION.md", "docs/33_AGENT_FINISH_LINE_CHECKLIST.md")
+# The closed stale-context vocabulary (5.5E2): five permissive contexts a
+# retiring decision may allow-list, plus the two DEFAULT contexts the scanner
+# assigns to everything else. The defaults are never permissive. The typed
+# enum in spec/dispositions.rs must declare exactly this set — before the
+# completion the scanner spoke two context names the typed owner could not.
+STALE_PERMISSIVE_CONTEXTS = frozenset({
+    "DecisionLedger", "RejectionRecord", "SupersessionGuide",
+    "LegacyEvidence", "MigrationCompatibility"})
+STALE_DEFAULT_CONTEXTS = frozenset({"ProductionSource", "OrdinaryAuthoritative"})
 STALE_REF_RE = re.compile(r"\[STALE-REF:\s*(DEC-\d+)\]")
 # The block is generated from spec/dispositions.rs (5.5D4b). The marker carries
 # its provenance, so the pattern must not pin the bare form.
@@ -3728,6 +3737,17 @@ def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[s
         findings.append("missing spec/dispositions.rs for stale-vocabulary derivation")
         return {}
     source = path.read_text(encoding="utf-8")
+    # The typed enum declares EXACTLY the vocabulary this scanner speaks:
+    # the five permissive contexts plus the two never-permissive defaults.
+    enum_body = re.search(r"pub enum StaleContext \{(.*?)\n\}", _uncomment(source), re.S)
+    declared = set(re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M)) if enum_body else set()
+    want = STALE_PERMISSIVE_CONTEXTS | STALE_DEFAULT_CONTEXTS
+    if declared != want:
+        findings.append(
+            f"spec/dispositions.rs StaleContext variants {sorted(declared)} != "
+            f"the scanner's closed vocabulary {sorted(want)}")
+    if not (set(STALE_CONTEXT_BY_PATH.values()) <= STALE_PERMISSIVE_CONTEXTS):
+        findings.append("audit's stale-context path map names an undeclared or non-permissive context")
     alias_map: dict[str, tuple[str, frozenset[str], str]] = {}
     row = re.compile(
         r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::\w+, gates: &\[[^\]]*\], '
@@ -3741,6 +3761,11 @@ def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[s
             findings.append(f"spec/dispositions.rs: {ident} carries stale aliases but disposition {disposition} does not retire vocabulary")
         if aliases and not contexts:
             findings.append(f"spec/dispositions.rs: {ident} has stale aliases but no allowed contexts")
+        for ctx in sorted(contexts & STALE_DEFAULT_CONTEXTS):
+            findings.append(
+                f"spec/dispositions.rs: {ident} allow-lists the default context {ctx}; "
+                "production source and ordinary authoritative material always require "
+                "an inline STALE-REF")
         for alias in aliases:
             key = alias.lower()
             if key in alias_map:

@@ -741,6 +741,32 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             | dispositions::Disposition::OpenImplementation
             | dispositions::Disposition::RetainAsEvidence => {}
         }
+        // The stale-context vocabulary is closed in both directions (5.5E2):
+        // the scanner's two DEFAULT contexts are declared variants, and a row
+        // may never allow-list them — that would exempt production source or
+        // ordinary authoritative prose from the inline STALE-REF law
+        // wholesale. Executed through the real permissive(), so reclassifying
+        // a default as permissive reddens the running binary.
+        for context in value.stale_allowed_contexts {
+            // Exhaustive: a new context must be classified here, not defaulted.
+            match context {
+                dispositions::StaleContext::DecisionLedger
+                | dispositions::StaleContext::RejectionRecord
+                | dispositions::StaleContext::SupersessionGuide
+                | dispositions::StaleContext::LegacyEvidence
+                | dispositions::StaleContext::MigrationCompatibility
+                | dispositions::StaleContext::ProductionSource
+                | dispositions::StaleContext::OrdinaryAuthoritative => {}
+            }
+            if !context.permissive() {
+                findings.push(format!(
+                    "{} allow-lists the default context {context:?}; a stale term in \
+                     production source or ordinary authoritative material always \
+                     requires an inline STALE-REF",
+                    value.id
+                ));
+            }
+        }
     }
     for value in invariants::INVARIANTS {
         check_gates(value.id, value.gates, findings);
