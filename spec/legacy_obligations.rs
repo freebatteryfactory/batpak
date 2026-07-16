@@ -135,3 +135,26 @@ pub const OBLIGATIONS: &[LegacyObligation] = &[
     LegacyObligation { id: "LEG-086", law: "Projection replay classifies a wrong event kind as a normal filter while a matched kind with decode or apply failure is a typed terminal; full replay, incremental replay, cache rebuild, and checkpoint restore agree on the first failing event and failure class, and no cache or checkpoint downgrades the failure to a miss or a silent skip", clean_owner: "batpak::projection", gates: &[GateId::G2, GateId::G3], compatibility_disposition: CompatibilityDisposition::None, deletion_condition: DeletionCondition::OnSuccessorGateClosure, active_or_closed_status: ObligationStatus::Active },
     LegacyObligation { id: "LEG-087", law: "An injected non-host storage backend makes ambient host filesystem access unreachable, including diagnostics and evidence collection; no probe, fallback, or evidence path touches the host filesystem when the storage port is virtual", clean_owner: "batpak::storage_port", gates: &[GateId::G2, GateId::G3], compatibility_disposition: CompatibilityDisposition::None, deletion_condition: DeletionCondition::OnSuccessorGateClosure, active_or_closed_status: ObligationStatus::Active },
 ];
+
+/// The one lawful LEG lifetime derivation (5.5C1a), executed in Rust since
+/// the 5.5E2 bake. A LEG row names a clean owner and gates but no typed
+/// successor GuaranteeRef, so an active gate-closed obligation is `UntilGate`
+/// (`UntilSuccessor` requires a resolved typed successor, which the LEG
+/// schema does not provide); a closed row is retained evidence; a
+/// compatibility-bound row cannot retire before its window.
+pub const fn legacy_lifetime(
+    status: ObligationStatus,
+    deletion: DeletionCondition,
+) -> crate::guarantees::GuaranteeLifetime {
+    use crate::guarantees::GuaranteeLifetime;
+    match (status, deletion) {
+        (ObligationStatus::Closed, _) => GuaranteeLifetime::ClosedEvidence,
+        (ObligationStatus::Active, DeletionCondition::OnCompatibilityWindowExpiry) => {
+            GuaranteeLifetime::UntilCompatibilityExpiry
+        }
+        (ObligationStatus::Active, DeletionCondition::Never)
+        | (ObligationStatus::Active, DeletionCondition::OnSuccessorGateClosure) => {
+            GuaranteeLifetime::UntilGate
+        }
+    }
+}

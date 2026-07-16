@@ -67,10 +67,131 @@ fn inspect(root: &Path) -> Vec<String> {
     check_reconciliation(&mut findings);
     check_release_seal(&mut findings);
     check_proof_terminals(&mut findings);
+    check_guarantee_admission(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
+}
+
+/// The cross-family guarantee admission law, EXECUTED (5.5E2 bake). Until
+/// this check existed, `spec::guarantees::admit` had Rust vocabulary and a
+/// Python reconstruction but no Rust execution path: every native row across
+/// all five families now passes through the real sealed admission, and the
+/// refusals are exercised with hostile sources so the reachable-refusal
+/// question has an executed answer, not a plausible one.
+fn check_guarantee_admission(findings: &mut Vec<String>) {
+    use guarantees::{admit, GuaranteeSource, QualificationTarget, SourceFailure};
+    let mut admitted = 0usize;
+    let push_err = |findings: &mut Vec<String>, id: &str, law: &str| {
+        findings.push(format!("guarantee {id} does not admit: {law}"));
+    };
+    for row in invariants::INVARIANTS {
+        match admit(&GuaranteeSource {
+            family: "SEED", id: row.id, row_kind: Some(row.kind),
+            row_lifetime: Some(row.lifetime), row_owner: Some(row.owner),
+            row_gates: Some(row.gates), legacy_status: None, legacy_deletion: None,
+            decision_disposition: None, decision_class: None,
+            qualification_target: None,
+            failure: SourceFailure::Seed(row.failure_disposition),
+        }) {
+            Ok(_) => admitted += 1,
+            Err(e) => push_err(findings, row.id, e.law),
+        }
+    }
+    for row in legacy_obligations::OBLIGATIONS {
+        match admit(&GuaranteeSource {
+            family: "LEG", id: row.id, row_kind: None, row_lifetime: None,
+            row_owner: Some(row.clean_owner), row_gates: Some(row.gates),
+            legacy_status: Some(row.active_or_closed_status),
+            legacy_deletion: Some(row.deletion_condition),
+            decision_disposition: None, decision_class: None,
+            qualification_target: None, failure: SourceFailure::Legacy(row.law),
+        }) {
+            Ok(_) => admitted += 1,
+            Err(e) => push_err(findings, row.id, e.law),
+        }
+    }
+    for row in dispositions::DECISIONS {
+        match admit(&GuaranteeSource {
+            family: "DEC", id: row.id, row_kind: None, row_lifetime: None,
+            row_owner: None, row_gates: Some(row.gates),
+            legacy_status: None, legacy_deletion: None,
+            decision_disposition: Some(row.disposition),
+            decision_class: Some(row.class),
+            qualification_target: None, failure: SourceFailure::Decision(row.subject),
+        }) {
+            Ok(_) => admitted += 1,
+            Err(e) => push_err(findings, row.id, e.law),
+        }
+    }
+    for pkg in architecture::PACKAGES {
+        let id: &'static str = Box::leak(format!("ARCH-{}", pkg.package).into_boxed_str());
+        match admit(&GuaranteeSource {
+            family: "ARCH", id, row_kind: None, row_lifetime: None,
+            row_owner: None, row_gates: None, legacy_status: None,
+            legacy_deletion: None, decision_disposition: None, decision_class: None,
+            qualification_target: None, failure: SourceFailure::Architecture(pkg.role),
+        }) {
+            Ok(_) => admitted += 1,
+            Err(e) => push_err(findings, id, e.law),
+        }
+    }
+    for q in architecture::QUALIFICATION_PROFILES {
+        let id: &'static str =
+            Box::leak(format!("QUAL-{}-{}", q.package, q.profile).into_boxed_str());
+        match admit(&GuaranteeSource {
+            family: "QUAL", id, row_kind: None, row_lifetime: None,
+            row_owner: None, row_gates: Some(q.gates), legacy_status: None,
+            legacy_deletion: None, decision_disposition: None, decision_class: None,
+            qualification_target: Some(QualificationTarget(q.target)),
+            failure: SourceFailure::Qualification(q.requirement),
+        }) {
+            Ok(_) => admitted += 1,
+            Err(e) => push_err(findings, id, e.law),
+        }
+    }
+    if admitted == 0 {
+        findings.push("guarantee admission admitted nothing; the desk is closed".into());
+    }
+    // Reachable refusals, exercised through the production door. Each hostile
+    // source must fail for ITS reason.
+    let hostile = GuaranteeSource {
+        family: "DEC", id: "DEC-000-HOSTILE", row_kind: None, row_lifetime: None,
+        row_owner: None, row_gates: Some(&[]), legacy_status: None,
+        legacy_deletion: None,
+        decision_disposition: Some(dispositions::Disposition::Lock),
+        decision_class: Some(dispositions::DecisionClass::Enforcement),
+        qualification_target: None, failure: SourceFailure::Decision("hostile"),
+    };
+    match admit(&hostile) {
+        Ok(_) => findings.push(
+            "an implementation-bearing decision with no gates was admitted".into()),
+        Err(e) => {
+            if e.law != "an implementation-bearing decision names at least one gate" {
+                findings.push(format!(
+                    "the gateless-decision refusal fired for the wrong law: {}", e.law));
+            }
+        }
+    }
+    let hostile = GuaranteeSource {
+        family: "QUAL", id: "QUAL-HOSTILE", row_kind: None, row_lifetime: None,
+        row_owner: None, row_gates: Some(&[gates::GateId::G0]), legacy_status: None,
+        legacy_deletion: None, decision_disposition: None, decision_class: None,
+        qualification_target: None, failure: SourceFailure::Qualification("hostile"),
+    };
+    if admit(&hostile).is_ok() {
+        findings.push("a qualification requirement without a target was admitted".into());
+    }
+    let hostile = GuaranteeSource {
+        family: "UNKNOWN", id: "X-HOSTILE", row_kind: None, row_lifetime: None,
+        row_owner: None, row_gates: None, legacy_status: None, legacy_deletion: None,
+        decision_disposition: None, decision_class: None,
+        qualification_target: None, failure: SourceFailure::Seed("hostile"),
+    };
+    if admit(&hostile).is_ok() {
+        findings.push("an undeclared family was admitted".into());
+    }
 }
 
 /// SEED-AUDITED-DENOMINATOR (5.5E1): the proof-terminal vocabulary is typed

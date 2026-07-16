@@ -273,3 +273,153 @@ pub struct GuaranteeView {
     pub witness: WitnessPosture,
     pub failure: SourceFailure,
 }
+
+/// The raw material ONE native row supplies to admission (5.5E2 bake). Every
+/// `Option` is "the row authored this" — `None` is an authored silence the
+/// family policy must lawfully fill or admission refuses. Nothing here is a
+/// default.
+#[derive(Clone, Copy, Debug)]
+pub struct GuaranteeSource {
+    pub family: &'static str,
+    pub id: GuaranteeRef,
+    pub row_kind: Option<GuaranteeKind>,
+    pub row_lifetime: Option<GuaranteeLifetime>,
+    pub row_owner: Option<&'static str>,
+    pub row_gates: Option<&'static [crate::gates::GateId]>,
+    /// LEG derivation inputs (status + deletion condition).
+    pub legacy_status: Option<crate::legacy_obligations::ObligationStatus>,
+    pub legacy_deletion: Option<crate::legacy_obligations::DeletionCondition>,
+    /// DEC derivation inputs (disposition + class).
+    pub decision_disposition: Option<crate::dispositions::Disposition>,
+    pub decision_class: Option<crate::dispositions::DecisionClass>,
+    pub qualification_target: Option<QualificationTarget>,
+    pub failure: SourceFailure,
+}
+
+/// A refusal names the law and the repair direction (Refusals are API,
+/// docs/14): the id locates the row, `law` states what admission required.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GuaranteeAdmissionFailure {
+    pub id: GuaranteeRef,
+    pub law: &'static str,
+}
+
+/// Proof that `admit` produced this view. The seal is private: no generator,
+/// auditor, projector, or fixture can mint one, so a `GuaranteeView` wearing
+/// this wrapper has passed the admission law by construction — the same
+/// sealed-witness shape as `AdmittedAsPublicSemanticNode` and
+/// `AdmittedCrossing`, arriving at the family that waited longest for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AdmittedGuarantee {
+    pub view: GuaranteeView,
+    seal: (),
+}
+
+/// Admit one native row through its family policy. Every `GuaranteeView`
+/// field resolves through exactly one of: a direct authored row value, a
+/// declared family constant, or one named lawful derivation — and admission
+/// fails closed when a required field has no such source. This function IS
+/// the admission law: until the 5.5E2 bake it existed only as a Python
+/// reconstruction (`audit.admit_view`), which meant the cross-family law had
+/// Rust vocabulary and no Rust execution path.
+pub fn admit(source: &GuaranteeSource) -> Result<AdmittedGuarantee, GuaranteeAdmissionFailure> {
+    let refuse = |law: &'static str| GuaranteeAdmissionFailure { id: source.id, law };
+    let policy = GUARANTEE_FAMILY_POLICIES
+        .iter()
+        .find(|p| p.family == source.family)
+        .ok_or(refuse("no declared family policy admits this family"))?;
+    let kind = match policy.kind {
+        KindRule::RowDeclared => source
+            .row_kind
+            .ok_or(refuse("the family reads kind from the row and the row states none"))?,
+        KindRule::FamilyConstant(k) => {
+            if source.row_kind.is_some() && source.row_kind != Some(k) {
+                return Err(refuse("the row contradicts its family's constant kind"));
+            }
+            k
+        }
+    };
+    let owner = match policy.owner {
+        OwnerRule::RowDeclared => source
+            .row_owner
+            .ok_or(refuse("the family reads owner from the row and the row states none"))?,
+        OwnerRule::FamilyConstant(o) => o,
+    };
+    if owner.trim().is_empty() {
+        return Err(refuse("an admitted guarantee names a non-empty owner"));
+    }
+    let lifetime = match policy.lifetime {
+        LifetimeRule::RowDeclared => source
+            .row_lifetime
+            .ok_or(refuse("the family reads lifetime from the row and the row states none"))?,
+        LifetimeRule::FamilyConstant(l) => l,
+        LifetimeRule::FromLegacyStatusAndDeletion => {
+            let status = source
+                .legacy_status
+                .ok_or(refuse("LEG lifetime derives from status, which is absent"))?;
+            let deletion = source
+                .legacy_deletion
+                .ok_or(refuse("LEG lifetime derives from deletion condition, which is absent"))?;
+            crate::legacy_obligations::legacy_lifetime(status, deletion)
+        }
+        LifetimeRule::FromDecisionDisposition => source
+            .decision_disposition
+            .ok_or(refuse("DEC lifetime derives from disposition, which is absent"))?
+            .guarantee_lifetime(),
+    };
+    let gate_posture = match policy.gate_posture {
+        GatePostureRule::RowDeclared => match source.row_gates {
+            Some(gates) if !gates.is_empty() => GatePosture::Scheduled(gates),
+            _ => return Err(refuse("the family reads gates from the row and the row names none")),
+        },
+        GatePostureRule::FamilyConstant(g) => g,
+        GatePostureRule::FromDecisionDispositionClassAndGates => {
+            let disposition = source
+                .decision_disposition
+                .ok_or(refuse("DEC gate posture derives from disposition, which is absent"))?;
+            let class = source
+                .decision_class
+                .ok_or(refuse("DEC gate posture derives from class, which is absent"))?;
+            let gates = source.row_gates.unwrap_or(&[]);
+            let retired =
+                disposition.guarantee_lifetime() == GuaranteeLifetime::HistoricalCoverageOnly;
+            if !gates.is_empty() {
+                if retired {
+                    GatePosture::HistoricalAssociation(gates)
+                } else {
+                    GatePosture::Scheduled(gates)
+                }
+            } else if class.requires_gate() {
+                return Err(refuse(
+                    "an implementation-bearing decision names at least one gate",
+                ));
+            } else {
+                GatePosture::GateIndependent
+            }
+        }
+    };
+    if matches!(policy.witness, WitnessPosture::QualificationReceipt)
+        && source.qualification_target.is_none()
+    {
+        return Err(refuse("a qualification requirement names its target environment"));
+    }
+    if !matches!(policy.witness, WitnessPosture::QualificationReceipt)
+        && source.qualification_target.is_some()
+    {
+        return Err(refuse("only qualification requirements carry a target environment"));
+    }
+    Ok(AdmittedGuarantee {
+        view: GuaranteeView {
+            id: source.id,
+            family: policy.family,
+            kind,
+            lifetime,
+            owner,
+            gate_posture,
+            qualification_target: source.qualification_target,
+            witness: policy.witness,
+            failure: source.failure,
+        },
+        seal: (),
+    })
+}
