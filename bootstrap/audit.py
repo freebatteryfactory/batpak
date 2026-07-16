@@ -2250,6 +2250,7 @@ def pakvm_isa_views(root: Path) -> list[dict]:
     names = _a_isa_dispatch(src, "authored_name", r'"(?:[^"\\]|\\.)*"')
     operands = _a_isa_dispatch(src, "operand_sorts", r'"(?:[^"\\]|\\.)*"')
     results = _a_isa_dispatch(src, "result_sorts", r'"(?:[^"\\]|\\.)*"')
+    surfaces = _a_isa_dispatch(src, "authoring_surface", r"NodeAuthoringSurface::\w+")
     algebra_pol = _a_isa_policy(src, "pub const PAKVM_ALGEBRA_POLICIES", "algebra")
     class_pol = _a_isa_policy(src, "pub const PAKVM_NODE_CLASS_POLICIES", "class")
     family_units: dict[str, list[str]] = {}
@@ -2315,6 +2316,10 @@ def pakvm_isa_views(root: Path) -> list[dict]:
         view["origin"] = origins.get(alg, "")
         if not view["origin"]:
             raise IsaAdmissionFailure(f"{node}: {alg} names no source origin")
+        surface = surfaces.get(node, "").split("::")[-1]
+        if not surface:
+            raise IsaAdmissionFailure(f"{node}: authoring_surface() names no lawful producer")
+        view["surface"] = surface
         views.append(view)
     return views
 
@@ -2338,6 +2343,25 @@ def pakvm_isa_findings(root: Path) -> list[str]:
             out.append(f"spec/pakvm_isa.rs: PakVM nodes {seen[v['name']]} and {v['node']} "
                        f"share the authored name {v['name']!r}")
         seen[v["name"]] = v["node"]
+    # A node whose only lawful producer is canonical ProgramImage authoring is
+    # not part of the frozen BatQL V1 language. Its authored name appearing in
+    # docs/13's semantic-algebra MEMBER LISTS (the first line under each ###
+    # heading; explanatory prose below may lawfully discuss it) would re-admit
+    # it as source-language law without the language-amendment process.
+    d13 = (root / "docs/13_BATQL_CONTRACT.md").read_text(encoding="utf-8")
+    m = re.search(r"## Semantic algebras\n(.*?)\n## ", d13, re.S)
+    if m is None:
+        out.append("docs/13 declares no semantic-algebras inventory")
+    else:
+        members = " ".join(h.group(1) for h in re.finditer(r"###[^\n]*\n+([^\n]+)", m.group(1)))
+        for v in views:
+            if v["surface"] != "BatQlLowered" and re.search(
+                    r"\b" + re.escape(v["name"]) + r"\b", members):
+                out.append(
+                    f"docs/13 lists {v['name']!r} as a BatQL semantic-algebra member, but its "
+                    f"authoring surface is {v['surface']} (spec/pakvm_isa.rs): source-language "
+                    f"membership enters through the language-amendment law, never to make "
+                    f"inventories agree")
     # The work planes partition the authored unit vocabulary. Derived from the
     # spec's own plane declarations: this states no plane membership of its own.
     src = (A_ISA_SRC and (root / A_ISA_SRC).read_text(encoding="utf-8"))

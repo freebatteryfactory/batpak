@@ -82,7 +82,14 @@ BatQL compilation produces a canonical ProgramImage. Source may be compiled loca
 
 ### Query/dataflow
 
-Source, subject, snapshot, time range, filter, fold, match, partition, group, aggregate, join, order, page, project, proof request.
+Source, subject, snapshot, time range, filter, fold, match, partition, group, aggregate, order, page, project, proof request.
+
+`join` is not part of this algebra and has no BatQL V1 surface: the frozen
+grammar permits one primary source per query. The PakVM `Join` node remains a
+public semantic node whose only lawful producer is canonical ProgramImage
+authoring through ordinary validation and admission
+(`spec/pakvm_isa.rs::authoring_surface`, 5.5E1 ruling). JOIN syntax enters, if
+ever, through the language-amendment law — never to make inventories agree.
 
 ### Formula/decision
 

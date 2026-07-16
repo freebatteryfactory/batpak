@@ -112,6 +112,19 @@ A pure query image cannot contain Effect instructions. The validator rejects the
 
 Each algebra accounts its work on its own plane, and the three planes partition the authored work-accounting vocabulary: no unit belongs to two algebras, and none belongs to none. This scopes to the public semantic ISA above; internal lowering identities and specialized plans are a different layer with their own accounting.
 
+## Node authoring surfaces (5.5E1)
+
+Every admitted node names the surface that may lawfully produce it
+(`spec/pakvm_isa.rs::authoring_surface`, total by construction). All V1 nodes
+are `BatQlLowered` except `join`, which is `CanonicalProgramImageOnly`: the
+frozen BatQL grammar permits one primary source per query and carries no JOIN
+syntax, so `join`'s only lawful production path is canonical ProgramImage
+authoring through ordinary decoding, independent validation, and admission.
+An external compiler or SDK may encode such an image, but authorship grants no
+trust — admission remains the authority (docs/10, DEC-051). A node with no
+lawful producer through any admitted surface is invalid, and source-language
+membership changes travel through the language-amendment law only.
+
 Node signatures, in the closed value algebra. No generic host object or `Any` value crosses the boundary:
 
 <!-- PAKVM-SIGNATURES:BEGIN generated from spec/pakvm_isa.rs by bootstrap/project.py; do not edit -->

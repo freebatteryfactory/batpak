@@ -2795,6 +2795,23 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
           "effect is declared by neither its algebra nor its class",
           "        effect: PakVmRule::ClassDeclared,")
 
+    # --- authoring surface: every node names a lawful producer (5.5E1) --------
+    # Join is the one V1 node the frozen grammar cannot express; deleting its
+    # authoring arm must refuse admission (rustc separately refuses the
+    # non-exhaustive match under tier0-seedcheck), and smuggling 'join' back
+    # into docs/13's member list must be caught as language re-admission.
+    probe("a_node_with_no_lawful_producer_is_refused", ISA,
+          "            PakVmNodeId::Join => NodeAuthoringSurface::CanonicalProgramImageOnly,\n",
+          "Join: authoring_surface() names no lawful producer",
+          "")
+    probe("join_reentering_the_batql_member_list_is_rejected",
+          "docs/13_BATQL_CONTRACT.md",
+          "Source, subject, snapshot, time range, filter, fold, match, partition, "
+          "group, aggregate, order, page, project, proof request.",
+          "as a BatQL semantic-algebra member",
+          "Source, subject, snapshot, time range, filter, fold, match, partition, "
+          "group, aggregate, join, order, page, project, proof request.")
+
     # --- work-formula lineage, not coverage -----------------------------------
     # Coverage cannot catch these: the wrong family still claims its unit.
     probe("windowing_accounted_by_returned_output_does_not_admit", ISA,

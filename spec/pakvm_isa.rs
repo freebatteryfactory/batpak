@@ -351,6 +351,34 @@ pub enum CandidateLoweringPosture {
     InternalLoweringIdentity,
 }
 
+/// Which admitted surface may PRODUCE a node (5.5E1 ruling). Orthogonal to
+/// algebra and class: this answers "who may author it", not "what it means".
+///
+/// A public semantic node is invalid only when it has no lawful producer
+/// through any admitted surface. The producer path for a node carrying
+/// `CanonicalProgramImageOnly` is canonical ProgramImage authoring → ordinary
+/// ProgramImage decoding → independent validation → admission. An external
+/// compiler or SDK may encode such a node, but authorship grants no trust:
+/// admission remains the authority, and compiler provenance bypasses nothing
+/// (docs/10, DEC-051; `compiler_emitted_invalid_image_is_rejected`).
+///
+/// There is deliberately no `ContractLowered` variant: MacBat generates
+/// contract vocabulary, not ProgramImages, so no V1 node names such a
+/// producer. A variant with no consumer is the GateResolution species; a
+/// contract-lowering surface enters this enum together with its first
+/// producer, by ruling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeAuthoringSurface {
+    /// The frozen BatQL V1 language lowers to this node. The node need not
+    /// have its own keyword: `Seek` has no syntax, but `GET` lowers to it
+    /// (docs/13 bounded traversal lowering).
+    BatQlLowered,
+    /// Reachable only as authored canonical ProgramImage bytes. Not part of
+    /// the frozen BatQL V1 source grammar; naming it in BatQL's semantic
+    /// algebras is a finding unless the language-amendment law admits it.
+    CanonicalProgramImageOnly,
+}
+
 /// Proof that admission classified a node as a public semantic node.
 ///
 /// The unit field is private, so this is constructible ONLY inside this module
@@ -704,6 +732,56 @@ impl PakVmNodeId {
             | PakVmNodeId::StageArtifact
             | PakVmNodeId::EmitResult
             | PakVmNodeId::AdvanceCheckpointIntent => PakVmAlgebra::Effect,
+        }
+    }
+
+    /// Authored producer surface. Total by construction: a new node cannot be
+    /// added without stating who may lawfully author it, and deleting a node's
+    /// arm refuses at compile time — "no legal producer" is unrepresentable.
+    ///
+    /// `Join` is the one V1 node the frozen BatQL grammar cannot express
+    /// (single primary source per query; no JOIN syntax, and none is added to
+    /// rescue an enum variant). It remains a public semantic node because a
+    /// validated canonical ProgramImage is a real production door; it enters
+    /// BatQL, if ever, through the full language-amendment law.
+    pub const fn authoring_surface(self) -> NodeAuthoringSurface {
+        match self {
+            PakVmNodeId::Join => NodeAuthoringSurface::CanonicalProgramImageOnly,
+            PakVmNodeId::Literal
+            | PakVmNodeId::Binding
+            | PakVmNodeId::Field
+            | PakVmNodeId::Let
+            | PakVmNodeId::Compare
+            | PakVmNodeId::All
+            | PakVmNodeId::Any
+            | PakVmNodeId::Not
+            | PakVmNodeId::Case
+            | PakVmNodeId::Allow
+            | PakVmNodeId::Deny
+            | PakVmNodeId::Defer
+            | PakVmNodeId::Require
+            | PakVmNodeId::Margin
+            | PakVmNodeId::Explain
+            | PakVmNodeId::KernelCall
+            | PakVmNodeId::Scan
+            | PakVmNodeId::Seek
+            | PakVmNodeId::Select
+            | PakVmNodeId::Filter
+            | PakVmNodeId::Project
+            | PakVmNodeId::Fold
+            | PakVmNodeId::Group
+            | PakVmNodeId::Aggregate
+            | PakVmNodeId::SequenceMatch
+            | PakVmNodeId::Sort
+            | PakVmNodeId::Page
+            | PakVmNodeId::Limit
+            | PakVmNodeId::MaterializeTile
+            | PakVmNodeId::Append
+            | PakVmNodeId::AppendBatch
+            | PakVmNodeId::RequestEffect
+            | PakVmNodeId::StageArtifact
+            | PakVmNodeId::EmitResult
+            | PakVmNodeId::AdvanceCheckpointIntent => NodeAuthoringSurface::BatQlLowered,
         }
     }
 
