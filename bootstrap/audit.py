@@ -3903,22 +3903,34 @@ def contract_kind_findings(root: Path) -> list[str]:
             out.append(f"ContractKind::{kind} tags {ident!r} as dec, whose family "
                        "owns the DEC- prefix")
         elif ident not in (leg_ids | dec_ids):
-            out.append(f"ContractKind::{kind} cites admitting guarantee {ident}, "
+            out.append(f"ContractKind::{kind} cites admission basis {ident}, "
                        "which no declared row owns")
     for kind in set(variants) - {k for k, _, _ in tagged}:
-        out.append(f"ContractKind::{kind} cites no admitting guarantee")
-    # docs/06 projects EXACTLY the admitted kinds: first token per fence line.
+        out.append(f"ContractKind::{kind} cites no admission basis")
+    # docs/06 projects EXACTLY the ordered (kind, admission-basis) pairs, in
+    # ContractKind::ALL order. The first two tokens of each fence line are
+    # semantic identity the typed owner projects; the explanatory tail is
+    # authored prose and carries none. Comparing sets of kind names alone
+    # would let the doc confidently explain the wrong provenance.
+    spelling_of = dict(re.findall(r'ContractKind::(\w+) => "(\w+)",', src))
+    basis_of = {k: ident for k, _tag, ident in tagged}
+    expected = [(spelling_of.get(v, ""), basis_of.get(v, "")) for v in inventory]
     doc = (root / "docs/06_MACBAT.md").read_text(encoding="utf-8")
     fence = A_CONTRACT_KIND_FENCE.search(doc)
     if not fence:
         out.append("docs/06 carries no admitted-kinds fence")
         return out
-    listed = [line.split()[0] for line in fence.group(1).splitlines() if line.strip()]
-    spellings = re.findall(r'ContractKind::\w+ => "(\w+)",', src)
-    for missing in sorted(set(spellings) - set(listed)):
-        out.append(f"docs/06 omits admitted contract kind {missing}")
-    for phantom in sorted(set(listed) - set(spellings)):
-        out.append(f"docs/06 admits {phantom}, which ContractKind does not declare")
+    listed = [tuple(line.split()[:2]) for line in fence.group(1).splitlines()
+              if line.strip()]
+    for i, want in enumerate(expected):
+        if i >= len(listed):
+            out.append(f"docs/06 omits admitted contract kind row {want[0]} {want[1]}")
+        elif listed[i] != want:
+            out.append(
+                f"docs/06 row {i + 1} states {listed[i][0]} {listed[i][1] if len(listed[i]) > 1 else '?'}; "
+                f"the typed catalog states {want[0]} {want[1]} at that position")
+    for extra in listed[len(expected):]:
+        out.append(f"docs/06 admits {extra[0]}, which ContractKind does not declare")
     return out
 
 

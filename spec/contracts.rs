@@ -13,9 +13,15 @@
 
 use crate::guarantees::GuaranteeRef;
 
-/// One admitted contract kind. Every kind CITES the guarantee that admits
-/// it — a typed, resolvable reference, so a kind whose law is deleted or
-/// retired reddens the running seedcheck instead of surviving as a label.
+/// One admitted contract kind. Every kind CITES its admission basis — the
+/// retained law under which it earned entry — as a typed, resolvable
+/// reference. The lifecycle law is three-tiered: a basis reference that is
+/// DELETED or DANGLING refuses the kind; a basis that is lawfully closed,
+/// superseded, or retained as historical evidence still resolves and the
+/// kind remains admitted (closing the founding obligation must not erase
+/// the public vocabulary it earned — Process already cites superseded
+/// DEC-009); removing or replacing a KIND requires an explicit ContractKind
+/// amendment with evidence, never a side effect of basis lifecycle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContractKind {
     /// Typed refusal/error shape (Refusals are API; error class and public
@@ -25,7 +31,9 @@ pub enum ContractKind {
     /// evolves on read).
     Event,
     /// Language-neutral schema identity, versions, canonical bytes, goldens,
-    /// and their codecs.
+    /// and their codecs. ONE MacBat declaration family — not a claim that
+    /// SchemaId and CodecId are interchangeable identities; the identity
+    /// catalog preserves that distinction.
     SchemaCodec,
     /// Projection query authority: contract, selector, shape, bounds, source
     /// stamp, completeness, and proof.
@@ -34,7 +42,9 @@ pub enum ContractKind {
     /// terminals.
     Subscription,
     /// Declared operations and their typed effect rows crossing capability
-    /// terminals.
+    /// terminals. ONE declaration family — not a claim that logical-operation
+    /// identity and physical effect evidence are one authority; the identity
+    /// catalog preserves that distinction.
     OperationEffect,
     /// Process identity and lifecycle: ProcessContract + Coordinate +
     /// ProcessGeneration.
@@ -70,10 +80,12 @@ impl ContractKind {
         }
     }
 
-    /// The guarantee that ADMITS this kind: the corpus law under which one
-    /// declaration is already canonical with real adopters and named proof
-    /// surfaces. Resolution is executed seedcheck law.
-    pub const fn admitting_guarantee(self) -> GuaranteeRef {
+    /// The ADMISSION BASIS: the retained corpus law under which one
+    /// declaration became canonical with real adopters and named proof
+    /// surfaces. Resolution (presence in the declared tables) is executed
+    /// seedcheck law; the basis is NOT required to remain an active
+    /// obligation — see the lifecycle law on the enum.
+    pub const fn admission_basis(self) -> GuaranteeRef {
         match self {
             ContractKind::Error => GuaranteeRef::leg("LEG-047"),
             ContractKind::Event => GuaranteeRef::leg("LEG-002"),

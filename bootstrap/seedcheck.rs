@@ -245,8 +245,9 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
 /// The admitted contract kinds are coherent (5.5E3c): every variant is
 /// classified, spellings are unique and nonempty, and every kind's
 /// admitting guarantee RESOLVES through the same law the relations and
-/// witnesses use — a kind whose admitting law is deleted or mistyped
-/// reddens the running binary instead of surviving as a label.
+/// witnesses use. Lifecycle law: a DELETED or DANGLING basis refuses the
+/// kind; a lawfully closed, superseded, or historically retained basis
+/// still resolves and the kind remains admitted.
 fn check_contract_kinds(findings: &mut Vec<String>) {
     let mut seen = BTreeSet::new();
     for kind in contracts::ContractKind::ALL {
@@ -271,10 +272,10 @@ fn check_contract_kinds(findings: &mut Vec<String>) {
                 kind.spelling()
             ));
         }
-        let admitting = kind.admitting_guarantee();
-        if !guarantee_ref_resolves(admitting) {
+        let basis = kind.admission_basis();
+        if !guarantee_ref_resolves(basis) {
             findings.push(format!(
-                "{kind:?} cites admitting guarantee {admitting:?}, which resolves \
+                "{kind:?} cites admission basis {basis:?}, which resolves \
                  to no declared row"
             ));
         }

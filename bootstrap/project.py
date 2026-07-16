@@ -507,6 +507,38 @@ def render_guarantee_graph(root):
 
 NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
+CONTRACT_DOC = "docs/06_MACBAT.md"
+_CONTRACT_FENCE = re.compile(
+    r"(The admitted kinds, each with its admitting law:\s*\n+```text\n)(.*?)(\n```)", re.S)
+
+
+def parse_contract_kinds(root):
+    """Ordered (spelling, admission-basis id) pairs, in ContractKind::ALL
+    order, from the typed owner."""
+    src = (root / "spec/contracts.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[ContractKind\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"ContractKind::(\w+)", all_body.group(1)) if all_body else []
+    spelling = dict(re.findall(r'ContractKind::(\w+) => "(\w+)",', src))
+    basis = dict(re.findall(
+        r'ContractKind::(\w+) => GuaranteeRef::(?:leg|dec)\("([^"]+)"\)', src))
+    return [(spelling.get(v, ""), basis.get(v, "")) for v in inventory]
+
+
+def render_contract_kind_columns(root, fence_body):
+    """Rewrite the kind and basis COLUMNS from the typed owner, preserving
+    each line's authored prose tail: the first two tokens are projected
+    semantic identity, the tail carries none."""
+    pairs = parse_contract_kinds(root)
+    lines = [line for line in fence_body.splitlines() if line.strip()]
+    out = []
+    for i, (kind, basis) in enumerate(pairs):
+        tail = ""
+        if i < len(lines):
+            tokens = lines[i].split(None, 2)
+            tail = tokens[2] if len(tokens) > 2 else ""
+        out.append(f"{kind:<16} {basis:<9} {tail}".rstrip())
+    return "\n".join(out)
 
 
 # --- Toolchain projection (5.5E3a) -------------------------------------------
@@ -1198,6 +1230,19 @@ def main() -> int:
     graph_path = root / GUARANTEE_DOC
     graph_original = graph_path.read_text(encoding="utf-8") if graph_path.is_file() else ""
     plans.append((graph_path, graph_original, render_guarantee_graph(root)))
+    # The admitted-kinds fence (5.5E3c1): the kind and admission-basis
+    # COLUMNS are projected from spec/contracts.rs in ContractKind::ALL
+    # order; the authored prose tails are preserved because they carry no
+    # semantic identity.
+    ck_path = root / CONTRACT_DOC
+    ck_original = ck_path.read_text(encoding="utf-8")
+    if not _CONTRACT_FENCE.search(ck_original):
+        findings.append(f"{CONTRACT_DOC}: missing admitted-kinds fence")
+    else:
+        ck_rewritten = _CONTRACT_FENCE.sub(
+            lambda m: m.group(1) + render_contract_kind_columns(root, m.group(2)) + m.group(3),
+            ck_original)
+        plans.append((ck_path, ck_original, ck_rewritten))
     # The tracked root toolchain selection (5.5E3a): a bootstrap projection of
     # spec/toolchain.rs ToolchainProfile, byte-deterministic. It must exist
     # BEFORE the spec compiles, which makes it a tracked projection — never a

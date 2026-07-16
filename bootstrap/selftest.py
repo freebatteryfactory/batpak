@@ -4331,24 +4331,78 @@ def test_contract_kinds(audit) -> list[str]:
            (CK, 'ContractKind::Composition => "Composition",',
                 'ContractKind::Composition => "Composition",\n            '
                 'ContractKind::StateMachine => "StateMachine",')],
-          "ContractKind::StateMachine cites no admitting guarantee")
+          "ContractKind::StateMachine cites no admission basis")
     probe("contract_kind_missing_from_all_is_rejected",
           [(CK, "        ContractKind::Composition,\n    ];", "    ];")],
           "ContractKind::Composition is omitted from ContractKind::ALL")
-    probe("docs06_omitting_an_admitted_kind_is_rejected",
+    probe("docs_contract_kind_missing_row_is_rejected",
           [("docs/06_MACBAT.md",
             "Composition      LEG-041   deterministic composition identity\n", "")],
-          "docs/06 omits admitted contract kind Composition")
-    probe("docs06_admitting_an_undeclared_kind_is_rejected",
+          "docs/06 omits admitted contract kind row Composition LEG-041")
+    probe("docs_contract_kind_extra_row_is_rejected",
           [("docs/06_MACBAT.md",
             "Composition      LEG-041   deterministic composition identity",
             "Composition      LEG-041   deterministic composition identity\n"
             "StateMachine     LEG-999   speculative")],
           "docs/06 admits StateMachine, which ContractKind does not declare")
+    # The BASIS is semantic identity, not decoration: a wrong law, swapped
+    # laws, and reordered rows are each refused positionally.
+    probe("docs_contract_kind_wrong_basis_is_rejected",
+          [("docs/06_MACBAT.md", "Error            LEG-047",
+            "Error            LEG-999")],
+          "docs/06 row 1 states Error LEG-999; the typed catalog states "
+          "Error LEG-047 at that position")
+    probe("docs_contract_kind_swapped_bases_are_rejected",
+          [("docs/06_MACBAT.md", "Error            LEG-047",
+            "Error            LEG-002"),
+           ("docs/06_MACBAT.md", "Event            LEG-002",
+            "Event            LEG-047")],
+          "docs/06 row 1 states Error LEG-002; the typed catalog states "
+          "Error LEG-047 at that position")
+    probe("docs_contract_kind_order_drift_is_rejected",
+          [("docs/06_MACBAT.md",
+            "Error            LEG-047   error class and public shape never drift into side tables\n"
+            "Event            LEG-002   accepted event bytes are immutable; shape evolves on read",
+            "Event            LEG-002   accepted event bytes are immutable; shape evolves on read\n"
+            "Error            LEG-047   error class and public shape never drift into side tables")],
+          "docs/06 row 1 states Event LEG-002; the typed catalog states "
+          "Error LEG-047 at that position")
     probe("mistagged_admitting_guarantee_is_rejected",
           [(CK, 'ContractKind::Error => GuaranteeRef::leg("LEG-047"),',
                 'ContractKind::Error => GuaranteeRef::leg("DEC-047"),')],
           "whose family owns the LEG- prefix")
+
+    # Lifecycle law (5.5E3c1): a DELETED basis refuses the kind; a lawfully
+    # CLOSED basis is retained evidence and the kind remains admitted —
+    # closing the founding obligation must not erase the vocabulary it
+    # earned. Process citing superseded DEC-009 on the real seed is the
+    # standing green witness for the historical tier.
+    probe("deleted_admission_basis_is_rejected",
+          [("spec/legacy_obligations.rs",
+            'LegacyObligation { id: "LEG-047",',
+            'LegacyObligation { id: "LEG-047-GONE",')],
+          "ContractKind::Error cites admission basis LEG-047, which no "
+          "declared row owns")
+    tmp = gate_sandbox([("spec/legacy_obligations.rs",
+        'id: "LEG-047", law: "Error handling class and public error shape do '
+        'not drift into side tables", clean_owner: "macbat-compiler", '
+        'gates: &[GateId::G1, GateId::G2], compatibility_disposition: '
+        'CompatibilityDisposition::None, deletion_condition: '
+        'DeletionCondition::OnSuccessorGateClosure, active_or_closed_status: '
+        'ObligationStatus::Active }',
+        'id: "LEG-047", law: "Error handling class and public error shape do '
+        'not drift into side tables", clean_owner: "macbat-compiler", '
+        'gates: &[GateId::G1, GateId::G2], compatibility_disposition: '
+        'CompatibilityDisposition::None, deletion_condition: '
+        'DeletionCondition::OnSuccessorGateClosure, active_or_closed_status: '
+        'ObligationStatus::Closed }')])
+    try:
+        got = audit.contract_kind_findings(tmp)
+        if got:
+            fail("closed_admission_basis_remains_valid_retained_evidence "
+                 f"(got {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     return findings
 
 
