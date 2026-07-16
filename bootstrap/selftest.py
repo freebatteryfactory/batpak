@@ -2337,10 +2337,30 @@ def test_leg081_authority(audit) -> list[str]:
     # retired id. docs/35 is the plant site precisely because it owns none of these
     # rows now: a rule scoped to a phase's own documents would miss the leak.
     rp = audit.retired_proof_row_findings
-    for old in audit.RETIRED_PROOF_ROWS:
+    for old in audit.retired_proof_rows(HERE.parent):
         probe(f"retired_{old}_reintroduced_is_rejected", D35, LEAK,
               f"reintroduces retired proof-row id {old} outside the historical migration note",
               LEAK + f" See {old}.", validator=rp)
+
+    # The registry is TYPED and must agree with the migration notes in both
+    # directions (5.5E2). The Python-dict era shipped exactly this defect: a
+    # docs/24 note retired an id the dict never learned, so its scanner
+    # guarded five of six retirements while claiming to guard them all.
+    probe("registry_missing_a_noted_retirement_is_rejected", "spec/proof.rs",
+          '    ProofRowMigration {\n'
+          '        id: ProofRowId("test_local_fixture_type_is_classified_correctly"),\n'
+          '        state: ProofRowState::Retired {\n'
+          '            successors: &[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")],\n'
+          '        },\n'
+          '    },\n',
+          "spec/proof.rs PROOF_ROW_MIGRATIONS never learned",
+          "", validator=rp)
+    probe("registry_retirement_without_a_note_is_rejected", "spec/proof.rs",
+          '    ProofRowMigration {\n'
+          '        id: ProofRowId("pre_shred_keyset_restore_is_rejected"),',
+          "no docs/24 migration note recording the retirement",
+          '    ProofRowMigration {\n'
+          '        id: ProofRowId("phantom_row_never_noted"),', validator=rp)
 
     # docs/21 projects exactly the nine.
     probe("docs21_leg081_missing_projected_id_is_rejected", D21,
@@ -3693,6 +3713,14 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'witnesses: &[WitnessRef::leg("LEG-999"), '
           'WitnessRef::contract("BP-GAUNTLET-1")]',
           "which no declared row owns")
+
+    # Retirement is supersession with a forwarding address: a successor that
+    # neither exists in the docs/24 inventory nor carries its own retirement
+    # entry reddens the running binary.
+    probe("dangling_proof_row_successor_is_rejected", "spec/proof.rs",
+          'successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")]',
+          'successors: &[ProofRowId("row_that_was_never_authored_anywhere")]',
+          "neither in the docs/24 proof inventory nor explicitly retired")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().

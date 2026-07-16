@@ -2471,19 +2471,38 @@ D4B2C_ROWS = [
 # Note that `pre_shred_keyset_restore_is_rejected` is a proper substring of its
 # own successor, so reintroduction is matched on identifier boundaries, never
 # by `in`.
-RETIRED_PROOF_ROWS = {
-    "pre_shred_keyset_restore_is_rejected":
-        ("stale_or_pre_shred_keyset_restore_is_rejected",),
-    "shredded_and_keyset_missing_remain_distinct":
-        ("shredded_unavailable_and_keyset_missing_remain_distinct",),
-    "snapshot_and_fork_exclude_keys_by_default":
-        ("snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",),
-    "hash_map_iteration_cannot_change_canonical_bytes":
-        ("hash_map_iteration_cannot_influence_canonical_observables",),
-    "attempt_receipt_cannot_cross_invocation_classes":
-        ("entrypoint_receipt_cannot_satisfy_query_program_execution",
-         "query_program_receipt_cannot_satisfy_entrypoint_invocation"),
-}
+# The retired proof-row registry moved to its typed owner in 5.5E2:
+# spec/proof.rs PROOF_ROW_MIGRATIONS. The dict that stood here was already
+# missing an entry (test_local_fixture_type_is_classified_correctly, retired
+# by a docs/24 migration note the dict never learned) — a registry the
+# auditor owns is a registry the auditor cannot be caught neglecting. This
+# auditor now PARSES the typed registry and independently verifies it agrees
+# with every historical migration note.
+A_PROOF_MIGRATION = re.compile(
+    r'ProofRowMigration \{\s*id: ProofRowId\("(\w+)"\),\s*'
+    r'state: ProofRowState::Retired \{\s*successors: &\[(.*?)\],?\s*\}',
+    re.S,
+)
+
+
+def retired_proof_rows(root: Path) -> dict[str, tuple[str, ...]]:
+    """retired id -> successors, parsed from the typed registry."""
+    src = _uncomment((root / "spec/proof.rs").read_text(encoding="utf-8"))
+    out: dict[str, tuple[str, ...]] = {}
+    for m in A_PROOF_MIGRATION.finditer(src):
+        out[m.group(1)] = tuple(re.findall(r'ProofRowId\(\s*"(\w+)"', m.group(2)))
+    return out
+
+
+def migration_note_retired_ids(root: Path) -> set[str]:
+    """Every id a docs/24 historical migration note declares retired, across
+    both authored formats (retired/successor tables and renamed/now pairs)."""
+    text = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    ids: set[str] = set()
+    for block in D4B2C_MIGRATION_NOTE.findall(text):
+        ids.update(re.findall(r"(?m)^retired\s+(\w+)", block))
+        ids.update(re.findall(r"(?m)^(\w+)\n\s+now\s+\w+", block))
+    return ids
 D4B2C_COVERAGE = {
     "durable destruction before acknowledgement": [
         "shred_ack_waits_for_backend_durability",
@@ -3154,12 +3173,30 @@ def retired_proof_row_findings(root: Path) -> list[str]:
 
     Every document, not a per-phase list of the ones a rename happened to touch:
     a retired id leaking into docs/09 is the same defect as one leaking into
-    docs/35, and only one of those was ever checked.
+    docs/35, and only one of those was ever checked. The registry itself is the
+    typed spec/proof.rs owner, and it must agree with the migration notes in
+    BOTH directions — a note that retires an id the registry never learned is
+    exactly the defect the Python dict era shipped.
     """
     out: list[str] = []
+    registry = retired_proof_rows(root)
+    noted = migration_note_retired_ids(root)
+    for missing in sorted(noted - set(registry)):
+        out.append(
+            f"docs/24 retires proof-row id {missing} in a migration note that "
+            "spec/proof.rs PROOF_ROW_MIGRATIONS never learned"
+        )
+    for phantom in sorted(set(registry) - noted):
+        out.append(
+            f"spec/proof.rs retires proof-row id {phantom} with no docs/24 "
+            "migration note recording the retirement"
+        )
+    for old, successors in registry.items():
+        if not successors:
+            out.append(f"retired proof-row id {old} names no successor")
     for p in sorted((root / "docs").glob("*.md")):
         text = D4B2C_MIGRATION_NOTE.sub("", p.read_text(encoding="utf-8"))
-        for old, successors in RETIRED_PROOF_ROWS.items():
+        for old, successors in registry.items():
             if re.search(r"(?<![a-z0-9_])" + re.escape(old) + r"(?![a-z0-9_])", text):
                 out.append(
                     f"docs/{p.name} reintroduces retired proof-row id {old} outside the "

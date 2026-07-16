@@ -62,3 +62,105 @@ impl ProofUnitTerminal {
         }
     }
 }
+
+/// A proof unit's stable identity (5.5E2). Sealed like the per-family
+/// guarantee ids: the spec's own registry authors identities, a consumer
+/// reads one through `raw()`.
+///
+/// Execution completeness and inventory retention are DIFFERENT AXES. A
+/// libtest count proves every currently declared test executed and no filter
+/// hid one; it cannot prove a required identity was not deleted, because
+/// deleting a test shrinks the expected count and the executed count
+/// together. Typed identity plus the migration registry below is the
+/// retention half.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProofRowId(pub(crate) &'static str);
+
+impl ProofRowId {
+    pub const fn raw(self) -> &'static str {
+        self.0
+    }
+}
+
+/// The lifecycle of a proof identity. Retirement PRESERVES successor
+/// identity: a rename names its one successor, a split names every
+/// successor, and the original claim must be carried by the conjunction of
+/// the successors — retirement is supersession with a forwarding address,
+/// never deletion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProofRowState {
+    /// The identity is authoritative in the proof inventory.
+    Active,
+    /// The identity is retired; the successors own its obligation now. An
+    /// active witness may reach a retired row only by explicitly following
+    /// this mapping.
+    Retired { successors: &'static [ProofRowId] },
+}
+
+/// One entry in the proof-identity migration registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProofRowMigration {
+    pub id: ProofRowId,
+    pub state: ProofRowState,
+}
+
+/// Every proof-row identity that ever stopped being authoritative, with its
+/// successors. This registry is the TYPED OWNER the retired-name scanner
+/// derives from: until the 5.5E2 bake it existed only as a Python dict
+/// inside the auditor, and the dict was already missing an entry — docs/24
+/// retired `test_local_fixture_type_is_classified_correctly` in a migration
+/// note the registry never learned, so the scanner guarded five of the six
+/// retirements while claiming to guard them all. A registry the auditor
+/// owns is a registry the auditor cannot be caught neglecting.
+///
+/// Identities here are RETIRED entries only: the active inventory lives in
+/// docs/24 until the documentary convergence pass lifts it, and every
+/// successor named below must either appear there or carry its own
+/// retirement entry.
+pub const PROOF_ROW_MIGRATIONS: &[ProofRowMigration] = &[
+    ProofRowMigration {
+        id: ProofRowId("pre_shred_keyset_restore_is_rejected"),
+        state: ProofRowState::Retired {
+            successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")],
+        },
+    },
+    ProofRowMigration {
+        id: ProofRowId("shredded_and_keyset_missing_remain_distinct"),
+        state: ProofRowState::Retired {
+            successors: &[ProofRowId(
+                "shredded_unavailable_and_keyset_missing_remain_distinct",
+            )],
+        },
+    },
+    ProofRowMigration {
+        id: ProofRowId("snapshot_and_fork_exclude_keys_by_default"),
+        state: ProofRowState::Retired {
+            successors: &[ProofRowId(
+                "snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys",
+            )],
+        },
+    },
+    ProofRowMigration {
+        id: ProofRowId("hash_map_iteration_cannot_change_canonical_bytes"),
+        state: ProofRowState::Retired {
+            successors: &[ProofRowId(
+                "hash_map_iteration_cannot_influence_canonical_observables",
+            )],
+        },
+    },
+    ProofRowMigration {
+        id: ProofRowId("attempt_receipt_cannot_cross_invocation_classes"),
+        state: ProofRowState::Retired {
+            successors: &[
+                ProofRowId("entrypoint_receipt_cannot_satisfy_query_program_execution"),
+                ProofRowId("query_program_receipt_cannot_satisfy_entrypoint_invocation"),
+            ],
+        },
+    },
+    ProofRowMigration {
+        id: ProofRowId("test_local_fixture_type_is_classified_correctly"),
+        state: ProofRowState::Retired {
+            successors: &[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")],
+        },
+    },
+];

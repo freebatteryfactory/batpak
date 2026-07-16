@@ -70,6 +70,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_guarantee_admission(&mut findings);
     check_frontmatter(root, &mut findings);
     check_witness_citations(root, &mut findings);
+    check_proof_row_migrations(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -269,6 +270,57 @@ fn guarantee_ref_resolves(reference: guarantees::GuaranteeRef) -> bool {
         guarantees::GuaranteeRef::Qualification(id) => architecture::QUALIFICATION_PROFILES
             .iter()
             .any(|q| q.package == id.package() && q.profile == id.profile()),
+    }
+}
+
+/// The proof-identity migration registry is coherent (5.5E2). Retirement is
+/// supersession with a forwarding address, never deletion: every retired
+/// identity names at least one successor, never itself, and every successor
+/// either appears in the docs/24 proof inventory or carries its own explicit
+/// retirement entry. Executed through the sealed accessors on every run.
+fn check_proof_row_migrations(root: &Path, findings: &mut Vec<String>) {
+    use proof::{ProofRowState, PROOF_ROW_MIGRATIONS};
+    let inventory = fs::read_to_string(root.join("docs/24_GAUNTLET.md")).unwrap_or_default();
+    let retired: BTreeSet<&str> = PROOF_ROW_MIGRATIONS.iter().map(|m| m.id.raw()).collect();
+    if retired.len() != PROOF_ROW_MIGRATIONS.len() {
+        findings.push("duplicate retired proof-row identity in the migration registry".into());
+    }
+    for entry in PROOF_ROW_MIGRATIONS {
+        // Exhaustive: a new state must be classified here, not defaulted.
+        match entry.state {
+            ProofRowState::Active => findings.push(format!(
+                "{} sits in the migration registry as Active; the registry holds \
+                 retirements, and the active inventory lives in docs/24 until the \
+                 documentary convergence pass lifts it",
+                entry.id.raw()
+            )),
+            ProofRowState::Retired { successors } => {
+                if successors.is_empty() {
+                    findings.push(format!(
+                        "{} is retired with no successor; retirement is supersession \
+                         with a forwarding address, never deletion",
+                        entry.id.raw()
+                    ));
+                }
+                for successor in successors {
+                    if successor.raw() == entry.id.raw() {
+                        findings.push(format!(
+                            "{} names itself as its successor",
+                            entry.id.raw()
+                        ));
+                    } else if !retired.contains(successor.raw())
+                        && !inventory.contains(successor.raw())
+                    {
+                        findings.push(format!(
+                            "{} names successor {}, which is neither in the docs/24 \
+                             proof inventory nor explicitly retired",
+                            entry.id.raw(),
+                            successor.raw()
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
 
