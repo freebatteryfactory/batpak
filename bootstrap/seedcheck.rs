@@ -370,8 +370,7 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             | gates::GateId::G6
             | gates::GateId::G7
             | gates::GateId::G8
-            | gates::GateId::G9
-            | gates::GateId::GJ => {}
+            | gates::GateId::G9 => {}
         }
     }
     let mut sorted_gate_ids = gate_ids.clone();

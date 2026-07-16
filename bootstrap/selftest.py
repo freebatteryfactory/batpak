@@ -588,7 +588,7 @@ def test_gates(audit, project) -> list[str]:
     # --- inventory integrity ---
     probe("gateid_missing_from_inventory_is_rejected",
           [("spec/gates.rs",
-            '    GateSpec { id: GateId::GJ, token: "GJ", title: "Integrated final tree" },',
+            '    GateSpec { id: GateId::G9, token: "G9", title: "Self-hosting and release seal" },',
             "")],
           audit.gate_inventory_findings, "missing from the GATES inventory")
     probe("inventory_token_duplicated_across_two_gateids_is_rejected",

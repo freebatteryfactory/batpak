@@ -29,7 +29,6 @@ rest of this document is authored.
 | G7 | G7 | NetBat and product CLI |
 | G8 | G8 | Optimized tiles, codecs, and delivery succession |
 | G9 | G9 | Self-hosting and release seal |
-| GJ | GJ | Integrated final tree |
 <!-- GATE-INVENTORY:END -->
 
 Each gate is one review unit with savepoint commits inside it. A later gate may not redefine an earlier owner's meaning.
@@ -84,6 +83,22 @@ Dependencies leave only after proof, never because the gate name says “cleanup
 
 Deliver repository command WorldImages where useful, independent seedcheck parity, context packets, release seal, issue/legacy closure receipts, and exact published artifacts.
 
+The seal refuses while any of these remain in the integrated final tree — this
+is G9's acceptance condition, not a separate gate (the former GJ, folded here
+by the 5.5E1 ruling):
+
+```text
+legacy architectural path
+second semantic owner
+unresolved contract surface
+public dependency mechanism type
+unclassified legacy obligation
+unqualified target adapter
+self-grading proof
+stale/superseded doc treated as law
+compatibility reader with no removal/retention receipt
+```
+
 ## Guarantee classification (DEC-070)
 
 Each guarantee's gates are owned by its native fact family (SEED in `spec/invariants.rs`, LEG, DEC, architecture, qualification). The [Guarantee Graph](GUARANTEE_GRAPH.generated.md) is a derived structural index that shows kind, lifetime, owner, gates, and relations; it is non-normative and cannot gate on its own. Lifetime (`UntilGate`, `UntilSuccessor`, `UntilCompatibilityExpiry`, `Permanent`, `HistoricalCoverageOnly`, `ClosedEvidence`) is orthogonal to active/closed status and deletion condition.
@@ -116,18 +131,3 @@ G9  release seal: proof-policy change receipts, weakening disclosure, and
 
 Bootstrap proves the typed and documentary structure only. It compiles no mutant, activates no slot, runs no nextest, invokes no rustc, compares no cargo-mutants run, kills nothing, proves no equivalence, promotes no candidate, and classifies no real diff semantically.
 
-## GJ: Integrated final tree
-
-Refuse the gate if any of these remain:
-
-```text
-legacy architectural path
-second semantic owner
-unresolved contract surface
-public dependency mechanism type
-unclassified legacy obligation
-unqualified target adapter
-self-grading proof
-stale/superseded doc treated as law
-compatibility reader with no removal/retention receipt
-```
