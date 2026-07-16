@@ -16,6 +16,7 @@ Proven properties:
 from __future__ import annotations
 import contextlib
 import hashlib
+import os
 import importlib.util
 import sys
 import shutil
@@ -2850,6 +2851,40 @@ def test_rust_specification_compiles(_audit) -> list[str]:
                 head = "\n".join(proc.stderr.splitlines()[:6])
                 findings.append(
                     f"rust specification surface does not compile ({name}):\n{head}")
+        # seedcheck is Tier 0. Compiling it is not running it: until this check
+        # existed it was only ever type-checked, and it had been FAILING since
+        # 5.5C1 -- three DEC rows red against a gate rule its own file already
+        # said the class decides, and the generated Guarantee Graph red against a
+        # frontmatter rule that predated generated documents. Nobody saw it
+        # because nobody ran it. A gate that is compiled and never executed is a
+        # gate in the same sense that a locked door in a field is a gate.
+        # Local execution is SUPPLEMENTAL evidence. The authoritative Windows
+        # receipt is a hosted MSVC runner; this machine's linker is whatever
+        # happens to be installed, and no toolchain here is a declared BatPak
+        # prerequisite. Report exactly one of executed-and-passed,
+        # executed-and-failed, or unavailable. Never let unavailable wear the
+        # green of a check that passed.
+        exe = tmp / ("seedcheck_run" + (".exe" if os.name == "nt" else ""))
+        linked = None
+        for target in (None, "x86_64-pc-windows-gnu"):
+            cmd = [rustc, "--edition", "2021", "--crate-name", "seedcheck_run",
+                   "-o", str(exe), str(root / "bootstrap/seedcheck.rs")]
+            if target:
+                cmd[1:1] = ["--target", target]
+            if subprocess.run(cmd, capture_output=True, text=True).returncode == 0:
+                linked = target or "host default"
+                break
+        if linked is None:
+            print("selftest: seedcheck unavailable locally (no working linker); it is "
+                  "compiled but NOT executed. Hosted MSVC qualification owns this receipt.")
+        else:
+            run = subprocess.run([str(exe), str(root)], capture_output=True, text=True)
+            if run.returncode != 0:
+                head = "\n".join((run.stderr or run.stdout).splitlines()[:8])
+                findings.append(f"seedcheck executes and FAILS ({linked}):\n{head}")
+            else:
+                print(f"selftest: seedcheck executed and passed ({linked}); "
+                      f"supplemental to hosted MSVC qualification")
         # The admission desk has no public bypass, and the admitted witness cannot
         # be forged. Both are proven by COMPILING against the real
         # spec/pakvm_isa.rs through a normal (non-test) module boundary — the same

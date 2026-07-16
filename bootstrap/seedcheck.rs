@@ -27,6 +27,9 @@ mod operators;
 #[allow(dead_code)] // declarative spec surface; not this binary's program
 #[path = "../spec/pakvm_isa.rs"]
 mod pakvm_isa;
+#[allow(dead_code)] // declarative spec surface; not this binary's program
+#[path = "../spec/syncbat_firewall.rs"]
+mod syncbat_firewall;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -79,6 +82,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_authenticated_history(&mut findings);
     check_version(&mut findings);
     check_pakvm_isa(&mut findings);
+    check_syncbat_firewall(&mut findings);
     check_unique_ids(&mut findings);
     check_frontmatter(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
@@ -357,10 +361,15 @@ fn check_unique_ids(findings: &mut Vec<String>) {
         findings.push("gate inventory is not in canonical GateId order".into());
     }
     // Canonical, duplicate-free, resolvable gate lists on every gate-bearing fact.
+    //
+    // Emptiness is NOT judged here. Whether a fact must name a gate is a question
+    // its own family answers: a DecisionClass with requires_gate() == false is
+    // gate-independent by authored claim, not by omission. This rule once flagged
+    // every empty list, which directly contradicted the class-aware rule three
+    // lines below it and made DEC-001, DEC-002, and DEC-048 permanently red. Two
+    // rules in one file disagreeing about one fact is the same defect as two
+    // scripts carrying one constant.
     let check_gates = |ident: &str, list: &[gates::GateId], findings: &mut Vec<String>| {
-        if list.is_empty() {
-            findings.push(format!("{} names no gate", ident));
-        }
         let unique: BTreeSet<&str> = list.iter().map(|g| g.token()).collect();
         if unique.len() != list.len() {
             findings.push(format!("{} names a duplicate GateId", ident));
@@ -437,8 +446,17 @@ fn check_unique_ids(findings: &mut Vec<String>) {
     }
     for value in invariants::INVARIANTS {
         check_gates(value.id, value.gates, findings);
+        // SEED declares no gate-independent class, so an empty list here is an
+        // omission rather than a claim. Stated explicitly now that check_gates no
+        // longer judges emptiness: dropping the rule silently would have weakened
+        // SEED to buy DEC's correctness.
+        if value.gates.is_empty() {
+            findings.push(format!("{} names no gate", value.id));
+        }
     }
     for value in legacy_obligations::OBLIGATIONS {
+        // Emptiness is judged below, with the rest of the obligation's
+        // completeness.
         check_gates(value.id, value.gates, findings);
     }
     let legacy_ids: BTreeSet<&str> = legacy_obligations::OBLIGATIONS.iter().map(|v| v.id).collect();
@@ -570,7 +588,19 @@ fn check_frontmatter(root: &Path, findings: &mut Vec<String>) {
         match fs::read_to_string(&path) {
             Ok(text) => {
                 if !text.starts_with("---\n") { findings.push(format!("missing frontmatter: {relative}")); }
-                for key in ["status:", "contract_id:", "authority_scope:", "supersedes:", "last_reconciled:"] {
+                // A GENERATED projection is not an authored contract and carries
+                // no contract_id, supersedes, or last_reconciled: it names what
+                // produced it instead. Demanding the authored set from a derived
+                // index would be demanding it claim an authority it must not have.
+                // This rule predated generated documents and never learned them,
+                // so docs/GUARANTEE_GRAPH.generated.md has been red since 5.5C1.
+                let generated = text.contains("status: GENERATED");
+                let required: &[&str] = if generated {
+                    &["status:", "authority_scope:", "generated_by:", "generated_from:", "do_not_edit:"]
+                } else {
+                    &["status:", "contract_id:", "authority_scope:", "supersedes:", "last_reconciled:"]
+                };
+                for key in required {
                     if !text.contains(key) { findings.push(format!("missing {key} in {relative}")); }
                 }
             }
@@ -941,6 +971,134 @@ fn check_pakvm_isa(findings: &mut Vec<String>) {
             findings.push(format!(
                 "authored work unit {:?} is accounted by no PakVM node family", unit));
         }
+    }
+}
+
+/// The SyncBat authority firewall is complete and closed.
+///
+/// Runs the same `admit_crossing` the specification declares. It does not
+/// recompute the legal-crossing table here: a checker carrying its own copy would
+/// be a second owner of the law, and two copies of one guess agree perfectly.
+fn check_syncbat_firewall(findings: &mut Vec<String>) {
+    use architecture::{SyncBatPlane, SYNCBAT_PLANES};
+    use syncbat_firewall::*;
+
+    // Every authority has exactly one owning plane, and every plane owns at
+    // least one authority. A plane owning nothing is not a plane; an authority
+    // owned by nobody has no one to refuse its misuse.
+    for &authority in SYNCBAT_AUTHORITIES {
+        let owner = authority.owner();
+        if !SYNCBAT_PLANES.contains(&owner) {
+            findings.push(format!("{authority:?} is owned by a plane outside SyncBat"));
+        }
+    }
+    for &plane in SYNCBAT_PLANES {
+        if !SYNCBAT_AUTHORITIES.iter().any(|a| a.owner() == plane) {
+            findings.push(format!("SyncBat plane {plane:?} owns no authority"));
+        }
+        if plane.package() != "syncbat" {
+            findings.push(format!("SyncBat plane {plane:?} claims package {}", plane.package()));
+        }
+        if plane.authored_ownership().is_empty() {
+            findings.push(format!("SyncBat plane {plane:?} names no authored ownership"));
+        }
+    }
+    for i in 0..SYNCBAT_AUTHORITIES.len() {
+        for j in (i + 1)..SYNCBAT_AUTHORITIES.len() {
+            if SYNCBAT_AUTHORITIES[i] == SYNCBAT_AUTHORITIES[j] {
+                findings.push(format!("authority {:?} is listed twice", SYNCBAT_AUTHORITIES[i]));
+            }
+        }
+    }
+
+    // Every declared crossing must itself be lawful: it must move an authority
+    // its sender owns, between two distinct planes, and admit through the very
+    // function production calls. A table entry that its own admission refuses
+    // would be law nobody could obey.
+    for crossing in SYNCBAT_LEGAL_CROSSINGS {
+        if crossing.law.is_empty() {
+            findings.push(format!(
+                "the {:?} -> {:?} crossing names no authored law", crossing.from, crossing.to));
+        }
+        if crossing.carries.owner() != crossing.from {
+            findings.push(format!(
+                "the declared {:?} -> {:?} crossing carries {:?}, which {:?} does not own",
+                crossing.from, crossing.to, crossing.carries, crossing.from));
+            continue;
+        }
+        let origin = if crossing.carries.requires_semantic_origin() {
+            Some(semantic_origin_for(crossing.carries))
+        } else {
+            None
+        };
+        match admit_crossing(crossing.from, crossing.to, crossing.carries, origin) {
+            CrossingAdmission::Admitted(_) => {}
+            CrossingAdmission::Refused(why) => findings.push(format!(
+                "the declared {:?} -> {:?} crossing does not admit: {why}",
+                crossing.from, crossing.to)),
+        }
+    }
+
+    // docs/08 names five forbidden crossings by example. Each must be refused
+    // through the production API, and the refusal must be the intended one.
+    for (what, from, to, carries, want) in [
+        // "PakVM advancing a durable checkpoint"
+        ("pakvm advances a durable checkpoint", SyncBatPlane::PakVm, SyncBatPlane::Port,
+         SyncBatAuthority::PhysicalAttempt,
+         "the sending plane does not own the authority it is exercising"),
+        // "Bvisor minting semantic restart authorization"
+        ("bvisor mints semantic restart authority", SyncBatPlane::Bvisor, SyncBatPlane::Runtime,
+         SyncBatAuthority::RetryRestartAuthority,
+         "the sending plane does not own the authority it is exercising"),
+        // "runtime bypassing Bvisor to execute a program"
+        ("runtime bypasses bvisor to execute", SyncBatPlane::Runtime, SyncBatPlane::Port,
+         SyncBatAuthority::PhysicalAttempt,
+         "the sending plane does not own the authority it is exercising"),
+        // "PakVM calling filesystem/network/clock directly"
+        ("pakvm reaches the host directly", SyncBatPlane::PakVm, SyncBatPlane::Port,
+         SyncBatAuthority::TypedEffectRequest,
+         "no lawful crossing carries this authority between these planes"),
+        // "world redefining BatPak-owned IDs or schema law"
+        ("world redefines owned identity", SyncBatPlane::World, SyncBatPlane::PakVm,
+         SyncBatAuthority::SemanticNodeInterpretation,
+         "the sending plane does not own the authority it is exercising"),
+        // attempt evidence must not satisfy a logical receipt
+        ("attempt evidence satisfies a semantic receipt", SyncBatPlane::Bvisor,
+         SyncBatPlane::Runtime, SyncBatAuthority::SemanticReceipt,
+         "the sending plane does not own the authority it is exercising"),
+        // runtime must not fabricate attempt evidence
+        ("runtime fabricates attempt evidence", SyncBatPlane::Runtime, SyncBatPlane::PakVm,
+         SyncBatAuthority::AttemptEvidence,
+         "the sending plane does not own the authority it is exercising"),
+        // world must not become a service locator for host capability
+        ("world wires around the port", SyncBatPlane::World, SyncBatPlane::Port,
+         SyncBatAuthority::PhysicalAttempt,
+         "the sending plane does not own the authority it is exercising"),
+    ] {
+        let origin = if carries.requires_semantic_origin() {
+            Some(semantic_origin_for(carries))
+        } else {
+            None
+        };
+        match admit_crossing(from, to, carries, origin) {
+            CrossingAdmission::Admitted(_) => {
+                findings.push(format!("the firewall admits a forbidden crossing: {what}"))
+            }
+            CrossingAdmission::Refused(why) if why != want => findings.push(format!(
+                "{what} is refused, but for the wrong reason: {why:?} rather than {want:?}")),
+            CrossingAdmission::Refused(_) => {}
+        }
+    }
+}
+
+/// A node whose admitted posture suits an authority, for exercising the firewall.
+/// Effect requests need an effectful node; interpretation takes any admitted one.
+fn semantic_origin_for(authority: syncbat_firewall::SyncBatAuthority) -> pakvm_isa::PakVmNodeId {
+    use pakvm_isa::PakVmNodeId;
+    use syncbat_firewall::SyncBatAuthority;
+    match authority {
+        SyncBatAuthority::TypedEffectRequest => PakVmNodeId::Append,
+        _ => PakVmNodeId::Compare,
     }
 }
 

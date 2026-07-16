@@ -10,6 +10,67 @@ pub enum PackageClass {
     Example,
 }
 
+/// The five SyncBat planes (docs/08 ownership firewall).
+///
+/// `spec/architecture.rs` owns package topology, so it owns the plane IDENTITIES
+/// and their package membership. It does NOT own what each plane may do: the
+/// legal-crossing and forbidden-transfer law lives in `spec/syncbat_firewall.rs`,
+/// which is the one authority for it. Splitting them this way keeps the plane
+/// inventory in one place while leaving the firewall a narrow, single-purpose
+/// authority rather than another topology.
+///
+/// These planes are specific to the SyncBat organism. They are not a universal
+/// plane framework and no other package has them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncBatPlane {
+    /// Logical legality.
+    Runtime,
+    /// Program semantics.
+    PakVm,
+    /// Attempt admission and physical evidence.
+    Bvisor,
+    /// Composition and instance identity.
+    World,
+    /// Explicit host requests and responses.
+    Port,
+}
+
+impl SyncBatPlane {
+    /// The package this plane lives in. Every plane is inside `syncbat`: sharing
+    /// a crate is exactly why the firewall has to be typed rather than
+    /// structural, because no module boundary separates them (docs/08: "Sharing a
+    /// crate does not permit one plane to perform another's transition").
+    pub const fn package(self) -> &'static str {
+        match self {
+            SyncBatPlane::Runtime
+            | SyncBatPlane::PakVm
+            | SyncBatPlane::Bvisor
+            | SyncBatPlane::World
+            | SyncBatPlane::Port => "syncbat",
+        }
+    }
+
+    /// The authored docs/08 ownership sentence this plane's identity comes from.
+    pub const fn authored_ownership(self) -> &'static str {
+        match self {
+            SyncBatPlane::Runtime => "runtime owns logical legality",
+            SyncBatPlane::PakVm => "pakvm owns program semantics",
+            SyncBatPlane::Bvisor => "bvisor owns attempt admission and physical evidence",
+            SyncBatPlane::World => "world owns composition and instance identity",
+            SyncBatPlane::Port => "port owns explicit host requests and responses",
+        }
+    }
+}
+
+/// The five planes, in docs/08 order.
+pub const SYNCBAT_PLANES: &[SyncBatPlane] = &[
+    SyncBatPlane::Runtime,
+    SyncBatPlane::PakVm,
+    SyncBatPlane::Bvisor,
+    SyncBatPlane::World,
+    SyncBatPlane::Port,
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PackageSpec {
     pub package: &'static str,
@@ -710,6 +771,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/guarantees.rs",
     "spec/gates.rs",
     "spec/pakvm_isa.rs",
+    "spec/syncbat_firewall.rs",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",
     "bootstrap/materialize.rs",
