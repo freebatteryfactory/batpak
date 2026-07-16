@@ -27,6 +27,56 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
+# Qualification receipts. NOT one flat status: availability, compilation,
+# execution-attempted, and outcome are orthogonal, and flattening them is how a
+# gate that was only ever compiled came to sit beside one that actually ran and
+# passed. A receipt records each separately, plus the target it holds for and
+# the exact reason when something did not happen.
+QUALIFICATION_RECEIPTS: list[dict] = []
+
+
+def receipt(name, *, available, compiled=None, executed=None, passed=None,
+            target=None, reason=None):
+    QUALIFICATION_RECEIPTS.append({
+        "name": name, "available": available, "compiled": compiled,
+        "executed": executed, "passed": passed, "target": target, "reason": reason,
+    })
+
+
+def render_receipts() -> str:
+    """One line per receipt, stage by stage.
+
+    An unavailable or unexecuted check says so here rather than being summarised
+    away by an aggregate that prints PASS. A check that was compiled and never
+    executed has earned no place beside one that executed and passed.
+    """
+    lines = []
+    for r in QUALIFICATION_RECEIPTS:
+        parts = ["available" if r["available"] else "UNAVAILABLE"]
+        if r["compiled"] is True:
+            parts.append("compiled")
+        elif r["compiled"] is False:
+            parts.append("COMPILE FAILED")
+        if r["executed"] is True:
+            parts.append("executed")
+        elif r["executed"] is False:
+            parts.append("NOT EXECUTED")
+        if r["passed"] is True:
+            parts.append("passed")
+        elif r["passed"] is False:
+            parts.append("FAILED")
+        if r["target"]:
+            parts.append("target " + str(r["target"]))
+        if r["reason"]:
+            parts.append("reason: " + str(r["reason"]))
+        lines.append("selftest: receipt " + r["name"] + ": " + ", ".join(parts))
+    return chr(10).join(lines)
+
+
+def executed_and_passed() -> list[str]:
+    """Only a check that actually ran AND passed may be claimed by the banner."""
+    return [r["name"] for r in QUALIFICATION_RECEIPTS
+            if r["available"] and r["executed"] and r["passed"]]
 def load(name: str):
     spec = importlib.util.spec_from_file_location(name, HERE / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
@@ -2827,7 +2877,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     root = HERE.parent
     rustc = shutil.which("rustc")
     if not rustc:
-        print("selftest: rustc unavailable; Tier 0 law fixtures NOT executed")
+        receipt("tier0-law-fixtures", available=False, reason="rustc absent")
         return findings
 
     def run_seedcheck(tree: Path) -> tuple[int, str]:
@@ -2876,9 +2926,12 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     # below could be red for free.
     code, out = run_seedcheck(root)
     if code == -1:
-        print("selftest: seedcheck unavailable; Tier 0 law fixtures NOT executed")
+        receipt("tier0-law-fixtures", available=False, compiled=True, executed=False,
+                reason="no working linker for any attempted target")
         return findings
     if code != 0:
+        receipt("tier0-law-fixtures", available=True, compiled=True, executed=True,
+                passed=False, reason="seedcheck already fails before any mutation")
         findings.append(f"seedcheck_passes_before_mutation FAILED ({out.strip()[:200]!r})")
         return findings
 
@@ -2915,6 +2968,8 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "generated_from:", "produced_from:",
           "missing generated_from: in docs/GUARANTEE_GRAPH.generated.md")
 
+    receipt("tier0-law-fixtures", available=True, compiled=True, executed=True,
+            passed=not findings, target="local host or gnu fallback")
     return findings
 
 
@@ -2978,16 +3033,16 @@ def test_rust_specification_compiles(_audit) -> list[str]:
                 linked = target or "host default"
                 break
         if linked is None:
-            print("selftest: seedcheck unavailable locally (no working linker); it is "
-                  "compiled but NOT executed. Hosted MSVC qualification owns this receipt.")
+            receipt("tier0-seedcheck", available=True, compiled=True, executed=False,
+                    reason="no working linker; hosted MSVC owns the authoritative receipt")
         else:
             run = subprocess.run([str(exe), str(root)], capture_output=True, text=True)
-            if run.returncode != 0:
+            ok = run.returncode == 0
+            receipt("tier0-seedcheck", available=True, compiled=True, executed=True,
+                    passed=ok, target=linked)
+            if not ok:
                 head = "\n".join((run.stderr or run.stdout).splitlines()[:8])
                 findings.append(f"seedcheck executes and FAILS ({linked}):\n{head}")
-            else:
-                print(f"selftest: seedcheck executed and passed ({linked}); "
-                      f"supplemental to hosted MSVC qualification")
         # The admission desk has no public bypass, and the admitted witness cannot
         # be forged. Both are proven by COMPILING against the real
         # spec/pakvm_isa.rs through a normal (non-test) module boundary — the same
@@ -3070,7 +3125,26 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
-    print("selftest: PASS (portability + stale-vocabulary + BatQL + numeric + guarantee + gate + decision + authenticated-history + control-character + substrate + specialization + proof-policy + probe-isolation + integrity-witness + derived-material + deferred-witness + LEG-081 authority + proof-target resolver + guarantee-authority hostile fixtures + PakVM semantic ISA + Tier 0 execution + rust specification compile)")
+    # Every receipt, stage by stage, BEFORE the banner. The banner then claims
+    # only the qualifications that actually executed and passed: listing "Tier 0
+    # execution" unconditionally is precisely how a check that never ran came to
+    # read as green.
+    rendered = render_receipts()
+    if rendered:
+        print(rendered)
+    claimed = ["portability", "stale-vocabulary", "BatQL", "numeric", "guarantee",
+               "gate", "decision", "authenticated-history", "control-character",
+               "substrate", "specialization", "proof-policy", "probe-isolation",
+               "integrity-witness", "derived-material", "deferred-witness",
+               "LEG-081 authority", "proof-target resolver",
+               "guarantee-authority hostile fixtures", "PakVM semantic ISA",
+               "rust specification compile"] + executed_and_passed()
+    unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
+                if not (r["available"] and r["executed"] and r["passed"])]
+    print("selftest: PASS (" + " + ".join(claimed) + ")")
+    if unearned:
+        # A passing aggregate must never absorb a check that did not run.
+        print("selftest: NOT QUALIFIED LOCALLY: " + ", ".join(unearned))
     return 0
 
 
