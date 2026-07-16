@@ -30,7 +30,10 @@ Established computer-science names are preferred. Branded names remain only wher
 
 ## File header contract
 
-Authored implementation files state:
+Structured authority headers are RISK-TRIGGERED, not universal (5.5E1
+anti-ceremony ruling). They are required for semantic-owner modules, kernels,
+ports/adapters, unsafe files, concurrency mechanisms, durable codecs, and
+proof-policy implementation:
 
 ```text
 OWNS
@@ -41,15 +44,41 @@ BOUNDS
 PROOF
 ```
 
-This is concise structured module documentation, not a duplicate architecture essay.
+An ordinary implementation file does not repeat an architecture questionnaire;
+concise module documentation suffices. This is concise structured module
+documentation, not a duplicate architecture essay.
 
 ## Generated Type Ledger
 
-TestPak generates every named type with owner, file, visibility, identity class, consumers, durable/wire status, lifecycle, and proof owner. It rejects duplicate semantic owners and inline domain types.
+Two indexes with different authority (5.5E1 ruling). The SEMANTIC-OWNER index
+is normative and covers types that cross at least one real boundary: public
+package, durable or wire, trust or authority, proof or receipt, unsafe or
+concurrency, cross-package lowering, or compatibility. Each such type carries
+owner, identity class, consumers, durable/wire status, lifecycle, and proof
+owner, and the index rejects duplicate semantic owners and inline domain
+types. The NAVIGATION index may discover every type and file for search, but
+its rows are non-normative and carry no per-row lifecycle, proof owner,
+receipt, or denominator obligation — "every named type gets a proof owner" is
+denominator inflation, and this contract refuses it.
 
 ## File dossiers
 
-Large or critical files have generated dossiers with concept, public surface, dependencies, unsafe/allocator/locking assumptions, complexity, mutation seams, fixtures, and receipts.
+Dossiers are RISK-TRIGGERED, never size-triggered or universal: unsafe or
+concurrency mechanisms, durable codecs, kernels, and trust boundaries earn
+generated dossiers with concept, public surface, dependencies,
+unsafe/allocator/locking assumptions, complexity, mutation seams, fixtures,
+and receipts. An ordinary large file does not.
+
+## Projection law (5.5E1)
+
+A closed authority-bearing inventory with a typed owner is projected for
+humans and agents; it is never independently re-authored in prose. This is
+the standing law behind the generated operator, gate, plane, crossing, seal,
+terminal, reconciliation, and classification blocks, and it applies to every
+future closed inventory. Typing is warranted only when all three hold: the
+vocabulary is closed or finite; it affects authority, admission,
+compatibility, proof, generation, or release; and an invalid value should be
+unconstructable. Speculative armor is debt.
 
 ## Typed diagnostics
 

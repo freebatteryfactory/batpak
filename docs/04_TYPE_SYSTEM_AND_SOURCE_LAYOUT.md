@@ -48,7 +48,7 @@ repository and proof facts
     → testpak
 ```
 
-A package may have private mechanism types, but they live under the owning concept, remain module-scoped, and appear in the generated Type Ledger.
+A package may have private mechanism types, but they live under the owning concept and remain module-scoped. They appear in the navigation index; they enter the normative semantic-owner ledger only when they cross a real boundary (docs/28, 5.5E1).
 
 No domain-significant named type is declared inside a function.
 

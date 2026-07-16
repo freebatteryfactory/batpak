@@ -239,3 +239,13 @@ Verification may occur without opening the live store when the receipt bundle ca
 ## Numeric receipts (DEC-069 / docs/37)
 
 `QuantizationReceipt` records every approximation-to-authority crossing: source interval, target profile, rounding mode, exact/inexact disposition, and discarded-remainder loss evidence. Approximation evidence — format identity, raw bits, classification, provenance — and typed margins (unit, direction, distance interval, and whether zero lies inside the margin) project through the receipt and explanation surfaces and never upgrade or collapse the recorded proof disposition.
+
+## Refusals are API (5.5E1)
+
+Every admission refusal and audit finding names, where structurally
+available: the violated law, its typed owner, the offending value or
+boundary, and the repair direction. This is not a universal error object —
+diagnostics keep their native types — but enough structure that the CLI,
+documentation, agents, and receipts can each project an actionable
+explanation. An error message a reader must reverse-engineer is a defect of
+the same species as an unowned semantic fact.
