@@ -37,6 +37,34 @@ This is one security floor, not a complete proof: `no_std` does not prove determ
 
 Safe Rust is the default implementation strategy. Unsafe Rust is admitted only for a mechanism that cannot be expressed with qualified safe primitives and only inside an explicitly named kernel, adapter, or FFI concept file. Each occurrence carries a `SAFETY-CONTRACT:` record naming the preconditions, invariants, postconditions, failure policy, owner, independent witness, and mutation/fault seam.
 
+## Compiler-assumption kinds
+
+This document owns what an admitted dangerous mechanism MEANS; detection
+and routing mechanics belong to TestPak (docs/12), and the hostile
+proof-row identities belong to the Gauntlet (docs/24). Two ledgerable
+kinds are currently admitted. `UnsafeMemoryContract` records what an
+unsafe block, function, or impl assumes about memory and the compiler,
+and intrinsically requires the `SAFETY-CONTRACT:` record above.
+`PointerProvenance` records what a pointer or integer-pointer crossing
+assumes about provenance; an occurrence that also uses unsafe Rust
+independently satisfies `UnsafeMemoryContract` — obligations stack, and
+the kinds do not collapse. A narrowing numeric cast is not a layout
+assumption: lossy numeric conversion remains a hard production finding
+and may never be legalized through a ledger entry. A future kind enters
+only by earning a distinct detector, a real adopter, a semantic owner, a
+decision naming it, required ledger fields, a hostile witness, and a
+release-visible proof surface. When real ledger rows land, each row will
+additionally bind its kind, an exact source anchor, its target/profile,
+and an explicit assumption statement as required non-optional fields.
+
+<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from spec/compiler_assumptions.rs by bootstrap/project.py; do not edit -->
+```text
+kind                   basis     marker  classify  release
+UnsafeMemoryContract   DEC-068   true    G3        G9
+PointerProvenance      DEC-067   false   G3        G9
+```
+<!-- COMPILER-ASSUMPTION-KINDS:END -->
+
 A workspace-wide unsafe ban is not used to hide the real requirement. TestPak and seed checks reject unledgered or misplaced unsafe code, and release receipts bind the complete unsafe denominator.
 
 ## Guest isolation claim

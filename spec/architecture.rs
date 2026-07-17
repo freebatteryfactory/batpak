@@ -865,6 +865,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/proof.rs",
     "spec/toolchain.rs",
     "spec/commands.rs",
+    "spec/compiler_assumptions.rs",
     "spec/contracts.rs",
     "spec/corpus.rs",
     "spec/identities.rs",

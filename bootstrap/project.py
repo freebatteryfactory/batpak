@@ -648,6 +648,66 @@ def render_identity_residue(root):
     return "```text\n" + rows + "\n```"
 
 
+# --- Compiler-assumption kinds projection (5.5E3h) ---------------------------
+# spec/compiler_assumptions.rs owns the admitted ledgerable kinds; docs/19,
+# the semantic owner, carries the generated fact row per kind.
+SECURITY_DOC = "docs/19_SECURITY_MODEL.md"
+
+
+def parse_compiler_assumptions(root):
+    src = (root / "spec/compiler_assumptions.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[CompilerAssumptionKind\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bCompilerAssumptionKind::(\w+)", all_body.group(1)) \
+        if all_body else []
+    fields = {}
+    for name, pat in (
+            ("spelling", r'"([^"]*)"'),
+            ("basis", r'GuaranteeRef::dec\("([^"]+)"\)'),
+            ("marker", r"(true|false)"),
+            ("cgate", r"GateId::(\w+)"),
+            ("rgate", r"GateId::(\w+)")):
+        fields[name] = {}
+    for fn_name, key in (("spelling", "spelling"), ("admission_basis", "basis"),
+                         ("requires_safety_contract_marker", "marker"),
+                         ("classification_gate", "cgate"),
+                         ("release_qualification_gate", "rgate")):
+        body = re.search(
+            r"pub const fn " + fn_name + r"\(self\)[^{]*\{\s*match self \{(.*?)\n        \}",
+            src, re.S)
+        if not body:
+            continue
+        for arm, value in re.findall(
+                r"(CompilerAssumptionKind::\w+(?:\s*\|\s*CompilerAssumptionKind::\w+)*)"
+                r"\s*=>\s*([^,]+),", body.group(1), re.S):
+            for v in re.findall(r"\bCompilerAssumptionKind::(\w+)", arm):
+                fields[key][v] = value.strip()
+    rows = []
+    for v in inventory:
+        if any(v not in fields[k] for k in fields):
+            raise Unadmitted(
+                f"spec/compiler_assumptions.rs: CompilerAssumptionKind::{v} facts unreadable")
+        rows.append((
+            fields["spelling"][v].strip('"'),
+            re.search(r'"([^"]+)"', fields["basis"][v]).group(1),
+            fields["marker"][v],
+            re.search(r"GateId::(\w+)", fields["cgate"][v]).group(1),
+            re.search(r"GateId::(\w+)", fields["rgate"][v]).group(1),
+        ))
+    if not rows:
+        raise Unadmitted("spec/compiler_assumptions.rs: inventory unreadable")
+    return rows
+
+
+def render_compiler_assumptions(root):
+    header = (f"{'kind':<22} {'basis':<9} {'marker':<7} "
+              f"{'classify':<9} release")
+    rows = "\n".join(
+        f"{s:<22} {basis:<9} {marker:<7} {cg:<9} {rg}"
+        for s, basis, marker, cg, rg in parse_compiler_assumptions(root))
+    return "```text\n" + header + "\n" + rows + "\n```"
+
+
 # --- Corpus epoch projection (5.5E3g) ----------------------------------------
 # spec/corpus.rs owns which corpus epochs exist and which one is CURRENT;
 # this projector mechanically converges every eligible document's epoch
@@ -1583,6 +1643,25 @@ def main() -> int:
             continue
         mu_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), mu_rewritten)
     plans.append((mu_path, mu_original, mu_rewritten))
+    # The compiler-assumption kinds (5.5E3h): docs/19 carries the fact row
+    # per admitted ledgerable kind.
+    ca_path = root / SECURITY_DOC
+    ca_original = ca_path.read_text(encoding="utf-8")
+    ca_pat = block_pattern("COMPILER-ASSUMPTION-KINDS")
+    if not ca_pat.search(ca_original):
+        findings.append(f"{SECURITY_DOC}: missing generated block markers for "
+                        "COMPILER-ASSUMPTION-KINDS")
+        plans.append((ca_path, ca_original, ca_original))
+    else:
+        try:
+            body = render_compiler_assumptions(root)
+            plans.append((ca_path, ca_original,
+                          ca_pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
+                                     ca_original)))
+        except Unadmitted as exc:
+            findings.append(f"{SECURITY_DOC}: COMPILER-ASSUMPTION-KINDS does not "
+                            f"admit: {exc}")
+            plans.append((ca_path, ca_original, ca_original))
     # The corpus epoch (5.5E3g): the docs/00 fact block, then mechanical
     # frontmatter convergence over every eligible tracked document — applied
     # to already-planned rewrites so no path appears in plans twice.

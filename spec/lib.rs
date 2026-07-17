@@ -12,6 +12,7 @@
 
 pub mod architecture;
 pub mod commands;
+pub mod compiler_assumptions;
 pub mod contracts;
 pub mod corpus;
 pub mod dispositions;

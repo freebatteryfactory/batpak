@@ -3677,6 +3677,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
     findings.extend(corpus_findings(root))
+    findings.extend(compiler_assumption_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -4214,6 +4215,152 @@ def _identity_block_parity(marker: str, want: list[str], doc: str,
     for extra in listed[len(want):]:
         out.append(f"docs/16 {marker} lists {extra.split()[0]}, "
                    "which the typed catalog does not project")
+
+
+# --- Compiler-assumption kinds (5.5E3h) --------------------------------------
+# spec/compiler_assumptions.rs owns the admitted ledgerable kinds — two
+# sharp instruments, never a junk drawer. Hard violations, test allowances,
+# dependency mechanisms, and not-yet-earned ideas keep their existing
+# owners; the borders are proven by hostiles, not by a second census table.
+def compiler_assumption_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / "spec/compiler_assumptions.rs"
+    if not path.is_file():
+        return ["missing spec/compiler_assumptions.rs"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    contract_ids = declared_contract_ids(root)
+    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dec_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
+    enum_body = re.search(r"pub enum CompilerAssumptionKind \{(.*?)\n\}", src, re.S)
+    variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
+    all_body = re.search(
+        r"pub const ALL: &'static \[CompilerAssumptionKind\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bCompilerAssumptionKind::(\w+)", all_body.group(1)) \
+        if all_body else []
+    for missing in [v for v in variants if v not in inventory]:
+        out.append(f"CompilerAssumptionKind::{missing} is omitted from "
+                   "CompilerAssumptionKind::ALL")
+    for phantom in [v for v in inventory if v not in variants]:
+        out.append(f"CompilerAssumptionKind::ALL names {phantom}, which the enum "
+                   "does not declare")
+
+    def fn_arms(name):
+        body = re.search(
+            r"pub const fn " + name + r"\(self\)[^{]*\{\s*match self \{(.*?)\n        \}",
+            src, re.S)
+        arms: dict[str, str] = {}
+        if not body:
+            return arms
+        for arm, value in re.findall(
+                r"(CompilerAssumptionKind::\w+(?:\s*\|\s*CompilerAssumptionKind::\w+)*)"
+                r"\s*=>\s*([^,]+),", body.group(1), re.S):
+            for v in re.findall(r"\bCompilerAssumptionKind::(\w+)", arm):
+                arms[v] = value.strip()
+        return arms
+
+    spellings = fn_arms("spelling")
+    owners = fn_arms("semantic_owner")
+    bases = fn_arms("admission_basis")
+    markers = fn_arms("requires_safety_contract_marker")
+    cgates = fn_arms("classification_gate")
+    rgates = fn_arms("release_qualification_gate")
+    owner_text: dict[str, str] = {}
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        text = p.read_text(encoding="utf-8")
+        cid = frontmatter(text).get("contract_id")
+        if cid:
+            owner_text[cid] = A_GENERATED_BLOCK.sub("", text)
+    seen: set[str] = set()
+    rows: list[str] = []
+    for v in inventory:
+        s = spellings.get(v, "").strip('"')
+        if not s.strip():
+            out.append(f"CompilerAssumptionKind::{v} projects an empty spelling")
+            continue
+        if s in seen:
+            out.append(f"assumption-kind spelling {s} is claimed twice")
+        seen.add(s)
+        owner = re.search(r'ContractId\("([^"]+)"\)', owners.get(v, ""))
+        oid = owner.group(1) if owner else ""
+        if oid not in contract_ids:
+            out.append(f"assumption kind {s} cites owner {oid}, which no declared "
+                       "contract owns")
+        elif not re.search(r"\b" + re.escape(s) + r"\b", owner_text.get(oid, "")):
+            out.append(f"assumption kind {s} cites owner {oid}, whose authoritative "
+                       "document does not author the spelling")
+        basis = re.search(r'GuaranteeRef::dec\("([^"]+)"\)', bases.get(v, ""))
+        bid = basis.group(1) if basis else ""
+        if bid not in dec_ids:
+            out.append(f"assumption kind {s} cites admission basis {bid}, which no "
+                       "declared decision owns")
+        else:
+            row = re.search(
+                r'DecisionSpec \{ id: "' + re.escape(bid)
+                + r'",.*?subject: "([^"]*)", successor: "([^"]*)",'
+                + r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
+            fields = " ".join(g or "" for g in row.groups()) if row else ""
+            if not re.search(r"\b" + re.escape(s) + r"\b", fields):
+                out.append(f"assumption kind {s} cites admission basis {bid}, whose "
+                           "forward-policy fields do not name the kind")
+        marker = markers.get(v, "")
+        if v == "UnsafeMemoryContract" and marker != "true":
+            out.append("UnsafeMemoryContract must intrinsically require the "
+                       "SAFETY-CONTRACT marker")
+        if v != "UnsafeMemoryContract" and marker == "true":
+            out.append(f"only UnsafeMemoryContract intrinsically requires the "
+                       f"SAFETY-CONTRACT marker; {s} claims it")
+        cg = re.search(r"GateId::(\w+)", cgates.get(v, ""))
+        if not cg or cg.group(1) != "G3":
+            out.append(f"assumption kind {s} classifies at "
+                       f"{cg.group(1) if cg else '?'}; the ledger boundary is "
+                       "classified at G3")
+        rg = re.search(r"GateId::(\w+)", rgates.get(v, ""))
+        if not rg or rg.group(1) != "G9":
+            out.append(f"assumption kind {s} qualifies for release at "
+                       f"{rg.group(1) if rg else '?'}; the release seal consumes "
+                       "the ledger at G9")
+        rows.append(f"{s:<22} {bid:<9} {marker:<7} "
+                    f"{cg.group(1) if cg else '?':<9} {rg.group(1) if rg else '?'}")
+    # docs/19 carries the fact rows; the semantic owner projects, docs/12
+    # only consumes.
+    doc19 = (root / "docs/19_SECURITY_MODEL.md").read_text(encoding="utf-8")
+    m = re.search(
+        r"<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from "
+        r"spec/compiler_assumptions\.rs by bootstrap/project\.py; do not edit -->"
+        r"\n```text\n(.*?)\n```\n<!-- COMPILER-ASSUMPTION-KINDS:END -->", doc19, re.S)
+    if not m:
+        out.append("docs/19 carries no generated COMPILER-ASSUMPTION-KINDS block "
+                   "naming spec/compiler_assumptions.rs as source")
+    else:
+        header = f"{'kind':<22} {'basis':<9} {'marker':<7} {'classify':<9} release"
+        expected = [header] + rows
+        listed = [line.rstrip() for line in m.group(1).splitlines() if line.strip()]
+        for i, want in enumerate(expected):
+            if i >= len(listed):
+                out.append(f"docs/19 COMPILER-ASSUMPTION-KINDS omits row "
+                           f"{want.split()[0]}")
+            elif listed[i] != want.rstrip():
+                out.append(f"docs/19 COMPILER-ASSUMPTION-KINDS row {i + 1} states "
+                           f"{' '.join(listed[i].split())}; the typed catalog states "
+                           f"{' '.join(want.split())} at that position")
+        for extra in listed[len(expected):]:
+            out.append(f"docs/19 COMPILER-ASSUMPTION-KINDS lists {extra.split()[0]}, "
+                       "which the typed catalog does not project")
+    # No universal assumption identity, and no other module speaks the type.
+    for rel in sorted((root / "spec").glob("*.rs")):
+        rsrc = _uncomment(rel.read_text(encoding="utf-8"))
+        if re.search(r"pub (?:struct|enum|type) (?:CompilerAssumptionId|AssumptionKind)\b",
+                     rsrc):
+            out.append(f"spec/{rel.name} declares a universal assumption identity; "
+                       "only earned ledgerable kinds enter CompilerAssumptionKind")
+        if rel.name in ("architecture.rs", "reconciliation.rs") and re.search(
+                r"\bCompilerAssumptionKind\b", rsrc):
+            out.append(f"spec/{rel.name} speaks CompilerAssumptionKind; the type has "
+                       "one owner module")
+    return out
 
 
 # --- Corpus reconciliation epoch (5.5E3g) ------------------------------------

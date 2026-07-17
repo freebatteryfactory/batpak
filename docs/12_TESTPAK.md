@@ -110,6 +110,14 @@ bootstrap lexical result       defense in depth
 TestPak AST result             authoritative Rust classification
 ```
 
+The ledgerable boundary consumes the canonical kinds owned by docs/19:
+unsafe blocks, functions, and impls may classify as `UnsafeMemoryContract`
+only with the complete ledger contract; pointer and integer-pointer
+crossings may classify as `PointerProvenance` only with the complete
+ledger contract; narrowing numeric casts are a hard finding, never
+ledgerable. Detection consumes the semantic kinds — it does not own what
+the danger means.
+
 This document owns the detector inventory, the required-behavior table, and the defense-in-depth posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
 Required proof rows, projected from docs/24 (qualification target: `DEC-068`; canonical proof-row owner: docs/24 Gauntlet):

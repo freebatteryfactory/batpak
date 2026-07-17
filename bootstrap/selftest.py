@@ -4485,6 +4485,182 @@ def test_corpus_epoch(audit) -> list[str]:
     return findings
 
 
+def test_compiler_assumptions(audit) -> list[str]:
+    """Named hostile fixtures for the admitted compiler-assumption kinds
+    (5.5E3h): two sharp instruments, borders proven by hostiles — no hard
+    violation, test allowance, dependency mechanism, or not-yet-earned idea
+    can enter the ledger wearing an assumption costume."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.compiler_assumption_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.compiler_assumption_findings(root):
+        fail("compiler_assumptions_pass_on_the_real_seed")
+
+    CA = "spec/compiler_assumptions.rs"
+    D19 = "docs/19_SECURITY_MODEL.md"
+
+    def synthetic_kind(name, basis):
+        """Full structural arms for a smuggled kind: everything present
+        except an authoring owner and a basis that names it."""
+        return [
+            (CA, "    PointerProvenance,\n}",
+             f"    PointerProvenance,\n    {name},\n}}"),
+            (CA, "        CompilerAssumptionKind::PointerProvenance,\n    ];",
+             "        CompilerAssumptionKind::PointerProvenance,\n"
+             f"        CompilerAssumptionKind::{name},\n    ];"),
+            (CA, 'CompilerAssumptionKind::PointerProvenance => "PointerProvenance",',
+             'CompilerAssumptionKind::PointerProvenance => "PointerProvenance",\n'
+             f'            CompilerAssumptionKind::{name} => "{name}",'),
+            (CA, 'CompilerAssumptionKind::PointerProvenance => ContractId("BP-SECURITY-1"),',
+             'CompilerAssumptionKind::PointerProvenance => ContractId("BP-SECURITY-1"),\n'
+             f'            CompilerAssumptionKind::{name} => ContractId("BP-SECURITY-1"),'),
+            (CA, 'CompilerAssumptionKind::PointerProvenance => GuaranteeRef::dec("DEC-067"),',
+             'CompilerAssumptionKind::PointerProvenance => GuaranteeRef::dec("DEC-067"),\n'
+             f'            CompilerAssumptionKind::{name} => GuaranteeRef::dec("{basis}"),'),
+            (CA, "CompilerAssumptionKind::PointerProvenance => false,",
+             "CompilerAssumptionKind::PointerProvenance => false,\n"
+             f"            CompilerAssumptionKind::{name} => false,"),
+            (CA, "CompilerAssumptionKind::PointerProvenance => GateId::G3,",
+             "CompilerAssumptionKind::PointerProvenance => GateId::G3,\n"
+             f"            CompilerAssumptionKind::{name} => GateId::G3,"),
+            (CA, "CompilerAssumptionKind::PointerProvenance => GateId::G9,",
+             "CompilerAssumptionKind::PointerProvenance => GateId::G9,\n"
+             f"            CompilerAssumptionKind::{name} => GateId::G9,"),
+        ]
+
+    probe("compiler_assumption_kind_missing_from_all_is_rejected",
+          [(CA, "        CompilerAssumptionKind::PointerProvenance,\n    ];", "    ];")],
+          "CompilerAssumptionKind::PointerProvenance is omitted from "
+          "CompilerAssumptionKind::ALL")
+    probe("assumption_kind_with_unknown_owner_is_rejected",
+          [(CA, 'CompilerAssumptionKind::PointerProvenance => ContractId("BP-SECURITY-1"),',
+            'CompilerAssumptionKind::PointerProvenance => ContractId("BP-GHOST-1"),')],
+          "assumption kind PointerProvenance cites owner BP-GHOST-1, which no "
+          "declared contract owns")
+    probe("assumption_kind_owner_must_author_the_spelling",
+          [(CA, 'CompilerAssumptionKind::PointerProvenance => ContractId("BP-SECURITY-1"),',
+            'CompilerAssumptionKind::PointerProvenance => ContractId("BP-NETBAT-1"),')],
+          "assumption kind PointerProvenance cites owner BP-NETBAT-1, whose "
+          "authoritative document does not author the spelling")
+    probe("assumption_kind_with_dangling_basis_is_rejected",
+          [(CA, 'GuaranteeRef::dec("DEC-067"),', 'GuaranteeRef::dec("DEC-967"),')],
+          "assumption kind PointerProvenance cites admission basis DEC-967, "
+          "which no declared decision owns")
+    probe("assumption_kind_basis_must_name_the_kind",
+          [("spec/dispositions.rs",
+            "pointer and integer-pointer crossings is PointerProvenance",
+            "pointer and integer-pointer crossings is the pointer kind")],
+          "assumption kind PointerProvenance cites admission basis DEC-067, "
+          "whose forward-policy fields do not name the kind")
+    probe("only_unsafe_memory_contract_requires_safety_marker",
+          [(CA, "CompilerAssumptionKind::PointerProvenance => false,",
+            "CompilerAssumptionKind::PointerProvenance => true,")],
+          "only UnsafeMemoryContract intrinsically requires the SAFETY-CONTRACT "
+          "marker; PointerProvenance claims it")
+    probe("unsafe_memory_contract_must_require_safety_marker",
+          [(CA, "CompilerAssumptionKind::UnsafeMemoryContract => true,",
+            "CompilerAssumptionKind::UnsafeMemoryContract => false,")],
+          "UnsafeMemoryContract must intrinsically require the SAFETY-CONTRACT "
+          "marker")
+    probe("assumption_kind_wrong_classification_gate_is_rejected",
+          [(CA, "CompilerAssumptionKind::UnsafeMemoryContract => GateId::G3,",
+            "CompilerAssumptionKind::UnsafeMemoryContract => GateId::G2,")],
+          "assumption kind UnsafeMemoryContract classifies at G2; the ledger "
+          "boundary is classified at G3")
+    probe("assumption_kind_wrong_release_gate_is_rejected",
+          [(CA, "CompilerAssumptionKind::UnsafeMemoryContract => GateId::G9,",
+            "CompilerAssumptionKind::UnsafeMemoryContract => GateId::G8,")],
+          "assumption kind UnsafeMemoryContract qualifies for release at G8; "
+          "the release seal consumes the ledger at G9")
+    # The border: nothing enters without a basis that names it and an owner
+    # that authors it — a decision sentence about a mechanism is an admission
+    # direction, not a passport.
+    for name, basis, fixture in (
+            ("NarrowingNumericCast", "DEC-067",
+             "narrowing_numeric_cast_cannot_become_a_ledger_escape"),
+            ("LintSuppression", "DEC-068",
+             "production_lint_suppression_cannot_become_an_assumption_kind"),
+            ("ProductionExpect", "DEC-067",
+             "production_expect_cannot_become_an_assumption_kind"),
+            ("TestContextualExpect", "DEC-068",
+             "test_contextual_expect_is_an_allowance_not_an_assumption"),
+            ("SerdeInterop", "DEC-020",
+             "compatibility_dependency_is_not_a_compiler_assumption"),
+            ("RepresentationLayout", "DEC-067",
+             "representation_layout_is_not_currently_admitted"),
+            ("AtomicOrdering", "DEC-068",
+             "atomic_ordering_is_not_currently_admitted"),
+            ("FfiAbi", "DEC-068", "ffi_abi_is_not_currently_admitted"),
+            ("TargetFeature", "DEC-068",
+             "target_feature_is_not_currently_admitted"),
+    ):
+        probe(fixture, synthetic_kind(name, basis),
+              f"assumption kind {name} cites admission basis {basis}, whose "
+              "forward-policy fields do not name the kind")
+    probe("docs_compiler_assumption_projection_drift_is_rejected",
+          [(D19, "UnsafeMemoryContract   DEC-068   true    G3        G9",
+            "UnsafeMemoryContract   DEC-068   false   G3        G9")],
+          "docs/19 COMPILER-ASSUMPTION-KINDS row 2 states UnsafeMemoryContract "
+          "DEC-068 false G3 G9; the typed catalog states UnsafeMemoryContract "
+          "DEC-068 true G3 G9 at that position")
+    probe("compiler_assumption_projection_source_marker_drift_is_rejected",
+          [(D19, "<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from "
+                 "spec/compiler_assumptions.rs by bootstrap/project.py; do not edit -->",
+            "<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from "
+                 "spec/compiler_presumptions.rs by bootstrap/project.py; do not edit -->")],
+          "docs/19 carries no generated COMPILER-ASSUMPTION-KINDS block naming "
+          "spec/compiler_assumptions.rs as source")
+    probe("universal_assumption_identity_is_absent_from_the_public_spec",
+          [(CA, "use crate::gates::GateId;",
+            "use crate::gates::GateId;\npub struct CompilerAssumptionId;")],
+          "declares a universal assumption identity")
+    probe("reconciliation_module_does_not_speak_assumption_kinds",
+          [("spec/reconciliation.rs", "pub enum ReconciliationRole {",
+            "pub struct CompilerAssumptionKindMirror(pub CompilerAssumptionKind);\n"
+            "pub enum ReconciliationRole {")],
+          "spec/reconciliation.rs speaks CompilerAssumptionKind")
+    probe("architecture_module_does_not_reexport_assumption_kinds",
+          [("spec/architecture.rs", "pub const SYNCBAT_PLANES:",
+            "pub use crate::compiler_assumptions::CompilerAssumptionKind;\n"
+            "pub const SYNCBAT_PLANES:")],
+          "spec/architecture.rs speaks CompilerAssumptionKind")
+    # GREEN structural growth — evidence that the parser and projection are
+    # count-free ONLY: every structural surface present (variant, ALL, unique
+    # spelling, live authoring owner, live decision naming it, full arms,
+    # matching docs/19 row). It does not prove a real future adopter exists.
+    tmp = gate_sandbox(synthetic_kind("FutureKindProbe", "DEC-068") + [
+        ("spec/dispositions.rs",
+         "unsafe blocks functions and impls is UnsafeMemoryContract;",
+         "unsafe blocks functions and impls is UnsafeMemoryContract and a "
+         "sandbox structural probe kind named FutureKindProbe;"),
+        (D19, "A future kind enters",
+         "A sandbox structural probe (`FutureKindProbe`) exercises this "
+         "boundary as growth evidence only. A future kind enters"),
+        (D19, "PointerProvenance      DEC-067   false   G3        G9",
+         "PointerProvenance      DEC-067   false   G3        G9\n"
+         "FutureKindProbe        DEC-068   false   G3        G9"),
+    ])
+    try:
+        got = audit.compiler_assumption_findings(tmp)
+        if got:
+            fail(f"structural_future_kind_growth_is_count_free (refused: {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -5380,6 +5556,7 @@ def main() -> int:
     findings += test_commands(audit)
     findings += test_mutation(audit)
     findings += test_corpus_epoch(audit)
+    findings += test_compiler_assumptions(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)

@@ -77,6 +77,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_commands(root, &mut findings);
     check_mutation(root, &mut findings);
     check_corpus(root, &mut findings);
+    check_compiler_assumptions(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -533,6 +534,94 @@ fn check_commands(root: &Path, findings: &mut Vec<String>) {
     let mut testpak_seen = BTreeSet::new();
     for command in commands::TestPakCommand::ALL {
         check_entry("TestPakCommand", command.token(), command.authority(), &mut testpak_seen);
+    }
+}
+
+/// The admitted compiler-assumption kinds execute their own law (5.5E3h):
+/// spellings unique and authored by the semantic owner, one admission basis
+/// per kind that NAMES the kind, only UnsafeMemoryContract intrinsically
+/// requiring the SAFETY-CONTRACT marker, classification at G3, and release
+/// qualification at G9.
+fn check_compiler_assumptions(root: &Path, findings: &mut Vec<String>) {
+    use spec::compiler_assumptions::CompilerAssumptionKind;
+    let contract_ids = declared_contract_ids(root);
+    let owner_texts = contract_authored_texts(root);
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for kind in CompilerAssumptionKind::ALL {
+        let s = kind.spelling();
+        if s.trim().is_empty() {
+            findings.push("an assumption kind projects an empty spelling".to_string());
+        }
+        if !seen.insert(s) {
+            findings.push(format!("assumption-kind spelling {s} is claimed twice"));
+        }
+        let owner = kind.semantic_owner();
+        if !contract_ids.contains(owner.raw()) {
+            findings.push(format!(
+                "assumption kind {s} cites owner {}, which no document declares",
+                owner.raw()
+            ));
+        } else if !owner_texts
+            .get(owner.raw())
+            .is_some_and(|text| authors_token(text, s))
+        {
+            findings.push(format!(
+                "assumption kind {s} cites owner {}, whose authoritative document \
+                 does not author the spelling",
+                owner.raw()
+            ));
+        }
+        match kind.admission_basis() {
+            guarantees::GuaranteeRef::Decision(decision) => {
+                match dispositions::DECISIONS.iter().find(|d| d.id == decision.raw()) {
+                    None => findings.push(format!(
+                        "assumption kind {s} cites admission basis {}, which no \
+                         declared decision owns",
+                        decision.raw()
+                    )),
+                    Some(d) => {
+                        let named = authors_token(d.subject, s)
+                            || authors_token(d.successor, s)
+                            || d.replacement_contract.is_some_and(|rc| authors_token(rc, s));
+                        if !named {
+                            findings.push(format!(
+                                "assumption kind {s} cites admission basis {}, whose \
+                                 forward-policy fields do not name the kind",
+                                decision.raw()
+                            ));
+                        }
+                    }
+                }
+            }
+            other => findings.push(format!(
+                "assumption kind {s} cites a non-decision admission basis {other:?}"
+            )),
+        }
+        let is_unsafe_contract = matches!(kind, CompilerAssumptionKind::UnsafeMemoryContract);
+        if kind.requires_safety_contract_marker() != is_unsafe_contract {
+            findings.push(if is_unsafe_contract {
+                "UnsafeMemoryContract must intrinsically require the SAFETY-CONTRACT \
+                 marker"
+                    .to_string()
+            } else {
+                format!(
+                    "only UnsafeMemoryContract intrinsically requires the \
+                     SAFETY-CONTRACT marker; {s} claims it"
+                )
+            });
+        }
+        if kind.classification_gate() != gates::GateId::G3 {
+            findings.push(format!(
+                "assumption kind {s} does not classify at G3; the ledger boundary is \
+                 TestPak's"
+            ));
+        }
+        if kind.release_qualification_gate() != gates::GateId::G9 {
+            findings.push(format!(
+                "assumption kind {s} does not qualify for release at G9; the release \
+                 seal consumes the ledger"
+            ));
+        }
     }
 }
 
