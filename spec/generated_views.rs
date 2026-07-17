@@ -96,6 +96,11 @@ pub enum GeneratedView {
     CompilerAssumptionKinds,
     CorpusReconciliationEpoch,
     CorpusEpochMembership,
+    PackageInventory,
+    PackageEdges,
+    QualificationProfiles,
+    BundleInventory,
+    Tier0ReceiptDenominator,
     GeneratedViewRegistry,
 }
 
@@ -136,6 +141,11 @@ impl GeneratedView {
         GeneratedView::CompilerAssumptionKinds,
         GeneratedView::CorpusReconciliationEpoch,
         GeneratedView::CorpusEpochMembership,
+        GeneratedView::PackageInventory,
+        GeneratedView::PackageEdges,
+        GeneratedView::QualificationProfiles,
+        GeneratedView::BundleInventory,
+        GeneratedView::Tier0ReceiptDenominator,
         GeneratedView::GeneratedViewRegistry,
     ];
 
@@ -176,6 +186,11 @@ impl GeneratedView {
             GeneratedView::CompilerAssumptionKinds => "CompilerAssumptionKinds",
             GeneratedView::CorpusReconciliationEpoch => "CorpusReconciliationEpoch",
             GeneratedView::CorpusEpochMembership => "CorpusEpochMembership",
+            GeneratedView::PackageInventory => "PackageInventory",
+            GeneratedView::PackageEdges => "PackageEdges",
+            GeneratedView::QualificationProfiles => "QualificationProfiles",
+            GeneratedView::BundleInventory => "BundleInventory",
+            GeneratedView::Tier0ReceiptDenominator => "Tier0ReceiptDenominator",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
         }
     }
@@ -438,6 +453,52 @@ impl GeneratedView {
                 target: GeneratedViewTarget::EligibleMarkdownCorpus,
                 surface: GeneratedViewSurface::CorpusFrontmatter,
                 marker: None,
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::PackageInventory => GeneratedViewSpec {
+                authority_sources: &["spec/architecture.rs"],
+                target: GeneratedViewTarget::Static(&[
+                    "README.md",
+                    "docs/03_REPOSITORY_AND_PACKAGES.md",
+                ]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PACKAGE-INVENTORY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::PackageEdges => GeneratedViewSpec {
+                authority_sources: &["spec/architecture.rs"],
+                target: GeneratedViewTarget::Static(&["docs/03_REPOSITORY_AND_PACKAGES.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PACKAGE-EDGES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::QualificationProfiles => GeneratedViewSpec {
+                authority_sources: &["spec/architecture.rs"],
+                target: GeneratedViewTarget::Static(&["docs/03_REPOSITORY_AND_PACKAGES.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("QUALIFICATION-PROFILES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::BundleInventory => GeneratedViewSpec {
+                authority_sources: &[
+                    "spec/architecture.rs",
+                    "spec/invariants.rs",
+                    "spec/dispositions.rs",
+                    "spec/legacy_obligations.rs",
+                    "spec/legacy_invariant_coverage.rs",
+                    "spec/operators.rs",
+                    "spec/generated_views.rs",
+                ],
+                target: GeneratedViewTarget::Static(&["DELIVERY_NOTES.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("BUNDLE-INVENTORY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::Tier0ReceiptDenominator => GeneratedViewSpec {
+                authority_sources: &["bootstrap/selftest.py"],
+                target: GeneratedViewTarget::Static(&["DELIVERY_NOTES.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("TIER0-RECEIPT-DENOMINATOR"),
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {

@@ -75,6 +75,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_contract_kinds(&mut findings);
     check_identity_catalogs(root, &mut findings);
     check_operators(root, &mut findings);
+    check_inventory_classes(&mut findings);
     check_generated_views(root, &mut findings);
     check_commands(root, &mut findings);
     check_mutation(root, &mut findings);
@@ -414,6 +415,127 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// The documentary inventory classes, EXECUTED (5.5E4b). The typed owners
+/// already contain the truth the generated package/edge/profile projections
+/// render; seedcheck proves the class inventories, spellings, row parity, and
+/// gate discipline on the real Rust values. It parses no generated Markdown
+/// and no Python Tier 0 rows.
+fn check_inventory_classes(findings: &mut Vec<String>) {
+    let mut pkg_spellings: BTreeSet<&str> = BTreeSet::new();
+    for class in architecture::PackageClass::ALL {
+        // Exhaustive: a new class must be classified here, not defaulted.
+        match class {
+            architecture::PackageClass::Production
+            | architecture::PackageClass::BinaryAdapter
+            | architecture::PackageClass::DevOnly
+            | architecture::PackageClass::Example => {}
+        }
+        let spelling = class.spelling();
+        if spelling.is_empty() {
+            findings.push("empty PackageClass spelling".into());
+        }
+        if !pkg_spellings.insert(spelling) {
+            findings.push(format!("duplicate PackageClass spelling {spelling}"));
+        }
+    }
+    for class in [
+        architecture::PackageClass::Production,
+        architecture::PackageClass::BinaryAdapter,
+        architecture::PackageClass::DevOnly,
+        architecture::PackageClass::Example,
+    ] {
+        if !architecture::PackageClass::ALL.contains(&class) {
+            findings.push(format!("PackageClass {:?} is missing from PackageClass::ALL", class));
+        }
+    }
+    let mut edge_spellings: BTreeSet<&str> = BTreeSet::new();
+    for class in architecture::EdgeClass::ALL {
+        match class {
+            architecture::EdgeClass::Required
+            | architecture::EdgeClass::OptionalProfile
+            | architecture::EdgeClass::DevOnly => {}
+        }
+        let spelling = class.spelling();
+        if spelling.is_empty() {
+            findings.push("empty EdgeClass spelling".into());
+        }
+        if !edge_spellings.insert(spelling) {
+            findings.push(format!("duplicate EdgeClass spelling {spelling}"));
+        }
+    }
+    for class in [
+        architecture::EdgeClass::Required,
+        architecture::EdgeClass::OptionalProfile,
+        architecture::EdgeClass::DevOnly,
+    ] {
+        if !architecture::EdgeClass::ALL.contains(&class) {
+            findings.push(format!("EdgeClass {:?} is missing from EdgeClass::ALL", class));
+        }
+    }
+    if architecture::PACKAGES.len() != architecture::PackageId::ALL.len() {
+        findings.push("PACKAGES does not equal PackageId::ALL".into());
+    }
+    for (index, package) in architecture::PACKAGES.iter().enumerate() {
+        if architecture::PackageId::ALL.get(index) != Some(&package.id) {
+            findings.push(format!(
+                "PACKAGES row {} is out of PackageId::ALL order", package.id.cargo_name()));
+        }
+        if !architecture::PackageClass::ALL.contains(&package.class) {
+            findings.push(format!(
+                "package {} carries a class outside PackageClass::ALL",
+                package.id.cargo_name()));
+        }
+    }
+    for edge in architecture::EDGES {
+        if !architecture::EdgeClass::ALL.contains(&edge.class) {
+            findings.push(format!(
+                "edge {} -> {} carries a class outside EdgeClass::ALL",
+                edge.importer.cargo_name(), edge.importee.cargo_name()));
+        }
+        for endpoint in [edge.importer, edge.importee] {
+            if !architecture::PackageId::ALL.contains(&endpoint) {
+                findings.push(format!(
+                    "edge endpoint {} is outside PackageId::ALL", endpoint.cargo_name()));
+            }
+        }
+    }
+    for profile in architecture::QUALIFICATION_PROFILES {
+        if !architecture::PackageId::ALL.contains(&profile.package) {
+            findings.push(format!(
+                "qualification profile {} names a package outside PackageId::ALL",
+                profile.profile));
+        }
+        if !architecture::QualificationEnvironment::ALL.contains(&profile.environment) {
+            findings.push(format!(
+                "qualification profile {}:{} names an unadmitted environment",
+                profile.package.cargo_name(), profile.profile));
+        }
+        if profile.profile.trim().is_empty() {
+            findings.push("empty qualification profile name".into());
+        }
+        if profile.gates.is_empty() {
+            findings.push(format!(
+                "qualification profile {}:{} declares no gates",
+                profile.package.cargo_name(), profile.profile));
+        }
+        let mut last_index = None;
+        for gate in profile.gates {
+            let position = gates::GATES.iter().position(|g| g.id == *gate);
+            if position.is_none() {
+                findings.push(format!(
+                    "qualification profile {}:{} names an undeclared gate",
+                    profile.package.cargo_name(), profile.profile));
+            }
+            if position < last_index {
+                findings.push(format!(
+                    "qualification profile {}:{} gate list is out of canonical order",
+                    profile.package.cargo_name(), profile.profile));
+            }
+            last_index = position;
         }
     }
 }

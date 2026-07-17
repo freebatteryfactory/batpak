@@ -10,6 +10,26 @@ pub enum PackageClass {
     Example,
 }
 
+impl PackageClass {
+    pub const ALL: &'static [PackageClass] = &[
+        PackageClass::Production,
+        PackageClass::BinaryAdapter,
+        PackageClass::DevOnly,
+        PackageClass::Example,
+    ];
+
+    /// The documentary spelling (5.5E4b): the one spelling every generated
+    /// inventory projection renders — no Python class-spelling map exists.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            PackageClass::Production => "production",
+            PackageClass::BinaryAdapter => "binary-adapter",
+            PackageClass::DevOnly => "dev-only",
+            PackageClass::Example => "example",
+        }
+    }
+}
+
 /// The five SyncBat planes (docs/08 ownership firewall).
 ///
 /// `spec/architecture.rs` owns package topology, so it owns the plane IDENTITIES
@@ -169,6 +189,24 @@ pub enum EdgeClass {
     Required,
     OptionalProfile,
     DevOnly,
+}
+
+impl EdgeClass {
+    pub const ALL: &'static [EdgeClass] = &[
+        EdgeClass::Required,
+        EdgeClass::OptionalProfile,
+        EdgeClass::DevOnly,
+    ];
+
+    /// The documentary spelling (5.5E4b): the one spelling every generated
+    /// edge projection renders — no Python class-spelling map exists.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            EdgeClass::Required => "required",
+            EdgeClass::OptionalProfile => "optional-profile",
+            EdgeClass::DevOnly => "dev-only",
+        }
+    }
 }
 
 /// The semantic assumptions a qualification holds under (5.5E3a1). These

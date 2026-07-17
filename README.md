@@ -25,19 +25,23 @@ The semantic profiles of `batpak` and `syncbat` are required to compile under `n
 
 ## Frozen package map
 
-| Name | Kind | Authority |
-| --- | --- | --- |
-| `batpak` | production Cargo package | semantic and durable core, including `.fbat` |
-| `macbat-compiler` | production Cargo package | pure contract compiler |
-| `macbat` | proc-macro Cargo package | Rust declaration front door |
-| `syncbat` | production Cargo package | runtime, PakVM, Bvisor, world composition, host ports |
-| `batql` | production Cargo package | BatQL frontend and ProgramImage compiler |
-| `netbat` | production Cargo package | bounded typed transport |
-| `testpak` | dev-only Cargo package | repository proof, forge, gauntlet, benchmarks, mutation |
-| `batpak-cli` | binary adapter | thin command composition, no semantic ownership |
-| `pakvm` | module inside `syncbat` | typed program validation and interpretation |
-| `bvisor` | module inside `syncbat` | capability, budget, attempt, supervision, reconciliation |
-| `muterprater` | module inside `testpak` | mutation testing only |
+The package inventory is a generated projection of the typed owner (`spec/architecture.rs`); membership, class, layer, path, and order live there, never in this document:
+
+<!-- PACKAGE-INVENTORY:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+| Package | Class | Layer | Workspace path | Role |
+| --- | --- | --- | --- | --- |
+| macbat-compiler | production | 0 | crates/macbat/compiler | pure Rust contract compiler |
+| macbat | production | 1 | crates/macbat/macros | proc-macro front door |
+| batpak | production | 2 | crates/batpak | semantic and durable core, including .fbat |
+| syncbat | production | 3 | crates/syncbat | runtime crate containing runtime, PakVM, Bvisor, world, and port planes |
+| batql | production | 3 | crates/batql | BatQL parser, type checker, planner, partial evaluator, and ProgramImage compiler |
+| netbat | production | 4 | crates/netbat | bounded typed transport over declared SyncBat world entrypoints |
+| testpak | dev-only | 6 | crates/testpak | repository proof, forge, gauntlet, benchmark, and mutation battery |
+| batpak-cli | binary-adapter | 5 | apps/batpak-cli | thin product command adapter; owns no semantic law |
+| batpak-examples | example | 5 | examples | public-surface witness; runnable demos over production APIs only; owns no semantic law and depends on no dev tooling |
+<!-- PACKAGE-INVENTORY:END -->
+
+PakVM and Bvisor are internal planes of `syncbat`, not Cargo packages. Muterprater is a module inside `testpak`, not a Cargo package. A module cannot enter the package inventory by appearing in this explanation.
 
 `.vpak` remains the immutable executable package extension. `PakVM` is the machine. `ProgramImage` and `WorldImage` are semantic types.
 

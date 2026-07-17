@@ -4091,6 +4091,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(proof_row_catalog_findings(root))
     findings.extend(contract_kind_findings(root))
     findings.extend(generated_view_findings(root))
+    findings.extend(inventory_mirror_findings(root))
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
@@ -4302,7 +4303,9 @@ A_VIEW_ARM = re.compile(
 A_VIEW_SURFACES = {"EmbeddedBlock", "StandaloneFile", "CorpusFrontmatter"}
 A_MARKER_BEGIN = re.compile(r"<!-- ([A-Z0-9][A-Z0-9-]*):BEGIN([^>]*)-->")
 A_MARKER_END = re.compile(r"<!-- ([A-Z0-9][A-Z0-9-]*):END -->")
-A_MARKER_PROVENANCE = re.compile(r"\Agenerated from (\S+) by (\S+); do not edit\Z")
+# Multiple authority sources are joined in registry order by "; " — source
+# order is provenance, and reordering without changing the set is drift.
+A_MARKER_PROVENANCE = re.compile(r"\Agenerated from (.+?) by (\S+); do not edit\Z")
 # Closed authored-fence allowlist: marker-shaped fences that are AUTHORED
 # document structure, not generated views. HISTORICAL-MIGRATION is the
 # docs/24 quarantine fence this auditor itself consumes for retired-ID scope.
@@ -4422,7 +4425,7 @@ def generated_view_findings(root: Path) -> list[str]:
     registered = {(target, views[name]["marker"]) for name in order
                   if name in views and views[name]["surface"] == "EmbeddedBlock"
                   and views[name]["marker"] for target in views[name]["targets"]}
-    marker_source = {marker: views[name]["sources"][0] for name in order
+    marker_source = {marker: "; ".join(views[name]["sources"]) for name in order
                      if name in views and views[name]["marker"] and views[name]["sources"]
                      for marker in [views[name]["marker"]]}
     actual: set[tuple[str, str]] = set()
@@ -4556,6 +4559,235 @@ def generated_view_findings(root: Path) -> list[str]:
     if "operator blocks current" in proj_src or "WROTE operator blocks" in proj_src:
         out.append("bootstrap/project.py status reports only operator blocks; "
                    "the banner must report the registered-view denominator")
+    return out
+
+
+# --- Repository inventory mirrors (5.5E4b) -----------------------------------
+# The typed owners already contain the truth. This auditor reconstructs the
+# package, edge, qualification-profile, bundle, and Tier 0 receipt projections
+# INDEPENDENTLY (own regexes, own traversal, no shared results with the
+# projector) and refuses every retired authored mirror. Three species stay
+# distinct: semantic facts (typed spec), derived repository inventory
+# (generated from denominators plus current tracked-tree membership), and run
+# evidence (exact-SHA, exact-target receipts). A current count is not
+# semantic authority; a denominator is not a claim a run passed.
+A_PKG_ROW_FULL = re.compile(
+    r'PackageSpec \{\s*id: PackageId::(\w+),\s*role: "([^"]*)",\s*'
+    r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
+A_EDGE_ROW = re.compile(
+    r'EdgeSpec \{ importer: PackageId::(\w+), importee: PackageId::(\w+), '
+    r'class: EdgeClass::(\w+), profile: "([^"]*)" \}')
+A_QUAL_FULL = re.compile(
+    r'QualificationProfile \{\s*package: PackageId::(\w+),\s*profile: "([^"]+)",\s*'
+    r'environment: QualificationEnvironment::(\w+),\s*gates: &\[([^\]]*)\],\s*'
+    r'requirement: "([^"]+)",\s*\}', re.S)
+A_TIER0_ROWS = re.compile(r'\("([^"]+)", (True|False)\)')
+# Authored doctrine fragments the converged documents must keep authoring.
+A_E4B_DOCTRINE = (
+    ("docs/03_REPOSITORY_AND_PACKAGES.md", "feature-coverage-distinction",
+     "They are not additional QualificationProfile identities unless they enter"),
+    ("DELIVERY_NOTES.md", "denominator-not-a-run-claim",
+     "This block declares the denominator. It does not claim that the latest run passed."),
+    ("DELIVERY_NOTES.md", "receipts-carry-outcomes",
+     "exact-SHA, exact-target run receipts, not timeless prose"),
+    ("docs/29_STATUS_AND_SUPERSESSION.md", "authored-metadata-epoch",
+     "ReconciliationEpoch corpus membership"),
+    ("docs/29_STATUS_AND_SUPERSESSION.md", "generated-metadata-sources",
+     "generator, exact authority sources, do-not-edit posture"),
+    ("docs/29_STATUS_AND_SUPERSESSION.md", "generated-needs-no-contract-id",
+     "does not invent a contract ID or supersession claim"),
+    ("docs/29_STATUS_AND_SUPERSESSION.md", "authored-cannot-claim-generated",
+     "cannot claim generated status to evade the authored fields"),
+)
+# Retired authored mirrors, refused against the stripped authored body.
+A_E4B_RETIRED = (
+    ("README.md", "authored package table",
+     re.compile(r"\|\s*`?[a-z-]+`?\s*\|\s*(?:production|dev-only|binary adapter|proc-macro) ")),
+    ("docs/03_REPOSITORY_AND_PACKAGES.md", "authored layer inventory",
+     re.compile(r"^L0\s+macbat-compiler", re.M)),
+    ("docs/03_REPOSITORY_AND_PACKAGES.md", "ASCII dependency inventory",
+     re.compile(r"[↑↑]")),
+    ("docs/03_REPOSITORY_AND_PACKAGES.md", "five-profile target matrix",
+     re.compile(r"^batpak semantic\s+no_std", re.M)),
+    ("DELIVERY_NOTES.md", "authored bundle counts",
+     re.compile(r"^\d+ (?:numbered|declared|retained|one-for-one|concrete|bootstrap|architectural|classified) ", re.M)),
+    ("DELIVERY_NOTES.md", "volatile word count",
+     re.compile(r"\d[\d,]*\+? words")),
+    ("DELIVERY_NOTES.md", "107-row legacy claim",
+     re.compile(r"\b107-row\b")),
+    ("DELIVERY_NOTES.md", "static validation PASS table",
+     re.compile(r"Validation completed in this delivery environment")),
+    ("DELIVERY_NOTES.md", "historical no-rustc claim",
+     re.compile(r"did not contain `?rustc`?|structurally inspected but not compiled")),
+    ("DELIVERY_NOTES.md", "authored package topology",
+     re.compile(r"Frozen package direction")),
+    ("DELIVERY_NOTES.md", "current run id embedded as timeless law",
+     re.compile(r"\b\d{10,}\b")),
+)
+
+
+def _a_gate_token_render(expr: str, root: Path) -> str:
+    src = (root / "spec/gates.rs").read_text(encoding="utf-8")
+    rows = re.findall(r'GateSpec \{ id: GateId::(\w+), token: "([^"]*)"', src)
+    order = [r[0] for r in rows]
+    token_of = dict(rows)
+    names = [c.strip().split("::")[-1] for c in expr.split(",") if c.strip()]
+    names.sort(key=lambda n: order.index(n) if n in order else 99)
+    return "/".join(token_of.get(n, "?") for n in names)
+
+
+def inventory_mirror_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    # Documentary class spellings: variants == ALL, spellings unique/nonempty.
+    for type_name in ("PackageClass", "EdgeClass"):
+        enum_body = re.search(r"pub enum " + type_name + r" \{(.*?)\n\}", arch, re.S)
+        variants = re.findall(r"\n    (\w+),", _uncomment(enum_body.group(1))) \
+            if enum_body else []
+        all_body = re.search(
+            r"pub const ALL: &'static \[" + type_name + r"\] = &\[(.*?)\];", arch, re.S)
+        inventory = re.findall(r"\b" + type_name + r"::(\w+)", all_body.group(1)) \
+            if all_body else []
+        for missing in [v for v in variants if v not in inventory]:
+            out.append(f"spec/architecture.rs: {type_name}::{missing} is declared "
+                       f"but missing from {type_name}::ALL")
+        for phantom in [v for v in inventory if v not in variants]:
+            out.append(f"spec/architecture.rs: {type_name}::ALL names {phantom}, "
+                       "which the enum does not declare")
+        impl = re.search(r"impl " + type_name + r" \{(.*?)\n\}", arch, re.S)
+        spellings = re.findall(r"\b" + type_name + r'::(\w+) => "([^"]*)",',
+                               impl.group(1)) if impl else []
+        seen: dict[str, str] = {}
+        for variant, spelling in spellings:
+            if not spelling:
+                out.append(f"spec/architecture.rs: {type_name}::{variant} declares "
+                           "an empty documentary spelling")
+            elif spelling in seen:
+                out.append(f"spec/architecture.rs: duplicate {type_name} spelling "
+                           f"{spelling!r} ({seen[spelling]} and {variant})")
+            seen[spelling] = variant
+        for variant in [v for v in inventory if v not in dict(spellings)]:
+            out.append(f"spec/architecture.rs: {type_name}::{variant} declares no "
+                       "documentary spelling arm")
+    # Independent projections of the typed rows.
+    pkg_all = re.findall(r"\bPackageId::(\w+),", re.search(
+        r"pub const ALL: &'static \[PackageId\] = &\[(.*?)\];", arch, re.S).group(1))
+    cargo = g_package_projection(root, "cargo_name")
+    wpath = g_package_projection(root, "workspace_path")
+    pkg_class = dict(re.findall(
+        r'PackageClass::(\w+) => "([^"]*)",',
+        re.search(r"impl PackageClass \{(.*?)\n\}", arch, re.S).group(1)))
+    edge_class = dict(re.findall(
+        r'EdgeClass::(\w+) => "([^"]*)",',
+        re.search(r"impl EdgeClass \{(.*?)\n\}", arch, re.S).group(1)))
+    environments = dict(re.findall(r'QualificationEnvironment::(\w+) => "([^"]+)"', arch))
+    pkg_rows = A_PKG_ROW_FULL.findall(arch)
+    if [r[0] for r in pkg_rows] != pkg_all:
+        out.append("spec/architecture.rs: PACKAGES does not equal PackageId::ALL "
+                   "exactly and in order")
+    want_pkg = [f"| {cargo.get(pid, '?')} | {pkg_class.get(cls, '?')} | {layer} | "
+                f"{wpath.get(pid, '?')} | {role} |"
+                for pid, role, cls, layer in pkg_rows]
+    want_edges = [f"| {cargo.get(a, '?')} | {cargo.get(b, '?')} | "
+                  f"{edge_class.get(cls, '?')} | {profile} |"
+                  for a, b, cls, profile in A_EDGE_ROW.findall(arch)]
+    want_quals = [f"| {cargo.get(pkg, '?')} | {profile} | "
+                  f"{environments.get(env, '?')} | {_a_gate_token_render(gates, root)} | "
+                  f"{req} |"
+                  for pkg, profile, env, gates, req in A_QUAL_FULL.findall(arch)]
+    # Tier 0 receipt denominator, from the harness that enforces it.
+    harness = (root / "bootstrap/selftest.py").read_text(encoding="utf-8") \
+        if (root / "bootstrap/selftest.py").is_file() else ""
+    tier0_body = re.search(r"REQUIRED_TIER0_RECEIPTS = \((.*?)\n\)", harness, re.S)
+    want_tier0 = [f"| {name} | {'yes' if bound == 'True' else 'no'} |"
+                  for name, bound in A_TIER0_ROWS.findall(tier0_body.group(1))] \
+        if tier0_body else []
+    if harness and not want_tier0:
+        out.append("bootstrap/selftest.py declares no parseable "
+                   "REQUIRED_TIER0_RECEIPTS denominator")
+    # Bundle inventory: every count independently derived.
+    md_paths = _a_tracked_markdown(root)
+    reg = a_parse_generated_views(root)
+    seeds = len(re.findall(r'InvariantSpec \{ id: "', (root / "spec/invariants.rs")
+                           .read_text(encoding="utf-8")))
+    decisions = len(G_DEC_ROW.findall((root / "spec/dispositions.rs")
+                                      .read_text(encoding="utf-8")))
+    obligations = len(G_LEG_ROW.findall((root / "spec/legacy_obligations.rs")
+                                        .read_text(encoding="utf-8")))
+    coverage_src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+    manifest = re.findall(r'"(INV-[^"]+)"', re.search(
+        r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", coverage_src,
+        re.S).group(1))
+    if len(re.findall(r"LegacyInvariantCoverage \{\s*legacy_id:", coverage_src)) \
+            != len(manifest):
+        out.append("spec/legacy_invariant_coverage.rs: COVERAGE rows do not equal "
+                   "SOURCE_INVARIANT_IDS")
+    op_model = batql_parse_operator_model(root)
+    if len(op_model["rows"]) != len(op_model["id_all"]):
+        out.append("spec/operators.rs: OPERATORS rows do not equal OperatorId::ALL")
+    static_instances = sum(len(reg["views"][n]["targets"]) for n in reg["order"]
+                           if n in reg["views"])
+    bindings = sum(1 for path in md_paths
+                   if re.search(r"^(?:source_)?reconciliation_epoch:",
+                                path.read_text(encoding="utf-8"), re.M))
+    derived = [
+        ("numbered architecture documents",
+         len(list((root / "docs").glob("[0-9][0-9]_*.md"))),
+         "current tracked docs matching docs/[0-9][0-9]_*.md"),
+        ("Markdown documents", len(md_paths), "current eligible Markdown corpus"),
+        ("Cargo packages", len(pkg_all), "PackageId::ALL with PACKAGES parity"),
+        ("package edges", len(A_EDGE_ROW.findall(arch)), "EDGES"),
+        ("qualification profiles", len(A_QUAL_FULL.findall(arch)),
+         "QUALIFICATION_PROFILES"),
+        ("SEED guarantees", seeds, "spec/invariants.rs SEED inventory"),
+        ("decision rows", decisions, "spec/dispositions.rs DECISIONS"),
+        ("legacy semantic obligations", obligations,
+         "spec/legacy_obligations.rs OBLIGATIONS"),
+        ("legacy invariant declarations", len(manifest),
+         "SOURCE_INVARIANT_IDS with COVERAGE parity"),
+        ("BatQL operators", len(op_model["id_all"]),
+         "OperatorId::ALL with OPERATORS parity"),
+        ("registered generated views", len(reg["order"]), "GeneratedView::ALL"),
+        ("static generated target instances", static_instances,
+         "expansion of every Static registry target"),
+        ("corpus-frontmatter bindings", bindings,
+         "the eligible Markdown corpus reached by CorpusEpochMembership"),
+    ]
+    want_bundle = [f"| {metric} | {count} | {derivation} |"
+                   for metric, count, derivation in derived]
+    # Positional block parity for all five projections.
+    for rel, marker, want in (
+        ("README.md", "PACKAGE-INVENTORY", want_pkg),
+        ("docs/03_REPOSITORY_AND_PACKAGES.md", "PACKAGE-INVENTORY", want_pkg),
+        ("docs/03_REPOSITORY_AND_PACKAGES.md", "PACKAGE-EDGES", want_edges),
+        ("docs/03_REPOSITORY_AND_PACKAGES.md", "QUALIFICATION-PROFILES", want_quals),
+        ("DELIVERY_NOTES.md", "BUNDLE-INVENTORY", want_bundle),
+        ("DELIVERY_NOTES.md", "TIER0-RECEIPT-DENOMINATOR", want_tier0),
+    ):
+        path = root / rel
+        body = batql_extract_block(path.read_text(encoding="utf-8"), marker) \
+            if path.is_file() else None
+        if body is None:
+            out.append(f"{rel}: missing generated block {marker}")
+            continue
+        got = [line for line in body.splitlines()[2:] if line.strip()]
+        if got != want:
+            out.append(f"{rel}: generated block {marker} does not match its "
+                       "typed derivation")
+    # Retired mirrors stay retired, and the converged doctrine stays authored —
+    # both judged with every generated block stripped.
+    stripped: dict[str, str] = {}
+    for rel in ("README.md", "docs/03_REPOSITORY_AND_PACKAGES.md",
+                "DELIVERY_NOTES.md", "docs/29_STATUS_AND_SUPERSESSION.md"):
+        path = root / rel
+        stripped[rel] = A_GENERATED_BLOCK.sub("", path.read_text(encoding="utf-8")) \
+            if path.is_file() else ""
+    for rel, label, pattern in A_E4B_RETIRED:
+        if pattern.search(stripped[rel]):
+            out.append(f"{rel}: retired authored mirror may not return ({label})")
+    for rel, name, fragment in A_E4B_DOCTRINE:
+        if fragment not in stripped[rel]:
+            out.append(f"{rel}: converged inventory doctrine absent ({name})")
     return out
 
 

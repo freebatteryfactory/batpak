@@ -69,6 +69,22 @@ mirrors.
 
 ## Package roles
 
+The package inventory — membership, class, layer, path, and canonical order — is a generated projection of `spec/architecture.rs`. The authored sections below explain meaning; they own none of those facts:
+
+<!-- PACKAGE-INVENTORY:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+| Package | Class | Layer | Workspace path | Role |
+| --- | --- | --- | --- | --- |
+| macbat-compiler | production | 0 | crates/macbat/compiler | pure Rust contract compiler |
+| macbat | production | 1 | crates/macbat/macros | proc-macro front door |
+| batpak | production | 2 | crates/batpak | semantic and durable core, including .fbat |
+| syncbat | production | 3 | crates/syncbat | runtime crate containing runtime, PakVM, Bvisor, world, and port planes |
+| batql | production | 3 | crates/batql | BatQL parser, type checker, planner, partial evaluator, and ProgramImage compiler |
+| netbat | production | 4 | crates/netbat | bounded typed transport over declared SyncBat world entrypoints |
+| testpak | dev-only | 6 | crates/testpak | repository proof, forge, gauntlet, benchmark, and mutation battery |
+| batpak-cli | binary-adapter | 5 | apps/batpak-cli | thin product command adapter; owns no semantic law |
+| batpak-examples | example | 5 | examples | public-surface witness; runnable demos over production APIs only; owns no semantic law and depends on no dev tooling |
+<!-- PACKAGE-INVENTORY:END -->
+
 ### `batpak`
 
 The public semantic and durable substrate. It owns `.fbat`; event, schema, codec, query, projection, tile, effect, image, receipt, identity, navigation, storage-port, compatibility, and recovery law.
@@ -115,36 +131,33 @@ Non-publishable public-surface witness at `examples/` (`src/bin/`). It depends o
 
 ## Dependency graph
 
-```text
-macbat-compiler
-      ↑
-    macbat
-      ↑
-    batpak
-    ↑    ↑
-syncbat batql
-    ↑    │
-  netbat │
-      \  │
-     batpak-cli
+The edge inventory is a generated projection of `spec/architecture.rs` `EDGES`; layer numbers live in the generated package inventory above:
 
-TestPak is dev-only over all semantic packages.
-```
+<!-- PACKAGE-EDGES:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+| Importer | Importee | Class | Profile |
+| --- | --- | --- | --- |
+| macbat | macbat-compiler | required | compile |
+| batpak | macbat | required | derive |
+| syncbat | batpak | required | runtime |
+| batql | batpak | required | compiler |
+| netbat | batpak | required | transport-contract |
+| netbat | syncbat | required | runtime-entrypoints |
+| batpak-cli | batpak | required | core |
+| batpak-cli | syncbat | required | runtime |
+| batpak-cli | batql | required | compiler |
+| batpak-cli | netbat | optional-profile | serve |
+| testpak | macbat-compiler | dev-only | proof |
+| testpak | macbat | dev-only | proof |
+| testpak | batpak | dev-only | proof |
+| testpak | syncbat | dev-only | proof |
+| testpak | batql | dev-only | proof |
+| testpak | netbat | dev-only | proof |
+| batpak-examples | batpak | required | example |
+| batpak-examples | syncbat | required | example |
+| batpak-examples | batql | required | example |
+<!-- PACKAGE-EDGES:END -->
 
-Exact edges, profile classes, and strict layer numbers live in `spec/architecture.rs`.
-
-```text
-L0  macbat-compiler
-L1  macbat
-L2  batpak
-L3  syncbat, batql
-L4  netbat
-L5  batpak-cli, batpak-examples
-L6  testpak (dev-only)
-```
-
-`batpak-examples` (L5) imports `batpak`, `syncbat`, and `batql`; nothing imports
-it, and it never imports dev tooling. Every dependency points to a strictly lower layer. Same-layer packages are siblings and may communicate only through lower-owned types or top-level composition, never by adding a convenience edge.
+Every edge points to a lower layer. Same-layer packages are siblings and may communicate only through lower-owned types or top-level composition, never by adding a convenience edge. TestPak is dev-only over all semantic packages. `batpak-examples` imports production public APIs and no dev tooling; nothing imports it.
 
 ## Crate boundary test
 
@@ -160,15 +173,20 @@ A format name, noun, or purity preference does not earn a Cargo package.
 
 ## Qualification profiles
 
-Package ownership and build qualification are separate questions. The target matrix is:
+Package ownership and build qualification are separate questions. The profile inventory is a generated projection of `spec/architecture.rs` `QUALIFICATION_PROFILES`:
 
-```text
-batpak semantic    no_std + alloc
-syncbat semantic   no_std + alloc
-batpak native      std adapters
-syncbat native     std drivers/adapters
-syncbat browser    wasm32 host adapters
-```
+<!-- QUALIFICATION-PROFILES:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+| Package | Profile | Environment | Gates | Requirement |
+| --- | --- | --- | --- | --- |
+| batpak | semantic | no_std + alloc | G0/G5 | contracts, schemas, codecs, image values, deterministic parsing, and storage-port law compile without std |
+| syncbat | semantic | no_std + alloc | G0/G5 | runtime transition core, PakVM validation/interpreter, Bvisor admission state, world values, and port protocols compile without std host adapters |
+| batpak | native | std | G0/G5 | native filesystem, mapping, clock, entropy, and threaded storage adapters are explicit std mechanisms |
+| syncbat | native | std | G0/G5 | threaded driver and native host-port adapters are explicit std mechanisms |
+| syncbat | browser | wasm32 host | G0/G5 | browser adapters preserve semantic result, receipt, bounds, and recovery contracts without OS-backend normalization |
+| batpak | browser-storage | wasm32 host | G2/G5/G7 | the browser persistence adapter proves its own atomicity, ordering, durability, quota, crash/reload, authority-generation, and bounded-size behavior without borrowing native filesystem claims |
+<!-- QUALIFICATION-PROFILES:END -->
+
+The generated QualificationProfile table is the current typed profile inventory. The later threaded, encryption, interop, and similar entries are implementation and CI coverage families under DEC-065. They are not additional QualificationProfile identities unless they enter `spec/architecture.rs`.
 
 The semantic profiles include contracts, typed values, canonical parsing/encoding over caller-provided buffers, image validation, PakVM reference interpretation, logical runtime transitions, Bvisor admission state, and port request/response protocols. They exclude native filesystem handles, threads, sockets, ambient clocks, entropy providers, and browser APIs.
 

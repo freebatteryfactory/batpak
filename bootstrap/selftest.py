@@ -979,16 +979,9 @@ def test_generated_views(audit, project) -> list[str]:
             fail(f"{name} (wanted {needle!r}, got {produced!r})")
 
     def sandbox(edits):
-        # The registry auditor reads bootstrap/project.py for dispatcher
-        # parity, so this sandbox carries the bootstrap sources too.
-        tmp = gate_sandbox([])
-        shutil.copytree(HERE, tmp / "bootstrap",
-                        ignore=shutil.ignore_patterns("__pycache__"))
-        for rel, old, new in edits:
-            path = tmp / rel
-            path.write_bytes(must_replace(path.read_text(encoding="utf-8"), old,
-                                          new, f"{rel}: {old[:48]!r}").encode("utf-8"))
-        return tmp
+        # gate_sandbox carries the bootstrap sources since 5.5E4b, so the
+        # registry auditor's dispatcher-parity read resolves in every sandbox.
+        return gate_sandbox(edits)
 
     def probe(name, edits, needle, validator=None):
         tmp = sandbox(edits)
@@ -1219,6 +1212,257 @@ def test_generated_views(audit, project) -> list[str]:
     return findings
 
 
+def test_inventory_mirrors(audit, project) -> list[str]:
+    """Named hostile fixtures for the repository inventory projections
+    (5.5E4b): package/edge/profile/bundle/Tier0 mirrors are generated
+    derivations of their typed owners, retired authored mirrors stay retired,
+    and a denominator never impersonates a run result."""
+    findings: list[str] = []
+    root = HERE.parent
+    AR = "spec/architecture.rs"
+    RM, D3, DN, D29 = ("README.md", "docs/03_REPOSITORY_AND_PACKAGES.md",
+                       "DELIVERY_NOTES.md", "docs/29_STATUS_AND_SUPERSESSION.md")
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def sandbox(edits):
+        # gate_sandbox carries the root-level documents and bootstrap sources
+        # since 5.5E4b, so the inventory projections resolve in every sandbox.
+        return gate_sandbox(edits)
+
+    def probe(name, edits, needle, validator=None):
+        tmp = sandbox(edits)
+        try:
+            expect(name, (validator or audit.inventory_mirror_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.inventory_mirror_findings(root):
+        fail(f"inventory_mirrors_pass_on_the_real_seed "
+             f"({audit.inventory_mirror_findings(root)!r})")
+
+    # Documentary class inventories.
+    probe("package_class_missing_from_all_is_rejected",
+          [(AR, "        PackageClass::Example,\n    ];", "    ];")],
+          "PackageClass::Example is declared but missing from PackageClass::ALL")
+    probe("duplicate_package_class_spelling_is_rejected",
+          [(AR, 'PackageClass::Example => "example",', 'PackageClass::Example => "production",')],
+          "duplicate PackageClass spelling 'production'")
+    probe("edge_class_missing_from_all_is_rejected",
+          [(AR, "        EdgeClass::DevOnly,\n    ];", "    ];")],
+          "EdgeClass::DevOnly is declared but missing from EdgeClass::ALL")
+    probe("duplicate_edge_class_spelling_is_rejected",
+          [(AR, 'EdgeClass::OptionalProfile => "optional-profile",',
+            'EdgeClass::OptionalProfile => "required",')],
+          "duplicate EdgeClass spelling 'required'")
+
+    # Every generated inventory row is positional law: a dropped, reordered,
+    # or reclassified row — and any smuggled module — is projection drift.
+    PKG_NEEDLE = "generated block PACKAGE-INVENTORY does not match its typed derivation"
+    EX_ROW = ("| batpak-examples | example | 5 | examples | public-surface witness; "
+              "runnable demos over production APIs only; owns no semantic law and "
+              "depends on no dev tooling |")
+    for name, rel, old, new, needle in (
+        ("package_inventory_missing_batpak_examples_is_rejected", RM,
+         EX_ROW + "\n", "", PKG_NEEDLE),
+        ("package_inventory_order_drift_is_rejected", D3,
+         "| macbat-compiler | production | 0 | crates/macbat/compiler | pure Rust contract compiler |\n| macbat | production | 1 |",
+         "| macbat | production | 1 | crates/macbat/macros | proc-macro front door |\n| macbat-compiler | production | 0 |",
+         PKG_NEEDLE),
+        ("package_inventory_class_drift_is_rejected", RM,
+         "| batpak-cli | binary-adapter |", "| batpak-cli | production |", PKG_NEEDLE),
+        ("package_inventory_layer_drift_is_rejected", RM,
+         "| macbat | production | 1 |", "| macbat | production | 2 |", PKG_NEEDLE),
+        ("package_inventory_path_drift_is_rejected", RM,
+         "| batpak | production | 2 | crates/batpak |",
+         "| batpak | production | 2 | crates/batpak2 |", PKG_NEEDLE),
+        ("package_inventory_role_drift_is_rejected", RM,
+         "pure Rust contract compiler |", "impure contract compiler |", PKG_NEEDLE),
+        ("internal_syncbat_plane_cannot_enter_package_inventory", RM,
+         EX_ROW, EX_ROW + "\n| pakvm | production | 3 | crates/syncbat | plane |",
+         PKG_NEEDLE),
+        ("muterprater_cannot_enter_package_inventory", D3,
+         EX_ROW, EX_ROW + "\n| muterprater | dev-only | 6 | crates/testpak | module |",
+         PKG_NEEDLE),
+        ("package_edge_missing_from_projection_is_rejected", D3,
+         "| macbat | macbat-compiler | required | compile |\n", "",
+         "generated block PACKAGE-EDGES does not match"),
+        ("package_edge_extra_projection_row_is_rejected", D3,
+         "| batpak-examples | batql | required | example |",
+         "| batpak-examples | batql | required | example |\n| batql | netbat | required | rogue |",
+         "generated block PACKAGE-EDGES does not match"),
+        ("package_edge_order_drift_is_rejected", D3,
+         "| macbat | macbat-compiler | required | compile |\n| batpak | macbat | required | derive |",
+         "| batpak | macbat | required | derive |\n| macbat | macbat-compiler | required | compile |",
+         "generated block PACKAGE-EDGES does not match"),
+        ("package_edge_class_drift_is_rejected", D3,
+         "| batpak-cli | netbat | optional-profile | serve |",
+         "| batpak-cli | netbat | required | serve |",
+         "generated block PACKAGE-EDGES does not match"),
+        ("package_edge_profile_drift_is_rejected", D3,
+         "| macbat | macbat-compiler | required | compile |",
+         "| macbat | macbat-compiler | required | compile2 |",
+         "generated block PACKAGE-EDGES does not match"),
+        ("qualification_profile_missing_browser_storage_is_rejected", D3,
+         "| batpak | browser-storage |", "| batpak | browser-storage-gone |",
+         "generated block QUALIFICATION-PROFILES does not match"),
+        ("qualification_profile_order_drift_is_rejected", D3,
+         "| batpak | semantic | no_std + alloc |", "| batpak | zzz-semantic | no_std + alloc |",
+         "generated block QUALIFICATION-PROFILES does not match"),
+        ("qualification_environment_drift_is_rejected", D3,
+         "| syncbat | semantic | no_std + alloc |", "| syncbat | semantic | std |",
+         "generated block QUALIFICATION-PROFILES does not match"),
+        ("qualification_gate_drift_is_rejected", D3,
+         "| batpak | semantic | no_std + alloc | G0/G5 |",
+         "| batpak | semantic | no_std + alloc | G5 |",
+         "generated block QUALIFICATION-PROFILES does not match"),
+        ("qualification_requirement_drift_is_rejected", D3,
+         "storage-port law compile without std |", "storage-port law need std |",
+         "generated block QUALIFICATION-PROFILES does not match"),
+        ("bundle_inventory_package_count_tracks_package_id_all", DN,
+         "| Cargo packages | 9 |", "| Cargo packages | 8 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_edge_count_tracks_edges", DN,
+         "| package edges | 19 |", "| package edges | 18 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_profile_count_tracks_profiles", DN,
+         "| qualification profiles | 6 |", "| qualification profiles | 5 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_seed_count_tracks_seed", DN,
+         "| SEED guarantees | 25 |", "| SEED guarantees | 24 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_decision_count_tracks_decisions", DN,
+         "| decision rows | 75 |", "| decision rows | 74 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_legacy_count_tracks_obligations", DN,
+         "| legacy semantic obligations | 87 |", "| legacy semantic obligations | 86 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_coverage_count_tracks_source_invariant_ids", DN,
+         "| legacy invariant declarations | 115 |", "| legacy invariant declarations | 107 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_operator_count_tracks_operator_id_all", DN,
+         "| BatQL operators | 13 |", "| BatQL operators | 12 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_generated_view_count_tracks_registry", DN,
+         "| registered generated views | 41 |", "| registered generated views | 36 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("bundle_inventory_markdown_count_tracks_eligible_corpus", DN,
+         "| Markdown documents | 47 |", "| Markdown documents | 46 |",
+         "generated block BUNDLE-INVENTORY does not match"),
+        ("tier0_receipt_missing_from_projection_is_rejected", DN,
+         "| tier0-materialize | yes |\n", "",
+         "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
+        ("tier0_receipt_artifact_binding_drift_is_rejected", DN,
+         "| tier0-seedcheck | yes |", "| tier0-seedcheck | no |",
+         "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
+        ("tier0_projection_order_drift_is_rejected", DN,
+         "| tier0-law-fixtures | no |\n| tier0-seedcheck | yes |",
+         "| tier0-seedcheck | yes |\n| tier0-law-fixtures | no |",
+         "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
+    ):
+        probe(name, [(rel, old, new)], needle)
+
+    # Retired authored mirrors stay retired; converged doctrine stays authored.
+    for name, rel, insertion, needle in (
+        ("readme_authored_package_table_cannot_return", RM,
+         "\n| `batpak` | production Cargo package | semantic core |\n",
+         "retired authored mirror may not return (authored package table)"),
+        ("docs03_authored_layer_inventory_cannot_return", D3,
+         "\nL0  macbat-compiler\nL1  macbat\n",
+         "retired authored mirror may not return (authored layer inventory)"),
+        ("docs03_ascii_dependency_inventory_cannot_return", D3,
+         "\nmacbat\n  ↑\nmacbat-compiler\n",
+         "retired authored mirror may not return (ASCII dependency inventory)"),
+        ("docs03_five_profile_mirror_cannot_return", D3,
+         "\nbatpak semantic    no_std + alloc\n",
+         "retired authored mirror may not return (five-profile target matrix)"),
+        ("authored_bundle_counts_cannot_return", DN,
+         "\n19 declared package edges\n",
+         "retired authored mirror may not return (authored bundle counts)"),
+        ("legacy_107_row_count_is_rejected", DN,
+         "\n107-row legacy catalog coverage equivalence PASS\n",
+         "retired authored mirror may not return (107-row legacy claim)"),
+        ("volatile_word_count_cannot_return", DN,
+         "\n31,000+ words of architecture\n",
+         "retired authored mirror may not return (volatile word count)"),
+        ("static_validation_pass_table_cannot_return", DN,
+         "\n## Validation completed in this delivery environment\n",
+         "retired authored mirror may not return (static validation PASS table)"),
+        ("historical_no_rustc_claim_cannot_return", DN,
+         "\nThe environment did not contain `rustc` or `cargo`.\n",
+         "retired authored mirror may not return (historical no-rustc claim)"),
+        ("delivery_notes_cannot_embed_current_run_ids_as_timeless_law", DN,
+         "\nHosted run 29593750281 was green.\n",
+         "retired authored mirror may not return (current run id embedded as timeless law)"),
+    ):
+        probe(name, [(rel, "\n## ", insertion + "\n## ")], needle)
+    for name, rel, fragment, needle in (
+        ("feature_coverage_family_cannot_masquerade_as_qualification_profile", D3,
+         "They are not additional QualificationProfile identities unless they enter",
+         "converged inventory doctrine absent (feature-coverage-distinction)"),
+        ("authored_metadata_requires_reconciliation_epoch", D29,
+         "ReconciliationEpoch corpus membership",
+         "converged inventory doctrine absent (authored-metadata-epoch)"),
+        ("generated_metadata_requires_exact_sources", D29,
+         "generator, exact authority sources, do-not-edit posture",
+         "converged inventory doctrine absent (generated-metadata-sources)"),
+        ("generated_document_does_not_require_contract_id", D29,
+         "does not invent a contract ID or supersession claim",
+         "converged inventory doctrine absent (generated-needs-no-contract-id)"),
+        ("authored_document_cannot_use_generated_metadata_shape", D29,
+         "cannot claim generated status to evade the authored fields",
+         "converged inventory doctrine absent (authored-cannot-claim-generated)"),
+    ):
+        probe(name, [(rel, fragment, "RETIRED FRAGMENT")], needle)
+    # Multi-source provenance: order IS provenance.
+    probe("bundle_inventory_multi_source_order_drift_is_rejected",
+          [(DN, "BUNDLE-INVENTORY:BEGIN generated from spec/architecture.rs; spec/invariants.rs;",
+            "BUNDLE-INVENTORY:BEGIN generated from spec/invariants.rs; spec/architecture.rs;")],
+          "not its registered authority source",
+          validator=audit.generated_view_findings)
+
+    # GREEN: profile growth — a sandbox-only QualificationProfile row flows
+    # mechanically into docs/03 and the bundle count with no frozen number.
+    first_profile = (
+        'QualificationProfile {\n        package: PackageId::BatPak,\n'
+        '        profile: "semantic",\n'
+        '        environment: QualificationEnvironment::NoStdAlloc,\n'
+        '        gates: &[GateId::G0, GateId::G5],\n'
+        '        requirement: "contracts, schemas, codecs, image values, '
+        'deterministic parsing, and storage-port law compile without std",\n    },')
+    tmp = sandbox([(AR, first_profile, first_profile +
+                    '\n    QualificationProfile {\n        package: PackageId::BatPak,\n'
+                    '        profile: "sandbox-growth",\n'
+                    '        environment: QualificationEnvironment::WasmHost,\n'
+                    '        gates: &[GateId::G2, GateId::G5],\n'
+                    '        requirement: "sandbox-only structural growth evidence",\n    },')])
+    try:
+        _regen_operator_blocks(project, tmp)
+        grown = audit.inventory_mirror_findings(tmp) + audit.generated_view_findings(tmp)
+        doc3 = (tmp / D3).read_text(encoding="utf-8")
+        if grown or "| batpak | sandbox-growth | wasm32 host | G2/G5 |" not in doc3 \
+                or "| qualification profiles | 7 |" not in (tmp / DN).read_text(encoding="utf-8"):
+            fail(f"qualification_profile_structural_growth_is_lawful ({grown!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # GREEN: one logical view, two registered target instances — the SAME
+    # PACKAGE-INVENTORY bytes land in README and docs/03.
+    readme_body = audit.batql_extract_block(
+        (root / RM).read_text(encoding="utf-8"), "PACKAGE-INVENTORY")
+    docs3_body = audit.batql_extract_block(
+        (root / D3).read_text(encoding="utf-8"), "PACKAGE-INVENTORY")
+    if readme_body is None or readme_body != docs3_body:
+        fail("package_inventory_multi_target_bytes_are_identical")
+
+    return findings
+
+
 def test_numeric(audit) -> list[str]:
     """Named hostile fixtures for the numeric authority contract (docs/37)."""
     findings: list[str] = []
@@ -1404,11 +1648,20 @@ def gate_sandbox(edits):
         src = root / sub
         if src.is_dir():
             shutil.copytree(src, tmp / sub)
+    # The bootstrap sources joined the sandbox in 5.5E4b: the registry-driven
+    # projector renders the Tier 0 denominator FROM the harness, and the
+    # registry auditor proves dispatcher parity AGAINST the projector.
+    shutil.copytree(HERE, tmp / "bootstrap",
+                    ignore=shutil.ignore_patterns("__pycache__"))
     # The tracked toolchain projection is part of every tree (5.5E3a): it
     # selects the compiler before the spec compiles, and its absence is a
-    # refusal, not a sandbox convenience.
-    if (root / "rust-toolchain.toml").is_file():
-        shutil.copy2(root / "rust-toolchain.toml", tmp / "rust-toolchain.toml")
+    # refusal, not a sandbox convenience. The root-level documents joined it
+    # in 5.5E4b: they carry registered generated views, so a sandbox that
+    # regenerates through the registry needs them present.
+    for rel in ("rust-toolchain.toml", "README.md", "DELIVERY_NOTES.md",
+                "AGENTS.md", "FINAL_RECONCILIATION.md"):
+        if (root / rel).is_file():
+            shutil.copy2(root / rel, tmp / rel)
     for rel, old, new in edits:
         path = tmp / rel
         text = path.read_text(encoding="utf-8")
@@ -2345,13 +2598,15 @@ def test_specialization(audit, project) -> list[str]:
 
 
 def test_delivery_notes_d2(audit) -> list[str]:
-    """The delivery inventory tracks the live decision count."""
+    """The delivery inventory tracks the live decision count — through the
+    generated BUNDLE-INVENTORY derivation (5.5E4b), never an authored number."""
     findings: list[str] = []
-    text = (HERE.parent / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
-    if "74 architectural decision/disposition rows" in text:
-        findings.append("delivery_notes_remaining_at_74_decisions FAILED")
-    if "75 architectural decision/disposition rows" not in text:
-        findings.append("delivery_notes_states_75_decisions FAILED")
+    root = HERE.parent
+    text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
+    live = len(audit.G_DEC_ROW.findall(
+        (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+    if f"| decision rows | {live} |" not in text:
+        findings.append("delivery_notes_tracks_live_decision_count FAILED")
     return findings
 
 
@@ -2539,8 +2794,10 @@ def test_proof_policy(audit) -> list[str]:
     if len(nodes) != 202 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
-    if "75 architectural decision/disposition rows" not in text:
-        fail("delivery_notes_states_74_decisions")
+    live_decisions = len(audit.G_DEC_ROW.findall(
+        (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+    if f"| decision rows | {live_decisions} |" not in text:
+        fail("delivery_notes_tracks_live_decision_count")
     return findings
 
 
@@ -6497,6 +6754,7 @@ def main() -> int:
     findings += test_batql(audit, project)
     findings += test_operator_surfaces(audit, project)
     findings += test_generated_views(audit, project)
+    findings += test_inventory_mirrors(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)

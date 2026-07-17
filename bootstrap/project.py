@@ -1567,7 +1567,9 @@ def parse_generated_views(root: Path) -> list[dict]:
 
 def canonical_block(marker: str, source: str, body: str) -> str:
     """One embedded view, marker AND body: the BEGIN provenance is generated
-    mechanically from the registry, never preserved from the target."""
+    mechanically from the registry, never preserved from the target. Multiple
+    authority sources are joined in registry order by "; " — source order is
+    provenance, and reordering without changing the set is drift."""
     return (f"<!-- {marker}:BEGIN generated from {source} by bootstrap/project.py; "
             f"do not edit -->\n{body}\n<!-- {marker}:END -->")
 
@@ -1580,6 +1582,165 @@ def render_tracked_toolchain(root: Path) -> str:
         raise Unadmitted("spec/toolchain.rs: incomplete ToolchainProfile; the projection refuses")
     return ("# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n"
             + render_root_toolchain(tc))
+
+
+# --- Repository inventory projections (5.5E4b) -------------------------------
+# The typed owners already contain the truth; these renderers parse them
+# directly. No Python package-name, workspace-path, class-spelling, edge-class,
+# environment, gate, or receipt-name map exists here.
+_PKG_SPEC_ROW = re.compile(
+    r'PackageSpec \{\s*id: PackageId::(\w+),\s*role: "([^"]*)",\s*'
+    r'class: PackageClass::(\w+),\s*layer: (\d+),\s*\}', re.S)
+_EDGE_ROW = re.compile(
+    r'EdgeSpec \{ importer: PackageId::(\w+), importee: PackageId::(\w+), '
+    r'class: EdgeClass::(\w+), profile: "([^"]*)" \}')
+_QUAL_PROFILE_ROW = re.compile(
+    r'QualificationProfile \{\s*package: PackageId::(\w+),\s*profile: "([^"]+)",\s*'
+    r'environment: QualificationEnvironment::(\w+),\s*gates: &\[([^\]]*)\],\s*'
+    r'requirement: "([^"]+)",\s*\}', re.S)
+
+
+def _class_spelling_arms(source: str, type_name: str) -> dict[str, str]:
+    impl = re.search(r"impl " + type_name + r" \{(.*?)\n\}", source, re.S)
+    return dict(re.findall(r"\b" + type_name + r'::(\w+) => "([^"]*)",',
+                           impl.group(1))) if impl else {}
+
+
+def _package_projection(source: str, fn_name: str) -> dict[str, str]:
+    body = re.search(
+        r"pub const fn " + fn_name + r"\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
+        source, re.S)
+    return dict(re.findall(r'PackageId::(\w+) => "([^"]+)",', body.group(1))) if body else {}
+
+
+def _environment_spellings(source: str) -> dict[str, str]:
+    return dict(re.findall(r'QualificationEnvironment::(\w+) => "([^"]+)",', source))
+
+
+def render_package_inventory(root: Path) -> str:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    cargo = _package_projection(src, "cargo_name")
+    wpath = _package_projection(src, "workspace_path")
+    classes = _class_spelling_arms(src, "PackageClass")
+    lines = ["| Package | Class | Layer | Workspace path | Role |",
+             "| --- | --- | --- | --- | --- |"]
+    for pid, role, cls, layer in _PKG_SPEC_ROW.findall(src):
+        if pid not in cargo or pid not in wpath or cls not in classes:
+            raise Unadmitted(f"package row {pid} does not resolve through the typed owner")
+        lines.append(f"| {cargo[pid]} | {classes[cls]} | {layer} | {wpath[pid]} | {role} |")
+    return "\n".join(lines)
+
+
+def render_package_edges(root: Path) -> str:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    cargo = _package_projection(src, "cargo_name")
+    classes = _class_spelling_arms(src, "EdgeClass")
+    lines = ["| Importer | Importee | Class | Profile |",
+             "| --- | --- | --- | --- |"]
+    for importer, importee, cls, profile in _EDGE_ROW.findall(src):
+        if importer not in cargo or importee not in cargo or cls not in classes:
+            raise Unadmitted(f"edge {importer}->{importee} does not resolve through the typed owner")
+        lines.append(f"| {cargo[importer]} | {cargo[importee]} | {classes[cls]} | {profile} |")
+    return "\n".join(lines)
+
+
+def render_qualification_profiles(root: Path) -> str:
+    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    cargo = _package_projection(src, "cargo_name")
+    environments = _environment_spellings(src)
+    lines = ["| Package | Profile | Environment | Gates | Requirement |",
+             "| --- | --- | --- | --- | --- |"]
+    for pkg, profile, environment, gates, requirement in _QUAL_PROFILE_ROW.findall(src):
+        if pkg not in cargo or environment not in environments:
+            raise Unadmitted(f"qualification profile {pkg}:{profile} does not resolve")
+        lines.append(f"| {cargo[pkg]} | {profile} | {environments[environment]} | "
+                     f"{gate_tokens(gates, root)} | {requirement} |")
+    return "\n".join(lines)
+
+
+def _eligible_markdown(root: Path) -> list[Path]:
+    out = []
+    for path in sorted(root.rglob("*.md")):
+        parts = path.relative_to(root).parts
+        if any(part in (".git", "target", "__pycache__") for part in parts):
+            continue
+        out.append(path)
+    return out
+
+
+def render_bundle_inventory(root: Path) -> str:
+    """Every count is DERIVED from an admitted typed denominator or the
+    current tracked tree — never hardcoded, never substituted."""
+    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    numbered = len(list((root / "docs").glob("[0-9][0-9]_*.md")))
+    markdown = len(_eligible_markdown(root))
+    packages = len(re.findall(r"\bPackageId::\w+,", re.search(
+        r"pub const ALL: &'static \[PackageId\] = &\[(.*?)\];", arch, re.S).group(1)))
+    if len(_PKG_SPEC_ROW.findall(arch)) != packages:
+        raise Unadmitted("PACKAGES does not equal PackageId::ALL")
+    edges = len(_EDGE_ROW.findall(arch))
+    profiles = len(_QUAL_PROFILE_ROW.findall(arch))
+    seeds = len(guarantee_seed(root))
+    decisions = len(_DEC_ROW.findall((root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+    obligations = len(_LEG_ROW.findall(
+        (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")))
+    coverage_src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+    manifest = re.findall(r'"(INV-[^"]+)"', re.search(
+        r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", coverage_src,
+        re.S).group(1))
+    coverage_rows = re.findall(r"LegacyInvariantCoverage \{\s*legacy_id:", coverage_src)
+    if len(coverage_rows) != len(manifest):
+        raise Unadmitted("legacy coverage rows do not equal SOURCE_INVARIANT_IDS")
+    operators = len(parse_operators(root))
+    views = parse_generated_views(root)
+    static_instances = sum(len(view["targets"]) for view in views)
+    bindings = sum(1 for path in _eligible_markdown(root)
+                   if re.search(r"^(?:source_)?reconciliation_epoch:",
+                                path.read_text(encoding="utf-8"), re.M))
+    rows = [
+        ("numbered architecture documents", numbered,
+         "current tracked docs matching docs/[0-9][0-9]_*.md"),
+        ("Markdown documents", markdown, "current eligible Markdown corpus"),
+        ("Cargo packages", packages, "PackageId::ALL with PACKAGES parity"),
+        ("package edges", edges, "EDGES"),
+        ("qualification profiles", profiles, "QUALIFICATION_PROFILES"),
+        ("SEED guarantees", seeds, "spec/invariants.rs SEED inventory"),
+        ("decision rows", decisions, "spec/dispositions.rs DECISIONS"),
+        ("legacy semantic obligations", obligations,
+         "spec/legacy_obligations.rs OBLIGATIONS"),
+        ("legacy invariant declarations", len(manifest),
+         "SOURCE_INVARIANT_IDS with COVERAGE parity"),
+        ("BatQL operators", operators, "OperatorId::ALL with OPERATORS parity"),
+        ("registered generated views", len(views), "GeneratedView::ALL"),
+        ("static generated target instances", static_instances,
+         "expansion of every Static registry target"),
+        ("corpus-frontmatter bindings", bindings,
+         "the eligible Markdown corpus reached by CorpusEpochMembership"),
+    ]
+    lines = ["| Metric | Count | Derivation |", "| --- | --- | --- |"]
+    for metric, count, derivation in rows:
+        lines.append(f"| {metric} | {count} | {derivation} |")
+    return "\n".join(lines)
+
+
+def render_tier0_receipts(root: Path) -> str:
+    """The required Tier 0 receipt denominator, parsed from the harness that
+    enforces it. This block declares WHAT is required; run receipts carry
+    whether a particular run passed."""
+    harness_path = root / "bootstrap/selftest.py"
+    if not harness_path.is_file():
+        raise Unadmitted("bootstrap/selftest.py is absent; the Tier 0 denominator refuses")
+    src = harness_path.read_text(encoding="utf-8")
+    body = re.search(r"REQUIRED_TIER0_RECEIPTS = \((.*?)\n\)", src, re.S)
+    if not body:
+        raise Unadmitted("bootstrap/selftest.py declares no REQUIRED_TIER0_RECEIPTS")
+    rows = re.findall(r'\("([^"]+)", (True|False)\)', body.group(1))
+    if not rows:
+        raise Unadmitted("REQUIRED_TIER0_RECEIPTS parses to no rows")
+    lines = ["| Receipt | Artifact-bound |", "| --- | --- |"]
+    for name, bound in rows:
+        lines.append(f"| {name} | {'yes' if bound == 'True' else 'no'} |")
+    return "\n".join(lines)
 
 
 _VIEW_SURFACE_DISPLAY = {"EmbeddedBlock": "embedded-block",
@@ -1642,6 +1803,11 @@ VIEW_RENDERERS = {
     "CompilerAssumptionKinds": render_compiler_assumptions,
     "CorpusReconciliationEpoch": render_corpus_epoch,
     "CorpusEpochMembership": lambda root: parse_corpus_epoch(root)["spelling"],
+    "PackageInventory": render_package_inventory,
+    "PackageEdges": render_package_edges,
+    "QualificationProfiles": render_qualification_profiles,
+    "BundleInventory": render_bundle_inventory,
+    "Tier0ReceiptDenominator": render_tier0_receipts,
     "GeneratedViewRegistry": render_generated_view_registry,
 }
 
@@ -1684,7 +1850,7 @@ def build_plans(root: Path, findings: list[str]):
                 findings.append(f"{name} does not admit: {exc}")
                 continue
             pattern = block_pattern(view["marker"])
-            replacement = canonical_block(view["marker"], view["sources"][0], body)
+            replacement = canonical_block(view["marker"], "; ".join(view["sources"]), body)
             for rel in view["targets"]:
                 entry = load(rel)
                 if not entry[2]:

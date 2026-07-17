@@ -23,7 +23,13 @@ REJECTED        intentionally refused architecture or mechanism
 
 ## Required metadata
 
-Every Markdown document declares status, contract ID, authority scope, supersession source/successor, and reconciliation date.
+There is no one universal metadata shape; the corpus carries two, and neither may imitate the other.
+
+Authored Markdown documents declare: status, contract ID, authority scope, supersession source or successor, last-reconciled date, and ReconciliationEpoch corpus membership.
+
+A standalone generated document declares: GENERATED status, derived authority scope, generator, exact authority sources, do-not-edit posture, and source ReconciliationEpoch.
+
+A generated document does not invent a contract ID or supersession claim merely to imitate authored frontmatter. An authored document cannot claim generated status to evade the authored fields.
 
 ## Precedence
 

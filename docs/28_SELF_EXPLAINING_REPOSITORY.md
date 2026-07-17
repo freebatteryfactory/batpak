@@ -161,5 +161,10 @@ An embedded block inherits no authority from its containing document. A standalo
 | CompilerAssumptionKinds | embedded-block | spec/compiler_assumptions.rs | docs/19_SECURITY_MODEL.md | COMPILER-ASSUMPTION-KINDS | bootstrap/project.py |
 | CorpusReconciliationEpoch | embedded-block | spec/corpus.rs | docs/00_CONSTITUTION.md | CORPUS-RECONCILIATION-EPOCH | bootstrap/project.py |
 | CorpusEpochMembership | corpus-frontmatter | spec/corpus.rs | eligible markdown corpus | - | bootstrap/project.py |
+| PackageInventory | embedded-block | spec/architecture.rs | README.md; docs/03_REPOSITORY_AND_PACKAGES.md | PACKAGE-INVENTORY | bootstrap/project.py |
+| PackageEdges | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | PACKAGE-EDGES | bootstrap/project.py |
+| QualificationProfiles | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | QUALIFICATION-PROFILES | bootstrap/project.py |
+| BundleInventory | embedded-block | spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs | DELIVERY_NOTES.md | BUNDLE-INVENTORY | bootstrap/project.py |
+| Tier0ReceiptDenominator | embedded-block | bootstrap/selftest.py | DELIVERY_NOTES.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
