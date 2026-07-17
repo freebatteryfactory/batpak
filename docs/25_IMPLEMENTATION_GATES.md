@@ -51,7 +51,7 @@ This gate closes every `LEG-*` row assigned G2 or explicitly carries it forward 
 
 ## G3: TestPak seed
 
-Deliver role-based tree, fixture/model/oracle/harness/schedule foundations, Repo IR seed, forge, audited denominator, proof receipts, and Muterprater Lane A.
+Deliver role-based tree, fixture/model/oracle/harness/schedule foundations, Repo IR seed, forge, audited denominator, proof receipts, and the Muterprater SemanticIr lane.
 
 ## G4: BatQL
 

@@ -46,7 +46,7 @@ Implement identities, schemas/codecs, EventFrameV2, `.fbat`, storage ports, rece
 
 ## Stage 3: TestPak seed
 
-Stand up fixtures, simple models, harnesses, Repo IR, forge, and proof receipts early enough to qualify later runtime work. Muterprater Lane A can begin once Contract/Image IR exists.
+Stand up fixtures, simple models, harnesses, Repo IR, forge, and proof receipts early enough to qualify later runtime work. The Muterprater SemanticIr lane can begin once Contract/Image IR exists.
 
 ## Stage 4: BatQL
 

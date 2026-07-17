@@ -75,6 +75,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_contract_kinds(&mut findings);
     check_identity_catalogs(root, &mut findings);
     check_commands(root, &mut findings);
+    check_mutation(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -531,6 +532,153 @@ fn check_commands(root: &Path, findings: &mut Vec<String>) {
     let mut testpak_seen = BTreeSet::new();
     for command in commands::TestPakCommand::ALL {
         check_entry("TestPakCommand", command.token(), command.authority(), &mut testpak_seen);
+    }
+}
+
+/// The mutation vocabulary executes its own law (5.5E3f): the lane facts
+/// and result classifications are total const functions, so seedcheck runs
+/// the REAL functions and asserts the semantic fences — no shadow table can
+/// drift because none exists.
+fn check_mutation(root: &Path, findings: &mut Vec<String>) {
+    use spec::mutation::{MutationLane, MutationResult};
+    let contract_ids = declared_contract_ids(root);
+    let owner_texts = contract_authored_texts(root);
+    let mut lane_seen = BTreeSet::new();
+    for lane in MutationLane::ALL {
+        let s = lane.spelling();
+        if s.trim().is_empty() {
+            findings.push("a mutation lane projects an empty spelling".to_string());
+        }
+        if !lane_seen.insert(s) {
+            findings.push(format!("lane spelling {s} is claimed twice"));
+        }
+        let owner = lane.semantic_owner();
+        if !contract_ids.contains(owner.raw()) {
+            findings.push(format!(
+                "lane {s} cites owner {}, which no document declares",
+                owner.raw()
+            ));
+        } else if !owner_texts
+            .get(owner.raw())
+            .is_some_and(|text| authors_token(text, s))
+        {
+            findings.push(format!(
+                "lane {s} cites owner {}, whose authoritative document does not \
+                 author the spelling",
+                owner.raw()
+            ));
+        }
+        let basis = lane.admission_basis();
+        match dispositions::DECISIONS.iter().find(|d| d.id == basis.raw()) {
+            None => findings.push(format!(
+                "lane {s} cites admission basis {}, which no declared decision owns",
+                basis.raw()
+            )),
+            Some(d) => {
+                let named = authors_token(d.subject, s)
+                    || authors_token(d.successor, s)
+                    || d.replacement_contract.is_some_and(|rc| authors_token(rc, s));
+                if !named {
+                    findings.push(format!(
+                        "{} forward-policy fields do not name lane {s}; the \
+                         admission boundary must name what it admits",
+                        basis.raw()
+                    ));
+                }
+            }
+        }
+        if !lane.requires_activation_evidence() {
+            findings.push(format!(
+                "lane {s} does not require activation evidence; a green test with \
+                 a dormant mutant is not evidence"
+            ));
+        }
+        if lane.permits_production_profile_slots() {
+            findings.push(format!("lane {s} permits production-profile mutation slots"));
+        }
+        if !lane.requires_independent_evidence_route() {
+            findings.push(format!("lane {s} does not require an independent evidence route"));
+        }
+        if lane.gates() != [gates::GateId::G3] {
+            findings.push(format!("lane {s} gates are not exactly G3"));
+        }
+    }
+    if MutationLane::SemanticIr.requires_real_rustc_semantics() {
+        findings.push(
+            "SemanticIr claims real rustc semantics; the reference interpreter \
+             lane must not"
+                .to_string(),
+        );
+    }
+    if MutationLane::SemanticIr.requires_per_candidate_rust_compile() {
+        findings.push(
+            "SemanticIr requires a per-candidate Rust compile; the semantic lane \
+             compiles nothing"
+                .to_string(),
+        );
+    }
+    if !MutationLane::SelectableCompiled.requires_real_rustc_semantics() {
+        findings.push("SelectableCompiled must run under real rustc semantics".to_string());
+    }
+    if MutationLane::SelectableCompiled.requires_per_candidate_rust_compile() {
+        findings.push(
+            "SelectableCompiled must not require a per-candidate Rust compile; \
+             one shard compiles once"
+                .to_string(),
+        );
+    }
+    if !MutationLane::CompilerBacked.requires_per_candidate_rust_compile() {
+        findings.push("CompilerBacked must require a per-candidate Rust compile".to_string());
+    }
+    if !MutationLane::CompilerBacked.requires_real_rustc_semantics() {
+        findings.push("CompilerBacked must run under real rustc semantics".to_string());
+    }
+    let mut result_seen = BTreeSet::new();
+    for result in MutationResult::ALL {
+        let s = result.spelling();
+        if s.trim().is_empty() {
+            findings.push("a mutation result projects an empty spelling".to_string());
+        }
+        if !result_seen.insert(s) {
+            findings.push(format!("result spelling {s} is claimed twice"));
+        }
+        let owner = result.semantic_owner();
+        if !contract_ids.contains(owner.raw()) {
+            findings.push(format!(
+                "result {s} cites owner {}, which no document declares",
+                owner.raw()
+            ));
+        } else if !owner_texts
+            .get(owner.raw())
+            .is_some_and(|text| authors_token(text, s))
+        {
+            findings.push(format!(
+                "result {s} cites owner {}, whose authoritative document does not \
+                 author the spelling",
+                owner.raw()
+            ));
+        }
+        let is_killed = matches!(result, MutationResult::Killed);
+        let is_survived = matches!(result, MutationResult::Survived);
+        if result.counts_as_kill() != is_killed {
+            findings.push(if is_killed {
+                "Killed must count as a kill".to_string()
+            } else {
+                format!("only Killed counts as a kill; {s} claims one")
+            });
+        }
+        if result.counts_as_survival() != is_survived {
+            findings.push(if is_survived {
+                "Survived must count as survival".to_string()
+            } else {
+                format!("only Survived counts as survival; {s} claims one")
+            });
+        }
+        if !result.appears_in_denominator() {
+            findings.push(format!(
+                "{s} leaves the denominator; nothing exits silently to improve a score"
+            ));
+        }
     }
 }
 

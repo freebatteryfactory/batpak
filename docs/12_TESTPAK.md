@@ -163,6 +163,17 @@ CompilerBacked       implementation-sensitive material whose truth depends on
 
 Muterprater may use compiler-backed mutation tooling as a backend. It never claims a homegrown Rust evaluator equals rustc, and V1 promises no wholesale replacement of external mutation tools.
 
+The executed lane facts are projected from the typed owner:
+
+<!-- MUTATION-LANES:BEGIN generated from spec/mutation.rs by bootstrap/project.py; do not edit -->
+```text
+lane                 compile rustc   activ   slots   indep   gates
+SemanticIr           false   false   true    false   true    G3
+SelectableCompiled   false   true    true    false   true    G3
+CompilerBacked       true    true    true    false   true    G3
+```
+<!-- MUTATION-LANES:END -->
+
 ### Runner and differential boundary
 
 ```text
@@ -199,6 +210,22 @@ EquivalentCandidate     may be equivalent under the named semantic scope;
 ```
 
 A `Survived` verdict without activation evidence is invalid. A `Killed` verdict without a qualified baseline and activation evidence is invalid. A failing test that also fails under the baseline does not kill the mutant. A timeout is not a kill. An unbuildable candidate is not a kill: a compiler error produced by an invalid mutation is not evidence that the test suite detected a semantic fault. `EquivalentCandidate` is a classification pending its witness, never equivalence proof.
+
+The executed classification is projected from the typed owner:
+
+<!-- MUTATION-RESULTS:BEGIN generated from spec/mutation.rs by bootstrap/project.py; do not edit -->
+```text
+result                 kill    surv    denominator
+Killed                 true    false   true
+Survived               false   true    true
+NotActivated           false   false   true
+Refused                false   false   true
+Unbuildable            false   false   true
+TimedOut               false   false   true
+InfrastructureFailure  false   false   true
+EquivalentCandidate    false   false   true
+```
+<!-- MUTATION-RESULTS:END -->
 
 ### Denominator truth
 
@@ -306,21 +333,6 @@ mutation receipts
 ```
 
 It does not own Repo IR, all commands, release, benchmarks, LSP, documentation, or general proof.
-
-## Mutation lanes
-
-```text
-Lane A: Contract, schema, BatQL, ProgramImage, and PakVM IR mutations
-        zero Rust compiles
-
-Lane B: generated selectable Rust mutation sites
-        one compile per shard; runtime-selected site
-
-Lane C: handwritten mechanism kernels
-        narrowly scoped compiler-backed mutation
-```
-
-A mutation site must be observed as activated. A green test with a dormant mutant is not evidence.
 
 ## Audited denominator
 

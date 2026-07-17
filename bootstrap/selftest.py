@@ -1694,27 +1694,19 @@ def test_proof_policy(audit) -> list[str]:
           "Mutation testing only inside TestPak", "no longer confines mutation testing to TestPak",
           "Mutation testing anywhere", validator=pp)
 
-    # --- lane and result vocabularies ---------------------------------------
-    probe("fourth_mutation_lane_is_rejected", ARCH,
+    # --- lane and result vocabularies (typed owner: spec/mutation.rs) --------
+    MUT = "spec/mutation.rs"
+    probe("fourth_mutation_lane_is_rejected", MUT,
           "    CompilerBacked,\n}", "MutationLane variants", "    CompilerBacked,\n    NativeLane,\n}",
           validator=pp)
-    probe("removed_mutation_lane_is_rejected", ARCH,
-          "    /// Implementation-sensitive material whose truth depends on real compiler\n"
-          "    /// and platform behavior. Runs under real rustc semantics.\n    CompilerBacked,\n",
-          "MutationLane variants", "", validator=pp)
+    probe("removed_mutation_lane_is_rejected", MUT,
+          "    /// Implementation-sensitive material whose truth depends on real\n"
+          "    /// compiler and platform behavior. Runs under real rustc semantics.\n"
+          "    CompilerBacked,\n}",
+          "MutationLane variants", "}", validator=pp)
     for variant in ("NotActivated", "Refused", "TimedOut", "InfrastructureFailure", "EquivalentCandidate"):
-        probe(f"mutation_result_{variant.lower()}_removed_is_rejected", ARCH,
+        probe(f"mutation_result_{variant.lower()}_removed_is_rejected", MUT,
               f"    {variant},\n", "MutationResult variants", "", validator=pp)
-    probe("never_killed_dropping_unbuildable_is_rejected", ARCH,
-          "pub const NEVER_KILLED: &[MutationResult] = &[\n    MutationResult::NotActivated,",
-          "NEVER_KILLED", "pub const NEVER_KILLED: &[MutationResult] = &[", validator=pp)
-    probe("never_survived_dropping_notactivated_is_rejected", ARCH,
-          "pub const NEVER_SURVIVED: &[MutationResult] = &[\n    MutationResult::NotActivated,",
-          "NEVER_SURVIVED", "pub const NEVER_SURVIVED: &[MutationResult] = &[", validator=pp)
-    probe("denominator_dropping_a_terminal_result_is_rejected", ARCH,
-          "pub const TERMINAL_MUTATION_RESULTS: &[MutationResult] = &[\n    MutationResult::Killed,",
-          "!= all eight categories",
-          "pub const TERMINAL_MUTATION_RESULTS: &[MutationResult] = &[", validator=pp)
     probe("change_class_collapsed_is_rejected", ARCH,
           "    Neutral,\n", "ProofPolicyChangeClass variants", "", validator=pp)
     probe("proof_policy_surface_removed_is_rejected", ARCH,
@@ -4175,6 +4167,160 @@ def test_commands(audit) -> list[str]:
     return findings
 
 
+def test_mutation(audit) -> list[str]:
+    """Named hostile fixtures for the canonical mutation vocabulary (5.5E3f):
+    one typed owner, total classification functions, no shadow tables, no
+    lettered lane nicknames."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.mutation_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.mutation_findings(root):
+        fail("mutation_vocabulary_passes_on_the_real_seed")
+
+    MU = "spec/mutation.rs"
+    D12 = "docs/12_TESTPAK.md"
+    probe("mutation_lane_missing_from_all_is_rejected",
+          [(MU, "        MutationLane::SelectableCompiled,\n", "")],
+          "MutationLane::SelectableCompiled is omitted from MutationLane::ALL")
+    probe("mutation_result_missing_from_all_is_rejected",
+          [(MU, "        MutationResult::TimedOut,\n", "")],
+          "MutationResult::TimedOut is omitted from MutationResult::ALL")
+    probe("mutation_lane_with_unknown_owner_is_rejected",
+          [(MU, '| MutationLane::CompilerBacked => ContractId("BP-TESTPAK-1"),',
+            '| MutationLane::CompilerBacked => ContractId("BP-GHOST-1"),')],
+          "MutationLane SemanticIr cites owner BP-GHOST-1, which no declared "
+          "contract owns")
+    probe("mutation_lane_with_dangling_admission_basis_is_rejected",
+          [(MU, '| MutationLane::CompilerBacked => DecisionId("DEC-015"),',
+            '| MutationLane::CompilerBacked => DecisionId("DEC-915"),')],
+          "lane SemanticIr cites admission basis DEC-915, which no declared "
+          "decision owns")
+    # The admission boundary must NAME what it admits: a DEC-015 amendment
+    # that stops spelling a lane un-admits it.
+    probe("mutation_lane_basis_must_name_the_lane",
+          [("spec/dispositions.rs",
+            "SemanticIr mutates BatPak-owned semantic structures",
+            "The semantic lane mutates BatPak-owned semantic structures")],
+          "DEC-015 forward-policy fields do not name lane SemanticIr")
+    # The semantic fences.
+    probe("semantic_ir_cannot_require_real_rustc_semantics",
+          [(MU, "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => true,",
+            "            MutationLane::SemanticIr => true,\n"
+                "            MutationLane::SelectableCompiled => true,")],
+          "SemanticIr claims real rustc semantics; the reference interpreter "
+          "lane must not")
+    probe("selectable_compiled_requires_real_rustc_semantics",
+          [(MU, "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => true,",
+            "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => false,")],
+          "SelectableCompiled must run under real rustc semantics")
+    probe("selectable_compiled_does_not_require_per_candidate_compile",
+          [(MU, "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => false,\n"
+                "            MutationLane::CompilerBacked => true,",
+            "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => true,\n"
+                "            MutationLane::CompilerBacked => true,")],
+          "SelectableCompiled must not require a per-candidate Rust compile")
+    probe("compiler_backed_requires_per_candidate_compile",
+          [(MU, "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => false,\n"
+                "            MutationLane::CompilerBacked => true,",
+            "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => false,\n"
+                "            MutationLane::CompilerBacked => false,")],
+          "CompilerBacked must require a per-candidate Rust compile")
+    probe("lane_without_activation_evidence_is_rejected",
+          [(MU, "            MutationLane::SemanticIr => true,\n"
+                "            MutationLane::SelectableCompiled => true,\n"
+                "            MutationLane::CompilerBacked => true,",
+            "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => true,\n"
+                "            MutationLane::CompilerBacked => true,")],
+          "lane SemanticIr does not require activation evidence")
+    probe("lane_permitting_production_profile_slots_is_rejected",
+          [(MU, "            MutationLane::SemanticIr => false,\n"
+                "            MutationLane::SelectableCompiled => false,\n"
+                "            MutationLane::CompilerBacked => false,",
+            "            MutationLane::SemanticIr => true,\n"
+                "            MutationLane::SelectableCompiled => false,\n"
+                "            MutationLane::CompilerBacked => false,")],
+          "lane SemanticIr permits production-profile mutation slots")
+    probe("lane_without_independent_evidence_route_is_rejected",
+          [(MU, "pub const fn requires_independent_evidence_route(self) -> bool {\n"
+                "        match self {\n"
+                "            MutationLane::SemanticIr => true,",
+            "pub const fn requires_independent_evidence_route(self) -> bool {\n"
+                "        match self {\n"
+                "            MutationLane::SemanticIr => false,")],
+          "lane SemanticIr does not require an independent evidence route")
+    probe("mutation_lane_wrong_gate_is_rejected",
+          [(MU, "            MutationLane::SemanticIr => &[GateId::G3],",
+            "            MutationLane::SemanticIr => &[GateId::G2],")],
+          "lane SemanticIr gates ['G2'] are not exactly G3")
+    # The classification teeth.
+    probe("only_killed_counts_as_kill",
+          [(MU, "            MutationResult::Survived => false,",
+            "            MutationResult::Survived => true,")],
+          "only Killed counts as a kill; Survived claims one")
+    probe("only_survived_counts_as_survival",
+          [(MU, "            MutationResult::Survived => true,\n"
+                "            MutationResult::NotActivated => false,",
+            "            MutationResult::Survived => true,\n"
+                "            MutationResult::NotActivated => true,")],
+          "only Survived counts as survival; NotActivated claims one")
+    probe("equivalent_candidate_counts_as_neither_kill_nor_survival",
+          [(MU, "            MutationResult::EquivalentCandidate => false,",
+            "            MutationResult::EquivalentCandidate => true,")],
+          "only Killed counts as a kill; EquivalentCandidate claims one")
+    probe("unbuildable_cannot_count_as_kill",
+          [(MU, "            MutationResult::Unbuildable => false,",
+            "            MutationResult::Unbuildable => true,")],
+          "only Killed counts as a kill; Unbuildable claims one")
+    probe("every_mutation_result_stays_in_the_denominator",
+          [(MU, "            MutationResult::TimedOut => true,",
+            "            MutationResult::TimedOut => false,")],
+          "TimedOut leaves the denominator")
+    # The lettered nicknames are dead.
+    probe("lane_letter_alias_is_rejected_in_authoritative_docs",
+          [(D12, "### Three frozen lanes",
+            "### Three frozen lanes (Lane A, Lane B, Lane C)")],
+          "cites the letter alias 'Lane A' in authoritative prose")
+    probe("docs_mutation_lane_projection_drift_is_rejected",
+          [(D12, "SemanticIr           false   false   true    false   true    G3",
+            "SemanticIr           false   true    true    false   true    G3")],
+          "docs/12 MUTATION-LANES row 2 states SemanticIr false true true "
+          "false true G3; the typed catalog states SemanticIr false false "
+          "true false true G3 at that position")
+    probe("docs_mutation_result_projection_drift_is_rejected",
+          [(D12, "Killed                 true    false   true",
+            "Killed                 true    true    true")],
+          "docs/12 MUTATION-RESULTS row 2 states Killed true true true; the "
+          "typed catalog states Killed true false true at that position")
+    probe("mutation_projection_source_marker_drift_is_rejected",
+          [(D12, "<!-- MUTATION-LANES:BEGIN generated from spec/mutation.rs "
+                 "by bootstrap/project.py; do not edit -->",
+            "<!-- MUTATION-LANES:BEGIN generated from spec/mutation_soup.rs "
+                 "by bootstrap/project.py; do not edit -->")],
+          "docs/12 carries no generated MUTATION-LANES block naming "
+          "spec/mutation.rs as source")
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -4624,6 +4770,21 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::commands::{BatQlSourceMode, ProductCommand};",
              "let _: ProductCommand = BatQlSourceMode::Ask;",
              "expected `ProductCommand`, found `BatQlSourceMode`"),
+            # 5.5E3f: the mutation vocabulary is typed — no raw string mints
+            # a lane or result, and architecture.rs no longer re-exports the
+            # identity it surrendered.
+            ("raw_string_cannot_substitute_for_mutation_lane",
+             "use spec::mutation::MutationLane;",
+             'let _: MutationLane = "SemanticIr";',
+             "expected `MutationLane`, found `&str`"),
+            ("raw_string_cannot_substitute_for_mutation_result",
+             "use spec::mutation::MutationResult;",
+             'let _: MutationResult = "Killed";',
+             "expected `MutationResult`, found `&str`"),
+            ("architecture_module_does_not_reexport_mutation_identity",
+             "use spec::architecture::MutationLane;",
+             "let _ = ();",
+             "no `MutationLane` in `architecture`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -5042,6 +5203,7 @@ def main() -> int:
     findings += test_contract_kinds(audit)
     findings += test_identity_catalogs(audit)
     findings += test_commands(audit)
+    findings += test_mutation(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)

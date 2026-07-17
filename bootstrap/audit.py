@@ -2074,8 +2074,8 @@ D3_FORBIDDEN_CANDIDATE_ROOTS = ["src/", "tests/", "spec/", "docs/", "companion/"
 D3_BANNED_RESULT_WORDS = ("pass/fail", "killed/not-killed", "success/error")
 
 
-def _arch_enum(root: Path, name: str) -> list[str]:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+def _arch_enum(root: Path, name: str, rel: str = "spec/architecture.rs") -> list[str]:
+    src = (root / rel).read_text(encoding="utf-8")
     m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
     return re.findall(r"^\s{4}(\w+),", m.group(1), re.M) if m else []
 
@@ -2098,27 +2098,19 @@ def proof_policy_findings(root: Path) -> list[str]:
         src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
         if "Mutation testing only inside TestPak" not in src:
             out.append("DEC-015 no longer confines mutation testing to TestPak")
-    for name, want in (("MutationLane", D3_LANES), ("MutationResult", D3_RESULTS),
-                       ("ProofPolicyChangeClass", D3_CHANGE_CLASSES),
-                       ("ProofPolicySurface", D3_POLICY_SURFACES)):
-        got = _arch_enum(root, name)
+    # The lane and result vocabularies moved to their typed owner (5.5E3f);
+    # their facts and classifications are reconstructed by mutation_findings.
+    for name, want, rel in (
+            ("MutationLane", D3_LANES, "spec/mutation.rs"),
+            ("MutationResult", D3_RESULTS, "spec/mutation.rs"),
+            ("ProofPolicyChangeClass", D3_CHANGE_CLASSES, "spec/architecture.rs"),
+            ("ProofPolicySurface", D3_POLICY_SURFACES, "spec/architecture.rs")):
+        got = _arch_enum(root, name, rel)
         if not got:
-            out.append(f"spec/architecture.rs declares no {name}")
+            out.append(f"{rel} declares no {name}")
         elif got != want:
             out.append(f"{name} variants {got} != frozen {want}")
     src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
-    lanes = re.findall(r"lane: MutationLane::(\w+),", src)
-    if lanes != D3_LANES:
-        out.append(f"MUTATION_LANES rows {lanes} != frozen three lanes {D3_LANES}")
-    for const, want in (("NEVER_KILLED", D3_NEVER_KILLED), ("NEVER_SURVIVED", D3_NEVER_KILLED)):
-        m = re.search(r"pub const " + const + r":[^=]*=\s*&\[(.*?)\];", src, re.S)
-        got = re.findall(r"MutationResult::(\w+)", m.group(1)) if m else []
-        if sorted(got) != sorted(want):
-            out.append(f"{const} {sorted(got)} != frozen {sorted(want)}")
-    m = re.search(r"pub const TERMINAL_MUTATION_RESULTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
-    terminal = re.findall(r"MutationResult::(\w+)", m.group(1)) if m else []
-    if sorted(terminal) != sorted(D3_RESULTS):
-        out.append(f"TERMINAL_MUTATION_RESULTS {sorted(terminal)} != all eight categories")
     if "target/muterprater/candidates/" not in src:
         out.append("no candidate output root is declared outside tracked source")
     m = re.search(r"pub const CANDIDATE_FORBIDDEN_WRITE_ROOTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
@@ -3681,6 +3673,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(contract_kind_findings(root))
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
+    findings.extend(mutation_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -4218,6 +4211,201 @@ def _identity_block_parity(marker: str, want: list[str], doc: str,
     for extra in listed[len(want):]:
         out.append(f"docs/16 {marker} lists {extra.split()[0]}, "
                    "which the typed catalog does not project")
+
+
+# --- Mutation vocabulary (5.5E3f) --------------------------------------------
+# spec/mutation.rs owns the lanes and result classifications as total const
+# functions. This auditor independently parses the fn arms, executes the
+# semantic fences, reconstructs the two docs/12 fact tables, and refuses the
+# lettered lane nicknames anywhere in authoritative prose.
+A_LANE_ALIAS = re.compile(r"\bLane\s+[ABC]\b")
+
+
+def _mutation_arms(src: str, enum: str, name: str) -> dict[str, str]:
+    impl = re.search(r"impl " + enum + r" \{(.*?)\n\}", src, re.S)
+    body = re.search(
+        r"pub const fn " + name + r"\(self\)[^{]*\{\s*match self \{(.*?)\n        \}",
+        impl.group(1) if impl else "", re.S)
+    arms: dict[str, str] = {}
+    if not body:
+        return arms
+    for arm, value in re.findall(
+            r"(" + enum + r"::\w+(?:\s*\|\s*" + enum + r"::\w+)*)\s*=>\s*([^,]+),",
+            body.group(1), re.S):
+        for v in re.findall(r"\b" + enum + r"::(\w+)", arm):
+            arms[v] = value.strip()
+    return arms
+
+
+def mutation_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / "spec/mutation.rs"
+    if not path.is_file():
+        return ["missing spec/mutation.rs"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    contract_ids = declared_contract_ids(root)
+    owner_text: dict[str, str] = {}
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        text = p.read_text(encoding="utf-8")
+        cid = frontmatter(text).get("contract_id")
+        if cid:
+            owner_text[cid] = A_GENERATED_BLOCK.sub("", text)
+    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dec_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
+    inventories: dict[str, list[str]] = {}
+    for enum in ("MutationLane", "MutationResult"):
+        enum_body = re.search(r"pub enum " + enum + r" \{(.*?)\n\}", src, re.S)
+        variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) \
+            if enum_body else []
+        all_body = re.search(
+            r"pub const ALL: &'static \[" + enum + r"\] = &\[(.*?)\];", src, re.S)
+        inventory = re.findall(r"\b" + enum + r"::(\w+)", all_body.group(1)) \
+            if all_body else []
+        for missing in [v for v in variants if v not in inventory]:
+            out.append(f"{enum}::{missing} is omitted from {enum}::ALL")
+        for phantom in [v for v in inventory if v not in variants]:
+            out.append(f"{enum}::ALL names {phantom}, which the enum does not declare")
+        inventories[enum] = inventory
+        spellings = _mutation_arms(src, enum, "spelling")
+        owners = _mutation_arms(src, enum, "semantic_owner")
+        seen: set[str] = set()
+        for v in inventory:
+            s = spellings.get(v, "").strip('"')
+            if not s.strip():
+                out.append(f"{enum}::{v} projects an empty spelling")
+                continue
+            if s in seen:
+                out.append(f"{enum} spelling {s} is claimed twice")
+            seen.add(s)
+            owner = re.search(r'ContractId\("([^"]+)"\)', owners.get(v, ""))
+            oid = owner.group(1) if owner else ""
+            if oid not in contract_ids:
+                out.append(f"{enum} {s} cites owner {oid}, which no declared "
+                           "contract owns")
+            elif not re.search(r"\b" + re.escape(s) + r"\b", owner_text.get(oid, "")):
+                out.append(f"{enum} {s} cites owner {oid}, whose authoritative "
+                           "document does not author the spelling")
+    # Lane facts: the semantic fences, executed against the parsed arms.
+    lane_fields = {name: _mutation_arms(src, "MutationLane", name) for name in (
+        "spelling", "admission_basis", "requires_per_candidate_rust_compile",
+        "requires_real_rustc_semantics", "requires_activation_evidence",
+        "permits_production_profile_slots", "requires_independent_evidence_route",
+        "gates")}
+    lane_rows: list[str] = []
+    for v in inventories.get("MutationLane", []):
+        s = lane_fields["spelling"].get(v, "").strip('"')
+        basis = re.search(r'DecisionId\("([^"]+)"\)',
+                          lane_fields["admission_basis"].get(v, ""))
+        bid = basis.group(1) if basis else ""
+        if bid not in dec_ids:
+            out.append(f"lane {s} cites admission basis {bid}, which no declared "
+                       "decision owns")
+        else:
+            row = re.search(
+                r'DecisionSpec \{ id: "' + re.escape(bid)
+                + r'",.*?subject: "([^"]*)", successor: "([^"]*)",'
+                + r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
+            fields = " ".join(g or "" for g in row.groups()) if row else ""
+            if not re.search(r"\b" + re.escape(s) + r"\b", fields):
+                out.append(f"{bid} forward-policy fields do not name lane {s}; "
+                           "the admission boundary must name what it admits")
+        pc = lane_fields["requires_per_candidate_rust_compile"].get(v, "")
+        rr = lane_fields["requires_real_rustc_semantics"].get(v, "")
+        act = lane_fields["requires_activation_evidence"].get(v, "")
+        slots = lane_fields["permits_production_profile_slots"].get(v, "")
+        ind = lane_fields["requires_independent_evidence_route"].get(v, "")
+        gates = re.findall(r"GateId::(\w+)", lane_fields["gates"].get(v, ""))
+        if act != "true":
+            out.append(f"lane {s} does not require activation evidence; a green "
+                       "test with a dormant mutant is not evidence")
+        if slots != "false":
+            out.append(f"lane {s} permits production-profile mutation slots")
+        if ind != "true":
+            out.append(f"lane {s} does not require an independent evidence route")
+        if gates != ["G3"]:
+            out.append(f"lane {s} gates {gates} are not exactly G3")
+        if v == "SemanticIr":
+            if rr != "false":
+                out.append("SemanticIr claims real rustc semantics; the reference "
+                           "interpreter lane must not")
+            if pc != "false":
+                out.append("SemanticIr requires a per-candidate Rust compile; the "
+                           "semantic lane compiles nothing")
+        if v == "SelectableCompiled":
+            if rr != "true":
+                out.append("SelectableCompiled must run under real rustc semantics")
+            if pc != "false":
+                out.append("SelectableCompiled must not require a per-candidate "
+                           "Rust compile; one shard compiles once")
+        if v == "CompilerBacked":
+            if pc != "true":
+                out.append("CompilerBacked must require a per-candidate Rust compile")
+            if rr != "true":
+                out.append("CompilerBacked must run under real rustc semantics")
+        lane_rows.append(f"{s:<20} {pc:<7} {rr:<7} {act:<7} {slots:<7} {ind:<7} "
+                         f"{' '.join(gates)}".rstrip())
+    # Result classification: only Killed kills, only Survived survives, every
+    # result stays in the denominator.
+    result_fields = {name: _mutation_arms(src, "MutationResult", name) for name in (
+        "spelling", "counts_as_kill", "counts_as_survival", "appears_in_denominator")}
+    result_rows: list[str] = []
+    for v in inventories.get("MutationResult", []):
+        s = result_fields["spelling"].get(v, "").strip('"')
+        kill = result_fields["counts_as_kill"].get(v, "")
+        surv = result_fields["counts_as_survival"].get(v, "")
+        denom = result_fields["appears_in_denominator"].get(v, "")
+        if v == "Killed" and kill != "true":
+            out.append("Killed must count as a kill")
+        if v != "Killed" and kill == "true":
+            out.append(f"only Killed counts as a kill; {s} claims one")
+        if v == "Survived" and surv != "true":
+            out.append("Survived must count as survival")
+        if v != "Survived" and surv == "true":
+            out.append(f"only Survived counts as survival; {s} claims one")
+        if denom != "true":
+            out.append(f"{s} leaves the denominator; nothing exits silently to "
+                       "improve a score")
+        result_rows.append(f"{s:<22} {kill:<7} {surv:<7} {denom}")
+    # docs/12 fact tables: exact ordered content plus provenance.
+    doc12 = (root / "docs/12_TESTPAK.md").read_text(encoding="utf-8")
+    lane_header = (f"{'lane':<20} {'compile':<7} {'rustc':<7} {'activ':<7} "
+                   f"{'slots':<7} {'indep':<7} gates")
+    result_header = f"{'result':<22} {'kill':<7} {'surv':<7} denominator"
+    for marker, expected in (("MUTATION-LANES", [lane_header] + lane_rows),
+                             ("MUTATION-RESULTS", [result_header] + result_rows)):
+        m = re.search(
+            r"<!-- " + marker + r":BEGIN generated from spec/mutation\.rs by "
+            r"bootstrap/project\.py; do not edit -->\n```text\n(.*?)\n```\n<!-- "
+            + marker + r":END -->", doc12, re.S)
+        if not m:
+            out.append(f"docs/12 carries no generated {marker} block naming "
+                       "spec/mutation.rs as source")
+            continue
+        listed = [line.rstrip() for line in m.group(1).splitlines() if line.strip()]
+        expected = [line.rstrip() for line in expected]
+        for i, want in enumerate(expected):
+            if i >= len(listed):
+                out.append(f"docs/12 {marker} omits row {want.split()[0]}")
+            elif listed[i] != want:
+                out.append(f"docs/12 {marker} row {i + 1} states "
+                           f"{' '.join(listed[i].split())}; the typed catalog states "
+                           f"{' '.join(want.split())} at that position")
+        for extra in listed[len(expected):]:
+            out.append(f"docs/12 {marker} lists {extra.split()[0]}, "
+                       "which the typed catalog does not project")
+    # The lettered nicknames are dead in authoritative prose.
+    for rel in sorted((root / "docs").glob("*.md")) + sorted((root / "companion").glob("*.md")):
+        text = rel.read_text(encoding="utf-8")
+        if frontmatter(text).get("status") == "GENERATED":
+            continue
+        for m in A_LANE_ALIAS.finditer(A_GENERATED_BLOCK.sub("", text)):
+            out.append(f"{rel.name} cites the letter alias {m.group(0)!r} in "
+                       "authoritative prose; the lanes are SemanticIr, "
+                       "SelectableCompiled, and CompilerBacked")
+    return out
 
 
 # --- Command namespaces (5.5E3e) ---------------------------------------------

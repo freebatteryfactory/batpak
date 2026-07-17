@@ -648,6 +648,94 @@ def render_identity_residue(root):
     return "```text\n" + rows + "\n```"
 
 
+# --- Mutation vocabulary projection (5.5E3f) ---------------------------------
+# spec/mutation.rs owns the lanes and result classifications as TOTAL const
+# functions; docs/12 carries two generated fact tables.
+MUTATION_DOC = "docs/12_TESTPAK.md"
+
+
+def _mutation_fn_arms(src, enum, name):
+    # Scope to the enum's own impl block: both enums declare a spelling()
+    # and semantic_owner(), and the first match in file order would answer
+    # for the wrong type.
+    impl = re.search(r"impl " + enum + r" \{(.*?)\n\}", src, re.S)
+    body = re.search(
+        r"pub const fn " + name + r"\(self\)[^{]*\{\s*match self \{(.*?)\n        \}",
+        impl.group(1) if impl else "", re.S)
+    arms: dict[str, str] = {}
+    if not body:
+        return arms
+    for arm, value in re.findall(
+            r"(" + enum + r"::\w+(?:\s*\|\s*" + enum + r"::\w+)*)\s*=>\s*([^,]+),",
+            body.group(1), re.S):
+        for v in re.findall(r"\b" + enum + r"::(\w+)", arm):
+            arms[v] = value.strip()
+    return arms
+
+
+def parse_mutation_lanes(root):
+    src = (root / "spec/mutation.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[MutationLane\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bMutationLane::(\w+)", all_body.group(1)) if all_body else []
+    fields = {name: _mutation_fn_arms(src, "MutationLane", name) for name in (
+        "spelling", "requires_per_candidate_rust_compile",
+        "requires_real_rustc_semantics", "requires_activation_evidence",
+        "permits_production_profile_slots", "requires_independent_evidence_route",
+        "gates")}
+    rows = []
+    for v in inventory:
+        if any(v not in fields[f] for f in fields):
+            raise Unadmitted(f"spec/mutation.rs: MutationLane::{v} facts unreadable")
+        rows.append((
+            fields["spelling"][v].strip('"'),
+            fields["requires_per_candidate_rust_compile"][v],
+            fields["requires_real_rustc_semantics"][v],
+            fields["requires_activation_evidence"][v],
+            fields["permits_production_profile_slots"][v],
+            fields["requires_independent_evidence_route"][v],
+            " ".join(re.findall(r"GateId::(\w+)", fields["gates"][v])),
+        ))
+    if not rows:
+        raise Unadmitted("spec/mutation.rs: MutationLane inventory unreadable")
+    return rows
+
+
+def parse_mutation_results(root):
+    src = (root / "spec/mutation.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[MutationResult\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bMutationResult::(\w+)", all_body.group(1)) if all_body else []
+    fields = {name: _mutation_fn_arms(src, "MutationResult", name) for name in (
+        "spelling", "counts_as_kill", "counts_as_survival", "appears_in_denominator")}
+    rows = []
+    for v in inventory:
+        if any(v not in fields[f] for f in fields):
+            raise Unadmitted(f"spec/mutation.rs: MutationResult::{v} facts unreadable")
+        rows.append((fields["spelling"][v].strip('"'), fields["counts_as_kill"][v],
+                     fields["counts_as_survival"][v], fields["appears_in_denominator"][v]))
+    if not rows:
+        raise Unadmitted("spec/mutation.rs: MutationResult inventory unreadable")
+    return rows
+
+
+def render_mutation_lanes(root):
+    rows = "\n".join(
+        f"{s:<20} {pc:<7} {rr:<7} {act:<7} {slots:<7} {ind:<7} {gates}"
+        for s, pc, rr, act, slots, ind, gates in parse_mutation_lanes(root))
+    header = (f"{'lane':<20} {'compile':<7} {'rustc':<7} {'activ':<7} "
+              f"{'slots':<7} {'indep':<7} gates")
+    return "```text\n" + header + "\n" + rows + "\n```"
+
+
+def render_mutation_results(root):
+    rows = "\n".join(
+        f"{s:<22} {kill:<7} {surv:<7} {denom}"
+        for s, kill, surv, denom in parse_mutation_results(root))
+    header = f"{'result':<22} {'kill':<7} {'surv':<7} denominator"
+    return "```text\n" + header + "\n" + rows + "\n```"
+
+
 # --- Command namespace projection (5.5E3e) -----------------------------------
 # spec/commands.rs owns three separate closed namespaces and each entry's
 # typed authority relation. docs/26 projects the two CLI inventories; the
@@ -1424,6 +1512,24 @@ def main() -> int:
                                     cmd_texts[doc][2])
     for p, original, rewritten in cmd_texts.values():
         plans.append((p, original, rewritten))
+    # The mutation vocabulary (5.5E3f): docs/12 projects the lane facts and
+    # result classifications from spec/mutation.rs.
+    mu_path = root / MUTATION_DOC
+    mu_original = mu_path.read_text(encoding="utf-8")
+    mu_rewritten = mu_original
+    for name, render in (("MUTATION-LANES", render_mutation_lanes),
+                         ("MUTATION-RESULTS", render_mutation_results)):
+        pat = block_pattern(name)
+        if not pat.search(mu_rewritten):
+            findings.append(f"{MUTATION_DOC}: missing generated block markers for {name}")
+            continue
+        try:
+            body = render(root)
+        except Unadmitted as exc:
+            findings.append(f"{MUTATION_DOC}: {name} does not admit: {exc}")
+            continue
+        mu_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), mu_rewritten)
+    plans.append((mu_path, mu_original, mu_rewritten))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:

@@ -17,7 +17,7 @@ The gauntlet proves that BatPak's claims survive hostile inputs, faults, schedul
 ```text
 Tier 0  seedcheck, format, structural facts, fast unit/model checks
 Tier 1  package conformance and differential tests
-Tier 2  deterministic schedules, crash matrices, semantic fuzz, Lane A/B mutation
+Tier 2  deterministic schedules, crash matrices, semantic fuzz, SemanticIr/SelectableCompiled mutation
 Tier 3  kernel mutation, cross-target adapters, sustained workload envelopes
 Tier 4  release seal, compatibility corpus, proof freshness, package audit
 ```
