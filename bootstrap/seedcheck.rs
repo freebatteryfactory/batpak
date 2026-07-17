@@ -301,7 +301,15 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
     // term may not ALSO be admitted, an owned-elsewhere term needs a live
     // contract owner, and a rejected term needs a live standing decision —
     // reopening happens by amending the decision, never by a quiet variant.
+    let mut residue_seen: BTreeSet<&str> = BTreeSet::new();
     for residue in identities::NON_CATALOGED_IDENTITY_TERMS {
+        if !residue_seen.insert(residue.term) {
+            findings.push(format!(
+                "{} is declared twice in the residue table; one term, one \
+                 path also means one row on that path",
+                residue.term
+            ));
+        }
         if seen.contains(residue.term) {
             findings.push(format!(
                 "{} is both cataloged and listed as non-cataloged; one term \
@@ -341,6 +349,20 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
                              historical coverage and cannot own a future admission barrier",
                             residue.term,
                             decision.raw()
+                        ));
+                    }
+                    // Permanent is not enough (5.5E3d1): Kill is Permanent
+                    // like Lock, but it is a dead passport, not a pending
+                    // application. The typed predicate — not the lifetime —
+                    // decides which dispositions own a future entry path.
+                    Some(d) if !d.disposition.may_own_not_yet_admitted_identity() => {
+                        findings.push(format!(
+                            "{} is not yet admitted by {}, whose {:?} disposition is \
+                             not a standing future-entry policy; only Lock and Defer \
+                             own pending applications",
+                            residue.term,
+                            decision.raw(),
+                            d.disposition
                         ));
                     }
                     Some(_) => {}

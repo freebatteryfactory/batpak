@@ -39,6 +39,19 @@ impl Disposition {
             }
         }
     }
+
+    /// Whether a decision with this disposition may own a `NotYetAdmittedBy`
+    /// identity residue disposition (5.5E3d1). Only a standing posture that
+    /// excludes the subject NOW while stating a lawful future entry path
+    /// qualifies. `Kill` is Permanent like `Lock`, but it is a permanent
+    /// PROHIBITION — a dead passport, never a pending application; `Keep` is
+    /// admitted retained policy, not an exclusion; `Demote` and
+    /// `OpenImplementation` are active postures with nothing pending; the
+    /// historical pair has no forward policy authority at all. Expanding
+    /// this set requires an explicit ruling, not a lifetime derivation.
+    pub const fn may_own_not_yet_admitted_identity(self) -> bool {
+        matches!(self, Disposition::Lock | Disposition::Defer)
+    }
 }
 
 /// The CLOSED vocabulary of semantic contexts the stale-vocabulary scan

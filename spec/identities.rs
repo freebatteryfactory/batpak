@@ -123,9 +123,10 @@ pub enum VersionIdentityKind {
     PakVmIsa,
     FbatFormat,
     BatTaggedRecord,
-    /// Sweep-discovered on the EventFrame struct; flagged for the
-    /// documentary convergence pass to confirm it is not an alias of
-    /// BatTaggedRecord.
+    /// Versions the EventFrame envelope (authored adopter: EventFrameV2 in
+    /// docs/05). Distinct from FbatFormatVersion, which versions the .fbat
+    /// container format, and from BatTaggedRecordVersion, which versions the
+    /// payload record codec.
     Frame,
     NetBatProtocol,
     KernelManifest,

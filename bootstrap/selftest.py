@@ -3820,10 +3820,11 @@ def test_identity_catalogs(audit) -> list[str]:
           "residue term CompressionId is not yet admitted by DEC-005, which "
           "is retained only as historical coverage and cannot own a future "
           "admission barrier")
-    # GREEN fixture: the counts are observed output, never acceptance
-    # thresholds. A lawful new entry with a live owner and a matching docs
-    # row grows the catalog without touching any frozen number.
-    tmp = gate_sandbox([
+    # 5.5E3d1: TRUE set equality — a catalog entry with only its own
+    # generated projection is an answer sheet, not an adopter. The typed
+    # entry and the docs/16 row alone must refuse; add a real authored
+    # sentence under the live owner contract and the same growth is lawful.
+    _SESSION_GROWTH = [
         (ID, "        IdentityKind::Tile,\n",
          "        IdentityKind::Tile,\n        IdentityKind::Session,\n"),
         (ID, '            IdentityKind::Tile => entry!("TileId", "BP-STORAGE-TILES-1"),',
@@ -3832,6 +3833,72 @@ def test_identity_catalogs(audit) -> list[str]:
         (DOC16, f"{'TileId':<30} BP-STORAGE-TILES-1\n",
          f"{'TileId':<30} BP-STORAGE-TILES-1\n"
          f"{'SessionId':<30} BP-STORAGE-TILES-1\n"),
+    ]
+    probe("catalog_entry_without_authored_adopter_is_rejected",
+          list(_SESSION_GROWTH),
+          "catalog entry SessionId appears in no authored corpus document; "
+          "an entry without an authored adopter is a brochure passport")
+    # Self-neutering guards: deleting the exclusion or wrapper-guard row
+    # before smuggling the term in is refused by independent parity with
+    # the authored docs/16 fences and the real spec declarations.
+    probe("chronology_exclusion_cannot_be_removed_then_cataloged",
+          [(ID, '    "Hlc",\n', ''),
+           (ID, 'entry!("RewrapId", "BP-CRYPTO-SECRET-1")',
+            'entry!("Hlc", "BP-IDENTITY-TIME-NAV-1")')],
+          "EXCLUDED_CHRONOLOGY_AND_NAVIGATION omits Hlc, which docs/16's "
+          "navigation and time-and-order fences declare")
+    probe("existing_owner_guard_cannot_be_removed_then_readmitted",
+          [(ID, '"PackageId", ', ''),
+           (ID, 'entry!("RotationId", "BP-CRYPTO-SECRET-1")',
+            'entry!("PackageId", "BP-CRYPTO-SECRET-1")')],
+          "EXISTING_TYPED_OWNER_SPELLINGS omits PackageId, which the spec "
+          "declares as an existing typed owner")
+    # One term, one path — and one ROW on that path.
+    probe("duplicate_residue_term_is_rejected",
+          [(ID, '        term: "GateId",\n',
+            '        term: "GateId",\n        disposition: '
+            'IdentityTermDisposition::OwnedElsewhere(ContractId("BP-GATES-1")),\n'
+            '    },\n    NonCatalogedIdentityTerm {\n        term: "GateId",\n')],
+          "residue term GateId is declared twice; one term, one path also "
+          "means one row on that path")
+    # Permanent is not enough: Kill is a dead passport and Keep is admitted
+    # retained policy — neither is a pending application.
+    probe("killed_decision_cannot_own_not_yet_admitted_term",
+          [("spec/dispositions.rs",
+            'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+            'gates: &[GateId::G2, GateId::G8], disposition: Disposition::Lock,',
+            'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+            'gates: &[GateId::G2, GateId::G8], disposition: Disposition::Kill,')],
+          "residue term CompressionId is not yet admitted by DEC-063, whose "
+          "Kill disposition is not a standing future-entry policy; only Lock "
+          "and Defer own pending applications")
+    probe("kept_decision_cannot_own_not_yet_admitted_term",
+          [("spec/dispositions.rs",
+            'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+            'gates: &[GateId::G2, GateId::G8], disposition: Disposition::Lock,',
+            'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+            'gates: &[GateId::G2, GateId::G8], disposition: Disposition::Keep,')],
+          "residue term CompressionId is not yet admitted by DEC-063, whose "
+          "Keep disposition is not a standing future-entry policy; only Lock "
+          "and Defer own pending applications")
+    # Provenance is verified independently of the renderer: a BEGIN marker
+    # naming any other source is not a generated identity block at all.
+    probe("identity_projection_source_marker_drift_is_rejected",
+          [(DOC16,
+            "<!-- IDENTITY-CATALOG:BEGIN generated from spec/identities.rs "
+            "by bootstrap/project.py; do not edit -->",
+            "<!-- IDENTITY-CATALOG:BEGIN generated from spec/identity_soup.rs "
+            "by bootstrap/project.py; do not edit -->")],
+          "docs/16 carries no generated IDENTITY-CATALOG block naming "
+          "spec/identities.rs as source")
+    # GREEN fixture: the counts are observed output, never acceptance
+    # thresholds. The SAME growth as the brochure hostile above, plus a real
+    # authored adopter sentence under the live owner contract (docs/05,
+    # BP-STORAGE-TILES-1), is lawful with no frozen number touched.
+    tmp = gate_sandbox(_SESSION_GROWTH + [
+        ("docs/05_STORAGE_FBAT_AND_TILES.md",
+         "EventFrame identity\n",
+         "EventFrame identity\nSessionId scoping\n"),
     ])
     try:
         got = audit.identity_catalog_findings(tmp)
@@ -4043,6 +4110,17 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'entry!("RotationId", "BP-CRYPTO-SECRET-1")',
           'entry!("PackageId", "BP-CRYPTO-SECRET-1")',
           "duplicates PackageId, which already has a typed spec owner")
+    # 5.5E3d1: the typed predicate, not the Permanent lifetime, decides who
+    # owns a pending application — Kill is a dead passport.
+    probe("seedcheck_killed_decision_cannot_own_not_yet_admitted_term",
+          "spec/dispositions.rs",
+          'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+          'gates: &[GateId::G2, GateId::G8], disposition: Disposition::Lock,',
+          'DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, '
+          'gates: &[GateId::G2, GateId::G8], disposition: Disposition::Kill,',
+          "CompressionId is not yet admitted by DEC-063, whose Kill disposition is "
+          "not a standing future-entry policy; only Lock and Defer own pending "
+          "applications")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().

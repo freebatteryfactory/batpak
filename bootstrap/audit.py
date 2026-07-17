@@ -3964,8 +3964,13 @@ A_GENERATED_BLOCK = re.compile(
 
 
 def _identity_block_body(name: str, doc: str):
+    # The BEGIN marker is provenance, verified independently of the renderer
+    # (5.5E3d1): it must name spec/identities.rs as the source authority
+    # exactly, or the block is not a generated identity block at all.
     m = re.search(
-        r"<!-- " + re.escape(name) + r":BEGIN[^>]*-->\n```text\n(.*?)\n```\n<!-- "
+        r"<!-- " + re.escape(name)
+        + r":BEGIN generated from spec/identities\.rs by bootstrap/project\.py; "
+        + r"do not edit -->\n```text\n(.*?)\n```\n<!-- "
         + re.escape(name) + r":END -->", doc, re.S)
     return m.group(1) if m else None
 
@@ -4045,7 +4050,12 @@ def identity_catalog_findings(root: Path) -> list[str]:
         residue_body.group(1)) if residue_body else []
     if not residue:
         out.append("spec/identities.rs declares no NON_CATALOGED_IDENTITY_TERMS rows")
+    residue_seen: set[str] = set()
     for term, variant, ref in residue:
+        if term in residue_seen:
+            out.append(f"residue term {term} is declared twice; one term, one path "
+                       "also means one row on that path")
+        residue_seen.add(term)
         if term in axis_of:
             out.append(f"{term} resolves through two paths: the residue table and "
                        f"the {axis_of[term]} catalog")
@@ -4066,6 +4076,16 @@ def identity_catalog_findings(root: Path) -> list[str]:
                 out.append(f"residue term {term} is not yet admitted by {ref}, "
                            "which is retained only as historical coverage and "
                            "cannot own a future admission barrier")
+            elif disp not in ("Lock", "Defer"):
+                # Mirrors Disposition::may_own_not_yet_admitted_identity:
+                # Permanent is not enough — Kill is a permanent PROHIBITION
+                # (a dead passport), Keep is admitted retained policy, and
+                # neither expresses "excluded now, with a standing future
+                # entry path". Only Lock and Defer do.
+                out.append(f"residue term {term} is not yet admitted by {ref}, "
+                           f"whose {disp} disposition is not a standing "
+                           "future-entry policy; only Lock and Defer own "
+                           "pending applications")
         else:
             out.append(f"residue term {term} carries unknown disposition {variant}")
     # docs/16 carries five generated blocks projecting ordered entries AND
@@ -4077,21 +4097,67 @@ def identity_catalog_findings(root: Path) -> list[str]:
     residue_want = [f"{t:<30} {A_IDENT_DISPOSITION.get(v, '?'):<22} {r}"
                     for t, v, r in residue]
     _identity_block_parity("IDENTITY-RESIDUE", residue_want, doc, out)
-    # The standing corpus-sweep law. Authored corpus: the authoritative docs
-    # and companion, minus every generated projection block.
-    classified = set(axis_of) | {t for t, _v, _r in residue}
-    discovered: set[str] = set()
+    # The standing corpus-sweep law, TRUE set equality (5.5E3d1). Authored
+    # corpus: the authoritative docs and companion, minus every generated
+    # projection block. Three refusal shapes: discovered but unclassified;
+    # classified residue with no authored occurrence; classified catalog
+    # entry with no authored adopter. The adopter direction uses exact
+    # token presence rather than the sweep grammar because a spelling like
+    # bare "Commitment" is lawful catalog vocabulary the prefix+suffix
+    # grammar deliberately does not mint from prose.
+    authored: list[str] = []
     for rel in sorted((root / "docs").glob("*.md")) + sorted((root / "companion").glob("*.md")):
         text = rel.read_text(encoding="utf-8")
         if frontmatter(text).get("status") == "GENERATED":
             continue
-        discovered.update(A_IDENT_TERM.findall(A_GENERATED_BLOCK.sub("", text)))
+        authored.append(A_GENERATED_BLOCK.sub("", text))
+    blob = "\n".join(authored)
+    discovered = set(A_IDENT_TERM.findall(blob))
+    classified = set(axis_of) | {t for t, _v, _r in residue}
     for term in sorted(discovered - classified):
         out.append(f"identity-shaped term {term} appears in the authoritative corpus "
                    "and resolves through none of the five classification paths")
-    for term in sorted({t for t, _v, _r in residue} - discovered):
-        out.append(f"residue term {term} no longer appears in the authored corpus; "
-                   "a disposition for a term nobody authors is an expired application")
+    for term in sorted(set(axis_of)):
+        if not re.search(r"\b" + re.escape(term) + r"\b", blob):
+            out.append(f"catalog entry {term} appears in no authored corpus document; "
+                       "an entry without an authored adopter is a brochure passport")
+    for term in sorted({t for t, _v, _r in residue}):
+        if not re.search(r"\b" + re.escape(term) + r"\b", blob):
+            out.append(f"residue term {term} no longer appears in the authored corpus; "
+                       "a disposition for a term nobody authors is an expired application")
+    # Self-neutering guards (5.5E3d1): the exclusion list must equal the
+    # vocabulary the authored docs/16 navigation and time-and-order fences
+    # declare, and the wrapper guard must equal the identity types the spec
+    # actually declares elsewhere. Deleting a guard row before smuggling the
+    # term in is refused by parity, not by the guard it deleted.
+    doc16_authored = A_GENERATED_BLOCK.sub(
+        "", (root / "docs/16_IDENTITY_TIME_AND_NAVIGATION.md").read_text(encoding="utf-8"))
+    required_excluded: set[str] = set()
+    for heading in ("Navigation types", "Time and order"):
+        fence = re.search(r"## " + heading + r"\n+```text\n(.*?)\n```", doc16_authored, re.S)
+        if not fence:
+            out.append(f"docs/16 carries no authored {heading} fence to derive "
+                       "the chronology/navigation exclusion from")
+            continue
+        required_excluded.update(
+            line.split()[0] for line in fence.group(1).splitlines() if line.strip())
+    for term in sorted(required_excluded - excluded):
+        out.append(f"EXCLUDED_CHRONOLOGY_AND_NAVIGATION omits {term}, which docs/16's "
+                   "navigation and time-and-order fences declare")
+    for term in sorted(excluded - required_excluded):
+        out.append(f"EXCLUDED_CHRONOLOGY_AND_NAVIGATION lists {term}, which docs/16's "
+                   "navigation and time-and-order fences do not declare")
+    required_owned: set[str] = set()
+    for rel in ("spec/architecture.rs", "spec/proof.rs", "spec/gates.rs"):
+        required_owned.update(re.findall(
+            r"pub (?:struct|enum) (\w+Id)\b",
+            _uncomment((root / rel).read_text(encoding="utf-8"))))
+    for term in sorted(required_owned - existing_owned):
+        out.append(f"EXISTING_TYPED_OWNER_SPELLINGS omits {term}, which the spec "
+                   "declares as an existing typed owner")
+    for term in sorted(existing_owned - required_owned):
+        out.append(f"EXISTING_TYPED_OWNER_SPELLINGS lists {term}, which no spec "
+                   "module declares as an existing typed owner")
     return out
 
 

@@ -134,7 +134,7 @@ Distinct version types do not typecheck when substituted for one another. Canoni
 
 `ProgramImageId` commits to the canonical ProgramImage bytes, including its version. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.
 
-This document owns the version vocabulary and the identity commitments above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+`spec/identities.rs` owns WHICH version identities exist and their owner mapping; this document owns their semantic distinctions and the identity commitment laws above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
 Required proof rows, projected from docs/24 (qualification target: `DEC-064`; canonical proof-row owner: docs/24 Gauntlet):
 
