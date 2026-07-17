@@ -17,6 +17,7 @@ pub mod contracts;
 pub mod corpus;
 pub mod dispositions;
 pub mod gates;
+pub mod generated_views;
 pub mod guarantees;
 pub mod identities;
 pub mod invariants;

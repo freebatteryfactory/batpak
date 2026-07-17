@@ -1,3 +1,4 @@
+# generated from spec/toolchain.rs by bootstrap/project.py; do not edit
 [toolchain]
 channel = "1.97.0"
 profile = "minimal"

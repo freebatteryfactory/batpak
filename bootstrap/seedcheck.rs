@@ -4,9 +4,9 @@
 // links it instead of textually mounting its modules, so no tracked
 // suppression exists and every pub spec item is API by construction.
 use spec::{
-    architecture, commands, contracts, dispositions, identities, gates, guarantees,
-    invariants, legacy_invariant_coverage, legacy_obligations, operators, pakvm_isa,
-    proof, reconciliation, syncbat_firewall, toolchain,
+    architecture, commands, contracts, dispositions, generated_views, identities, gates,
+    guarantees, invariants, legacy_invariant_coverage, legacy_obligations, operators,
+    pakvm_isa, proof, reconciliation, syncbat_firewall, toolchain,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -75,6 +75,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_contract_kinds(&mut findings);
     check_identity_catalogs(root, &mut findings);
     check_operators(root, &mut findings);
+    check_generated_views(root, &mut findings);
     check_commands(root, &mut findings);
     check_mutation(root, &mut findings);
     check_corpus(root, &mut findings);
@@ -414,6 +415,116 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
                 }
             }
         }
+    }
+}
+
+/// The generated-view registry, EXECUTED (5.5E4a). Seedcheck runs the real
+/// `GeneratedView` values: inventory integrity, complete specs, surface/target
+/// shape agreement, per-target marker uniqueness, generator identity, path
+/// existence through the repository root, and the registry's own presence.
+/// It parses no Markdown block bodies — that reconstruction is audit.py's.
+fn check_generated_views(root: &Path, findings: &mut Vec<String>) {
+    use generated_views::{GeneratedView, GeneratedViewSurface, GeneratedViewTarget};
+    let mut names: BTreeSet<&str> = BTreeSet::new();
+    let mut target_markers: BTreeSet<(&str, &str)> = BTreeSet::new();
+    let mut registry_present = false;
+    for view in GeneratedView::ALL {
+        let name = view.name();
+        if name.trim().is_empty() {
+            findings.push("empty GeneratedView name".into());
+        }
+        if !names.insert(name) {
+            findings.push(format!("duplicate GeneratedView {name} in ALL"));
+        }
+        if *view == GeneratedView::GeneratedViewRegistry {
+            registry_present = true;
+        }
+        let spec = view.spec();
+        if spec.authority_sources.is_empty() {
+            findings.push(format!("generated view {name} names no authority source"));
+        }
+        for source in spec.authority_sources {
+            if source.trim().is_empty() {
+                findings.push(format!("generated view {name} names an empty authority source"));
+            } else if !root.join(source).is_file() {
+                findings.push(format!(
+                    "generated view {name} names authority source {source}, which does not exist"));
+            }
+        }
+        // Exhaustive on generator: a new bootstrap generator must be
+        // classified here, never defaulted into legitimacy.
+        match spec.generator {
+            guarantees::BootstrapToolId::ProjectPy => {}
+            other => findings.push(format!(
+                "generated view {name} names generator {other:?}; every current \
+                 generator is ProjectPy")),
+        }
+        let static_targets: &[&str] = match spec.target {
+            GeneratedViewTarget::Static(targets) => {
+                if targets.is_empty() {
+                    findings.push(format!("generated view {name} declares an empty static target list"));
+                }
+                for target in targets {
+                    if !root.join(target).is_file() {
+                        findings.push(format!(
+                            "generated view {name} targets {target}, which does not exist"));
+                    }
+                }
+                targets
+            }
+            GeneratedViewTarget::EligibleMarkdownCorpus => &[],
+        };
+        // Surface/target shape agreement, exhaustive on both axes.
+        match (spec.surface, spec.target) {
+            (GeneratedViewSurface::EmbeddedBlock, GeneratedViewTarget::Static(_)) => {
+                match spec.marker {
+                    Some(marker) if !marker.trim().is_empty() => {
+                        for target in static_targets {
+                            if !target_markers.insert((target, marker)) {
+                                findings.push(format!(
+                                    "generated views claim marker {marker} in {target} twice; \
+                                     one target carries one instance of one marker"));
+                            }
+                        }
+                    }
+                    _ => findings.push(format!(
+                        "embedded generated view {name} carries no marker")),
+                }
+            }
+            (GeneratedViewSurface::EmbeddedBlock, GeneratedViewTarget::EligibleMarkdownCorpus) => {
+                findings.push(format!(
+                    "embedded generated view {name} must name static targets"));
+            }
+            (GeneratedViewSurface::StandaloneFile, GeneratedViewTarget::Static(targets)) => {
+                if spec.marker.is_some() {
+                    findings.push(format!(
+                        "standalone generated view {name} carries an embedded marker"));
+                }
+                if targets.len() != 1 {
+                    findings.push(format!(
+                        "standalone generated view {name} must name exactly one target"));
+                }
+            }
+            (GeneratedViewSurface::StandaloneFile, GeneratedViewTarget::EligibleMarkdownCorpus) => {
+                findings.push(format!(
+                    "standalone generated view {name} must name one static target"));
+            }
+            (GeneratedViewSurface::CorpusFrontmatter, GeneratedViewTarget::EligibleMarkdownCorpus) => {
+                if spec.marker.is_some() {
+                    findings.push(format!(
+                        "corpus-frontmatter generated view {name} carries an embedded marker"));
+                }
+            }
+            (GeneratedViewSurface::CorpusFrontmatter, GeneratedViewTarget::Static(_)) => {
+                findings.push(format!(
+                    "corpus-frontmatter generated view {name} may not name static targets"));
+            }
+        }
+    }
+    if !registry_present {
+        findings.push(
+            "GeneratedView::ALL omits GeneratedViewRegistry; the registry must include itself"
+                .into());
     }
 }
 
@@ -1028,7 +1139,7 @@ fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
         }
     }
     // The tracked root selection is a PROJECTION: byte-equal or refused.
-    let want = t.root_toolchain_toml();
+    let want = t.tracked_root_toolchain_toml();
     match fs::read_to_string(root.join("rust-toolchain.toml")) {
         Ok(tracked) if tracked == want => {}
         Ok(_) => refuse(

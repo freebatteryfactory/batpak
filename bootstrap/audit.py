@@ -4090,6 +4090,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(retired_proof_row_findings(root))
     findings.extend(proof_row_catalog_findings(root))
     findings.extend(contract_kind_findings(root))
+    findings.extend(generated_view_findings(root))
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
@@ -4242,7 +4243,10 @@ def toolchain_findings(root: Path) -> list[str]:
             f"exact_rust_release {t['exact']} is below the declared MSRV "
             f"floor {t['floor']}; the qualifying compiler must satisfy the "
             "floor the generated workspace claims")
-    want = ('[toolchain]\nchannel = "{}"\nprofile = "{}"\ncomponents = [{}]\n'
+    # The tracked root projection opens with its machine-readable provenance
+    # line (5.5E4a): the comment is part of the exact projected bytes.
+    want = ('# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n'
+            '[toolchain]\nchannel = "{}"\nprofile = "{}"\ncomponents = [{}]\n'
             .format(t["exact"], t["profile"],
                     ", ".join(f'"{c}"' for c in t["components"])))
     tracked = root / "rust-toolchain.toml"
@@ -4282,11 +4286,286 @@ def toolchain_findings(root: Path) -> list[str]:
     return out
 
 
-# --- Admitted contract kinds (5.5E3c) ----------------------------------------
-# spec/contracts.rs owns the admitted set; docs/06 projects it. A kind whose
-# admitting citation dangles, and a doc fence that admits more or fewer kinds
-# than the enum, are both refused.
-A_CONTRACT_KIND_FENCE = re.compile(
+# --- Generated-view registry (5.5E4a) ----------------------------------------
+# spec/generated_views.rs is the closed denominator of every repository-
+# generated view. This auditor parses the typed registry INDEPENDENTLY of
+# bootstrap/project.py (never importing it or executing its parser), scans
+# every tracked Markdown document for generated markers, and proves true set
+# equality between registered embedded target instances and actual ones —
+# plus provenance, pairing, dispatcher parity, and the projector's own
+# documentary honesty. After 5.5E4a an unregistered generated block cannot
+# hide in the wallpaper.
+A_GENERATED_VIEWS_SRC = "spec/generated_views.rs"
+A_VIEW_ARM = re.compile(
+    r"GeneratedView::(\w+) => GeneratedViewSpec \{"
+    r"(.*?)generator: BootstrapToolId::(\w+),", re.S)
+A_VIEW_SURFACES = {"EmbeddedBlock", "StandaloneFile", "CorpusFrontmatter"}
+A_MARKER_BEGIN = re.compile(r"<!-- ([A-Z0-9][A-Z0-9-]*):BEGIN([^>]*)-->")
+A_MARKER_END = re.compile(r"<!-- ([A-Z0-9][A-Z0-9-]*):END -->")
+A_MARKER_PROVENANCE = re.compile(r"\Agenerated from (\S+) by (\S+); do not edit\Z")
+# Closed authored-fence allowlist: marker-shaped fences that are AUTHORED
+# document structure, not generated views. HISTORICAL-MIGRATION is the
+# docs/24 quarantine fence this auditor itself consumes for retired-ID scope.
+A_AUTHORED_FENCES = {"HISTORICAL-MIGRATION"}
+
+
+def a_parse_generated_views(root: Path) -> dict:
+    """The auditor's own registry parse. Shares no code with the generator."""
+    path = root / A_GENERATED_VIEWS_SRC
+    if not path.is_file():
+        return {"variants": [], "order": [], "views": {}}
+    src = path.read_text(encoding="utf-8")
+    enum_body = re.search(r"pub enum GeneratedView \{(.*?)\n\}", src, re.S)
+    variants = re.findall(r"\n    (\w+),", _uncomment(enum_body.group(1))) if enum_body else []
+    all_body = re.search(
+        r"pub const ALL: &'static \[GeneratedView\] = &\[(.*?)\];", src, re.S)
+    order = re.findall(r"GeneratedView::(\w+)", all_body.group(1)) if all_body else []
+    views: dict[str, dict] = {}
+    for name, body, generator in A_VIEW_ARM.findall(src):
+        sources_m = re.search(r"authority_sources: &\[([^\]]*)\]", body)
+        static_m = re.search(r"target: GeneratedViewTarget::Static\(&\[([^\]]*)\]\)", body)
+        corpus = "GeneratedViewTarget::EligibleMarkdownCorpus" in body
+        surface_m = re.search(r"surface: GeneratedViewSurface::(\w+)", body)
+        marker_m = re.search(r'marker: Some\("([^"]+)"\)', body)
+        views[name] = {
+            "sources": re.findall(r'"([^"]+)"', sources_m.group(1)) if sources_m else [],
+            "targets": re.findall(r'"([^"]+)"', static_m.group(1)) if static_m else [],
+            "corpus": corpus,
+            "surface": surface_m.group(1) if surface_m else "",
+            "marker": marker_m.group(1) if marker_m else None,
+            "generator": generator,
+        }
+    return {"variants": variants, "order": order, "views": views}
+
+
+def _a_tracked_markdown(root: Path) -> list[Path]:
+    out = []
+    for path in sorted(root.rglob("*.md")):
+        parts = path.relative_to(root).parts
+        if any(part in (".git", "target", "__pycache__") for part in parts):
+            continue
+        out.append(path)
+    return out
+
+
+def generated_view_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    reg = a_parse_generated_views(root)
+    variants, order, views = reg["variants"], reg["order"], reg["views"]
+    if not order:
+        out.append("spec/generated_views.rs declares no GeneratedView::ALL inventory")
+    for variant in variants:
+        if variant not in order:
+            out.append(f"spec/generated_views.rs: GeneratedView::{variant} is declared "
+                       "but missing from GeneratedView::ALL")
+    for variant in order:
+        if variant not in variants:
+            out.append(f"spec/generated_views.rs: GeneratedView::ALL names {variant}, "
+                       "which the enum does not declare")
+    for duplicate in sorted({v for v in order if order.count(v) > 1}):
+        out.append(f"spec/generated_views.rs: GeneratedView::ALL repeats {duplicate}")
+    for variant in order:
+        if variant not in views:
+            out.append(f"spec/generated_views.rs: GeneratedView::{variant} has no "
+                       "parseable spec() arm")
+    if "GeneratedViewRegistry" not in order:
+        out.append("GeneratedView::ALL omits GeneratedViewRegistry; the registry "
+                   "must include itself")
+    membership = views.get("CorpusEpochMembership")
+    if "CorpusEpochMembership" not in order or membership is None \
+            or membership["surface"] != "CorpusFrontmatter" or not membership["corpus"]:
+        out.append("CorpusEpochMembership may not leave the registry: the corpus "
+                   "epoch frontmatter projection must stay registered and complete")
+    claimed: dict[tuple[str, str], str] = {}
+    for name in order:
+        view = views.get(name)
+        if view is None:
+            continue
+        if not view["sources"]:
+            out.append(f"generated view {name} names no authority source")
+        for source in view["sources"]:
+            if not (root / source).is_file():
+                out.append(f"generated view {name} names authority source {source}, "
+                           "which does not exist")
+        for target in view["targets"]:
+            if not (root / target).is_file():
+                out.append(f"generated view {name} targets {target}, which does not exist")
+        surface = view["surface"]
+        if surface not in A_VIEW_SURFACES:
+            out.append(f"generated view {name} carries unknown surface {surface!r}")
+        if surface == "EmbeddedBlock":
+            if not view["marker"]:
+                out.append(f"embedded generated view {name} carries no marker")
+            if not view["targets"] or view["corpus"]:
+                out.append(f"embedded generated view {name} must name static targets")
+            for target in view["targets"]:
+                key = (target, view["marker"] or "")
+                if key in claimed:
+                    out.append(f"generated views {claimed[key]} and {name} both claim "
+                               f"marker {view['marker']} in {target}; one target plus "
+                               "one marker names one view")
+                claimed[key] = name
+        elif surface == "StandaloneFile":
+            if view["marker"] is not None:
+                out.append(f"standalone generated view {name} carries an embedded marker")
+            if len(view["targets"]) != 1 or view["corpus"]:
+                out.append(f"standalone generated view {name} must name exactly one "
+                           "static target")
+        elif surface == "CorpusFrontmatter":
+            if view["marker"] is not None:
+                out.append(f"corpus-frontmatter generated view {name} carries an "
+                           "embedded marker")
+            if view["targets"] or not view["corpus"]:
+                out.append(f"corpus-frontmatter generated view {name} must target the "
+                           "eligible markdown corpus, never static paths")
+    # The universal marker census: registered embedded instances == actual.
+    registered = {(target, views[name]["marker"]) for name in order
+                  if name in views and views[name]["surface"] == "EmbeddedBlock"
+                  and views[name]["marker"] for target in views[name]["targets"]}
+    marker_source = {marker: views[name]["sources"][0] for name in order
+                     if name in views and views[name]["marker"] and views[name]["sources"]
+                     for marker in [views[name]["marker"]]}
+    actual: set[tuple[str, str]] = set()
+    for path in _a_tracked_markdown(root):
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        begins = A_MARKER_BEGIN.findall(text)
+        ends = A_MARKER_END.findall(text)
+        begin_names = [name for name, _tail in begins]
+        for name in sorted(set(begin_names)):
+            if begin_names.count(name) > ends.count(name):
+                out.append(f"{rel}: generated marker {name} has a BEGIN with no "
+                           "matching END")
+        for name in sorted(set(ends)):
+            if ends.count(name) > begin_names.count(name):
+                out.append(f"{rel}: generated marker {name} has an END with no "
+                           "matching BEGIN")
+        for name, tail in begins:
+            if name in marker_source:
+                if (rel, name) in actual:
+                    out.append(f"{rel}: generated marker {name} appears more than "
+                               "once; one target carries one instance of one marker")
+                actual.add((rel, name))
+                prov = A_MARKER_PROVENANCE.match(tail.strip())
+                if not prov:
+                    out.append(f"{rel}: {name} BEGIN marker does not carry the "
+                               "canonical machine-readable provenance")
+                else:
+                    if prov.group(1) != marker_source[name]:
+                        out.append(f"{rel}: {name} BEGIN marker names source "
+                                   f"{prov.group(1)}, not its registered authority "
+                                   f"source {marker_source[name]}")
+                    if prov.group(2) != "bootstrap/project.py":
+                        out.append(f"{rel}: {name} BEGIN marker names generator "
+                                   f"{prov.group(2)}, not bootstrap/project.py")
+            elif "generated" in tail:
+                out.append(f"{rel}: generated marker {name} is not a registered "
+                           "generated view; a future view enters the registry "
+                           "before it may land")
+            elif name not in A_AUTHORED_FENCES:
+                out.append(f"{rel}: marker {name} is neither a registered generated "
+                           "view nor a declared authored fence")
+    for target, marker in sorted(registered - actual):
+        out.append(f"{target}: registered generated marker {marker} is absent "
+                   "from its target")
+    for rel, name in sorted(actual - registered):
+        out.append(f"{rel}: generated marker {name} appears in a target the "
+                   "registry does not claim")
+    # Standalone provenance equals the registry row.
+    graph = views.get("GuaranteeGraph")
+    if graph:
+        graph_path = root / graph["targets"][0] if graph["targets"] else None
+        if graph_path and graph_path.is_file():
+            front = frontmatter(graph_path.read_text(encoding="utf-8"))
+            want_from = "; ".join(graph["sources"])
+            if front.get("generated_from") != want_from:
+                out.append(f"{graph['targets'][0]}: generated_from is "
+                           f"{front.get('generated_from')!r}, not its registry row "
+                           f"{want_from!r}")
+            if front.get("generated_by") != "bootstrap/project.py":
+                out.append(f"{graph['targets'][0]}: generated_by is "
+                           f"{front.get('generated_by')!r}, not bootstrap/project.py")
+    toolchain_view = views.get("RustToolchain")
+    if toolchain_view and toolchain_view["targets"]:
+        tc_path = root / toolchain_view["targets"][0]
+        want_line = (f"# generated from {toolchain_view['sources'][0]} by "
+                     "bootstrap/project.py; do not edit")
+        if tc_path.is_file():
+            first = tc_path.read_text(encoding="utf-8").splitlines()
+            if not first or first[0] != want_line:
+                out.append(f"{toolchain_view['targets'][0]}: missing or drifted "
+                           "provenance comment; the comment is part of the exact "
+                           "projected bytes")
+    # The registry's own projection (docs/28) equals the auditor's independent
+    # reconstruction, its own row included.
+    reg_row = views.get("GeneratedViewRegistry")
+    if reg_row and reg_row["targets"] and reg_row["marker"]:
+        reg_target = root / reg_row["targets"][0]
+        if reg_target.is_file():
+            body = batql_extract_block(reg_target.read_text(encoding="utf-8"),
+                                       reg_row["marker"])
+            surface_display = {"EmbeddedBlock": "embedded-block",
+                               "StandaloneFile": "standalone-file",
+                               "CorpusFrontmatter": "corpus-frontmatter"}
+            generator_display = {"ProjectPy": "bootstrap/project.py"}
+            rows = ["| View | Surface | Authority source(s) | Target | Marker | Generator |",
+                    "| --- | --- | --- | --- | --- | --- |"]
+            for name in order:
+                view = views.get(name)
+                if view is None:
+                    continue
+                target_cell = "; ".join(view["targets"]) if view["targets"] \
+                    else "eligible markdown corpus"
+                rows.append(
+                    f"| {name} | {surface_display.get(view['surface'], '?')} | "
+                    f"{'; '.join(view['sources'])} | {target_cell} | "
+                    f"{view['marker'] or '-'} | "
+                    f"{generator_display.get(view['generator'], '?')} |")
+            if body is not None and body != "\n".join(rows):
+                out.append(f"{reg_row['targets'][0]}: generated block "
+                           f"{reg_row['marker']} does not match the "
+                           "spec/generated_views.rs projection")
+    # Dispatcher parity: the projector's VIEW_RENDERERS key set equals the
+    # registry, and no manual literal plan bypasses it. Parsed from source —
+    # the auditor never imports or executes project.py. An absent projector
+    # is a refusal, never a crash.
+    proj_path = root / "bootstrap/project.py"
+    if not proj_path.is_file():
+        out.append("bootstrap/project.py is absent; the registered generated "
+                   "views have no projector")
+        return out
+    proj_src = proj_path.read_text(encoding="utf-8")
+    dispatch_body = re.search(r"\nVIEW_RENDERERS = \{(.*?)\n\}", proj_src, re.S)
+    dispatch_keys = re.findall(r'\n    "(\w+)":', dispatch_body.group(1)) \
+        if dispatch_body else []
+    if not dispatch_keys:
+        out.append("bootstrap/project.py declares no VIEW_RENDERERS dispatch map")
+    for missing in [n for n in order if n not in dispatch_keys]:
+        out.append(f"registered generated view {missing} has no projector "
+                   "dispatcher entry")
+    for phantom in sorted(set(dispatch_keys) - set(order)):
+        out.append(f"projector dispatcher entry {phantom} serializes no "
+                   "registered view")
+    for literal in re.findall(r'block_pattern\(\s*"([^"]+)"', proj_src):
+        out.append(f"bootstrap/project.py builds a manual projection plan for "
+                   f"{literal!r}; no literal plan may bypass the registry")
+    # The projector's own documentary honesty.
+    if re.search(r"do(?:es)? not generate the Guarantee Graph", proj_src):
+        out.append("bootstrap/project.py documentation denies generating the "
+                   "Guarantee Graph, which its own plan builder generates")
+    if "operator blocks current" in proj_src or "WROTE operator blocks" in proj_src:
+        out.append("bootstrap/project.py status reports only operator blocks; "
+                   "the banner must report the registered-view denominator")
+    return out
+
+
+# --- Admitted contract kinds (5.5E3c, block form 5.5E4a) ---------------------
+# spec/contracts.rs owns the admitted set; docs/06 projects it through the
+# ordinary CONTRACT-KINDS generated block. A kind whose admitting citation
+# dangles, and a block that admits more or fewer kinds than the enum, are both
+# refused — and the retired HYBRID fence (a generator editing selected columns
+# inside an authored fence) may not return.
+A_CONTRACT_KIND_HYBRID_FENCE = re.compile(
     r"The admitted kinds, each with its admitting law:\s*\n+```text\n(.*?)\n```", re.S)
 
 
@@ -4325,26 +4604,29 @@ def contract_kind_findings(root: Path) -> list[str]:
     for kind in set(variants) - {k for k, _, _ in tagged}:
         out.append(f"ContractKind::{kind} cites no admission basis")
     # docs/06 projects EXACTLY the ordered (kind, admission-basis) pairs, in
-    # ContractKind::ALL order. The first two tokens of each fence line are
-    # semantic identity the typed owner projects; the explanatory tail is
-    # authored prose and carries none. Comparing sets of kind names alone
-    # would let the doc confidently explain the wrong provenance.
+    # ContractKind::ALL order, through the ordinary CONTRACT-KINDS generated
+    # block. Comparing sets of kind names alone would let the doc confidently
+    # explain the wrong provenance.
     spelling_of = dict(re.findall(r'ContractKind::(\w+) => "(\w+)",', src))
     basis_of = {k: ident for k, _tag, ident in tagged}
     expected = [(spelling_of.get(v, ""), basis_of.get(v, "")) for v in inventory]
     doc = (root / "docs/06_MACBAT.md").read_text(encoding="utf-8")
-    fence = A_CONTRACT_KIND_FENCE.search(doc)
-    if not fence:
-        out.append("docs/06 carries no admitted-kinds fence")
+    if A_CONTRACT_KIND_HYBRID_FENCE.search(doc):
+        out.append("docs/06 hybrid admitted-kinds fence may not return; "
+                   "CONTRACT-KINDS is an ordinary generated block and no "
+                   "generator edits selected columns inside an authored fence")
+    body = batql_extract_block(doc, "CONTRACT-KINDS")
+    if body is None:
+        out.append("docs/06 carries no generated CONTRACT-KINDS block")
         return out
-    listed = [tuple(line.split()[:2]) for line in fence.group(1).splitlines()
-              if line.strip()]
+    listed = [tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+              for line in body.splitlines()[2:] if line.strip()]
     for i, want in enumerate(expected):
         if i >= len(listed):
             out.append(f"docs/06 omits admitted contract kind row {want[0]} {want[1]}")
         elif listed[i] != want:
             out.append(
-                f"docs/06 row {i + 1} states {listed[i][0]} {listed[i][1] if len(listed[i]) > 1 else '?'}; "
+                f"docs/06 CONTRACT-KINDS row {i + 1} states {' '.join(listed[i])}; "
                 f"the typed catalog states {want[0]} {want[1]} at that position")
     for extra in listed[len(expected):]:
         out.append(f"docs/06 admits {extra[0]}, which ContractKind does not declare")

@@ -116,3 +116,50 @@ TestPak rejects forbidden dependency direction, duplicate validators, stringly c
 ## Context packet
 
 `testpak context` is generated from Repo IR and receipts. It includes active authority, stale evidence warnings, obligation status, dirty tree, and next legal actions. It does not ask the next agent to reconstruct project history from chat logs.
+
+## Generated-view registry
+
+`spec/generated_views.rs` owns which repository-generated views exist, their authority source, target selector, surface form, marker, and generator. The registry owns generation metadata only. It never owns or completes the semantic facts a view renders.
+
+An embedded block inherits no authority from its containing document. A standalone generated file is a derived view. Corpus epoch frontmatter states corpus membership, not semantic truth. A future generated view must enter the registry before it may land.
+
+<!-- GENERATED-VIEW-REGISTRY:BEGIN generated from spec/generated_views.rs by bootstrap/project.py; do not edit -->
+| View | Surface | Authority source(s) | Target | Marker | Generator |
+| --- | --- | --- | --- | --- | --- |
+| OperatorsCatalog | embedded-block | spec/operators.rs | companion/BATQL_LANGUAGE.md | OPERATORS-CATALOG | bootstrap/project.py |
+| OperatorsSurfaces | embedded-block | spec/operators.rs | companion/BATQL_LANGUAGE.md | OPERATORS-SURFACES | bootstrap/project.py |
+| OperatorsGrammar | embedded-block | spec/operators.rs | companion/BATQL_LANGUAGE.md | OPERATORS-GRAMMAR | bootstrap/project.py |
+| OperatorsProjection | embedded-block | spec/operators.rs | companion/BATQL_LANGUAGE.md | OPERATORS-PROJECTION | bootstrap/project.py |
+| OperatorsTyping | embedded-block | spec/operators.rs | companion/BATQL_LANGUAGE.md | OPERATORS-TYPING | bootstrap/project.py |
+| OperatorsNumeric | embedded-block | spec/operators.rs | docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md | OPERATORS-NUMERIC | bootstrap/project.py |
+| SeedClassification | embedded-block | spec/invariants.rs | docs/23_BOOTSTRAP_AND_SELF_HOSTING.md | SEED-CLASSIFICATION | bootstrap/project.py |
+| GuaranteeGraph | standalone-file | spec/invariants.rs; spec/legacy_obligations.rs; spec/dispositions.rs; spec/architecture.rs; spec/guarantees.rs; spec/gates.rs | docs/GUARANTEE_GRAPH.generated.md | - | bootstrap/project.py |
+| PakVmSemanticIsa | embedded-block | spec/pakvm_isa.rs | docs/07_PAKVM_ISA.md | PAKVM-SEMANTIC-ISA | bootstrap/project.py |
+| PakVmSignatures | embedded-block | spec/pakvm_isa.rs | docs/07_PAKVM_ISA.md | PAKVM-SIGNATURES | bootstrap/project.py |
+| SyncBatPlaneOwnership | embedded-block | spec/architecture.rs | docs/08_SYNCBAT_RUNTIME.md | SYNCBAT-PLANE-OWNERSHIP | bootstrap/project.py |
+| SyncBatAuthorities | embedded-block | spec/syncbat_firewall.rs | docs/08_SYNCBAT_RUNTIME.md | SYNCBAT-AUTHORITIES | bootstrap/project.py |
+| SyncBatCrossings | embedded-block | spec/syncbat_firewall.rs | docs/08_SYNCBAT_RUNTIME.md | SYNCBAT-CROSSINGS | bootstrap/project.py |
+| ReconciliationCoordinates | embedded-block | spec/reconciliation.rs | docs/02_SYSTEM_MODEL.md | RECONCILIATION-COORDINATES | bootstrap/project.py |
+| ReconciliationRetry | embedded-block | spec/reconciliation.rs | docs/02_SYSTEM_MODEL.md | RECONCILIATION-RETRY | bootstrap/project.py |
+| ReleaseSeal | embedded-block | spec/architecture.rs | docs/36_PUBLIC_API_CI_AND_RELEASE.md | RELEASE-SEAL | bootstrap/project.py |
+| ProofTerminals | embedded-block | spec/proof.rs | docs/12_TESTPAK.md | PROOF-TERMINALS | bootstrap/project.py |
+| StaleVocabulary | embedded-block | spec/dispositions.rs | docs/29_STATUS_AND_SUPERSESSION.md; docs/33_AGENT_FINISH_LINE_CHECKLIST.md | STALE-VOCAB | bootstrap/project.py |
+| GateInventory | embedded-block | spec/gates.rs | docs/25_IMPLEMENTATION_GATES.md | GATE-INVENTORY | bootstrap/project.py |
+| ContractKinds | embedded-block | spec/contracts.rs | docs/06_MACBAT.md | CONTRACT-KINDS | bootstrap/project.py |
+| RustToolchain | standalone-file | spec/toolchain.rs | rust-toolchain.toml | - | bootstrap/project.py |
+| IdentityCatalog | embedded-block | spec/identities.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | IDENTITY-CATALOG | bootstrap/project.py |
+| GenerationCatalog | embedded-block | spec/identities.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | GENERATION-CATALOG | bootstrap/project.py |
+| BindingCatalog | embedded-block | spec/identities.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | BINDING-CATALOG | bootstrap/project.py |
+| VersionCatalog | embedded-block | spec/identities.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | VERSION-CATALOG | bootstrap/project.py |
+| IdentityResidue | embedded-block | spec/identities.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | IDENTITY-RESIDUE | bootstrap/project.py |
+| ProductCommands | embedded-block | spec/commands.rs | docs/26_COMMAND_PLANE.md | PRODUCT-COMMANDS | bootstrap/project.py |
+| TestPakCommands | embedded-block | spec/commands.rs | docs/26_COMMAND_PLANE.md | TESTPAK-COMMANDS | bootstrap/project.py |
+| BatQlSourceModes | embedded-block | spec/commands.rs | companion/BATQL_LANGUAGE.md | BATQL-SOURCE-MODES | bootstrap/project.py |
+| MutationLanes | embedded-block | spec/mutation.rs | docs/12_TESTPAK.md | MUTATION-LANES | bootstrap/project.py |
+| MutationResults | embedded-block | spec/mutation.rs | docs/12_TESTPAK.md | MUTATION-RESULTS | bootstrap/project.py |
+| PromotionRequirements | embedded-block | spec/promotion.rs | docs/12_TESTPAK.md | PROMOTION-REQUIREMENTS | bootstrap/project.py |
+| CompilerAssumptionKinds | embedded-block | spec/compiler_assumptions.rs | docs/19_SECURITY_MODEL.md | COMPILER-ASSUMPTION-KINDS | bootstrap/project.py |
+| CorpusReconciliationEpoch | embedded-block | spec/corpus.rs | docs/00_CONSTITUTION.md | CORPUS-RECONCILIATION-EPOCH | bootstrap/project.py |
+| CorpusEpochMembership | corpus-frontmatter | spec/corpus.rs | eligible markdown corpus | - | bootstrap/project.py |
+| GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
+<!-- GENERATED-VIEW-REGISTRY:END -->

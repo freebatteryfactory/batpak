@@ -41,18 +41,31 @@ MacBat knows what one declaration means locally. TestPak resolves global ownersh
 
 Contract kinds are closed and exhaustive. A kind enters only when one declaration becomes canonical, a real adopter exists, and every lowering/proof surface is named. `spec/contracts.rs` is the typed owner of the admitted set; each kind cites the guarantee that admits it, and the citation resolves or the kind is refused.
 
-The admitted kinds, each with its admitting law:
+The admitted kinds and their admitting laws are a generated projection of the typed owner — inventory membership and canonical order live in `spec/contracts.rs`, never in this document:
 
-```text
-Error            LEG-047   error class and public shape never drift into side tables
-Event            LEG-002   accepted event bytes are immutable; shape evolves on read
-SchemaCodec      LEG-040   language-neutral identity, versions, canonical bytes, goldens
-Projection       LEG-029   projection query authority binds contract through proof
-Subscription     LEG-060   explicit open/receive/close/overrun terminals
-OperationEffect  LEG-036   declared effect rows contain observed effects and receipts
-Process          DEC-009   ProcessContract + Coordinate + ProcessGeneration
-Composition      LEG-041   deterministic composition identity
-```
+<!-- CONTRACT-KINDS:BEGIN generated from spec/contracts.rs by bootstrap/project.py; do not edit -->
+| ContractKind | Admission basis |
+| --- | --- |
+| Error | LEG-047 |
+| Event | LEG-002 |
+| SchemaCodec | LEG-040 |
+| Projection | LEG-029 |
+| Subscription | LEG-060 |
+| OperationEffect | LEG-036 |
+| Process | DEC-009 |
+| Composition | LEG-041 |
+<!-- CONTRACT-KINDS:END -->
+
+What each admitting law means, in authored prose — semantic adoption, not inventory:
+
+- Error (LEG-047): error class and public shape never drift into side tables.
+- Event (LEG-002): accepted event bytes are immutable; shape evolves on read.
+- SchemaCodec (LEG-040): language-neutral identity, versions, canonical bytes, goldens.
+- Projection (LEG-029): projection query authority binds contract through proof.
+- Subscription (LEG-060): explicit open/receive/close/overrun terminals.
+- OperationEffect (LEG-036): declared effect rows contain observed effects and receipts.
+- Process (DEC-009): ProcessContract + Coordinate + ProcessGeneration.
+- Composition (LEG-041): deterministic composition identity.
 
 StateMachine and EvidenceBody appeared in an earlier expectation list and nowhere else in the corpus: no owning law, no adopter, no proof surface. They are NOT admitted kinds. Either enters later through exactly the entry law above — a brochure name is not a border crossing.
 

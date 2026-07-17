@@ -950,17 +950,273 @@ def test_operator_surfaces(audit, project) -> list[str]:
 
 
 def _regen_operator_blocks(project, tmp) -> None:
-    """Regenerate every operator projection in a sandbox from its typed source,
-    so semantic hostiles fail for the intended syntax law and never for a
-    stale generated block."""
-    ops = project.parse_operators(tmp)
-    for name, render in project.BLOCK_RENDER.items():
-        path = tmp / project.BLOCK_FILE[name]
-        text = path.read_text(encoding="utf-8")
-        body = render(ops)
-        text = project.block_pattern(name).sub(
-            lambda m, body=body: m.group(1) + body + m.group(3), text)
-        path.write_bytes(text.encode("utf-8"))
+    """Regenerate every registered generated view in a sandbox from its typed
+    sources (5.5E4a: the registry is the one projection denominator), so
+    semantic hostiles fail for the intended law and never for a stale
+    generated block."""
+    findings: list[str] = []
+    _views, plans, _bindings = project.build_plans(tmp, findings)
+    if findings:
+        raise ProbeError(f"sandbox regeneration refused: {findings!r}")
+    for path, original, rewritten in plans:
+        if rewritten != original:
+            path.write_bytes(rewritten.encode("utf-8"))
+
+
+def test_generated_views(audit, project) -> list[str]:
+    """Named hostile fixtures for the generated-view registry (5.5E4a):
+    spec/generated_views.rs is the closed denominator of every repository-
+    generated view, the projector dispatches only through it, and the
+    universal marker census leaves no unregistered block in the wallpaper."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def sandbox(edits):
+        # The registry auditor reads bootstrap/project.py for dispatcher
+        # parity, so this sandbox carries the bootstrap sources too.
+        tmp = gate_sandbox([])
+        shutil.copytree(HERE, tmp / "bootstrap",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        for rel, old, new in edits:
+            path = tmp / rel
+            path.write_bytes(must_replace(path.read_text(encoding="utf-8"), old,
+                                          new, f"{rel}: {old[:48]!r}").encode("utf-8"))
+        return tmp
+
+    def probe(name, edits, needle, validator=None):
+        tmp = sandbox(edits)
+        try:
+            got = (validator or audit.generated_view_findings)(tmp)
+            expect(name, got, needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.generated_view_findings(root):
+        fail(f"generated_view_registry_passes_on_the_real_seed "
+             f"({audit.generated_view_findings(root)!r})")
+
+    GV = "spec/generated_views.rs"
+    PY = "bootstrap/project.py"
+    GATES_ROW = "        GeneratedView::GateInventory,\n"
+
+    # Registry structure.
+    probe("generated_view_missing_from_all_is_rejected",
+          [(GV, GATES_ROW, "")],
+          "is declared but missing from GeneratedView::ALL")
+    probe("generated_view_without_spec_arm_is_rejected",
+          [(GV, "GeneratedView::GateInventory => GeneratedViewSpec {",
+            "GeneratedView::GateInventoryRenamed => GeneratedViewSpec {")],
+          "GeneratedView::GateInventory has no parseable spec() arm")
+    probe("duplicate_generated_view_name_is_rejected",
+          [(GV, GATES_ROW, GATES_ROW + GATES_ROW)],
+          "GeneratedView::ALL repeats GateInventory")
+    probe("generated_view_without_authority_source_is_rejected",
+          [(GV, 'authority_sources: &["spec/gates.rs"],', "authority_sources: &[],")],
+          "generated view GateInventory names no authority source")
+    probe("generated_view_with_missing_authority_source_is_rejected",
+          [(GV, 'authority_sources: &["spec/gates.rs"],',
+            'authority_sources: &["spec/gates_missing.rs"],')],
+          "names authority source spec/gates_missing.rs, which does not exist")
+    probe("generated_view_with_missing_static_target_is_rejected",
+          [(GV, 'GeneratedViewTarget::Static(&["docs/25_IMPLEMENTATION_GATES.md"])',
+            'GeneratedViewTarget::Static(&["docs/25_MISSING.md"])')],
+          "targets docs/25_MISSING.md, which does not exist")
+
+    # Surface/target shape.
+    probe("embedded_view_without_marker_is_rejected",
+          [(GV, 'marker: Some("GATE-INVENTORY"),', "marker: None,")],
+          "embedded generated view GateInventory carries no marker")
+    probe("standalone_view_with_embedded_marker_is_rejected",
+          [(GV,
+            'target: GeneratedViewTarget::Static(&["rust-toolchain.toml"]),\n'
+            "                surface: GeneratedViewSurface::StandaloneFile,\n"
+            "                marker: None,",
+            'target: GeneratedViewTarget::Static(&["rust-toolchain.toml"]),\n'
+            "                surface: GeneratedViewSurface::StandaloneFile,\n"
+            '                marker: Some("RUST-TOOLCHAIN"),')],
+          "standalone generated view RustToolchain carries an embedded marker")
+    probe("corpus_frontmatter_with_static_target_is_rejected",
+          [(GV,
+            "target: GeneratedViewTarget::EligibleMarkdownCorpus,\n"
+            "                surface: GeneratedViewSurface::CorpusFrontmatter,",
+            'target: GeneratedViewTarget::Static(&["docs/00_CONSTITUTION.md"]),\n'
+            "                surface: GeneratedViewSurface::CorpusFrontmatter,")],
+          "must target the eligible markdown corpus, never static paths")
+    probe("duplicate_target_marker_claim_is_rejected",
+          [(GV, 'marker: Some("MUTATION-RESULTS"),', 'marker: Some("MUTATION-LANES"),')],
+          "both claim marker MUTATION-LANES in docs/12_TESTPAK.md")
+    if any("STALE-VOCAB" in f or "StaleVocabulary" in f
+           for f in audit.generated_view_findings(root)):
+        fail("multi_target_stale_vocabulary_is_lawful")
+
+    # The universal marker census.
+    GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
+    GATES_BEGIN = ("<!-- GATE-INVENTORY:BEGIN generated from spec/gates.rs by "
+                   "bootstrap/project.py; do not edit -->")
+    probe("unregistered_generated_begin_marker_is_rejected",
+          [(GATES_DOC, GATES_BEGIN,
+            "<!-- ROGUE-VIEW:BEGIN generated from spec/gates.rs by "
+            "bootstrap/project.py; do not edit -->\nrogue\n"
+            "<!-- ROGUE-VIEW:END -->\n\n" + GATES_BEGIN)],
+          "generated marker ROGUE-VIEW is not a registered generated view")
+    probe("orphan_generated_end_marker_is_rejected",
+          [(GATES_DOC, GATES_BEGIN, "<!-- ORPHANED:END -->\n\n" + GATES_BEGIN)],
+          "ORPHANED has an END with no matching BEGIN")
+    probe("mismatched_generated_end_marker_is_rejected",
+          [(GATES_DOC, "<!-- GATE-INVENTORY:END -->", "<!-- GATE-INVENTORYX:END -->")],
+          "GATE-INVENTORY has a BEGIN with no matching END")
+    probe("duplicate_generated_marker_in_one_target_is_rejected",
+          [(GATES_DOC, GATES_BEGIN,
+            GATES_BEGIN + "\nrogue\n<!-- GATE-INVENTORY:END -->\n\n" + GATES_BEGIN)],
+          "generated marker GATE-INVENTORY appears more than once")
+    probe("registered_marker_missing_from_target_is_rejected",
+          [(GATES_DOC, "GATE-INVENTORY:BEGIN", "GATE-INVENTORYX:BEGIN"),
+           (GATES_DOC, "GATE-INVENTORY:END", "GATE-INVENTORYX:END")],
+          "registered generated marker GATE-INVENTORY is absent from its target")
+    probe("generated_marker_source_drift_is_rejected",
+          [(GATES_DOC, "GATE-INVENTORY:BEGIN generated from spec/gates.rs",
+            "GATE-INVENTORY:BEGIN generated from spec/architecture.rs")],
+          "names source spec/architecture.rs, not its registered authority source")
+    probe("generated_marker_generator_drift_is_rejected",
+          [(GATES_DOC, "GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/project.py",
+            "GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/render.py")],
+          "names generator bootstrap/render.py, not bootstrap/project.py")
+
+    # Dispatcher parity and the registry bypass fence.
+    probe("projector_dispatcher_omission_is_rejected",
+          [(PY, '    "GateInventory": render_gate_inventory,\n', "")],
+          "registered generated view GateInventory has no projector dispatcher entry")
+    probe("unregistered_projector_dispatcher_entry_is_rejected",
+          [(PY, '    "GateInventory": render_gate_inventory,\n',
+            '    "GateInventory": render_gate_inventory,\n'
+            '    "RogueView": render_gate_inventory,\n')],
+          "projector dispatcher entry RogueView serializes no registered view")
+    probe("manual_projection_plan_cannot_bypass_registry",
+          [(PY, '\nif __name__ == "__main__":',
+            '\n_bypass = block_pattern("ROGUE-VIEW")\n\nif __name__ == "__main__":')],
+          "manual projection plan for 'ROGUE-VIEW'")
+
+    # Standalone provenance.
+    probe("guarantee_graph_generated_from_drift_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "generated_from: spec/invariants.rs;",
+            "generated_from: spec/wrong.rs;")],
+          "not its registry row")
+    probe("guarantee_graph_generator_drift_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "generated_by: bootstrap/project.py",
+            "generated_by: bootstrap/render.py")],
+          "not bootstrap/project.py")
+    probe("rust_toolchain_provenance_comment_missing_is_rejected",
+          [("rust-toolchain.toml",
+            "# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n[toolchain]",
+            "[toolchain]")],
+          "missing or drifted provenance comment")
+
+    # Registry self-inclusion and the corpus-membership floor.
+    probe("corpus_epoch_membership_cannot_leave_the_registry",
+          [(GV, "        GeneratedView::CorpusEpochMembership,\n", "")],
+          "CorpusEpochMembership may not leave the registry")
+    probe("generated_view_registry_must_include_itself",
+          [(GV, "        GeneratedView::GeneratedViewRegistry,\n", "")],
+          "must include itself")
+    probe("generated_view_registry_projection_drift_is_rejected",
+          [("docs/28_SELF_EXPLAINING_REPOSITORY.md",
+            "| GateInventory | embedded-block |",
+            "| GateInventory | standalone-file |")],
+          "generated block GENERATED-VIEW-REGISTRY does not match")
+    probe("generated_view_registry_marker_drift_is_rejected",
+          [("docs/28_SELF_EXPLAINING_REPOSITORY.md",
+            "GENERATED-VIEW-REGISTRY:BEGIN generated from spec/generated_views.rs",
+            "GENERATED-VIEW-REGISTRY:BEGIN generated from spec/architecture.rs")],
+          "not its registered authority source spec/generated_views.rs")
+
+    # The retired hybrid fence and the projector's documentary honesty.
+    probe("contract_kind_hybrid_fence_cannot_return",
+          [("docs/06_MACBAT.md",
+            "What each admitting law means, in authored prose",
+            "The admitted kinds, each with its admitting law:\n\n```text\n"
+            "Error LEG-047 stale hybrid\n```\n\n"
+            "What each admitting law means, in authored prose")],
+          "hybrid admitted-kinds fence may not return",
+          validator=audit.contract_kind_findings)
+    probe("projector_docs_cannot_deny_guarantee_graph_generation",
+          [(PY, "project.py never generates decision text itself.",
+            "project.py never generates decision text itself, and does not "
+            "generate the Guarantee Graph.")],
+          "denies generating the Guarantee Graph")
+    probe("projector_status_cannot_report_only_operator_blocks",
+          [(PY, '\nif __name__ == "__main__":',
+            '\n_legacy_banner = "operator blocks current"\n\nif __name__ == "__main__":')],
+          "status reports only operator blocks")
+
+    # GREEN structural registry growth — evidence ONLY. A sandbox-only future
+    # view with a fresh source, a temporary target, a complete arm, and a
+    # dispatcher entry stays green after regeneration through its OWN
+    # projector: no frozen numeric count guards the registry. This does not
+    # justify a real new generated surface.
+    tmp = sandbox([
+        (GV, "    GeneratedViewRegistry,\n}",
+         "    GeneratedViewRegistry,\n    FutureLedger,\n}"),
+        (GV, "        GeneratedView::GeneratedViewRegistry,\n    ];",
+         "        GeneratedView::GeneratedViewRegistry,\n"
+         "        GeneratedView::FutureLedger,\n    ];"),
+        (GV, '            GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",\n        }',
+         '            GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",\n'
+         '            GeneratedView::FutureLedger => "FutureLedger",\n        }'),
+        (GV,
+         'marker: Some("GENERATED-VIEW-REGISTRY"),\n'
+         "                generator: BootstrapToolId::ProjectPy,\n"
+         "            },",
+         'marker: Some("GENERATED-VIEW-REGISTRY"),\n'
+         "                generator: BootstrapToolId::ProjectPy,\n"
+         "            },\n"
+         "            GeneratedView::FutureLedger => GeneratedViewSpec {\n"
+         '                authority_sources: &["spec/future_ledger.rs"],\n'
+         '                target: GeneratedViewTarget::Static(&["docs/FUTURE_LEDGER.md"]),\n'
+         "                surface: GeneratedViewSurface::EmbeddedBlock,\n"
+         '                marker: Some("FUTURE-LEDGER"),\n'
+         "                generator: BootstrapToolId::ProjectPy,\n"
+         "            },"),
+        (PY, '    "GeneratedViewRegistry": render_generated_view_registry,\n}',
+         '    "GeneratedViewRegistry": render_generated_view_registry,\n'
+         '    "FutureLedger": lambda root: "sandbox-only future ledger body",\n}'),
+    ])
+    try:
+        (tmp / "spec/future_ledger.rs").write_bytes(
+            b"// sandbox-only future ledger source (registry-growth evidence)\n")
+        (tmp / "docs/FUTURE_LEDGER.md").write_bytes(
+            b"# Future ledger (sandbox only)\n\n"
+            b"<!-- FUTURE-LEDGER:BEGIN generated from spec/future_ledger.rs by "
+            b"bootstrap/project.py; do not edit -->\n(pending)\n"
+            b"<!-- FUTURE-LEDGER:END -->\n")
+        spec_mod = importlib.util.spec_from_file_location(
+            "project_growth_tmp", tmp / "bootstrap/project.py")
+        proj_tmp = importlib.util.module_from_spec(spec_mod)
+        spec_mod.loader.exec_module(proj_tmp)
+        regen_findings: list[str] = []
+        _views, plans, _bindings = proj_tmp.build_plans(tmp, regen_findings)
+        if regen_findings:
+            fail(f"structural_registry_growth_is_lawful (projector refused: "
+                 f"{regen_findings!r})")
+        else:
+            for path, original, rewritten in plans:
+                if rewritten != original:
+                    path.write_bytes(rewritten.encode("utf-8"))
+            grown = audit.generated_view_findings(tmp)
+            if grown:
+                fail(f"structural_registry_growth_is_lawful ({grown!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return findings
 
 
 def test_numeric(audit) -> list[str]:
@@ -5836,6 +6092,25 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::operators::OperatorSyntax;",
              'let _: OperatorSyntax = "times";',
              "expected `OperatorSyntax`, found `&str`"),
+            # 5.5E4a: the generated-view registry is typed — no raw string
+            # or surface value mints a view, no other module re-exports the
+            # identity, and no universal GeneratedViewId exists.
+            ("raw_string_cannot_substitute_for_generated_view",
+             "use spec::generated_views::GeneratedView;",
+             'let _: GeneratedView = "OperatorsCatalog";',
+             "expected `GeneratedView`, found `&str`"),
+            ("generated_view_surface_cannot_substitute_for_generated_view",
+             "use spec::generated_views::{GeneratedView, GeneratedViewSurface};",
+             "let _: GeneratedView = GeneratedViewSurface::EmbeddedBlock;",
+             "expected `GeneratedView`, found `GeneratedViewSurface`"),
+            ("architecture_module_does_not_reexport_generated_view",
+             "use spec::architecture::GeneratedView;",
+             "let _ = ();",
+             "no `GeneratedView` in `architecture`"),
+            ("universal_generated_view_id_is_absent",
+             "use spec::generated_views::GeneratedViewId;",
+             "let _ = ();",
+             "no `GeneratedViewId` in `generated_views`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -6072,37 +6347,29 @@ def test_contract_kinds(audit) -> list[str]:
           [(CK, "        ContractKind::Composition,\n    ];", "    ];")],
           "ContractKind::Composition is omitted from ContractKind::ALL")
     probe("docs_contract_kind_missing_row_is_rejected",
-          [("docs/06_MACBAT.md",
-            "Composition      LEG-041   deterministic composition identity\n", "")],
+          [("docs/06_MACBAT.md", "| Composition | LEG-041 |\n", "")],
           "docs/06 omits admitted contract kind row Composition LEG-041")
     probe("docs_contract_kind_extra_row_is_rejected",
-          [("docs/06_MACBAT.md",
-            "Composition      LEG-041   deterministic composition identity",
-            "Composition      LEG-041   deterministic composition identity\n"
-            "StateMachine     LEG-999   speculative")],
+          [("docs/06_MACBAT.md", "| Composition | LEG-041 |",
+            "| Composition | LEG-041 |\n| StateMachine | LEG-999 |")],
           "docs/06 admits StateMachine, which ContractKind does not declare")
     # The BASIS is semantic identity, not decoration: a wrong law, swapped
     # laws, and reordered rows are each refused positionally.
     probe("docs_contract_kind_wrong_basis_is_rejected",
-          [("docs/06_MACBAT.md", "Error            LEG-047",
-            "Error            LEG-999")],
-          "docs/06 row 1 states Error LEG-999; the typed catalog states "
-          "Error LEG-047 at that position")
+          [("docs/06_MACBAT.md", "| Error | LEG-047 |", "| Error | LEG-999 |")],
+          "docs/06 CONTRACT-KINDS row 1 states Error LEG-999; the typed "
+          "catalog states Error LEG-047 at that position")
     probe("docs_contract_kind_swapped_bases_are_rejected",
-          [("docs/06_MACBAT.md", "Error            LEG-047",
-            "Error            LEG-002"),
-           ("docs/06_MACBAT.md", "Event            LEG-002",
-            "Event            LEG-047")],
-          "docs/06 row 1 states Error LEG-002; the typed catalog states "
-          "Error LEG-047 at that position")
+          [("docs/06_MACBAT.md", "| Error | LEG-047 |", "| Error | LEG-002 |"),
+           ("docs/06_MACBAT.md", "| Event | LEG-002 |", "| Event | LEG-047 |")],
+          "docs/06 CONTRACT-KINDS row 1 states Error LEG-002; the typed "
+          "catalog states Error LEG-047 at that position")
     probe("docs_contract_kind_order_drift_is_rejected",
           [("docs/06_MACBAT.md",
-            "Error            LEG-047   error class and public shape never drift into side tables\n"
-            "Event            LEG-002   accepted event bytes are immutable; shape evolves on read",
-            "Event            LEG-002   accepted event bytes are immutable; shape evolves on read\n"
-            "Error            LEG-047   error class and public shape never drift into side tables")],
-          "docs/06 row 1 states Event LEG-002; the typed catalog states "
-          "Error LEG-047 at that position")
+            "| Error | LEG-047 |\n| Event | LEG-002 |",
+            "| Event | LEG-002 |\n| Error | LEG-047 |")],
+          "docs/06 CONTRACT-KINDS row 1 states Event LEG-002; the typed "
+          "catalog states Error LEG-047 at that position")
     probe("mistagged_admitting_guarantee_is_rejected",
           [(CK, 'ContractKind::Error => GuaranteeRef::leg("LEG-047"),',
                 'ContractKind::Error => GuaranteeRef::leg("DEC-047"),')],
@@ -6229,6 +6496,7 @@ def main() -> int:
     findings += test_legacy_manifest_parity(audit)
     findings += test_batql(audit, project)
     findings += test_operator_surfaces(audit, project)
+    findings += test_generated_views(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)

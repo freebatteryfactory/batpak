@@ -2,7 +2,7 @@
 status: GENERATED
 authority_scope: derived structural index only
 generated_by: bootstrap/project.py
-generated_from: typed SEED, LEG, DEC, architecture, and qualification fact families
+generated_from: spec/invariants.rs; spec/legacy_obligations.rs; spec/dispositions.rs; spec/architecture.rs; spec/guarantees.rs; spec/gates.rs
 do_not_edit: true
 source_reconciliation_epoch: cleanroom-v1
 ---

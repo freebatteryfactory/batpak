@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """Deterministic projection generator for the clean-room specification.
 
-This projects `spec/operators.rs` (OperatorId / OperatorSyntax / OperatorSpec)
-into the generated operator blocks:
+Every projection plan is built by iterating the typed generated-view registry
+(`spec/generated_views.rs` GeneratedView::ALL, 5.5E4a): embedded marker blocks
+across the authored corpus, the standalone generated files — including the
+Guarantee Graph (docs/GUARANTEE_GRAPH.generated.md) and the tracked
+rust-toolchain.toml, both of which THIS tool generates — and the mechanical
+corpus-frontmatter epoch convergence. The registry owns which views exist;
+each renderer here owns only how an admitted authority source is serialized,
+and no manual literal plan may bypass the registry.
 
-    OPERATORS-CATALOG      precedence / fixity / associativity / sort table
-    OPERATORS-SURFACES     typed shape / canonical surface / accepted alias
-    OPERATORS-GRAMMAR      comparison / arithmetic / logical operator productions
-    OPERATORS-PROJECTION   canonical formatting / spoken / mutation-class projection
-    OPERATORS-TYPING       the §5.2a legality matrix
-    OPERATORS-NUMERIC      per-operator numeric support (docs/37)
-
-`project.py --write`  rewrites the designated generated blocks in place.
-`project.py --check`  regenerates and fails if any block has drifted.
+`project.py --write`  rewrites every registered generated view in place.
+`project.py --check`  regenerates and fails if any view has drifted.
 
 This is the GENERATOR half of the generator/auditor pair. `bootstrap/audit.py`
-is the read-only AUDITOR: it recomputes the same projection independently and
+is the read-only AUDITOR: it recomputes the same projections independently and
 compares. The two share no parsing, normalization, projection-building, or
 comparison logic — only the inert marker names, whose values are independently
-asserted on both sides. project.py never generates DEC-060 itself, and does not
-generate the Guarantee Graph (that arrives with 5.5C1).
+asserted on both sides. project.py never generates decision text itself.
 
 Standard library only. All writes are UTF-8 with literal LF endings.
 """
@@ -218,7 +216,8 @@ GUARANTEE_FRONT = (
     "status: GENERATED\n"
     "authority_scope: derived structural index only\n"
     "generated_by: bootstrap/project.py\n"
-    "generated_from: typed SEED, LEG, DEC, architecture, and qualification fact families\n"
+    "generated_from: spec/invariants.rs; spec/legacy_obligations.rs; "
+    "spec/dispositions.rs; spec/architecture.rs; spec/guarantees.rs; spec/gates.rs\n"
     "do_not_edit: true\n"
     "---\n"
 )
@@ -591,8 +590,6 @@ def render_guarantee_graph(root):
 NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
 CONTRACT_DOC = "docs/06_MACBAT.md"
-_CONTRACT_FENCE = re.compile(
-    r"(The admitted kinds, each with its admitting law:\s*\n+```text\n)(.*?)(\n```)", re.S)
 
 
 def parse_contract_kinds(root):
@@ -608,20 +605,15 @@ def parse_contract_kinds(root):
     return [(spelling.get(v, ""), basis.get(v, "")) for v in inventory]
 
 
-def render_contract_kind_columns(root, fence_body):
-    """Rewrite the kind and basis COLUMNS from the typed owner, preserving
-    each line's authored prose tail: the first two tokens are projected
-    semantic identity, the tail carries none."""
-    pairs = parse_contract_kinds(root)
-    lines = [line for line in fence_body.splitlines() if line.strip()]
-    out = []
-    for i, (kind, basis) in enumerate(pairs):
-        tail = ""
-        if i < len(lines):
-            tokens = lines[i].split(None, 2)
-            tail = tokens[2] if len(tokens) > 2 else ""
-        out.append(f"{kind:<16} {basis:<9} {tail}".rstrip())
-    return "\n".join(out)
+def render_contract_kinds(root):
+    """The docs/06 admitted-kinds table, an ORDINARY generated block (5.5E4a):
+    inventory membership and canonical order from the typed owner, nothing
+    else. The retired hybrid fence let this generator edit selected columns
+    inside an authored fence; the explanatory prose now lives outside."""
+    lines = ["| ContractKind | Admission basis |", "| --- | --- |"]
+    for kind, basis in parse_contract_kinds(root):
+        lines.append(f"| {kind} | {basis} |")
+    return "\n".join(lines)
 
 
 # --- Toolchain projection (5.5E3a) -------------------------------------------
@@ -1222,22 +1214,6 @@ def render_typing(ops: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
-BLOCK_RENDER = {
-    "OPERATORS-CATALOG": render_catalog,
-    "OPERATORS-SURFACES": render_surfaces,
-    "OPERATORS-GRAMMAR": render_grammar,
-    "OPERATORS-PROJECTION": render_projection,
-    "OPERATORS-NUMERIC": render_numeric,
-    "OPERATORS-TYPING": render_typing,
-}
-BLOCK_FILE = {
-    "OPERATORS-CATALOG": COMPANION,
-    "OPERATORS-SURFACES": COMPANION,
-    "OPERATORS-GRAMMAR": COMPANION,
-    "OPERATORS-PROJECTION": COMPANION,
-    "OPERATORS-NUMERIC": NUMERIC_DOC,
-    "OPERATORS-TYPING": COMPANION,
-}
 
 
 # --- PakVM semantic ISA projection (D4c1) -----------------------------------
@@ -1545,17 +1521,211 @@ def block_pattern(name: str) -> re.Pattern[str]:
     )
 
 
-def apply_blocks(text: str, ops: list[dict[str, str]], names: list[str]) -> tuple[str, list[str]]:
-    """Return (rewritten_text, missing_block_names) for the named blocks."""
-    missing: list[str] = []
-    for name in names:
-        pattern = block_pattern(name)
-        body = BLOCK_RENDER[name](ops)
-        if not pattern.search(text):
-            missing.append(name)
+# --- The generated-view registry (5.5E4a) ------------------------------------
+# spec/generated_views.rs owns which generated views exist. This projector
+# parses the typed registry independently, dispatches through VIEW_RENDERERS,
+# and builds EVERY projection plan by iterating the registry — the scattered
+# hand-built plan denominator is dead, and a manual literal plan cannot
+# bypass the registry.
+GENERATED_VIEWS_SRC = "spec/generated_views.rs"
+_VIEW_SPEC_ARM = re.compile(
+    r"GeneratedView::(\w+) => GeneratedViewSpec \{\s*"
+    r"authority_sources: &\[([^\]]*)\],\s*"
+    r"target: GeneratedViewTarget::(?:Static\(&\[([^\]]*)\]\)|(EligibleMarkdownCorpus)),\s*"
+    r"surface: GeneratedViewSurface::(\w+),\s*"
+    r'marker: (?:Some\("([^"]+)"\)|None),\s*'
+    r"generator: BootstrapToolId::(\w+),", re.S)
+
+
+def parse_generated_views(root: Path) -> list[dict]:
+    """The typed registry in GeneratedView::ALL order. Unknown or incomplete
+    arms fail generation; there is no raw fallback."""
+    src = (root / GENERATED_VIEWS_SRC).read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[GeneratedView\] = &\[(.*?)\];", src, re.S)
+    if not all_body:
+        raise SystemExit("project: spec/generated_views.rs declares no GeneratedView::ALL")
+    order = re.findall(r"GeneratedView::(\w+)", all_body.group(1))
+    arms: dict[str, dict] = {}
+    for m in _VIEW_SPEC_ARM.finditer(src):
+        arms[m.group(1)] = {
+            "name": m.group(1),
+            "sources": re.findall(r'"([^"]+)"', m.group(2)),
+            "targets": re.findall(r'"([^"]+)"', m.group(3) or ""),
+            "corpus": bool(m.group(4)),
+            "surface": m.group(5),
+            "marker": m.group(6),
+            "generator": m.group(7),
+        }
+    views = []
+    for name in order:
+        if name not in arms:
+            raise SystemExit(f"project: GeneratedView::{name} has no parseable spec() arm")
+        views.append(arms[name])
+    return views
+
+
+def canonical_block(marker: str, source: str, body: str) -> str:
+    """One embedded view, marker AND body: the BEGIN provenance is generated
+    mechanically from the registry, never preserved from the target."""
+    return (f"<!-- {marker}:BEGIN generated from {source} by bootstrap/project.py; "
+            f"do not edit -->\n{body}\n<!-- {marker}:END -->")
+
+
+def render_tracked_toolchain(root: Path) -> str:
+    """The tracked root rust-toolchain.toml: provenance line plus the bare
+    selection; byte-equal to ToolchainProfile::tracked_root_toolchain_toml."""
+    tc = parse_toolchain(root)
+    if not all(tc.values()):
+        raise Unadmitted("spec/toolchain.rs: incomplete ToolchainProfile; the projection refuses")
+    return ("# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n"
+            + render_root_toolchain(tc))
+
+
+_VIEW_SURFACE_DISPLAY = {"EmbeddedBlock": "embedded-block",
+                         "StandaloneFile": "standalone-file",
+                         "CorpusFrontmatter": "corpus-frontmatter"}
+_VIEW_GENERATOR_DISPLAY = {"ProjectPy": "bootstrap/project.py"}
+
+
+def render_generated_view_registry(root: Path) -> str:
+    """The registry's own projection (docs/28), including its own row."""
+    lines = ["| View | Surface | Authority source(s) | Target | Marker | Generator |",
+             "| --- | --- | --- | --- | --- | --- |"]
+    for view in parse_generated_views(root):
+        surface = _VIEW_SURFACE_DISPLAY.get(view["surface"])
+        generator = _VIEW_GENERATOR_DISPLAY.get(view["generator"])
+        if surface is None or generator is None:
+            raise Unadmitted(
+                f"generated view {view['name']} carries an unregistered surface "
+                f"or generator spelling")
+        target = "; ".join(view["targets"]) if view["targets"] else "eligible markdown corpus"
+        lines.append(
+            f"| {view['name']} | {surface} | {'; '.join(view['sources'])} | "
+            f"{target} | {view['marker'] or '-'} | {generator} |")
+    return "\n".join(lines)
+
+
+VIEW_RENDERERS = {
+    "OperatorsCatalog": lambda root: render_catalog(parse_operators(root)),
+    "OperatorsSurfaces": lambda root: render_surfaces(parse_operators(root)),
+    "OperatorsGrammar": lambda root: render_grammar(parse_operators(root)),
+    "OperatorsProjection": lambda root: render_projection(parse_operators(root)),
+    "OperatorsTyping": lambda root: render_typing(parse_operators(root)),
+    "OperatorsNumeric": lambda root: render_numeric(parse_operators(root)),
+    "SeedClassification": render_seed_classification,
+    "GuaranteeGraph": render_guarantee_graph,
+    "PakVmSemanticIsa": render_pakvm_isa,
+    "PakVmSignatures": render_pakvm_signatures,
+    "SyncBatPlaneOwnership": render_syncbat_plane_ownership,
+    "SyncBatAuthorities": render_syncbat_authorities,
+    "SyncBatCrossings": render_syncbat_crossings,
+    "ReconciliationCoordinates": render_recon_coordinates,
+    "ReconciliationRetry": render_recon_retry,
+    "ReleaseSeal": render_release_seal,
+    "ProofTerminals": render_proof_terminals,
+    "StaleVocabulary": render_stale_vocabulary,
+    "GateInventory": render_gate_inventory,
+    "ContractKinds": render_contract_kinds,
+    "RustToolchain": render_tracked_toolchain,
+    "IdentityCatalog": lambda root: render_identity_axis(root, "IdentityKind"),
+    "GenerationCatalog": lambda root: render_identity_axis(root, "GenerationKind"),
+    "BindingCatalog": lambda root: render_identity_axis(root, "BindingKind"),
+    "VersionCatalog": lambda root: render_identity_axis(root, "VersionIdentityKind"),
+    "IdentityResidue": render_identity_residue,
+    "ProductCommands": lambda root: render_command_namespace(root, "ProductCommand"),
+    "TestPakCommands": lambda root: render_command_namespace(root, "TestPakCommand"),
+    "BatQlSourceModes": lambda root: render_command_namespace(root, "BatQlSourceMode"),
+    "MutationLanes": render_mutation_lanes,
+    "MutationResults": render_mutation_results,
+    "PromotionRequirements": render_promotion,
+    "CompilerAssumptionKinds": render_compiler_assumptions,
+    "CorpusReconciliationEpoch": render_corpus_epoch,
+    "CorpusEpochMembership": lambda root: parse_corpus_epoch(root)["spelling"],
+    "GeneratedViewRegistry": render_generated_view_registry,
+}
+
+
+def build_plans(root: Path, findings: list[str]):
+    """Every projection plan, built by iterating the typed registry. The
+    renderer-key set must equal the registry in both directions: a registered
+    view with no renderer refuses, and a renderer with no registered view
+    refuses."""
+    views = parse_generated_views(root)
+    names = [v["name"] for v in views]
+    for missing in [n for n in names if n not in VIEW_RENDERERS]:
+        findings.append(f"registered generated view {missing} has no projector renderer")
+    for phantom in sorted(set(VIEW_RENDERERS) - set(names)):
+        findings.append(f"projector renderer {phantom} serializes no registered view")
+    texts: dict[str, list] = {}
+
+    def load(rel: str) -> list:
+        if rel not in texts:
+            path = root / rel
+            original = path.read_text(encoding="utf-8") if path.is_file() else ""
+            texts[rel] = [path, original, original]
+        return texts[rel]
+
+    epoch_spelling = None
+    for view in views:
+        name = view["name"]
+        render = VIEW_RENDERERS.get(name)
+        if render is None:
             continue
-        text = pattern.sub(lambda m: m.group(1) + body + m.group(3), text)
-    return text, missing
+        if view["surface"] == "EmbeddedBlock":
+            if not view["marker"] or not view["sources"] or not view["targets"]:
+                findings.append(
+                    f"embedded generated view {name} lacks a marker, authority "
+                    f"source, or static target")
+                continue
+            try:
+                body = render(root)
+            except Unadmitted as exc:
+                findings.append(f"{name} does not admit: {exc}")
+                continue
+            pattern = block_pattern(view["marker"])
+            replacement = canonical_block(view["marker"], view["sources"][0], body)
+            for rel in view["targets"]:
+                entry = load(rel)
+                if not entry[2]:
+                    findings.append(f"{rel}: missing generated-view target file")
+                    continue
+                if not pattern.search(entry[2]):
+                    findings.append(
+                        f"{rel}: missing generated block markers for {view['marker']}")
+                    continue
+                entry[2] = pattern.sub(lambda m, r=replacement: r, entry[2])
+        elif view["surface"] == "StandaloneFile":
+            if len(view["targets"]) != 1:
+                findings.append(
+                    f"standalone generated view {name} must name exactly one target")
+                continue
+            try:
+                content = render(root)
+            except Unadmitted as exc:
+                findings.append(f"{name} does not admit: {exc}")
+                continue
+            load(view["targets"][0])[2] = content
+        elif view["surface"] == "CorpusFrontmatter":
+            try:
+                epoch_spelling = render(root)
+            except Unadmitted as exc:
+                findings.append(f"{name} does not admit: {exc}")
+        else:
+            findings.append(
+                f"generated view {name} carries unknown surface {view['surface']!r}")
+    corpus_bindings = 0
+    if epoch_spelling is not None:
+        for path in sorted(root.rglob("*.md")):
+            rel_parts = path.relative_to(root).parts
+            if any(part in (".git", "target", "__pycache__") for part in rel_parts):
+                continue
+            entry = load(path.relative_to(root).as_posix())
+            entry[2] = converge_epoch_frontmatter(entry[2], epoch_spelling)
+            if re.search(r"^(?:source_)?reconciliation_epoch:", entry[2], re.M):
+                corpus_bindings += 1
+    plans = [(entry[0], entry[1], entry[2]) for entry in texts.values()]
+    return views, plans, corpus_bindings
 
 
 def main() -> int:
@@ -1564,309 +1734,33 @@ def main() -> int:
         return 2
     mode = sys.argv[1]
     root = Path(sys.argv[2] if len(sys.argv) > 2 else ".").resolve()
-    ops = parse_operators(root)
     findings: list[str] = []
-    if not ops:
-        findings.append("spec/operators.rs: no OperatorSpec rows parsed")
-    by_file: dict[str, list[str]] = {}
-    for name, rel in BLOCK_FILE.items():
-        by_file.setdefault(rel, []).append(name)
-    plans: list[tuple[Path, str, str]] = []
-    for rel, names in sorted(by_file.items()):
-        path = root / rel
-        original = path.read_text(encoding="utf-8")
-        rewritten, missing = apply_blocks(original, ops, names)
-        for name in missing:
-            findings.append(f"{rel}: missing generated block markers for {name}")
-        plans.append((path, original, rewritten))
-    # Guarantee classification: SEED marker block in docs/23 + the whole graph file
-    seed_path = root / SEED_DOC
-    seed_original = seed_path.read_text(encoding="utf-8")
-    seed_pattern = block_pattern("SEED-CLASSIFICATION")
-    if not seed_pattern.search(seed_original):
-        findings.append(f"{SEED_DOC}: missing generated block markers for SEED-CLASSIFICATION")
-        seed_rewritten = seed_original
-    else:
-        body = render_seed_classification(root)
-        seed_rewritten = seed_pattern.sub(lambda m: m.group(1) + body + m.group(3), seed_original)
-    plans.append((seed_path, seed_original, seed_rewritten))
-    isa_path = root / ISA_DOC
-    isa_original = isa_path.read_text(encoding="utf-8")
-    isa_rewritten = isa_original
-    for name, render in (("PAKVM-SEMANTIC-ISA", render_pakvm_isa),
-                         ("PAKVM-SIGNATURES", render_pakvm_signatures)):
-        pat = block_pattern(name)
-        if not pat.search(isa_rewritten):
-            findings.append(f"{ISA_DOC}: missing generated block markers for {name}")
-            continue
-        body = render(root)
-        isa_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), isa_rewritten)
-    plans.append((isa_path, isa_original, isa_rewritten))
-    fw_path = root / SYNCBAT_DOC
-    fw_original = fw_path.read_text(encoding="utf-8")
-    fw_rewritten = fw_original
-    for name, render in (("SYNCBAT-PLANE-OWNERSHIP", render_syncbat_plane_ownership),
-                         ("SYNCBAT-AUTHORITIES", render_syncbat_authorities),
-                         ("SYNCBAT-CROSSINGS", render_syncbat_crossings)):
-        pat = block_pattern(name)
-        if not pat.search(fw_rewritten):
-            findings.append(f"{SYNCBAT_DOC}: missing generated block markers for {name}")
-            continue
-        try:
-            body = render(root)
-        except Unadmitted as exc:
-            # Fail closed and say why. The alternative — a traceback — is a
-            # projector refusing to answer, which reads to a fixture exactly like
-            # a projector that has nothing to report.
-            findings.append(f"{SYNCBAT_DOC}: {name} does not admit: {exc}")
-            continue
-        fw_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), fw_rewritten)
-    plans.append((fw_path, fw_original, fw_rewritten))
-    recon_path = root / SYSTEM_DOC
-    recon_original = recon_path.read_text(encoding="utf-8")
-    recon_rewritten = recon_original
-    for name, render in (("RECONCILIATION-COORDINATES", render_recon_coordinates),
-                         ("RECONCILIATION-RETRY", render_recon_retry)):
-        pat = block_pattern(name)
-        if not pat.search(recon_rewritten):
-            findings.append(f"{SYSTEM_DOC}: missing generated block markers for {name}")
-            continue
-        try:
-            body = render(root)
-        except Unadmitted as exc:
-            findings.append(f"{SYSTEM_DOC}: {name} does not admit: {exc}")
-            continue
-        recon_rewritten = pat.sub(lambda m: m.group(1) + body + m.group(3), recon_rewritten)
-    plans.append((recon_path, recon_original, recon_rewritten))
-    seal_path = root / RELEASE_DOC
-    seal_original = seal_path.read_text(encoding="utf-8")
-    seal_pattern = block_pattern("RELEASE-SEAL")
-    if not seal_pattern.search(seal_original):
-        findings.append(f"{RELEASE_DOC}: missing generated block markers for RELEASE-SEAL")
-        seal_rewritten = seal_original
-    else:
-        try:
-            body = render_release_seal(root)
-            seal_rewritten = seal_pattern.sub(
-                lambda m: m.group(1) + body + m.group(3), seal_original)
-        except Unadmitted as exc:
-            findings.append(f"{RELEASE_DOC}: RELEASE-SEAL does not admit: {exc}")
-            seal_rewritten = seal_original
-    plans.append((seal_path, seal_original, seal_rewritten))
-    pt_path = root / TESTPAK_DOC
-    pt_original = pt_path.read_text(encoding="utf-8")
-    pt_pattern = block_pattern("PROOF-TERMINALS")
-    if not pt_pattern.search(pt_original):
-        findings.append(f"{TESTPAK_DOC}: missing generated block markers for PROOF-TERMINALS")
-        pt_rewritten = pt_original
-    else:
-        try:
-            body = render_proof_terminals(root)
-            pt_rewritten = pt_pattern.sub(lambda m: m.group(1) + body + m.group(3), pt_original)
-        except Unadmitted as exc:
-            findings.append(f"{TESTPAK_DOC}: PROOF-TERMINALS does not admit: {exc}")
-            pt_rewritten = pt_original
-    plans.append((pt_path, pt_original, pt_rewritten))
-    gates_path = root / GATES_DOC
-    gates_original = gates_path.read_text(encoding="utf-8")
-    for rel in STALE_DOCS:
-        sp = root / rel
-        if not sp.is_file():
-            findings.append(f"{rel}: missing stale-vocabulary projection doc")
-            continue
-        so = sp.read_text(encoding="utf-8")
-        spat = block_pattern("STALE-VOCAB")
-        if not spat.search(so):
-            findings.append(f"{rel}: missing generated block markers for STALE-VOCAB")
-        else:
-            plans.append((sp, so, spat.sub(
-                lambda m: m.group(1) + render_stale_vocabulary(root) + m.group(3), so)))
-    gates_pattern = block_pattern("GATE-INVENTORY")
-    if not gates_pattern.search(gates_original):
-        findings.append(f"{GATES_DOC}: missing generated block markers for GATE-INVENTORY")
-        gates_rewritten = gates_original
-    else:
-        body = render_gate_inventory(root)
-        gates_rewritten = gates_pattern.sub(lambda m: m.group(1) + body + m.group(3), gates_original)
-    plans.append((gates_path, gates_original, gates_rewritten))
-    graph_path = root / GUARANTEE_DOC
-    graph_original = graph_path.read_text(encoding="utf-8") if graph_path.is_file() else ""
-    plans.append((graph_path, graph_original, render_guarantee_graph(root)))
-    # The admitted-kinds fence (5.5E3c1): the kind and admission-basis
-    # COLUMNS are projected from spec/contracts.rs in ContractKind::ALL
-    # order; the authored prose tails are preserved because they carry no
-    # semantic identity.
-    ck_path = root / CONTRACT_DOC
-    ck_original = ck_path.read_text(encoding="utf-8")
-    if not _CONTRACT_FENCE.search(ck_original):
-        findings.append(f"{CONTRACT_DOC}: missing admitted-kinds fence")
-    else:
-        ck_rewritten = _CONTRACT_FENCE.sub(
-            lambda m: m.group(1) + render_contract_kind_columns(root, m.group(2)) + m.group(3),
-            ck_original)
-        plans.append((ck_path, ck_original, ck_rewritten))
-    # The tracked root toolchain selection (5.5E3a): a bootstrap projection of
-    # spec/toolchain.rs ToolchainProfile, byte-deterministic. It must exist
-    # BEFORE the spec compiles, which makes it a tracked projection — never a
-    # second authority. The auditor reconstructs the same bytes independently
-    # and seedcheck compares them against the running type.
-    tc_path = root / "rust-toolchain.toml"
-    tc_original = tc_path.read_text(encoding="utf-8") if tc_path.is_file() else ""
-    tc = parse_toolchain(root)
-    if not all(tc.values()):
-        findings.append("spec/toolchain.rs: incomplete ToolchainProfile; the projection refuses")
-    else:
-        plans.append((tc_path, tc_original, render_root_toolchain(tc)))
-    # The identity catalogs (5.5E3d): five generated docs/16 blocks — four
-    # catalog axes plus the visible residue table, ordered entries AND owners.
-    id_path = root / IDENTITY_DOC
-    id_original = id_path.read_text(encoding="utf-8")
-    id_rewritten = id_original
-    id_renders = [(name, lambda r, k=kind: render_identity_axis(r, k))
-                  for name, kind in IDENTITY_AXES]
-    id_renders.append(("IDENTITY-RESIDUE", render_identity_residue))
-    for name, render in id_renders:
-        pat = block_pattern(name)
-        if not pat.search(id_rewritten):
-            findings.append(f"{IDENTITY_DOC}: missing generated block markers for {name}")
-            continue
-        try:
-            body = render(root)
-        except Unadmitted as exc:
-            findings.append(f"{IDENTITY_DOC}: {name} does not admit: {exc}")
-            continue
-        id_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), id_rewritten)
-    plans.append((id_path, id_original, id_rewritten))
-    # The command namespaces (5.5E3e): docs/26 projects the two CLI
-    # inventories, the companion projects the source modes — ordered rows of
-    # token, authority shape, owner, and delegates.
-    cmd_texts: dict[str, tuple] = {}
-    for doc in (COMMANDS_DOC, COMPANION_DOC):
-        p = root / doc
-        original = p.read_text(encoding="utf-8")
-        cmd_texts[doc] = [p, original, original]
-    for name, kind, doc in COMMAND_NAMESPACES:
-        pat = block_pattern(name)
-        if not pat.search(cmd_texts[doc][2]):
-            findings.append(f"{doc}: missing generated block markers for {name}")
-            continue
-        try:
-            body = render_command_namespace(root, kind)
-        except Unadmitted as exc:
-            findings.append(f"{doc}: {name} does not admit: {exc}")
-            continue
-        cmd_texts[doc][2] = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
-                                    cmd_texts[doc][2])
-    for p, original, rewritten in cmd_texts.values():
-        plans.append((p, original, rewritten))
-    # The mutation vocabulary (5.5E3f): docs/12 projects the lane facts and
-    # result classifications from spec/mutation.rs.
-    mu_path = root / MUTATION_DOC
-    mu_original = mu_path.read_text(encoding="utf-8")
-    mu_rewritten = mu_original
-    for name, render in (("MUTATION-LANES", render_mutation_lanes),
-                         ("MUTATION-RESULTS", render_mutation_results)):
-        pat = block_pattern(name)
-        if not pat.search(mu_rewritten):
-            findings.append(f"{MUTATION_DOC}: missing generated block markers for {name}")
-            continue
-        try:
-            body = render(root)
-        except Unadmitted as exc:
-            findings.append(f"{MUTATION_DOC}: {name} does not admit: {exc}")
-            continue
-        mu_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), mu_rewritten)
-    # The promotion denominator (5.5E3i) also projects into docs/12 — same
-    # plan entry, one write.
-    pr_pat = block_pattern("PROMOTION-REQUIREMENTS")
-    if not pr_pat.search(mu_rewritten):
-        findings.append(f"{MUTATION_DOC}: missing generated block markers for "
-                        "PROMOTION-REQUIREMENTS")
-    else:
-        try:
-            body = render_promotion(root)
-            mu_rewritten = pr_pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
-                                      mu_rewritten)
-        except Unadmitted as exc:
-            findings.append(f"{MUTATION_DOC}: PROMOTION-REQUIREMENTS does not "
-                            f"admit: {exc}")
-    plans.append((mu_path, mu_original, mu_rewritten))
-    # The compiler-assumption kinds (5.5E3h): docs/19 carries the fact row
-    # per admitted ledgerable kind.
-    ca_path = root / SECURITY_DOC
-    ca_original = ca_path.read_text(encoding="utf-8")
-    ca_pat = block_pattern("COMPILER-ASSUMPTION-KINDS")
-    if not ca_pat.search(ca_original):
-        findings.append(f"{SECURITY_DOC}: missing generated block markers for "
-                        "COMPILER-ASSUMPTION-KINDS")
-        plans.append((ca_path, ca_original, ca_original))
-    else:
-        try:
-            body = render_compiler_assumptions(root)
-            plans.append((ca_path, ca_original,
-                          ca_pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
-                                     ca_original)))
-        except Unadmitted as exc:
-            findings.append(f"{SECURITY_DOC}: COMPILER-ASSUMPTION-KINDS does not "
-                            f"admit: {exc}")
-            plans.append((ca_path, ca_original, ca_original))
-    # The corpus epoch (5.5E3g): the docs/00 fact block, then mechanical
-    # frontmatter convergence over every eligible tracked document — applied
-    # to already-planned rewrites so no path appears in plans twice.
-    try:
-        epoch = parse_corpus_epoch(root)
-    except Unadmitted as exc:
-        findings.append(f"spec/corpus.rs: {exc}")
-        epoch = None
-    if epoch is not None:
-        c00_pat = block_pattern("CORPUS-RECONCILIATION-EPOCH")
-        planned_paths = {p: i for i, (p, _o, _r) in enumerate(plans)}
-        c00_path = root / "docs/00_CONSTITUTION.md"
-        if c00_path not in planned_paths:
-            c00_original = c00_path.read_text(encoding="utf-8")
-            plans.append((c00_path, c00_original, c00_original))
-            planned_paths[c00_path] = len(plans) - 1
-        i = planned_paths[c00_path]
-        if not c00_pat.search(plans[i][2]):
-            findings.append("docs/00: missing generated block markers for "
-                            "CORPUS-RECONCILIATION-EPOCH")
-        else:
-            body = render_corpus_epoch(root)
-            plans[i] = (plans[i][0], plans[i][1],
-                        c00_pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
-                                    plans[i][2]))
-        for path in sorted(root.rglob("*.md")):
-            rel = path.relative_to(root)
-            if any(part in (".git", "target", "__pycache__") for part in rel.parts):
-                continue
-            if path in planned_paths:
-                i = planned_paths[path]
-                plans[i] = (plans[i][0], plans[i][1],
-                            converge_epoch_frontmatter(plans[i][2], epoch["spelling"]))
-            else:
-                original = path.read_text(encoding="utf-8")
-                rewritten = converge_epoch_frontmatter(original, epoch["spelling"])
-                if rewritten != original:
-                    plans.append((path, original, rewritten))
+    views, plans, corpus_bindings = build_plans(root, findings)
+    static_instances = sum(len(view["targets"]) for view in views)
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
     if mode == "--write":
-        changed = sum(1 for path, original, rewritten in plans if rewritten != original)
+        changed = sum(1 for _path, original, rewritten in plans if rewritten != original)
         for path, original, rewritten in plans:
             if rewritten != original:
                 path.write_bytes(rewritten.encode("utf-8"))
         verb = "WROTE" if changed else "OK"
-        print(f"project: {verb} operator blocks, SEED classification, and the Guarantee Graph ({len(ops)} operators)")
+        print(f"project: {verb} {len(views)} registered generated views "
+              f"({static_instances} static target instances; "
+              f"{corpus_bindings} corpus-frontmatter bindings)")
         return 0
     # --check
     stale = [path.name for path, original, rewritten in plans if rewritten != original]
     if stale:
-        print(f"project: FAIL (generated operator blocks stale in {stale}; run project.py --write)", file=sys.stderr)
+        print(f"project: FAIL (registered generated views stale in {stale}; "
+              "run project.py --write)", file=sys.stderr)
         return 1
-    print(f"project: PASS ({len(BLOCK_RENDER)} operator blocks current; {len(ops)} operators)")
+    print(f"project: PASS ({len(views)} registered generated views current; "
+          f"{static_instances} static target instances; "
+          f"{corpus_bindings} corpus-frontmatter bindings)")
     return 0
 
 

@@ -1,0 +1,452 @@
+//! The generated-view registry (5.5E4a): the closed denominator of every
+//! repository-generated view.
+//!
+//! Owned by BP-SELF-EXPLAINING-1 (docs/28). This registry describes repository
+//! GENERATION METADATA only: which generated views exist, which authority
+//! source each serializes, where each lands, what surface form it takes, and
+//! which bootstrap generator owns the mechanical projection. It never owns or
+//! completes the semantic facts a view renders — every rendered fact remains
+//! owned by the view's named authority source.
+//!
+//! The enum variant is the logical view identity: there is no
+//! `GeneratedViewId`, no `ProjectionId`, and no universal repository artifact
+//! identity. `ALL` is the sole inventory and `spec()` the sole fact function —
+//! no parallel row table. `bootstrap/project.py` builds every projection plan
+//! by iterating this registry, and `bootstrap/audit.py` independently proves
+//! that the registered embedded target instances equal the actual generated
+//! markers in the tracked corpus. A future generated view must enter this
+//! registry before it may land.
+
+use crate::guarantees::BootstrapToolId;
+
+/// The three admitted surface forms a generated view may take.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GeneratedViewSurface {
+    /// A marker-fenced block embedded inside an authored document. The block
+    /// inherits no authority from its containing document.
+    EmbeddedBlock,
+    /// An entire generated file. A standalone generated file is a derived
+    /// view, never an authored contract.
+    StandaloneFile,
+    /// Mechanical frontmatter convergence across the eligible Markdown
+    /// corpus. Corpus epoch frontmatter states corpus membership, not
+    /// semantic truth.
+    CorpusFrontmatter,
+}
+
+/// Where a generated view lands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GeneratedViewTarget {
+    /// Exact tracked paths. One logical view may lawfully have multiple
+    /// static targets (StaleVocabulary is the standing multi-target case).
+    Static(&'static [&'static str]),
+    /// Every eligible tracked Markdown document, discovered mechanically.
+    EligibleMarkdownCorpus,
+}
+
+/// One view's generation metadata. `authority_sources` names the files whose
+/// facts the view serializes; supporting typed identities used only for
+/// validation or formatting do not become co-owners.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GeneratedViewSpec {
+    pub authority_sources: &'static [&'static str],
+    pub target: GeneratedViewTarget,
+    pub surface: GeneratedViewSurface,
+    pub marker: Option<&'static str>,
+    pub generator: BootstrapToolId,
+}
+
+/// Every generated view the repository carries, in canonical registry order.
+/// Completeness is enum-to-ALL equality plus total `spec()` coverage — no
+/// numeric count is the law.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GeneratedView {
+    OperatorsCatalog,
+    OperatorsSurfaces,
+    OperatorsGrammar,
+    OperatorsProjection,
+    OperatorsTyping,
+    OperatorsNumeric,
+    SeedClassification,
+    GuaranteeGraph,
+    PakVmSemanticIsa,
+    PakVmSignatures,
+    SyncBatPlaneOwnership,
+    SyncBatAuthorities,
+    SyncBatCrossings,
+    ReconciliationCoordinates,
+    ReconciliationRetry,
+    ReleaseSeal,
+    ProofTerminals,
+    StaleVocabulary,
+    GateInventory,
+    ContractKinds,
+    RustToolchain,
+    IdentityCatalog,
+    GenerationCatalog,
+    BindingCatalog,
+    VersionCatalog,
+    IdentityResidue,
+    ProductCommands,
+    TestPakCommands,
+    BatQlSourceModes,
+    MutationLanes,
+    MutationResults,
+    PromotionRequirements,
+    CompilerAssumptionKinds,
+    CorpusReconciliationEpoch,
+    CorpusEpochMembership,
+    GeneratedViewRegistry,
+}
+
+impl GeneratedView {
+    pub const ALL: &'static [GeneratedView] = &[
+        GeneratedView::OperatorsCatalog,
+        GeneratedView::OperatorsSurfaces,
+        GeneratedView::OperatorsGrammar,
+        GeneratedView::OperatorsProjection,
+        GeneratedView::OperatorsTyping,
+        GeneratedView::OperatorsNumeric,
+        GeneratedView::SeedClassification,
+        GeneratedView::GuaranteeGraph,
+        GeneratedView::PakVmSemanticIsa,
+        GeneratedView::PakVmSignatures,
+        GeneratedView::SyncBatPlaneOwnership,
+        GeneratedView::SyncBatAuthorities,
+        GeneratedView::SyncBatCrossings,
+        GeneratedView::ReconciliationCoordinates,
+        GeneratedView::ReconciliationRetry,
+        GeneratedView::ReleaseSeal,
+        GeneratedView::ProofTerminals,
+        GeneratedView::StaleVocabulary,
+        GeneratedView::GateInventory,
+        GeneratedView::ContractKinds,
+        GeneratedView::RustToolchain,
+        GeneratedView::IdentityCatalog,
+        GeneratedView::GenerationCatalog,
+        GeneratedView::BindingCatalog,
+        GeneratedView::VersionCatalog,
+        GeneratedView::IdentityResidue,
+        GeneratedView::ProductCommands,
+        GeneratedView::TestPakCommands,
+        GeneratedView::BatQlSourceModes,
+        GeneratedView::MutationLanes,
+        GeneratedView::MutationResults,
+        GeneratedView::PromotionRequirements,
+        GeneratedView::CompilerAssumptionKinds,
+        GeneratedView::CorpusReconciliationEpoch,
+        GeneratedView::CorpusEpochMembership,
+        GeneratedView::GeneratedViewRegistry,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            GeneratedView::OperatorsCatalog => "OperatorsCatalog",
+            GeneratedView::OperatorsSurfaces => "OperatorsSurfaces",
+            GeneratedView::OperatorsGrammar => "OperatorsGrammar",
+            GeneratedView::OperatorsProjection => "OperatorsProjection",
+            GeneratedView::OperatorsTyping => "OperatorsTyping",
+            GeneratedView::OperatorsNumeric => "OperatorsNumeric",
+            GeneratedView::SeedClassification => "SeedClassification",
+            GeneratedView::GuaranteeGraph => "GuaranteeGraph",
+            GeneratedView::PakVmSemanticIsa => "PakVmSemanticIsa",
+            GeneratedView::PakVmSignatures => "PakVmSignatures",
+            GeneratedView::SyncBatPlaneOwnership => "SyncBatPlaneOwnership",
+            GeneratedView::SyncBatAuthorities => "SyncBatAuthorities",
+            GeneratedView::SyncBatCrossings => "SyncBatCrossings",
+            GeneratedView::ReconciliationCoordinates => "ReconciliationCoordinates",
+            GeneratedView::ReconciliationRetry => "ReconciliationRetry",
+            GeneratedView::ReleaseSeal => "ReleaseSeal",
+            GeneratedView::ProofTerminals => "ProofTerminals",
+            GeneratedView::StaleVocabulary => "StaleVocabulary",
+            GeneratedView::GateInventory => "GateInventory",
+            GeneratedView::ContractKinds => "ContractKinds",
+            GeneratedView::RustToolchain => "RustToolchain",
+            GeneratedView::IdentityCatalog => "IdentityCatalog",
+            GeneratedView::GenerationCatalog => "GenerationCatalog",
+            GeneratedView::BindingCatalog => "BindingCatalog",
+            GeneratedView::VersionCatalog => "VersionCatalog",
+            GeneratedView::IdentityResidue => "IdentityResidue",
+            GeneratedView::ProductCommands => "ProductCommands",
+            GeneratedView::TestPakCommands => "TestPakCommands",
+            GeneratedView::BatQlSourceModes => "BatQlSourceModes",
+            GeneratedView::MutationLanes => "MutationLanes",
+            GeneratedView::MutationResults => "MutationResults",
+            GeneratedView::PromotionRequirements => "PromotionRequirements",
+            GeneratedView::CompilerAssumptionKinds => "CompilerAssumptionKinds",
+            GeneratedView::CorpusReconciliationEpoch => "CorpusReconciliationEpoch",
+            GeneratedView::CorpusEpochMembership => "CorpusEpochMembership",
+            GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
+        }
+    }
+
+    /// The complete generation metadata for one view. Every generator arm is
+    /// written explicitly — no wildcard or family default silently blesses a
+    /// future generator.
+    pub const fn spec(self) -> GeneratedViewSpec {
+        match self {
+            GeneratedView::OperatorsCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/operators.rs"],
+                target: GeneratedViewTarget::Static(&["companion/BATQL_LANGUAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("OPERATORS-CATALOG"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::OperatorsSurfaces => GeneratedViewSpec {
+                authority_sources: &["spec/operators.rs"],
+                target: GeneratedViewTarget::Static(&["companion/BATQL_LANGUAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("OPERATORS-SURFACES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::OperatorsGrammar => GeneratedViewSpec {
+                authority_sources: &["spec/operators.rs"],
+                target: GeneratedViewTarget::Static(&["companion/BATQL_LANGUAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("OPERATORS-GRAMMAR"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::OperatorsProjection => GeneratedViewSpec {
+                authority_sources: &["spec/operators.rs"],
+                target: GeneratedViewTarget::Static(&["companion/BATQL_LANGUAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("OPERATORS-PROJECTION"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::OperatorsTyping => GeneratedViewSpec {
+                authority_sources: &["spec/operators.rs"],
+                target: GeneratedViewTarget::Static(&["companion/BATQL_LANGUAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("OPERATORS-TYPING"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::OperatorsNumeric => GeneratedViewSpec {
+                authority_sources: &["spec/operators.rs"],
+                target: GeneratedViewTarget::Static(&["docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("OPERATORS-NUMERIC"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SeedClassification => GeneratedViewSpec {
+                authority_sources: &["spec/invariants.rs"],
+                target: GeneratedViewTarget::Static(&["docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SEED-CLASSIFICATION"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::GuaranteeGraph => GeneratedViewSpec {
+                authority_sources: &[
+                    "spec/invariants.rs",
+                    "spec/legacy_obligations.rs",
+                    "spec/dispositions.rs",
+                    "spec/architecture.rs",
+                    "spec/guarantees.rs",
+                    "spec/gates.rs",
+                ],
+                target: GeneratedViewTarget::Static(&["docs/GUARANTEE_GRAPH.generated.md"]),
+                surface: GeneratedViewSurface::StandaloneFile,
+                marker: None,
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::PakVmSemanticIsa => GeneratedViewSpec {
+                authority_sources: &["spec/pakvm_isa.rs"],
+                target: GeneratedViewTarget::Static(&["docs/07_PAKVM_ISA.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PAKVM-SEMANTIC-ISA"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::PakVmSignatures => GeneratedViewSpec {
+                authority_sources: &["spec/pakvm_isa.rs"],
+                target: GeneratedViewTarget::Static(&["docs/07_PAKVM_ISA.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PAKVM-SIGNATURES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SyncBatPlaneOwnership => GeneratedViewSpec {
+                authority_sources: &["spec/architecture.rs"],
+                target: GeneratedViewTarget::Static(&["docs/08_SYNCBAT_RUNTIME.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SYNCBAT-PLANE-OWNERSHIP"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SyncBatAuthorities => GeneratedViewSpec {
+                authority_sources: &["spec/syncbat_firewall.rs"],
+                target: GeneratedViewTarget::Static(&["docs/08_SYNCBAT_RUNTIME.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SYNCBAT-AUTHORITIES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SyncBatCrossings => GeneratedViewSpec {
+                authority_sources: &["spec/syncbat_firewall.rs"],
+                target: GeneratedViewTarget::Static(&["docs/08_SYNCBAT_RUNTIME.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SYNCBAT-CROSSINGS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::ReconciliationCoordinates => GeneratedViewSpec {
+                authority_sources: &["spec/reconciliation.rs"],
+                target: GeneratedViewTarget::Static(&["docs/02_SYSTEM_MODEL.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("RECONCILIATION-COORDINATES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::ReconciliationRetry => GeneratedViewSpec {
+                authority_sources: &["spec/reconciliation.rs"],
+                target: GeneratedViewTarget::Static(&["docs/02_SYSTEM_MODEL.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("RECONCILIATION-RETRY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::ReleaseSeal => GeneratedViewSpec {
+                authority_sources: &["spec/architecture.rs"],
+                target: GeneratedViewTarget::Static(&["docs/36_PUBLIC_API_CI_AND_RELEASE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("RELEASE-SEAL"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::ProofTerminals => GeneratedViewSpec {
+                authority_sources: &["spec/proof.rs"],
+                target: GeneratedViewTarget::Static(&["docs/12_TESTPAK.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PROOF-TERMINALS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::StaleVocabulary => GeneratedViewSpec {
+                authority_sources: &["spec/dispositions.rs"],
+                target: GeneratedViewTarget::Static(&[
+                    "docs/29_STATUS_AND_SUPERSESSION.md",
+                    "docs/33_AGENT_FINISH_LINE_CHECKLIST.md",
+                ]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("STALE-VOCAB"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::GateInventory => GeneratedViewSpec {
+                authority_sources: &["spec/gates.rs"],
+                target: GeneratedViewTarget::Static(&["docs/25_IMPLEMENTATION_GATES.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("GATE-INVENTORY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::ContractKinds => GeneratedViewSpec {
+                authority_sources: &["spec/contracts.rs"],
+                target: GeneratedViewTarget::Static(&["docs/06_MACBAT.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("CONTRACT-KINDS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::RustToolchain => GeneratedViewSpec {
+                authority_sources: &["spec/toolchain.rs"],
+                target: GeneratedViewTarget::Static(&["rust-toolchain.toml"]),
+                surface: GeneratedViewSurface::StandaloneFile,
+                marker: None,
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::IdentityCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/identities.rs"],
+                target: GeneratedViewTarget::Static(&["docs/16_IDENTITY_TIME_AND_NAVIGATION.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("IDENTITY-CATALOG"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::GenerationCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/identities.rs"],
+                target: GeneratedViewTarget::Static(&["docs/16_IDENTITY_TIME_AND_NAVIGATION.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("GENERATION-CATALOG"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::BindingCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/identities.rs"],
+                target: GeneratedViewTarget::Static(&["docs/16_IDENTITY_TIME_AND_NAVIGATION.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("BINDING-CATALOG"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::VersionCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/identities.rs"],
+                target: GeneratedViewTarget::Static(&["docs/16_IDENTITY_TIME_AND_NAVIGATION.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("VERSION-CATALOG"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::IdentityResidue => GeneratedViewSpec {
+                authority_sources: &["spec/identities.rs"],
+                target: GeneratedViewTarget::Static(&["docs/16_IDENTITY_TIME_AND_NAVIGATION.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("IDENTITY-RESIDUE"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::ProductCommands => GeneratedViewSpec {
+                authority_sources: &["spec/commands.rs"],
+                target: GeneratedViewTarget::Static(&["docs/26_COMMAND_PLANE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PRODUCT-COMMANDS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::TestPakCommands => GeneratedViewSpec {
+                authority_sources: &["spec/commands.rs"],
+                target: GeneratedViewTarget::Static(&["docs/26_COMMAND_PLANE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("TESTPAK-COMMANDS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::BatQlSourceModes => GeneratedViewSpec {
+                authority_sources: &["spec/commands.rs"],
+                target: GeneratedViewTarget::Static(&["companion/BATQL_LANGUAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("BATQL-SOURCE-MODES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::MutationLanes => GeneratedViewSpec {
+                authority_sources: &["spec/mutation.rs"],
+                target: GeneratedViewTarget::Static(&["docs/12_TESTPAK.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("MUTATION-LANES"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::MutationResults => GeneratedViewSpec {
+                authority_sources: &["spec/mutation.rs"],
+                target: GeneratedViewTarget::Static(&["docs/12_TESTPAK.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("MUTATION-RESULTS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::PromotionRequirements => GeneratedViewSpec {
+                authority_sources: &["spec/promotion.rs"],
+                target: GeneratedViewTarget::Static(&["docs/12_TESTPAK.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PROMOTION-REQUIREMENTS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::CompilerAssumptionKinds => GeneratedViewSpec {
+                authority_sources: &["spec/compiler_assumptions.rs"],
+                target: GeneratedViewTarget::Static(&["docs/19_SECURITY_MODEL.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("COMPILER-ASSUMPTION-KINDS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::CorpusReconciliationEpoch => GeneratedViewSpec {
+                authority_sources: &["spec/corpus.rs"],
+                target: GeneratedViewTarget::Static(&["docs/00_CONSTITUTION.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("CORPUS-RECONCILIATION-EPOCH"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::CorpusEpochMembership => GeneratedViewSpec {
+                authority_sources: &["spec/corpus.rs"],
+                target: GeneratedViewTarget::EligibleMarkdownCorpus,
+                surface: GeneratedViewSurface::CorpusFrontmatter,
+                marker: None,
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {
+                authority_sources: &["spec/generated_views.rs"],
+                target: GeneratedViewTarget::Static(&["docs/28_SELF_EXPLAINING_REPOSITORY.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("GENERATED-VIEW-REGISTRY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+        }
+    }
+}

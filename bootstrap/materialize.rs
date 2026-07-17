@@ -291,8 +291,11 @@ fn materialize_syncbat_planes(root: &Path) -> io::Result<()> {
 
 fn toolchain_manifest() -> String {
     // The workspace toolchain selection is the SAME deterministic projection
-    // the tracked root file carries: one owner, two consumers.
-    toolchain::TOOLCHAIN.root_toolchain_toml()
+    // the tracked root file carries: one owner, two consumers. Since 5.5E4a
+    // the tracked bytes open with the registered provenance line
+    // (spec/generated_views.rs RustToolchain), so both consumers project the
+    // TRACKED form and write_checked stays idempotent.
+    toolchain::TOOLCHAIN.tracked_root_toolchain_toml()
 }
 
 fn justfile() -> &'static str {
