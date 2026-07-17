@@ -4,6 +4,7 @@ contract_id: BP-FINAL-AUDIT-1
 authority_scope: final cross-document contradiction and debt audit
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Final Contradiction Audit

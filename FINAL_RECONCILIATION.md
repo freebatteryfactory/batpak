@@ -4,6 +4,7 @@ contract_id: BP-FINAL-RECONCILIATION
 authority_scope: pass history and final authority ruling
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Final Reconciliation

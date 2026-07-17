@@ -4321,6 +4321,170 @@ def test_mutation(audit) -> list[str]:
     return findings
 
 
+def test_corpus_epoch(audit) -> list[str]:
+    """Named hostile fixtures for the corpus reconciliation epoch (5.5E3g):
+    one typed owner, one current selection, corpus-wide membership, and no
+    date wearing an epoch costume."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.corpus_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.corpus_findings(root):
+        fail("corpus_epoch_passes_on_the_real_seed")
+
+    CO = "spec/corpus.rs"
+    D16 = "docs/16_IDENTITY_TIME_AND_NAVIGATION.md"
+    _V2_ARMS = [
+        (CO, "    CleanroomV1,\n}", "    CleanroomV1,\n    CleanroomV2,\n}"),
+        (CO, "&[ReconciliationEpoch::CleanroomV1]",
+         "&[ReconciliationEpoch::CleanroomV1, ReconciliationEpoch::CleanroomV2]"),
+        (CO, 'ReconciliationEpoch::CleanroomV1 => "cleanroom-v1",',
+         'ReconciliationEpoch::CleanroomV1 => "cleanroom-v1",\n'
+         '            ReconciliationEpoch::CleanroomV2 => "cleanroom-v2",'),
+        (CO, 'ReconciliationEpoch::CleanroomV1 => ContractId("BP-CONSTITUTION-1"),',
+         'ReconciliationEpoch::CleanroomV1 => ContractId("BP-CONSTITUTION-1"),\n'
+         '            ReconciliationEpoch::CleanroomV2 => ContractId("BP-CONSTITUTION-1"),'),
+        (CO, 'ReconciliationEpoch::CleanroomV1 => {\n'
+             '                GuaranteeRef::Seed(SeedId("SEED-DOC-STATUS"))\n'
+             '            }',
+         'ReconciliationEpoch::CleanroomV1 => {\n'
+             '                GuaranteeRef::Seed(SeedId("SEED-DOC-STATUS"))\n'
+             '            }\n'
+             '            ReconciliationEpoch::CleanroomV2 => {\n'
+             '                GuaranteeRef::Seed(SeedId("SEED-DOC-STATUS"))\n'
+             '            }'),
+    ]
+    probe("reconciliation_epoch_missing_from_all_is_rejected",
+          [(CO, "&[ReconciliationEpoch::CleanroomV1]", "&[]")],
+          "ReconciliationEpoch::CleanroomV1 is omitted from ReconciliationEpoch::ALL")
+    probe("current_reconciliation_epoch_must_be_declared",
+          [(CO, "ReconciliationEpoch = ReconciliationEpoch::CleanroomV1;",
+            "ReconciliationEpoch = ReconciliationEpoch::CleanroomV9;")],
+          "CURRENT_RECONCILIATION_EPOCH names CleanroomV9, which "
+          "ReconciliationEpoch::ALL does not declare")
+    probe("empty_reconciliation_epoch_spelling_is_rejected",
+          [(CO, 'ReconciliationEpoch::CleanroomV1 => "cleanroom-v1",',
+            'ReconciliationEpoch::CleanroomV1 => "",')],
+          "ReconciliationEpoch::CleanroomV1 projects an empty spelling")
+    probe("duplicate_reconciliation_epoch_spelling_is_rejected",
+          [_V2_ARMS[0], _V2_ARMS[1],
+           (CO, 'ReconciliationEpoch::CleanroomV1 => "cleanroom-v1",',
+            'ReconciliationEpoch::CleanroomV1 => "cleanroom-v1",\n'
+            '            ReconciliationEpoch::CleanroomV2 => "cleanroom-v1",'),
+           _V2_ARMS[3], _V2_ARMS[4]],
+          "epoch spelling cleanroom-v1 is claimed twice")
+    probe("reconciliation_epoch_with_unknown_owner_is_rejected",
+          [(CO, 'ContractId("BP-CONSTITUTION-1")', 'ContractId("BP-GHOST-1")')],
+          "epoch cleanroom-v1 cites owner BP-GHOST-1, which no declared "
+          "contract owns")
+    probe("reconciliation_epoch_owner_must_author_the_spelling",
+          [(CO, 'ContractId("BP-CONSTITUTION-1")', 'ContractId("BP-NETBAT-1")')],
+          "epoch cleanroom-v1 cites owner BP-NETBAT-1, whose authoritative "
+          "document does not author ReconciliationEpoch")
+    probe("reconciliation_epoch_with_dangling_basis_is_rejected",
+          [(CO, 'SeedId("SEED-DOC-STATUS")', 'SeedId("SEED-GHOST")')],
+          "epoch cleanroom-v1 cites admission basis SEED-GHOST, which no "
+          "declared seed row owns")
+    probe("reconciliation_epoch_basis_must_name_the_type",
+          [("spec/invariants.rs",
+            "reconciliation date, and its ReconciliationEpoch corpus membership.",
+            "reconciliation date, and its corpus membership.")],
+          "SEED-DOC-STATUS does not name ReconciliationEpoch in its statement")
+    probe("authoritative_document_missing_epoch_is_rejected",
+          [(D16, "reconciliation_epoch: cleanroom-v1\n", "")],
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md: declares no "
+          "reconciliation_epoch")
+    probe("authoritative_document_with_wrong_epoch_is_rejected",
+          [(D16, "reconciliation_epoch: cleanroom-v1",
+            "reconciliation_epoch: cleanroom-v0")],
+          "claims corpus epoch cleanroom-v0; the current corpus epoch is "
+          "cleanroom-v1")
+    # Evidence stays in the corpus as evidence; it still claims membership.
+    probe("evidence_document_missing_epoch_is_rejected",
+          [("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
+            "status: AUTHORITATIVE", "status: EVIDENCE-ONLY"),
+           ("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
+            "reconciliation_epoch: cleanroom-v1\n", "")],
+          "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md: declares no "
+          "reconciliation_epoch")
+    probe("two_documents_cannot_claim_different_current_epochs",
+          [(D16, "reconciliation_epoch: cleanroom-v1",
+            "reconciliation_epoch: cleanroom-v2")],
+          "docs/16_IDENTITY_TIME_AND_NAVIGATION.md: claims corpus epoch "
+          "cleanroom-v2; the current corpus epoch is cleanroom-v1")
+    probe("date_cannot_substitute_for_reconciliation_epoch",
+          [(D16, "reconciliation_epoch: cleanroom-v1",
+            "reconciliation_epoch: 2026-07-13")],
+          "a date (2026-07-13) cannot substitute for a corpus epoch")
+    probe("last_reconciled_cannot_be_deleted_when_epoch_exists",
+          [(D16, "last_reconciled: 2026-07-13\n", "")],
+          "last_reconciled is deleted; the epoch answers WHICH corpus")
+    probe("generated_document_missing_source_epoch_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "source_reconciliation_epoch: cleanroom-v1\n", "")],
+          "docs/GUARANTEE_GRAPH.generated.md: declares no "
+          "source_reconciliation_epoch")
+    probe("generated_document_with_wrong_source_epoch_is_rejected",
+          [("docs/GUARANTEE_GRAPH.generated.md",
+            "source_reconciliation_epoch: cleanroom-v1",
+            "source_reconciliation_epoch: cleanroom-v0")],
+          "claims corpus epoch cleanroom-v0; the current corpus epoch is "
+          "cleanroom-v1")
+    probe("corpus_epoch_projection_drift_is_rejected",
+          [("docs/00_CONSTITUTION.md",
+            f"{'current epoch':<18} cleanroom-v1",
+            f"{'current epoch':<18} cleanroom-v9")],
+          "the typed owner states")
+    probe("corpus_epoch_projection_source_marker_drift_is_rejected",
+          [("docs/00_CONSTITUTION.md",
+            "<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from "
+            "spec/corpus.rs by bootstrap/project.py; do not edit -->",
+            "<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from "
+            "spec/corpse.rs by bootstrap/project.py; do not edit -->")],
+          "docs/00 carries no generated CORPUS-RECONCILIATION-EPOCH block "
+          "naming spec/corpus.rs as source")
+    # Moving CURRENT without re-projecting the corpus strands every document
+    # on the old epoch — the whole corpus reds, not just the constant.
+    probe("changing_current_epoch_requires_whole_corpus_projection",
+          _V2_ARMS + [
+              (CO, "ReconciliationEpoch = ReconciliationEpoch::CleanroomV1;",
+               "ReconciliationEpoch = ReconciliationEpoch::CleanroomV2;")],
+          "claims corpus epoch cleanroom-v1; the current corpus epoch is "
+          "cleanroom-v2")
+    probe("runtime_reconciliation_module_does_not_own_corpus_epoch",
+          [("spec/reconciliation.rs", "pub enum ReconciliationRole {",
+            "pub struct ReconciliationEpoch;\npub enum ReconciliationRole {")],
+          "spec/reconciliation.rs speaks ReconciliationEpoch; the runtime "
+          "reconciliation module does not own the corpus epoch")
+    # GREEN growth: a declared future epoch with a unique spelling, the same
+    # live constitutional owner, an authored constitutional description, and
+    # ALL membership — CURRENT unchanged, no frozen count anywhere.
+    tmp = gate_sandbox(_V2_ARMS + [
+        ("docs/00_CONSTITUTION.md",
+         "reconciliation that moves the current selection.",
+         "reconciliation that moves the current selection. A future "
+         "`cleanroom-v2` epoch is declared only by such a reconciliation.")])
+    try:
+        got = audit.corpus_findings(tmp)
+        if got:
+            fail(f"future_epoch_may_be_declared_without_moving_current "
+                 f"(refused: {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -4785,6 +4949,17 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::architecture::MutationLane;",
              "let _ = ();",
              "no `MutationLane` in `architecture`"),
+            # 5.5E3g: the corpus epoch is typed — no raw string and no
+            # runtime reconciliation role substitutes for it.
+            ("raw_string_cannot_substitute_for_reconciliation_epoch",
+             "use spec::corpus::ReconciliationEpoch;",
+             'let _: ReconciliationEpoch = "cleanroom-v1";',
+             "expected `ReconciliationEpoch`, found `&str`"),
+            ("reconciliation_role_cannot_substitute_for_reconciliation_epoch",
+             "use spec::corpus::ReconciliationEpoch;\n"
+             "use spec::reconciliation::ReconciliationRole;",
+             "let _: ReconciliationEpoch = ReconciliationRole::DurableOrderWitness;",
+             "expected `ReconciliationEpoch`, found `ReconciliationRole`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -5204,6 +5379,7 @@ def main() -> int:
     findings += test_identity_catalogs(audit)
     findings += test_commands(audit)
     findings += test_mutation(audit)
+    findings += test_corpus_epoch(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)

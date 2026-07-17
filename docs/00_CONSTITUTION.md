@@ -4,6 +4,7 @@ contract_id: BP-CONSTITUTION-1
 authority_scope: root architecture and non-negotiable law
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Constitution
@@ -139,6 +140,27 @@ Design may iterate. The signed architecture is atomic. The final tree contains o
 ## 16. Status law
 
 Filename age and prose confidence do not confer authority. Every document declares status and supersession. Rejected designs remain readable only through the decision ledger.
+
+## Corpus reconciliation epoch
+
+`ReconciliationEpoch` identifies which coherent semantic corpus a document
+belongs to. The current epoch is `cleanroom-v1`. It is not a date, a
+release, a tree digest, a proof-freshness claim, or a runtime
+reconciliation posture: `last_reconciled` answers when a document was
+reviewed, and the epoch answers which whole-corpus reconciliation it
+belongs to — neither derives from the other. An evidence-only document
+carrying the current epoch has been reconciled into the corpus as
+evidence; its historical design does not thereby become current
+authority. A new epoch is admitted only by a deliberate whole-corpus
+reconciliation that moves the current selection.
+
+<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from spec/corpus.rs by bootstrap/project.py; do not edit -->
+```text
+current epoch      cleanroom-v1
+semantic owner     BP-CONSTITUTION-1
+admission basis    SEED-DOC-STATUS
+```
+<!-- CORPUS-RECONCILIATION-EPOCH:END -->
 
 ## 17. Legacy law
 

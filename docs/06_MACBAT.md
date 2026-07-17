@@ -4,6 +4,7 @@ contract_id: BP-MACBAT-1
 authority_scope: MacBat compiler, Contract IR, lowerings, diagnostics, and generated proof facts
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # MacBat

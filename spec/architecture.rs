@@ -866,6 +866,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/toolchain.rs",
     "spec/commands.rs",
     "spec/contracts.rs",
+    "spec/corpus.rs",
     "spec/identities.rs",
     "spec/mutation.rs",
     "rust-toolchain.toml",

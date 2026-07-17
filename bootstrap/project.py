@@ -648,6 +648,59 @@ def render_identity_residue(root):
     return "```text\n" + rows + "\n```"
 
 
+# --- Corpus epoch projection (5.5E3g) ----------------------------------------
+# spec/corpus.rs owns which corpus epochs exist and which one is CURRENT;
+# this projector mechanically converges every eligible document's epoch
+# frontmatter and renders the docs/00 fact block. It touches ONLY the epoch
+# field — authored status, contract id, scope, supersession, and the
+# last_reconciled date stay authored.
+def parse_corpus_epoch(root):
+    src = (root / "spec/corpus.rs").read_text(encoding="utf-8")
+    cur = re.search(
+        r"pub const CURRENT_RECONCILIATION_EPOCH:\s*ReconciliationEpoch = "
+        r"ReconciliationEpoch::(\w+);", src)
+    spellings = dict(re.findall(r'ReconciliationEpoch::(\w+) => "([^"]+)",', src))
+    owners = dict(re.findall(
+        r'ReconciliationEpoch::(\w+) => ContractId\("([^"]+)"\)', src))
+    bases = dict(re.findall(
+        r'ReconciliationEpoch::(\w+) => \{?\s*GuaranteeRef::Seed\(SeedId\("([^"]+)"\)\)', src))
+    if not cur or cur.group(1) not in spellings:
+        raise Unadmitted("spec/corpus.rs: CURRENT_RECONCILIATION_EPOCH unreadable")
+    v = cur.group(1)
+    return {"variant": v, "spelling": spellings[v],
+            "owner": owners.get(v, ""), "basis": bases.get(v, "")}
+
+
+def render_corpus_epoch(root):
+    e = parse_corpus_epoch(root)
+    return ("```text\n"
+            f"{'current epoch':<18} {e['spelling']}\n"
+            f"{'semantic owner':<18} {e['owner']}\n"
+            f"{'admission basis':<18} {e['basis']}\n"
+            "```")
+
+
+def converge_epoch_frontmatter(text, spelling):
+    """Insert or update the epoch field in one document's frontmatter,
+    touching nothing else. GENERATED documents bind their SOURCE epoch."""
+    m = re.match(r"---\n(.*?\n)---\n", text, re.S)
+    if not m:
+        return text
+    front = m.group(1)
+    key = ("source_reconciliation_epoch"
+           if re.search(r"^status: GENERATED$", front, re.M)
+           else "reconciliation_epoch")
+    line = f"{key}: {spelling}\n"
+    if re.search(r"^" + key + r": .*$", front, re.M):
+        new_front = re.sub(r"^" + key + r": .*$", line.rstrip("\n"), front, flags=re.M)
+    elif re.search(r"^last_reconciled: .*$", front, re.M):
+        new_front = re.sub(r"^(last_reconciled: .*)$", r"\1\n" + line.rstrip("\n"),
+                           front, flags=re.M)
+    else:
+        new_front = front + line
+    return "---\n" + new_front + "---\n" + text[m.end():]
+
+
 # --- Mutation vocabulary projection (5.5E3f) ---------------------------------
 # spec/mutation.rs owns the lanes and result classifications as TOTAL const
 # functions; docs/12 carries two generated fact tables.
@@ -1530,6 +1583,44 @@ def main() -> int:
             continue
         mu_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), mu_rewritten)
     plans.append((mu_path, mu_original, mu_rewritten))
+    # The corpus epoch (5.5E3g): the docs/00 fact block, then mechanical
+    # frontmatter convergence over every eligible tracked document — applied
+    # to already-planned rewrites so no path appears in plans twice.
+    try:
+        epoch = parse_corpus_epoch(root)
+    except Unadmitted as exc:
+        findings.append(f"spec/corpus.rs: {exc}")
+        epoch = None
+    if epoch is not None:
+        c00_pat = block_pattern("CORPUS-RECONCILIATION-EPOCH")
+        planned_paths = {p: i for i, (p, _o, _r) in enumerate(plans)}
+        c00_path = root / "docs/00_CONSTITUTION.md"
+        if c00_path not in planned_paths:
+            c00_original = c00_path.read_text(encoding="utf-8")
+            plans.append((c00_path, c00_original, c00_original))
+            planned_paths[c00_path] = len(plans) - 1
+        i = planned_paths[c00_path]
+        if not c00_pat.search(plans[i][2]):
+            findings.append("docs/00: missing generated block markers for "
+                            "CORPUS-RECONCILIATION-EPOCH")
+        else:
+            body = render_corpus_epoch(root)
+            plans[i] = (plans[i][0], plans[i][1],
+                        c00_pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
+                                    plans[i][2]))
+        for path in sorted(root.rglob("*.md")):
+            rel = path.relative_to(root)
+            if any(part in (".git", "target", "__pycache__") for part in rel.parts):
+                continue
+            if path in planned_paths:
+                i = planned_paths[path]
+                plans[i] = (plans[i][0], plans[i][1],
+                            converge_epoch_frontmatter(plans[i][2], epoch["spelling"]))
+            else:
+                original = path.read_text(encoding="utf-8")
+                rewritten = converge_epoch_frontmatter(original, epoch["spelling"])
+                if rewritten != original:
+                    plans.append((path, original, rewritten))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:

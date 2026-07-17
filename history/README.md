@@ -4,6 +4,7 @@ contract_id: BP-HISTORY-README
 authority_scope: pass history retained as evidence only
 supersedes: Previous clean-room architecture passes
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Architecture Pass History

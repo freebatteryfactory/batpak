@@ -4,6 +4,7 @@ contract_id: BP-BOOTSTRAP-1
 authority_scope: bootstrap braid, stage order, seedcheck, materialization, and self-hosting
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Bootstrap and Self-Hosting

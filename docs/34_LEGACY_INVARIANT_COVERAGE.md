@@ -4,6 +4,7 @@ contract_id: BP-LEGACY-INVARIANT-COVERAGE-1
 authority_scope: one-for-one disposition of the live legacy invariant catalog
 supersedes: legacy invariant catalog as target architecture authority
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Legacy Invariant Coverage

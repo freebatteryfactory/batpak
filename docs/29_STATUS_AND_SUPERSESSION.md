@@ -4,6 +4,7 @@ contract_id: BP-STATUS-1
 authority_scope: document statuses, precedence, supersession, and stale-evidence behavior
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Status and Supersession

@@ -4,6 +4,7 @@ contract_id: BP-SCHEMA-CODEC-1
 authority_scope: schema, codec, representations, migration, native encoding, and compatibility
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Schema, Codec, and Migration

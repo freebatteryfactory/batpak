@@ -4,6 +4,7 @@ contract_id: BP-AGENT-FINISH-LINE-1
 authority_scope: code-agent execution checklist and stale-architecture cheat sheet
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Agent Finish-Line Checklist

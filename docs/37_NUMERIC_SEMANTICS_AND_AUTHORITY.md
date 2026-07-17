@@ -4,6 +4,7 @@ contract_id: BP-NUMERIC-1
 authority_scope: exact and approximate numeric semantics, authority crossings, and numeric proof obligations
 supersedes: numeric wording previously implied only through DEC-060 and the language companion
 last_reconciled: 2026-07-14
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Numeric Semantics and Authority

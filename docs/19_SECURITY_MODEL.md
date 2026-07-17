@@ -4,6 +4,7 @@ contract_id: BP-SECURITY-1
 authority_scope: threats, trusted computing base, guest isolation, capabilities, storage and proof honesty
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Security Model

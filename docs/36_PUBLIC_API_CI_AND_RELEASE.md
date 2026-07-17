@@ -4,6 +4,7 @@ contract_id: BP-PUBLIC-API-CI-RELEASE-1
 authority_scope: public API ownership, semver, MSRV, CI lane responsibilities, release seal, and refusal
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-14
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Public API, CI, and Release

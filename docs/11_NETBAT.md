@@ -4,6 +4,7 @@ contract_id: BP-NETBAT-1
 authority_scope: bounded transport, sessions, paging, proof carriage, and adapters
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # NetBat

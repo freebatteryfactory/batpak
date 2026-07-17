@@ -13,6 +13,7 @@
 pub mod architecture;
 pub mod commands;
 pub mod contracts;
+pub mod corpus;
 pub mod dispositions;
 pub mod gates;
 pub mod guarantees;

@@ -76,6 +76,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_identity_catalogs(root, &mut findings);
     check_commands(root, &mut findings);
     check_mutation(root, &mut findings);
+    check_corpus(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -532,6 +533,59 @@ fn check_commands(root: &Path, findings: &mut Vec<String>) {
     let mut testpak_seen = BTreeSet::new();
     for command in commands::TestPakCommand::ALL {
         check_entry("TestPakCommand", command.token(), command.authority(), &mut testpak_seen);
+    }
+}
+
+/// The corpus reconciliation epoch executes its own law (5.5E3g): the
+/// CURRENT selection is a declared variant, spellings are unique and
+/// nonempty, the constitutional owner resolves, and the admission basis
+/// resolves to a declared seed row. Frontmatter traversal stays audit and
+/// projector work — seedcheck grows no Markdown parser to imitate them.
+fn check_corpus(root: &Path, findings: &mut Vec<String>) {
+    use spec::corpus::{ReconciliationEpoch, CURRENT_RECONCILIATION_EPOCH};
+    let contract_ids = declared_contract_ids(root);
+    if !ReconciliationEpoch::ALL
+        .iter()
+        .any(|e| *e == CURRENT_RECONCILIATION_EPOCH)
+    {
+        findings.push(
+            "CURRENT_RECONCILIATION_EPOCH is not declared in ReconciliationEpoch::ALL"
+                .to_string(),
+        );
+    }
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for epoch in ReconciliationEpoch::ALL {
+        let s = epoch.spelling();
+        if s.trim().is_empty() {
+            findings.push("a corpus epoch projects an empty spelling".to_string());
+        }
+        if !seen.insert(s) {
+            findings.push(format!(
+                "epoch spelling {s} is claimed twice; two epochs cannot share a name"
+            ));
+        }
+        let owner = epoch.semantic_owner();
+        if !contract_ids.contains(owner.raw()) {
+            findings.push(format!(
+                "epoch {s} cites owner {}, which no document declares",
+                owner.raw()
+            ));
+        }
+        match epoch.admission_basis() {
+            guarantees::GuaranteeRef::Seed(seed) => {
+                if !invariants::INVARIANTS.iter().any(|r| r.id == seed.raw()) {
+                    findings.push(format!(
+                        "epoch {s} cites admission basis {}, which no declared seed \
+                         row owns",
+                        seed.raw()
+                    ));
+                }
+            }
+            other => findings.push(format!(
+                "epoch {s} cites a non-seed admission basis {other:?}; corpus \
+                 membership is document-status law"
+            )),
+        }
     }
 }
 

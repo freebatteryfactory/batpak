@@ -4,6 +4,7 @@ contract_id: BP-CRYPTO-SECRET-1
 authority_scope: integrity roles, secret authority, key lifecycle, shred durability, and anti-rollback
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-14
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Crypto and Secret Authority

@@ -4,6 +4,7 @@ contract_id: BP-REPOSITORY-PACKAGES-1
 authority_scope: repository cutover, package graph, and source tree
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Repository and Packages

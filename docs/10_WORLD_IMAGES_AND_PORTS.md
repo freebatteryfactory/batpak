@@ -4,6 +4,7 @@ contract_id: BP-WORLD-PORTS-1
 authority_scope: WorldImage composition, instances, namespaces, host ports, and portability
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # World Images and Ports

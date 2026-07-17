@@ -4,6 +4,7 @@ contract_id: BP-GAUNTLET-1
 authority_scope: proof economy, hostile closure, mutation, fuzzing, benchmarking, and release proof
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Gauntlet

@@ -4,6 +4,7 @@ contract_id: BP-MIGRATION-1
 authority_scope: clean-room branch, legacy import, data compatibility, issue closure, and cutover
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Migration and Cutover

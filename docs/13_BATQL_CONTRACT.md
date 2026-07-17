@@ -4,6 +4,7 @@ contract_id: BP-BATQL-ARCH-1
 authority_scope: BatQL compiler boundary, frozen grammar concepts, lowering, analysis, and execution contract
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # BatQL Architectural Contract

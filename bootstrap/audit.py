@@ -8,8 +8,10 @@ import sys
 from pathlib import Path
 
 STATUSES = {"AUTHORITATIVE", "GENERATED", "EVIDENCE-ONLY", "SUPERSEDED", "REJECTED"}
-REQUIRED_FRONT = {"status", "contract_id", "authority_scope", "supersedes", "last_reconciled"}
-GENERATED_FRONT = {"status", "authority_scope", "generated_by", "generated_from", "do_not_edit"}
+REQUIRED_FRONT = {"status", "contract_id", "authority_scope", "supersedes", "last_reconciled",
+                  "reconciliation_epoch"}
+GENERATED_FRONT = {"status", "authority_scope", "generated_by", "generated_from", "do_not_edit",
+                   "source_reconciliation_epoch"}
 PLACEHOLDERS = ("TBD", "TO BE DECIDED", "IMPLEMENTATION DECIDES", "FIXME")
 # Stale vocabulary is DERIVED from spec/dispositions.rs (never a hand-kept list).
 # Each retiring decision names its stale aliases and the contexts in which they
@@ -3674,6 +3676,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
+    findings.extend(corpus_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -4211,6 +4214,138 @@ def _identity_block_parity(marker: str, want: list[str], doc: str,
     for extra in listed[len(want):]:
         out.append(f"docs/16 {marker} lists {extra.split()[0]}, "
                    "which the typed catalog does not project")
+
+
+# --- Corpus reconciliation epoch (5.5E3g) ------------------------------------
+# spec/corpus.rs owns which corpus epochs exist and which is CURRENT. The
+# epoch answers "which coherent semantic corpus does this document belong
+# to" — never a date, release, digest, proof freshness, or the runtime
+# reconciliation posture that spec/reconciliation.rs owns under DEC-075.
+def corpus_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / "spec/corpus.rs"
+    if not path.is_file():
+        return ["missing spec/corpus.rs"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    contract_ids = declared_contract_ids(root)
+    enum_body = re.search(r"pub enum ReconciliationEpoch \{(.*?)\n\}", src, re.S)
+    variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
+    all_body = re.search(
+        r"pub const ALL: &'static \[ReconciliationEpoch\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bReconciliationEpoch::(\w+)", all_body.group(1)) \
+        if all_body else []
+    for missing in [v for v in variants if v not in inventory]:
+        out.append(f"ReconciliationEpoch::{missing} is omitted from "
+                   "ReconciliationEpoch::ALL")
+    for phantom in [v for v in inventory if v not in variants]:
+        out.append(f"ReconciliationEpoch::ALL names {phantom}, which the enum "
+                   "does not declare")
+    cur = re.search(
+        r"pub const CURRENT_RECONCILIATION_EPOCH:\s*ReconciliationEpoch = "
+        r"ReconciliationEpoch::(\w+);", src)
+    if not cur:
+        out.append("spec/corpus.rs declares no CURRENT_RECONCILIATION_EPOCH")
+        return out
+    current = cur.group(1)
+    if current not in inventory:
+        out.append(f"CURRENT_RECONCILIATION_EPOCH names {current}, which "
+                   "ReconciliationEpoch::ALL does not declare")
+    spellings = dict(re.findall(r'ReconciliationEpoch::(\w+) => "([^"]*)",', src))
+    owners = dict(re.findall(
+        r'ReconciliationEpoch::(\w+) => ContractId\("([^"]+)"\)', src))
+    bases = dict(re.findall(
+        r'ReconciliationEpoch::(\w+) => \{?\s*GuaranteeRef::Seed\(SeedId\("([^"]+)"\)\)',
+        src))
+    inv_src = _uncomment((root / "spec/invariants.rs").read_text(encoding="utf-8"))
+    seen: set[str] = set()
+    for v in inventory:
+        s = spellings.get(v, "")
+        if not s.strip():
+            out.append(f"ReconciliationEpoch::{v} projects an empty spelling")
+            continue
+        if s in seen:
+            out.append(f"epoch spelling {s} is claimed twice")
+        seen.add(s)
+        oid = owners.get(v, "")
+        if oid not in contract_ids:
+            out.append(f"epoch {s} cites owner {oid}, which no declared contract owns")
+        else:
+            otext = None
+            for p in sorted(root.rglob("*.md")):
+                rel = p.relative_to(root)
+                if any(part in EXCLUDE_DIRS for part in rel.parts):
+                    continue
+                text = p.read_text(encoding="utf-8")
+                if frontmatter(text).get("contract_id") == oid:
+                    # Authored BODY only: every document's frontmatter now
+                    # carries the projected epoch spelling, and metadata may
+                    # not notarize its own authorship claim.
+                    body = re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.S)
+                    otext = A_GENERATED_BLOCK.sub("", body)
+                    break
+            for token in ("ReconciliationEpoch", s):
+                if otext is None or not re.search(
+                        r"(?<![A-Za-z0-9_-])" + re.escape(token) + r"(?![A-Za-z0-9_-])",
+                        otext):
+                    out.append(f"epoch {s} cites owner {oid}, whose authoritative "
+                               f"document does not author {token}")
+        basis = bases.get(v, "")
+        row = re.search(r'id: "' + re.escape(basis) + r'", statement: "([^"]*)"', inv_src)
+        if not row:
+            out.append(f"epoch {s} cites admission basis {basis}, which no declared "
+                       "seed row owns")
+        elif "ReconciliationEpoch" not in row.group(1):
+            out.append(f"{basis} does not name ReconciliationEpoch in its statement; "
+                       "the admission basis must name what it admits")
+    # Every eligible document claims the CURRENT corpus epoch; standalone
+    # generated documents bind their SOURCE epoch. A date never substitutes.
+    current_spelling = spellings.get(current, "")
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        meta = frontmatter(p.read_text(encoding="utf-8"))
+        key = ("source_reconciliation_epoch" if meta.get("status") == "GENERATED"
+               else "reconciliation_epoch")
+        got = meta.get(key)
+        if got is None:
+            out.append(f"{rel.as_posix()}: declares no {key}; every eligible "
+                       "document claims the current corpus epoch")
+            continue
+        if key == "reconciliation_epoch" and "last_reconciled" not in meta:
+            out.append(f"{rel.as_posix()}: last_reconciled is deleted; the epoch "
+                       "answers WHICH corpus, the date answers WHEN reviewed, and "
+                       "both stand")
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", got):
+            out.append(f"{rel.as_posix()}: a date ({got}) cannot substitute for a "
+                       "corpus epoch")
+        elif got != current_spelling:
+            out.append(f"{rel.as_posix()}: claims corpus epoch {got}; the current "
+                       f"corpus epoch is {current_spelling}")
+    # spec/reconciliation.rs owns runtime execution reconciliation, never the
+    # corpus epoch.
+    recon = _uncomment((root / "spec/reconciliation.rs").read_text(encoding="utf-8"))
+    if re.search(r"\bReconciliationEpoch\b", recon):
+        out.append("spec/reconciliation.rs speaks ReconciliationEpoch; the runtime "
+                   "reconciliation module does not own the corpus epoch")
+    # The docs/00 fact block: exact provenance and ordered content.
+    doc00 = (root / "docs/00_CONSTITUTION.md").read_text(encoding="utf-8")
+    m = re.search(
+        r"<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from spec/corpus\.rs by "
+        r"bootstrap/project\.py; do not edit -->\n```text\n(.*?)\n```\n<!-- "
+        r"CORPUS-RECONCILIATION-EPOCH:END -->", doc00, re.S)
+    if not m:
+        out.append("docs/00 carries no generated CORPUS-RECONCILIATION-EPOCH block "
+                   "naming spec/corpus.rs as source")
+    else:
+        want = [f"{'current epoch':<18} {current_spelling}",
+                f"{'semantic owner':<18} {owners.get(current, '')}",
+                f"{'admission basis':<18} {bases.get(current, '')}"]
+        listed = [line.rstrip() for line in m.group(1).splitlines() if line.strip()]
+        if listed != want:
+            out.append(f"docs/00 CORPUS-RECONCILIATION-EPOCH states {listed}; the "
+                       f"typed owner states {want}")
+    return out
 
 
 # --- Mutation vocabulary (5.5E3f) --------------------------------------------

@@ -4,6 +4,7 @@ contract_id: BP-BATQL-LANGUAGE-1
 authority_scope: BatQL 1.0 lexical, syntactic, type, availability, decision, query, transaction, formatting, narration, and diagnostic language
 supersedes: all prior BatQL drafts
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # BatQL Frontend Language Packet

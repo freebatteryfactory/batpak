@@ -4,6 +4,7 @@ contract_id: BP-DECISION-LEDGER-1
 authority_scope: KEEP, LOCK, KILL, SUPERSEDE, DEMOTE, DEFER, and implementation dispositions
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Decision and Rejection Ledger

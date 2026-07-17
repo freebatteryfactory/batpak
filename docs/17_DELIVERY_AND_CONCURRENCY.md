@@ -4,6 +4,7 @@ contract_id: BP-DELIVERY-CONCURRENCY-1
 authority_scope: delivery topologies, push/pull, mechanisms, Flume succession, and runtime work
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Delivery and Concurrency

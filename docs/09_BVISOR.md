@@ -4,6 +4,7 @@ contract_id: BP-BVISOR-1
 authority_scope: Bvisor admission, capability, budget, attempts, supervision, and recovery
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
 last_reconciled: 2026-07-13
+reconciliation_epoch: cleanroom-v1
 ---
 
 # Bvisor

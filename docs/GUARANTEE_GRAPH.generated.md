@@ -4,6 +4,7 @@ authority_scope: derived structural index only
 generated_by: bootstrap/project.py
 generated_from: typed SEED, LEG, DEC, architecture, and qualification fact families
 do_not_edit: true
+source_reconciliation_epoch: cleanroom-v1
 ---
 
 # Guarantee Graph (generated)
