@@ -850,6 +850,33 @@ def test_operator_surfaces(audit, project) -> list[str]:
           audit.identity_catalog_findings,
           "duplicates a spelling that already has a typed spec owner")
 
+    # E3j1: the documentary layer may fence operator admission, never deny
+    # value existence — DEC-069/docs/37 own first-class Qualified
+    # Approximation TODAY. The ordinary parser strips comments, so this law
+    # executes over the raw source.
+    operators_src = (root / "spec/operators.rs").read_text(encoding="utf-8")
+    for stale in ("No Approximate value exists yet.",
+                  "No `Approximate` value exists until a profile ships."):
+        mutated = must_replace(
+            operators_src, "Approximate numeric values already exist as typed",
+            stale, "operator_docs_cannot_deny_existing_approximate_values")
+        expect("operator_docs_cannot_deny_existing_approximate_values",
+               audit.batql_operator_doc_findings(mutated),
+               "approximate values exist; no current ordinary operator admits raw")
+    expect("operator_docs_cannot_revive_superseded_chronology",
+           audit.batql_operator_doc_findings(
+               operators_src + "\n// those arrive with 5.5B2\n"),
+           "approximate values exist; no current ordinary operator admits raw")
+    # GREEN: the corrected module, Exactness, and NumericSupport doctrines
+    # agree with DEC-069/docs/37 while every real OperatorSpec row stays
+    # exact-only — value vocabulary exists, operator admission does not.
+    doc_green = audit.batql_operator_doc_findings(operators_src)
+    admitted_rows = [op["id"] for op in resolved(audit.batql_parse_operator_model(root))
+                     if op["numeric_support"] == "QualifiedProfileOnly"]
+    if doc_green or admitted_rows:
+        fail("operator_docs_distinguish_value_existence_from_operator_admission "
+             f"({doc_green!r}, {admitted_rows!r})")
+
     # GREEN structural growth — count-freedom evidence ONLY. A sandbox-only
     # synthetic comparison operator with typed identity, both surfaces, an
     # explicit owner and basis, DEC-060 naming, authored companion adoption,

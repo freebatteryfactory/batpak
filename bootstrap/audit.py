@@ -378,6 +378,43 @@ def batql_operator_authority_findings(model: dict, contract_ids: set[str],
     return out
 
 
+# 5.5E3j1: the documentary layer of spec/operators.rs may fence OPERATOR
+# ADMISSION, never deny VALUE EXISTENCE. First-class Qualified Approximation
+# is owned by DEC-069/docs/37 today; the ordinary operator parser strips
+# comments, so this law reads the RAW source before any comment removal.
+BATQL_OPERATOR_DOC_DENIALS = (
+    re.compile(r"No `?Approximate`? value exists"),
+    re.compile(r"arrives? with 5\.5B2"),
+)
+BATQL_OPERATOR_DOC_DOCTRINE = (
+    ("value-existence", "already exist as typed values"),
+    ("admission-fence", "admits raw approximate operands"),
+    ("future-profile-law", "language-change record"),
+)
+
+
+def batql_operator_doc_findings(src: str) -> list[str]:
+    """The value-existence/operator-admission distinction, executed over the
+    raw source: approximate values exist (DEC-069, docs/37); what the module
+    may deny is only ordinary-operator admission of raw approximate operands.
+    Comment markers and line wraps are normalized away first, so a claim
+    split across doc-comment lines neither hides a denial nor loses doctrine."""
+    flat = re.sub(r"\s+", " ", src.replace("///", " ").replace("//!", " "))
+    out: list[str] = []
+    for pattern in BATQL_OPERATOR_DOC_DENIALS:
+        match = pattern.search(flat)
+        if match:
+            out.append(
+                "spec/operators.rs: approximate values exist; no current ordinary "
+                "operator admits raw approximate operands — the documentary layer "
+                f"may not deny value existence ({match.group(0)!r})")
+    for name, fragment in BATQL_OPERATOR_DOC_DOCTRINE:
+        if fragment not in flat:
+            out.append(
+                f"spec/operators.rs: approximate-authority doctrine absent ({name})")
+    return out
+
+
 def batql_render_catalog(ops: list[dict[str, str]]) -> str:
     out = [
         "| OperatorId | Class | Arity | Fixity | Precedence | Associativity | Result sort | Exactness |",
@@ -963,6 +1000,7 @@ def check_batql(root: Path, findings: list[str]) -> None:
     companion = companion_path.read_text(encoding="utf-8")
     model = batql_parse_operator_model(root)
     findings.extend(batql_operator_model_findings(model))
+    findings.extend(batql_operator_doc_findings(model["src"]))
     ops = batql_resolve_operator_rows(model, findings)
     if not ops:
         findings.append("spec/operators.rs: no OperatorSpec rows parsed")

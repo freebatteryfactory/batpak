@@ -361,9 +361,13 @@ pub enum Exactness {
 }
 
 /// Per-operator numeric authority-support posture. Exact arithmetic is always
-/// supported (DEC-060); approximate arithmetic through `+ - * /` is never
-/// automatic and is admitted only when a qualified profile defines sound error
-/// or interval propagation. No `Approximate` value exists until a profile ships.
+/// supported (DEC-060). Approximate numeric values already exist as typed
+/// values under DEC-069 and docs/37; what does NOT exist is ordinary-operator
+/// admission: no current ordinary OperatorSpec admits raw approximate
+/// operands, and no current row uses `QualifiedProfileOnly`. A future
+/// qualified operator profile requires explicit admission, sound error or
+/// interval propagation, and a language-change record. The value vocabulary
+/// exists; the operator admission does not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NumericSupport {
     /// Exact operands admitted directly; approximate operands must Quantize first
