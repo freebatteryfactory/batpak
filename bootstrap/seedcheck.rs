@@ -4,7 +4,7 @@
 // links it instead of textually mounting its modules, so no tracked
 // suppression exists and every pub spec item is API by construction.
 use spec::{
-    architecture, contracts, dispositions, gates, guarantees, invariants,
+    architecture, contracts, dispositions, identities, gates, guarantees, invariants,
     legacy_invariant_coverage, legacy_obligations, operators, pakvm_isa,
     proof, reconciliation, syncbat_firewall, toolchain,
 };
@@ -73,6 +73,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_proof_rows(root, &mut findings);
     check_toolchain(root, &mut findings);
     check_contract_kinds(&mut findings);
+    check_identity_catalogs(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -240,6 +241,113 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
         GuaranteeSource::Seed(&UNSCHEDULED_SEED),
         GuaranteeAdmissionRule::RowNamesScheduledGates,
     );
+}
+
+/// The four identity catalogs are coherent (5.5E3d). One term, ONE axis:
+/// spellings are unique across identity, generation, binding, and version —
+/// so ContentDigest classified as an object identity has no spelling.
+/// Every entry's owner resolves against the declared contract ids, the
+/// chronology/navigation exclusion is executed law, and each catalog's
+/// variants are exhaustively classified.
+fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
+    let contract_ids = declared_contract_ids(root);
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut entries: Vec<(String, identities::CatalogEntry)> = Vec::new();
+    for kind in identities::IdentityKind::ALL {
+        entries.push((format!("identity {kind:?}"), kind.entry()));
+    }
+    for kind in identities::GenerationKind::ALL {
+        entries.push((format!("generation {kind:?}"), kind.entry()));
+    }
+    for kind in identities::BindingKind::ALL {
+        entries.push((format!("binding {kind:?}"), kind.entry()));
+    }
+    for kind in identities::VersionIdentityKind::ALL {
+        entries.push((format!("version {kind:?}"), kind.entry()));
+    }
+    for (label, entry) in &entries {
+        if entry.spelling.trim().is_empty() {
+            findings.push(format!("{label} projects an empty spelling"));
+        }
+        if !seen.insert(entry.spelling) {
+            findings.push(format!(
+                "{label} spells {}, which another catalog entry already owns; \
+                 one term answers one question",
+                entry.spelling
+            ));
+        }
+        if !contract_ids.contains(entry.owner.raw()) {
+            findings.push(format!(
+                "{label} names owner {}, which no document declares",
+                entry.owner.raw()
+            ));
+        }
+        if identities::EXCLUDED_CHRONOLOGY_AND_NAVIGATION.contains(&entry.spelling) {
+            findings.push(format!(
+                "{label} admits {}, which is chronology/order/navigation \
+                 vocabulary owned outside the identity catalogs",
+                entry.spelling
+            ));
+        }
+        if identities::EXISTING_TYPED_OWNER_SPELLINGS.contains(&entry.spelling) {
+            findings.push(format!(
+                "{label} duplicates {}, which already has a typed spec owner; \
+                 the catalog may reference it but never re-admit it",
+                entry.spelling
+            ));
+        }
+    }
+    // The residue half of the permanent corpus denominator: a non-cataloged
+    // term may not ALSO be admitted, an owned-elsewhere term needs a live
+    // contract owner, and a rejected term needs a live standing decision —
+    // reopening happens by amending the decision, never by a quiet variant.
+    for residue in identities::NON_CATALOGED_IDENTITY_TERMS {
+        if seen.contains(residue.term) {
+            findings.push(format!(
+                "{} is both cataloged and listed as non-cataloged; one term \
+                 resolves through exactly one path",
+                residue.term
+            ));
+        }
+        // Exhaustive: a new disposition must be classified here, not defaulted.
+        match residue.disposition {
+            identities::IdentityTermDisposition::OwnedElsewhere(owner) => {
+                if !contract_ids.contains(owner.raw()) {
+                    findings.push(format!(
+                        "{} is owned elsewhere by {}, which no document declares",
+                        residue.term,
+                        owner.raw()
+                    ));
+                }
+            }
+            identities::IdentityTermDisposition::NotYetAdmittedBy(decision) => {
+                match dispositions::DECISIONS.iter().find(|d| d.id == decision.raw()) {
+                    None => findings.push(format!(
+                        "{} is not yet admitted by {}, which no declared decision owns",
+                        residue.term,
+                        decision.raw()
+                    )),
+                    // Forward policy authority is required: the one lawful
+                    // lifetime derivation says Supersede and RetainAsEvidence
+                    // rows are historical coverage only, and a historical
+                    // archive does not issue future visas.
+                    Some(d) if matches!(
+                        d.disposition.guarantee_lifetime(),
+                        guarantees::GuaranteeLifetime::HistoricalCoverageOnly
+                    ) =>
+                    {
+                        findings.push(format!(
+                            "{} is not yet admitted by {}, which is retained only as \
+                             historical coverage and cannot own a future admission barrier",
+                            residue.term,
+                            decision.raw()
+                        ));
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+    }
 }
 
 /// The admitted contract kinds are coherent (5.5E3c): every variant is
@@ -556,10 +664,9 @@ fn check_proof_rows(root: &Path, findings: &mut Vec<String>) {
 /// guarantee, an unknown contract id, or a tool that does not exist in the
 /// checked tree is refused at runtime, every run. The note carries the human
 /// reading and carries no law.
-fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {
-    use guarantees::WitnessRef;
-    // The declared contract ids, read from the same inventory the
-    // front-matter law walks.
+/// The declared contract ids, read from the same inventory the front-matter
+/// law walks. Shared by the witness-citation and identity-catalog laws.
+fn declared_contract_ids(root: &Path) -> BTreeSet<String> {
     let mut contract_ids = BTreeSet::new();
     for relative in architecture::REQUIRED_DOCS {
         if !relative.ends_with(".md") {
@@ -573,6 +680,12 @@ fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {
             }
         }
     }
+    contract_ids
+}
+
+fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {
+    use guarantees::WitnessRef;
+    let contract_ids = declared_contract_ids(root);
     for row in invariants::INVARIANTS {
         // SEED's witness posture is RowDeclared: an empty citation list is an
         // omission, never a policy.

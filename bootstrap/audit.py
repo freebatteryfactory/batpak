@@ -3679,6 +3679,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(retired_proof_row_findings(root))
     findings.extend(proof_row_catalog_findings(root))
     findings.extend(contract_kind_findings(root))
+    findings.extend(identity_catalog_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -3932,6 +3933,186 @@ def contract_kind_findings(root: Path) -> list[str]:
     for extra in listed[len(expected):]:
         out.append(f"docs/06 admits {extra[0]}, which ContractKind does not declare")
     return out
+
+
+# --- Identity catalogs (5.5E3d) ----------------------------------------------
+# spec/identities.rs owns four catalog axes plus the non-cataloged residue.
+# This auditor independently parses the typed owner, reconstructs the five
+# generated docs/16 blocks (ordered entries AND owners), and runs the standing
+# corpus-sweep law: every identity-shaped term discovered in the AUTHORED
+# corpus resolves through exactly one of five classification paths. Discovery
+# deliberately excludes generated projection blocks and spec/identities.rs
+# itself — the denominator must never prove itself by rereading its own
+# answer sheet.
+A_IDENTITY_AXES = (
+    ("IDENTITY-CATALOG", "IdentityKind"),
+    ("GENERATION-CATALOG", "GenerationKind"),
+    ("BINDING-CATALOG", "BindingKind"),
+    ("VERSION-CATALOG", "VersionIdentityKind"),
+)
+A_IDENT_DISPOSITION = {
+    "OwnedElsewhere": "owned elsewhere",
+    "NotYetAdmittedBy": "not yet admitted by",
+}
+# Exact case-sensitive identifier tokens ending in one of the six admitted
+# suffixes, with token boundaries: "Valid", "provide", and prose containing
+# lowercase "id" mint no surprise passports.
+A_IDENT_TERM = re.compile(
+    r"\b[A-Z][A-Za-z0-9]*(?:Id|Hash|Digest|Commitment|Generation|Version)\b")
+A_GENERATED_BLOCK = re.compile(
+    r"<!-- [A-Z0-9-]+:BEGIN[^>]*-->.*?<!-- [A-Z0-9-]+:END -->", re.S)
+
+
+def _identity_block_body(name: str, doc: str):
+    m = re.search(
+        r"<!-- " + re.escape(name) + r":BEGIN[^>]*-->\n```text\n(.*?)\n```\n<!-- "
+        + re.escape(name) + r":END -->", doc, re.S)
+    return m.group(1) if m else None
+
+
+def identity_catalog_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / "spec/identities.rs"
+    if not path.is_file():
+        return ["missing spec/identities.rs"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    contract_ids = declared_contract_ids(root)
+    dec_disposition = {m[0]: m[3] for m in G_DEC_ROW.findall(
+        (root / "spec/dispositions.rs").read_text(encoding="utf-8"))}
+    # Spellings with existing typed spec owners are referenced, never
+    # re-admitted: a duplicate variant is a wrapper passport.
+    owned_body = re.search(
+        r"pub const EXISTING_TYPED_OWNER_SPELLINGS: &\[&str\] = &\[(.*?)\];", src, re.S)
+    existing_owned = set(re.findall(r'"(\w+)"', owned_body.group(1))) if owned_body else set()
+    if not existing_owned:
+        out.append("spec/identities.rs declares no EXISTING_TYPED_OWNER_SPELLINGS list")
+    # Independent parse of the four axes, in Kind::ALL order. The \b anchor
+    # keeps "VersionIdentityKind::..." from satisfying "IdentityKind::...".
+    catalogs: dict[str, list[tuple[str, str]]] = {}
+    axis_of: dict[str, str] = {}
+    for marker, kind in A_IDENTITY_AXES:
+        all_body = re.search(
+            r"pub const ALL: &'static \[" + kind + r"\] = &\[(.*?)\];", src, re.S)
+        inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) \
+            if all_body else []
+        arms = {v: (s, o) for v, s, o in re.findall(
+            r"\b" + kind + r"::(\w+) => \{?\s*entry!\(\s*\"([^\"]+)\",\s*\"([^\"]+)\"\s*\)",
+            src)}
+        if not inventory:
+            out.append(f"spec/identities.rs declares no {kind} inventory")
+            continue
+        entries: list[tuple[str, str]] = []
+        for v in inventory:
+            if v not in arms:
+                out.append(f"{kind}::{v} is missing from ALL or declares no catalog entry")
+                continue
+            spelling, owner = arms[v]
+            entries.append((spelling, owner))
+            if spelling in axis_of:
+                out.append(
+                    f"identity spelling {spelling} answers two questions: it appears "
+                    f"in both {axis_of[spelling]} and {kind}")
+            else:
+                axis_of[spelling] = kind
+            if owner not in contract_ids:
+                out.append(f"{kind} entry {spelling} names owner {owner}, "
+                           "which no declared contract owns")
+            if spelling in existing_owned:
+                out.append(f"{kind} entry {spelling} duplicates a spelling that "
+                           "already has a typed spec owner; the catalog may "
+                           "reference it but never re-admit it")
+        for phantom in sorted(set(arms) - set(inventory)):
+            out.append(f"{kind}::{phantom} declares an entry but is omitted from {kind}::ALL")
+        catalogs[marker] = entries
+    # Chronology/order/topology/coordinate/cursor/navigation vocabulary is
+    # excluded by executed law, not convention.
+    excluded_body = re.search(
+        r"pub const EXCLUDED_CHRONOLOGY_AND_NAVIGATION: &\[&str\] = &\[(.*?)\];",
+        src, re.S)
+    excluded = set(re.findall(r'"(\w+)"', excluded_body.group(1))) if excluded_body else set()
+    if not excluded:
+        out.append("spec/identities.rs declares no EXCLUDED_CHRONOLOGY_AND_NAVIGATION list")
+    for term in sorted(excluded & set(axis_of)):
+        out.append(f"{term} is chronology/navigation vocabulary and may not enter "
+                   f"the {axis_of[term]} catalog")
+    # The residue table: the denominator's non-admitted half.
+    residue_body = re.search(
+        r"pub const NON_CATALOGED_IDENTITY_TERMS: &\[NonCatalogedIdentityTerm\] = &\[(.*?)\n\];",
+        src, re.S)
+    residue = re.findall(
+        r'term: "(\w+)",\s*disposition: IdentityTermDisposition::(\w+)\('
+        r'(?:ContractId|DecisionId)\("([^"]+)"\)\)',
+        residue_body.group(1)) if residue_body else []
+    if not residue:
+        out.append("spec/identities.rs declares no NON_CATALOGED_IDENTITY_TERMS rows")
+    for term, variant, ref in residue:
+        if term in axis_of:
+            out.append(f"{term} resolves through two paths: the residue table and "
+                       f"the {axis_of[term]} catalog")
+        if variant == "OwnedElsewhere":
+            if ref not in contract_ids:
+                out.append(f"residue term {term} is owned elsewhere by {ref}, "
+                           "which no declared contract owns")
+        elif variant == "NotYetAdmittedBy":
+            disp = dec_disposition.get(ref)
+            if disp is None:
+                out.append(f"residue term {term} is not yet admitted by {ref}, "
+                           "which no declared decision owns")
+            elif disp in ("Supersede", "RetainAsEvidence"):
+                # Mirrors Disposition::guarantee_lifetime: these two derive
+                # HistoricalCoverageOnly, and a decision retained only as
+                # historical coverage has no forward policy authority to own
+                # a future admission barrier.
+                out.append(f"residue term {term} is not yet admitted by {ref}, "
+                           "which is retained only as historical coverage and "
+                           "cannot own a future admission barrier")
+        else:
+            out.append(f"residue term {term} carries unknown disposition {variant}")
+    # docs/16 carries five generated blocks projecting ordered entries AND
+    # owners; this auditor reconstructs each body independently.
+    doc = (root / "docs/16_IDENTITY_TIME_AND_NAVIGATION.md").read_text(encoding="utf-8")
+    for marker, _kind in A_IDENTITY_AXES:
+        want = [f"{s:<30} {o}" for s, o in catalogs.get(marker, [])]
+        _identity_block_parity(marker, want, doc, out)
+    residue_want = [f"{t:<30} {A_IDENT_DISPOSITION.get(v, '?'):<22} {r}"
+                    for t, v, r in residue]
+    _identity_block_parity("IDENTITY-RESIDUE", residue_want, doc, out)
+    # The standing corpus-sweep law. Authored corpus: the authoritative docs
+    # and companion, minus every generated projection block.
+    classified = set(axis_of) | {t for t, _v, _r in residue}
+    discovered: set[str] = set()
+    for rel in sorted((root / "docs").glob("*.md")) + sorted((root / "companion").glob("*.md")):
+        text = rel.read_text(encoding="utf-8")
+        if frontmatter(text).get("status") == "GENERATED":
+            continue
+        discovered.update(A_IDENT_TERM.findall(A_GENERATED_BLOCK.sub("", text)))
+    for term in sorted(discovered - classified):
+        out.append(f"identity-shaped term {term} appears in the authoritative corpus "
+                   "and resolves through none of the five classification paths")
+    for term in sorted({t for t, _v, _r in residue} - discovered):
+        out.append(f"residue term {term} no longer appears in the authored corpus; "
+                   "a disposition for a term nobody authors is an expired application")
+    return out
+
+
+def _identity_block_parity(marker: str, want: list[str], doc: str,
+                           out: list[str]) -> None:
+    body = _identity_block_body(marker, doc)
+    if body is None:
+        out.append(f"docs/16 carries no generated {marker} block naming "
+                   "spec/identities.rs as source")
+        return
+    listed = [line.rstrip() for line in body.splitlines() if line.strip()]
+    want = [line.rstrip() for line in want]
+    for i, expect in enumerate(want):
+        if i >= len(listed):
+            out.append(f"docs/16 {marker} omits row {expect.split()[0]}")
+        elif listed[i] != expect:
+            out.append(f"docs/16 {marker} row {i + 1} states {' '.join(listed[i].split())}; "
+                       f"the typed catalog states {' '.join(expect.split())} at that position")
+    for extra in listed[len(want):]:
+        out.append(f"docs/16 {marker} lists {extra.split()[0]}, "
+                   "which the typed catalog does not project")
 
 
 def check_architecture(root: Path, findings: list[str]) -> None:

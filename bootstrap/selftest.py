@@ -3696,6 +3696,153 @@ def test_syncbat_requiredness(audit, project) -> list[str]:
     return findings
 
 
+def test_identity_catalogs(audit) -> list[str]:
+    """Named hostile fixtures for the identity catalogs (5.5E3d). Four axes,
+    one term one axis, owners resolve, chronology stays out, existing typed
+    owners are never duplicated, docs/16 projects ordered entries AND owners,
+    and the permanent corpus denominator refuses any identity-shaped term
+    that resolves through none of the five classification paths."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.identity_catalog_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.identity_catalog_findings(root):
+        fail("identity_catalogs_pass_on_the_real_seed")
+
+    ID = "spec/identities.rs"
+    DOC16 = "docs/16_IDENTITY_TIME_AND_NAVIGATION.md"
+    # EventId was the sweep's headline restoration; deleting it again is
+    # refused by the corpus denominator itself: the term is still authored
+    # in docs/04, docs/05, and the companion, so it must classify.
+    probe("event_id_cannot_disappear_from_identity_catalog",
+          [(ID, "        IdentityKind::Event,\n", ""),
+           (ID, '            IdentityKind::Event => entry!("EventId", "BP-STORAGE-TILES-1"),\n',
+            "")],
+          "identity-shaped term EventId appears in the authoritative corpus "
+          "and resolves through none of the five classification paths")
+    # A binding is a commitment to content, never the object's identity:
+    # cross-axis uniqueness means the misclassification has no spelling.
+    probe("content_digest_cannot_be_classified_as_object_identity",
+          [(ID, 'entry!("CorrelationId", "BP-STORAGE-TILES-1")',
+            'entry!("ContentDigest", "BP-STORAGE-TILES-1")')],
+          "ContentDigest answers two questions: it appears in both "
+          "IdentityKind and BindingKind")
+    probe("commitment_cannot_be_classified_as_object_identity",
+          [(ID, 'entry!("TileId", "BP-STORAGE-TILES-1")',
+            'entry!("Commitment", "BP-IDENTITY-TIME-NAV-1")')],
+          "Commitment answers two questions: it appears in both "
+          "IdentityKind and BindingKind")
+    # Chronology and navigation vocabulary is excluded by executed law.
+    probe("hlc_cannot_enter_identity_catalog",
+          [(ID, 'entry!("RewrapId", "BP-CRYPTO-SECRET-1")',
+            'entry!("Hlc", "BP-IDENTITY-TIME-NAV-1")')],
+          "Hlc is chronology/navigation vocabulary and may not enter "
+          "the IdentityKind catalog")
+    probe("commit_point_cannot_enter_identity_catalog",
+          [(ID, 'entry!("UnitId", "BP-NUMERIC-1")',
+            'entry!("CommitPoint", "BP-IDENTITY-TIME-NAV-1")')],
+          "CommitPoint is chronology/navigation vocabulary and may not enter "
+          "the IdentityKind catalog")
+    probe("identity_kind_missing_from_all_is_rejected",
+          [(ID, "        IdentityKind::Tile,\n", "")],
+          "IdentityKind::Tile declares an entry but is omitted from IdentityKind::ALL")
+    probe("catalog_entry_with_unknown_owner_is_rejected",
+          [(ID, 'entry!("TileId", "BP-STORAGE-TILES-1")',
+            'entry!("TileId", "BP-NONEXISTENT-1")')],
+          "IdentityKind entry TileId names owner BP-NONEXISTENT-1, "
+          "which no declared contract owns")
+    probe("docs_identity_block_drift_is_rejected",
+          [(DOC16, f"{'EventId':<30} BP-STORAGE-TILES-1",
+            f"{'EventId':<30} BP-SYNCBAT-1")],
+          "docs/16 IDENTITY-CATALOG row 7 states EventId BP-SYNCBAT-1; the "
+          "typed catalog states EventId BP-STORAGE-TILES-1 at that position")
+    # Existing typed owners stay owners: a duplicate variant is a wrapper
+    # passport, refused by spelling.
+    probe("existing_package_id_owner_cannot_be_duplicated",
+          [(ID, 'entry!("RotationId", "BP-CRYPTO-SECRET-1")',
+            'entry!("PackageId", "BP-CRYPTO-SECRET-1")')],
+          "IdentityKind entry PackageId duplicates a spelling that already "
+          "has a typed spec owner")
+    probe("existing_proof_row_id_owner_cannot_be_duplicated",
+          [(ID, 'entry!("KeyBackendId", "BP-CRYPTO-SECRET-1")',
+            'entry!("ProofRowId", "BP-CRYPTO-SECRET-1")')],
+          "IdentityKind entry ProofRowId duplicates a spelling that already "
+          "has a typed spec owner")
+    # The standing denominator law: a new identity-shaped term authored
+    # anywhere in the corpus turns red until classified through exactly one
+    # of the five paths.
+    probe("new_identity_shaped_term_requires_classification",
+          [(DOC16, "BatPak never invents its own entropy primitive.",
+            "BatPak never invents its own entropy primitive. A future "
+            "WidgetTrackerId is under discussion.")],
+          "identity-shaped term WidgetTrackerId appears in the authoritative "
+          "corpus and resolves through none of the five classification paths")
+    probe("noncataloged_term_cannot_also_be_admitted",
+          [(ID, 'entry!("KeyId", "BP-CRYPTO-SECRET-1")',
+            'entry!("NavigationId", "BP-IDENTITY-TIME-NAV-1")')],
+          "NavigationId resolves through two paths: the residue table and "
+          "the IdentityKind catalog")
+    probe("owned_elsewhere_term_requires_a_live_contract_owner",
+          [(ID, 'OwnedElsewhere(ContractId("BP-GATES-1"))',
+            'OwnedElsewhere(ContractId("BP-GHOST-1"))')],
+          "residue term GateId is owned elsewhere by BP-GHOST-1, "
+          "which no declared contract owns")
+    # CompressionId is a passport application stapled to DEC-063's checklist.
+    # Sneaking it into a catalog while the residue row stands is the two-path
+    # refusal; entry happens only by amending DEC-063 AND moving the term.
+    probe("compression_id_cannot_enter_without_dec063_amendment",
+          [(ID, 'entry!("FloatFormatId", "BP-NUMERIC-1")',
+            'entry!("CompressionId", "BP-NUMERIC-1")')],
+          "CompressionId resolves through two paths: the residue table and "
+          "the IdentityKind catalog")
+    probe("not_yet_admitted_term_requires_a_live_decision",
+          [(ID, 'NotYetAdmittedBy(DecisionId("DEC-063"))',
+            'NotYetAdmittedBy(DecisionId("DEC-963"))')],
+          "residue term CompressionId is not yet admitted by DEC-963, "
+          "which no declared decision owns")
+    # A decision retained only as historical coverage has no forward policy
+    # authority: the archive does not issue future visas. DEC-005 is the
+    # standing Supersede row.
+    probe("historical_decision_cannot_own_not_yet_admitted_term",
+          [(ID, 'NotYetAdmittedBy(DecisionId("DEC-063"))',
+            'NotYetAdmittedBy(DecisionId("DEC-005"))')],
+          "residue term CompressionId is not yet admitted by DEC-005, which "
+          "is retained only as historical coverage and cannot own a future "
+          "admission barrier")
+    # GREEN fixture: the counts are observed output, never acceptance
+    # thresholds. A lawful new entry with a live owner and a matching docs
+    # row grows the catalog without touching any frozen number.
+    tmp = gate_sandbox([
+        (ID, "        IdentityKind::Tile,\n",
+         "        IdentityKind::Tile,\n        IdentityKind::Session,\n"),
+        (ID, '            IdentityKind::Tile => entry!("TileId", "BP-STORAGE-TILES-1"),',
+         '            IdentityKind::Tile => entry!("TileId", "BP-STORAGE-TILES-1"),\n'
+         '            IdentityKind::Session => entry!("SessionId", "BP-STORAGE-TILES-1"),'),
+        (DOC16, f"{'TileId':<30} BP-STORAGE-TILES-1\n",
+         f"{'TileId':<30} BP-STORAGE-TILES-1\n"
+         f"{'SessionId':<30} BP-STORAGE-TILES-1\n"),
+    ])
+    try:
+        got = audit.identity_catalog_findings(tmp)
+        if got:
+            fail(f"catalog_counts_are_derived_not_frozen (lawful growth "
+                 f"was refused: {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -3882,6 +4029,20 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'environment: QualificationEnvironment::WasmHost,',
           'environment: "wasm32-unknown-unknown",',
           "expected `QualificationEnvironment`")
+    # 5.5E3d residue lifecycle, executed by the RUNNING gate: a decision
+    # retained only as historical coverage cannot own a future admission
+    # barrier, and an existing typed owner's spelling is never re-admitted.
+    probe("seedcheck_historical_decision_cannot_own_not_yet_admitted_term",
+          "spec/identities.rs",
+          'NotYetAdmittedBy(DecisionId("DEC-063"))',
+          'NotYetAdmittedBy(DecisionId("DEC-005"))',
+          "CompressionId is not yet admitted by DEC-005, which is retained "
+          "only as historical coverage and cannot own a future admission barrier")
+    probe("seedcheck_wrapper_passport_is_rejected",
+          "spec/identities.rs",
+          'entry!("RotationId", "BP-CRYPTO-SECRET-1")',
+          'entry!("PackageId", "BP-CRYPTO-SECRET-1")',
+          "duplicates PackageId, which already has a typed spec owner")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
     # as green must redden the running seedcheck through counts_green().
@@ -4100,6 +4261,16 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::architecture::SyncBatPlane;",
              "let _: &str = SyncBatPlane::Runtime.package();",
              "expected `&str`, found `PackageId`"),
+            # 5.5E3d: "not currently admitted" and "forbidden by decision"
+            # are DIFFERENT laws, and no term is currently decision-forbidden,
+            # so a forbidden disposition has no spelling at all. Mislabeling
+            # the pending passport application as a dead passport is a
+            # compile error, not a reclassification.
+            ("future_required_identity_cannot_be_mislabeled_rejected",
+             "use spec::identities::IdentityTermDisposition;\n"
+             "use spec::guarantees::DecisionId;",
+             'let _ = IdentityTermDisposition::RejectedBy(DecisionId("DEC-063"));',
+             "no variant, associated function, or constant named `RejectedBy`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -4516,6 +4687,7 @@ def main() -> int:
     findings += test_toolchain(audit)
     findings += test_package_identity(audit)
     findings += test_contract_kinds(audit)
+    findings += test_identity_catalogs(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)

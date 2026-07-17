@@ -24,43 +24,111 @@ Externally interoperable IDs may preserve UUIDv7-compatible bits under a named `
 
 ## Identity stack
 
+The identity catalog answers exactly one question: which semantic, instance,
+event, operation, or evidence object. Each entry names its canonical semantic
+owner. Spellings, order, and owners are projected from the typed catalogs.
+
+<!-- IDENTITY-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
 ```text
-ContractId
-SchemaId
-CodecId
-LayoutId
-MaterializationId
-StoreId
-AuthorityGeneration
-ProgramImageId
-WorldImageId
-WorldInstanceId
-ProcessInstanceId
-TurnId
-AttemptId
-ReceiptId
-ContentDigest
-Commitment
+ContractId                     BP-IDENTITY-TIME-NAV-1
+SchemaId                       BP-SCHEMA-CODEC-1
+CodecId                        BP-SCHEMA-CODEC-1
+LayoutId                       BP-SYSTEM-MODEL-1
+MaterializationId              BP-STORAGE-TILES-1
+StoreId                        BP-STORAGE-TILES-1
+EventId                        BP-STORAGE-TILES-1
+LogicalOperationId             BP-IDENTITY-TIME-NAV-1
+ProgramImageId                 BP-IDENTITY-TIME-NAV-1
+ContractImageId                BP-WORLD-PORTS-1
+AuthorityImageId               BP-STORAGE-TILES-1
+WorldImageId                   BP-IDENTITY-TIME-NAV-1
+WorldInstanceId                BP-WORLD-PORTS-1
+ProcessInstanceId              BP-SYNCBAT-1
+TurnId                         BP-IDENTITY-TIME-NAV-1
+AttemptId                      BP-BVISOR-1
+ReceiptId                      BP-RECEIPTS-1
+EntrypointId                   BP-WORLD-PORTS-1
+InvocationId                   BP-WORLD-PORTS-1
+CorrelationId                  BP-STORAGE-TILES-1
+TileId                         BP-STORAGE-TILES-1
+KernelContractId               BP-PUBLIC-API-CI-RELEASE-1
+KernelImplementationId         BP-PUBLIC-API-CI-RELEASE-1
+QualifiedKernelId              BP-PUBLIC-API-CI-RELEASE-1
+KernelQualificationReceiptId   BP-PUBLIC-API-CI-RELEASE-1
+KeyId                          BP-CRYPTO-SECRET-1
+KeyBackendId                   BP-CRYPTO-SECRET-1
+RotationId                     BP-CRYPTO-SECRET-1
+RewrapId                       BP-CRYPTO-SECRET-1
+UnitId                         BP-NUMERIC-1
+NumericProfileId               BP-NUMERIC-1
+FloatFormatId                  BP-NUMERIC-1
+ApproximationProfileId         BP-NUMERIC-1
+WideExactProfileId             BP-NUMERIC-1
+QuantizationPolicyId           BP-NUMERIC-1
+RoundingModeId                 BP-NUMERIC-1
 ```
+<!-- IDENTITY-CATALOG:END -->
 
 No identity answers two questions.
 
+## Generation identities
+
+A generation answers "which evolution or authority generation", never which
+object. `AuthorityGeneration` lives here, not in the identity stack: a
+generation of authority is not an object passport.
+
+<!-- GENERATION-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+```text
+AuthorityGeneration            BP-STORAGE-TILES-1
+KeyGeneration                  BP-CRYPTO-SECRET-1
+ProcessGeneration              BP-SYNCBAT-1
+WorldGeneration                BP-WORLD-PORTS-1
+MaterializationGeneration      BP-STORAGE-TILES-1
+```
+<!-- GENERATION-CATALOG:END -->
+
+## Binding commitments
+
+A binding proves a relationship to bytes, an interface, or history; it is
+never the object's identity. `ContentDigest` and `Commitment` live here, not
+in the identity stack. A binding may reference a `CommitPoint`; it defines no
+CommitPoint comparison, chronology, or frontier law.
+
+<!-- BINDING-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+```text
+ContentDigest                  BP-STORAGE-TILES-1
+Commitment                     BP-IDENTITY-TIME-NAV-1
+EventCommitment                BP-STORAGE-TILES-1
+CommitmentDigest               BP-STORAGE-TILES-1
+WorldInterfaceHash             BP-WORLD-PORTS-1
+KernelInterfaceHash            BP-PUBLIC-API-CI-RELEASE-1
+CapabilityGrantHash            BP-BVISOR-1
+InputDigest                    BP-RECEIPTS-1
+OutputDigest                   BP-RECEIPTS-1
+EffectBatchDigest              BP-SYNCBAT-1
+```
+<!-- BINDING-CATALOG:END -->
+
 ## Version identities (DEC-064)
 
-Version is not one generic type crossing subsystem boundaries. Each format and protocol carries its own distinct version identity:
+Version is not one generic type crossing subsystem boundaries. Each format and protocol carries its own distinct version identity, with its canonical semantic owner:
 
+<!-- VERSION-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
 ```text
-BatQlLanguageVersion
-ProgramImageVersion
-WorldImageVersion
-PakVmIsaVersion
-FbatFormatVersion
-BatTaggedRecordVersion
-NetBatProtocolVersion
-KernelManifestVersion
-ReceiptSchemaVersion
-SchemaVersion
+BatQlLanguageVersion           BP-BATQL-LANGUAGE-1
+ProgramImageVersion            BP-IDENTITY-TIME-NAV-1
+WorldImageVersion              BP-IDENTITY-TIME-NAV-1
+PakVmIsaVersion                BP-PAKVM-ISA-1
+FbatFormatVersion              BP-STORAGE-TILES-1
+BatTaggedRecordVersion         BP-SCHEMA-CODEC-1
+FrameVersion                   BP-STORAGE-TILES-1
+NetBatProtocolVersion          BP-NETBAT-1
+KernelManifestVersion          BP-PUBLIC-API-CI-RELEASE-1
+ReceiptSchemaVersion           BP-RECEIPTS-1
+SchemaVersion                  BP-SCHEMA-CODEC-1
+LayoutVersion                  BP-SYSTEM-MODEL-1
 ```
+<!-- VERSION-CATALOG:END -->
 
 Distinct version types do not typecheck when substituted for one another. Canonical bytes carry their own owning format/version identity.
 
@@ -75,6 +143,33 @@ program_image_id_is_independent_of_compiler_provenance
 distinct_version_types_do_not_typecheck_when_substituted
 netbat_version_does_not_upgrade_pakvm_isa
 ```
+
+## Non-cataloged identity-shaped terms
+
+Every stable identity-shaped term in the authoritative corpus resolves through
+exactly one of five paths: the four catalogs above, or this residue table. A
+new unclassified term reds the audit immediately. "Owned elsewhere" cites the
+live contract that owns the term outside these catalogs; "not yet admitted by"
+cites the standing decision naming the prerequisites — entry happens only by
+amending that decision AND joining exactly one catalog, never by the amendment
+alone.
+
+<!-- IDENTITY-RESIDUE:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+```text
+GateId                         owned elsewhere        BP-GATES-1
+OperatorId                     owned elsewhere        BP-BATQL-LANGUAGE-1
+NavigationId                   owned elsewhere        BP-IDENTITY-TIME-NAV-1
+EntityId                       owned elsewhere        BP-BATQL-LANGUAGE-1
+CustomerId                     owned elsewhere        BP-BATQL-LANGUAGE-1
+InvoiceId                      owned elsewhere        BP-BATQL-LANGUAGE-1
+OrderId                        owned elsewhere        BP-BATQL-LANGUAGE-1
+BorrowerId                     owned elsewhere        BP-BATQL-LANGUAGE-1
+TenantId                       owned elsewhere        BP-BATQL-LANGUAGE-1
+SystemId                       owned elsewhere        BP-ECS-1
+TypeId                         owned elsewhere        BP-ECS-1
+CompressionId                  not yet admitted by    DEC-063
+```
+<!-- IDENTITY-RESIDUE:END -->
 
 ## Coordinate
 

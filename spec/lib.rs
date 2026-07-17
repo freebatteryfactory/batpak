@@ -15,6 +15,7 @@ pub mod contracts;
 pub mod dispositions;
 pub mod gates;
 pub mod guarantees;
+pub mod identities;
 pub mod invariants;
 pub mod legacy_invariant_coverage;
 pub mod legacy_obligations;

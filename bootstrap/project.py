@@ -577,6 +577,77 @@ def render_root_toolchain(tc):
             f'profile = "{tc["profile"]}"\ncomponents = [{comps}]\n')
 
 
+# --- Identity catalog projection (5.5E3d) ------------------------------------
+# spec/identities.rs owns four separate catalog axes plus the non-cataloged
+# residue table; docs/16 carries five generated blocks projecting ordered
+# entries AND owners. This projector renders; audit.py independently
+# reconstructs; they share no classification map.
+IDENTITY_DOC = "docs/16_IDENTITY_TIME_AND_NAVIGATION.md"
+IDENTITY_AXES = (
+    ("IDENTITY-CATALOG", "IdentityKind"),
+    ("GENERATION-CATALOG", "GenerationKind"),
+    ("BINDING-CATALOG", "BindingKind"),
+    ("VERSION-CATALOG", "VersionIdentityKind"),
+)
+_DISPOSITION_SPELLING = {
+    "OwnedElsewhere": "owned elsewhere",
+    "NotYetAdmittedBy": "not yet admitted by",
+}
+
+
+def parse_identity_catalog(root, kind):
+    """Ordered (spelling, owner) entries in Kind::ALL order from the typed
+    owner. An ALL variant with no entry() arm refuses rather than rendering
+    a hole."""
+    src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[" + kind + r"\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) if all_body else []
+    # \b matters: "VersionIdentityKind::Schema" must never satisfy an
+    # unanchored "IdentityKind::..." pattern and overwrite identity arms.
+    arms = {v: (s, o) for v, s, o in re.findall(
+        r"\b" + kind + r"::(\w+) => \{?\s*entry!\("
+        r"\s*\"([^\"]+)\",\s*\"([^\"]+)\"\s*\)", src)}
+    missing = [v for v in inventory if v not in arms]
+    if not inventory or missing:
+        raise Unadmitted(
+            f"spec/identities.rs: {kind} inventory unreadable or entries missing "
+            f"for {missing}")
+    return [arms[v] for v in inventory]
+
+
+def parse_identity_residue(root):
+    """Ordered (term, disposition variant, reference) rows from
+    NON_CATALOGED_IDENTITY_TERMS."""
+    src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    body = re.search(
+        r"pub const NON_CATALOGED_IDENTITY_TERMS: &\[NonCatalogedIdentityTerm\] = &\[(.*?)\n\];",
+        src, re.S)
+    if not body:
+        raise Unadmitted("spec/identities.rs: NON_CATALOGED_IDENTITY_TERMS unreadable")
+    rows = re.findall(
+        r'term: "(\w+)",\s*disposition: IdentityTermDisposition::(\w+)\('
+        r'(?:ContractId|DecisionId)\("([^"]+)"\)\)', body.group(1))
+    bad = [v for _, v, _ in rows if v not in _DISPOSITION_SPELLING]
+    if not rows or bad:
+        raise Unadmitted(
+            f"spec/identities.rs: residue rows unreadable or dispositions unknown: {bad}")
+    return rows
+
+
+def render_identity_axis(root, kind):
+    entries = parse_identity_catalog(root, kind)
+    rows = "\n".join(f"{s:<30} {o}" for s, o in entries)
+    return "```text\n" + rows + "\n```"
+
+
+def render_identity_residue(root):
+    rows = "\n".join(
+        f"{term:<30} {_DISPOSITION_SPELLING[v]:<22} {ref}"
+        for term, v, ref in parse_identity_residue(root))
+    return "```text\n" + rows + "\n```"
+
+
 # --- Stale-vocabulary projection (5.5D4b) ------------------------------------
 # The alias set is a CONSEQUENCE of the decisions that retired vocabulary. It was
 # duplicated by hand in two documents and guarded by an equality check -- two
@@ -1255,6 +1326,26 @@ def main() -> int:
         findings.append("spec/toolchain.rs: incomplete ToolchainProfile; the projection refuses")
     else:
         plans.append((tc_path, tc_original, render_root_toolchain(tc)))
+    # The identity catalogs (5.5E3d): five generated docs/16 blocks — four
+    # catalog axes plus the visible residue table, ordered entries AND owners.
+    id_path = root / IDENTITY_DOC
+    id_original = id_path.read_text(encoding="utf-8")
+    id_rewritten = id_original
+    id_renders = [(name, lambda r, k=kind: render_identity_axis(r, k))
+                  for name, kind in IDENTITY_AXES]
+    id_renders.append(("IDENTITY-RESIDUE", render_identity_residue))
+    for name, render in id_renders:
+        pat = block_pattern(name)
+        if not pat.search(id_rewritten):
+            findings.append(f"{IDENTITY_DOC}: missing generated block markers for {name}")
+            continue
+        try:
+            body = render(root)
+        except Unadmitted as exc:
+            findings.append(f"{IDENTITY_DOC}: {name} does not admit: {exc}")
+            continue
+        id_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), id_rewritten)
+    plans.append((id_path, id_original, id_rewritten))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:
