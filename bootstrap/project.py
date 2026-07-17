@@ -708,6 +708,55 @@ def render_compiler_assumptions(root):
     return "```text\n" + header + "\n" + rows + "\n```"
 
 
+# --- Promotion requirements projection (5.5E3i) ------------------------------
+# spec/promotion.rs owns the conjunctive denominator; docs/12 carries the
+# generated table. This projector parses the typed owner — never a Python
+# list of the four requirements.
+def parse_promotion(root):
+    src = (root / "spec/promotion.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[PromotionRequirement\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bPromotionRequirement::(\w+)", all_body.group(1)) \
+        if all_body else []
+    arms = {}
+    for fn_name in ("spelling", "semantic_owner", "admission_basis"):
+        body = re.search(
+            r"pub const fn " + fn_name + r"\(self\)[^{]*\{\s*match self \{(.*?)\n        \}",
+            src, re.S)
+        arms[fn_name] = dict(re.findall(
+            r"PromotionRequirement::(\w+)\s*=>\s*([^,]+),", body.group(1), re.S)) \
+            if body else {}
+    rows = []
+    for v in inventory:
+        s = arms["spelling"].get(v, "").strip().strip('"')
+        owner = re.search(r'ContractId\("([^"]+)"\)', arms["semantic_owner"].get(v, ""))
+        basis = re.search(r'GuaranteeRef::dec\("([^"]+)"\)',
+                          arms["admission_basis"].get(v, ""))
+        if not s or not owner or not basis:
+            raise Unadmitted(
+                f"spec/promotion.rs: PromotionRequirement::{v} facts unreadable")
+        rows.append((s, owner.group(1), basis.group(1)))
+    surface = re.search(r"ProofPolicySurface::(\w+);", src)
+    change = re.search(
+        r'PROMOTION_CHANGE_BASIS: GuaranteeRef = GuaranteeRef::dec\("([^"]+)"\);', src)
+    egate = re.search(r"PROMOTION_ENFORCEMENT_GATE: GateId = GateId::(\w+);", src)
+    rgate = re.search(r"PROMOTION_RELEASE_VISIBILITY_GATE: GateId = GateId::(\w+);", src)
+    if not rows or not surface or not change or not egate or not rgate:
+        raise Unadmitted("spec/promotion.rs: family facts unreadable")
+    return rows, surface.group(1), change.group(1), egate.group(1), rgate.group(1)
+
+
+def render_promotion(root):
+    rows, surface, change, egate, rgate = parse_promotion(root)
+    header = f"{'requirement':<26} {'owner':<14} admission basis"
+    body = "\n".join(f"{s:<26} {o:<14} {b}" for s, o, b in rows)
+    family = (f"\n{'policy surface':<26} {surface}\n"
+              f"{'policy-change basis':<26} {change}\n"
+              f"{'enforcement gate':<26} {egate}\n"
+              f"{'release-visibility gate':<26} {rgate}")
+    return "```text\n" + header + "\n" + body + "\n" + family + "\n```"
+
+
 # --- Corpus epoch projection (5.5E3g) ----------------------------------------
 # spec/corpus.rs owns which corpus epochs exist and which one is CURRENT;
 # this projector mechanically converges every eligible document's epoch
@@ -1642,6 +1691,20 @@ def main() -> int:
             findings.append(f"{MUTATION_DOC}: {name} does not admit: {exc}")
             continue
         mu_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), mu_rewritten)
+    # The promotion denominator (5.5E3i) also projects into docs/12 — same
+    # plan entry, one write.
+    pr_pat = block_pattern("PROMOTION-REQUIREMENTS")
+    if not pr_pat.search(mu_rewritten):
+        findings.append(f"{MUTATION_DOC}: missing generated block markers for "
+                        "PROMOTION-REQUIREMENTS")
+    else:
+        try:
+            body = render_promotion(root)
+            mu_rewritten = pr_pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
+                                      mu_rewritten)
+        except Unadmitted as exc:
+            findings.append(f"{MUTATION_DOC}: PROMOTION-REQUIREMENTS does not "
+                            f"admit: {exc}")
     plans.append((mu_path, mu_original, mu_rewritten))
     # The compiler-assumption kinds (5.5E3h): docs/19 carries the fact row
     # per admitted ledgerable kind.

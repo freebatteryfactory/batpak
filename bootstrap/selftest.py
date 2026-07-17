@@ -1719,13 +1719,6 @@ def test_proof_policy(audit) -> list[str]:
     probe("candidate_root_moved_into_tracked_source_is_rejected", ARCH,
           "target/muterprater/candidates/", "no candidate output root is declared", "tests/generated/",
           validator=pp)
-    for needed, token in (("oracle", "independent evidence or oracle identity"),
-                          ("named invariant", "named invariant, guarantee, obligation, or documented proof gap"),
-                          ("killed real semantic mutant", "killed real semantic mutant or equivalent hostile evidence"),
-                          ("receipt", "auditable proof and promotion receipt")):
-        probe(f"promotion_without_{needed.split()[0]}_is_rejected", ARCH,
-              f'    "{token}",\n', f"promotion requirements omit {needed}", "", validator=pp)
-
     # --- documentary law ----------------------------------------------------
     for name, rel, old, needle in (
         ("survived_without_activation_is_rejected", TP,
@@ -4661,6 +4654,207 @@ def test_compiler_assumptions(audit) -> list[str]:
     return findings
 
 
+def test_promotion(audit) -> list[str]:
+    """Named hostile fixtures for the typed promotion denominator (5.5E3i):
+    four bouncers with badges, all conjunctive, and the receipt cannot claim
+    the other three showed up."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.promotion_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.promotion_findings(root):
+        fail("promotion_requirements_pass_on_the_real_seed")
+
+    PR = "spec/promotion.rs"
+    D12 = "docs/12_TESTPAK.md"
+    probe("promotion_requirement_missing_from_all_is_rejected",
+          [(PR, "        PromotionRequirement::AuditablePromotionReceipt,\n    ];",
+            "    ];")],
+          "PromotionRequirement::AuditablePromotionReceipt is omitted from "
+          "PromotionRequirement::ALL; the denominator is conjunctive")
+    probe("duplicate_promotion_requirement_spelling_is_rejected",
+          [(PR, 'PromotionRequirement::NamedProofTarget => "NamedProofTarget",',
+            'PromotionRequirement::NamedProofTarget => "IndependentEvidenceRoute",')],
+          "promotion-requirement spelling IndependentEvidenceRoute is claimed twice")
+    probe("empty_promotion_requirement_spelling_is_rejected",
+          [(PR, 'PromotionRequirement::NamedProofTarget => "NamedProofTarget",',
+            'PromotionRequirement::NamedProofTarget => "",')],
+          "PromotionRequirement::NamedProofTarget projects an empty spelling")
+    probe("promotion_requirement_with_unknown_owner_is_rejected",
+          [(PR, 'PromotionRequirement::NamedProofTarget => ContractId("BP-TESTPAK-1"),',
+            'PromotionRequirement::NamedProofTarget => ContractId("BP-GHOST-1"),')],
+          "promotion requirement NamedProofTarget cites owner BP-GHOST-1, "
+          "which no declared contract owns")
+    probe("promotion_requirement_owner_must_author_the_spelling",
+          [(PR, 'PromotionRequirement::NamedProofTarget => ContractId("BP-TESTPAK-1"),',
+            'PromotionRequirement::NamedProofTarget => ContractId("BP-NETBAT-1"),')],
+          "promotion requirement NamedProofTarget cites owner BP-NETBAT-1, "
+          "whose authoritative document does not author the spelling")
+    probe("promotion_requirement_with_dangling_basis_is_rejected",
+          [(PR, 'PromotionRequirement::NamedProofTarget => GuaranteeRef::dec("DEC-015"),',
+            'PromotionRequirement::NamedProofTarget => GuaranteeRef::dec("DEC-915"),')],
+          "promotion requirement NamedProofTarget cites admission basis DEC-915, "
+          "which no declared decision owns")
+    probe("promotion_requirement_basis_must_name_the_requirement",
+          [("spec/dispositions.rs",
+            "is IndependentEvidenceRoute NamedProofTarget QualifiedHostileEvidence",
+            "is IndependentEvidenceRoute QualifiedHostileEvidence")],
+          "promotion requirement NamedProofTarget cites admission basis DEC-015, "
+          "whose forward-policy fields do not name the requirement")
+    # The doctrine clauses are law; deleting one reds.
+    probe("promotion_requirements_are_conjunctive",
+          [(D12, "a missing member\nrefuses promotion,", "each matters,")],
+          "docs/12 promotion doctrine no longer states: the requirements are "
+          "conjunctive")
+    probe("independent_evidence_route_cannot_be_self_grading",
+          [(D12, "are not independence.", "are usually enough.")],
+          "docs/12 promotion doctrine no longer states: the evidence route "
+          "cannot be self-grading")
+    probe("named_proof_target_cannot_be_a_generic_issue",
+          [(D12, "A generic issue link, chat\ntranscript,", "A chat\ntranscript,")],
+          "docs/12 promotion doctrine no longer states: a generic issue is not "
+          "a named proof target")
+    probe("named_proof_target_cannot_be_a_commit_message",
+          [(D12, "chat\ntranscript, commit message, or vague",
+            "chat\ntranscript or vague")],
+          "docs/12 promotion doctrine no longer states: a commit message is not "
+          "a named proof target")
+    probe("documented_proof_gap_requires_a_stable_owner",
+          [(D12, "a stable name, a ContractId owner, the affected",
+            "a name and the affected")],
+          "docs/12 promotion doctrine no longer states: a documented proof gap "
+          "requires a stable owner")
+    probe("qualified_hostile_evidence_requires_rule_qualification",
+          [(D12, "satisfying the docs/24 Rule qualification law",
+            "satisfying a reviewer")],
+          "docs/12 promotion doctrine no longer states: qualified hostile "
+          "evidence consumes the docs/24 Rule qualification law")
+    for token, fixture in (
+            ("NotActivated", "not_activated_cannot_satisfy_qualified_hostile_evidence"),
+            ("Unbuildable", "unbuildable_cannot_satisfy_qualified_hostile_evidence"),
+            ("InfrastructureFailure",
+             "infrastructure_failure_cannot_satisfy_qualified_hostile_evidence")):
+        probe(fixture,
+              [(D12, f"{token},", "")] if token != "InfrastructureFailure" else
+              [(D12, "TimedOut, InfrastructureFailure,", "TimedOut,")],
+              f"docs/12 no longer states that {token} cannot satisfy "
+              "QualifiedHostileEvidence")
+    probe("equivalent_candidate_is_not_a_killed_mutant",
+          [(D12, "EquivalentCandidate without its independent equivalence witness,",
+            "EquivalentCandidate,")],
+          "docs/12 promotion doctrine no longer states: an equivalent candidate "
+          "is not a killed mutant")
+    probe("baseline_failure_cannot_kill_a_candidate",
+          [(D12, "or a failure produced by the unchanged baseline.",
+            "or a flaky run.")],
+          "docs/12 promotion doctrine no longer states: a baseline failure "
+          "cannot kill a candidate")
+    probe("commit_message_cannot_substitute_for_promotion_receipt",
+          [(D12, "A commit message\nis not this receipt.", "The receipt is above.")],
+          "docs/12 promotion doctrine no longer states: a commit message is not "
+          "the promotion receipt")
+    probe("promotion_receipt_must_bind_resulting_tracked_content",
+          [(D12, "promotion decision, and resulting tracked-content commitment.",
+            "and promotion decision.")],
+          "docs/12 promotion doctrine no longer states: the receipt binds the "
+          "resulting tracked-content commitment")
+    # The family facts answer four different questions.
+    probe("promotion_policy_surface_must_be_candidate_promotion",
+          [(PR, "ProofPolicySurface::CandidatePromotion;",
+            "ProofPolicySurface::WaiverLogic;")],
+          "the promotion policy surface is not ProofPolicySurface::CandidatePromotion")
+    probe("promotion_change_basis_must_be_dec074",
+          [(PR, 'PROMOTION_CHANGE_BASIS: GuaranteeRef = GuaranteeRef::dec("DEC-074");',
+            'PROMOTION_CHANGE_BASIS: GuaranteeRef = GuaranteeRef::dec("DEC-015");')],
+          "the promotion policy-change basis is not DEC-074")
+    probe("promotion_enforcement_gate_must_be_g3",
+          [(PR, "PROMOTION_ENFORCEMENT_GATE: GateId = GateId::G3;",
+            "PROMOTION_ENFORCEMENT_GATE: GateId = GateId::G9;")],
+          "candidate-promotion policy is not enforced at G3")
+    probe("promotion_release_visibility_gate_must_be_g9",
+          [(PR, "PROMOTION_RELEASE_VISIBILITY_GATE: GateId = GateId::G9;",
+            "PROMOTION_RELEASE_VISIBILITY_GATE: GateId = GateId::G3;")],
+          "promotion policy changes are not release-visibly qualified at G9")
+    probe("docs_promotion_projection_drift_is_rejected",
+          [(D12, "NamedProofTarget           BP-TESTPAK-1   DEC-015",
+            "NamedProofTarget           BP-TESTPAK-1   DEC-074")],
+          "docs/12 PROMOTION-REQUIREMENTS row 3 states NamedProofTarget "
+          "BP-TESTPAK-1 DEC-074; the typed catalog states NamedProofTarget "
+          "BP-TESTPAK-1 DEC-015 at that position")
+    probe("promotion_projection_source_marker_drift_is_rejected",
+          [(D12, "<!-- PROMOTION-REQUIREMENTS:BEGIN generated from "
+                 "spec/promotion.rs by bootstrap/project.py; do not edit -->",
+            "<!-- PROMOTION-REQUIREMENTS:BEGIN generated from "
+                 "spec/demotion.rs by bootstrap/project.py; do not edit -->")],
+          "docs/12 carries no generated PROMOTION-REQUIREMENTS block naming "
+          "spec/promotion.rs as source")
+    probe("docs24_must_consume_rule_qualification_without_reowning_requirements",
+          [("docs/24_GAUNTLET.md",
+            "is not restated here.",
+            "is not restated here, except IndependentEvidenceRoute.")],
+          "docs/24 restates the promotion-requirement inventory")
+    probe("mutation_lane_consumer_cannot_point_to_architecture_module",
+          [("docs/24_GAUNTLET.md",
+            "The typed names are `MutationLane` in `spec/mutation.rs`",
+            "The typed names are `MutationLane` in `spec/architecture.rs`")],
+          "docs/24 points MutationLane at spec/architecture.rs; the typed owner "
+          "moved to spec/mutation.rs")
+    probe("docs31_cannot_restate_a_second_promotion_inventory",
+          [("docs/31_FINAL_CONTRADICTION_AUDIT.md",
+            "`PromotionRequirement::ALL` is unsatisfied",
+            "`PromotionRequirement::ALL` (IndependentEvidenceRoute, "
+            "NamedProofTarget, QualifiedHostileEvidence, "
+            "AuditablePromotionReceipt) is unsatisfied")],
+          "docs/31 restates IndependentEvidenceRoute; the audit consumer owns "
+          "no second promotion inventory")
+    # GREEN structural growth — count-freedom evidence only.
+    tmp = gate_sandbox([
+        (PR, "    AuditablePromotionReceipt,\n}",
+         "    AuditablePromotionReceipt,\n    ReproducibleCandidateOrigin,\n}"),
+        (PR, "        PromotionRequirement::AuditablePromotionReceipt,\n    ];",
+         "        PromotionRequirement::AuditablePromotionReceipt,\n"
+         "        PromotionRequirement::ReproducibleCandidateOrigin,\n    ];"),
+        (PR, 'PromotionRequirement::AuditablePromotionReceipt => "AuditablePromotionReceipt",',
+         'PromotionRequirement::AuditablePromotionReceipt => "AuditablePromotionReceipt",\n'
+         '            PromotionRequirement::ReproducibleCandidateOrigin => "ReproducibleCandidateOrigin",'),
+        (PR, 'PromotionRequirement::AuditablePromotionReceipt => ContractId("BP-TESTPAK-1"),',
+         'PromotionRequirement::AuditablePromotionReceipt => ContractId("BP-TESTPAK-1"),\n'
+         '            PromotionRequirement::ReproducibleCandidateOrigin => ContractId("BP-TESTPAK-1"),'),
+        (PR, 'PromotionRequirement::AuditablePromotionReceipt => GuaranteeRef::dec("DEC-015"),',
+         'PromotionRequirement::AuditablePromotionReceipt => GuaranteeRef::dec("DEC-015"),\n'
+         '            PromotionRequirement::ReproducibleCandidateOrigin => GuaranteeRef::dec("DEC-015"),'),
+        ("spec/dispositions.rs",
+         "QualifiedHostileEvidence and AuditablePromotionReceipt",
+         "QualifiedHostileEvidence AuditablePromotionReceipt and "
+         "ReproducibleCandidateOrigin"),
+        (D12, "`AuditablePromotionReceipt`: the complete receipt below.",
+         "`ReproducibleCandidateOrigin`: a sandbox structural probe as growth "
+         "evidence only. `AuditablePromotionReceipt`: the complete receipt below."),
+        (D12, "AuditablePromotionReceipt  BP-TESTPAK-1   DEC-015",
+         "AuditablePromotionReceipt  BP-TESTPAK-1   DEC-015\n"
+         "ReproducibleCandidateOrigin BP-TESTPAK-1   DEC-015"),
+    ])
+    try:
+        got = audit.promotion_findings(tmp)
+        if got:
+            fail(f"structural_future_requirement_growth_is_count_free "
+                 f"(refused: {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -5136,6 +5330,25 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::reconciliation::ReconciliationRole;",
              "let _: ReconciliationEpoch = ReconciliationRole::DurableOrderWitness;",
              "expected `ReconciliationEpoch`, found `ReconciliationRole`"),
+            # 5.5E3i: the promotion denominator is typed — no raw string, no
+            # policy-surface substitution, and no alternate owner module.
+            ("raw_string_cannot_substitute_for_promotion_requirement",
+             "use spec::promotion::PromotionRequirement;",
+             'let _: PromotionRequirement = "NamedProofTarget";',
+             "expected `PromotionRequirement`, found `&str`"),
+            ("architecture_module_does_not_reexport_promotion_requirement",
+             "use spec::architecture::PromotionRequirement;",
+             "let _ = ();",
+             "no `PromotionRequirement` in `architecture`"),
+            ("mutation_module_does_not_reexport_promotion_requirement",
+             "use spec::mutation::PromotionRequirement;",
+             "let _ = ();",
+             "no `PromotionRequirement` in `mutation`"),
+            ("proof_policy_surface_cannot_substitute_for_promotion_requirement",
+             "use spec::architecture::ProofPolicySurface;\n"
+             "use spec::promotion::PromotionRequirement;",
+             "let _: PromotionRequirement = ProofPolicySurface::CandidatePromotion;",
+             "expected `PromotionRequirement`, found `ProofPolicySurface`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -5557,6 +5770,7 @@ def main() -> int:
     findings += test_mutation(audit)
     findings += test_corpus_epoch(audit)
     findings += test_compiler_assumptions(audit)
+    findings += test_promotion(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)

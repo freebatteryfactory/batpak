@@ -24,6 +24,7 @@ pub mod legacy_invariant_coverage;
 pub mod legacy_obligations;
 pub mod mutation;
 pub mod operators;
+pub mod promotion;
 pub mod pakvm_isa;
 pub mod proof;
 pub mod reconciliation;

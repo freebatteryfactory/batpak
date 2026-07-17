@@ -278,12 +278,53 @@ Muterprater may propose tests, fixtures, patches, mutation operators, and proof 
 
 ### Candidate promotion law
 
+The four typed requirements (`spec/promotion.rs`) are conjunctive: every
+member of `PromotionRequirement::ALL` is required, a missing member
+refuses promotion, and no requirement satisfies another — a killed mutant
+does not prove the evidence route was independent, a named guarantee does
+not prove the hostile activated, and a receipt cannot manufacture missing
+evidence.
+
+`IndependentEvidenceRoute`: the candidate and its generator may not be
+their own sole oracle; the evidence route must be independently owned or
+independently computed, and two wrappers around the same implementation
+are not independence.
+
+`NamedProofTarget`: promotion names a resolvable GuaranteeRef whenever an
+existing guarantee owns the target. A documented proof gap is permitted
+only when it carries a stable name, a ContractId owner, the affected
+semantic boundary, and a repair target. A generic issue link, chat
+transcript, commit message, or vague "cleanup" description is not a
+named proof target.
+
+`QualifiedHostileEvidence`: satisfied by a real semantic mutant
+terminating as `MutationResult::Killed` under a qualified baseline,
+observed activation, and executed witnesses; or by hostile evidence
+satisfying the docs/24 Rule qualification law — a conforming fixture
+passes, a violating fixture fails for the intended reason, the
+scanner/parser limitation is documented, and future syntax cannot
+silently evade the rule. Not satisfied by: Survived, NotActivated,
+Refused, Unbuildable, TimedOut, InfrastructureFailure, an
+EquivalentCandidate without its independent equivalence witness, an
+arbitrary failing test, or a failure produced by the unchanged baseline.
+
+`AuditablePromotionReceipt`: the complete receipt below. A commit message
+is not this receipt.
+
+<!-- PROMOTION-REQUIREMENTS:BEGIN generated from spec/promotion.rs by bootstrap/project.py; do not edit -->
 ```text
-No oracle, no promotion.
-No invariant or named proof obligation, no promotion.
-No killed mutant or equivalent hostile evidence, no promotion.
-No proof receipt, no trust.
+requirement                owner          admission basis
+IndependentEvidenceRoute   BP-TESTPAK-1   DEC-015
+NamedProofTarget           BP-TESTPAK-1   DEC-015
+QualifiedHostileEvidence   BP-TESTPAK-1   DEC-015
+AuditablePromotionReceipt  BP-TESTPAK-1   DEC-015
+
+policy surface             CandidatePromotion
+policy-change basis        DEC-074
+enforcement gate           G3
+release-visibility gate    G9
 ```
+<!-- PROMOTION-REQUIREMENTS:END -->
 
 The promotion receipt records: candidate identity and content commitment, candidate origin and generator, target tracked path, named owner, named guarantee or proof gap, independent evidence route, mutation or hostile-evidence result, selected and executed proof units, review or mechanically predetermined admission posture, freshness, promotion decision, and resulting tracked-content commitment.
 

@@ -50,7 +50,7 @@ A structural rule is accepted only after a conforming fixture passes, a violatin
 
 ## Mutation lanes
 
-Exactly three, frozen (DEC-015). The typed names are `MutationLane` in `spec/architecture.rs`; the contract, result algebra, activation evidence, and promotion law live in `12_TESTPAK.md`.
+Exactly three, frozen (DEC-015). The typed names are `MutationLane` in `spec/mutation.rs`; the contract, result algebra, activation evidence, and promotion law live in `12_TESTPAK.md`. The promotion denominator's `QualifiedHostileEvidence` requirement consumes this document's Rule qualification law; the requirement inventory itself is owned by `spec/promotion.rs` and is not restated here.
 
 ### Semantic IR (`MutationLane::SemanticIr`)
 

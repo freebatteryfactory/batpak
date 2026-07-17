@@ -1891,11 +1891,8 @@ DOC_LAW_MARKERS = {
          "It may not write candidates directly into `src/`, `tests/`, `spec/`, `docs/`, or `companion/`"),
         ("generation and promotion are separate",
          "Generation and promotion are two different operations with two different receipts"),
-        ("no oracle, no promotion", "No oracle, no promotion."),
-        ("no named obligation, no promotion", "No invariant or named proof obligation, no promotion."),
-        ("no killed mutant, no promotion",
-         "No killed mutant or equivalent hostile evidence, no promotion."),
-        ("no proof receipt, no trust", "No proof receipt, no trust."),
+        ("the typed promotion denominator is conjunctive",
+         "a missing member\nrefuses promotion"),
         ("an unclassified proof-policy change is refused",
          "An unclassified proof-policy change is refused"),
         ("Neutral requires parity evidence",
@@ -2120,11 +2117,8 @@ def proof_policy_findings(root: Path) -> list[str]:
     for rootdir in D3_FORBIDDEN_CANDIDATE_ROOTS:
         if rootdir not in forbidden:
             out.append(f"candidate generation is not forbidden from writing {rootdir}")
-    m = re.search(r"pub const PROMOTION_REQUIREMENTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
-    reqs = " ".join(re.findall(r'"([^"]+)"', m.group(1))) if m else ""
-    for needed in ("oracle", "named invariant", "killed real semantic mutant", "receipt"):
-        if needed not in reqs:
-            out.append(f"promotion requirements omit {needed}")
+    # The promotion denominator moved to its typed owner (5.5E3i);
+    # promotion_findings reconstructs it and refuses the raw array's return.
     # No YAML proof-policy language, no public BatQL mutation syntax.
     grammar = (root / "companion/BATQL_LANGUAGE.md").read_text(encoding="utf-8")
     for token in ("MUTATE", "PROMOTE"):
@@ -3678,6 +3672,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(mutation_findings(root))
     findings.extend(corpus_findings(root))
     findings.extend(compiler_assumption_findings(root))
+    findings.extend(promotion_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -4215,6 +4210,224 @@ def _identity_block_parity(marker: str, want: list[str], doc: str,
     for extra in listed[len(want):]:
         out.append(f"docs/16 {marker} lists {extra.split()[0]}, "
                    "which the typed catalog does not project")
+
+
+# --- Promotion requirements (5.5E3i) -----------------------------------------
+# spec/promotion.rs owns the conjunctive denominator: four required members,
+# no optional flag, no waiver variant, no second list anywhere. docs/12 owns
+# what each requirement means; docs/24 consumes Rule qualification; docs/31
+# consumes the typed law. The authored doctrine clauses are themselves law:
+# each fragment below has a hostile proving its deletion reds.
+A_PROMOTION_DOCTRINE = (
+    ("a missing member refuses promotion",
+     "the requirements are conjunctive"),
+    ("are not independence",
+     "the evidence route cannot be self-grading"),
+    ("A generic issue link, chat",
+     "a generic issue is not a named proof target"),
+    ("chat transcript, commit message, or vague",
+     "a commit message is not a named proof target"),
+    ("a stable name, a ContractId owner, the affected",
+     "a documented proof gap requires a stable owner"),
+    ("Rule qualification law",
+     "qualified hostile evidence consumes the docs/24 Rule qualification law"),
+    ("EquivalentCandidate without its independent equivalence witness",
+     "an equivalent candidate is not a killed mutant"),
+    ("a failure produced by the unchanged baseline",
+     "a baseline failure cannot kill a candidate"),
+    ("A commit message\nis not this receipt.",
+     "a commit message is not the promotion receipt"),
+    ("resulting tracked-content commitment",
+     "the receipt binds the resulting tracked-content commitment"),
+)
+A_PROMOTION_DISQUALIFIED = (
+    "Survived", "NotActivated", "Refused", "Unbuildable", "TimedOut",
+    "InfrastructureFailure",
+)
+
+
+def promotion_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / "spec/promotion.rs"
+    if not path.is_file():
+        return ["missing spec/promotion.rs"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    contract_ids = declared_contract_ids(root)
+    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dec_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
+    enum_body = re.search(r"pub enum PromotionRequirement \{(.*?)\n\}", src, re.S)
+    variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
+    all_body = re.search(
+        r"pub const ALL: &'static \[PromotionRequirement\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\bPromotionRequirement::(\w+)", all_body.group(1)) \
+        if all_body else []
+    for missing in [v for v in variants if v not in inventory]:
+        out.append(f"PromotionRequirement::{missing} is omitted from "
+                   "PromotionRequirement::ALL; the denominator is conjunctive "
+                   "and complete")
+    for phantom in [v for v in inventory if v not in variants]:
+        out.append(f"PromotionRequirement::ALL names {phantom}, which the enum "
+                   "does not declare")
+    if re.search(r"\boptional\b|\bwaiver\b", src, re.I):
+        out.append("spec/promotion.rs speaks of optional or waiver; the "
+                   "denominator is conjunctive with no escape hatch")
+
+    def fn_arms(name):
+        body = re.search(
+            r"pub const fn " + name + r"\(self\)[^{]*\{\s*match self \{(.*?)\n        \}",
+            src, re.S)
+        return dict(re.findall(r"PromotionRequirement::(\w+)\s*=>\s*([^,]+),",
+                               body.group(1), re.S)) if body else {}
+
+    spellings = fn_arms("spelling")
+    owners = fn_arms("semantic_owner")
+    bases = fn_arms("admission_basis")
+    owner_text: dict[str, str] = {}
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        text = p.read_text(encoding="utf-8")
+        cid = frontmatter(text).get("contract_id")
+        if cid:
+            owner_text[cid] = A_GENERATED_BLOCK.sub("", text)
+    seen: set[str] = set()
+    rows: list[str] = []
+    for v in inventory:
+        s = spellings.get(v, "").strip().strip('"')
+        if not s.strip():
+            out.append(f"PromotionRequirement::{v} projects an empty spelling")
+            continue
+        if s in seen:
+            out.append(f"promotion-requirement spelling {s} is claimed twice")
+        seen.add(s)
+        owner = re.search(r'ContractId\("([^"]+)"\)', owners.get(v, ""))
+        oid = owner.group(1) if owner else ""
+        if oid not in contract_ids:
+            out.append(f"promotion requirement {s} cites owner {oid}, which no "
+                       "declared contract owns")
+        elif not re.search(r"\b" + re.escape(s) + r"\b", owner_text.get(oid, "")):
+            out.append(f"promotion requirement {s} cites owner {oid}, whose "
+                       "authoritative document does not author the spelling")
+        basis = re.search(r'GuaranteeRef::dec\("([^"]+)"\)', bases.get(v, ""))
+        bid = basis.group(1) if basis else ""
+        if bid not in dec_ids:
+            out.append(f"promotion requirement {s} cites admission basis {bid}, "
+                       "which no declared decision owns")
+        else:
+            row = re.search(
+                r'DecisionSpec \{ id: "' + re.escape(bid)
+                + r'",.*?subject: "([^"]*)", successor: "([^"]*)",'
+                + r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
+            fields = " ".join(g or "" for g in row.groups()) if row else ""
+            if not re.search(r"\b" + re.escape(s) + r"\b", fields):
+                out.append(f"promotion requirement {s} cites admission basis {bid}, "
+                           "whose forward-policy fields do not name the requirement")
+        rows.append(f"{s:<26} {oid:<14} {bid}")
+    # The family facts answer four different questions.
+    surface = re.search(
+        r"PROMOTION_POLICY_SURFACE: ProofPolicySurface = ProofPolicySurface::(\w+);", src)
+    if not surface or surface.group(1) != "CandidatePromotion":
+        out.append("the promotion policy surface is not "
+                   "ProofPolicySurface::CandidatePromotion")
+    change = re.search(
+        r'PROMOTION_CHANGE_BASIS: GuaranteeRef = GuaranteeRef::dec\("([^"]+)"\);', src)
+    if not change or change.group(1) != "DEC-074":
+        out.append("the promotion policy-change basis is not DEC-074; requirement "
+                   "admission and change classification are different laws")
+    egate = re.search(r"PROMOTION_ENFORCEMENT_GATE: GateId = GateId::(\w+);", src)
+    if not egate or egate.group(1) != "G3":
+        out.append("candidate-promotion policy is not enforced at G3")
+    rgate = re.search(r"PROMOTION_RELEASE_VISIBILITY_GATE: GateId = GateId::(\w+);", src)
+    if not rgate or rgate.group(1) != "G9":
+        out.append("promotion policy changes are not release-visibly qualified at G9")
+    # DEC-074 binds the typed change law without restating the inventory.
+    row74 = re.search(
+        r'DecisionSpec \{ id: "DEC-074",.*?successor: "([^"]*)"', dsrc)
+    f74 = row74.group(1) if row74 else ""
+    for token in ("PromotionRequirement", "ProofPolicySurface::CandidatePromotion",
+                  "spec/promotion.rs"):
+        if token not in f74:
+            out.append(f"DEC-074 does not name {token}; the change law must bind "
+                       "the typed boundary")
+    # docs/12: authored doctrine clauses plus the generated projection.
+    doc12 = (root / "docs/12_TESTPAK.md").read_text(encoding="utf-8")
+    authored12 = A_GENERATED_BLOCK.sub("", doc12)
+    flat12 = " ".join(authored12.split())
+    for fragment, label in A_PROMOTION_DOCTRINE:
+        if " ".join(fragment.split()) not in flat12:
+            out.append(f"docs/12 promotion doctrine no longer states: {label}")
+    disq = re.search(r"Not satisfied by:(.*?)(?:\n\n|`Auditable)", authored12, re.S)
+    disq_text = disq.group(1) if disq else ""
+    for token in A_PROMOTION_DISQUALIFIED:
+        if not re.search(r"\b" + token + r"\b", disq_text):
+            out.append(f"docs/12 no longer states that {token} cannot satisfy "
+                       "QualifiedHostileEvidence")
+    m = re.search(
+        r"<!-- PROMOTION-REQUIREMENTS:BEGIN generated from spec/promotion\.rs by "
+        r"bootstrap/project\.py; do not edit -->\n```text\n(.*?)\n```\n<!-- "
+        r"PROMOTION-REQUIREMENTS:END -->", doc12, re.S)
+    if not m:
+        out.append("docs/12 carries no generated PROMOTION-REQUIREMENTS block "
+                   "naming spec/promotion.rs as source")
+    else:
+        header = f"{'requirement':<26} {'owner':<14} admission basis"
+        family = [f"{'policy surface':<26} {surface.group(1) if surface else '?'}",
+                  f"{'policy-change basis':<26} {change.group(1) if change else '?'}",
+                  f"{'enforcement gate':<26} {egate.group(1) if egate else '?'}",
+                  f"{'release-visibility gate':<26} {rgate.group(1) if rgate else '?'}"]
+        expected = [header] + rows + family
+        listed = [line.rstrip() for line in m.group(1).splitlines() if line.strip()]
+        for i, want in enumerate(expected):
+            if i >= len(listed):
+                out.append(f"docs/12 PROMOTION-REQUIREMENTS omits row "
+                           f"{want.split()[0]}")
+            elif listed[i] != want.rstrip():
+                out.append(f"docs/12 PROMOTION-REQUIREMENTS row {i + 1} states "
+                           f"{' '.join(listed[i].split())}; the typed catalog states "
+                           f"{' '.join(want.split())} at that position")
+        for extra in listed[len(expected):]:
+            out.append(f"docs/12 PROMOTION-REQUIREMENTS lists {extra.split()[0]}, "
+                       "which the typed catalog does not project")
+    # docs/24 consumes without re-owning; the retired MutationLane owner path
+    # cannot return.
+    doc24 = A_GENERATED_BLOCK.sub(
+        "", (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8"))
+    if re.search(r"MutationLane`? in `?spec/architecture\.rs", doc24):
+        out.append("docs/24 points MutationLane at spec/architecture.rs; the "
+                   "typed owner moved to spec/mutation.rs and left no re-export")
+    if "QualifiedHostileEvidence" not in doc24 or "Rule qualification" not in doc24:
+        out.append("docs/24 no longer states that QualifiedHostileEvidence "
+                   "consumes its Rule qualification law")
+    if re.search(r"\bIndependentEvidenceRoute\b", doc24):
+        out.append("docs/24 restates the promotion-requirement inventory; it "
+                   "consumes Rule qualification without re-owning the denominator")
+    # docs/31 consumes the typed law and owns no second list.
+    doc31 = A_GENERATED_BLOCK.sub(
+        "", (root / "docs/31_FINAL_CONTRADICTION_AUDIT.md").read_text(encoding="utf-8"))
+    if "PromotionRequirement::ALL" not in doc31:
+        out.append("docs/31 no longer consumes spec/promotion.rs "
+                   "PromotionRequirement::ALL as the promotion condition")
+    for s in ("IndependentEvidenceRoute", "NamedProofTarget",
+              "QualifiedHostileEvidence", "AuditablePromotionReceipt"):
+        if re.search(r"\b" + s + r"\b", doc31):
+            out.append(f"docs/31 restates {s}; the audit consumer owns no second "
+                       "promotion inventory")
+    # The raw array stays dead, and the forbidden alternate owners neither
+    # declare nor re-export the type. dispositions.rs lawfully NAMES it in
+    # DEC-074's amended text; naming is not ownership.
+    for rel in sorted((root / "spec").glob("*.rs")):
+        rsrc = _uncomment(rel.read_text(encoding="utf-8"))
+        if rel.name in ("architecture.rs", "mutation.rs", "proof.rs",
+                        "reconciliation.rs") \
+                and re.search(r"\bPromotionRequirement\b", rsrc):
+            out.append(f"spec/{rel.name} speaks PromotionRequirement; the type has "
+                       "one owner module")
+        if re.search(r"pub const PROMOTION_REQUIREMENTS\b", rsrc) \
+                and rel.name != "promotion.rs":
+            out.append(f"spec/{rel.name} resurrects the raw PROMOTION_REQUIREMENTS "
+                       "array; the napkin is retired")
+    return out
 
 
 # --- Compiler-assumption kinds (5.5E3h) --------------------------------------

@@ -78,6 +78,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_mutation(root, &mut findings);
     check_corpus(root, &mut findings);
     check_compiler_assumptions(root, &mut findings);
+    check_promotion(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -534,6 +535,96 @@ fn check_commands(root: &Path, findings: &mut Vec<String>) {
     let mut testpak_seen = BTreeSet::new();
     for command in commands::TestPakCommand::ALL {
         check_entry("TestPakCommand", command.token(), command.authority(), &mut testpak_seen);
+    }
+}
+
+/// The typed promotion denominator executes its own law (5.5E3i): ALL is
+/// conjunctive and complete, spellings are unique and authored by the
+/// owner, every admission basis resolves AND names its requirement, the
+/// policy surface is CandidatePromotion, the change basis is DEC-074, and
+/// the gate bindings are G3 enforcement with G9 release visibility.
+fn check_promotion(root: &Path, findings: &mut Vec<String>) {
+    use spec::promotion::{
+        PromotionRequirement, PROMOTION_CHANGE_BASIS, PROMOTION_ENFORCEMENT_GATE,
+        PROMOTION_POLICY_SURFACE, PROMOTION_RELEASE_VISIBILITY_GATE,
+    };
+    let contract_ids = declared_contract_ids(root);
+    let owner_texts = contract_authored_texts(root);
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for requirement in PromotionRequirement::ALL {
+        let s = requirement.spelling();
+        if s.trim().is_empty() {
+            findings.push("a promotion requirement projects an empty spelling".to_string());
+        }
+        if !seen.insert(s) {
+            findings.push(format!("promotion-requirement spelling {s} is claimed twice"));
+        }
+        let owner = requirement.semantic_owner();
+        if !contract_ids.contains(owner.raw()) {
+            findings.push(format!(
+                "promotion requirement {s} cites owner {}, which no document declares",
+                owner.raw()
+            ));
+        } else if !owner_texts
+            .get(owner.raw())
+            .is_some_and(|text| authors_token(text, s))
+        {
+            findings.push(format!(
+                "promotion requirement {s} cites owner {}, whose authoritative \
+                 document does not author the spelling",
+                owner.raw()
+            ));
+        }
+        match requirement.admission_basis() {
+            guarantees::GuaranteeRef::Decision(decision) => {
+                match dispositions::DECISIONS.iter().find(|d| d.id == decision.raw()) {
+                    None => findings.push(format!(
+                        "promotion requirement {s} cites admission basis {}, which no \
+                         declared decision owns",
+                        decision.raw()
+                    )),
+                    Some(d) => {
+                        let named = authors_token(d.subject, s)
+                            || authors_token(d.successor, s)
+                            || d.replacement_contract.is_some_and(|rc| authors_token(rc, s));
+                        if !named {
+                            findings.push(format!(
+                                "promotion requirement {s} cites admission basis {}, \
+                                 whose forward-policy fields do not name the requirement",
+                                decision.raw()
+                            ));
+                        }
+                    }
+                }
+            }
+            other => findings.push(format!(
+                "promotion requirement {s} cites a non-decision admission basis {other:?}"
+            )),
+        }
+    }
+    if !matches!(
+        PROMOTION_POLICY_SURFACE,
+        architecture::ProofPolicySurface::CandidatePromotion
+    ) {
+        findings.push(
+            "the promotion policy surface is not ProofPolicySurface::CandidatePromotion"
+                .to_string(),
+        );
+    }
+    match PROMOTION_CHANGE_BASIS {
+        guarantees::GuaranteeRef::Decision(decision) if decision.raw() == "DEC-074" => {}
+        other => findings.push(format!(
+            "the promotion policy-change basis is {other:?}, not DEC-074; requirement \
+             admission and change classification are different laws"
+        )),
+    }
+    if PROMOTION_ENFORCEMENT_GATE != gates::GateId::G3 {
+        findings.push("candidate-promotion policy is not enforced at G3".to_string());
+    }
+    if PROMOTION_RELEASE_VISIBILITY_GATE != gates::GateId::G9 {
+        findings.push(
+            "promotion policy changes are not release-visibly qualified at G9".to_string(),
+        );
     }
 }
 

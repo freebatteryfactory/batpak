@@ -775,13 +775,6 @@ pub const CANDIDATE_FORBIDDEN_WRITE_ROOTS: &[&str] =
 
 /// No oracle, no promotion. No named obligation, no promotion. No killed mutant
 /// or equivalent hostile evidence, no promotion. No proof receipt, no trust.
-pub const PROMOTION_REQUIREMENTS: &[&str] = &[
-    "independent evidence or oracle identity",
-    "named invariant, guarantee, obligation, or documented proof gap",
-    "killed real semantic mutant or equivalent hostile evidence",
-    "auditable proof and promotion receipt",
-];
-
 pub const EDGES: &[EdgeSpec] = &[
     EdgeSpec { importer: PackageId::MacBat, importee: PackageId::MacBatCompiler, class: EdgeClass::Required, profile: "compile" },
     EdgeSpec { importer: PackageId::BatPak, importee: PackageId::MacBat, class: EdgeClass::Required, profile: "derive" },
@@ -870,6 +863,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/corpus.rs",
     "spec/identities.rs",
     "spec/mutation.rs",
+    "spec/promotion.rs",
     "rust-toolchain.toml",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",
