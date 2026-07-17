@@ -8,7 +8,7 @@ last_reconciled: 2026-07-13
 
 # BatQL Frontend Language Packet
 
-> **Freeze:** BatQL 1.0 is normative. Only defects proven by parser, type, compatibility, or conformance work may amend it through the signed language-change law.
+> **Freeze:** BatQL 1.0 is normative, identified by its `BatQlLanguageVersion`. Only defects proven by parser, type, compatibility, or conformance work may amend it through the signed language-change law. Each admitted operator carries a stable `OperatorId` in the typed operator authority (`spec/operators.rs`).
 
 
 ## Definition

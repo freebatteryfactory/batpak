@@ -251,6 +251,7 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
 /// variants are exhaustively classified.
 fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
     let contract_ids = declared_contract_ids(root);
+    let owner_texts = contract_authored_texts(root);
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut entries: Vec<(String, identities::CatalogEntry)> = Vec::new();
     for kind in identities::IdentityKind::ALL {
@@ -280,6 +281,16 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
             findings.push(format!(
                 "{label} names owner {}, which no document declares",
                 entry.owner.raw()
+            ));
+        } else if !owner_texts
+            .get(entry.owner.raw())
+            .is_some_and(|text| authors_token(text, entry.spelling))
+        {
+            findings.push(format!(
+                "{label} names owner {}, whose authoritative document does not \
+                 author {}",
+                entry.owner.raw(),
+                entry.spelling
             ));
         }
         if identities::EXCLUDED_CHRONOLOGY_AND_NAVIGATION.contains(&entry.spelling) {
@@ -326,6 +337,15 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
                         residue.term,
                         owner.raw()
                     ));
+                } else if !owner_texts
+                    .get(owner.raw())
+                    .is_some_and(|text| authors_token(text, residue.term))
+                {
+                    findings.push(format!(
+                        "{} is owned elsewhere by {}, which does not author the term",
+                        residue.term,
+                        owner.raw()
+                    ));
                 }
             }
             identities::IdentityTermDisposition::NotYetAdmittedBy(decision) => {
@@ -365,7 +385,26 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
                             d.disposition
                         ));
                     }
-                    Some(_) => {}
+                    // Decision coherence (5.5E3d2): the cited decision must
+                    // NAME the pending term in its forward-policy fields —
+                    // subject, successor, or replacement contract. A live
+                    // Lock decision about something else is an unrelated
+                    // authority, and stale_aliases retire vocabulary rather
+                    // than granting future admission.
+                    Some(d) => {
+                        let named = authors_token(d.subject, residue.term)
+                            || authors_token(d.successor, residue.term)
+                            || d.replacement_contract
+                                .is_some_and(|rc| authors_token(rc, residue.term));
+                        if !named {
+                            findings.push(format!(
+                                "{} is not yet admitted by {}, whose forward-policy \
+                                 fields do not name the term",
+                                residue.term,
+                                decision.raw()
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -703,6 +742,67 @@ fn declared_contract_ids(root: &Path) -> BTreeSet<String> {
         }
     }
     contract_ids
+}
+
+/// contract_id -> the authored text of its authoritative document, with
+/// generated projection blocks removed (5.5E3d2). The owner must AUTHOR the
+/// term it claims, and a generated block can never notarize its own owner
+/// claim.
+fn contract_authored_texts(root: &Path) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for relative in architecture::REQUIRED_DOCS {
+        if !relative.ends_with(".md") {
+            continue;
+        }
+        if let Ok(text) = fs::read_to_string(root.join(relative)) {
+            let id = text.lines().take(16).find_map(|line| {
+                line.strip_prefix("contract_id:").map(|s| s.trim().to_string())
+            });
+            if let Some(id) = id {
+                out.insert(id, strip_generated_blocks(&text));
+            }
+        }
+    }
+    out
+}
+
+/// Remove `<!-- NAME:BEGIN ... --> ... <!-- NAME:END -->` regions, which are
+/// line-delimited in every authoritative document.
+fn strip_generated_blocks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut skipping = false;
+    for line in text.lines() {
+        if !skipping && line.starts_with("<!-- ") && line.contains(":BEGIN") {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            if line.starts_with("<!-- ") && line.contains(":END -->") {
+                skipping = false;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Exact token occurrence: the neighbors of a match may not be identifier
+/// characters, so prose "id" and longer identifiers mint nothing.
+fn authors_token(text: &str, term: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    while let Some(pos) = text[start..].find(term) {
+        let i = start + pos;
+        let j = i + term.len();
+        let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        if (i == 0 || !word(bytes[i - 1])) && (j >= bytes.len() || !word(bytes[j])) {
+            return true;
+        }
+        start = i + 1;
+    }
+    false
 }
 
 fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {

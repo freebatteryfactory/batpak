@@ -173,6 +173,10 @@ select runnable process
 → advance checkpoint
 ```
 
+Each running process carries its `ProcessInstanceId`, and every appended
+batch is committed under its `EffectBatchDigest` — the runtime never appends
+effects it cannot name and bind.
+
 ## Effect algebra
 
 Effects are typed intents. Runtime owns sequencing, declaration subset checks, idempotency, and checkpoint coupling. Bvisor mediates host-port attempts. BatPak stores intent, attempt, completion, failure, or outcome-unknown evidence.

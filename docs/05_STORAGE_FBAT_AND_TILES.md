@@ -156,7 +156,7 @@ A missing or corrupt mutable authority is a typed refusal, not an empty state.
 
 ## Store and authority generation
 
-Authorities and caches bind StoreId, AuthorityGeneration, source frontier, source commitment, and format version.
+Authorities and caches bind StoreId, AuthorityGeneration, source frontier, source commitment, and format version. Each product is itself identified: a `MaterializationId` names one materialization, and an `AuthorityImageId` names one published authority image.
 
 A foreign or stale derived cache is discarded and rebuilt. A foreign or damaged authority is refused unless an explicit restore transition authorizes replacement.
 

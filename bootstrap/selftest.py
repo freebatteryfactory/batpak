@@ -3891,6 +3891,48 @@ def test_identity_catalogs(audit) -> list[str]:
             "by bootstrap/project.py; do not edit -->")],
           "docs/16 carries no generated IDENTITY-CATALOG block naming "
           "spec/identities.rs as source")
+    # Owner coherence (5.5E3d2): the owner must AUTHOR the term. Each owner
+    # mutation moves the generated docs/16 row in lockstep, so the hostile
+    # fails for owner incoherence, never for a stale projection.
+    probe("catalog_owner_must_author_the_term",
+          [(ID, 'entry!("EventId", "BP-STORAGE-TILES-1")',
+            'entry!("EventId", "BP-SYNCBAT-1")'),
+           (DOC16, f"{'EventId':<30} BP-STORAGE-TILES-1",
+            f"{'EventId':<30} BP-SYNCBAT-1")],
+          "IdentityKind entry EventId names owner BP-SYNCBAT-1, whose "
+          "authoritative document does not author the term")
+    probe("owned_elsewhere_owner_must_author_the_term",
+          [(ID, 'OwnedElsewhere(ContractId("BP-GATES-1"))',
+            'OwnedElsewhere(ContractId("BP-NETBAT-1"))'),
+           (DOC16, f"{'GateId':<30} {'owned elsewhere':<22} BP-GATES-1",
+            f"{'GateId':<30} {'owned elsewhere':<22} BP-NETBAT-1")],
+          "residue term GateId is owned elsewhere by BP-NETBAT-1, "
+          "which does not author the term")
+    # DEC-058 is live and Lock, so it passes existence and the disposition
+    # predicate — but it is about the release seal and says nothing about
+    # CompressionId. A live but unrelated authority is refused by name.
+    probe("not_yet_admitted_decision_must_name_the_term",
+          [(ID, 'NotYetAdmittedBy(DecisionId("DEC-063"))',
+            'NotYetAdmittedBy(DecisionId("DEC-058"))'),
+           (DOC16, f"{'CompressionId':<30} {'not yet admitted by':<22} DEC-063",
+            f"{'CompressionId':<30} {'not yet admitted by':<22} DEC-058")],
+          "residue term CompressionId is not yet admitted by DEC-058, whose "
+          "forward-policy fields do not name the term")
+    # GREEN fixture: a term may lawfully appear in many documents while its
+    # canonical owner document also authors it — breadth of adoption is not
+    # an ownership dispute.
+    tmp = gate_sandbox([
+        ("docs/14_RECEIPTS_AND_EXPLANATION.md",
+         "It is structured evidence, not a debug log.",
+         "It is structured evidence, not a debug log. A replay receipt names "
+         "the EventId range it covered.")])
+    try:
+        got = audit.identity_catalog_findings(tmp)
+        if got:
+            fail(f"term_in_many_documents_with_authoring_owner_is_lawful "
+                 f"(refused: {got!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     # GREEN fixture: the counts are observed output, never acceptance
     # thresholds. The SAME growth as the brochure hostile above, plus a real
     # authored adopter sentence under the live owner contract (docs/05,

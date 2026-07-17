@@ -112,7 +112,10 @@ A release receipt binds every field of the typed inventory
 projection of it. `KernelQualificationSet` is mandatory even when empty: an
 empty set states "no kernels admitted" (KernelImplementationId +
 KernelQualificationReceiptId per admitted kernel), it never disappears from
-the schema.
+the schema. An admitted row binds the `KernelContractId` it implements, the
+`QualifiedKernelId` it earned, the `KernelInterfaceHash` of the interface it
+was qualified against, and the `KernelManifestVersion` of the manifest that
+carried it.
 
 <!-- RELEASE-SEAL:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
 ```text

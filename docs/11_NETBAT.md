@@ -10,7 +10,7 @@ last_reconciled: 2026-07-13
 
 ## Identity
 
-NetBat is the bounded transport layer for declared BatPak world entrypoints. It is thin by design.
+NetBat is the bounded transport layer for declared BatPak world entrypoints. It is thin by design. Its wire contract evolves under its own `NetBatProtocolVersion`; negotiating a transport version never upgrades any image or ISA.
 
 NetBat may know:
 

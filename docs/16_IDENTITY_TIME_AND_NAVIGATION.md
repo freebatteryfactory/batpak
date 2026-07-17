@@ -18,6 +18,8 @@ BatPak owns branded IDs, domain separation, text/wire/display law, layout versio
 
 BatPak never invents its own entropy primitive.
 
+Branded means the owning contract rides the type: a `ContractId` names one declared contract, and no other identity substitutes for it.
+
 ## UUID succession
 
 Externally interoperable IDs may preserve UUIDv7-compatible bits under a named `IdLayout`. The UUID crate remains a differential oracle until version/variant bits, ordering, same-time sequencing, regression, collision budget, native/browser parity, and language-neutral goldens close.
@@ -99,7 +101,7 @@ CommitPoint comparison, chronology, or frontier law.
 ContentDigest                  BP-STORAGE-TILES-1
 Commitment                     BP-IDENTITY-TIME-NAV-1
 EventCommitment                BP-STORAGE-TILES-1
-CommitmentDigest               BP-STORAGE-TILES-1
+CommitmentDigest               BP-CRYPTO-SECRET-1
 WorldInterfaceHash             BP-WORLD-PORTS-1
 KernelInterfaceHash            BP-PUBLIC-API-CI-RELEASE-1
 CapabilityGrantHash            BP-BVISOR-1
@@ -132,7 +134,7 @@ LayoutVersion                  BP-SYSTEM-MODEL-1
 
 Distinct version types do not typecheck when substituted for one another. Canonical bytes carry their own owning format/version identity.
 
-`ProgramImageId` commits to the canonical ProgramImage bytes, including its version. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.
+`ProgramImageId` commits to the canonical ProgramImage bytes, including its `ProgramImageVersion`. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.
 
 `spec/identities.rs` owns WHICH version identities exist and their owner mapping; this document owns their semantic distinctions and the identity commitment laws above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
@@ -293,7 +295,7 @@ observed_wall_time_is_not_promoted_to_hlc
 
 ## TurnId
 
-TurnId commits to ProcessInstanceId, ProcessContract version, and exact input start/end frontiers. It is stable across replay of the same logical turn and seeds output/effect idempotency.
+TurnId commits to ProcessInstanceId, ProcessContract version, and exact input start/end frontiers. It is stable across replay of the same logical turn and seeds output/effect idempotency. The `LogicalOperationId` names the logical operation a turn executes: retries share it while every physical attempt stays distinct.
 
 ## AttemptId
 

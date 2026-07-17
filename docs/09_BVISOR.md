@@ -50,7 +50,7 @@ The exact ordered stages are part of the admitted plan identity. Validation neve
 
 ## Capability table
 
-Capabilities are typed, rights-bounded, resource-bounded, WorldInstance-scoped, and generation-scoped. A path or slot number alone grants nothing.
+Capabilities are typed, rights-bounded, resource-bounded, WorldInstance-scoped, and generation-scoped. A path or slot number alone grants nothing. Each grant is committed under its `CapabilityGrantHash`, so an attempt report can prove which grant authorized it without restating the grant.
 
 PakVM receives opaque capability slots. Only Bvisor resolves them into typed PortRequests.
 

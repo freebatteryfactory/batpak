@@ -10,7 +10,7 @@ last_reconciled: 2026-07-13
 
 ## Receipt law
 
-A receipt records what was admitted, attempted, completed, denied, deferred, persisted, replayed, verified, projected, imported, exported, or inspected. It is structured evidence, not a debug log.
+A receipt records what was admitted, attempted, completed, denied, deferred, persisted, replayed, verified, projected, imported, exported, or inspected. It is structured evidence, not a debug log. Every receipt states the `ReceiptSchemaVersion` it was written under; a reader never guesses a receipt's shape.
 
 ## Receipt families
 

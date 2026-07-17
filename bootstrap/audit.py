@@ -3982,8 +3982,27 @@ def identity_catalog_findings(root: Path) -> list[str]:
         return ["missing spec/identities.rs"]
     src = _uncomment(path.read_text(encoding="utf-8"))
     contract_ids = declared_contract_ids(root)
-    dec_disposition = {m[0]: m[3] for m in G_DEC_ROW.findall(
-        (root / "spec/dispositions.rs").read_text(encoding="utf-8"))}
+    # Owner coherence (5.5E3d2): the owner must AUTHOR the term. Map each
+    # declared contract to its authoritative document's authored text —
+    # generated blocks removed, so a projection can never notarize its own
+    # owner claim. An occurrence in some other live contract's document does
+    # not satisfy the claim: a live building cannot sign a passport merely
+    # because the applicant exists somewhere else in town.
+    owner_text: dict[str, str] = {}
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        text = p.read_text(encoding="utf-8")
+        cid = frontmatter(text).get("contract_id")
+        if cid:
+            owner_text[cid] = A_GENERATED_BLOCK.sub("", text)
+
+    def owner_authors(cid: str, term: str) -> bool:
+        return bool(re.search(r"\b" + re.escape(term) + r"\b", owner_text.get(cid, "")))
+
+    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dec_disposition = {m[0]: m[3] for m in G_DEC_ROW.findall(dsrc)}
     # Spellings with existing typed spec owners are referenced, never
     # re-admitted: a duplicate variant is a wrapper passport.
     owned_body = re.search(
@@ -4022,6 +4041,9 @@ def identity_catalog_findings(root: Path) -> list[str]:
             if owner not in contract_ids:
                 out.append(f"{kind} entry {spelling} names owner {owner}, "
                            "which no declared contract owns")
+            elif not owner_authors(owner, spelling):
+                out.append(f"{kind} entry {spelling} names owner {owner}, "
+                           "whose authoritative document does not author the term")
             if spelling in existing_owned:
                 out.append(f"{kind} entry {spelling} duplicates a spelling that "
                            "already has a typed spec owner; the catalog may "
@@ -4063,6 +4085,9 @@ def identity_catalog_findings(root: Path) -> list[str]:
             if ref not in contract_ids:
                 out.append(f"residue term {term} is owned elsewhere by {ref}, "
                            "which no declared contract owns")
+            elif not owner_authors(ref, term):
+                out.append(f"residue term {term} is owned elsewhere by {ref}, "
+                           "which does not author the term")
         elif variant == "NotYetAdmittedBy":
             disp = dec_disposition.get(ref)
             if disp is None:
@@ -4086,6 +4111,19 @@ def identity_catalog_findings(root: Path) -> list[str]:
                            f"whose {disp} disposition is not a standing "
                            "future-entry policy; only Lock and Defer own "
                            "pending applications")
+            else:
+                # Decision coherence (5.5E3d2): the cited decision must NAME
+                # the pending term in its forward-policy fields — subject,
+                # successor, or replacement contract. stale_aliases retire
+                # vocabulary and carry no future admission authority.
+                row = re.search(
+                    r'DecisionSpec \{ id: "' + re.escape(ref)
+                    + r'",.*?subject: "([^"]*)", successor: "([^"]*)",'
+                    + r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
+                fields = " ".join(g or "" for g in row.groups()) if row else ""
+                if not re.search(r"\b" + re.escape(term) + r"\b", fields):
+                    out.append(f"residue term {term} is not yet admitted by {ref}, "
+                               "whose forward-policy fields do not name the term")
         else:
             out.append(f"residue term {term} carries unknown disposition {variant}")
     # docs/16 carries five generated blocks projecting ordered entries AND

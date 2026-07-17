@@ -278,7 +278,7 @@ impl BindingKind {
             BindingKind::ContentDigest => entry!("ContentDigest", "BP-STORAGE-TILES-1"),
             BindingKind::Commitment => entry!("Commitment", "BP-IDENTITY-TIME-NAV-1"),
             BindingKind::EventCommitment => entry!("EventCommitment", "BP-STORAGE-TILES-1"),
-            BindingKind::CommitmentDigest => entry!("CommitmentDigest", "BP-STORAGE-TILES-1"),
+            BindingKind::CommitmentDigest => entry!("CommitmentDigest", "BP-CRYPTO-SECRET-1"),
             BindingKind::WorldInterfaceHash => entry!("WorldInterfaceHash", "BP-WORLD-PORTS-1"),
             BindingKind::KernelInterfaceHash => {
                 entry!("KernelInterfaceHash", "BP-PUBLIC-API-CI-RELEASE-1")
