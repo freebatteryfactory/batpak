@@ -74,6 +74,8 @@ pub struct EventFrameV2 {
 }
 ```
 
+FrameVersion versions the EventFrame envelope. FbatFormatVersion versions the surrounding .fbat container. BatTaggedRecordVersion versions a tagged payload record inside EncodedPayload. A coordinated migration may move all three in one release while preserving three independent version identities.
+
 Exact bytes are selected at Gate 2 and frozen with language-neutral goldens. The identity separation is already law.
 
 ## Payload codecs

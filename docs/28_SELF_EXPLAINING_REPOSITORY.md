@@ -166,5 +166,17 @@ An embedded block inherits no authority from its containing document. A standalo
 | QualificationProfiles | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | QUALIFICATION-PROFILES | bootstrap/project.py |
 | BundleInventory | embedded-block | spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs | DELIVERY_NOTES.md | BUNDLE-INVENTORY | bootstrap/project.py |
 | Tier0ReceiptDenominator | embedded-block | bootstrap/selftest.py | DELIVERY_NOTES.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
+| DecisionLedger | embedded-block | spec/dispositions.rs | docs/30_DECISION_AND_REJECTION_LEDGER.md | DECISION-LEDGER | bootstrap/project.py |
+| LegacyInvariantCoverage | embedded-block | spec/legacy_invariant_coverage.rs | docs/34_LEGACY_INVARIANT_COVERAGE.md | LEGACY-INVARIANT-COVERAGE | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
+
+## Exact mirrors and semantic owners
+
+Exact mirrors: when a typed owner already contains every field in a documentary table, the table is generated. An equivalence checker babysitting two editable copies is not convergence.
+
+Complementary semantic ownership: an authored document may remain the canonical owner of meaning that does not exist in the typed row. A generator may not fill that missing meaning from conventions, neighbouring rows, or Python defaults.
+
+Subset projections: a cross-document subset list is a generated view only after a typed relation says which rows belong to which target. Parsing prose headings is not an authority relation.
+
+Historical narrative: historical counts and migration explanations may remain authored when they are explicitly historical, bind a frozen source, and cannot be read as the current inventory.

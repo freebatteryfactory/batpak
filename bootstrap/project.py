@@ -1743,6 +1743,92 @@ def render_tier0_receipts(root: Path) -> str:
     return "\n".join(lines)
 
 
+# --- Exact-ledger projections (5.5E4c) ---------------------------------------
+# docs/30 and docs/34 are exact mirrors whose complete rows already live in
+# typed owners; both become generated views. No Python spelling, meaning,
+# count, or ordering map — unknown variants refuse generation.
+_FULL_DEC_ROW = re.compile(
+    r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::(\w+), '
+    r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+), '
+    r'subject: "((?:[^"\\]|\\.)*)", successor: "((?:[^"\\]|\\.)*)"')
+_COVERAGE_FULL_ROW = re.compile(
+    r'LegacyInvariantCoverage \{ legacy_id: "([^"]+)", '
+    r'disposition: CoverageDisposition::(\w+), successor: "((?:[^"\\]|\\.)*)", '
+    r'rationale: "((?:[^"\\]|\\.)*)" \}')
+
+
+def _fn_str_arms(source: str, type_name: str, fn_name: str) -> dict[str, str]:
+    impl = re.search(r"impl " + type_name + r" \{(.*?)\n\}", source, re.S)
+    body = impl.group(1) if impl else ""
+    fn = re.search(
+        r"pub const fn " + fn_name + r"\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
+        body, re.S)
+    return dict(re.findall(
+        r"\b" + type_name + r'::(\w+) => \{?\s*"((?:[^"\\]|\\.)*)"', fn.group(1))) \
+        if fn else {}
+
+
+def _all_variants(source: str, type_name: str) -> list[str]:
+    body = re.search(
+        r"pub const ALL: &'static \[" + type_name + r"\] = &\[(.*?)\];", source, re.S)
+    return re.findall(r"\b" + type_name + r"::(\w+)", body.group(1)) if body else []
+
+
+def render_decision_ledger(root: Path) -> str:
+    src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    tags = _fn_str_arms(src, "Disposition", "spelling")
+    meanings = _fn_str_arms(src, "Disposition", "meaning")
+    classes = _fn_str_arms(src, "DecisionClass", "spelling")
+    order = _all_variants(src, "Disposition")
+    if not order:
+        raise Unadmitted("spec/dispositions.rs declares no Disposition::ALL")
+    lines = ["| Tag | Meaning |", "| --- | --- |"]
+    for variant in order:
+        if variant not in tags or variant not in meanings:
+            raise Unadmitted(f"Disposition::{variant} lacks a spelling or meaning arm")
+        lines.append(f"| {tags[variant]} | {meanings[variant]} |")
+    lines += ["", "| ID | Tag | Class | Gates | Subject | Final ruling |",
+              "| --- | --- | --- | --- | --- | --- |"]
+    rows = _FULL_DEC_ROW.findall(src)
+    if not rows:
+        raise Unadmitted("spec/dispositions.rs declares no DecisionSpec rows")
+    for dec_id, cls, gates, disp, subject, successor in rows:
+        if disp not in tags or cls not in classes:
+            raise Unadmitted(f"{dec_id} carries an unadmitted class or disposition")
+        lines.append(f"| {dec_id} | {tags[disp]} | {classes[cls]} | "
+                     f"{gate_tokens(gates, root)} | {subject} | {successor} |")
+    return "\n".join(lines)
+
+
+def render_legacy_coverage(root: Path) -> str:
+    src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+    tags = _fn_str_arms(src, "CoverageDisposition", "spelling")
+    meanings = _fn_str_arms(src, "CoverageDisposition", "meaning")
+    order = _all_variants(src, "CoverageDisposition")
+    if not order:
+        raise Unadmitted("spec/legacy_invariant_coverage.rs declares no CoverageDisposition::ALL")
+    manifest = re.findall(r'"(INV-[^"]+)"', re.search(
+        r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", src, re.S).group(1))
+    rows = _COVERAGE_FULL_ROW.findall(src)
+    if {r[0] for r in rows} != set(manifest) or len(rows) != len(manifest):
+        raise Unadmitted("COVERAGE does not equal SOURCE_INVARIANT_IDS set parity")
+    lines = ["| Disposition | Meaning |", "| --- | --- |"]
+    for variant in order:
+        if variant not in tags or variant not in meanings:
+            raise Unadmitted(f"CoverageDisposition::{variant} lacks a spelling or meaning arm")
+        lines.append(f"| {tags[variant]} | {meanings[variant]} |")
+    lines += ["", f"The source declaration denominator is the {len(manifest)}-declaration "
+              "`SOURCE_INVARIANT_IDS` manifest, in exact set parity with the coverage "
+              "rows below.",
+              "", "| Legacy invariant | Disposition | Clean successor | Rationale |",
+              "| --- | --- | --- | --- |"]
+    for inv, disp, successor, rationale in rows:
+        if disp not in tags:
+            raise Unadmitted(f"coverage row {inv} carries unadmitted disposition {disp}")
+        lines.append(f"| `{inv}` | {tags[disp]} | `{successor}` | {rationale} |")
+    return "\n".join(lines)
+
+
 _VIEW_SURFACE_DISPLAY = {"EmbeddedBlock": "embedded-block",
                          "StandaloneFile": "standalone-file",
                          "CorpusFrontmatter": "corpus-frontmatter"}
@@ -1808,6 +1894,8 @@ VIEW_RENDERERS = {
     "QualificationProfiles": render_qualification_profiles,
     "BundleInventory": render_bundle_inventory,
     "Tier0ReceiptDenominator": render_tier0_receipts,
+    "DecisionLedger": render_decision_ledger,
+    "LegacyInvariantCoverage": render_legacy_coverage,
     "GeneratedViewRegistry": render_generated_view_registry,
 }
 

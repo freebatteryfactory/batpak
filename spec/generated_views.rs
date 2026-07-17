@@ -101,6 +101,8 @@ pub enum GeneratedView {
     QualificationProfiles,
     BundleInventory,
     Tier0ReceiptDenominator,
+    DecisionLedger,
+    LegacyInvariantCoverage,
     GeneratedViewRegistry,
 }
 
@@ -146,6 +148,8 @@ impl GeneratedView {
         GeneratedView::QualificationProfiles,
         GeneratedView::BundleInventory,
         GeneratedView::Tier0ReceiptDenominator,
+        GeneratedView::DecisionLedger,
+        GeneratedView::LegacyInvariantCoverage,
         GeneratedView::GeneratedViewRegistry,
     ];
 
@@ -191,6 +195,8 @@ impl GeneratedView {
             GeneratedView::QualificationProfiles => "QualificationProfiles",
             GeneratedView::BundleInventory => "BundleInventory",
             GeneratedView::Tier0ReceiptDenominator => "Tier0ReceiptDenominator",
+            GeneratedView::DecisionLedger => "DecisionLedger",
+            GeneratedView::LegacyInvariantCoverage => "LegacyInvariantCoverage",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
         }
     }
@@ -499,6 +505,20 @@ impl GeneratedView {
                 target: GeneratedViewTarget::Static(&["DELIVERY_NOTES.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("TIER0-RECEIPT-DENOMINATOR"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::DecisionLedger => GeneratedViewSpec {
+                authority_sources: &["spec/dispositions.rs"],
+                target: GeneratedViewTarget::Static(&["docs/30_DECISION_AND_REJECTION_LEDGER.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("DECISION-LEDGER"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::LegacyInvariantCoverage => GeneratedViewSpec {
+                authority_sources: &["spec/legacy_invariant_coverage.rs"],
+                target: GeneratedViewTarget::Static(&["docs/34_LEGACY_INVARIANT_COVERAGE.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("LEGACY-INVARIANT-COVERAGE"),
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {

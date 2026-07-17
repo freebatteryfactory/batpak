@@ -16,9 +16,10 @@ These items are intentionally unresolved numeric or physical constants. Their se
 ## G2 storage constants
 
 ```text
-EventFrameV2 field IDs and physical order
-frame/header magic and version numbers
-BatTaggedRecordV1 tags and length encoding
+FrameVersion values and EventFrame envelope field IDs/order
+FbatFormatVersion values and .fbat container magic/header
+BatTaggedRecordVersion values, field tags, and length encoding
+LayoutVersion values for selected physical layouts
 maximum frame/payload/schema bounds
 sidecar/authority format version IDs
 store metadata and generation encoding

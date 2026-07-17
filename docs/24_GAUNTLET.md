@@ -881,11 +881,15 @@ program_image_id_is_independent_of_compiler_provenance
       carried as receipt evidence and never enters the id computation
 
 distinct_version_types_do_not_typecheck_when_substituted
-    The ten declared version identities are distinct types. No generic Version
-    crosses a subsystem boundary, and substituting one identity where another is
-    required is rejected by the type system rather than by a runtime range check.
-    expects: substituting any declared version identity for another fails to
-      typecheck at the specification surface
+    Every member of spec/identities.rs VersionIdentityKind::ALL denotes a
+    distinct version type. No generic Version crosses a subsystem boundary, and
+    substituting one identity where another is required is rejected by the type
+    system rather than by a runtime range check. The boundary includes the
+    three-way EventFrame/container/payload split (FrameVersion versus
+    FbatFormatVersion versus BatTaggedRecordVersion) and the
+    SchemaVersion/LayoutVersion split.
+    expects: substituting any member of VersionIdentityKind::ALL for another
+      fails to typecheck at the specification surface
     disposition: a compile-time type error, never a runtime comparison of two
       version numbers that happen to share a representation
 

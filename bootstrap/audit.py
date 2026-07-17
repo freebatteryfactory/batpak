@@ -4092,6 +4092,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(contract_kind_findings(root))
     findings.extend(generated_view_findings(root))
     findings.extend(inventory_mirror_findings(root))
+    findings.extend(exact_ledger_findings(root))
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
@@ -4788,6 +4789,253 @@ def inventory_mirror_findings(root: Path) -> list[str]:
     for rel, name, fragment in A_E4B_DOCTRINE:
         if fragment not in stripped[rel]:
             out.append(f"{rel}: converged inventory doctrine absent ({name})")
+    return out
+
+
+# --- Version boundaries and exact-ledger mirrors (5.5E4c) --------------------
+# Part one: the accepted version-identity vocabulary converges with DEC-064
+# and every documentary consumer — the inventory derives from
+# VersionIdentityKind::ALL, never a hardcoded count. Part two/three: docs/30
+# and docs/34 are exact mirrors whose complete rows live in typed owners; the
+# auditor reconstructs both generated bodies independently and refuses the
+# authored mirrors' return. Part four: the docs/28 convergence doctrine.
+A_DEC_FULL_ROW = re.compile(
+    r'DecisionSpec \{ id: "(DEC-\d+)", class: DecisionClass::(\w+), '
+    r'gates: &\[([^\]]*)\], disposition: Disposition::(\w+), '
+    r'subject: "((?:[^"\\]|\\.)*)", successor: "((?:[^"\\]|\\.)*)"')
+A_COV_FULL_ROW = re.compile(
+    r'LegacyInvariantCoverage \{ legacy_id: "([^"]+)", '
+    r'disposition: CoverageDisposition::(\w+), successor: "((?:[^"\\]|\\.)*)", '
+    r'rationale: "((?:[^"\\]|\\.)*)" \}')
+A_VERSION_ALIAS_BANS = ("EventFrameVersion", "FbatFrameVersion")
+A_VERSION_DOCTRINE = (
+    ("docs/16_IDENTITY_TIME_AND_NAVIGATION.md", "frame-version-reservation",
+     "FrameVersion is reserved for the EventFrame envelope"),
+    ("docs/16_IDENTITY_TIME_AND_NAVIGATION.md", "shared-representation-fence",
+     "Sharing an integer representation or a migration does not permit"),
+    ("docs/05_STORAGE_FBAT_AND_TILES.md", "three-way-envelope-split",
+     "FrameVersion versions the EventFrame envelope. FbatFormatVersion versions "
+     "the surrounding .fbat container. BatTaggedRecordVersion versions a tagged "
+     "payload record inside EncodedPayload"),
+    ("docs/05_STORAGE_FBAT_AND_TILES.md", "coordinated-migration",
+     "preserving three independent version identities"),
+    ("docs/15_SCHEMA_CODEC_AND_MIGRATION.md", "payload-record-boundary",
+     "BatTaggedRecordVersion versions the tagged payload-record envelope and "
+     "codec. It does not version EventFrame or the .fbat container"),
+    ("docs/02_SYSTEM_MODEL.md", "layout-schema-split",
+     "LayoutVersion versions physical organization under LayoutId. SchemaVersion "
+     "versions schema meaning. Neither substitutes for the other"),
+    ("docs/32_IMPLEMENTATION_CONSTANTS.md", "frame-version-constants",
+     "FrameVersion values and EventFrame envelope field IDs/order"),
+    ("docs/32_IMPLEMENTATION_CONSTANTS.md", "container-constants",
+     "FbatFormatVersion values and .fbat container magic/header"),
+    ("docs/32_IMPLEMENTATION_CONSTANTS.md", "payload-record-constants",
+     "BatTaggedRecordVersion values, field tags, and length encoding"),
+    ("docs/32_IMPLEMENTATION_CONSTANTS.md", "layout-constants",
+     "LayoutVersion values for selected physical layouts"),
+    ("docs/24_GAUNTLET.md", "version-witness-consumes-all",
+     "Every member of spec/identities.rs VersionIdentityKind::ALL denotes a "
+     "distinct version type"),
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "exact-mirror-clause",
+     "An equivalence checker babysitting two editable copies is not convergence"),
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "no-python-prosthetics-clause",
+     "from conventions, neighbouring rows, or Python defaults"),
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "subset-relation-clause",
+     "Parsing prose headings is not an authority relation"),
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "historical-narrative-clause",
+     "cannot be read as the current inventory"),
+    ("docs/34_LEGACY_INVARIANT_COVERAGE.md", "historical-framing",
+     "retained as secondary historical evidence, not a competing denominator"),
+)
+
+
+def _a_str_arms(source: str, type_name: str, fn_name: str) -> dict[str, str]:
+    impl = re.search(r"impl " + type_name + r" \{(.*?)\n\}", source, re.S)
+    fn = re.search(
+        r"pub const fn " + fn_name + r"\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
+        impl.group(1), re.S) if impl else None
+    return dict(re.findall(
+        r"\b" + type_name + r'::(\w+) => \{?\s*"((?:[^"\\]|\\.)*)"', fn.group(1))) \
+        if fn else {}
+
+
+def _a_all_of(source: str, type_name: str) -> list[str]:
+    body = re.search(
+        r"pub const ALL: &'static \[" + type_name + r"\] = &\[(.*?)\];", source, re.S)
+    return re.findall(r"\b" + type_name + r"::(\w+)", body.group(1)) if body else []
+
+
+def _a_enum_variants_of(source: str, type_name: str) -> list[str]:
+    body = re.search(r"pub enum " + type_name + r" \{(.*?)\n\}", source, re.S)
+    return re.findall(r"\n    (\w+),", _uncomment(body.group(1))) if body else []
+
+
+def _a_spelling_laws(out, source, src_label, type_name, spelling_fn,
+                     meaning_fn=None):
+    variants = _a_enum_variants_of(source, type_name)
+    inventory = _a_all_of(source, type_name)
+    for missing in [v for v in variants if v not in inventory]:
+        out.append(f"{src_label}: {type_name}::{missing} is declared but missing "
+                   f"from {type_name}::ALL")
+    for phantom in [v for v in inventory if v not in variants]:
+        out.append(f"{src_label}: {type_name}::ALL names {phantom}, which the "
+                   "enum does not declare")
+    for fn_name, kind in ((spelling_fn, "spelling"),) + (
+            ((meaning_fn, "meaning"),) if meaning_fn else ()):
+        arms = _a_str_arms(source, type_name, fn_name)
+        seen: dict[str, str] = {}
+        for variant in inventory:
+            value = arms.get(variant)
+            if not value:
+                out.append(f"{src_label}: {type_name}::{variant} declares no or an "
+                           f"empty {kind}")
+                continue
+            if kind == "spelling" and value in seen:
+                out.append(f"{src_label}: duplicate {type_name} spelling {value!r} "
+                           f"({seen[value]} and {variant})")
+            seen[value] = variant
+    return inventory
+
+
+def exact_ledger_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    # Version-identity convergence.
+    ident_src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    version_all = _a_all_of(ident_src, "VersionIdentityKind")
+    version_pairs = re.findall(
+        r'\bVersionIdentityKind::(\w+) => \{?\s*entry!\(\s*"([^"]+)",\s*"([^"]+)"\s*\)',
+        ident_src)
+    version_arms = {v: s for v, s, _o in version_pairs}
+    version_owner = {v: o for v, _s, o in version_pairs}
+    spellings = [version_arms[v] for v in version_all if v in version_arms]
+    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    row = re.search(
+        r'DecisionSpec \{ id: "DEC-064",.*?subject: "([^"]*)", successor: "([^"]*)",'
+        r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
+    fields = " ".join(g or "" for g in row.groups()) if row else ""
+    if not row:
+        out.append("DEC-064 is missing from the decision ledger")
+    for spelling in spellings:
+        if not re.search(r"\b" + re.escape(spelling) + r"\b", fields):
+            out.append(f"DEC-064 forward-policy fields do not name {spelling}; "
+                       "the version-separation law names its complete inventory")
+    named = set(re.findall(r"\b([A-Z][A-Za-z]*Version)\b", fields)) - {"Version"}
+    for phantom in sorted(named - set(spellings)):
+        out.append(f"DEC-064 names {phantom}, which VersionIdentityKind::ALL "
+                   "does not declare (phantom version identity)")
+    frame_owner = version_owner.get("Frame")
+    if frame_owner != "BP-STORAGE-TILES-1":
+        out.append(f"FrameVersion is owned by {frame_owner!r}, not BP-STORAGE-TILES-1")
+    doc05 = (root / "docs/05_STORAGE_FBAT_AND_TILES.md").read_text(encoding="utf-8")
+    if "frame_version: FrameVersion" not in doc05:
+        out.append("docs/05: EventFrameV2 does not carry frame_version: FrameVersion")
+    for rel, name, fragment in A_VERSION_DOCTRINE:
+        text = A_GENERATED_BLOCK.sub("", (root / rel).read_text(encoding="utf-8")) \
+            if (root / rel).is_file() else ""
+        if re.sub(r"\s+", " ", fragment) not in re.sub(r"\s+", " ", text):
+            out.append(f"{rel}: version/convergence doctrine absent ({name})")
+    doc24 = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    if re.search(r"ten declared version identities", doc24):
+        out.append("docs/24: the version witness may not freeze a numeric count; "
+                   "it consumes VersionIdentityKind::ALL")
+    for rel in sorted((root / "docs").glob("*.md")) + sorted((root / "companion").glob("*.md")):
+        stripped = A_GENERATED_BLOCK.sub("", rel.read_text(encoding="utf-8"))
+        for alias in A_VERSION_ALIAS_BANS:
+            if re.search(r"\b" + alias + r"\b", stripped):
+                out.append(f"{rel.relative_to(root).as_posix()}: names {alias}, "
+                           "an unadmitted version-identity alias")
+    for spec_rel in sorted((root / "spec").glob("*.rs")):
+        if re.search(r"pub (?:struct|enum) Version\b",
+                     _uncomment(spec_rel.read_text(encoding="utf-8"))):
+            out.append(f"{spec_rel.relative_to(root).as_posix()}: declares a "
+                       "generic Version type; no generic Version crosses a "
+                       "subsystem boundary")
+    # E4d protections: the mixed ledgers stay authored until their missing
+    # fields have real owners.
+    for rel, label in (("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
+                        "docs/21 carries evidence and witness meaning "
+                        "LegacyObligation does not yet own"),
+                       ("docs/24_GAUNTLET.md",
+                        "docs/24 is the canonical semantic owner of proof-row "
+                        "meaning, not an exact mirror")):
+        front = frontmatter((root / rel).read_text(encoding="utf-8"))
+        if front.get("status") == "GENERATED":
+            out.append(f"{rel}: may not be marked GENERATED before its missing "
+                       f"fields are owned ({label})")
+    # Decision-ledger and coverage reconstruction, byte-exact.
+    disp_all = _a_spelling_laws(out, dsrc, "spec/dispositions.rs", "Disposition",
+                                "spelling", "meaning")
+    _a_spelling_laws(out, dsrc, "spec/dispositions.rs", "DecisionClass", "spelling")
+    disp_tags = _a_str_arms(dsrc, "Disposition", "spelling")
+    disp_meanings = _a_str_arms(dsrc, "Disposition", "meaning")
+    class_spellings = _a_str_arms(dsrc, "DecisionClass", "spelling")
+    ledger_lines = ["| Tag | Meaning |", "| --- | --- |"]
+    ledger_lines += [f"| {disp_tags.get(v, '?')} | {disp_meanings.get(v, '?')} |"
+                     for v in disp_all]
+    ledger_lines += ["", "| ID | Tag | Class | Gates | Subject | Final ruling |",
+                     "| --- | --- | --- | --- | --- | --- |"]
+    for dec_id, cls, gates, disp, subject, successor in A_DEC_FULL_ROW.findall(dsrc):
+        if disp not in disp_tags:
+            out.append(f"{dec_id} carries disposition {disp}, which "
+                       "Disposition::ALL does not admit")
+        if cls not in class_spellings:
+            out.append(f"{dec_id} carries class {cls}, which DecisionClass::ALL "
+                       "does not admit")
+        ledger_lines.append(
+            f"| {dec_id} | {disp_tags.get(disp, '?')} | "
+            f"{class_spellings.get(cls, '?')} | {_a_gate_token_render(gates, root)} | "
+            f"{subject} | {successor} |")
+    cov_src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+    cov_all = _a_spelling_laws(out, cov_src, "spec/legacy_invariant_coverage.rs",
+                               "CoverageDisposition", "spelling", "meaning")
+    cov_tags = _a_str_arms(cov_src, "CoverageDisposition", "spelling")
+    cov_meanings = _a_str_arms(cov_src, "CoverageDisposition", "meaning")
+    manifest = re.findall(r'"(INV-[^"]+)"', re.search(
+        r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", cov_src,
+        re.S).group(1))
+    cov_rows = A_COV_FULL_ROW.findall(cov_src)
+    cov_lines = ["| Disposition | Meaning |", "| --- | --- |"]
+    cov_lines += [f"| {cov_tags.get(v, '?')} | {cov_meanings.get(v, '?')} |"
+                  for v in cov_all]
+    cov_lines += ["", f"The source declaration denominator is the {len(manifest)}"
+                  "-declaration `SOURCE_INVARIANT_IDS` manifest, in exact set "
+                  "parity with the coverage rows below.",
+                  "", "| Legacy invariant | Disposition | Clean successor | Rationale |",
+                  "| --- | --- | --- | --- |"]
+    for inv, disp, successor, rationale in cov_rows:
+        if disp not in cov_tags:
+            out.append(f"coverage row {inv} carries disposition {disp}, which "
+                       "CoverageDisposition::ALL does not admit")
+        cov_lines.append(f"| `{inv}` | {cov_tags.get(disp, '?')} | `{successor}` | "
+                         f"{rationale} |")
+    for rel, marker, want in (
+        ("docs/30_DECISION_AND_REJECTION_LEDGER.md", "DECISION-LEDGER",
+         "\n".join(ledger_lines)),
+        ("docs/34_LEGACY_INVARIANT_COVERAGE.md", "LEGACY-INVARIANT-COVERAGE",
+         "\n".join(cov_lines)),
+    ):
+        text = (root / rel).read_text(encoding="utf-8") if (root / rel).is_file() else ""
+        body = batql_extract_block(text, marker)
+        if body is None:
+            out.append(f"{rel}: missing generated block {marker}")
+        elif body != want:
+            out.append(f"{rel}: generated block {marker} does not match its "
+                       "typed derivation")
+        stripped = A_GENERATED_BLOCK.sub("", text)
+        if marker == "DECISION-LEDGER":
+            if re.search(r"^\| DEC-\d+ \|", stripped, re.M):
+                out.append(f"{rel}: an authored decision row may not return "
+                           "outside the generated ledger")
+            if re.search(r"^KEEP\s{2,}retained", stripped, re.M):
+                out.append(f"{rel}: an authored disposition inventory may not "
+                           "return outside the generated ledger")
+        else:
+            if re.search(r"^\| `INV-", stripped, re.M):
+                out.append(f"{rel}: an authored coverage row may not return "
+                           "outside the generated matrix")
+            if re.search(r"^PRESERVE\s{2,}semantic law", stripped, re.M):
+                out.append(f"{rel}: an authored coverage disposition inventory "
+                           "may not return outside the generated matrix")
     return out
 
 

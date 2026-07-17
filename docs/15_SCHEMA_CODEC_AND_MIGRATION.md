@@ -13,7 +13,7 @@ reconciliation_epoch: cleanroom-v1
 
 Schema describes meaning. Codec describes canonical bytes. Layout describes physical organization. Rust shape is an authoring surface, not durable identity.
 
-A `SchemaId` names a schema and a `CodecId` names a codec; the two never merge into one passport. A schema evolves under its `SchemaVersion`, and the tagged-record envelope carries its own `BatTaggedRecordVersion` — envelope evolution never silently reversions payload meaning.
+A `SchemaId` names a schema and a `CodecId` names a codec; the two never merge into one passport. A schema evolves under its `SchemaVersion`, and the tagged-record envelope carries its own `BatTaggedRecordVersion` — envelope evolution never silently reversions payload meaning. BatTaggedRecordVersion versions the tagged payload-record envelope and codec. It does not version EventFrame or the .fbat container.
 
 ## Schema contract
 

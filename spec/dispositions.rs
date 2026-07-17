@@ -16,6 +16,51 @@ pub enum Disposition {
 }
 
 impl Disposition {
+    pub const ALL: &'static [Disposition] = &[
+        Disposition::Keep,
+        Disposition::Lock,
+        Disposition::Kill,
+        Disposition::Supersede,
+        Disposition::Demote,
+        Disposition::Defer,
+        Disposition::OpenImplementation,
+        Disposition::RetainAsEvidence,
+    ];
+
+    /// The documentary tag (5.5E4c): the one spelling the generated decision
+    /// ledger renders — no Python spelling map exists.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Disposition::Keep => "KEEP",
+            Disposition::Lock => "LOCK",
+            Disposition::Kill => "KILL",
+            Disposition::Supersede => "SUPERSEDE",
+            Disposition::Demote => "DEMOTE",
+            Disposition::Defer => "DEFER",
+            Disposition::OpenImplementation => "OPEN-IMPLEMENTATION",
+            Disposition::RetainAsEvidence => "RETAIN-AS-EVIDENCE",
+        }
+    }
+
+    /// The documentary meaning of each tag — owned here, projected into the
+    /// generated ledger legend, never restated by hand.
+    pub const fn meaning(self) -> &'static str {
+        match self {
+            Disposition::Keep => "retained as current architecture",
+            Disposition::Lock => "retained and frozen against casual reopening",
+            Disposition::Kill => "forbidden from the clean target",
+            Disposition::Supersede => "old meaning survives through a named successor",
+            Disposition::Demote => "retained only for compatibility, oracle, or evidence",
+            Disposition::Defer => "outside V1; requires a real adopter and new ruling",
+            Disposition::OpenImplementation => {
+                "owner and law fixed; exact constant selected at named gate"
+            }
+            Disposition::RetainAsEvidence => {
+                "historical material may be consulted, never treated as law"
+            }
+        }
+    }
+
     /// The one lawful DEC lifetime derivation (5.5D4b authority closure).
     ///
     /// A DecisionSpec declares no lifetime field, so a lifetime is DERIVED from
@@ -123,6 +168,29 @@ pub enum DecisionClass {
 }
 
 impl DecisionClass {
+    pub const ALL: &'static [DecisionClass] = &[
+        DecisionClass::Architecture,
+        DecisionClass::Capability,
+        DecisionClass::Compatibility,
+        DecisionClass::Enforcement,
+        DecisionClass::HistoricalReceipt,
+        DecisionClass::Naming,
+        DecisionClass::ImplementationPosture,
+    ];
+
+    /// The documentary spelling (5.5E4c): the variant name is the spelling.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            DecisionClass::Architecture => "Architecture",
+            DecisionClass::Capability => "Capability",
+            DecisionClass::Compatibility => "Compatibility",
+            DecisionClass::Enforcement => "Enforcement",
+            DecisionClass::HistoricalReceipt => "HistoricalReceipt",
+            DecisionClass::Naming => "Naming",
+            DecisionClass::ImplementationPosture => "ImplementationPosture",
+        }
+    }
+
     /// Implementation-bearing classes must name at least one gate. There is no
     /// "architecture, but perhaps not implementation-bearing" escape hatch: a
     /// row that only records an outcome is a HistoricalReceipt, and a row that
@@ -206,7 +274,7 @@ pub const DECISIONS: &[DecisionSpec] = &[
     DecisionSpec { id: "DEC-061", class: DecisionClass::Capability, gates: &[GateId::G2], disposition: Disposition::Lock, subject: "Deterministic HLC query ordering and range law", successor: "HLC is causal chronological evidence never journal progress authority; ORDER BY HLC lowers to a total key HLC then GlobalSequence within one journal and HLC then StoreId then GlobalSequence across journals; DURING HLC ranges are half-open; HLC is forbidden for durability coverage cursor resume frontier advancement commit identity deadline measurement and implicit causation; when causal HLC is absent the result is Unavailable and ObservedWallTime is never promoted into Hlc", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
     DecisionSpec { id: "DEC-062", class: DecisionClass::Capability, gates: &[GateId::G4], disposition: Disposition::Lock, subject: "Kernel identity and binding policy", successor: "FROM KERNEL refers to a canonical KernelManifest never a display name Rust path or function pointer; KernelContractId KernelInterfaceHash KernelImplementationId and KernelQualificationReceiptId are distinct; WorldImage binding is either ExactImplementation pinning KernelImplementationId or QualifiedInterface pinning KernelContractId plus KernelInterfaceHash with an accepted qualification receipt; PakVM never resolves a kernel by string name and the AttemptReceipt records the exact KernelImplementationId used", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
     DecisionSpec { id: "DEC-063", class: DecisionClass::ImplementationPosture, gates: &[GateId::G2, GateId::G8], disposition: Disposition::Lock, subject: "V1 compression posture", successor: "V1 .fbat authority frames and .vpak canonical sections are uncompressed; large payloads use ArtifactRef; derived tiles may use an explicit versioned compression profile; transparent compression is forbidden; a future compressed profile requires CompressionId canonical parameters bounded decompression a maximum expansion ratio a digest-coverage law compatibility rows hostile fixtures and a measured adopter and must state whether identity covers compressed bytes uncompressed bytes or both; no compression algorithm is selected now", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
-    DecisionSpec { id: "DEC-064", class: DecisionClass::Architecture, gates: &[GateId::G2], disposition: Disposition::Lock, subject: "Version identities remain distinct", successor: "BatQlLanguageVersion ProgramImageVersion WorldImageVersion PakVmIsaVersion FbatFormatVersion BatTaggedRecordVersion NetBatProtocolVersion KernelManifestVersion ReceiptSchemaVersion and SchemaVersion are distinct types; no generic Version crosses subsystem boundaries; canonical bytes carry their owning version; ProgramImageId commits to canonical bytes including version and is independent of compiler provenance so identical bytes from two qualified compilers share an id; NetBat protocol negotiation is independent of PakVM ISA and WorldImage versions", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
+    DecisionSpec { id: "DEC-064", class: DecisionClass::Architecture, gates: &[GateId::G2], disposition: Disposition::Lock, subject: "Version identities remain distinct", successor: "BatQlLanguageVersion ProgramImageVersion WorldImageVersion PakVmIsaVersion FbatFormatVersion BatTaggedRecordVersion FrameVersion NetBatProtocolVersion KernelManifestVersion ReceiptSchemaVersion SchemaVersion and LayoutVersion are distinct types; FrameVersion versions the EventFrame envelope and never the .fbat container, the payload record codec, or NetBat transport framing; FbatFormatVersion versions the .fbat journal container and its open and compatibility law; BatTaggedRecordVersion versions the tagged payload-record envelope and codec inside the encoded payload boundary; LayoutVersion versions physical organization under LayoutId and never schema meaning; no generic Version crosses subsystem boundaries; canonical bytes carry their owning version; ProgramImageId commits to canonical bytes including version and is independent of compiler provenance so identical bytes from two qualified compilers share an id; NetBat protocol negotiation is independent of PakVM ISA and WorldImage versions", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
     DecisionSpec { id: "DEC-065", class: DecisionClass::Architecture, gates: &[GateId::G0, GateId::G5], disposition: Disposition::Lock, subject: "no_std and alloc realization matrix", successor: "batpak and syncbat realize their no_std plus alloc semantic surfaces not merely assert them; std and browser adapters own filesystem mapping threads sockets clock entropy keychain and web APIs; default-features false is compile-proven and a green default build is not sufficient evidence; collections use Vec bounded arenas BTreeMap ordered maps and sorted catalogs while hash maps are derived caches whose iteration never influences canonical identity formatting diagnostics execution order or receipts; the qualification matrix covers batpak no_std syncbat no_std native std default threaded browser encryption and interop; every qualified profile preserves program semantics so the same program over the same inputs yields the same canonical observables on native and browser alike, with an adapter supplying mechanism and evidence only and profile-owned differences confined to mechanism performance and available capability never to program-observable results", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
     DecisionSpec { id: "DEC-066", class: DecisionClass::Capability, gates: &[GateId::G5, GateId::G6], disposition: Disposition::Lock, subject: "Typed resource exhaustion and no-partial-publication", successor: "BudgetExceeded and ResourceExhausted are distinct outcomes never collapsed into each other a string or INVALID; INVALID means a value violated its contract while resource exhaustion is an execution failure; every attacker-influenced allocation decodes the declared length checks arithmetic enforces the semantic bound try_reserves initializes and publishes only after completion; failure never panics aborts wraps or leaves a partial value event artifact or checkpoint; this covers .fbat .vpak BatQL PakVM arenas group and match state NetBat framing proof bundles artifact staging and tile materialization", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },
     DecisionSpec { id: "DEC-026", class: DecisionClass::Architecture, gates: &[GateId::G2], disposition: Disposition::Lock, subject: "Immutable accepted history", successor: "Corrections are later events", stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },

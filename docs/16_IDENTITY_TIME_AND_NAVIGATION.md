@@ -133,6 +133,8 @@ LayoutVersion                  BP-SYSTEM-MODEL-1
 ```
 <!-- VERSION-CATALOG:END -->
 
+The catalog answers which independently versioned identities exist and who owns them. The owning contracts answer what each versions. FrameVersion is reserved for the EventFrame envelope. FbatFormatVersion is the .fbat container version. BatTaggedRecordVersion is the tagged payload-record version. LayoutVersion is the physical-layout version. Sharing an integer representation or a migration does not permit one of these types to cross another boundary.
+
 Distinct version types do not typecheck when substituted for one another. Canonical bytes carry their own owning format/version identity.
 
 `ProgramImageId` commits to the canonical ProgramImage bytes, including its `ProgramImageVersion`. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.

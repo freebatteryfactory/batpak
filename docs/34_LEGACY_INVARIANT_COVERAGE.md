@@ -36,13 +36,18 @@ The two recovered obligations had a witnessed law and no successor; the remainin
 
 ## Dispositions
 
-```text
-PRESERVE    semantic law survives through named successor
-SUPERSEDE   law survives but old mechanism/API/catalog does not
-DEMOTE      useful compatibility/reference evidence, not native authority
-KILL        intentionally absent from the target
-REQUALIFY   valid only under an explicit target/profile proof scope
-```
+`spec/legacy_invariant_coverage.rs` owns the disposition vocabulary, every coverage row, and the declaration denominator. The legend, denominator, and matrix below are one generated projection of the typed owner:
+
+<!-- LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/legacy_invariant_coverage.rs by bootstrap/project.py; do not edit -->
+| Disposition | Meaning |
+| --- | --- |
+| PRESERVE | semantic law survives through named successor |
+| SUPERSEDE | law survives but old mechanism, API, or catalog does not |
+| DEMOTE | useful compatibility or reference evidence, not native authority |
+| KILL | intentionally absent from the target |
+| REQUALIFY | valid only under an explicit target or profile proof scope |
+
+The source declaration denominator is the 115-declaration `SOURCE_INVARIANT_IDS` manifest, in exact set parity with the coverage rows below.
 
 | Legacy invariant | Disposition | Clean successor | Rationale |
 | --- | --- | --- | --- |
@@ -161,6 +166,7 @@ REQUALIFY   valid only under an explicit target/profile proof scope
 | `INV-WIRE-ROUNDTRIP-TOTALITY` | PRESERVE | `LEG-064` | Wire surfaces remain total on valid values and reject malformed bytes atomically. |
 | `INV-WORKSPACE-DAG-ACYCLIC` | PRESERVE | `spec/architecture.rs, seedcheck.rs, and audit.py` | The workspace graph remains independently derived and acyclic. |
 | `INV-ZERO-WARNINGS` | SUPERSEDE | `DEC-067 and DEC-068` | The zero-warnings posture is mechanically derived from lint tables, clippy and rustdoc deny lanes, and the armed zero-allow tripwire; the legacy gate implementation does not survive. |
+<!-- LEGACY-INVARIANT-COVERAGE:END -->
 
 ## Note: the two fusion invariants are distinct
 

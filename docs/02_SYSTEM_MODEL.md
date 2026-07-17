@@ -72,6 +72,8 @@ ContentDigest
 Commitment
 ```
 
+LayoutVersion versions physical organization under LayoutId. SchemaVersion versions schema meaning. Neither substitutes for the other.
+
 Each identity answers one question.
 
 ## Contract, tile, turn, attempt, receipt

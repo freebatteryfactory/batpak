@@ -1349,7 +1349,8 @@ def test_inventory_mirrors(audit, project) -> list[str]:
          "| BatQL operators | 13 |", "| BatQL operators | 12 |",
          "generated block BUNDLE-INVENTORY does not match"),
         ("bundle_inventory_generated_view_count_tracks_registry", DN,
-         "| registered generated views | 41 |", "| registered generated views | 36 |",
+         f"| registered generated views | {len(audit.a_parse_generated_views(root)['order'])} |",
+         "| registered generated views | 1 |",
          "generated block BUNDLE-INVENTORY does not match"),
         ("bundle_inventory_markdown_count_tracks_eligible_corpus", DN,
          "| Markdown documents | 47 |", "| Markdown documents | 46 |",
@@ -1459,6 +1460,308 @@ def test_inventory_mirrors(audit, project) -> list[str]:
         (root / D3).read_text(encoding="utf-8"), "PACKAGE-INVENTORY")
     if readme_body is None or readme_body != docs3_body:
         fail("package_inventory_multi_target_bytes_are_identical")
+
+    return findings
+
+
+def test_exact_ledgers(audit, project) -> list[str]:
+    """Named hostile fixtures for 5.5E4c: version-boundary convergence, the
+    generated decision ledger, the generated legacy-invariant coverage matrix,
+    and the exact-mirror/semantic-owner doctrine."""
+    findings: list[str] = []
+    root = HERE.parent
+    DI, CV, ID = ("spec/dispositions.rs", "spec/legacy_invariant_coverage.rs",
+                  "spec/identities.rs")
+    D30, D34 = ("docs/30_DECISION_AND_REJECTION_LEDGER.md",
+                "docs/34_LEGACY_INVARIANT_COVERAGE.md")
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, edits, needle, validator=None):
+        tmp = gate_sandbox(edits)
+        try:
+            expect(name, (validator or audit.exact_ledger_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.exact_ledger_findings(root):
+        fail(f"exact_ledgers_pass_on_the_real_seed "
+             f"({audit.exact_ledger_findings(root)!r})")
+
+    LEDGER = "generated block DECISION-LEDGER does not match its typed derivation"
+    MATRIX = "generated block LEGACY-INVARIANT-COVERAGE does not match its typed derivation"
+    DEC1 = "| DEC-001 | LOCK | HistoricalReceipt |  | Pass 1 machine-centered architecture | Base of final v1 |"
+    INV1 = "| `INV-ALLOW-IS-DESIGN` | SUPERSEDE | `BP-AGENT-GUIDE and BP-GAUNTLET-1` | Keep the zero-silencer law; replace the legacy checker implementation. |"
+    for name, rel, old, new, needle in (
+        # Version convergence.
+        ("dec064_must_name_every_version_identity", DI,
+         "PakVmIsaVersion FbatFormatVersion", "FbatFormatVersion",
+         "the version-separation law names its complete inventory"),
+        ("dec064_cannot_name_phantom_version_identity", DI,
+         "no generic Version crosses subsystem boundaries",
+         "GadgetVersion is admitted; no generic Version crosses subsystem boundaries",
+         "phantom version identity"),
+        ("event_frame_must_use_frame_version", "docs/05_STORAGE_FBAT_AND_TILES.md",
+         "frame_version: FrameVersion", "frame_version: u16",
+         "does not carry frame_version: FrameVersion"),
+        ("frame_version_cannot_be_described_as_fbat_container_version",
+         "docs/05_STORAGE_FBAT_AND_TILES.md",
+         "FrameVersion versions the EventFrame envelope.",
+         "FrameVersion versions the .fbat container.",
+         "version/convergence doctrine absent (three-way-envelope-split)"),
+        ("frame_version_cannot_be_described_as_payload_record_version",
+         "docs/16_IDENTITY_TIME_AND_NAVIGATION.md",
+         "FrameVersion is reserved for the EventFrame envelope",
+         "FrameVersion is reserved for the payload record",
+         "version/convergence doctrine absent (frame-version-reservation)"),
+        ("fbat_format_version_cannot_be_described_as_event_frame_version",
+         "docs/05_STORAGE_FBAT_AND_TILES.md",
+         "FbatFormatVersion versions the surrounding .fbat container.",
+         "FbatFormatVersion versions the EventFrame envelope.",
+         "version/convergence doctrine absent (three-way-envelope-split)"),
+        ("bat_tagged_record_version_cannot_be_described_as_container_version",
+         "docs/15_SCHEMA_CODEC_AND_MIGRATION.md",
+         "It does not version EventFrame or the .fbat container.",
+         "It versions the .fbat container.",
+         "version/convergence doctrine absent (payload-record-boundary)"),
+        ("layout_version_cannot_substitute_for_schema_version",
+         "docs/02_SYSTEM_MODEL.md",
+         "Neither substitutes for the other.",
+         "Either substitutes for the other.",
+         "version/convergence doctrine absent (layout-schema-split)"),
+        ("docs24_version_witness_cannot_freeze_ten", "docs/24_GAUNTLET.md",
+         "Every member of spec/identities.rs VersionIdentityKind::ALL denotes a",
+         "The ten declared version identities are distinct types; every one denotes a",
+         "may not freeze a numeric count"),
+        ("docs24_version_witness_must_consume_version_identity_all",
+         "docs/24_GAUNTLET.md",
+         "VersionIdentityKind::ALL denotes a", "the version catalog denotes a",
+         "version/convergence doctrine absent (version-witness-consumes-all)"),
+        ("docs32_cannot_use_ambiguous_frame_header_version_wording",
+         "docs/32_IMPLEMENTATION_CONSTANTS.md",
+         "FrameVersion values and EventFrame envelope field IDs/order",
+         "frame/header magic and version numbers",
+         "version/convergence doctrine absent (frame-version-constants)"),
+        ("generic_version_type_is_rejected", ID,
+         "pub const EXISTING_TYPED_OWNER_SPELLINGS",
+         "pub struct Version(pub u32);\npub const EXISTING_TYPED_OWNER_SPELLINGS",
+         "declares a generic Version type"),
+        ("event_frame_version_alias_is_rejected", "docs/05_STORAGE_FBAT_AND_TILES.md",
+         "preserving three independent version identities.",
+         "preserving three independent version identities. EventFrameVersion is the alias.",
+         "an unadmitted version-identity alias"),
+        ("fbat_frame_version_alias_is_rejected", "docs/05_STORAGE_FBAT_AND_TILES.md",
+         "preserving three independent version identities.",
+         "preserving three independent version identities. FbatFrameVersion is the alias.",
+         "an unadmitted version-identity alias"),
+        # Decision-ledger vocabulary and drift.
+        ("disposition_missing_from_all_is_rejected", DI,
+         "        Disposition::RetainAsEvidence,\n    ];", "    ];",
+         "Disposition::RetainAsEvidence is declared but missing from Disposition::ALL"),
+        ("duplicate_disposition_spelling_is_rejected", DI,
+         'Disposition::Defer => "DEFER",', 'Disposition::Defer => "KEEP",',
+         "duplicate Disposition spelling 'KEEP'"),
+        ("empty_disposition_meaning_is_rejected", DI,
+         'Disposition::Keep => "retained as current architecture",',
+         'Disposition::Keep => "",',
+         "Disposition::Keep declares no or an empty meaning"),
+        ("decision_class_missing_from_all_is_rejected", DI,
+         "        DecisionClass::Naming,\n", "",
+         "DecisionClass::Naming is declared but missing from DecisionClass::ALL"),
+        ("duplicate_decision_class_spelling_is_rejected", DI,
+         'DecisionClass::Naming => "Naming",', 'DecisionClass::Naming => "Capability",',
+         "duplicate DecisionClass spelling 'Capability'"),
+        ("decision_ledger_missing_row_is_rejected", D30, DEC1 + "\n", "", LEDGER),
+        ("decision_ledger_extra_row_is_rejected", D30, DEC1,
+         DEC1 + "\n| DEC-998 | KEEP | Naming | | X | Y |", LEDGER),
+        ("decision_ledger_order_drift_is_rejected", D30,
+         DEC1 + "\n| DEC-002 |", "| DEC-002 |\n" + DEC1 + " ", LEDGER),
+        ("decision_ledger_tag_drift_is_rejected", D30,
+         "| DEC-001 | LOCK |", "| DEC-001 | KEEP |", LEDGER),
+        ("decision_ledger_class_drift_is_rejected", D30,
+         "| DEC-001 | LOCK | HistoricalReceipt |", "| DEC-001 | LOCK | Naming |", LEDGER),
+        ("decision_ledger_gate_drift_is_rejected", D30,
+         "| DEC-003 | KILL | Architecture | G2 |", "| DEC-003 | KILL | Architecture | G5 |",
+         LEDGER),
+        ("decision_ledger_subject_drift_is_rejected", D30,
+         "Pass 1 machine-centered architecture", "Pass 1 hand-centered architecture",
+         LEDGER),
+        ("decision_ledger_ruling_drift_is_rejected", D30,
+         "| Base of final v1 |", "| Base of final v2 |", LEDGER),
+        ("decision_disposition_legend_drift_is_rejected", D30,
+         "| KEEP | retained as current architecture |",
+         "| KEEP | retained as legacy architecture |", LEDGER),
+        ("authored_decision_row_cannot_return", D30,
+         "## Reopening rule",
+         "| DEC-999 | KEEP | Naming | G0 | Rogue | Rogue |\n\n## Reopening rule",
+         "an authored decision row may not return"),
+        ("authored_disposition_inventory_cannot_return", D30,
+         "## Reopening rule",
+         "KEEP                 retained as current architecture\n\n## Reopening rule",
+         "an authored disposition inventory may not return"),
+        # Coverage vocabulary and drift.
+        ("coverage_disposition_missing_from_all_is_rejected", CV,
+         "        CoverageDisposition::Requalify,\n    ];", "    ];",
+         "CoverageDisposition::Requalify is declared but missing"),
+        ("duplicate_coverage_disposition_spelling_is_rejected", CV,
+         'CoverageDisposition::Requalify => "REQUALIFY",',
+         'CoverageDisposition::Requalify => "KILL",',
+         "duplicate CoverageDisposition spelling 'KILL'"),
+        ("empty_coverage_disposition_meaning_is_rejected", CV,
+         'CoverageDisposition::Kill => "intentionally absent from the target",',
+         'CoverageDisposition::Kill => "",',
+         "CoverageDisposition::Kill declares no or an empty meaning"),
+        ("legacy_coverage_missing_row_is_rejected", D34, INV1 + "\n", "", MATRIX),
+        ("legacy_coverage_extra_row_is_rejected", D34, INV1,
+         INV1 + "\n| `INV-ROGUE` | KILL | `x` | rogue |", MATRIX),
+        ("legacy_coverage_order_drift_is_rejected", D34,
+         INV1 + "\n| `INV-BATCH-ATOMIC-VISIBILITY` |",
+         "| `INV-BATCH-ATOMIC-VISIBILITY` |\n" + INV1 + " ", MATRIX),
+        ("legacy_coverage_disposition_drift_is_rejected", D34,
+         "| `INV-ALLOW-IS-DESIGN` | SUPERSEDE |", "| `INV-ALLOW-IS-DESIGN` | KILL |",
+         MATRIX),
+        ("legacy_coverage_successor_drift_is_rejected", D34,
+         "| `BP-AGENT-GUIDE and BP-GAUNTLET-1` |", "| `BP-AGENT-GUIDE` |", MATRIX),
+        ("legacy_coverage_rationale_drift_is_rejected", D34,
+         "Keep the zero-silencer law; replace the legacy checker implementation.",
+         "Drop the zero-silencer law.", MATRIX),
+        ("legacy_coverage_legend_drift_is_rejected", D34,
+         "| PRESERVE | semantic law survives through named successor |",
+         "| PRESERVE | semantic law may lapse |", MATRIX),
+        ("legacy_coverage_source_denominator_drift_is_rejected", D34,
+         "The source declaration denominator is the 115-declaration",
+         "The source declaration denominator is the 107-declaration", MATRIX),
+        ("authored_legacy_coverage_row_cannot_return", D34,
+         "## Note: the two fusion invariants are distinct",
+         "| `INV-ROGUE` | KILL | `x` | rogue |\n\n"
+         "## Note: the two fusion invariants are distinct",
+         "an authored coverage row may not return"),
+        ("authored_coverage_disposition_inventory_cannot_return", D34,
+         "## Note: the two fusion invariants are distinct",
+         "PRESERVE    semantic law survives through named successor\n\n"
+         "## Note: the two fusion invariants are distinct",
+         "an authored coverage disposition inventory may not return"),
+        # Convergence doctrine.
+        ("exact_mirror_cannot_remain_hand_authored",
+         "docs/28_SELF_EXPLAINING_REPOSITORY.md",
+         "An equivalence checker babysitting two editable copies is not convergence.",
+         "Two editable copies are acceptable.",
+         "version/convergence doctrine absent (exact-mirror-clause)"),
+        ("generator_cannot_complete_missing_semantic_fields",
+         "docs/28_SELF_EXPLAINING_REPOSITORY.md",
+         "from conventions, neighbouring rows, or Python defaults.",
+         "from any convenient source.",
+         "version/convergence doctrine absent (no-python-prosthetics-clause)"),
+        ("subset_projection_requires_a_typed_relation",
+         "docs/28_SELF_EXPLAINING_REPOSITORY.md",
+         "Parsing prose headings is not an authority relation.",
+         "Parsing prose headings is acceptable.",
+         "version/convergence doctrine absent (subset-relation-clause)"),
+        ("historical_count_cannot_masquerade_as_current_inventory", D34,
+         "retained as secondary historical evidence, not a competing denominator",
+         "the current competing denominator",
+         "version/convergence doctrine absent (historical-framing)"),
+        ("docs21_cannot_be_marked_generated_before_its_missing_fields_are_owned",
+         "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
+         "status: AUTHORITATIVE", "status: GENERATED",
+         "may not be marked GENERATED before its missing fields are owned"),
+        ("docs24_semantic_meaning_cannot_be_demoted_to_generated_projection",
+         "docs/24_GAUNTLET.md",
+         "status: AUTHORITATIVE", "status: GENERATED",
+         "may not be marked GENERATED before its missing fields are owned"),
+    ):
+        probe(name, [(rel, old, new)], needle)
+
+    # The omission hostiles must silence EVERY occurrence — the boundary
+    # clauses name the identities too, which is exactly the redundancy the
+    # admission law provides.
+    probe("dec064_omitting_frame_version_is_rejected",
+          [(DI, "BatTaggedRecordVersion FrameVersion NetBatProtocolVersion",
+            "BatTaggedRecordVersion NetBatProtocolVersion"),
+           (DI, "FrameVersion versions the EventFrame envelope and never the "
+            ".fbat container, the payload record codec, or NetBat transport framing; ",
+            "")],
+          "DEC-064 forward-policy fields do not name FrameVersion")
+    probe("dec064_omitting_layout_version_is_rejected",
+          [(DI, "SchemaVersion and LayoutVersion are distinct types",
+            "SchemaVersion are distinct types"),
+           (DI, "LayoutVersion versions physical organization under LayoutId "
+            "and never schema meaning; ", "")],
+          "DEC-064 forward-policy fields do not name LayoutVersion")
+
+    # Marker drift flows through the universal census.
+    probe("decision_ledger_marker_drift_is_rejected",
+          [(D30, "DECISION-LEDGER:BEGIN generated from spec/dispositions.rs",
+            "DECISION-LEDGER:BEGIN generated from spec/architecture.rs")],
+          "not its registered authority source",
+          validator=audit.generated_view_findings)
+    probe("legacy_coverage_marker_drift_is_rejected",
+          [(D34, "LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/legacy_invariant_coverage.rs",
+            "LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/architecture.rs")],
+          "not its registered authority source",
+          validator=audit.generated_view_findings)
+
+    # GREEN growth — structural count-freedom evidence ONLY.
+    def regen_and_check(name, edits, checks, validators):
+        tmp = gate_sandbox(edits)
+        try:
+            _regen_operator_blocks(project, tmp)
+            grown: list[str] = []
+            for validator in validators:
+                grown += validator(tmp)
+            texts = {rel: (tmp / rel).read_text(encoding="utf-8")
+                     for rel, _needle in checks}
+            missing = [needle for rel, needle in checks if needle not in texts[rel]]
+            if grown or missing:
+                fail(f"{name} ({grown!r}, missing {missing!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    regen_and_check(
+        "decision_structural_growth_is_lawful",
+        [(DI, "pub const DECISIONS: &[DecisionSpec] = &[",
+          "pub const DECISIONS: &[DecisionSpec] = &[\n"
+          '    DecisionSpec { id: "DEC-990", class: DecisionClass::HistoricalReceipt, '
+          "gates: &[], disposition: Disposition::RetainAsEvidence, "
+          'subject: "Sandbox growth", successor: "structural count-freedom evidence only", '
+          "stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },")],
+        [(D30, "| DEC-990 | RETAIN-AS-EVIDENCE |"),
+         ("DELIVERY_NOTES.md", "| decision rows | 76 |")],
+        [audit.exact_ledger_findings])
+    regen_and_check(
+        "coverage_structural_growth_is_lawful",
+        [(CV, '    "INV-ZERO-WARNINGS",\n];',
+          '    "INV-ZERO-WARNINGS",\n    "INV-ZZZ-SANDBOX-GROWTH",\n];'),
+         (CV, "pub const COVERAGE: &[LegacyInvariantCoverage] = &[",
+          "pub const COVERAGE: &[LegacyInvariantCoverage] = &[\n"
+          '    LegacyInvariantCoverage { legacy_id: "INV-ZZZ-SANDBOX-GROWTH", '
+          "disposition: CoverageDisposition::Kill, "
+          'successor: "none", rationale: "structural count-freedom evidence only." },')],
+        [(D34, "| `INV-ZZZ-SANDBOX-GROWTH` | KILL |"),
+         (D34, "the 116-declaration `SOURCE_INVARIANT_IDS` manifest")],
+        [audit.exact_ledger_findings])
+    regen_and_check(
+        "version_structural_growth_is_lawful",
+        [(ID, "        VersionIdentityKind::Layout,\n    ];",
+          "        VersionIdentityKind::Layout,\n"
+          "        VersionIdentityKind::Gadget,\n    ];"),
+         (ID, "    Layout,\n}", "    Layout,\n    Gadget,\n}"),
+         (ID, 'VersionIdentityKind::Layout => entry!("LayoutVersion", ',
+          'VersionIdentityKind::Gadget => entry!("GadgetVersion", "BP-STORAGE-TILES-1"),\n'
+          '            VersionIdentityKind::Layout => entry!("LayoutVersion", '),
+         (DI, "SchemaVersion and LayoutVersion are distinct types",
+          "SchemaVersion LayoutVersion and GadgetVersion are distinct types"),
+         ("docs/05_STORAGE_FBAT_AND_TILES.md",
+          "preserving three independent version identities.",
+          "preserving three independent version identities. GadgetVersion is a "
+          "sandbox-only structural-growth identity owned here.")],
+        [("docs/16_IDENTITY_TIME_AND_NAVIGATION.md", "GadgetVersion")],
+        [audit.exact_ledger_findings, audit.identity_catalog_findings])
 
     return findings
 
@@ -6755,6 +7058,7 @@ def main() -> int:
     findings += test_operator_surfaces(audit, project)
     findings += test_generated_views(audit, project)
     findings += test_inventory_mirrors(audit, project)
+    findings += test_exact_ledgers(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)

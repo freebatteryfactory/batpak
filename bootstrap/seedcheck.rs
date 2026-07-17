@@ -76,6 +76,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_identity_catalogs(root, &mut findings);
     check_operators(root, &mut findings);
     check_inventory_classes(&mut findings);
+    check_ledger_vocabulary(&mut findings);
     check_generated_views(root, &mut findings);
     check_commands(root, &mut findings);
     check_mutation(root, &mut findings);
@@ -536,6 +537,97 @@ fn check_inventory_classes(findings: &mut Vec<String>) {
                     profile.package.cargo_name(), profile.profile));
             }
             last_index = position;
+        }
+    }
+}
+
+/// The exact-ledger vocabularies, EXECUTED (5.5E4c). Disposition,
+/// DecisionClass, and CoverageDisposition carry the documentary spellings and
+/// meanings the generated ledgers render; seedcheck proves the inventories,
+/// uniqueness, admission, and canonical gate order on the real Rust values.
+/// It parses no Markdown and no DEC prose.
+fn check_ledger_vocabulary(findings: &mut Vec<String>) {
+    let mut disp_spellings: BTreeSet<&str> = BTreeSet::new();
+    for disposition in dispositions::Disposition::ALL {
+        match disposition {
+            dispositions::Disposition::Keep
+            | dispositions::Disposition::Lock
+            | dispositions::Disposition::Kill
+            | dispositions::Disposition::Supersede
+            | dispositions::Disposition::Demote
+            | dispositions::Disposition::Defer
+            | dispositions::Disposition::OpenImplementation
+            | dispositions::Disposition::RetainAsEvidence => {}
+        }
+        if disposition.spelling().is_empty() || disposition.meaning().is_empty() {
+            findings.push(format!(
+                "Disposition {:?} carries an empty spelling or meaning", disposition));
+        }
+        if !disp_spellings.insert(disposition.spelling()) {
+            findings.push(format!(
+                "duplicate Disposition spelling {}", disposition.spelling()));
+        }
+    }
+    let mut class_spellings: BTreeSet<&str> = BTreeSet::new();
+    for class in dispositions::DecisionClass::ALL {
+        match class {
+            dispositions::DecisionClass::Architecture
+            | dispositions::DecisionClass::Capability
+            | dispositions::DecisionClass::Compatibility
+            | dispositions::DecisionClass::Enforcement
+            | dispositions::DecisionClass::HistoricalReceipt
+            | dispositions::DecisionClass::Naming
+            | dispositions::DecisionClass::ImplementationPosture => {}
+        }
+        if class.spelling().is_empty() {
+            findings.push(format!("DecisionClass {:?} carries an empty spelling", class));
+        }
+        if !class_spellings.insert(class.spelling()) {
+            findings.push(format!("duplicate DecisionClass spelling {}", class.spelling()));
+        }
+    }
+    for row in dispositions::DECISIONS {
+        if !dispositions::Disposition::ALL.contains(&row.disposition) {
+            findings.push(format!("{} carries a disposition outside Disposition::ALL", row.id));
+        }
+        if !dispositions::DecisionClass::ALL.contains(&row.class) {
+            findings.push(format!("{} carries a class outside DecisionClass::ALL", row.id));
+        }
+        let mut last_index = None;
+        for gate in row.gates {
+            let position = gates::GATES.iter().position(|g| g.id == *gate);
+            if position.is_none() {
+                findings.push(format!("{} names an undeclared gate", row.id));
+            }
+            if position < last_index {
+                findings.push(format!("{} gate list is out of canonical order", row.id));
+            }
+            last_index = position;
+        }
+    }
+    let mut cov_spellings: BTreeSet<&str> = BTreeSet::new();
+    for disposition in legacy_invariant_coverage::CoverageDisposition::ALL {
+        match disposition {
+            legacy_invariant_coverage::CoverageDisposition::Preserve
+            | legacy_invariant_coverage::CoverageDisposition::Supersede
+            | legacy_invariant_coverage::CoverageDisposition::Demote
+            | legacy_invariant_coverage::CoverageDisposition::Kill
+            | legacy_invariant_coverage::CoverageDisposition::Requalify => {}
+        }
+        if disposition.spelling().is_empty() || disposition.meaning().is_empty() {
+            findings.push(format!(
+                "CoverageDisposition {:?} carries an empty spelling or meaning", disposition));
+        }
+        if !cov_spellings.insert(disposition.spelling()) {
+            findings.push(format!(
+                "duplicate CoverageDisposition spelling {}", disposition.spelling()));
+        }
+    }
+    for row in legacy_invariant_coverage::COVERAGE {
+        if !legacy_invariant_coverage::CoverageDisposition::ALL.contains(&row.disposition) {
+            findings.push(format!(
+                "coverage row {} carries a disposition outside CoverageDisposition::ALL",
+                row.legacy_id));
         }
     }
 }
