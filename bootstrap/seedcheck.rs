@@ -2686,29 +2686,39 @@ fn check_frontmatter(root: &Path, findings: &mut Vec<String>) {
 fn check_bootstrap_output(findings: &mut Vec<String>) {
     use bootstrap_output as bo;
 
-    // Every closed vocabulary equals its ALL inventory. Exhaustive matches
-    // make a missing arm a compile error; a shrunken or duplicated ALL is the
-    // runtime lie this check refuses.
-    if bo::Gate0RootArtifact::ALL.len() != 3 {
-        findings.push("Gate0RootArtifact::ALL does not enumerate every root artifact".into());
-    }
-    if bo::Gate0PackageArtifact::ALL.len() != 3 {
-        findings.push("Gate0PackageArtifact::ALL does not enumerate every package artifact".into());
-    }
-    if bo::Gate0PackageTargetKind::ALL.len() != 4 {
-        findings.push("Gate0PackageTargetKind::ALL does not enumerate every target kind".into());
-    }
-    if bo::Gate0PlaneArtifact::ALL.len() != 2 {
-        findings.push("Gate0PlaneArtifact::ALL does not enumerate every plane artifact".into());
-    }
-    if bo::Gate0OutputDisposition::ALL.len() != 2 {
-        findings.push("Gate0OutputDisposition::ALL does not enumerate every disposition".into());
-    }
-    for i in 0..bo::Gate0RootArtifact::ALL.len() {
-        for j in (i + 1)..bo::Gate0RootArtifact::ALL.len() {
-            if bo::Gate0RootArtifact::ALL[i] == bo::Gate0RootArtifact::ALL[j] {
-                findings.push("a Gate0RootArtifact is listed twice in ALL".into());
-            }
+    // Each closed vocabulary is generated with its ALL inventory from one
+    // variant list (5.5E5a), so enum-to-ALL divergence is unrepresentable and
+    // no cardinality is asserted here. What remains executable: the inventory
+    // is nonempty and carries no duplicate. A duplicate would already be a
+    // compile error in the enum, so this is belt-and-braces evidence, count
+    // free.
+    for (name, len, dup) in [
+        ("Gate0RootArtifact", bo::Gate0RootArtifact::ALL.len(), {
+            let a = bo::Gate0RootArtifact::ALL;
+            (0..a.len()).any(|i| ((i + 1)..a.len()).any(|j| a[i] == a[j]))
+        }),
+        ("Gate0PackageArtifact", bo::Gate0PackageArtifact::ALL.len(), {
+            let a = bo::Gate0PackageArtifact::ALL;
+            (0..a.len()).any(|i| ((i + 1)..a.len()).any(|j| a[i] == a[j]))
+        }),
+        ("Gate0PackageTargetKind", bo::Gate0PackageTargetKind::ALL.len(), {
+            let a = bo::Gate0PackageTargetKind::ALL;
+            (0..a.len()).any(|i| ((i + 1)..a.len()).any(|j| a[i] == a[j]))
+        }),
+        ("Gate0PlaneArtifact", bo::Gate0PlaneArtifact::ALL.len(), {
+            let a = bo::Gate0PlaneArtifact::ALL;
+            (0..a.len()).any(|i| ((i + 1)..a.len()).any(|j| a[i] == a[j]))
+        }),
+        ("Gate0OutputDisposition", bo::Gate0OutputDisposition::ALL.len(), {
+            let a = bo::Gate0OutputDisposition::ALL;
+            (0..a.len()).any(|i| ((i + 1)..a.len()).any(|j| a[i] == a[j]))
+        }),
+    ] {
+        if len == 0 {
+            findings.push(format!("{name}::ALL is empty"));
+        }
+        if dup {
+            findings.push(format!("{name}::ALL lists a variant twice"));
         }
     }
 
@@ -2775,17 +2785,16 @@ fn check_bootstrap_output(findings: &mut Vec<String>) {
             });
         }
     }
+    // Every expanded path obeys the one portable-path law, and no two collide
+    // under case folding (the authoritative host is case-insensitive).
     let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut folded: BTreeSet<String> = BTreeSet::new();
     for path in &planned {
-        if path.trim().is_empty() {
-            findings.push("the expanded Gate0 plan contains an empty path".into());
-            continue;
+        if !bo::is_portable_gate0_relative_path(path) {
+            findings.push(format!("expanded Gate0 path {path} is not a portable relative path"));
         }
-        if path.starts_with('/') || path.contains(':') {
-            findings.push(format!("expanded Gate0 path {path} is not output-root-relative"));
-        }
-        if path.split('/').any(|part| part == ".." || part.is_empty()) {
-            findings.push(format!("expanded Gate0 path {path} carries parent traversal or an empty component"));
+        if !folded.insert(path.to_ascii_lowercase()) {
+            findings.push(format!("expanded Gate0 path {path} case-fold collides in the plan"));
         }
         if !seen.insert(path) {
             findings.push(format!("expanded Gate0 path {path} is planned twice"));

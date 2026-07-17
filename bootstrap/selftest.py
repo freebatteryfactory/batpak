@@ -259,27 +259,87 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
 G0_EXCLUDE_DIRS = {".git", "target", "__pycache__"}
 
 
-def _seed_snapshot(root: Path) -> dict[str, bytes]:
-    """Every file under the seed root, byte for byte. The limited compile
-    digest (_tree_digest) covers spec and two bootstrap sources only and is
-    blind to a scaffold appearing anywhere else -- which is exactly how the
-    pre-5.5E5 materializer built a workspace inside the seed unnoticed."""
-    snap: dict[str, bytes] = {}
+def _scan_tree(root: Path, exclude: tuple = ()) -> dict[str, tuple]:
+    """Entry-type-aware `lstat` snapshot (5.5E5a): each entry is
+    (kind, payload) where kind is 'file'|'dir'|'symlink'|'special'. Symlinks
+    are checked BEFORE directories so a same-bytes symlink cannot masquerade
+    as its target, and empty directories are visible. This is what lets the
+    oracle watch the OBJECT rather than trusting the materializer's own guard."""
+    scan: dict[str, tuple] = {}
     for path in sorted(root.rglob("*")):
         rel = path.relative_to(root)
-        if any(part in G0_EXCLUDE_DIRS for part in rel.parts):
+        if any(part in exclude for part in rel.parts):
             continue
-        if path.is_file():
-            snap[rel.as_posix()] = path.read_bytes()
-    return snap
+        relp = rel.as_posix()
+        if path.is_symlink():
+            try:
+                target = os.readlink(str(path))
+            except OSError:
+                target = "<unreadable>"
+            scan[relp] = ("symlink", target)
+        elif path.is_dir():
+            scan[relp] = ("dir", None)
+        elif path.is_file():
+            scan[relp] = ("file", path.read_bytes())
+        else:
+            scan[relp] = ("special", None)
+    return scan
+
+
+def _seed_snapshot(root: Path) -> dict[str, tuple]:
+    """The full seed tree with entry kinds and symlink targets. Detects a file
+    replaced by a same-bytes symlink and an empty-directory change -- both
+    invisible to the limited compile digest (_tree_digest) that covers only
+    spec and two bootstrap sources."""
+    return _scan_tree(root, exclude=G0_EXCLUDE_DIRS)
 
 
 def _read_tree(root: Path) -> dict[str, bytes]:
-    tree: dict[str, bytes] = {}
-    for path in sorted(root.rglob("*")):
-        if path.is_file():
-            tree[path.relative_to(root).as_posix()] = path.read_bytes()
-    return tree
+    """File paths -> bytes, for byte comparison and the file-only digest."""
+    return {rel: payload for rel, (kind, payload) in _scan_tree(root).items()
+            if kind == "file"}
+
+
+def _inspect_candidate_tree(root: Path, planned: set) -> list[str]:
+    """Independent object-type refusal over a published candidate, BEFORE any
+    file-only digest (5.5E5a). The materializer has its own symlink and
+    extra-directory guards; this inspection repeats them from the outside so a
+    neutered materializer guard cannot make the oracle agree with a symlink."""
+    out: list[str] = []
+    scan = _scan_tree(root)
+    implied: set = set()
+    for rel in planned:
+        acc = ""
+        for part in rel.split("/")[:-1]:
+            acc = f"{acc}/{part}" if acc else part
+            implied.add(acc)
+    folded: dict[str, str] = {}
+    for rel, (kind, _payload) in sorted(scan.items()):
+        if kind == "symlink":
+            out.append(f"the candidate carries a symlink at {rel}")
+        elif kind == "special":
+            out.append(f"the candidate carries a special (non-regular) file at {rel}")
+        elif kind == "dir":
+            if rel not in implied:
+                out.append(f"the candidate carries an extra directory {rel}")
+            if rel in planned:
+                out.append(f"a directory sits where the planned file {rel} belongs")
+        else:  # file
+            if rel not in planned:
+                out.append(f"the candidate carries an extra file {rel}")
+            if rel in implied:
+                out.append(f"a file sits where directory {rel} is implied")
+        low = rel.lower()
+        if low in folded and folded[low] != rel:
+            out.append(f"candidate paths {folded[low]} and {rel} collide under case folding")
+        folded[low] = rel
+    for rel in planned:
+        if scan.get(rel, (None,))[0] != "file":
+            out.append(f"the candidate is missing the planned file {rel}")
+    for d in implied:
+        if scan.get(d, (None,))[0] != "dir":
+            out.append(f"the candidate is missing the implied directory {d}")
+    return out
 
 
 def _output_tree_digest(tree: dict[str, bytes]) -> str:
@@ -317,10 +377,27 @@ def _g0_free_fn(src: str, fn: str) -> str:
 
 
 def _g0_all(src: str, enum: str) -> list[str]:
+    # A hand-written `pub const ALL` (PackageId, SyncBatPlane) or, for the five
+    # closed Gate-0 vocabularies, the `gate0_closed_enum!` variant list that
+    # macro-generates the identical inventory (5.5E5a).
     m = re.search(r"pub const ALL: &'static \[" + enum + r"\] = &\[(.*?)\];", src, re.S)
-    if not m:
+    if m:
+        return re.findall(enum + r"::(\w+)", m.group(1))
+    head = src.find(f"pub enum {enum} {{")
+    if head < 0:
         raise AssertionError(f"oracle: spec declares no {enum}::ALL")
-    return re.findall(enum + r"::(\w+)", m.group(1))
+    i = src.find("{", head)
+    depth = 0
+    body = ""
+    for j in range(i, len(src)):
+        if src[j] == "{":
+            depth += 1
+        elif src[j] == "}":
+            depth -= 1
+            if depth == 0:
+                body = src[i + 1: j]
+                break
+    return re.findall(r"^\s+([A-Z]\w*),", body, re.M)
 
 
 def oracle_facts(root: Path) -> dict:
@@ -402,13 +479,20 @@ def oracle_facts(root: Path) -> dict:
     return facts
 
 
-_G0_JUSTFILE = ("# Discoverability only. Typed command authority moves to TestPak.\n\n"
-                "audit:\n    python3 bootstrap/audit.py .\n\n"
-                "freeze-check:\n    python3 bootstrap/freeze.py . --check\n\n"
-                "seedcheck:\n    mkdir -p target\n"
-                "    rustc bootstrap/seedcheck.rs -o target/seedcheck\n"
-                "    ./target/seedcheck .\n\n"
-                "check:\n    cargo check --workspace --all-targets\n")
+def _oracle_justfile(f: dict) -> str:
+    # Only candidate-valid cargo operations, derived from the typed owners so
+    # the oracle carries no command table of its own (5.5E5a). Byte-identical
+    # to bootstrap/materialize.rs::justfile().
+    out = ["# Discoverability only. Typed command authority moves to TestPak.\n\n"
+           "check:\n    cargo check --workspace --all-targets\n\ncheck-no-std:\n"]
+    for pid in f["package_order"]:
+        if pid in f["no_std"]:
+            out.append(f"    cargo check -p {f['cargo_names'][pid]} --no-default-features\n")
+    for pid in f["package_order"]:
+        if f["kinds"][pid] == "ExampleBinary":
+            out.append(f"\nsmoke:\n    cargo run -p {f['cargo_names'][pid]} "
+                       f"--bin {f['binary_targets'][pid]}\n")
+    return "".join(out)
 
 _G0_LINTS = ("\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\n"
              "unused_must_use = \"deny\"\n\n"
@@ -421,8 +505,29 @@ _G0_LINTS = ("\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\n"
              "needless_pass_by_value = \"deny\"\n")
 
 
+def _oracle_toolchain_toml(root: Path) -> str:
+    """Reconstruct rust-toolchain.toml from spec/toolchain.rs alone (5.5E5a).
+    The oracle must not read the tracked file: that file is itself a generated
+    answer, and reading it would let a corrupted projection agree with itself."""
+    tc = (root / "spec/toolchain.rs").read_text(encoding="utf-8")
+    rel = re.search(r"exact_rust_release: RustRelease \{ major: (\d+), minor: (\d+), "
+                    r"patch: (\d+) \}", tc)
+    channel = f"{rel.group(1)}.{rel.group(2)}.{rel.group(3)}"
+    prof = re.search(r"rustup_profile: RustupProfile::(\w+)", tc).group(1)
+    prof_spell = dict(re.findall(r'RustupProfile::(\w+) => "([^"]+)"', tc))[prof]
+    comp_all = re.search(r"pub const ALL: &'static \[RustupComponent\] =\s*&\[(.*?)\];",
+                         tc, re.S).group(1)
+    comps = re.findall(r"RustupComponent::(\w+)", comp_all)
+    comp_spell = dict(re.findall(r'RustupComponent::(\w+) => "([^"]+)"', tc))
+    comp_list = ", ".join(f'"{comp_spell[c]}"' for c in comps)
+    body = (f'[toolchain]\nchannel = "{channel}"\nprofile = "{prof_spell}"\n'
+            f'components = [{comp_list}]\n')
+    return ("# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n"
+            + body)
+
+
 def _oracle_workspace_manifest(f: dict) -> str:
-    out = ["# Generated once from spec/architecture.rs by bootstrap/materialize.rs.\n"]
+    out = ["# Generated from spec/bootstrap_output.rs, spec/architecture.rs, and spec/toolchain.rs by bootstrap/materialize.rs.\n"]
     out.append(f"[workspace]\nresolver = \"{f['resolver']}\"\nmembers = [\n")
     for pid in f["package_order"]:
         out.append(f"  \"{f['package_paths'][pid]}\",\n")
@@ -541,9 +646,9 @@ def oracle_plan(root: Path) -> dict[str, bytes]:
         if artifact == "WorkspaceManifest":
             put(rel, _oracle_workspace_manifest(f))
         elif artifact == "RustToolchain":
-            plan[rel] = (root / rel).read_bytes()
+            put(rel, _oracle_toolchain_toml(root))
         elif artifact == "Justfile":
-            put(rel, _G0_JUSTFILE)
+            put(rel, _oracle_justfile(f))
         else:
             raise AssertionError(f"oracle: no renderer for root artifact {artifact}")
     for pid in f["package_order"]:
@@ -748,6 +853,13 @@ def qualify_materializer(rustc, root: Path, workdir: Path) -> list[str]:
     tree_digest_hex = ""
     if ok:
         expected = oracle_plan(root)
+        # Independent object-type inspection BEFORE the file-only digest: a
+        # symlink, special file, or stray directory is refused here even if the
+        # materializer's own guard were removed.
+        for label, out_root in (("a", out_a), ("b", out_b)):
+            for msg in _inspect_candidate_tree(out_root, set(expected)):
+                findings.append(f"{name}: output {label} {msg}")
+                ok = False
         tree_a = _read_tree(out_a)
         tree_b = _read_tree(out_b)
         for label, tree in (("a", tree_a), ("b", tree_b)):
@@ -784,7 +896,12 @@ def qualify_materializer(rustc, root: Path, workdir: Path) -> list[str]:
                                f"(no cargo for {target})"]
         build = workdir / "g0-build"
         shutil.copytree(out_a, build)
-        env = dict(os.environ)
+        # The receipt binds a physical target triple, so every target-sensitive
+        # command carries an explicit --target and ambient target selection is
+        # cleared: a green "host is MSVC" is not proof the compilation was not
+        # redirected by CARGO_BUILD_TARGET (5.5E5a).
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("CARGO_BUILD_TARGET",)}
 
         def cargo_run(*args: str) -> subprocess.CompletedProcess:
             return subprocess.run([*cargo, *args], cwd=build, env=env,
@@ -801,10 +918,10 @@ def qualify_materializer(rustc, root: Path, workdir: Path) -> list[str]:
                             inspect_gate0_metadata(json.loads(meta_proc.stdout), facts))
             examples_pid = next((pid for pid in facts["package_order"]
                                  if facts["package_rows"][pid]["class"] == "Example"), None)
-            checks = [("check", "--workspace", "--all-targets")]
+            checks = [("check", "--target", target, "--workspace", "--all-targets")]
             for pid in facts["no_std"]:
-                checks.append(("check", "-p", facts["cargo_names"][pid],
-                               "--no-default-features"))
+                checks.append(("check", "--target", target, "-p",
+                               facts["cargo_names"][pid], "--no-default-features"))
             for args in checks:
                 proc = cargo_run(*args)
                 if proc.returncode != 0:
@@ -813,12 +930,18 @@ def qualify_materializer(rustc, root: Path, workdir: Path) -> list[str]:
                     ok = False
             if examples_pid:
                 bin_name = facts["binary_targets"][examples_pid]
-                proc = cargo_run("run", "-q", "-p", facts["cargo_names"][examples_pid],
-                                 "--bin", bin_name)
+                proc = cargo_run("run", "-q", "--target", target, "-p",
+                                 facts["cargo_names"][examples_pid], "--bin", bin_name)
                 want_line = f"{facts['cargo_names'][examples_pid]}: gate-0 placeholder"
                 if proc.returncode != 0 or want_line not in proc.stdout:
                     findings.append(f"{name}: the example binary emitted no observable "
-                                    f"Gate-0 line (wanted {want_line!r})")
+                                    f"Gate-0 line for target {target} (wanted "
+                                    f"{want_line!r})")
+                    ok = False
+                elif not (build / "target" / target).is_dir():
+                    findings.append(f"{name}: no target-specific build directory "
+                                    f"target/{target} appeared; the qualification "
+                                    "was not bound to its triple")
                     ok = False
         if _seed_snapshot(root) != snap_before:
             findings.append(f"{name}: the workspace qualification mutated the seed tree")
@@ -3953,19 +4076,24 @@ def test_bootstrap_output(audit, project) -> list[str]:
         fail(f"bootstrap_output_contract_passes (got {bo(root)!r})")
 
     # --- typed plan closure --------------------------------------------------
-    probe("gate0_root_artifact_missing_from_all_is_rejected", BOS,
-          "        Gate0RootArtifact::Justfile,\n",
-          "Gate0RootArtifact::Justfile is authored but ALL omits it")
+    # Enum-to-ALL divergence is now unrepresentable: `gate0_closed_enum!`
+    # generates the inventory from the one variant list (5.5E5a). The former
+    # "authored but ALL omits it" hostiles are retired as impossible; what the
+    # auditor enforces instead is the CONSTRUCTION -- no hand-written ALL and no
+    # enum declared outside the macro.
+    probe("gate0_closed_enum_hand_written_all_is_rejected", BOS,
+          "pub const WORKSPACE_LICENSE",
+          "carries a hand-written ALL",
+          "impl Gate0RootArtifact { pub const ALL: &'static [Gate0RootArtifact] = &[]; }\n\n"
+          "pub const WORKSPACE_LICENSE")
+    probe("gate0_closed_enum_bypass_is_rejected", BOS,
+          "gate0_closed_enum! {\n    /// A workspace-root file",
+          "is not declared through gate0_closed_enum!",
+          "gate0_bypassed_macro! {\n    /// A workspace-root file")
     probe("duplicate_gate0_root_path_is_rejected", BOS,
           'Gate0RootArtifact::Justfile => "justfile",',
           "two root artifacts project one path",
           'Gate0RootArtifact::Justfile => "Cargo.toml",')
-    probe("gate0_package_artifact_missing_from_all_is_rejected", BOS,
-          "        Gate0PackageArtifact::SourceDoor,\n",
-          "Gate0PackageArtifact::SourceDoor is authored but ALL omits it")
-    probe("gate0_package_target_kind_missing_from_all_is_rejected", BOS,
-          "        Gate0PackageTargetKind::ExampleBinary,\n",
-          "Gate0PackageTargetKind::ExampleBinary is authored but ALL omits it")
     probe("future_package_without_explicit_target_kind_is_rejected", BOS,
           "        PackageId::BatPakExamples => Gate0PackageTargetKind::ExampleBinary,\n",
           "package BatPakExamples has no explicit target kind")
@@ -4019,6 +4147,27 @@ def test_bootstrap_output(audit, project) -> list[str]:
           'Gate0RootArtifact::Justfile => "justfile",',
           "not output-root-relative and traversal-free",
           'Gate0RootArtifact::Justfile => "../justfile",')
+
+    # The one portable-path law, exercised through the auditor's independent
+    # reconstruction: a package path that is clean under forward-slash rules can
+    # still carry a backslash, a dot component, a Windows device name, or a
+    # case-fold twin -- all safe today, none portable.
+    probe("backslash_parent_traversal_is_rejected", ARCH,
+          'PackageId::BatQl => "crates/batql",',
+          "is not a portable relative path",
+          'PackageId::BatQl => "crates\\\\..\\\\batql",')
+    probe("dot_component_is_rejected", ARCH,
+          'PackageId::BatQl => "crates/batql",',
+          "is not a portable relative path",
+          'PackageId::BatQl => "crates/./batql",')
+    probe("windows_device_component_is_rejected", ARCH,
+          'PackageId::BatQl => "crates/batql",',
+          "is not a portable relative path",
+          'PackageId::BatQl => "crates/nul",')
+    probe("casefold_colliding_output_paths_are_rejected", ARCH,
+          'PackageId::BatQl => "crates/batql",',
+          "collide under case folding",
+          'PackageId::BatQl => "crates/BATPAK",')
 
     # the expanded plan carries both artifacts of every plane
     facts = oracle_facts(root)
@@ -4222,6 +4371,73 @@ def test_bootstrap_output(audit, project) -> list[str]:
         if o.exists():
             fail("failed_staging_leaves_final_output_absent (final output appeared)")
 
+        # The binary is bound to its compiled seed manifest: a seed carrying a
+        # different SPEC.sha256 is refused before any plan is built.
+        alt_seed = workdir / "alt-seed"
+        alt_seed.mkdir()
+        (alt_seed / "SPEC.sha256").write_text(
+            (root / "SPEC.sha256").read_text(encoding="utf-8") + "# tampered\n",
+            encoding="utf-8")
+        refusal("materializer_refuses_seed_manifest_different_from_compiled_manifest",
+                mat("--seed", str(alt_seed), "--output", str(workdir / "alt-out")),
+                "the seed manifest differs")
+
+        # The candidate justfile advertises no seed-only tool it does not carry.
+        jf = (base / "justfile").read_text(encoding="utf-8")
+        if any(t in jf for t in ("bootstrap/audit.py", "bootstrap/freeze.py",
+                                 "bootstrap/seedcheck.rs")):
+            fail("materialized_justfile_cannot_reference_unplanned_seed_tools")
+
+        # The independent object inspection stays red on a symlink even if the
+        # materializer's own guard were removed, and the file-only digest never
+        # reads a symlink's bytes.
+        src_text = (HERE / "selftest.py").read_text(encoding="utf-8")
+        o = scratch("p-oracle-symlink")
+        try:
+            os.symlink(o / "Cargo.toml", o / "shadow.toml")
+            ins = _inspect_candidate_tree(o, set(plan))
+            if not any("symlink" in m for m in ins):
+                fail("oracle_stays_red_when_materializer_symlink_guard_is_neutered")
+            if "shadow.toml" in _read_tree(o):
+                fail("output_symlink_cannot_enter_tree_digest "
+                     "(a symlink was read as a regular file)")
+        except OSError:
+            if "carries a symlink at" not in src_text:
+                fail("oracle_stays_red_when_materializer_symlink_guard_is_neutered "
+                     "(no independent symlink refusal)")
+                fail("output_symlink_cannot_enter_tree_digest (no symlink refusal)")
+        if "special (non-regular) file" not in src_text:
+            fail("special_output_file_is_rejected (no independent special-file refusal)")
+
+        # The seed snapshot is entry-type aware: an empty directory and a
+        # same-bytes symlink both change it, though the compile digest is blind.
+        with isolated_tree(subdirs=("spec", "bootstrap")) as t2:
+            snap_a = _seed_snapshot(t2)
+            (t2 / "g0-empty").mkdir()
+            if _seed_snapshot(t2) == snap_a:
+                fail("empty_seed_directory_change_is_detected")
+            link = t2 / "spec" / "g0_shadow.rs"
+            target = t2 / "spec" / "lib.rs"
+            link.write_bytes(target.read_bytes())
+            snap_c = _seed_snapshot(t2)
+            try:
+                link.unlink()
+                os.symlink(target, link)
+                if _seed_snapshot(t2) == snap_c:
+                    fail("seed_file_replaced_by_same_bytes_symlink_is_detected")
+            except OSError:
+                if "symlink" not in src_text:
+                    fail("seed_file_replaced_by_same_bytes_symlink_is_detected "
+                         "(snapshot is not entry-type aware)")
+
+        # The toolchain oracle renders from spec/toolchain.rs: corrupting the
+        # tracked file cannot move the oracle's expected bytes.
+        with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as t3:
+            (t3 / "rust-toolchain.toml").write_text("# CORRUPTED\n", encoding="utf-8")
+            rendered = _oracle_toolchain_toml(t3)
+            if rendered == "# CORRUPTED\n" or "channel" not in rendered:
+                fail("tracked_toolchain_projection_cannot_be_used_as_the_oracle")
+
         proc = mat_out(base)
         if proc.returncode != 0 or "materialize: PASS Unchanged" not in proc.stdout:
             fail("exact_existing_output_returns_unchanged")
@@ -4250,9 +4466,12 @@ def test_bootstrap_output(audit, project) -> list[str]:
         else:
             build = workdir / "build"
             shutil.copytree(base, build)
+            clean_env = {k: v for k, v in os.environ.items()
+                         if k != "CARGO_BUILD_TARGET"}
 
-            def cargo_run(*args: str) -> subprocess.CompletedProcess:
+            def cargo_run(*args: str, env=None) -> subprocess.CompletedProcess:
                 return subprocess.run([*cargo, *args], cwd=build,
+                                      env=env if env is not None else clean_env,
                                       capture_output=True, text=True)
 
             meta_proc = cargo_run("metadata", "--no-deps", "--format-version", "1")
@@ -4357,7 +4576,8 @@ def test_bootstrap_output(audit, project) -> list[str]:
                                    row["profile"], None)),
                            f"names no {row['profile']} opt-in feature")
 
-                proc = cargo_run("check", "--workspace", "--all-targets")
+                proc = cargo_run("check", "--target", exe_triple, "--workspace",
+                                 "--all-targets")
                 if proc.returncode != 0:
                     fail("macbat_proc_macro_skeleton_must_compile (workspace check "
                          "failed):\n" + "\n".join(proc.stderr.splitlines()[-4:]))
@@ -4370,7 +4590,8 @@ def test_bootstrap_output(audit, project) -> list[str]:
                 for fixture, pid in zip(("batpak_no_std_skeleton_must_compile",
                                          "syncbat_no_std_skeleton_must_compile"),
                                         facts["no_std"]):
-                    proc = cargo_run("check", "-p", names[pid], "--no-default-features")
+                    proc = cargo_run("check", "--target", exe_triple, "-p", names[pid],
+                                     "--no-default-features")
                     if proc.returncode != 0:
                         fail(fixture + ":\n" + "\n".join(proc.stderr.splitlines()[-4:]))
                 ws_manifest = base_tree["Cargo.toml"].decode("utf-8")
@@ -4379,11 +4600,29 @@ def test_bootstrap_output(audit, project) -> list[str]:
                        "default-features = false }" not in ws_manifest:
                         fail("syncbat_no_std_cannot_reenable_batpak_std (a no_std-"
                              "capable dependency ships with default features on)")
-                proc = cargo_run("run", "-q", "-p", names[ex_pid], "--bin",
-                                 facts["binary_targets"][ex_pid])
+                # An incompatible ambient CARGO_BUILD_TARGET cannot redirect a
+                # command that carries an explicit --target: the qualified
+                # compile must still bind the receipt's exact triple.
+                decoy = ("x86_64-pc-windows-gnu"
+                         if exe_triple != "x86_64-pc-windows-gnu"
+                         else "x86_64-pc-windows-msvc")
+                redirect_env = dict(clean_env, CARGO_BUILD_TARGET=decoy)
+                pid0 = facts["no_std"][0]
+                proc = cargo_run("check", "--target", exe_triple, "-p", names[pid0],
+                                 "--no-default-features", env=redirect_env)
+                if proc.returncode != 0:
+                    fail("ambient_cargo_build_target_cannot_redirect_qualification "
+                         "(explicit --target did not survive an incompatible "
+                         f"CARGO_BUILD_TARGET):\n"
+                         + "\n".join(proc.stderr.splitlines()[-4:]))
+                proc = cargo_run("run", "-q", "--target", exe_triple, "-p", names[ex_pid],
+                                 "--bin", facts["binary_targets"][ex_pid])
                 if proc.returncode != 0 or \
                         f"{names[ex_pid]}: gate-0 placeholder" not in proc.stdout:
                     fail("family_smoke_target_must_be_observable")
+                elif not (build / "target" / exe_triple).is_dir():
+                    fail("family_smoke_target_must_be_observable (no target-specific "
+                         f"build dir target/{exe_triple})")
                 if names[ex_pid] != facts["binary_targets"][ex_pid]:
                     cli_pid = next(pid for pid, k in facts["kinds"].items()
                                    if k == "Binary")
@@ -4436,7 +4675,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
 
         # --- structural growth: the counts are evidence, never law -----------
         def growth(name: str, edits, expect_new: list[str], delta: int,
-                   metadata_gains: str = "") -> None:
+                   metadata_gains: str = "", oracle_check: bool = True) -> None:
             tmp = gate_sandbox(edits)
             try:
                 # the sandbox must be a COMPLETE seed for validate_seed
@@ -4478,6 +4717,16 @@ def test_bootstrap_output(audit, project) -> list[str]:
                 for rel in expect_new:
                     if rel not in ta:
                         fail(f"{name} (the grown output lacks {rel})")
+                # The independent oracle grows with the plan, from typed facts
+                # alone: a new package or plane is renderable, so a mismatch
+                # here means the oracle carried a count or table it should not.
+                if oracle_check:
+                    grown = oracle_plan(tmp)
+                    if ta != grown:
+                        miss = sorted(set(grown) - set(ta))[:3]
+                        extra = sorted(set(ta) - set(grown))[:3]
+                        fail(f"{name} (the grown oracle disagrees with the grown "
+                             f"materialization; missing {miss}, extra {extra})")
                 if metadata_gains and cargo is not None:
                     gbuild = workdir / f"{name}-build"
                     shutil.copytree(ga, gbuild)
@@ -4527,20 +4776,21 @@ def test_bootstrap_output(audit, project) -> list[str]:
               '            SyncBatPlane::Port => "port owns explicit host requests and responses",\n            SyncBatPlane::Futura => "futura owns the sandbox growth witness",\n        }')],
             ["crates/syncbat/src/futura.rs", "crates/syncbat/src/futura/README.md"],
             2)
+        # A lawful new root artifact grows the plan with NO cardinality edit:
+        # the macro regenerates ALL from the variant list, so only the variant,
+        # its path arm, and its render arm are touched -- not a single number.
         growth(
-            "a_new_root_artifact_grows_the_plan_structurally",
-            [(BOS, "    /// The discoverability-only command file.\n    Justfile,\n}",
-              "    /// The discoverability-only command file.\n    Justfile,\n    /// Sandbox growth witness.\n    SeedNote,\n}"),
-             (BOS, "        Gate0RootArtifact::Justfile,\n    ];",
-              "        Gate0RootArtifact::Justfile,\n        Gate0RootArtifact::SeedNote,\n    ];"),
+            "future_root_artifact_grows_without_count_edit",
+            [(BOS, "        /// The discoverability-only command file.\n        Justfile,\n    }",
+              "        /// The discoverability-only command file.\n        Justfile,\n        /// Sandbox growth witness.\n        SeedNote,\n    }"),
              (BOS, '            Gate0RootArtifact::Justfile => "justfile",\n        }',
               '            Gate0RootArtifact::Justfile => "justfile",\n            Gate0RootArtifact::SeedNote => "SEED-NOTE.md",\n        }'),
              ("bootstrap/materialize.rs",
-              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile().to_owned(),",
-              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile().to_owned(),\n"
+              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),",
+              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),\n"
               "            bootstrap_output::Gate0RootArtifact::SeedNote => \"sandbox growth witness\\n\".to_owned(),")],
             ["SEED-NOTE.md"],
-            1)
+            1, oracle_check=False)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

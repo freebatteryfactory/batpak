@@ -4008,19 +4008,25 @@ def bootstrap_output_findings(root: Path) -> list[str]:
     arch = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
 
     def enum_variants(text: str, enum: str) -> list[str]:
+        # Indentation-robust brace match: the five closed enums live inside a
+        # `gate0_closed_enum!` invocation (5.5E5a), so their variants sit two
+        # indents deep and their `ALL` is macro-generated, not authored.
         head = text.find(f"pub enum {enum} {{")
         if head < 0:
             out.append(f"{A_BO_SPEC}: declares no {enum}")
             return []
-        return re.findall(r"^\s{4}(\w+),$", text[head: text.find("\n}", head)], re.M)
-
-    def all_listing(text: str, enum: str, where: str) -> list[str]:
-        m = re.search(r"pub const ALL: &'static \[" + enum + r"\] = &\[(.*?)\];",
-                      text, re.S)
-        if not m:
-            out.append(f"{where}: {enum} declares no ALL inventory")
-            return []
-        return re.findall(enum + r"::(\w+)", m.group(1))
+        i = text.find("{", head)
+        depth = 0
+        body = ""
+        for j in range(i, len(text)):
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    body = text[i + 1: j]
+                    break
+        return re.findall(r"^\s+([A-Z]\w*),", body, re.M)
 
     def arm_pairs(text: str, fn: str, head_re: str, key: str) -> dict[str, str]:
         m = re.search(head_re, text, re.S)
@@ -4029,19 +4035,27 @@ def bootstrap_output_findings(root: Path) -> list[str]:
             return {}
         return dict(re.findall(key + r"::(\w+) => \"([^\"]*)\"", m.group(1)))
 
+    # The five closed vocabularies are each declared through the one
+    # `gate0_closed_enum!` primitive, which emits the enum AND its `ALL`
+    # inventory from a single variant list (5.5E5a). Enum-to-`ALL` divergence
+    # is therefore unrepresentable, so there is no authored-vs-listed
+    # comparison and no cardinality here: the auditor verifies the CONSTRUCTION
+    # instead. A hand-written `pub const ALL` for one of these enums is the
+    # divergence surface the macro exists to close, so it is a finding.
+    macro_enums = set(re.findall(
+        r"gate0_closed_enum!\s*\{[^{]*?pub enum (\w+)", src))
     inventories: dict[str, list[str]] = {}
     for enum in A_BO_ENUMS:
         authored = enum_variants(src, enum)
-        listed = all_listing(src, enum, A_BO_SPEC)
-        inventories[enum] = listed
-        for name in authored:
-            if name not in listed:
-                out.append(f"{A_BO_SPEC}: {enum}::{name} is authored but ALL omits it")
-        for name in listed:
-            if name not in authored:
-                out.append(f"{A_BO_SPEC}: {enum} ALL lists {name}, which the enum does not author")
-        if len(set(listed)) != len(listed):
-            out.append(f"{A_BO_SPEC}: {enum} ALL lists a variant twice")
+        inventories[enum] = authored
+        if enum not in macro_enums:
+            out.append(f"{A_BO_SPEC}: {enum} is not declared through gate0_closed_enum!; "
+                       "its inventory could diverge from the enum")
+        if re.search(r"pub const ALL: &'static \[" + enum + r"\]", src):
+            out.append(f"{A_BO_SPEC}: {enum} carries a hand-written ALL; the inventory "
+                       "must come from gate0_closed_enum! so it cannot diverge")
+        if len(set(authored)) != len(authored):
+            out.append(f"{A_BO_SPEC}: {enum} lists a variant twice")
 
     # Root artifact paths: total, nonempty, unique; the RustToolchain artifact
     # must project the tracked root toolchain path.
@@ -4176,6 +4190,53 @@ def bootstrap_output_findings(root: Path) -> list[str]:
     else:
         out.append("missing docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
 
+    # Every expanded plan path obeys one portable-path law, independently
+    # reconstructed here (5.5E5a). The forward-slash-only posture the old
+    # inline check carried admitted a backslash, a drive colon, or a Windows
+    # device name on the authoritative host; this reconstruction refuses them.
+    def portable(path: str) -> bool:
+        if not path or path.startswith("/") or "\\" in path or ":" in path:
+            return False
+        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in path):
+            return False
+        for component in path.split("/"):
+            if component in ("", ".", ".."):
+                return False
+            if component.endswith(".") or component.endswith(" "):
+                return False
+            stem = component.split(".")[0].upper()
+            if stem in ("CON", "PRN", "AUX", "NUL"):
+                return False
+            if (len(stem) == 4 and stem[:3] in ("COM", "LPT")
+                    and stem[3].isdigit() and stem[3] != "0"):
+                return False
+        return True
+
+    folded: dict[str, str] = {}
+    for path in expected_paths:
+        if not portable(path):
+            out.append(f"{A_BO_SPEC}: expanded plan path {path!r} is not a portable "
+                       "relative path")
+        low = path.lower()
+        if low in folded and folded[low] != path:
+            out.append(f"{A_BO_SPEC}: plan paths {folded[low]!r} and {path!r} collide "
+                       "under case folding")
+        folded[low] = path
+
+    # The typed path law is the one law: the materializer and seedcheck must
+    # USE it, not carry their own slash-only reimplementation, and no
+    # cardinality assertion may return in seedcheck.
+    if "pub fn is_portable_gate0_relative_path" not in raw:
+        out.append(f"{A_BO_SPEC}: the portable-path law is missing")
+    sc_path = root / "bootstrap/seedcheck.rs"
+    if sc_path.is_file():
+        sc = sc_path.read_text(encoding="utf-8")
+        if "is_portable_gate0_relative_path" not in sc:
+            out.append("bootstrap/seedcheck.rs: does not use the typed portable-path law")
+        if re.search(r"Gate0\w+::ALL\.len\(\)\s*!=\s*\d", sc):
+            out.append("bootstrap/seedcheck.rs: a Gate0 ALL cardinality assertion "
+                       "returned; the inventory is count-free by construction")
+
     # The parallel plane inventories cannot return.
     for token in ("SYNCBAT_REQUIRED_PLANES", "pub const SYNCBAT_PLANES"):
         if token in arch:
@@ -4206,6 +4267,19 @@ def bootstrap_output_findings(root: Path) -> list[str]:
         if re.search(r'"browser(?:-storage)?"', mat):
             out.append("bootstrap/materialize.rs: a handwritten qualification-feature "
                        "name returned; features derive from the profile ledger")
+        if "is_portable_gate0_relative_path" not in mat:
+            out.append("bootstrap/materialize.rs: does not use the typed portable-path "
+                       "law; a hand-rolled path check can drift from the owner")
+        # The candidate justfile is internally executable: it may not advertise
+        # seed-only tools it does not contain.
+        jf = re.search(r"fn justfile\(\)[^{]*\{(.*?)\n\}", mat, re.S)
+        if jf and re.search(r"audit\.py|freeze\.py|seedcheck\.rs", jf.group(1)):
+            out.append("bootstrap/materialize.rs: the candidate justfile references a "
+                       "seed-only tool the candidate does not contain")
+        # The binary is bound to the seed manifest it was compiled from.
+        if "COMPILED_SEED_MANIFEST" not in mat or "include_str!" not in mat:
+            out.append("bootstrap/materialize.rs: the binary is not bound to its "
+                       "compiled SPEC.sha256 seed manifest")
 
     # The dedicated isolated qualification exists and the generic binary route
     # no longer carries tier0-materialize.

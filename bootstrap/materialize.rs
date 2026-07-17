@@ -19,6 +19,13 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// The exact `SPEC.sha256` bytes this materializer was compiled against
+/// (5.5E5a). A binary compiled from seed A cannot casually claim seed B:
+/// the supplied seed must carry this same manifest before any plan is
+/// built. This is not a replacement for `freeze --check`; it binds the
+/// binary to the source it was born from.
+const COMPILED_SEED_MANIFEST: &str = include_str!("../SPEC.sha256");
+
 fn main() {
     let (seed, output) = match parse_args(&env::args().skip(1).collect::<Vec<_>>()) {
         Ok(roots) => roots,
@@ -129,6 +136,20 @@ fn materialize(
 }
 
 fn validate_seed(root: &Path) -> io::Result<()> {
+    // The supplied seed must be the exact seed this binary was compiled from.
+    let seed_manifest = fs::read_to_string(root.join("SPEC.sha256")).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "the seed root carries no SPEC.sha256 manifest",
+        )
+    })?;
+    if seed_manifest != COMPILED_SEED_MANIFEST {
+        return Err(invalid(
+            "the seed manifest differs from the SPEC.sha256 this materializer was \
+             compiled against; a binary cannot claim a seed it was not born from"
+                .into(),
+        ));
+    }
     for required in architecture::REQUIRED_DOCS {
         if !root.join(required).is_file() {
             return Err(io::Error::new(
@@ -193,15 +214,21 @@ fn validate_seed(root: &Path) -> io::Result<()> {
 /// planned path refuses here, before a single directory exists.
 fn build_plan() -> io::Result<BTreeMap<String, Vec<u8>>> {
     let mut plan: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // Case-fold identity: the plan's BTreeMap is case-sensitive, but the
+    // authoritative host is not, so two paths differing only in case are a
+    // collision on the platform that matters.
+    let mut folded: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut admit = |path: String, bytes: String| -> io::Result<()> {
-        if path.trim().is_empty()
-            || path.starts_with('/')
-            || path.contains(':')
-            || path.split('/').any(|part| part == ".." || part.is_empty())
-        {
+        if !bootstrap_output::is_portable_gate0_relative_path(&path) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("planned path {path:?} is not a clean output-root-relative path"),
+                format!("planned path {path:?} is not a portable output-root-relative path"),
+            ));
+        }
+        if !folded.insert(path.to_ascii_lowercase()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("planned path {path:?} case-fold collides with another planned path"),
             ));
         }
         if plan.insert(path.clone(), bytes.into_bytes()).is_some() {
@@ -217,7 +244,7 @@ fn build_plan() -> io::Result<BTreeMap<String, Vec<u8>>> {
         let bytes = match artifact {
             bootstrap_output::Gate0RootArtifact::WorkspaceManifest => workspace_manifest(),
             bootstrap_output::Gate0RootArtifact::RustToolchain => toolchain_manifest(),
-            bootstrap_output::Gate0RootArtifact::Justfile => justfile().to_owned(),
+            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),
         };
         admit(artifact.relative_path().to_owned(), bytes)?;
     }
@@ -288,7 +315,7 @@ fn opt_in_profiles(id: architecture::PackageId) -> Vec<&'static str> {
 
 fn workspace_manifest() -> String {
     let mut out = String::new();
-    out.push_str("# Generated once from spec/architecture.rs by bootstrap/materialize.rs.\n");
+    out.push_str("# Generated from spec/bootstrap_output.rs, spec/architecture.rs, and spec/toolchain.rs by bootstrap/materialize.rs.\n");
     // The resolver, edition, and MSRV floor come from the typed toolchain
     // owner (5.5E3a). A literal here would be a second authority the audit
     // scans for and refuses.
@@ -551,8 +578,38 @@ fn toolchain_manifest() -> String {
     toolchain::TOOLCHAIN.tracked_root_toolchain_toml()
 }
 
-fn justfile() -> &'static str {
-    "# Discoverability only. Typed command authority moves to TestPak.\n\naudit:\n    python3 bootstrap/audit.py .\n\nfreeze-check:\n    python3 bootstrap/freeze.py . --check\n\nseedcheck:\n    mkdir -p target\n    rustc bootstrap/seedcheck.rs -o target/seedcheck\n    ./target/seedcheck .\n\ncheck:\n    cargo check --workspace --all-targets\n"
+fn justfile() -> String {
+    // Only commands that WORK inside the isolated candidate. Seed auditing and
+    // freezing are the signed seed repository's commands, documented in
+    // bootstrap/README.md; a candidate must not advertise doors painted onto a
+    // wall (5.5E5a). The no_std and smoke targets derive from the typed owners.
+    let mut out = String::new();
+    out.push_str("# Discoverability only. Typed command authority moves to TestPak.\n\n");
+    out.push_str("check:\n    cargo check --workspace --all-targets\n\ncheck-no-std:\n");
+    for package in architecture::PACKAGES {
+        if no_std_capable(package.id) {
+            let _ = writeln!(
+                out,
+                "    cargo check -p {} --no-default-features",
+                package.id.cargo_name()
+            );
+        }
+    }
+    for package in architecture::PACKAGES {
+        if bootstrap_output::target_kind(package.id)
+            == bootstrap_output::Gate0PackageTargetKind::ExampleBinary
+        {
+            if let Some(bin) = bootstrap_output::binary_target(package.id) {
+                let _ = write!(
+                    out,
+                    "\nsmoke:\n    cargo run -p {} --bin {}\n",
+                    package.id.cargo_name(),
+                    bin
+                );
+            }
+        }
+    }
+    out
 }
 
 // --- Publication -------------------------------------------------------------

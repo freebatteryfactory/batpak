@@ -1535,9 +1535,27 @@ def gate0_plan_facts(root: Path) -> list[dict]:
     arch = (root / ARCH_SPEC).read_text(encoding="utf-8")
 
     def enum_all(src: str, enum: str, where: str) -> list[str]:
+        # A hand-written `pub const ALL` or, for the closed Gate-0 vocabularies,
+        # the `gate0_closed_enum!` variant list that macro-generates the
+        # identical inventory (5.5E5a).
         m = re.search(r"pub const ALL: &'static \[" + re.escape(enum) + r"\] = &\[(.*?)\];",
                       src, re.S)
-        got = re.findall(re.escape(enum) + r"::(\w+)", m.group(1)) if m else []
+        if m:
+            got = re.findall(re.escape(enum) + r"::(\w+)", m.group(1))
+        else:
+            head = src.find(f"pub enum {enum} {{")
+            got = []
+            if head >= 0:
+                i = src.find("{", head)
+                depth = 0
+                for j in range(i, len(src)):
+                    if src[j] == "{":
+                        depth += 1
+                    elif src[j] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            got = re.findall(r"^\s+([A-Z]\w*),", src[i + 1: j], re.M)
+                            break
         if not got:
             raise Unadmitted(f"{where}: {enum}::ALL lists nothing")
         return got
