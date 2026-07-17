@@ -92,7 +92,7 @@ Live capability authority cannot be serialized out of the instance.
 
 ## Invocation classes
 
-`docs/10` owns the two — and only two — ways a caller reaches PakVM execution. Both execute canonical ProgramImages; they differ in deployment authority, lifetime, effect permission, and capability origin, never in interpreter semantics.
+`docs/10` owns the two — and only two — ways a caller reaches PakVM execution. Both execute canonical ProgramImages; they differ in deployment authority, lifetime, effect permission, and capability origin, never in interpreter semantics. The product `run` command is the CLI projection of `InvokeEntrypoint`, and the product `query` command is the CLI projection of `ExecuteQueryProgram`: the adapter owns spelling and composition only, and invocation meaning lives here.
 
 ### `InvokeEntrypoint` (DEC-049)
 

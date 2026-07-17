@@ -648,6 +648,62 @@ def render_identity_residue(root):
     return "```text\n" + rows + "\n```"
 
 
+# --- Command namespace projection (5.5E3e) -----------------------------------
+# spec/commands.rs owns three separate closed namespaces and each entry's
+# typed authority relation. docs/26 projects the two CLI inventories; the
+# BatQL companion projects the source modes.
+COMMANDS_DOC = "docs/26_COMMAND_PLANE.md"
+COMPANION_DOC = "companion/BATQL_LANGUAGE.md"
+COMMAND_NAMESPACES = (
+    ("PRODUCT-COMMANDS", "ProductCommand", COMMANDS_DOC),
+    ("TESTPAK-COMMANDS", "TestPakCommand", COMMANDS_DOC),
+    ("BATQL-SOURCE-MODES", "BatQlSourceMode", COMPANION_DOC),
+)
+
+
+def parse_command_namespace(root, kind):
+    """Ordered (token, shape, owner, delegates) rows in Kind::ALL order from
+    the typed owner."""
+    src = (root / "spec/commands.rs").read_text(encoding="utf-8")
+    all_body = re.search(
+        r"pub const ALL: &'static \[" + kind + r"\] = &\[(.*?)\];", src, re.S)
+    inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) if all_body else []
+    tokens: dict[str, str] = {}
+    for arm, tok in re.findall(
+            r"\b" + kind + r"::(\w+(?:\s*\|\s*" + kind + r"::\w+)*) => \"([^\"]+)\",", src):
+        for v in re.split(r"\s*\|\s*", arm):
+            tokens[v.split("::")[-1]] = tok
+    impl = re.search(r"impl " + kind + r" \{(.*?)\n\}", src, re.S)
+    authority: dict[str, tuple[str, str, list[str]]] = {}
+    for arm_body, direct, comp in re.findall(
+            r"(" + kind + r"::\w+(?:\s*\|\s*" + kind + r"::\w+)*)\s*=>\s*\{?\s*"
+            r"(?:CommandAuthority::Direct\(ContractId\(\"([^\"]+)\"\)\)"
+            r"|CommandAuthority::(Composite \{.*?\},?))",
+            impl.group(1) if impl else "", re.S):
+        variants = re.findall(r"\b" + kind + r"::(\w+)", arm_body)
+        if direct:
+            entry = ("direct", direct, [])
+        else:
+            owner = re.search(r'composition_owner: ContractId\("([^"]+)"\)', comp)
+            delegates = re.findall(r'ContractId\("([^"]+)"\)', comp.split("delegates:", 1)[-1])
+            entry = ("composite", owner.group(1) if owner else "", delegates)
+        for v in variants:
+            authority[v] = entry
+    missing = [v for v in inventory if v not in tokens or v not in authority]
+    if not inventory or missing:
+        raise Unadmitted(
+            f"spec/commands.rs: {kind} inventory unreadable or arms missing for {missing}")
+    return [(tokens[v], *authority[v]) for v in inventory]
+
+
+def render_command_namespace(root, kind):
+    rows = []
+    for token, shape, owner, delegates in parse_command_namespace(root, kind):
+        row = f"{token:<10} {shape:<10} {owner:<28} {' '.join(delegates)}".rstrip()
+        rows.append(row)
+    return "```text\n" + "\n".join(rows) + "\n```"
+
+
 # --- Stale-vocabulary projection (5.5D4b) ------------------------------------
 # The alias set is a CONSEQUENCE of the decisions that retired vocabulary. It was
 # duplicated by hand in two documents and guarded by an equality check -- two
@@ -1346,6 +1402,28 @@ def main() -> int:
             continue
         id_rewritten = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3), id_rewritten)
     plans.append((id_path, id_original, id_rewritten))
+    # The command namespaces (5.5E3e): docs/26 projects the two CLI
+    # inventories, the companion projects the source modes — ordered rows of
+    # token, authority shape, owner, and delegates.
+    cmd_texts: dict[str, tuple] = {}
+    for doc in (COMMANDS_DOC, COMPANION_DOC):
+        p = root / doc
+        original = p.read_text(encoding="utf-8")
+        cmd_texts[doc] = [p, original, original]
+    for name, kind, doc in COMMAND_NAMESPACES:
+        pat = block_pattern(name)
+        if not pat.search(cmd_texts[doc][2]):
+            findings.append(f"{doc}: missing generated block markers for {name}")
+            continue
+        try:
+            body = render_command_namespace(root, kind)
+        except Unadmitted as exc:
+            findings.append(f"{doc}: {name} does not admit: {exc}")
+            continue
+        cmd_texts[doc][2] = pat.sub(lambda m, b=body: m.group(1) + b + m.group(3),
+                                    cmd_texts[doc][2])
+    for p, original, rewritten in cmd_texts.values():
+        plans.append((p, original, rewritten))
     if findings:
         print(f"project: FAIL ({len(findings)} finding(s))", file=sys.stderr)
         for finding in findings:

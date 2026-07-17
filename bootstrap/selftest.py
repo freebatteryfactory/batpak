@@ -3952,6 +3952,229 @@ def test_identity_catalogs(audit) -> list[str]:
     return findings
 
 
+def test_commands(audit) -> list[str]:
+    """Named hostile fixtures for the three command namespaces (5.5E3e). The
+    variant is the identity; namespace identity and invoked semantic
+    authority are separate axes; composition never transfers ownership."""
+    findings: list[str] = []
+    root = HERE.parent
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def probe(name, edits, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            got = audit.command_catalog_findings(tmp)
+            if not any(needle in f for f in got):
+                fail(f"{name} (wanted {needle!r}, got {got!r})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # GREEN: the real seed passes whole — which simultaneously proves the two
+    # ruled lawful shapes: the same "inspect" token lives in ProductCommand
+    # AND TestPakCommand (uniqueness is per namespace), and the composite
+    # commands delegate to several contracts without transferring ownership.
+    if audit.command_catalog_findings(root):
+        fail("commands_pass_on_the_real_seed")
+
+    CM = "spec/commands.rs"
+    D26 = "docs/26_COMMAND_PLANE.md"
+    CP = "companion/BATQL_LANGUAGE.md"
+    probe("product_command_missing_from_inventory_is_rejected",
+          [(CM, "        ProductCommand::Repl,\n    ];", "    ];")],
+          "ProductCommand::Repl is omitted from ProductCommand::ALL")
+    probe("testpak_command_missing_from_inventory_is_rejected",
+          [(CM, "        TestPakCommand::Seal,\n    ];", "    ];")],
+          "TestPakCommand::Seal is omitted from TestPakCommand::ALL")
+    probe("batql_mode_missing_from_inventory_is_rejected",
+          [(CM, "&[BatQlSourceMode::Ask, BatQlSourceMode::Do]",
+            "&[BatQlSourceMode::Ask]")],
+          "BatQlSourceMode::Do is omitted from BatQlSourceMode::ALL")
+    probe("duplicate_token_within_product_namespace_is_rejected",
+          [(CM, 'ProductCommand::Repl => "repl",', 'ProductCommand::Repl => "run",')],
+          "ProductCommand token run is claimed twice; tokens are unique "
+          "within their namespace")
+    probe("do_cannot_enter_product_commands",
+          [(CM, 'ProductCommand::Repl => "repl",', 'ProductCommand::Repl => "do",')],
+          "ProductCommand admits do: ASK and DO are language modes, never "
+          "CLI verbs, and DO is never a top-level command")
+    probe("ask_cannot_enter_testpak_commands",
+          [(CM, 'TestPakCommand::Forge => "forge",', 'TestPakCommand::Forge => "ask",')],
+          "TestPakCommand admits ask: ASK and DO are language modes")
+    # Owner coherence, with the generated row moved in lockstep so the
+    # refusal is authorship, not projection staleness.
+    probe("direct_command_owner_must_author_the_token",
+          [(CM, 'ProductCommand::Serve => CommandAuthority::Direct(ContractId("BP-NETBAT-1")),',
+            'ProductCommand::Serve => CommandAuthority::Direct(ContractId("BP-CRYPTO-SECRET-1")),'),
+           (D26, "serve      direct     BP-NETBAT-1",
+            "serve      direct     BP-CRYPTO-SECRET-1")],
+          "ProductCommand serve cites owner BP-CRYPTO-SECRET-1, whose "
+          "authoritative document does not author the token")
+    probe("composite_command_owner_must_author_the_token",
+          [(CM, 'ProductCommand::Verify => CommandAuthority::Composite {\n'
+                '                composition_owner: ContractId("BP-COMMAND-PLANE-1"),',
+            'ProductCommand::Verify => CommandAuthority::Composite {\n'
+                '                composition_owner: ContractId("BP-NUMERIC-1"),'),
+           (D26, "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1",
+            "verify     composite  BP-NUMERIC-1                 "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1")],
+          "ProductCommand verify cites composition owner BP-NUMERIC-1, whose "
+          "authoritative document does not author the token")
+    probe("composite_command_requires_at_least_one_delegate",
+          [(CM, 'delegates: &[\n                    ContractId("BP-WORLD-PORTS-1"),\n'
+                '                    ContractId("BP-RECEIPTS-1"),\n'
+                '                    ContractId("BP-GAUNTLET-1"),\n                ],',
+            "delegates: &[],"),
+           (D26, "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1",
+            "verify     composite  BP-COMMAND-PLANE-1")],
+          "ProductCommand verify is a composite with no delegates")
+    probe("composite_command_cannot_repeat_a_delegate",
+          [(CM, '                    ContractId("BP-RECEIPTS-1"),\n'
+                '                    ContractId("BP-GAUNTLET-1"),\n                ],',
+            '                    ContractId("BP-RECEIPTS-1"),\n'
+                '                    ContractId("BP-RECEIPTS-1"),\n'
+                '                    ContractId("BP-GAUNTLET-1"),\n                ],'),
+           (D26, "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1",
+            "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1")],
+          "ProductCommand verify repeats a delegate")
+    probe("composition_owner_cannot_be_its_own_delegate",
+          [(CM, '                    ContractId("BP-GAUNTLET-1"),\n                ],',
+            '                    ContractId("BP-GAUNTLET-1"),\n'
+                '                    ContractId("BP-COMMAND-PLANE-1"),\n                ],'),
+           (D26, "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1",
+            "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1 BP-COMMAND-PLANE-1")],
+          "ProductCommand verify lists its composition owner as its own "
+          "delegate; composition never transfers ownership")
+    # The composition boundary is declared in authored docs/26 prose, and the
+    # typed authority must agree in BOTH directions.
+    probe("compile_cannot_collapse_to_macbat_only",
+          [(CM, 'ProductCommand::Compile => CommandAuthority::Composite {\n'
+                '                composition_owner: ContractId("BP-COMMAND-PLANE-1"),\n'
+                '                delegates: &[\n'
+                '                    ContractId("BP-MACBAT-1"),\n'
+                '                    ContractId("BP-BATQL-ARCH-1"),\n'
+                '                    ContractId("BP-WORLD-PORTS-1"),\n'
+                '                ],\n            },',
+            'ProductCommand::Compile => CommandAuthority::Direct(ContractId("BP-MACBAT-1")),'),
+           (D26, "compile    composite  BP-COMMAND-PLANE-1           "
+                 "BP-MACBAT-1 BP-BATQL-ARCH-1 BP-WORLD-PORTS-1",
+            "compile    direct     BP-MACBAT-1")],
+          "docs/26 declares compile a composition boundary; a Direct owner "
+          "would collapse it to a single sovereign")
+    probe("query_cannot_silently_gain_raw_source_compilation",
+          [(CM, 'ProductCommand::Query => {\n'
+                '                CommandAuthority::Direct(ContractId("BP-WORLD-PORTS-1"))\n'
+                '            }',
+            'ProductCommand::Query => CommandAuthority::Composite {\n'
+                '                composition_owner: ContractId("BP-COMMAND-PLANE-1"),\n'
+                '                delegates: &[\n'
+                '                    ContractId("BP-BATQL-ARCH-1"),\n'
+                '                    ContractId("BP-WORLD-PORTS-1"),\n'
+                '                ],\n            },'),
+           (D26, "query      direct     BP-WORLD-PORTS-1",
+            "query      composite  BP-COMMAND-PLANE-1           "
+                 "BP-BATQL-ARCH-1 BP-WORLD-PORTS-1")],
+          "docs/26 does not declare query a composition boundary; the typed "
+          "authority may not silently gain a composite")
+    probe("product_inspect_cannot_claim_receipts_as_sole_owner",
+          [(CM, 'ProductCommand::Inspect => CommandAuthority::Composite {\n'
+                '                composition_owner: ContractId("BP-COMMAND-PLANE-1"),\n'
+                '                delegates: &[\n'
+                '                    ContractId("BP-WORLD-PORTS-1"),\n'
+                '                    ContractId("BP-SCHEMA-CODEC-1"),\n'
+                '                    ContractId("BP-PAKVM-ISA-1"),\n'
+                '                    ContractId("BP-BVISOR-1"),\n'
+                '                    ContractId("BP-RECEIPTS-1"),\n'
+                '                ],\n            },',
+            'ProductCommand::Inspect => CommandAuthority::Direct(ContractId("BP-RECEIPTS-1")),'),
+           (D26, "inspect    composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-SCHEMA-CODEC-1 BP-PAKVM-ISA-1 BP-BVISOR-1 BP-RECEIPTS-1",
+            "inspect    direct     BP-RECEIPTS-1")],
+          "docs/26 declares inspect a composition boundary")
+    probe("product_verify_cannot_claim_receipts_as_sole_owner",
+          [(CM, 'ProductCommand::Verify => CommandAuthority::Composite {\n'
+                '                composition_owner: ContractId("BP-COMMAND-PLANE-1"),\n'
+                '                delegates: &[\n'
+                '                    ContractId("BP-WORLD-PORTS-1"),\n'
+                '                    ContractId("BP-RECEIPTS-1"),\n'
+                '                    ContractId("BP-GAUNTLET-1"),\n'
+                '                ],\n            },',
+            'ProductCommand::Verify => CommandAuthority::Direct(ContractId("BP-RECEIPTS-1")),'),
+           (D26, "verify     composite  BP-COMMAND-PLANE-1           "
+                 "BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1",
+            "verify     direct     BP-RECEIPTS-1")],
+          "docs/26 declares verify a composition boundary")
+    # The ruled TestPak owners are pinned by the generated projection: moving
+    # an owner in the spec without regenerating docs/26 is positional drift,
+    # and regenerating docs/26 is a visible diff the promotion review reads.
+    probe("testpak_inspect_is_owned_by_self_explaining_contract",
+          [(CM, "TestPakCommand::Inspect | TestPakCommand::Context => {\n"
+                '                CommandAuthority::Direct(ContractId("BP-SELF-EXPLAINING-1"))',
+            "TestPakCommand::Inspect | TestPakCommand::Context => {\n"
+                '                CommandAuthority::Direct(ContractId("BP-TESTPAK-1"))')],
+          "docs/26_COMMAND_PLANE.md TESTPAK-COMMANDS row 1 states inspect "
+          "direct BP-SELF-EXPLAINING-1; the typed catalog states inspect "
+          "direct BP-TESTPAK-1 at that position")
+    probe("testpak_context_is_owned_by_self_explaining_contract",
+          [(CM, "TestPakCommand::Inspect | TestPakCommand::Context => {\n"
+                '                CommandAuthority::Direct(ContractId("BP-SELF-EXPLAINING-1"))',
+            "TestPakCommand::Inspect | TestPakCommand::Context => {\n"
+                '                CommandAuthority::Direct(ContractId("BP-TESTPAK-1"))')],
+          "docs/26_COMMAND_PLANE.md TESTPAK-COMMANDS row 8 states context "
+          "direct BP-SELF-EXPLAINING-1; the typed catalog states context "
+          "direct BP-TESTPAK-1 at that position")
+    probe("fuzz_bench_and_prove_are_gauntlet_commands",
+          [(CM, "TestPakCommand::Fuzz | TestPakCommand::Bench | TestPakCommand::Prove => {\n"
+                '                CommandAuthority::Direct(ContractId("BP-GAUNTLET-1"))',
+            "TestPakCommand::Fuzz | TestPakCommand::Bench | TestPakCommand::Prove => {\n"
+                '                CommandAuthority::Direct(ContractId("BP-TESTPAK-1"))')],
+          "docs/26_COMMAND_PLANE.md TESTPAK-COMMANDS row 5 states fuzz "
+          "direct BP-GAUNTLET-1; the typed catalog states fuzz direct "
+          "BP-TESTPAK-1 at that position")
+    probe("docs_product_command_order_drift_is_rejected",
+          [(D26, "run        direct     BP-WORLD-PORTS-1\n"
+                 "query      direct     BP-WORLD-PORTS-1",
+            "query      direct     BP-WORLD-PORTS-1\n"
+                 "run        direct     BP-WORLD-PORTS-1")],
+          "docs/26_COMMAND_PLANE.md PRODUCT-COMMANDS row 2 states query "
+          "direct BP-WORLD-PORTS-1; the typed catalog states run direct "
+          "BP-WORLD-PORTS-1 at that position")
+    probe("docs_testpak_command_order_drift_is_rejected",
+          [(D26, "forge      direct     BP-TESTPAK-1\n"
+                 "test       direct     BP-TESTPAK-1",
+            "test       direct     BP-TESTPAK-1\n"
+                 "forge      direct     BP-TESTPAK-1")],
+          "docs/26_COMMAND_PLANE.md TESTPAK-COMMANDS row 2 states test "
+          "direct BP-TESTPAK-1; the typed catalog states forge direct "
+          "BP-TESTPAK-1 at that position")
+    probe("batql_mode_projection_drift_is_rejected",
+          [(CP, "ASK        direct     BP-BATQL-LANGUAGE-1",
+            "ASK        direct     BP-BATQL-ARCH-1")],
+          "companion/BATQL_LANGUAGE.md BATQL-SOURCE-MODES row 1 states ASK "
+          "direct BP-BATQL-ARCH-1; the typed catalog states ASK direct "
+          "BP-BATQL-LANGUAGE-1 at that position")
+    probe("command_projection_source_marker_drift_is_rejected",
+          [(D26, "<!-- PRODUCT-COMMANDS:BEGIN generated from spec/commands.rs "
+                 "by bootstrap/project.py; do not edit -->",
+            "<!-- PRODUCT-COMMANDS:BEGIN generated from spec/command_soup.rs "
+                 "by bootstrap/project.py; do not edit -->")],
+          "docs/26_COMMAND_PLANE.md carries no generated PRODUCT-COMMANDS "
+          "block naming spec/commands.rs as source")
+    probe("universal_command_id_is_absent_from_the_public_spec",
+          [(CM, "use crate::guarantees::ContractId;",
+            "use crate::guarantees::ContractId;\npub struct CommandId;")],
+          "declares a universal CommandId; command identity lives in three "
+          "separate namespaces or nowhere")
+    return findings
+
+
 def test_seedcheck_executes_its_law(_audit) -> list[str]:
     """Tier 0 rules, proven by RUNNING seedcheck against mutated typed sources.
 
@@ -4391,6 +4614,16 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::guarantees::DecisionId;",
              'let _ = IdentityTermDisposition::RejectedBy(DecisionId("DEC-063"));',
              "no variant, associated function, or constant named `RejectedBy`"),
+            # 5.5E3e: the three command namespaces do not substitute for one
+            # another — the same surface token, different passports.
+            ("product_inspect_cannot_substitute_for_testpak_inspect",
+             "use spec::commands::{ProductCommand, TestPakCommand};",
+             "let _: TestPakCommand = ProductCommand::Inspect;",
+             "expected `TestPakCommand`, found `ProductCommand`"),
+            ("batql_mode_cannot_substitute_for_product_command",
+             "use spec::commands::{BatQlSourceMode, ProductCommand};",
+             "let _: ProductCommand = BatQlSourceMode::Ask;",
+             "expected `ProductCommand`, found `BatQlSourceMode`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -4808,6 +5041,7 @@ def main() -> int:
     findings += test_package_identity(audit)
     findings += test_contract_kinds(audit)
     findings += test_identity_catalogs(audit)
+    findings += test_commands(audit)
     findings += test_required_receipt_denominator()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)

@@ -67,7 +67,19 @@ ASK    Pure query. Cannot mutate source truth or request external effects.
 DO     Admitted transaction. May perform declared effects and always returns a receipt.
 ```
 
-That boundary is structural.
+That boundary is structural. The typed source-mode inventory is projected
+from the command namespaces:
+
+<!-- BATQL-SOURCE-MODES:BEGIN generated from spec/commands.rs by bootstrap/project.py; do not edit -->
+```text
+ASK        direct     BP-BATQL-LANGUAGE-1
+DO         direct     BP-BATQL-LANGUAGE-1
+```
+<!-- BATQL-SOURCE-MODES:END -->
+
+ASK and DO are language modes, never CLI verbs: `DO` is not a top-level
+product command, and `batpak query` executes a canonical query-only
+ProgramImage rather than compiling raw source.
 
 An `ASK` containing `APPEND` or `REQUEST EFFECT` does not compile.
 

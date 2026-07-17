@@ -4,8 +4,8 @@
 // links it instead of textually mounting its modules, so no tracked
 // suppression exists and every pub spec item is API by construction.
 use spec::{
-    architecture, contracts, dispositions, identities, gates, guarantees, invariants,
-    legacy_invariant_coverage, legacy_obligations, operators, pakvm_isa,
+    architecture, commands, contracts, dispositions, identities, gates, guarantees,
+    invariants, legacy_invariant_coverage, legacy_obligations, operators, pakvm_isa,
     proof, reconciliation, syncbat_firewall, toolchain,
 };
 
@@ -74,6 +74,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_toolchain(root, &mut findings);
     check_contract_kinds(&mut findings);
     check_identity_catalogs(root, &mut findings);
+    check_commands(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_source_debt(root, &mut findings);
     findings
@@ -408,6 +409,128 @@ fn check_identity_catalogs(root: &Path, findings: &mut Vec<String>) {
                 }
             }
         }
+    }
+}
+
+/// The three command namespaces are coherent (5.5E3e). Tokens are nonempty
+/// and unique WITHIN each namespace (the same token across namespaces is
+/// lawful); ASK/DO never enter a CLI namespace; a Direct owner resolves and
+/// authors its token; a Composite's composition owner resolves and authors
+/// its token while owning only orchestration — delegates are nonempty,
+/// unique, live, and never include the composition owner. Delegate contracts
+/// are NOT required to author the CLI token: they own the invoked semantic
+/// operation, not the adapter spelling.
+fn check_commands(root: &Path, findings: &mut Vec<String>) {
+    let contract_ids = declared_contract_ids(root);
+    let owner_texts = contract_authored_texts(root);
+    let mut check_entry =
+        |ns: &str, token: &str, auth: commands::CommandAuthority, seen: &mut BTreeSet<String>| {
+            if token.trim().is_empty() {
+                findings.push(format!("{ns} projects an empty token"));
+            }
+            if !seen.insert(token.to_string()) {
+                findings.push(format!(
+                    "{ns} token {token} is claimed twice; tokens are unique within \
+                     their namespace"
+                ));
+            }
+            if ns != "BatQlSourceMode" && token.eq_ignore_ascii_case("ask")
+                || ns != "BatQlSourceMode" && token.eq_ignore_ascii_case("do")
+            {
+                findings.push(format!(
+                    "{ns} admits {token}: ASK and DO are language modes, never CLI \
+                     verbs, and DO is never a top-level command"
+                ));
+            }
+            fn owner_check(
+                findings: &mut Vec<String>,
+                contract_ids: &BTreeSet<String>,
+                owner_texts: &BTreeMap<String, String>,
+                ns: &str,
+                token: &str,
+                role: &str,
+                owner: guarantees::ContractId,
+            ) {
+                if !contract_ids.contains(owner.raw()) {
+                    findings.push(format!(
+                        "{ns} {token} cites {role} {}, which no document declares",
+                        owner.raw()
+                    ));
+                } else if !owner_texts
+                    .get(owner.raw())
+                    .is_some_and(|text| authors_token(text, token))
+                {
+                    findings.push(format!(
+                        "{ns} {token} cites {role} {}, whose authoritative document \
+                         does not author the token",
+                        owner.raw()
+                    ));
+                }
+            }
+            match auth {
+                commands::CommandAuthority::Direct(owner) => {
+                    if owner.raw() == "BP-COMMAND-PLANE-1" {
+                        findings.push(format!(
+                            "{ns} {token} is Direct-owned by BP-COMMAND-PLANE-1, which \
+                             may own command composition but never the command-level \
+                             meaning"
+                        ));
+                    }
+                    owner_check(findings, &contract_ids, &owner_texts, ns, token, "owner", owner);
+                }
+                commands::CommandAuthority::Composite { composition_owner, delegates } => {
+                    owner_check(
+                        findings,
+                        &contract_ids,
+                        &owner_texts,
+                        ns,
+                        token,
+                        "composition owner",
+                        composition_owner,
+                    );
+                    if delegates.is_empty() {
+                        findings.push(format!(
+                            "{ns} {token} is a composite with no delegates; an \
+                             orchestration boundary with nothing to route to is refused"
+                        ));
+                    }
+                    let mut seen_delegates = BTreeSet::new();
+                    for delegate in delegates {
+                        if !seen_delegates.insert(delegate.raw()) {
+                            findings.push(format!(
+                                "{ns} {token} repeats delegate {}; each delegate \
+                                 retains its own law exactly once",
+                                delegate.raw()
+                            ));
+                        }
+                        if delegate.raw() == composition_owner.raw() {
+                            findings.push(format!(
+                                "{ns} {token} lists its composition owner as its own \
+                                 delegate; composition never transfers ownership"
+                            ));
+                        }
+                        if !contract_ids.contains(delegate.raw()) {
+                            findings.push(format!(
+                                "{ns} {token} delegates to {}, which no document \
+                                 declares",
+                                delegate.raw()
+                            ));
+                        }
+                    }
+                }
+            }
+        };
+    let mut product_seen = BTreeSet::new();
+    for command in commands::ProductCommand::ALL {
+        check_entry("ProductCommand", command.token(), command.authority(), &mut product_seen);
+    }
+    let mut mode_seen = BTreeSet::new();
+    for mode in commands::BatQlSourceMode::ALL {
+        check_entry("BatQlSourceMode", mode.keyword(), mode.authority(), &mut mode_seen);
+    }
+    let mut testpak_seen = BTreeSet::new();
+    for command in commands::TestPakCommand::ALL {
+        check_entry("TestPakCommand", command.token(), command.authority(), &mut testpak_seen);
     }
 }
 

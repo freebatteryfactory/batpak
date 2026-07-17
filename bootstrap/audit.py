@@ -3680,6 +3680,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(proof_row_catalog_findings(root))
     findings.extend(contract_kind_findings(root))
     findings.extend(identity_catalog_findings(root))
+    findings.extend(command_catalog_findings(root))
     findings.extend(pakvm_isa_findings(root))
     findings.extend(recon_findings(root))
     findings.extend(release_seal_findings(root))
@@ -4217,6 +4218,183 @@ def _identity_block_parity(marker: str, want: list[str], doc: str,
     for extra in listed[len(want):]:
         out.append(f"docs/16 {marker} lists {extra.split()[0]}, "
                    "which the typed catalog does not project")
+
+
+# --- Command namespaces (5.5E3e) ---------------------------------------------
+# spec/commands.rs owns three separate closed namespaces and each entry's
+# typed authority relation. A command's namespace identity and its invoked
+# semantic authority are separate axes: Direct owners own the command-level
+# operation; a Composite's composition owner owns ONLY orchestration and
+# routing, and composition never transfers ownership.
+A_COMMAND_NAMESPACES = (
+    ("PRODUCT-COMMANDS", "ProductCommand", "docs/26_COMMAND_PLANE.md"),
+    ("TESTPAK-COMMANDS", "TestPakCommand", "docs/26_COMMAND_PLANE.md"),
+    ("BATQL-SOURCE-MODES", "BatQlSourceMode", "companion/BATQL_LANGUAGE.md"),
+)
+
+
+def _command_block_body(name: str, doc: str):
+    m = re.search(
+        r"<!-- " + re.escape(name)
+        + r":BEGIN generated from spec/commands\.rs by bootstrap/project\.py; "
+        + r"do not edit -->\n```text\n(.*?)\n```\n<!-- "
+        + re.escape(name) + r":END -->", doc, re.S)
+    return m.group(1) if m else None
+
+
+def command_catalog_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / "spec/commands.rs"
+    if not path.is_file():
+        return ["missing spec/commands.rs"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    contract_ids = declared_contract_ids(root)
+    owner_text: dict[str, str] = {}
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if any(part in EXCLUDE_DIRS for part in rel.parts):
+            continue
+        text = p.read_text(encoding="utf-8")
+        cid = frontmatter(text).get("contract_id")
+        if cid:
+            owner_text[cid] = A_GENERATED_BLOCK.sub("", text)
+
+    def owner_authors(cid: str, term: str) -> bool:
+        return bool(re.search(r"\b" + re.escape(term) + r"\b", owner_text.get(cid, "")))
+
+    # No universal CommandId anywhere in the public spec: command identity
+    # lives in three separate namespaces or nowhere.
+    for rel in sorted((root / "spec").glob("*.rs")):
+        if re.search(r"pub (?:struct|enum|type) CommandId\b",
+                     _uncomment(rel.read_text(encoding="utf-8"))):
+            out.append(f"spec/{rel.name} declares a universal CommandId; command "
+                       "identity lives in three separate namespaces or nowhere")
+    # The composition boundary is DECLARED in authored docs/26 prose, and the
+    # typed authority must agree in both directions — a command cannot
+    # silently collapse to a single sovereign or silently gain a composite.
+    doc26 = (root / "docs/26_COMMAND_PLANE.md").read_text(encoding="utf-8")
+    comp_sec = re.search(r"## Composite commands\n(.*?)(?:\n## |\Z)",
+                         A_GENERATED_BLOCK.sub("", doc26), re.S)
+    declared_composites: set[str] = set()
+    if not comp_sec:
+        out.append("docs/26 carries no authored Composite commands section "
+                   "describing the composition boundary")
+    else:
+        declared_composites = set(re.findall(r"`(\w+)`", comp_sec.group(1)))
+    companion = (root / "companion/BATQL_LANGUAGE.md").read_text(encoding="utf-8")
+    docs_of = {"docs/26_COMMAND_PLANE.md": doc26,
+               "companion/BATQL_LANGUAGE.md": companion}
+    for marker, kind, docrel in A_COMMAND_NAMESPACES:
+        all_body = re.search(
+            r"pub const ALL: &'static \[" + kind + r"\] = &\[(.*?)\];", src, re.S)
+        inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) \
+            if all_body else []
+        if not inventory:
+            out.append(f"spec/commands.rs declares no {kind} inventory")
+            continue
+        enum_body = re.search(r"pub enum " + kind + r" \{(.*?)\n\}", src, re.S)
+        variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
+        for missing in [v for v in variants if v not in inventory]:
+            out.append(f"{kind}::{missing} is omitted from {kind}::ALL")
+        for phantom in [v for v in inventory if v not in variants]:
+            out.append(f"{kind}::ALL names {phantom}, which the enum does not declare")
+        tokens: dict[str, str] = {}
+        for arm, tok in re.findall(
+                r"\b" + kind + r"::(\w+(?:\s*\|\s*" + kind + r"::\w+)*) => \"([^\"]+)\",",
+                src):
+            for v in re.split(r"\s*\|\s*", arm):
+                tokens[v.split("::")[-1]] = tok
+        authority: dict[str, tuple[str, str, list[str]]] = {}
+        for arm_body, direct, comp in re.findall(
+                r"(" + kind + r"::\w+(?:\s*\|\s*" + kind + r"::\w+)*)\s*=>\s*\{?\s*"
+                r"(?:CommandAuthority::Direct\(ContractId\(\"([^\"]+)\"\)\)"
+                r"|CommandAuthority::(Composite \{.*?\}))", src, re.S):
+            if direct:
+                entry = ("direct", direct, [])
+            else:
+                owner = re.search(r'composition_owner: ContractId\("([^"]+)"\)', comp)
+                delegates = re.findall(r'ContractId\("([^"]+)"\)',
+                                       comp.split("delegates:", 1)[-1])
+                entry = ("composite", owner.group(1) if owner else "", delegates)
+            for v in re.findall(r"\b" + kind + r"::(\w+)", arm_body):
+                authority[v] = entry
+        seen_tokens: set[str] = set()
+        rows: list[str] = []
+        for v in inventory:
+            if v not in tokens or v not in authority:
+                out.append(f"{kind}::{v} declares no token or no authority relation")
+                continue
+            token = tokens[v]
+            shape, owner, delegates = authority[v]
+            rows.append(f"{token:<10} {shape:<10} {owner:<28} "
+                        f"{' '.join(delegates)}".rstrip())
+            if not token.strip():
+                out.append(f"{kind}::{v} projects an empty token")
+            if token in seen_tokens:
+                out.append(f"{kind} token {token} is claimed twice; tokens are "
+                           "unique within their namespace")
+            seen_tokens.add(token)
+            if kind != "BatQlSourceMode" and token.lower() in ("ask", "do"):
+                out.append(f"{kind} admits {token}: ASK and DO are language modes, "
+                           "never CLI verbs, and DO is never a top-level command")
+            if shape == "direct":
+                if owner == "BP-COMMAND-PLANE-1":
+                    out.append(f"{kind} {token} is Direct-owned by BP-COMMAND-PLANE-1, "
+                               "which may own command composition but never the "
+                               "command-level meaning")
+                if owner not in contract_ids:
+                    out.append(f"{kind} {token} cites owner {owner}, which no "
+                               "declared contract owns")
+                elif not owner_authors(owner, token):
+                    out.append(f"{kind} {token} cites owner {owner}, whose "
+                               "authoritative document does not author the token")
+            else:
+                if owner not in contract_ids:
+                    out.append(f"{kind} {token} cites composition owner {owner}, "
+                               "which no declared contract owns")
+                elif not owner_authors(owner, token):
+                    out.append(f"{kind} {token} cites composition owner {owner}, "
+                               "whose authoritative document does not author the token")
+                if not delegates:
+                    out.append(f"{kind} {token} is a composite with no delegates; "
+                               "an orchestration boundary with nothing to route "
+                               "to is refused")
+                if len(set(delegates)) != len(delegates):
+                    out.append(f"{kind} {token} repeats a delegate; each delegate "
+                               "retains its own law exactly once")
+                if owner in delegates:
+                    out.append(f"{kind} {token} lists its composition owner as its "
+                               "own delegate; composition never transfers ownership")
+                for d in delegates:
+                    if d not in contract_ids:
+                        out.append(f"{kind} {token} delegates to {d}, which no "
+                                   "declared contract owns")
+            if kind == "ProductCommand":
+                if shape == "composite" and token not in declared_composites:
+                    out.append(f"docs/26 does not declare {token} a composition "
+                               "boundary; the typed authority may not silently "
+                               "gain a composite")
+                if shape == "direct" and token in declared_composites:
+                    out.append(f"docs/26 declares {token} a composition boundary; "
+                               f"a Direct owner would collapse it to a single "
+                               "sovereign")
+        body = _command_block_body(marker, docs_of[docrel])
+        if body is None:
+            out.append(f"{docrel} carries no generated {marker} block naming "
+                       "spec/commands.rs as source")
+            continue
+        listed = [line.rstrip() for line in body.splitlines() if line.strip()]
+        for i, expect in enumerate(rows):
+            if i >= len(listed):
+                out.append(f"{docrel} {marker} omits row {expect.split()[0]}")
+            elif listed[i] != expect:
+                out.append(f"{docrel} {marker} row {i + 1} states "
+                           f"{' '.join(listed[i].split())}; the typed catalog states "
+                           f"{' '.join(expect.split())} at that position")
+        for extra in listed[len(rows):]:
+            out.append(f"{docrel} {marker} lists {extra.split()[0]}, "
+                       "which the typed catalog does not project")
+    return out
 
 
 def check_architecture(root: Path, findings: list[str]) -> None:

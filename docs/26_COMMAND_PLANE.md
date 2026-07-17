@@ -23,15 +23,21 @@ The CLI adapter owns command parsing/composition only. Semantic commands are dec
 
 ## Product commands
 
+Each entry carries its typed authority relation: `direct` cites the contract
+owning the command-level operation; `composite` cites the orchestration
+owner and the delegates whose semantic law it routes to.
+
+<!-- PRODUCT-COMMANDS:BEGIN generated from spec/commands.rs by bootstrap/project.py; do not edit -->
 ```text
-compile   BatQL + contract inputs → .vpak
-run       execute a world entrypoint
-query     execute an ASK program
-serve     expose declared NetBat entrypoints
-inspect   inspect image, schema, program, world, capability, result, receipt
-verify    verify package, result, receipt, proof bundle
-repl      interactive authoring/query shell
+compile    composite  BP-COMMAND-PLANE-1           BP-MACBAT-1 BP-BATQL-ARCH-1 BP-WORLD-PORTS-1
+run        direct     BP-WORLD-PORTS-1
+query      direct     BP-WORLD-PORTS-1
+serve      direct     BP-NETBAT-1
+inspect    composite  BP-COMMAND-PLANE-1           BP-WORLD-PORTS-1 BP-SCHEMA-CODEC-1 BP-PAKVM-ISA-1 BP-BVISOR-1 BP-RECEIPTS-1
+verify     composite  BP-COMMAND-PLANE-1           BP-WORLD-PORTS-1 BP-RECEIPTS-1 BP-GAUNTLET-1
+repl       direct     BP-BATQL-LANGUAGE-1
 ```
+<!-- PRODUCT-COMMANDS:END -->
 
 Three command namespaces stay distinct (5.5E1): product commands above, BatQL
 source modes (`ASK`, `DO` -- language law, owned by the companion, never
@@ -41,17 +47,31 @@ invokes a declared WorldImage entrypoint whose program may be ASK or DO;
 
 ## TestPak commands
 
+<!-- TESTPAK-COMMANDS:BEGIN generated from spec/commands.rs by bootstrap/project.py; do not edit -->
 ```text
-inspect
-forge
-test
-mutate
-fuzz
-bench
-prove
-context
-seal
+inspect    direct     BP-SELF-EXPLAINING-1
+forge      direct     BP-TESTPAK-1
+test       direct     BP-TESTPAK-1
+mutate     direct     BP-TESTPAK-1
+fuzz       direct     BP-GAUNTLET-1
+bench      direct     BP-GAUNTLET-1
+prove      direct     BP-GAUNTLET-1
+context    direct     BP-SELF-EXPLAINING-1
+seal       direct     BP-PUBLIC-API-CI-RELEASE-1
 ```
+<!-- TESTPAK-COMMANDS:END -->
+
+## Composite commands
+
+`compile`, `inspect`, and `verify` are composition boundaries, not
+single-sovereign operations, and the command plane owns their orchestration
+and routing only. `compile` composes BatQL source compilation, MacBat
+contract lowering, and WorldImage/`.vpak` assembly. `inspect` routes
+read-only views across images, schemas, programs, worlds, capabilities,
+results, and receipts. `verify` routes packages, results, receipts, and
+proof bundles to their verifying contracts and reports which verifier
+established which claim — never one generic "valid". Composition transfers
+no ownership: every delegate retains its underlying semantic law.
 
 ## One declaration, many interfaces
 

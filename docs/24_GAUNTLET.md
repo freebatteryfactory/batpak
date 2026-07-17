@@ -73,7 +73,7 @@ Explore bounded interleavings for admission, writer drain, completion, checkpoin
 
 ## Complexity and performance
 
-Work counts, allocation counts, bytes touched, scaling exponent, fallback, and logical high-water are primary. Wall-time distributions supplement physical evidence. Plant slower-complexity cases to prove the gate is anti-vacuous.
+Work counts, allocation counts, bytes touched, scaling exponent, fallback, and logical high-water are primary. Wall-time distributions supplement physical evidence. Plant slower-complexity cases to prove the gate is anti-vacuous. The repository `bench` command runs under this contract: physical measurement supplements the logical work counts, never replaces them.
 
 ## Cross-target qualification
 
