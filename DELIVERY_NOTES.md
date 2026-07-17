@@ -28,8 +28,8 @@ Every count below is a generated derivation of a typed denominator or the curren
 | legacy semantic obligations | 87 | spec/legacy_obligations.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
-| registered generated views | 56 | GeneratedView::ALL |
-| static generated target instances | 57 | expansion of every Static registry target |
+| registered generated views | 57 | GeneratedView::ALL |
+| static generated target instances | 58 | expansion of every Static registry target |
 | corpus-frontmatter bindings | 47 | the eligible Markdown corpus reached by CorpusEpochMembership |
 <!-- BUNDLE-INVENTORY:END -->
 
@@ -57,7 +57,7 @@ The package topology lives in `spec/architecture.rs` and its generated projectio
 1. Install the pinned Rust toolchain.
 2. Compile and run `bootstrap/seedcheck.rs`.
 3. Run `bootstrap/audit.py` and `bootstrap/freeze.py --check`.
-4. Compile and run `bootstrap/materialize.rs` to create only the signed Gate-0 skeleton.
+4. Compile and run `bootstrap/materialize.rs` with explicit `--seed` and `--output` roots to materialize and qualify the isolated Gate-0 candidate. Do not write the skeleton into the signed seed tree.
 5. Compile `batpak` and `syncbat` semantic profiles under `no_std + alloc`.
 6. Do not copy legacy source.
 7. Begin Gate 1 MacBat only after the Gate-0 review packet closes.

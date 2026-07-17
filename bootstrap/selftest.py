@@ -18,6 +18,7 @@ import contextlib
 import hashlib
 import os
 import importlib.util
+import json
 import re
 import sys
 import shutil
@@ -240,6 +241,597 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
     if not ok:
         head = "\n".join(out.splitlines()[:8])
         findings.append(f"{name} executed and FAILED ({target}):\n{head}")
+    return findings
+
+
+# --- 5.5E5 isolated Gate-0 materializer qualification ------------------------
+# The independent output oracle and the dedicated tier0-materialize route.
+# The oracle reconstructs the complete expected candidate -- every path and
+# every byte -- from spec/bootstrap_output.rs, spec/architecture.rs, and
+# spec/toolchain.rs alone. It never imports the materializer, never invokes a
+# materializer rendering function, never reads a generated candidate as its
+# expectation, and carries no package, edge, plane, feature, or target-name
+# table: every identity below is parsed from the typed owners at run time.
+# Duplicating the serialization logic is intentional oracle duplication, not
+# a second semantic owner: both implementations consume the same typed facts
+# and must agree on exact bytes.
+
+G0_EXCLUDE_DIRS = {".git", "target", "__pycache__"}
+
+
+def _seed_snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under the seed root, byte for byte. The limited compile
+    digest (_tree_digest) covers spec and two bootstrap sources only and is
+    blind to a scaffold appearing anywhere else -- which is exactly how the
+    pre-5.5E5 materializer built a workspace inside the seed unnoticed."""
+    snap: dict[str, bytes] = {}
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root)
+        if any(part in G0_EXCLUDE_DIRS for part in rel.parts):
+            continue
+        if path.is_file():
+            snap[rel.as_posix()] = path.read_bytes()
+    return snap
+
+
+def _read_tree(root: Path) -> dict[str, bytes]:
+    tree: dict[str, bytes] = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            tree[path.relative_to(root).as_posix()] = path.read_bytes()
+    return tree
+
+
+def _output_tree_digest(tree: dict[str, bytes]) -> str:
+    """Canonical output-tree digest: files in UTF-8 path-byte order, each
+    entry length-framed (path length, path bytes, content length, content
+    bytes) so no concatenation ambiguity exists. Directories never enter."""
+    h = hashlib.sha256()
+    for rel in sorted(tree, key=lambda r: r.encode("utf-8")):
+        p = rel.encode("utf-8")
+        h.update(len(p).to_bytes(8, "big"))
+        h.update(p)
+        h.update(len(tree[rel]).to_bytes(8, "big"))
+        h.update(tree[rel])
+    return h.hexdigest()
+
+
+def _g0_uncomment(src: str) -> str:
+    return re.sub(r"//[^\n]*", "", src)
+
+
+def _g0_method(src: str, fn: str) -> str:
+    m = re.search(r"pub const fn " + re.escape(fn) + r"\(self\)[^{]*\{(.*?)\n    \}",
+                  src, re.S)
+    if not m:
+        raise AssertionError(f"oracle: spec declares no {fn}()")
+    return m.group(1)
+
+
+def _g0_free_fn(src: str, fn: str) -> str:
+    m = re.search(r"pub const fn " + re.escape(fn) + r"\(package: PackageId\)[^{]*\{(.*?)\n\}",
+                  src, re.S)
+    if not m:
+        raise AssertionError(f"oracle: spec declares no {fn}()")
+    return m.group(1)
+
+
+def _g0_all(src: str, enum: str) -> list[str]:
+    m = re.search(r"pub const ALL: &'static \[" + enum + r"\] = &\[(.*?)\];", src, re.S)
+    if not m:
+        raise AssertionError(f"oracle: spec declares no {enum}::ALL")
+    return re.findall(enum + r"::(\w+)", m.group(1))
+
+
+def oracle_facts(root: Path) -> dict:
+    """Every typed fact the oracle consumes, parsed from the owners alone."""
+    bo_raw = (root / "spec/bootstrap_output.rs").read_text(encoding="utf-8")
+    bo = _g0_uncomment(bo_raw)
+    arch = _g0_uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    tc = _g0_uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
+
+    facts: dict = {}
+    facts["root_artifacts"] = _g0_all(bo, "Gate0RootArtifact")
+    facts["root_paths"] = dict(re.findall(
+        r'Gate0RootArtifact::(\w+) => "([^"]*)"', _g0_method(bo, "relative_path")))
+    facts["kinds"] = dict(re.findall(
+        r"PackageId::(\w+) => Gate0PackageTargetKind::(\w+)",
+        _g0_free_fn(bo, "target_kind")))
+    facts["binary_targets"] = dict(re.findall(
+        r'PackageId::(\w+) => Some\("([^"]+)"\)', _g0_free_fn(bo, "binary_target")))
+    doors: dict[str, str] = {}
+    for pattern, suffix in re.findall(
+            r'((?:Gate0PackageTargetKind::\w+\s*\|?\s*)+)=> "([^"]+)"',
+            _g0_free_fn(bo, "source_suffix")):
+        for kind in re.findall(r"Gate0PackageTargetKind::(\w+)", pattern):
+            doors[kind] = suffix
+    facts["doors"] = doors
+    facts["license"] = re.search(
+        r'pub const WORKSPACE_LICENSE: &str = "([^"]*)";', bo_raw).group(1)
+    facts["repository"] = re.search(
+        r'pub const WORKSPACE_REPOSITORY: &str = "([^"]*)";', bo_raw).group(1)
+
+    facts["package_order"] = _g0_all(arch, "PackageId")
+    facts["cargo_names"] = dict(re.findall(
+        r'PackageId::(\w+) => "([^"]*)"', _g0_method(arch, "cargo_name")))
+    facts["package_paths"] = dict(re.findall(
+        r'PackageId::(\w+) => "([^"]*)"', _g0_method(arch, "workspace_path")))
+    facts["package_rows"] = {
+        pid: {"role": role, "class": cls}
+        for pid, role, cls in re.findall(
+            r'PackageSpec \{\s*id: PackageId::(\w+),\s*role: "([^"]*)",\s*'
+            r"class: PackageClass::(\w+),", arch)
+    }
+    facts["edges"] = [
+        {"importer": imp, "importee": ime, "class": cls, "profile": prof}
+        for imp, ime, cls, prof in re.findall(
+            r"EdgeSpec \{ importer: PackageId::(\w+), importee: PackageId::(\w+), "
+            r'class: EdgeClass::(\w+), profile: "([^"]*)" \}', arch)
+    ]
+    facts["profiles"] = [
+        {"package": pkg, "profile": prof, "environment": env}
+        for pkg, prof, env in re.findall(
+            r'QualificationProfile \{\s*package: PackageId::(\w+),\s*profile: "([^"]+)",'
+            r"\s*environment: QualificationEnvironment::(\w+)", arch)
+    ]
+    facts["workspace_version"] = re.search(
+        r'pub const WORKSPACE_VERSION: &str = "([^"]*)";', arch).group(1)
+    facts["planes"] = _g0_all(arch, "SyncBatPlane")
+    facts["modules"] = dict(re.findall(
+        r'SyncBatPlane::(\w+) => "([^"]*)"', _g0_method(arch, "module_name")))
+    facts["ownership"] = dict(re.findall(
+        r'SyncBatPlane::(\w+) => "([^"]*)"', _g0_method(arch, "authored_ownership")))
+    plane_pkg = re.findall(r"=> PackageId::(\w+),\n        \}",
+                           arch[arch.find("pub const fn package(self)"):])
+    facts["plane_owner"] = plane_pkg[0] if plane_pkg else ""
+
+    facts["resolver"] = re.search(
+        r'CargoResolver::\w+ => "([^"]+)"', tc).group(1)
+    facts["edition"] = re.search(
+        r'RustEdition::\w+ => "([^"]+)"', tc).group(1)
+    floor = re.search(
+        r"rust_version_floor: RustVersionFloor \{ major: (\d+), minor: (\d+) \}", tc)
+    facts["rust_version"] = f"{floor.group(1)}.{floor.group(2)}"
+    facts["no_std"] = sorted({p["package"] for p in facts["profiles"]
+                              if p["environment"] == "NoStdAlloc"})
+    facts["opt_in"] = {
+        pid: [p["profile"] for p in facts["profiles"]
+              if p["package"] == pid and p["environment"] not in ("NoStdAlloc", "NativeStd")]
+        for pid in facts["package_order"]
+    }
+    return facts
+
+
+_G0_JUSTFILE = ("# Discoverability only. Typed command authority moves to TestPak.\n\n"
+                "audit:\n    python3 bootstrap/audit.py .\n\n"
+                "freeze-check:\n    python3 bootstrap/freeze.py . --check\n\n"
+                "seedcheck:\n    mkdir -p target\n"
+                "    rustc bootstrap/seedcheck.rs -o target/seedcheck\n"
+                "    ./target/seedcheck .\n\n"
+                "check:\n    cargo check --workspace --all-targets\n")
+
+_G0_LINTS = ("\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\n"
+             "unused_must_use = \"deny\"\n\n"
+             "[workspace.lints.clippy]\ndbg_macro = \"deny\"\ntodo = \"deny\"\n"
+             "unimplemented = \"deny\"\nunwrap_used = \"deny\"\npanic = \"deny\"\n"
+             "print_stdout = \"deny\"\nprint_stderr = \"deny\"\n"
+             "wildcard_enum_match_arm = \"deny\"\ncast_possible_truncation = \"deny\"\n"
+             "cast_sign_loss = \"deny\"\nmissing_errors_doc = \"deny\"\n"
+             "large_enum_variant = \"deny\"\nclone_on_ref_ptr = \"deny\"\n"
+             "needless_pass_by_value = \"deny\"\n")
+
+
+def _oracle_workspace_manifest(f: dict) -> str:
+    out = ["# Generated once from spec/architecture.rs by bootstrap/materialize.rs.\n"]
+    out.append(f"[workspace]\nresolver = \"{f['resolver']}\"\nmembers = [\n")
+    for pid in f["package_order"]:
+        out.append(f"  \"{f['package_paths'][pid]}\",\n")
+    out.append("]\n\n[workspace.package]\n")
+    out.append(f"version = \"{f['workspace_version']}\"\n")
+    out.append(f"edition = \"{f['edition']}\"\nrust-version = \"{f['rust_version']}\"\n")
+    out.append(f"license = \"{f['license']}\"\nrepository = \"{f['repository']}\"\n")
+    out.append("\n[workspace.dependencies]\n")
+    for pid in f["package_order"]:
+        suffix = ", default-features = false" if pid in f["no_std"] else ""
+        out.append(f"{f['cargo_names'][pid]} = {{ path = \"{f['package_paths'][pid]}\"{suffix} }}\n")
+    out.append(_G0_LINTS)
+    return "".join(out)
+
+
+def _oracle_package_manifest(f: dict, pid: str) -> str:
+    name = f["cargo_names"][pid]
+    cls = f["package_rows"][pid]["class"]
+    kind = f["kinds"][pid]
+    out = ["# Gate-0 skeleton generated from the signed architecture seed.\n[package]\n"]
+    out.append(f"name = \"{name}\"\n")
+    out.append("version.workspace = true\nedition.workspace = true\n"
+               "rust-version.workspace = true\nlicense.workspace = true\n"
+               "repository.workspace = true\n")
+    if cls in ("DevOnly", "Example"):
+        out.append("publish = false\n")
+    if kind == "ProcMacroLibrary":
+        out.append("\n[lib]\nproc-macro = true\n")
+    elif kind == "Binary":
+        out.append(f"\n[[bin]]\nname = \"{f['binary_targets'][pid]}\"\n"
+                   f"path = \"{f['doors'][kind]}\"\n")
+    required = [e for e in f["edges"] if e["importer"] == pid and e["class"] == "Required"]
+    optional = [e for e in f["edges"] if e["importer"] == pid and e["class"] == "OptionalProfile"]
+    dev = [e for e in f["edges"] if e["importer"] == pid and e["class"] == "DevOnly"]
+    if pid in f["no_std"]:
+        out.append("\n[features]\ndefault = [\"std\"]\n")
+        forwards = [f"\"{f['cargo_names'][e['importee']]}/std\"" for e in required
+                    if e["importee"] in f["no_std"]]
+        out.append(f"std = [{', '.join(forwards)}]\n")
+        for prof in f["opt_in"][pid]:
+            out.append(f"{prof} = []\n")
+    elif optional:
+        out.append("\n[features]\ndefault = []\n")
+        for e in optional:
+            out.append(f"{e['profile']} = [\"dep:{f['cargo_names'][e['importee']]}\"]\n")
+
+    def dep_suffix(importee: str) -> str:
+        if importee in f["no_std"] and pid not in f["no_std"]:
+            return ", default-features = true"
+        return ""
+
+    if required or optional or (cls == "DevOnly" and dev):
+        out.append("\n[dependencies]\n")
+        for e in required:
+            out.append(f"{f['cargo_names'][e['importee']]} = "
+                       f"{{ workspace = true{dep_suffix(e['importee'])} }}\n")
+        for e in optional:
+            out.append(f"{f['cargo_names'][e['importee']]} = "
+                       f"{{ workspace = true, optional = true{dep_suffix(e['importee'])} }}\n")
+        if cls == "DevOnly":
+            for e in dev:
+                out.append(f"{f['cargo_names'][e['importee']]} = "
+                           f"{{ workspace = true{dep_suffix(e['importee'])} }}\n")
+    if cls != "DevOnly" and dev:
+        out.append("\n[dev-dependencies]\n")
+        for e in dev:
+            out.append(f"{f['cargo_names'][e['importee']]} = "
+                       f"{{ workspace = true{dep_suffix(e['importee'])} }}\n")
+    out.append("\n[lints]\nworkspace = true\n")
+    return "".join(out)
+
+
+def _oracle_source_door(f: dict, pid: str) -> str:
+    name = f["cargo_names"][pid]
+    crate = name.replace("-", "_")
+    kind = f["kinds"][pid]
+    role = f["package_rows"][pid]["role"]
+    if kind == "ProcMacroLibrary":
+        return (f"#![deny(missing_docs)]\n//! Proc-macro front door for `{name}`.\n//!\n"
+                "//! Gate-0 publishes no macros: the contract compiler drives this crate and\n"
+                "//! every exported macro lands at its signed gate. A proc-macro crate cannot\n"
+                "//! export ordinary items, so this file is intentionally empty.\n")
+    if kind == "Binary":
+        return f"//! Thin product command adapter for `{name}`.\n\nfn main() {{}}\n"
+    if kind == "ExampleBinary":
+        return (f"//! Gate-0 placeholder example for `{name}`.\n\n"
+                f"fn main() {{\n    println!(\"{name}: gate-0 placeholder\");\n}}\n")
+    if pid == f["plane_owner"]:
+        modules = sorted(f["modules"][pl] for pl in f["planes"])
+        body = "".join(f"pub mod {m};\n" for m in modules)
+        return ("#![cfg_attr(not(feature = \"std\"), no_std)]\n#![deny(missing_docs)]\n"
+                "//! SyncBat runtime, PakVM, Bvisor, world, and port planes.\n\n"
+                "extern crate alloc;\n\n" + body)
+    if pid in f["no_std"]:
+        return ("#![cfg_attr(not(feature = \"std\"), no_std)]\n#![deny(missing_docs)]\n"
+                "//! Semantic and durable BatPak core.\n\nextern crate alloc;\n\n"
+                f"/// Gate-0 marker for the `{crate}` package skeleton.\n"
+                f"pub const PACKAGE_ID: &str = \"{name}\";\n")
+    _ = role
+    return (f"#![deny(missing_docs)]\n//! Gate-0 package skeleton for `{name}`.\n\n"
+            "/// Stable package identity used only by the bootstrap skeleton.\n"
+            f"pub const PACKAGE_ID: &str = \"{name}\";\n")
+
+
+def oracle_plan(root: Path) -> dict[str, bytes]:
+    """The complete expected candidate: normalized relative path -> bytes."""
+    f = oracle_facts(root)
+    plan: dict[str, bytes] = {}
+
+    def put(rel: str, text: str) -> None:
+        assert rel not in plan, f"oracle: {rel} planned twice"
+        plan[rel] = text.encode("utf-8")
+
+    for artifact in f["root_artifacts"]:
+        rel = f["root_paths"][artifact]
+        if artifact == "WorkspaceManifest":
+            put(rel, _oracle_workspace_manifest(f))
+        elif artifact == "RustToolchain":
+            plan[rel] = (root / rel).read_bytes()
+        elif artifact == "Justfile":
+            put(rel, _G0_JUSTFILE)
+        else:
+            raise AssertionError(f"oracle: no renderer for root artifact {artifact}")
+    for pid in f["package_order"]:
+        base = f["package_paths"][pid]
+        role = f["package_rows"][pid]["role"]
+        name = f["cargo_names"][pid]
+        put(f"{base}/Cargo.toml", _oracle_package_manifest(f, pid))
+        put(f"{base}/README.md",
+            f"# {name}\n\nGate-0 package skeleton.\n\n**Authority:** {role}\n\n"
+            "The normative owner and dependency facts live in `spec/architecture.rs`. "
+            "This file does not widen that role.\n")
+        put(f"{base}/{f['doors'][f['kinds'][pid]]}", _oracle_source_door(f, pid))
+    syncbat_base = f["package_paths"][f["plane_owner"]]
+    for plane in f["planes"]:
+        module = f["modules"][plane]
+        ownership = f["ownership"][plane]
+        put(f"{syncbat_base}/src/{module}.rs",
+            f"//! SyncBat `{module}` plane: {ownership}.\n\n"
+            "/// Gate-0 marker. Semantic types and transitions land only at their signed gate.\n"
+            f"pub const PLANE_ID: &str = \"{module}\";\n")
+        put(f"{syncbat_base}/src/{module}/README.md",
+            f"# `{module}` plane\n\nOwner: {ownership}.\n\n"
+            f"The root `{module}.rs` file owns the public module and primary type spine. "
+            "This directory holds same-concept implementation files when the owning gate lands.\n")
+    return plan
+
+
+def inspect_gate0_metadata(meta: dict, f: dict) -> list[str]:
+    """Semantic inspection of `cargo metadata --no-deps` for the candidate.
+    A zero cargo exit is not this inspection: the packages, paths, targets,
+    publication posture, dependency endpoints, optional edges, and feature
+    wiring are each compared to their typed derivation."""
+    out: list[str] = []
+    want_names = {f["cargo_names"][pid]: pid for pid in f["package_order"]}
+    got = {p["name"]: p for p in meta.get("packages", [])}
+    for name in sorted(set(want_names) - set(got)):
+        out.append(f"materialized workspace is missing package {name}")
+    for name in sorted(set(got) - set(want_names)):
+        out.append(f"materialized workspace carries forbidden standalone package {name}")
+    for name, pkg in sorted(got.items()):
+        pid = want_names.get(name)
+        if pid is None:
+            continue
+        want_path = f["package_paths"][pid]
+        manifest = str(pkg.get("manifest_path", "")).replace("\\", "/")
+        if not manifest.endswith(f"{want_path}/Cargo.toml"):
+            out.append(f"package {name} path drifted from {want_path}")
+        cls = f["package_rows"][pid]["class"]
+        publish = pkg.get("publish")
+        if cls in ("DevOnly", "Example"):
+            if publish is None or publish == True:  # noqa: E712 -- metadata uses null/[]/list
+                out.append(f"package {name} must carry publish = false")
+        elif publish is not None and publish != True:  # noqa: E712
+            out.append(f"package {name} must remain publishable")
+        kind = f["kinds"][pid]
+        targets = {t["name"]: t for t in pkg.get("targets", [])}
+        target_kinds = {k for t in pkg.get("targets", []) for k in t.get("kind", [])}
+        if kind == "ProcMacroLibrary" and "proc-macro" not in target_kinds:
+            out.append(f"package {name} must compile as a proc-macro library")
+        if kind in ("Binary", "ExampleBinary"):
+            want_bin = f["binary_targets"][pid]
+            bins = {t["name"] for t in pkg.get("targets", []) if "bin" in t.get("kind", [])}
+            if bins != {want_bin}:
+                out.append(f"package {name} binary target must be exactly {want_bin}")
+        _ = targets
+        want_deps: dict[str, dict] = {}
+        for e in f["edges"]:
+            if e["importer"] != pid:
+                continue
+            dep_kind = "dev" if e["class"] == "DevOnly" and cls != "DevOnly" else None
+            want_deps[f["cargo_names"][e["importee"]]] = {
+                "optional": e["class"] == "OptionalProfile", "kind": dep_kind}
+        got_deps = {d["name"]: d for d in pkg.get("dependencies", [])}
+        for dep in sorted(set(want_deps) - set(got_deps)):
+            out.append(f"package {name} is missing declared edge to {dep}")
+        for dep in sorted(set(got_deps) - set(want_deps)):
+            out.append(f"package {name} carries undeclared edge to {dep}")
+        for dep, want in sorted(want_deps.items()):
+            gotd = got_deps.get(dep)
+            if not gotd:
+                continue
+            if bool(gotd.get("optional")) != want["optional"]:
+                out.append(f"package {name} edge to {dep} has the wrong optional posture")
+            if want["kind"] == "dev" and gotd.get("kind") != "dev":
+                out.append(f"package {name} dev-only edge to {dep} leaks into production")
+        examples_pid = pid if cls == "Example" else None
+        if examples_pid:
+            dev_only_names = {f["cargo_names"][q]
+                              for q in f["package_order"]
+                              if f["package_rows"][q]["class"] == "DevOnly"}
+            for dep in got_deps:
+                if dep in dev_only_names:
+                    out.append(f"package {name} depends on dev tooling {dep}")
+        features = pkg.get("features", {})
+        if pid in f["no_std"]:
+            if features.get("default") != ["std"] or "std" not in features:
+                out.append(f"package {name} std feature wiring drifted")
+            for prof in f["opt_in"][pid]:
+                if prof not in features:
+                    out.append(f"package {name} names no {prof} opt-in feature "
+                               "for its admitted qualification profile")
+    return out
+
+
+def _g0_cargo_command(exe_triple: str) -> list[str] | None:
+    """A cargo invocation whose HOST matches the qualified binary's triple, so
+    the workspace (and its proc-macro DLLs) link with the same toolchain the
+    receipt binds. Returns None when no matching toolchain exists here; the
+    hosted lane owns the authoritative receipt in that case."""
+    cargo = shutil.which("cargo")
+    rustc = shutil.which("rustc")
+    if not cargo or not rustc:
+        return None
+    host = re.search(r"host: (\S+)",
+                     subprocess.run([rustc, "-vV"], capture_output=True,
+                                    text=True).stdout)
+    if host and host.group(1) == exe_triple:
+        return [cargo]
+    listing = subprocess.run(["rustup", "toolchain", "list"],
+                             capture_output=True, text=True)
+    if listing.returncode == 0:
+        for line in listing.stdout.split():
+            if line.endswith(exe_triple):
+                return [cargo, f"+{line}"]
+    return None
+
+
+def qualify_materializer(rustc, root: Path, workdir: Path) -> list[str]:
+    """The dedicated tier0-materialize qualification (5.5E5).
+
+    The generic qualify_binary route ran the materializer with the live seed
+    root as its only argument -- which is how a workspace scaffold appeared
+    inside the signed seed with every receipt green. This route materializes
+    into TWO independent temporary roots outside the seed, proves the full
+    seed snapshot unchanged, byte-compares both trees against the independent
+    oracle, proves the second disposition Unchanged, qualifies the workspace
+    with Cargo on a disposable build copy, and records the canonical output
+    tree digest as receipt evidence. Printing PASS earns nothing here.
+    """
+    name = "tier0-materialize"
+    findings: list[str] = []
+    before = _tree_digest(root)
+    exe = workdir / f"{name}-{before[:12]}" / ("run" + (".exe" if os.name == "nt" else ""))
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    if exe.exists():
+        receipt(name, available=True, compiled=False,
+                reason="artifact path already existed; a prior run's binary could be reused")
+        return [f"{name}: artifact path was not unique to this run"]
+    built = None
+    for target in (None, "x86_64-pc-windows-gnu"):
+        rlib = exe.parent / f"libspec-{target or 'host'}.rlib"
+        lib_cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "rlib",
+                   "--crate-name", "spec", "-o", str(rlib), str(root / "spec/lib.rs")]
+        if target:
+            lib_cmd[1:1] = ["--target", target]
+        if subprocess.run(lib_cmd, capture_output=True, text=True).returncode != 0:
+            continue
+        cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-name", "materialize",
+               "--extern", f"spec={rlib}", "-o", str(exe),
+               str(root / "bootstrap/materialize.rs")]
+        if target:
+            cmd[1:1] = ["--target", target]
+        if subprocess.run(cmd, capture_output=True, text=True).returncode == 0 and exe.is_file():
+            if target is None:
+                m = re.search(r"host: (\S+)",
+                              subprocess.run([rustc, "-vV"], capture_output=True,
+                                             text=True).stdout)
+                target = m.group(1) if m else "host default"
+            built = (target, hashlib.sha256(exe.read_bytes()).hexdigest())
+            break
+    if built is None:
+        receipt(name, available=True, compiled=True, executed=False,
+                reason="no working linker for any attempted target; "
+                       "hosted MSVC owns the authoritative receipt")
+        return findings
+    target, digest = built
+
+    snap_before = _seed_snapshot(root)
+    out_a = workdir / "g0-candidate-a"
+    out_b = workdir / "g0-candidate-b"
+
+    def run_mat(output: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [str(exe), "--seed", str(root), "--output", str(output)],
+            capture_output=True, text=True)
+
+    ok = True
+    for output in (out_a, out_b):
+        proc = run_mat(output)
+        if proc.returncode != 0 or "materialize: PASS Created" not in proc.stdout:
+            findings.append(f"{name}: isolated materialization into {output.name} "
+                            f"did not report Created:\n"
+                            + "\n".join((proc.stdout + proc.stderr).splitlines()[:6]))
+            ok = False
+    snap_after = _seed_snapshot(root)
+    if snap_after != snap_before:
+        changed = sorted(set(snap_before) ^ set(snap_after))[:8] or ["(byte changes)"]
+        findings.append(f"{name}: the materializer qualification mutated the seed "
+                        f"tree: {', '.join(changed)}")
+        ok = False
+
+    tree_digest_hex = ""
+    if ok:
+        expected = oracle_plan(root)
+        tree_a = _read_tree(out_a)
+        tree_b = _read_tree(out_b)
+        for label, tree in (("a", tree_a), ("b", tree_b)):
+            if tree != expected:
+                missing = sorted(set(expected) - set(tree))[:4]
+                extra = sorted(set(tree) - set(expected))[:4]
+                diff = sorted(r for r in set(tree) & set(expected)
+                              if tree[r] != expected[r])[:4]
+                findings.append(
+                    f"{name}: output {label} does not match the independent oracle "
+                    f"(missing {missing}, extra {extra}, differing {diff})")
+                ok = False
+        if tree_a != tree_b:
+            findings.append(f"{name}: the two isolated outputs are not byte-identical")
+            ok = False
+        rerun = run_mat(out_a)
+        if rerun.returncode != 0 or "materialize: PASS Unchanged" not in rerun.stdout:
+            findings.append(f"{name}: a second materialization against the exact "
+                            "output did not report Unchanged")
+            ok = False
+        if _read_tree(out_a) != tree_a:
+            findings.append(f"{name}: the second materialization rewrote the output")
+            ok = False
+        tree_digest_hex = _output_tree_digest(tree_a)
+
+    if ok:
+        cargo = _g0_cargo_command(target)
+        if cargo is None:
+            receipt(name, available=True, compiled=True, executed=True, passed=False,
+                    target=target,
+                    reason=f"no cargo toolchain matches {target}; the hosted lane "
+                           "owns the authoritative workspace qualification")
+            return findings + [f"{name}: the workspace qualification could not run "
+                               f"(no cargo for {target})"]
+        build = workdir / "g0-build"
+        shutil.copytree(out_a, build)
+        env = dict(os.environ)
+
+        def cargo_run(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run([*cargo, *args], cwd=build, env=env,
+                                  capture_output=True, text=True)
+
+        meta_proc = cargo_run("metadata", "--no-deps", "--format-version", "1")
+        if meta_proc.returncode != 0:
+            findings.append(f"{name}: cargo metadata refused the candidate:\n"
+                            + "\n".join(meta_proc.stderr.splitlines()[:6]))
+            ok = False
+        else:
+            facts = oracle_facts(root)
+            findings.extend(f"{name}: {msg}" for msg in
+                            inspect_gate0_metadata(json.loads(meta_proc.stdout), facts))
+            examples_pid = next((pid for pid in facts["package_order"]
+                                 if facts["package_rows"][pid]["class"] == "Example"), None)
+            checks = [("check", "--workspace", "--all-targets")]
+            for pid in facts["no_std"]:
+                checks.append(("check", "-p", facts["cargo_names"][pid],
+                               "--no-default-features"))
+            for args in checks:
+                proc = cargo_run(*args)
+                if proc.returncode != 0:
+                    findings.append(f"{name}: cargo {' '.join(args)} failed:\n"
+                                    + "\n".join(proc.stderr.splitlines()[-6:]))
+                    ok = False
+            if examples_pid:
+                bin_name = facts["binary_targets"][examples_pid]
+                proc = cargo_run("run", "-q", "-p", facts["cargo_names"][examples_pid],
+                                 "--bin", bin_name)
+                want_line = f"{facts['cargo_names'][examples_pid]}: gate-0 placeholder"
+                if proc.returncode != 0 or want_line not in proc.stdout:
+                    findings.append(f"{name}: the example binary emitted no observable "
+                                    f"Gate-0 line (wanted {want_line!r})")
+                    ok = False
+        if _seed_snapshot(root) != snap_before:
+            findings.append(f"{name}: the workspace qualification mutated the seed tree")
+            ok = False
+        if (out_a / "Cargo.lock").exists() or _read_tree(out_a) != _read_tree(out_b):
+            findings.append(f"{name}: cargo qualification touched the qualified "
+                            "candidate; it must run on a disposable copy")
+            ok = False
+
+    ok = ok and not findings
+    receipt(name, available=True, compiled=True, executed=True, passed=ok,
+            target=f"{target} artifact sha256:{digest[:12]} source sha256:{before[:12]}",
+            reason=(f"output tree sha256:{tree_digest_hex[:12]}" if tree_digest_hex else None))
     return findings
 
 
@@ -3326,6 +3918,636 @@ def _commit(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_bootstrap_output(audit, project) -> list[str]:
+    """The 5.5E5 isolated Gate-0 materializer-output qualification fixtures.
+
+    Typed-plan closure, command-boundary isolation, non-overwriting
+    publication, manifest and compilation qualification, independent-oracle
+    integrity, sealed substitution probes, and structural growth. The
+    behavioral probes run the REAL compiled materializer against scratch
+    outputs; nothing here writes the seed.
+    """
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, rel, old, needle, new="", validator=None):
+        tmp = gate_sandbox([(rel, old, new)])
+        try:
+            expect(name, (validator or audit.bootstrap_output_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    bo = audit.bootstrap_output_findings
+    BOS = "spec/bootstrap_output.rs"
+    ARCH = "spec/architecture.rs"
+
+    if bo(root):
+        fail(f"bootstrap_output_contract_passes (got {bo(root)!r})")
+
+    # --- typed plan closure --------------------------------------------------
+    probe("gate0_root_artifact_missing_from_all_is_rejected", BOS,
+          "        Gate0RootArtifact::Justfile,\n",
+          "Gate0RootArtifact::Justfile is authored but ALL omits it")
+    probe("duplicate_gate0_root_path_is_rejected", BOS,
+          'Gate0RootArtifact::Justfile => "justfile",',
+          "two root artifacts project one path",
+          'Gate0RootArtifact::Justfile => "Cargo.toml",')
+    probe("gate0_package_artifact_missing_from_all_is_rejected", BOS,
+          "        Gate0PackageArtifact::SourceDoor,\n",
+          "Gate0PackageArtifact::SourceDoor is authored but ALL omits it")
+    probe("gate0_package_target_kind_missing_from_all_is_rejected", BOS,
+          "        Gate0PackageTargetKind::ExampleBinary,\n",
+          "Gate0PackageTargetKind::ExampleBinary is authored but ALL omits it")
+    probe("future_package_without_explicit_target_kind_is_rejected", BOS,
+          "        PackageId::BatPakExamples => Gate0PackageTargetKind::ExampleBinary,\n",
+          "package BatPakExamples has no explicit target kind")
+    probe("binary_package_without_target_name_is_rejected", BOS,
+          '        PackageId::BatPakCli => Some("batpak"),\n',
+          "binary-kind package BatPakCli names no binary target")
+    probe("library_package_with_binary_target_is_rejected", BOS,
+          '        PackageId::BatPakCli => Some("batpak"),',
+          "library-kind package BatPak names a binary target",
+          '        PackageId::BatPakCli => Some("batpak"),\n'
+          '        PackageId::BatPak => Some("bp"),')
+
+    def plan_refusal(tmp):
+        try:
+            project.gate0_plan_facts(tmp)
+            return []
+        except project.Unadmitted as exc:
+            return [str(exc)]
+
+    probe("package_source_door_collision_is_rejected", ARCH,
+          'PackageId::BatQl => "crates/batql",',
+          "lists crates/netbat/Cargo.toml twice",
+          'PackageId::BatQl => "crates/netbat",', validator=plan_refusal)
+    probe("duplicate_expanded_gate0_path_is_rejected", ARCH,
+          'PackageId::NetBat => "crates/netbat",',
+          "lists crates/batpak/Cargo.toml twice",
+          'PackageId::NetBat => "crates/batpak",', validator=plan_refusal)
+    probe("syncbat_plane_missing_from_all_is_rejected", ARCH,
+          "        SyncBatPlane::Port,\n",
+          "plane Port is authored but SyncBatPlane::ALL omits it",
+          validator=audit.syncbat_firewall_findings)
+    probe("duplicate_syncbat_plane_module_name_is_rejected", ARCH,
+          'SyncBatPlane::Port => "port",',
+          "two SyncBat planes project one module name",
+          'SyncBatPlane::Port => "world",')
+    probe("raw_syncbat_required_planes_table_cannot_return", ARCH,
+          "pub const FORBIDDEN_TARGET_PATHS",
+          "raw plane inventory SYNCBAT_REQUIRED_PLANES",
+          "pub const SYNCBAT_REQUIRED_PLANES: &[&str] = &[];\n\n"
+          "pub const FORBIDDEN_TARGET_PATHS")
+    probe("parallel_syncbat_plane_inventory_cannot_return", ARCH,
+          "pub const FORBIDDEN_TARGET_PATHS",
+          "raw plane inventory SYNCBAT_PLANES",
+          "pub const SYNCBAT_PLANES: &[SyncBatPlane] = &[];\n\n"
+          "pub const FORBIDDEN_TARGET_PATHS")
+    probe("absolute_gate0_output_path_is_rejected", BOS,
+          'Gate0RootArtifact::Justfile => "justfile",',
+          "not output-root-relative and traversal-free",
+          'Gate0RootArtifact::Justfile => "/justfile",')
+    probe("parent_traversal_in_gate0_output_path_is_rejected", BOS,
+          'Gate0RootArtifact::Justfile => "justfile",',
+          "not output-root-relative and traversal-free",
+          'Gate0RootArtifact::Justfile => "../justfile",')
+
+    # the expanded plan carries both artifacts of every plane
+    facts = oracle_facts(root)
+    plan = oracle_plan(root)
+    plane_base = facts["package_paths"][facts["plane_owner"]]
+    for plane in facts["planes"]:
+        module = facts["modules"][plane]
+        if f"{plane_base}/src/{module}.rs" not in plan:
+            fail("syncbat_plane_module_missing_from_plan_is_rejected")
+        if f"{plane_base}/src/{module}/README.md" not in plan:
+            fail("syncbat_plane_readme_missing_from_plan_is_rejected")
+
+    # --- isolation laws over the harness and the corpus ----------------------
+    # The forged payload is concatenated at run time so THIS source never
+    # contains the contiguous one-root tuple the audit law scans for.
+    forged_route = ('_FORGED_ROUTE = ("tier0-mat' + 'erialize", '
+                    '"bootstrap/materialize.rs", "materialize: PASS")'
+                    "\n\n\ndef qualify_materializer")
+    probe("materializer_qualification_cannot_use_live_repository_as_output",
+          "bootstrap/selftest.py",
+          "def qualify_materializer",
+          "rides the generic one-root binary qualification",
+          forged_route)
+    with isolated_tree(subdirs=("spec", "bootstrap")) as tmp:
+        d0 = _tree_digest(tmp)
+        s0 = _seed_snapshot(tmp)
+        (tmp / "Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+        if _tree_digest(tmp) != d0:
+            fail("limited_source_digest_cannot_substitute_for_seed_snapshot "
+                 "(the limited digest saw the scaffold; the fixture premise moved)")
+        if _seed_snapshot(tmp) == s0:
+            fail("limited_source_digest_cannot_substitute_for_seed_snapshot "
+                 "(the full snapshot is blind to a root scaffold file)")
+    for readme_rel in [f"{facts['package_paths'][pid]}/README.md"
+                       for pid in facts["package_order"]][:1]:
+        text = plan[readme_rel].decode("utf-8")
+        if text.startswith("---") or "reconciliation_epoch" in text:
+            fail("package_readme_cannot_force_architecture_frontmatter")
+    if {"crates", "apps", "examples"} & set(audit.EXCLUDE_DIRS):
+        fail("materializer_output_cannot_create_a_corpus_eligibility_carveout")
+
+    # --- oracle integrity ----------------------------------------------------
+    st_src = (HERE / "selftest.py").read_text(encoding="utf-8")
+    oracle_block = re.search(r"\ndef oracle_plan\(.*?(?=\ndef )", st_src, re.S).group(0)
+    if "materialize" in oracle_block:
+        fail("output_oracle_cannot_import_materializer_renderer")
+    if "g0-candidate" in oracle_block or "read_tree" in oracle_block:
+        fail("output_oracle_cannot_use_generated_output_as_expected_bytes")
+    probe("output_oracle_cannot_carry_package_name_map", "bootstrap/selftest.py",
+          "    f = oracle_facts(root)\n    plan: dict[str, bytes] = {}",
+          "the output oracle carries the package name",
+          '    _forged = "macbat-compiler"\n'
+          "    f = oracle_facts(root)\n    plan: dict[str, bytes] = {}")
+    probe("output_oracle_cannot_carry_plane_name_map", "bootstrap/selftest.py",
+          "    f = oracle_facts(root)\n    plan: dict[str, bytes] = {}",
+          "the output oracle carries the plane module name",
+          '    _forged = "pakvm"\n'
+          "    f = oracle_facts(root)\n    plan: dict[str, bytes] = {}")
+    probe("output_oracle_cannot_carry_feature_map", "bootstrap/selftest.py",
+          "    f = oracle_facts(root)\n    plan: dict[str, bytes] = {}",
+          "the output oracle carries the feature name",
+          '    _forged = "browser-storage"\n'
+          "    f = oracle_facts(root)\n    plan: dict[str, bytes] = {}")
+    probe("gate0_materialization_plan_projection_drift_is_rejected",
+          "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
+          "| justfile | Root / Justfile |",
+          "does not match its typed derivation",
+          "| justfile-drifted | Root / Justfile |")
+    probe("gate0_materialization_plan_marker_drift_is_rejected",
+          "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
+          "GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/bootstrap_output.rs; "
+          "spec/architecture.rs; spec/toolchain.rs",
+          "GATE0-MATERIALIZATION-PLAN",
+          "GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/architecture.rs; "
+          "spec/bootstrap_output.rs; spec/toolchain.rs",
+          validator=audit.generated_view_findings)
+
+    # --- behavioral probes against the real binary ---------------------------
+    rustc = shutil.which("rustc")
+    if not rustc:
+        fail("bootstrap_output_behavioral_probes (no rustc on this machine)")
+        findings.extend(canonical_drift(before))
+        return findings
+    workdir = Path(tempfile.mkdtemp(prefix="batpak-g0-"))
+    try:
+        exe = None
+        exe_triple = None
+        for target in (None, "x86_64-pc-windows-gnu"):
+            rlib = workdir / f"libspec-{target or 'host'}.rlib"
+            lib_cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "rlib",
+                       "--crate-name", "spec", "-o", str(rlib), str(root / "spec/lib.rs")]
+            candidate = workdir / f"materialize-{target or 'host'}.exe"
+            cmd = [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-name", "materialize",
+                   "--extern", f"spec={rlib}", "-o", str(candidate),
+                   str(root / "bootstrap/materialize.rs")]
+            if target:
+                lib_cmd[1:1] = ["--target", target]
+                cmd[1:1] = ["--target", target]
+            if subprocess.run(lib_cmd, capture_output=True, text=True).returncode == 0 \
+                    and subprocess.run(cmd, capture_output=True, text=True).returncode == 0:
+                exe = candidate
+                exe_triple = target
+                break
+        if exe is None:
+            fail("bootstrap_output_behavioral_probes (no working linker; the "
+                 "hosted lane owns these probes)")
+            findings.extend(canonical_drift(before))
+            return findings
+        if exe_triple is None:
+            m = re.search(r"host: (\S+)",
+                          subprocess.run([rustc, "-vV"], capture_output=True,
+                                         text=True).stdout)
+            exe_triple = m.group(1) if m else "host default"
+
+        def mat(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run([str(exe), *args], capture_output=True, text=True)
+
+        def mat_out(output: Path) -> subprocess.CompletedProcess:
+            return mat("--seed", str(root), "--output", str(output))
+
+        def refusal(name: str, proc: subprocess.CompletedProcess, needle: str) -> None:
+            if proc.returncode == 0 or needle not in (proc.stdout + proc.stderr):
+                fail(f"{name} (wanted {needle!r}, got "
+                     f"{(proc.stdout + proc.stderr).strip()[:160]!r})")
+
+        refusal("materializer_requires_explicit_seed_root",
+                mat("--output", str(workdir / "x1")), "the --seed root is required")
+        refusal("materializer_requires_explicit_output_root",
+                mat("--seed", str(root)), "the --output root is required")
+        refusal("materializer_refuses_same_seed_and_output_root",
+                mat_out(root), "the seed and output roots are the same path")
+        refusal("materializer_refuses_output_inside_seed_root",
+                mat_out(root / "g0-probe-out"), "the output root is inside the seed root")
+        refusal("materializer_refuses_seed_inside_output_root",
+                mat_out(root.parent), "the seed root is inside the output root")
+
+        snap = _seed_snapshot(root)
+        base = workdir / "base"
+        proc = mat_out(base)
+        if proc.returncode != 0 or "materialize: PASS Created" not in proc.stdout:
+            fail(f"materializer_publishes_a_created_candidate (got "
+                 f"{(proc.stdout + proc.stderr).strip()[:160]!r})")
+            findings.extend(canonical_drift(before))
+            return findings
+        if _seed_snapshot(root) != snap:
+            fail("tier0_materializer_does_not_mutate_seed_tree")
+        base_tree = _read_tree(base)
+        if base_tree != plan:
+            fail("materialized_tree_matches_the_independent_oracle")
+
+        def scratch(name: str) -> Path:
+            out = workdir / name
+            shutil.copytree(base, out)
+            return out
+
+        o = scratch("p-missing")
+        (o / "justfile").unlink()
+        refusal("materializer_missing_planned_file_is_rejected", mat_out(o),
+                "missing the planned file justfile")
+        o = scratch("p-mismatch")
+        with open(o / "justfile", "ab") as fh:
+            fh.write(b"# drift\n")
+        refusal("materializer_mismatching_planned_file_is_rejected", mat_out(o),
+                "does not match its planned bytes")
+        if (o / "justfile").read_bytes() == plan["justfile"]:
+            fail("divergent_existing_output_is_not_repaired")
+        o = scratch("p-extra")
+        (o / "stray.txt").write_text("x", encoding="utf-8")
+        refusal("materializer_extra_file_is_rejected", mat_out(o),
+                "extra file stray.txt")
+        o = scratch("p-extradir")
+        (o / "straydir").mkdir()
+        refusal("materializer_extra_directory_is_rejected", mat_out(o),
+                "extra directory straydir")
+        o = scratch("p-symlink")
+        try:
+            os.symlink(o / "Cargo.toml", o / "link.toml")
+            refusal("materializer_symlink_is_rejected", mat_out(o),
+                    "carries a symlink")
+        except OSError:
+            # Symlink creation needs privilege this environment lacks; the
+            # refusal still has to EXIST in the publication path, and the
+            # hosted lane exercises it behaviorally.
+            if "is_symlink" not in (root / "bootstrap/materialize.rs").read_text(encoding="utf-8"):
+                fail("materializer_symlink_is_rejected (no symlink refusal in the "
+                     "publication path)")
+        o = scratch("p-collision")
+        (o / "justfile").unlink()
+        (o / "justfile").mkdir()
+        refusal("materializer_file_directory_collision_is_rejected", mat_out(o),
+                "a directory sits where the planned file justfile belongs")
+        o = workdir / "p-staging-dir"
+        (workdir / ".p-staging-dir.g0-staging").mkdir()
+        refusal("late_mismatch_refusal_creates_no_earlier_files", mat_out(o),
+                "staging path")
+        if o.exists():
+            fail("late_mismatch_refusal_creates_no_earlier_files (final output appeared)")
+        o = workdir / "p-staging-file"
+        (workdir / ".p-staging-file.g0-staging").write_text("x", encoding="utf-8")
+        refusal("failed_staging_leaves_final_output_absent", mat_out(o), "staging path")
+        if o.exists():
+            fail("failed_staging_leaves_final_output_absent (final output appeared)")
+
+        proc = mat_out(base)
+        if proc.returncode != 0 or "materialize: PASS Unchanged" not in proc.stdout:
+            fail("exact_existing_output_returns_unchanged")
+        if _read_tree(base) != base_tree:
+            fail("second_materialization_is_byte_idempotent")
+        o = workdir / "twin"
+        mat_out(o)
+        if _read_tree(o) != base_tree:
+            fail("two_isolated_outputs_are_byte_identical")
+        fwd = dict(sorted(base_tree.items()))
+        rev = dict(sorted(base_tree.items(), reverse=True))
+        if _output_tree_digest(fwd) != _output_tree_digest(rev):
+            fail("materialized_tree_digest_is_order_independent")
+        if "Cargo.lock" in plan or (base / "Cargo.lock").exists():
+            fail("cargo_generated_lockfile_cannot_enter_materializer_plan")
+
+        # --- manifest and compilation qualification --------------------------
+        members = re.findall(r'^  "([^"]+)",$',
+                             base_tree["Cargo.toml"].decode("utf-8"), re.M)
+        if members != [facts["package_paths"][pid] for pid in facts["package_order"]]:
+            fail("materialized_workspace_member_order_is_canonical")
+        cargo = _g0_cargo_command(exe_triple)
+        if cargo is None:
+            fail(f"materialized_workspace_qualification (no cargo toolchain "
+                 f"matches {exe_triple})")
+        else:
+            build = workdir / "build"
+            shutil.copytree(base, build)
+
+            def cargo_run(*args: str) -> subprocess.CompletedProcess:
+                return subprocess.run([*cargo, *args], cwd=build,
+                                      capture_output=True, text=True)
+
+            meta_proc = cargo_run("metadata", "--no-deps", "--format-version", "1")
+            if meta_proc.returncode != 0:
+                fail("materialized_workspace_members_equal_package_id_all "
+                     "(cargo metadata refused the candidate)")
+            else:
+                meta = json.loads(meta_proc.stdout)
+                inspect = inspect_gate0_metadata
+                real = inspect(meta, facts)
+                if real:
+                    fail(f"materialized_workspace_members_equal_package_id_all "
+                         f"(got {real!r})")
+                import copy
+
+                def mutated(mutator) -> list[str]:
+                    m2 = copy.deepcopy(meta)
+                    mutator(m2)
+                    return inspect(m2, facts)
+
+                def by_name(m2, name):
+                    return next(p for p in m2["packages"] if p["name"] == name)
+
+                names = facts["cargo_names"]
+                dev_pid = next(pid for pid in facts["package_order"]
+                               if facts["package_rows"][pid]["class"] == "DevOnly")
+                ex_pid = next(pid for pid in facts["package_order"]
+                              if facts["package_rows"][pid]["class"] == "Example")
+                any_pid = facts["package_order"][0]
+                expect("materialized_package_name_drift_is_rejected",
+                       mutated(lambda m2: by_name(m2, names[any_pid]).update(
+                           name=names[any_pid] + "-drift")),
+                       "is missing package")
+                expect("materialized_package_path_drift_is_rejected",
+                       mutated(lambda m2: by_name(m2, names[any_pid]).update(
+                           manifest_path="elsewhere/Cargo.toml")),
+                       "path drifted")
+                edge = next(e for e in facts["edges"] if e["class"] == "Required")
+                expect("materialized_edge_missing_is_rejected",
+                       mutated(lambda m2: by_name(m2, names[edge["importer"]])
+                               ["dependencies"].remove(next(
+                                   d for d in by_name(m2, names[edge["importer"]])["dependencies"]
+                                   if d["name"] == names[edge["importee"]]))),
+                       "is missing declared edge")
+                expect("materialized_edge_extra_is_rejected",
+                       mutated(lambda m2: by_name(m2, names[any_pid])
+                               ["dependencies"].append(
+                                   {"name": names[dev_pid], "optional": False,
+                                    "kind": None})),
+                       "carries undeclared edge")
+                opt = next((e for e in facts["edges"] if e["class"] == "OptionalProfile"),
+                           None)
+                if opt is None:
+                    fail("materialized_optional_edge_is_not_required "
+                         "(the seed declares no optional edge to defend)")
+                else:
+                    expect("materialized_optional_edge_is_not_required",
+                           mutated(lambda m2: next(
+                               d for d in by_name(m2, names[opt["importer"]])["dependencies"]
+                               if d["name"] == names[opt["importee"]]).update(optional=False)),
+                           "wrong optional posture")
+                dev_edge = next((e for e in facts["edges"] if e["class"] == "DevOnly"
+                                 and facts["package_rows"][e["importer"]]["class"] != "DevOnly"),
+                                None)
+                if dev_edge is not None:
+                    expect("materialized_dev_edge_cannot_leak_into_production",
+                           mutated(lambda m2: next(
+                               d for d in by_name(m2, names[dev_edge["importer"]])["dependencies"]
+                               if d["name"] == names[dev_edge["importee"]]
+                               and d.get("kind") == "dev").update(kind=None)),
+                           "leaks into production")
+                else:
+                    # The seed declares no production dev edge at all, so the
+                    # leak the law refuses can only arrive as an UNDECLARED
+                    # normal dependency on dev tooling -- plant exactly that.
+                    prod_pid = next(pid for pid in facts["package_order"]
+                                    if facts["package_rows"][pid]["class"] == "Production")
+                    expect("materialized_dev_edge_cannot_leak_into_production",
+                           mutated(lambda m2: by_name(m2, names[prod_pid])
+                                   ["dependencies"].append(
+                                       {"name": names[dev_pid], "optional": False,
+                                        "kind": None})),
+                           "carries undeclared edge")
+                expect("materialized_examples_cannot_depend_on_testpak_is_rejected",
+                       mutated(lambda m2: by_name(m2, names[ex_pid])
+                               ["dependencies"].append(
+                                   {"name": names[dev_pid], "optional": False,
+                                    "kind": None})),
+                       "depends on dev tooling")
+                expect("materialized_publish_false_posture_is_enforced",
+                       mutated(lambda m2: by_name(m2, names[ex_pid]).update(publish=None)),
+                       "must carry publish = false")
+                wasm = [p for p in facts["profiles"]
+                        if p["environment"] not in ("NoStdAlloc", "NativeStd")]
+                for fixture, row in zip(
+                        ("browser_storage_profile_requires_named_feature",
+                         "syncbat_browser_profile_requires_named_feature"),
+                        sorted(wasm, key=lambda r: r["profile"])):
+                    expect(fixture,
+                           mutated(lambda m2, row=row: by_name(
+                               m2, names[row["package"]])["features"].pop(
+                                   row["profile"], None)),
+                           f"names no {row['profile']} opt-in feature")
+
+                proc = cargo_run("check", "--workspace", "--all-targets")
+                if proc.returncode != 0:
+                    fail("macbat_proc_macro_skeleton_must_compile (workspace check "
+                         "failed):\n" + "\n".join(proc.stderr.splitlines()[-4:]))
+                macbat_pid = next(pid for pid, k in facts["kinds"].items()
+                                  if k == "ProcMacroLibrary")
+                if "proc-macro" not in {k for p in meta["packages"]
+                                        if p["name"] == names[macbat_pid]
+                                        for t in p["targets"] for k in t["kind"]}:
+                    fail("macbat_proc_macro_skeleton_must_compile (no proc-macro target)")
+                for fixture, pid in zip(("batpak_no_std_skeleton_must_compile",
+                                         "syncbat_no_std_skeleton_must_compile"),
+                                        facts["no_std"]):
+                    proc = cargo_run("check", "-p", names[pid], "--no-default-features")
+                    if proc.returncode != 0:
+                        fail(fixture + ":\n" + "\n".join(proc.stderr.splitlines()[-4:]))
+                ws_manifest = base_tree["Cargo.toml"].decode("utf-8")
+                for pid in facts["no_std"]:
+                    if f"{names[pid]} = {{ path = \"{facts['package_paths'][pid]}\", " \
+                       "default-features = false }" not in ws_manifest:
+                        fail("syncbat_no_std_cannot_reenable_batpak_std (a no_std-"
+                             "capable dependency ships with default features on)")
+                proc = cargo_run("run", "-q", "-p", names[ex_pid], "--bin",
+                                 facts["binary_targets"][ex_pid])
+                if proc.returncode != 0 or \
+                        f"{names[ex_pid]}: gate-0 placeholder" not in proc.stdout:
+                    fail("family_smoke_target_must_be_observable")
+                if names[ex_pid] != facts["binary_targets"][ex_pid]:
+                    cli_pid = next(pid for pid, k in facts["kinds"].items()
+                                   if k == "Binary")
+                    bins = {t["name"] for p in meta["packages"]
+                            if p["name"] == names[cli_pid]
+                            for t in p["targets"] if "bin" in t["kind"]}
+                    if bins != {facts["binary_targets"][cli_pid]}:
+                        fail("batpak_cli_target_must_be_batpak")
+
+        # --- sealed substitution probes (compile against the real boundary) --
+        spec_meta = workdir / "libspec.rmeta"
+        proc = subprocess.run(
+            [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "lib",
+             "--emit=metadata", "--crate-name", "spec", "-o", str(spec_meta),
+             str(root / "spec/lib.rs")],
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            fail("bootstrap_output_sealed_probes (spec does not compile)")
+        else:
+            for name, body, want in (
+                ("raw_string_cannot_substitute_for_gate0_root_artifact",
+                 'let _: spec::bootstrap_output::Gate0RootArtifact = "Cargo.toml";',
+                 "mismatched types"),
+                ("package_class_cannot_substitute_for_gate0_package_target_kind",
+                 "let _: spec::bootstrap_output::Gate0PackageTargetKind = "
+                 "spec::architecture::PackageClass::Production;",
+                 "mismatched types"),
+                ("materialization_id_cannot_substitute_for_gate0_output_artifact",
+                 "use spec::bootstrap_output::MaterializationId;",
+                 "no `MaterializationId`"),
+                ("architecture_module_does_not_reexport_gate0_output_types",
+                 "use spec::architecture::Gate0RootArtifact;",
+                 "no `Gate0RootArtifact`"),
+            ):
+                src = workdir / f"{name}.rs"
+                if body.startswith("use "):
+                    src.write_text(f"{body}\nfn main() {{}}\n", encoding="utf-8")
+                else:
+                    src.write_text(f"fn main() {{ {body} }}\n", encoding="utf-8")
+                proc = subprocess.run(
+                    [rustc, "--edition", TOOLCHAIN_EDITION, "--emit=metadata",
+                     "--crate-name", name, "--extern", f"spec={spec_meta}",
+                     "-o", str(workdir / f"{name}.rmeta"), str(src)],
+                    capture_output=True, text=True)
+                if proc.returncode == 0:
+                    fail(f"{name} (the hostile consumer compiled)")
+                elif want not in proc.stderr:
+                    fail(f"{name} (refused for the wrong reason: "
+                         f"{proc.stderr.splitlines()[:3]!r})")
+
+        # --- structural growth: the counts are evidence, never law -----------
+        def growth(name: str, edits, expect_new: list[str], delta: int,
+                   metadata_gains: str = "") -> None:
+            tmp = gate_sandbox(edits)
+            try:
+                # the sandbox must be a COMPLETE seed for validate_seed
+                for rel in ("SPEC.sha256", "history/README.md"):
+                    if (root / rel).is_file():
+                        (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(root / rel, tmp / rel)
+                grlib = workdir / f"libspec-{name}.rlib"
+                gexe = workdir / f"{name}.exe"
+                for cmdset in (
+                    [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-type", "rlib",
+                     "--crate-name", "spec", "-o", str(grlib), str(tmp / "spec/lib.rs")],
+                    [rustc, "--edition", TOOLCHAIN_EDITION, "--crate-name",
+                     "materialize", "--extern", f"spec={grlib}", "-o", str(gexe),
+                     str(tmp / "bootstrap/materialize.rs")],
+                ):
+                    if exe_triple != "host default":
+                        cmdset[1:1] = ["--target", exe_triple]
+                    proc = subprocess.run(cmdset, capture_output=True, text=True)
+                    if proc.returncode != 0:
+                        fail(f"{name} (sandbox spec/materializer does not compile):\n"
+                             + "\n".join(proc.stderr.splitlines()[:6]))
+                        return
+                ga = workdir / f"{name}-a"
+                gb = workdir / f"{name}-b"
+                for out in (ga, gb):
+                    proc = subprocess.run(
+                        [str(gexe), "--seed", str(tmp), "--output", str(out)],
+                        capture_output=True, text=True)
+                    if proc.returncode != 0:
+                        fail(f"{name} (sandbox materialization refused):\n"
+                             + "\n".join((proc.stdout + proc.stderr).splitlines()[:6]))
+                        return
+                ta, tb = _read_tree(ga), _read_tree(gb)
+                if ta != tb:
+                    fail(f"{name} (the two grown outputs diverge)")
+                if len(ta) != len(plan) + delta:
+                    fail(f"{name} (expected {len(plan) + delta} files, got {len(ta)})")
+                for rel in expect_new:
+                    if rel not in ta:
+                        fail(f"{name} (the grown output lacks {rel})")
+                if metadata_gains and cargo is not None:
+                    gbuild = workdir / f"{name}-build"
+                    shutil.copytree(ga, gbuild)
+                    proc = subprocess.run(
+                        [*cargo, "metadata", "--no-deps", "--format-version", "1"],
+                        cwd=gbuild, capture_output=True, text=True)
+                    if proc.returncode != 0 or metadata_gains not in {
+                            p["name"] for p in json.loads(proc.stdout or "{}")
+                            .get("packages", [])}:
+                        fail(f"{name} (cargo metadata does not gain {metadata_gains})")
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+
+        growth(
+            "a_new_package_grows_the_plan_structurally",
+            [(ARCH, "    BatPakExamples,\n}", "    BatPakExamples,\n    FuturePak,\n}"),
+             (ARCH, "        PackageId::BatPakExamples,\n    ];",
+              "        PackageId::BatPakExamples,\n        PackageId::FuturePak,\n    ];"),
+             (ARCH, '            PackageId::BatPakExamples => "batpak-examples",\n        }\n    }\n\n    /// The workspace-relative path',
+              '            PackageId::BatPakExamples => "batpak-examples",\n            PackageId::FuturePak => "futurepak",\n        }\n    }\n\n    /// The workspace-relative path'),
+             (ARCH, '            PackageId::BatPakExamples => "examples",\n        }\n    }',
+              '            PackageId::BatPakExamples => "examples",\n            PackageId::FuturePak => "crates/futurepak",\n        }\n    }'),
+             (ARCH, '            PackageId::BatPakExamples => "BatPak examples",\n        }\n    }',
+              '            PackageId::BatPakExamples => "BatPak examples",\n            PackageId::FuturePak => "FuturePak",\n        }\n    }'),
+             (ARCH, "pub const QUALIFICATION_PROFILES",
+              'pub const FUTUREPAK_SPEC: PackageSpec = PackageSpec { id: PackageId::FuturePak, role: "sandbox growth witness", class: PackageClass::Production, layer: 0 };\n\npub const QUALIFICATION_PROFILES'),
+             (ARCH, "        layer: 5,\n    },\n];",
+              "        layer: 5,\n    },\n    FUTUREPAK_SPEC,\n];"),
+             (BOS, "        PackageId::BatPakExamples => Gate0PackageTargetKind::ExampleBinary,\n    }",
+              "        PackageId::BatPakExamples => Gate0PackageTargetKind::ExampleBinary,\n        PackageId::FuturePak => Gate0PackageTargetKind::Library,\n    }"),
+             (BOS, "        | PackageId::TestPak => None,\n    }",
+              "        | PackageId::TestPak\n        | PackageId::FuturePak => None,\n    }")],
+            ["crates/futurepak/Cargo.toml", "crates/futurepak/README.md",
+             "crates/futurepak/src/lib.rs"],
+            3, metadata_gains="futurepak")
+        growth(
+            "a_new_plane_grows_the_plan_structurally",
+            [(ARCH, "    /// Explicit host requests and responses.\n    Port,\n}",
+              "    /// Explicit host requests and responses.\n    Port,\n    /// Sandbox growth witness.\n    Futura,\n}"),
+             (ARCH, "        SyncBatPlane::Port,\n    ];",
+              "        SyncBatPlane::Port,\n        SyncBatPlane::Futura,\n    ];"),
+             (ARCH, '            SyncBatPlane::Port => "port",\n        }',
+              '            SyncBatPlane::Port => "port",\n            SyncBatPlane::Futura => "futura",\n        }'),
+             (ARCH, "            | SyncBatPlane::Port => PackageId::SyncBat,",
+              "            | SyncBatPlane::Port\n            | SyncBatPlane::Futura => PackageId::SyncBat,"),
+             (ARCH, '            SyncBatPlane::Port => "port owns explicit host requests and responses",\n        }',
+              '            SyncBatPlane::Port => "port owns explicit host requests and responses",\n            SyncBatPlane::Futura => "futura owns the sandbox growth witness",\n        }')],
+            ["crates/syncbat/src/futura.rs", "crates/syncbat/src/futura/README.md"],
+            2)
+        growth(
+            "a_new_root_artifact_grows_the_plan_structurally",
+            [(BOS, "    /// The discoverability-only command file.\n    Justfile,\n}",
+              "    /// The discoverability-only command file.\n    Justfile,\n    /// Sandbox growth witness.\n    SeedNote,\n}"),
+             (BOS, "        Gate0RootArtifact::Justfile,\n    ];",
+              "        Gate0RootArtifact::Justfile,\n        Gate0RootArtifact::SeedNote,\n    ];"),
+             (BOS, '            Gate0RootArtifact::Justfile => "justfile",\n        }',
+              '            Gate0RootArtifact::Justfile => "justfile",\n            Gate0RootArtifact::SeedNote => "SEED-NOTE.md",\n        }'),
+             ("bootstrap/materialize.rs",
+              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile().to_owned(),",
+              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile().to_owned(),\n"
+              "            bootstrap_output::Gate0RootArtifact::SeedNote => \"sandbox growth witness\\n\".to_owned(),")],
+            ["SEED-NOTE.md"],
+            1)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
 def canonical_commitments() -> dict[str, str]:
     """Content commitments for every canonical validator, before any probe runs."""
     return {name: _commit(HERE / name) for name in CANONICAL_VALIDATORS if (HERE / name).is_file()}
@@ -5991,9 +7213,9 @@ def test_compiler_assumptions(audit) -> list[str]:
             "pub enum ReconciliationRole {")],
           "spec/reconciliation.rs speaks CompilerAssumptionKind")
     probe("architecture_module_does_not_reexport_assumption_kinds",
-          [("spec/architecture.rs", "pub const SYNCBAT_PLANES:",
+          [("spec/architecture.rs", "pub const REPOSITORY_NAME:",
             "pub use crate::compiler_assumptions::CompilerAssumptionKind;\n"
-            "pub const SYNCBAT_PLANES:")],
+            "pub const REPOSITORY_NAME:")],
           "spec/architecture.rs speaks CompilerAssumptionKind")
     # GREEN structural growth — evidence that the parser and projection are
     # count-free ONLY: every structural surface present (variant, ALL, unique
@@ -6552,11 +7774,14 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         # green of a check that passed.
         # BOTH bootstrap binaries execute. materialize.rs was the same species as
         # seedcheck: it existed, it type-checked, and it had never once run.
-        for name, src, expect in (
-            ("tier0-seedcheck", "bootstrap/seedcheck.rs", "seedcheck: PASS"),
-            ("tier0-materialize", "bootstrap/materialize.rs", "materialize: PASS"),
-        ):
-            findings.extend(qualify_binary(rustc, root, tmp, name, src, expect))
+        findings.extend(qualify_binary(rustc, root, tmp, "tier0-seedcheck",
+                                       "bootstrap/seedcheck.rs", "seedcheck: PASS"))
+        # tier0-materialize rides its own isolated qualification (5.5E5): two
+        # temporary output roots outside the seed, a full seed snapshot, an
+        # independent byte oracle, an Unchanged rerun, and Cargo on a
+        # disposable copy of the candidate. The generic one-root route is the
+        # exact defect that scaffolded the inspector's kitchen.
+        findings.extend(qualify_materializer(rustc, root, tmp))
         # The #[cfg(test)] refusal tests inside seedcheck are claims too, and a
         # plain compile STRIPS them: until D4d they had never executed or even
         # type-checked -- the same species as materialize, wearing test syntax.
@@ -6943,8 +8168,8 @@ def test_package_identity(audit) -> list[str]:
         path = tmp / "bootstrap/materialize.rs"
         path.write_text(must_replace(
             path.read_text(encoding="utf-8"),
-            "package.id == architecture::PackageId::MacBat",
-            'package.id.cargo_name() == "macbat"',
+            "package.id == architecture::PackageId::BatPak",
+            'package.id.cargo_name() == "batpak"',
             "raw-name selection"), encoding="utf-8")
         got: list[str] = []
         audit.check_architecture(tmp, got)
@@ -7142,6 +8367,7 @@ def main() -> int:
     findings += test_inventory_mirrors(audit, project)
     findings += test_exact_ledgers(audit, project)
     findings += test_proof_relations(audit, project)
+    findings += test_bootstrap_output(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)
@@ -7202,6 +8428,7 @@ def main() -> int:
                "toolchain authority",
                "package identity",
                "contract kinds",
+               "isolated materializer output",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

@@ -181,6 +181,7 @@ An embedded block inherits no authority from its containing document. A standalo
 | IdentityTimeProofRequirements | embedded-block | spec/proof.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | MigrationProofRequirements | embedded-block | spec/proof.rs | docs/22_MIGRATION_AND_CUTOVER.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | SecretAuthorityProofRequirements | embedded-block | spec/proof.rs | docs/35_CRYPTO_AND_SECRET_AUTHORITY.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| Gate0MaterializationPlan | embedded-block | spec/bootstrap_output.rs; spec/architecture.rs; spec/toolchain.rs | docs/23_BOOTSTRAP_AND_SELF_HOSTING.md | GATE0-MATERIALIZATION-PLAN | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
 

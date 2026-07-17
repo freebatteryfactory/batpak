@@ -116,6 +116,7 @@ pub enum GeneratedView {
     IdentityTimeProofRequirements,
     MigrationProofRequirements,
     SecretAuthorityProofRequirements,
+    Gate0MaterializationPlan,
     GeneratedViewRegistry,
 }
 
@@ -176,6 +177,7 @@ impl GeneratedView {
         GeneratedView::IdentityTimeProofRequirements,
         GeneratedView::MigrationProofRequirements,
         GeneratedView::SecretAuthorityProofRequirements,
+        GeneratedView::Gate0MaterializationPlan,
         GeneratedView::GeneratedViewRegistry,
     ];
 
@@ -236,6 +238,7 @@ impl GeneratedView {
             GeneratedView::IdentityTimeProofRequirements => "IdentityTimeProofRequirements",
             GeneratedView::MigrationProofRequirements => "MigrationProofRequirements",
             GeneratedView::SecretAuthorityProofRequirements => "SecretAuthorityProofRequirements",
+            GeneratedView::Gate0MaterializationPlan => "Gate0MaterializationPlan",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
         }
     }
@@ -652,6 +655,17 @@ impl GeneratedView {
                 target: GeneratedViewTarget::Static(&["docs/35_CRYPTO_AND_SECRET_AUTHORITY.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("PROOF-REQUIREMENTS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::Gate0MaterializationPlan => GeneratedViewSpec {
+                authority_sources: &[
+                    "spec/bootstrap_output.rs",
+                    "spec/architecture.rs",
+                    "spec/toolchain.rs",
+                ],
+                target: GeneratedViewTarget::Static(&["docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("GATE0-MATERIALIZATION-PLAN"),
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {

@@ -3386,7 +3386,10 @@ def syncbat_firewall_views(root: Path) -> dict:
     planes = _a_fw_variants(arch, "SyncBatPlane", A_FW_ARCH)
     if not planes:
         raise FirewallAdmissionFailure(f"{A_FW_ARCH}: SyncBatPlane authors no plane")
-    listed_planes = _a_fw_listing(arch, "SYNCBAT_PLANES", "SyncBatPlane", A_FW_ARCH)
+    m = re.search(r"pub const ALL: &'static \[SyncBatPlane\] = &\[(.*?)\];", arch, re.S)
+    if not m:
+        raise FirewallAdmissionFailure(f"{A_FW_ARCH}: declares no SyncBatPlane::ALL")
+    listed_planes = re.findall(r"SyncBatPlane::(\w+)", m.group(1))
     sentences: dict[str, str] = {}
     for arm in _a_fw_method(arch, "authored_ownership", A_FW_ARCH).split("\n"):
         m = re.search(r'SyncBatPlane::(\w+)\s*=>\s*"([^"]*)"', arm)
@@ -3448,11 +3451,11 @@ def syncbat_firewall_findings(root: Path) -> list[str]:
     # is invisible to rustc and silently narrows every law that iterates them.
     for name in planes:
         if name not in v["listed_planes"]:
-            out.append(f"{A_FW_ARCH}: plane {name} is authored but SYNCBAT_PLANES omits it, "
+            out.append(f"{A_FW_ARCH}: plane {name} is authored but SyncBatPlane::ALL omits it, "
                        f"so no law that walks the planes can see it")
     for name in v["listed_planes"]:
         if name not in planes:
-            out.append(f"{A_FW_ARCH}: SYNCBAT_PLANES lists {name}, which SyncBatPlane does not author")
+            out.append(f"{A_FW_ARCH}: SyncBatPlane::ALL lists {name}, which SyncBatPlane does not author")
     for name in authorities:
         if name not in v["listed"]:
             out.append(f"{A_FW_SRC}: authority {name} is authored but SYNCBAT_AUTHORITIES omits it, "
@@ -3983,6 +3986,262 @@ def candidate_summary(root: Path) -> tuple[int, int, int]:
             len([w for w in rows if w not in exp]))
 
 
+# --- 5.5E5 Gate-0 materializer output shape ----------------------------------
+# spec/bootstrap_output.rs owns the candidate's file shape; the materializer
+# and the selftest oracle both expand it. This auditor re-parses the typed
+# owner independently and holds the STATIC posture laws: the dynamic isolated
+# qualification (two output roots, seed snapshot, byte oracle, Cargo) lives in
+# selftest, and audit never executes Cargo or materializes a tree.
+
+A_BO_SPEC = "spec/bootstrap_output.rs"
+A_BO_ENUMS = ("Gate0RootArtifact", "Gate0PackageArtifact", "Gate0PackageTargetKind",
+              "Gate0PlaneArtifact", "Gate0OutputDisposition")
+
+
+def bootstrap_output_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / A_BO_SPEC
+    if not path.is_file():
+        return [f"missing {A_BO_SPEC}"]
+    raw = path.read_text(encoding="utf-8")
+    src = _uncomment(raw)
+    arch = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+
+    def enum_variants(text: str, enum: str) -> list[str]:
+        head = text.find(f"pub enum {enum} {{")
+        if head < 0:
+            out.append(f"{A_BO_SPEC}: declares no {enum}")
+            return []
+        return re.findall(r"^\s{4}(\w+),$", text[head: text.find("\n}", head)], re.M)
+
+    def all_listing(text: str, enum: str, where: str) -> list[str]:
+        m = re.search(r"pub const ALL: &'static \[" + enum + r"\] = &\[(.*?)\];",
+                      text, re.S)
+        if not m:
+            out.append(f"{where}: {enum} declares no ALL inventory")
+            return []
+        return re.findall(enum + r"::(\w+)", m.group(1))
+
+    def arm_pairs(text: str, fn: str, head_re: str, key: str) -> dict[str, str]:
+        m = re.search(head_re, text, re.S)
+        if not m:
+            out.append(f"{A_BO_SPEC}: declares no {fn}()")
+            return {}
+        return dict(re.findall(key + r"::(\w+) => \"([^\"]*)\"", m.group(1)))
+
+    inventories: dict[str, list[str]] = {}
+    for enum in A_BO_ENUMS:
+        authored = enum_variants(src, enum)
+        listed = all_listing(src, enum, A_BO_SPEC)
+        inventories[enum] = listed
+        for name in authored:
+            if name not in listed:
+                out.append(f"{A_BO_SPEC}: {enum}::{name} is authored but ALL omits it")
+        for name in listed:
+            if name not in authored:
+                out.append(f"{A_BO_SPEC}: {enum} ALL lists {name}, which the enum does not author")
+        if len(set(listed)) != len(listed):
+            out.append(f"{A_BO_SPEC}: {enum} ALL lists a variant twice")
+
+    # Root artifact paths: total, nonempty, unique; the RustToolchain artifact
+    # must project the tracked root toolchain path.
+    root_paths = arm_pairs(
+        src, "relative_path",
+        r"pub const fn relative_path\(self\)[^{]*\{(.*?)\n    \}", "Gate0RootArtifact")
+    for name in inventories.get("Gate0RootArtifact", []):
+        path_str = root_paths.get(name, "")
+        if not path_str.strip():
+            out.append(f"{A_BO_SPEC}: root artifact {name} projects no path")
+        elif path_str.startswith("/") or ".." in path_str.split("/"):
+            out.append(f"{A_BO_SPEC}: root artifact {name} path {path_str!r} is not "
+                       "output-root-relative and traversal-free")
+    if len(set(root_paths.values())) != len(root_paths):
+        out.append(f"{A_BO_SPEC}: two root artifacts project one path")
+    if root_paths.get("RustToolchain", "rust-toolchain.toml") != "rust-toolchain.toml":
+        out.append(f"{A_BO_SPEC}: RustToolchain does not project the tracked root toolchain path")
+
+    # Target kinds: every PackageId arm explicit, no wildcard, no class fallback.
+    packages = enum_variants(arch, "PackageId")
+    tk = re.search(r"pub const fn target_kind\(package: PackageId\)[^{]*\{(.*?)\n\}",
+                   src, re.S)
+    kinds: dict[str, str] = {}
+    if not tk:
+        out.append(f"{A_BO_SPEC}: declares no target_kind()")
+    else:
+        body = tk.group(1)
+        kinds = dict(re.findall(r"PackageId::(\w+) => Gate0PackageTargetKind::(\w+)", body))
+        if re.search(r"\n\s*_\s*=>", body) or "PackageClass" in body:
+            out.append(f"{A_BO_SPEC}: target_kind() carries a wildcard or class fallback; "
+                       "a future package must be classified explicitly")
+        for package in packages:
+            if package not in kinds:
+                out.append(f"{A_BO_SPEC}: package {package} has no explicit target kind")
+        for package, kind in kinds.items():
+            if package not in packages:
+                out.append(f"{A_BO_SPEC}: target_kind() names unknown package {package}")
+            if kind not in inventories.get("Gate0PackageTargetKind", []):
+                out.append(f"{A_BO_SPEC}: target_kind() names unknown kind {kind}")
+
+    # Binary targets: named exactly where the kind requires one, nonempty, unique.
+    bt = re.search(r"pub const fn binary_target\(package: PackageId\)[^{]*\{(.*?)\n\}",
+                   src, re.S)
+    named: dict[str, str] = {}
+    if not bt:
+        out.append(f"{A_BO_SPEC}: declares no binary_target()")
+    else:
+        named = dict(re.findall(r"PackageId::(\w+) => Some\(\"([^\"]+)\"\)", bt.group(1)))
+        want = {p for p, k in kinds.items() if k in ("Binary", "ExampleBinary")}
+        for package in sorted(want - set(named)):
+            out.append(f"{A_BO_SPEC}: binary-kind package {package} names no binary target")
+        for package in sorted(set(named) - want):
+            out.append(f"{A_BO_SPEC}: library-kind package {package} names a binary target")
+        if len(set(named.values())) != len(named):
+            out.append(f"{A_BO_SPEC}: two packages claim one binary target name")
+
+    # Source doors: every authored kind projects a nonempty door.
+    door = re.search(r"pub const fn source_suffix\(package: PackageId\)[^{]*\{(.*?)\n\}",
+                     src, re.S)
+    doors: dict[str, str] = {}
+    if not door:
+        out.append(f"{A_BO_SPEC}: declares no source_suffix()")
+    else:
+        for pattern, suffix in re.findall(
+                r"((?:Gate0PackageTargetKind::\w+\s*\|?\s*)+)=> \"([^\"]+)\"",
+                door.group(1)):
+            for kind in re.findall(r"Gate0PackageTargetKind::(\w+)", pattern):
+                doors[kind] = suffix
+        for kind in inventories.get("Gate0PackageTargetKind", []):
+            if not doors.get(kind, "").strip():
+                out.append(f"{A_BO_SPEC}: target kind {kind} projects no source door")
+
+    # Plane modules: total over SyncBatPlane, nonempty, unique.
+    modules = arm_pairs(
+        arch, "module_name",
+        r"pub const fn module_name\(self\)[^{]*\{(.*?)\n    \}", "SyncBatPlane")
+    planes = enum_variants(arch, "SyncBatPlane")
+    for plane in planes:
+        if not modules.get(plane, "").strip():
+            out.append(f"{A_BO_SPEC}: SyncBat plane {plane} projects no module name")
+    if len(set(modules.values())) != len(modules):
+        out.append(f"{A_BO_SPEC}: two SyncBat planes project one module name")
+
+    # Workspace metadata is owned here and nonempty.
+    # Parsed from the RAW text: _uncomment would truncate the // in a URL.
+    for const in ("WORKSPACE_LICENSE", "WORKSPACE_REPOSITORY"):
+        m = re.search(r"pub const " + const + r": &str = \"([^\"]*)\";", raw)
+        if not m or not m.group(1).strip():
+            out.append(f"{A_BO_SPEC}: {const} is missing or empty")
+
+    # The docs/23 plan block equals this auditor's own expansion, path for
+    # path, in canonical order: roots, packages, planes.
+    expected_paths: list[str] = []
+    for name in inventories.get("Gate0RootArtifact", []):
+        expected_paths.append(root_paths.get(name, ""))
+    package_paths = arm_pairs(
+        arch, "workspace_path",
+        r"pub const fn workspace_path\(self\)[^{]*\{(.*?)\n    \}", "PackageId")
+    package_all = re.search(r"pub const ALL: &'static \[PackageId\] = &\[(.*?)\];",
+                            arch, re.S)
+    package_order = re.findall(r"PackageId::(\w+)", package_all.group(1)) if package_all else []
+    for package in package_order:
+        base = package_paths.get(package, "")
+        door = doors.get(kinds.get(package, ""), "")
+        for suffix in ("Cargo.toml", "README.md", door):
+            expected_paths.append(f"{base}/{suffix}" if base and suffix else "")
+    plane_all = re.search(r"pub const ALL: &'static \[SyncBatPlane\] = &\[(.*?)\];",
+                          arch, re.S)
+    plane_order = re.findall(r"SyncBatPlane::(\w+)", plane_all.group(1)) if plane_all else []
+    syncbat_base = package_paths.get("SyncBat", "")
+    for plane in plane_order:
+        module = modules.get(plane, "")
+        expected_paths.append(f"{syncbat_base}/src/{module}.rs")
+        expected_paths.append(f"{syncbat_base}/src/{module}/README.md")
+    doc23 = root / "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"
+    if doc23.is_file():
+        text = doc23.read_text(encoding="utf-8")
+        m = re.search(r"<!-- GATE0-MATERIALIZATION-PLAN:BEGIN[^>]*-->\n(.*?)\n"
+                      r"<!-- GATE0-MATERIALIZATION-PLAN:END -->", text, re.S)
+        if not m:
+            out.append("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md: carries no "
+                       "GATE0-MATERIALIZATION-PLAN block")
+        else:
+            got_paths = [line.split("|")[1].strip()
+                         for line in m.group(1).splitlines()
+                         if line.startswith("|") and not line.startswith("| ---")
+                         and not line.startswith("| Path")]
+            if got_paths != expected_paths:
+                out.append("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md: the "
+                           "GATE0-MATERIALIZATION-PLAN block does not match its "
+                           "typed derivation")
+    else:
+        out.append("missing docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
+
+    # The parallel plane inventories cannot return.
+    for token in ("SYNCBAT_REQUIRED_PLANES", "pub const SYNCBAT_PLANES"):
+        if token in arch:
+            out.append(f"spec/architecture.rs: the raw plane inventory {token.split()[-1]} "
+                       "returned; SyncBatPlane::ALL is the one inventory")
+
+    # Static materializer posture laws.
+    mat_path = root / "bootstrap/materialize.rs"
+    if not mat_path.is_file():
+        out.append("missing bootstrap/materialize.rs")
+    else:
+        mat = mat_path.read_text(encoding="utf-8")
+        if 'PathBuf::from(".")' in mat or "args().nth(1)" in mat:
+            out.append("bootstrap/materialize.rs: an implicit current-directory or "
+                       "one-root invocation route exists; both roots must be explicit")
+        for flag in ("--seed", "--output"):
+            if f'"{flag}"' not in mat:
+                out.append(f"bootstrap/materialize.rs: the explicit {flag} boundary is gone")
+        if "write_checked" in mat:
+            out.append("bootstrap/materialize.rs: the per-file overwrite-or-repair "
+                       "route returned; publication is a staged whole tree")
+        if "fs::rename(" not in mat:
+            out.append("bootstrap/materialize.rs: publication does not rename a "
+                       "complete staged tree into place")
+        if "plane_roles" in mat:
+            out.append("bootstrap/materialize.rs: a materializer-local plane role "
+                       "map returned; authored_ownership() is the one description")
+        if re.search(r'"browser(?:-storage)?"', mat):
+            out.append("bootstrap/materialize.rs: a handwritten qualification-feature "
+                       "name returned; features derive from the profile ledger")
+
+    # The dedicated isolated qualification exists and the generic binary route
+    # no longer carries tier0-materialize.
+    st_path = root / "bootstrap/selftest.py"
+    if st_path.is_file():
+        st = st_path.read_text(encoding="utf-8")
+        if "def qualify_materializer" not in st:
+            out.append("bootstrap/selftest.py: no dedicated isolated materializer "
+                       "qualification exists")
+        if re.search(r'\("tier0-materialize",\s*"bootstrap/materialize\.rs"', st):
+            out.append("bootstrap/selftest.py: tier0-materialize still rides the "
+                       "generic one-root binary qualification")
+        oracle = re.search(r"\ndef oracle_plan\(.*?(?=\ndef )", st, re.S)
+        if oracle:
+            block = oracle.group(0)
+            cargo_names = re.findall(r'PackageId::\w+ => "([^"]+)"',
+                                     re.search(r"pub const fn cargo_name\(self\)[^{]*\{(.*?)\n    \}",
+                                               arch, re.S).group(1))
+            for name in cargo_names:
+                if f'"{name}"' in block:
+                    out.append(f"bootstrap/selftest.py: the output oracle carries the "
+                               f"package name {name!r}; names derive from spec/architecture.rs")
+            for module in modules.values():
+                if f'"{module}"' in block:
+                    out.append(f"bootstrap/selftest.py: the output oracle carries the "
+                               f"plane module name {module!r}; modules derive from the typed inventory")
+            wasm_profiles = [prof for _, prof, env in re.findall(
+                r'package: PackageId::(\w+),\s*profile: "([^"]+)",\s*'
+                r"environment: QualificationEnvironment::(\w+)", arch) if env == "WasmHost"]
+            for prof in wasm_profiles:
+                if f'"{prof}"' in block:
+                    out.append(f"bootstrap/selftest.py: the output oracle carries the "
+                               f"feature name {prof!r}; features derive from the profile ledger")
+    return out
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -4026,6 +4285,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(release_seal_findings(root))
     findings.extend(proof_terminal_findings(root))
     findings.extend(syncbat_firewall_findings(root))
+    findings.extend(bootstrap_output_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
@@ -6507,9 +6767,14 @@ def check_architecture(root: Path, findings: list[str]) -> None:
             findings.append(f"spec/architecture.rs: forbidden path exists {relative}")
     syncbat_root = root / "crates/syncbat"
     if syncbat_root.exists():
-        for relative in string_array(source, "SYNCBAT_REQUIRED_PLANES"):
-            if not (syncbat_root / relative).exists():
-                findings.append(f"syncbat source missing declared plane {relative}")
+        # Plane files derive from the typed inventory (5.5E5); the raw
+        # SYNCBAT_REQUIRED_PLANES path table retired with it.
+        arm = re.search(r"pub const fn module_name\(self\)[^{]*\{(.*?)\n    \}",
+                        source, re.S)
+        for module in re.findall(r'=>\s*"([^"]+)"', arm.group(1)) if arm else []:
+            for relative in (f"src/{module}.rs", f"src/{module}"):
+                if not (syncbat_root / relative).exists():
+                    findings.append(f"syncbat source missing declared plane {relative}")
 
 
 def check_seed_ids(root: Path, findings: list[str]) -> None:

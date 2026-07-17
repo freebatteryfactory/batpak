@@ -36,7 +36,7 @@ Each gate is one review unit with savepoint commits inside it. A later gate may 
 
 ## G0: Constitution and skeleton
 
-Deliver exact workspace members/edges, status metadata, seed tools, concept-file skeleton, no forbidden paths, no legacy source, declared qualification profiles, and a passing architecture audit. Materialize the skeleton with `bootstrap/materialize.rs`; then compile `batpak` and `syncbat` semantic profiles under `no_std + alloc` before G0 closes.
+Deliver exact workspace members/edges, status metadata, seed tools, concept-file skeleton, no forbidden paths, no legacy source, declared qualification profiles, and a passing architecture audit. G0 receives a QUALIFIED ISOLATED candidate: `bootstrap/materialize.rs` publishes the Gate-0 workspace at an explicit output root outside the signed seed, and the candidate's exact bytes enter tracked source only through the explicit reviewed integration action Phase 6 owns -- the materializer never writes the integrated repository. Compile `batpak` and `syncbat` semantic profiles under `no_std + alloc` before G0 closes.
 
 ## G1: MacBat
 

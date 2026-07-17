@@ -56,6 +56,31 @@ pub enum SyncBatPlane {
 }
 
 impl SyncBatPlane {
+    /// The five planes, in docs/08 order. This is the ONE plane inventory
+    /// (5.5E5): the raw `SYNCBAT_PLANES` alias and the string-path
+    /// `SYNCBAT_REQUIRED_PLANES` table retired with the isolated-materializer
+    /// closure, and every consumer — projector, auditor, seedcheck, and the
+    /// materializer's plan — derives plane files from this inventory and
+    /// `module_name()`.
+    pub const ALL: &'static [SyncBatPlane] = &[
+        SyncBatPlane::Runtime,
+        SyncBatPlane::PakVm,
+        SyncBatPlane::Bvisor,
+        SyncBatPlane::World,
+        SyncBatPlane::Port,
+    ];
+
+    /// The Rust module name this plane's identity projects.
+    pub const fn module_name(self) -> &'static str {
+        match self {
+            SyncBatPlane::Runtime => "runtime",
+            SyncBatPlane::PakVm => "pakvm",
+            SyncBatPlane::Bvisor => "bvisor",
+            SyncBatPlane::World => "world",
+            SyncBatPlane::Port => "port",
+        }
+    }
+
     /// The package this plane lives in. Every plane is inside `syncbat`: sharing
     /// a crate is exactly why the firewall has to be typed rather than
     /// structural, because no module boundary separates them (docs/08: "Sharing a
@@ -82,15 +107,6 @@ impl SyncBatPlane {
         }
     }
 }
-
-/// The five planes, in docs/08 order.
-pub const SYNCBAT_PLANES: &[SyncBatPlane] = &[
-    SyncBatPlane::Runtime,
-    SyncBatPlane::PakVm,
-    SyncBatPlane::Bvisor,
-    SyncBatPlane::World,
-    SyncBatPlane::Port,
-];
 
 /// The closed identity of an admitted workspace package (5.5E3b). The
 /// VARIANT is the identity; the Cargo package name, the workspace path, and
@@ -900,6 +916,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/contracts.rs",
     "spec/corpus.rs",
     "spec/generated_views.rs",
+    "spec/bootstrap_output.rs",
     "spec/identities.rs",
     "spec/mutation.rs",
     "spec/promotion.rs",
@@ -930,15 +947,3 @@ pub const FORBIDDEN_TARGET_PATHS: &[&str] = &[
     "fixtures",
 ];
 
-pub const SYNCBAT_REQUIRED_PLANES: &[&str] = &[
-    "src/runtime.rs",
-    "src/runtime",
-    "src/pakvm.rs",
-    "src/pakvm",
-    "src/bvisor.rs",
-    "src/bvisor",
-    "src/world.rs",
-    "src/world",
-    "src/port.rs",
-    "src/port",
-];

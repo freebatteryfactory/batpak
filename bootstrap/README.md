@@ -16,7 +16,7 @@ python bootstrap/audit.py .
 rustc bootstrap/seedcheck.rs -o target/seedcheck
 ./target/seedcheck .
 rustc bootstrap/materialize.rs -o target/materialize
-./target/materialize .
+./target/materialize --seed . --output ../batpak-gate0-candidate
 ```
 
 `freeze.py` writes the exact SHA-256 manifest.
@@ -25,6 +25,16 @@ rustc bootstrap/materialize.rs -o target/materialize
 
 `seedcheck.rs` independently checks required files, package graph acyclicity, qualification profiles, forbidden paths, typed IDs, exact decision/legacy/invariant-coverage ledgers, SyncBat's required internal planes when source exists, and early source-debt patterns.
 
-`materialize.rs` reads the same typed architecture seed and creates the Gate-0 Cargo workspace, package manifests, package roots, and required SyncBat planes without overwriting nonmatching files. It is a one-way skeleton materializer, not a code generator or semantic owner.
+`materialize.rs` reads the same typed architecture seed and publishes the Gate-0 Cargo workspace -- workspace manifest, package manifests, source doors, and required SyncBat planes -- as one isolated candidate tree at the explicit `--output` root. Both roots are required; there is no default and no positional form. It refuses a shared or nested seed/output pair, parent traversal in either path, a missing seed, and an unresolvable output parent. The only successful dispositions are `Created` (absent output, complete staged tree renamed into place) and `Unchanged` (the output already carries exactly the planned tree; zero writes); a divergent existing output is refused, never repaired. It is a one-time factory, not a code generator, synchronizer, or semantic owner.
+
+Qualification of the candidate runs on a disposable copy so Cargo lockfiles and build artifacts never touch the qualified tree:
+
+```sh
+cargo metadata --no-deps --format-version 1
+cargo check --workspace --all-targets
+cargo check -p batpak --no-default-features
+cargo check -p syncbat --no-default-features
+cargo run -p batpak-examples --bin family_smoke
+```
 
 These tools never inspect private reasoning and never confer semantic correctness merely because structure passes.

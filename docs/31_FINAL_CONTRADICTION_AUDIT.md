@@ -129,6 +129,7 @@ no GET lowered to a scan, CHILDREN OF lowered to a subtree walk, or SCAN UNDER l
 no Contract IR-owned effect family routed by hand-authored kind-plus-bytes dispatch, and no ambient linker, startup-constructor, or process-global route discovery (LEG-046)
 no relative inactivity timeout presented as an absolute monotonic deadline, no retry resetting the overall deadline, and no lower repeating mechanism outliving it (LEG-066)
 no invisible C0 control character in tracked specification, bootstrap, or contract text (LF and TAB only; a backspace impersonating a word boundary once made a rule unmatchable)
+no bootstrap qualification that mutates the signed seed tree it claims to prove, and no materializer output published inside the seed root (5.5E5, docs/23)
 ```
 
 ## Remaining implementation work is not architecture ambiguity

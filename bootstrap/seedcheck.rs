@@ -4,9 +4,10 @@
 // links it instead of textually mounting its modules, so no tracked
 // suppression exists and every pub spec item is API by construction.
 use spec::{
-    architecture, commands, contracts, dispositions, generated_views, identities, gates,
-    guarantees, invariants, legacy_invariant_coverage, legacy_obligations, operators,
-    pakvm_isa, proof, reconciliation, syncbat_firewall, toolchain,
+    architecture, bootstrap_output, commands, contracts, dispositions, generated_views,
+    identities, gates, guarantees, invariants, legacy_invariant_coverage,
+    legacy_obligations, operators, pakvm_isa, proof, reconciliation, syncbat_firewall,
+    toolchain,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -85,6 +86,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_compiler_assumptions(root, &mut findings);
     check_promotion(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
+    check_bootstrap_output(&mut findings);
     check_source_debt(root, &mut findings);
     findings
 }
@@ -2676,11 +2678,135 @@ fn check_frontmatter(root: &Path, findings: &mut Vec<String>) {
     }
 }
 
+/// The Gate-0 materializer output shape, EXECUTED from the typed plan
+/// (5.5E5). Seedcheck expands the same closed inventories the materializer
+/// and the independent selftest oracle consume; it renders no TOML and
+/// inspects no filesystem output -- the plan's internal lawfulness is the
+/// subject here, and the isolated qualification owns the published tree.
+fn check_bootstrap_output(findings: &mut Vec<String>) {
+    use bootstrap_output as bo;
+
+    // Every closed vocabulary equals its ALL inventory. Exhaustive matches
+    // make a missing arm a compile error; a shrunken or duplicated ALL is the
+    // runtime lie this check refuses.
+    if bo::Gate0RootArtifact::ALL.len() != 3 {
+        findings.push("Gate0RootArtifact::ALL does not enumerate every root artifact".into());
+    }
+    if bo::Gate0PackageArtifact::ALL.len() != 3 {
+        findings.push("Gate0PackageArtifact::ALL does not enumerate every package artifact".into());
+    }
+    if bo::Gate0PackageTargetKind::ALL.len() != 4 {
+        findings.push("Gate0PackageTargetKind::ALL does not enumerate every target kind".into());
+    }
+    if bo::Gate0PlaneArtifact::ALL.len() != 2 {
+        findings.push("Gate0PlaneArtifact::ALL does not enumerate every plane artifact".into());
+    }
+    if bo::Gate0OutputDisposition::ALL.len() != 2 {
+        findings.push("Gate0OutputDisposition::ALL does not enumerate every disposition".into());
+    }
+    for i in 0..bo::Gate0RootArtifact::ALL.len() {
+        for j in (i + 1)..bo::Gate0RootArtifact::ALL.len() {
+            if bo::Gate0RootArtifact::ALL[i] == bo::Gate0RootArtifact::ALL[j] {
+                findings.push("a Gate0RootArtifact is listed twice in ALL".into());
+            }
+        }
+    }
+
+    // Workspace metadata is nonempty.
+    if bo::WORKSPACE_LICENSE.trim().is_empty() {
+        findings.push("bootstrap-output workspace license is empty".into());
+    }
+    if bo::WORKSPACE_REPOSITORY.trim().is_empty() {
+        findings.push("bootstrap-output workspace repository is empty".into());
+    }
+
+    // Expand the complete plan's PATHS exactly as the materializer does:
+    // roots, then three files per package, then two files per plane. Every
+    // path must be nonempty, relative, traversal-free, and unique.
+    let mut planned: Vec<String> = Vec::new();
+    for &artifact in bo::Gate0RootArtifact::ALL {
+        planned.push(artifact.relative_path().to_owned());
+    }
+    let mut roots: BTreeSet<&str> = BTreeSet::new();
+    for &artifact in bo::Gate0RootArtifact::ALL {
+        if !roots.insert(artifact.relative_path()) {
+            findings.push(format!("duplicate Gate0 root path {}", artifact.relative_path()));
+        }
+    }
+    for &package in architecture::PackageId::ALL {
+        let base = package.workspace_path();
+        // one target kind per package (total function), and a binary target
+        // name exactly where the kind requires one
+        let kind = bo::target_kind(package);
+        let named = bo::binary_target(package).is_some();
+        let needs_name = matches!(
+            kind,
+            bo::Gate0PackageTargetKind::Binary | bo::Gate0PackageTargetKind::ExampleBinary
+        );
+        if needs_name && !named {
+            findings.push(format!("{} is a binary-kind package with no binary target name", package.cargo_name()));
+        }
+        if !needs_name && named {
+            findings.push(format!("{} is a library-kind package carrying a binary target name", package.cargo_name()));
+        }
+        if bo::source_suffix(package).trim().is_empty() {
+            findings.push(format!("{} has an empty source door", package.cargo_name()));
+        }
+        // exactly one path per artifact family
+        for &family in bo::Gate0PackageArtifact::ALL {
+            let suffix = match family {
+                bo::Gate0PackageArtifact::Manifest => "Cargo.toml",
+                bo::Gate0PackageArtifact::Readme => "README.md",
+                bo::Gate0PackageArtifact::SourceDoor => bo::source_suffix(package),
+            };
+            planned.push(format!("{base}/{suffix}"));
+        }
+    }
+    for &plane in architecture::SyncBatPlane::ALL {
+        let base = architecture::PackageId::SyncBat.workspace_path();
+        let module = plane.module_name();
+        if module.trim().is_empty() {
+            findings.push(format!("SyncBat plane {plane:?} has an empty module name"));
+        }
+        for &family in bo::Gate0PlaneArtifact::ALL {
+            planned.push(match family {
+                bo::Gate0PlaneArtifact::Module => format!("{base}/src/{module}.rs"),
+                bo::Gate0PlaneArtifact::DirectoryReadme => format!("{base}/src/{module}/README.md"),
+            });
+        }
+    }
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for path in &planned {
+        if path.trim().is_empty() {
+            findings.push("the expanded Gate0 plan contains an empty path".into());
+            continue;
+        }
+        if path.starts_with('/') || path.contains(':') {
+            findings.push(format!("expanded Gate0 path {path} is not output-root-relative"));
+        }
+        if path.split('/').any(|part| part == ".." || part.is_empty()) {
+            findings.push(format!("expanded Gate0 path {path} carries parent traversal or an empty component"));
+        }
+        if !seen.insert(path) {
+            findings.push(format!("expanded Gate0 path {path} is planned twice"));
+        }
+    }
+}
+
 fn check_syncbat_shape(root: &Path, findings: &mut Vec<String>) {
-    let base=root.join("crates/syncbat");
+    // The signed seed carries no generated workspace (5.5E5): plane files are
+    // checked only where a materialized candidate is present, and their paths
+    // derive from SyncBatPlane::ALL, never from a raw path table.
+    let base = root.join("crates/syncbat");
     if !base.exists() { return; }
-    for relative in architecture::SYNCBAT_REQUIRED_PLANES {
-        if !base.join(relative).exists() { findings.push(format!("syncbat missing required plane {relative}")); }
+    for &plane in architecture::SyncBatPlane::ALL {
+        let module = plane.module_name();
+        if !base.join(format!("src/{module}.rs")).exists() {
+            findings.push(format!("syncbat missing required plane src/{module}.rs"));
+        }
+        if !base.join(format!("src/{module}")).exists() {
+            findings.push(format!("syncbat missing required plane src/{module}"));
+        }
     }
 }
 
@@ -3047,7 +3173,7 @@ fn check_pakvm_isa(findings: &mut Vec<String>) {
 /// recompute the legal-crossing table here: a checker carrying its own copy would
 /// be a second owner of the law, and two copies of one guess agree perfectly.
 fn check_syncbat_firewall(findings: &mut Vec<String>) {
-    use architecture::{SyncBatPlane, SYNCBAT_PLANES};
+    use architecture::SyncBatPlane;
     use syncbat_firewall::*;
 
     // Every authority has exactly one owning plane, and every plane owns at
@@ -3055,11 +3181,11 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
     // owned by nobody has no one to refuse its misuse.
     for &authority in SYNCBAT_AUTHORITIES {
         let owner = authority.owner();
-        if !SYNCBAT_PLANES.contains(&owner) {
+        if !SyncBatPlane::ALL.contains(&owner) {
             findings.push(format!("{authority:?} is owned by a plane outside SyncBat"));
         }
     }
-    for &plane in SYNCBAT_PLANES {
+    for &plane in SyncBatPlane::ALL {
         if !SYNCBAT_AUTHORITIES.iter().any(|a| a.owner() == plane) {
             findings.push(format!("SyncBat plane {plane:?} owns no authority"));
         }
@@ -3206,7 +3332,7 @@ fn check_syncbat_firewall(findings: &mut Vec<String>) {
 /// them, so relying on one for connectivity would be the very confusion this
 /// posture exists to prevent.
 fn check_syncbat_requiredness(findings: &mut Vec<String>) {
-    use architecture::{SyncBatPlane, SYNCBAT_PLANES};
+    use architecture::SyncBatPlane;
     use syncbat_firewall::*;
 
     let owner_of = |a: SyncBatAuthority| a.owner();
@@ -3217,7 +3343,7 @@ fn check_syncbat_requiredness(findings: &mut Vec<String>) {
     // relaxation to a fixed point needs no allocation beyond a bitset.
     let reaches = |start: SyncBatPlane, goal: SyncBatPlane| -> bool {
         let mut seen = [false; 5];
-        let idx = |p: SyncBatPlane| SYNCBAT_PLANES.iter().position(|&q| q == p).unwrap();
+        let idx = |p: SyncBatPlane| SyncBatPlane::ALL.iter().position(|&q| q == p).unwrap();
         seen[idx(start)] = true;
         let mut changed = true;
         while changed {
@@ -3239,7 +3365,7 @@ fn check_syncbat_requiredness(findings: &mut Vec<String>) {
         seen[idx(goal)]
     };
 
-    for &plane in SYNCBAT_PLANES {
+    for &plane in SyncBatPlane::ALL {
         if !reaches(plane, root) {
             findings.push(format!(
                 "SyncBat plane {plane:?} cannot reach the logical root {root:?} by required \

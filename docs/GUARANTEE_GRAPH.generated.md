@@ -64,7 +64,7 @@ historical coverage only: 4
 | GuaranteeId | Kind | Lifetime | Owner | Gates | Witness | Relations |
 | --- | --- | --- | --- | --- | --- | --- |
 | SEED-ONE-OWNER | SemanticLaw | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py; BP-SELF-EXPLAINING-1 -- contract-id uniqueness scan; the self-explaining-repository law | - |
-| SEED-SYNCBAT-ONE-HEARTBEAT | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | seedcheck; audit.py -- SYNCBAT_REQUIRED_PLANES plane checks in both independent derivations | - |
+| SEED-SYNCBAT-ONE-HEARTBEAT | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | seedcheck; audit.py -- SyncBatPlane::ALL plane-file checks in both independent derivations | - |
 | SEED-NO-STANDALONE-VM | ArchitectureConstraint | Permanent | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | seedcheck; audit.py -- PACKAGES inventory; forbidden-path scan | - |
 | SEED-FBAT-CORE | ArchitectureConstraint | Permanent | docs/05_STORAGE_FBAT_AND_TILES.md | G2 | audit.py -- stale-vocabulary scan | - |
 | SEED-PAKVM-NAME | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G0/G5 | audit.py -- stale-vocabulary scan | - |

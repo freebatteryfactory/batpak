@@ -1438,9 +1438,12 @@ def syncbat_firewall_facts(root: Path) -> dict:
     arch = (root / ARCH_SPEC).read_text(encoding="utf-8")
     src = (root / FIREWALL_SPEC).read_text(encoding="utf-8")
     # Plane identity and the ownership sentences: spec/architecture.rs owns both.
-    order = _const_list(arch, "SYNCBAT_PLANES", "SyncBatPlane", ARCH_SPEC)
+    # The inventory is SyncBatPlane::ALL (5.5E5); the raw SYNCBAT_PLANES alias
+    # retired with the isolated-materializer closure.
+    m = re.search(r"pub const ALL: &'static \[SyncBatPlane\] = &\[(.*?)\];", arch, re.S)
+    order = re.findall(r"SyncBatPlane::(\w+)", m.group(1)) if m else []
     if not order:
-        raise Unadmitted(f"{ARCH_SPEC}: SYNCBAT_PLANES lists no plane")
+        raise Unadmitted(f"{ARCH_SPEC}: SyncBatPlane::ALL lists no plane")
     sentences = dict(re.findall(
         r'SyncBatPlane::(\w+)\s*=>\s*"([^"]*)"',
         _method_body(arch, "authored_ownership", ARCH_SPEC)))
@@ -1514,6 +1517,107 @@ def render_syncbat_crossings(root) -> str:
     out = ["| From | To | Carries | Posture | Law |", "| --- | --- | --- | --- | --- |"]
     for c in syncbat_firewall_facts(root)["crossings"]:
         out.append(f"| {c['from']} | {c['to']} | {c['carries']} | {c['posture']} | {c['law']} |")
+    return "\n".join(out)
+
+
+# --- The Gate-0 materialization plan (5.5E5) ---------------------------------
+# spec/bootstrap_output.rs owns the output shape; spec/architecture.rs owns
+# package and plane membership; spec/toolchain.rs owns the toolchain file the
+# plan carries. This renderer expands the complete candidate file plan in
+# canonical order -- roots, then packages, then SyncBat planes -- and derives
+# every path from the typed owners. It carries no file table of its own.
+
+BO_SPEC = "spec/bootstrap_output.rs"
+
+
+def gate0_plan_facts(root: Path) -> list[dict]:
+    bo = (root / BO_SPEC).read_text(encoding="utf-8")
+    arch = (root / ARCH_SPEC).read_text(encoding="utf-8")
+
+    def enum_all(src: str, enum: str, where: str) -> list[str]:
+        m = re.search(r"pub const ALL: &'static \[" + re.escape(enum) + r"\] = &\[(.*?)\];",
+                      src, re.S)
+        got = re.findall(re.escape(enum) + r"::(\w+)", m.group(1)) if m else []
+        if not got:
+            raise Unadmitted(f"{where}: {enum}::ALL lists nothing")
+        return got
+
+    def arm_map(src: str, fn: str, key: str, where: str) -> dict[str, str]:
+        # impl methods close at four-space indent; matching a column-0 brace
+        # would swallow every later method's arms into the same dict
+        m = re.search(r"fn " + re.escape(fn) + r"\(self\)[^{]*\{(.*?)\n    \}", src, re.S)
+        if not m:
+            raise Unadmitted(f"{where}: declares no {fn}()")
+        return dict(re.findall(re.escape(key) + r"::(\w+) => \"([^\"]*)\"", m.group(1)))
+
+    roots = enum_all(bo, "Gate0RootArtifact", BO_SPEC)
+    root_paths = arm_map(bo, "relative_path", "Gate0RootArtifact", BO_SPEC)
+    package_families = enum_all(bo, "Gate0PackageArtifact", BO_SPEC)
+    plane_families = enum_all(bo, "Gate0PlaneArtifact", BO_SPEC)
+    packages = enum_all(arch, "PackageId", ARCH_SPEC)
+    package_paths = arm_map(arch, "workspace_path", "PackageId", ARCH_SPEC)
+
+    # target kinds and their source doors
+    kind_m = re.search(r"pub const fn target_kind\(package: PackageId\)[^{]*\{(.*?)\n\}",
+                       bo, re.S)
+    if not kind_m:
+        raise Unadmitted(f"{BO_SPEC}: declares no target_kind()")
+    kinds = dict(re.findall(r"PackageId::(\w+) => Gate0PackageTargetKind::(\w+)",
+                            kind_m.group(1)))
+    door_m = re.search(r"pub const fn source_suffix\(package: PackageId\)[^{]*\{(.*?)\n\}",
+                       bo, re.S)
+    if not door_m:
+        raise Unadmitted(f"{BO_SPEC}: declares no source_suffix()")
+    doors: dict[str, str] = {}
+    for pattern, suffix in re.findall(
+            r"((?:Gate0PackageTargetKind::\w+\s*\|?\s*)+)=> \"([^\"]+)\"", door_m.group(1)):
+        for kind in re.findall(r"Gate0PackageTargetKind::(\w+)", pattern):
+            doors[kind] = suffix
+
+    planes = enum_all(arch, "SyncBatPlane", ARCH_SPEC)
+    modules = arm_map(arch, "module_name", "SyncBatPlane", ARCH_SPEC)
+    syncbat_base = package_paths.get("SyncBat", "")
+
+    rows: list[dict] = []
+    for artifact in roots:
+        path = root_paths.get(artifact, "")
+        if not path:
+            raise Unadmitted(f"{BO_SPEC}: root artifact {artifact} projects no path")
+        rows.append({"path": path, "family": f"Root / {artifact}",
+                     "derivation": f"Gate0RootArtifact::{artifact}"})
+    for package in packages:
+        base = package_paths.get(package)
+        kind = kinds.get(package)
+        if not base or not kind:
+            raise Unadmitted(f"{BO_SPEC}: package {package} lacks a path or target kind")
+        for family in package_families:
+            suffix = {"Manifest": "Cargo.toml", "Readme": "README.md",
+                      "SourceDoor": doors.get(kind, "")}[family]
+            if not suffix:
+                raise Unadmitted(f"{BO_SPEC}: target kind {kind} projects no source door")
+            rows.append({"path": f"{base}/{suffix}", "family": f"Package / {family}",
+                         "derivation": f"PackageId::{package} ({kind})"})
+    for plane in planes:
+        module = modules.get(plane)
+        if not module or not syncbat_base:
+            raise Unadmitted(f"{ARCH_SPEC}: plane {plane} projects no module name")
+        for family in plane_families:
+            path = (f"{syncbat_base}/src/{module}.rs" if family == "Module"
+                    else f"{syncbat_base}/src/{module}/README.md")
+            rows.append({"path": path, "family": f"SyncBat plane / {family}",
+                         "derivation": f"SyncBatPlane::{plane}"})
+    seen: set[str] = set()
+    for row in rows:
+        if row["path"] in seen:
+            raise Unadmitted(f"{BO_SPEC}: the expanded plan lists {row['path']} twice")
+        seen.add(row["path"])
+    return rows
+
+
+def render_gate0_plan(root) -> str:
+    out = ["| Path | Artifact family | Derivation |", "| --- | --- | --- |"]
+    for row in gate0_plan_facts(root):
+        out.append(f"| {row['path']} | {row['family']} | {row['derivation']} |")
     return "\n".join(out)
 
 
@@ -2031,6 +2135,7 @@ VIEW_RENDERERS = {
     "IdentityTimeProofRequirements": _proof_requirements_renderer("IdentityTimeProofRequirements"),
     "MigrationProofRequirements": _proof_requirements_renderer("MigrationProofRequirements"),
     "SecretAuthorityProofRequirements": _proof_requirements_renderer("SecretAuthorityProofRequirements"),
+    "Gate0MaterializationPlan": render_gate0_plan,
     "GeneratedViewRegistry": render_generated_view_registry,
 }
 
