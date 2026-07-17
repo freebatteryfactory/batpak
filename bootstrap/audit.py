@@ -1197,7 +1197,10 @@ def g_witness_render(refs_raw: str, note: str) -> str:
     text = "; ".join(parts)
     return f"{text} -- {note}" if note else text
 G_LEG_ROW = re.compile(
-    r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
+    r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", '
+    r'legacy_evidence: "(?:[^"\\]|\\.)*", clean_owner: "([^"]+)", '
+    r'mechanism_disposition: "(?:[^"\\]|\\.)*", witness_requirement: '
+    r'LegacyWitnessRequirement::(?:CanonicalProofRows|Planned\("(?:[^"\\]|\\.)*"\)), '
     r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::(\w+), '
     r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
 )
@@ -2568,21 +2571,20 @@ W_ID = re.compile(r"^[a-z0-9_]+$")
 
 
 def witness_rows(root: Path) -> dict[str, dict]:
-    """proof-row id -> {owner LEG, proof owner, gates}. docs/24 is the authority."""
-    doc = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    """proof-row id -> {owner guarantee}. Since 5.5E4d the TYPED catalog in
+    spec/proof.rs is the one membership authority; docs/24 owns meaning only,
+    and the retired fence headers are no longer parsed for anything."""
+    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
     out: dict[str, dict] = {}
-    for proof_owner, gates, posture, tail, leg, body in W_OWNER_BLOCK.findall(doc):
-        for line in body.splitlines():
-            wid = line.strip()
-            if not wid or not W_ID.match(wid):
-                continue
-            if wid in out:
-                out[wid]["duplicate"] = True
-                continue
-            out[wid] = {"leg": leg, "target": leg, "tail": tail,
-                        "proof_owner": proof_owner.strip(),
-                        "gates": gates.strip(), "posture": posture.strip(),
-                        "duplicate": False}
+    for wid, family, guarantee, _contracts in re.findall(
+            r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
+            r'ProofRowState::Active \{ guarantee: GuaranteeRef::(leg|dec)\("([^"]+)"\), '
+            r'projection_contracts: &\[([^\]]*)\] \} \}', src):
+        if wid in out:
+            out[wid]["duplicate"] = True
+            continue
+        out[wid] = {"leg": guarantee, "target": guarantee, "family": family,
+                    "duplicate": False}
     return out
 
 
@@ -2623,8 +2625,6 @@ def witness_reference_findings(root: Path) -> list[str]:
             out.append(f"docs/24 binds proof-row id {wid} more than once")
         if wid not in meanings:
             out.append(f"docs/24 proof row {wid} has no authoritative meaning")
-        if "TestPak" not in row["proof_owner"] or not row["gates"]:
-            out.append(f"docs/24 proof row {wid} states no future-executable proof owner or gate")
     # every owned row is projected, and nothing extra is
     owned: dict[str, set[str]] = {}
     for wid, row in rows.items():
@@ -2829,49 +2829,19 @@ def proof_meaning_findings(root: Path) -> list[str]:
 
 
 def deferred_posture_findings(root: Path) -> list[str]:
+    """The deferred-proof rows keep their typed membership (5.5E4d): the
+    fence-header posture prose retired with the membership mirrors, and
+    execution evidence lives in run receipts, never in timeless prose."""
     rows = witness_rows(root)
     out: list[str] = []
     for leg, ids in D4B2B_ROWS.items():
-        want_gates = leg_gates(root, leg)
         for wid in ids:
             row = rows.get(wid)
             if row is None:
                 out.append(f"{leg} witness {wid} is absent from docs/24")
-                continue
-            if row["leg"] != leg:
+            elif row["leg"] != leg:
                 out.append(f"{leg} witness {wid} is bound to {row['leg']}")
-            posture = row["posture"].lower()
-            if "future executable: yes" not in posture:
-                out.append(f"proof row {wid} states no future-executable posture")
-            if "bootstrap executed: no" not in posture:
-                out.append(f"proof row {wid} does not state that bootstrap did not execute it")
-            if "bootstrap executed: yes" in posture:
-                out.append(f"proof row {wid} falsely claims bootstrap execution")
-            if "currently qualified" in posture:
-                out.append(f"proof row {wid} falsely claims current executable qualification")
-            # the proof row qualifies at its owning obligation's gates
-            if row["gates"] != want_gates:
-                out.append(
-                    f"proof row {wid} gates {row['gates']!r} differ from {leg} gates {want_gates!r}"
-                )
-            out.extend(gate_findings(root, "proof row", wid, gate_list(
-                " ".join(f"GateId::{t}" for t in row["gates"].split("/") if t))))
-            if wid in D4B2B_DEFERRED:
-                m = re.search(r"deferred until:\s*([^;)]*)", row["posture"], re.I)
-                if not m or not m.group(1).strip():
-                    out.append(f"deferred proof row {wid} states no deferral condition")
-                else:
-                    cond = m.group(1).strip()
-                    if any(v in cond.lower() for v in D4B2B_VAGUE) or "admitted" not in cond.lower():
-                        out.append(
-                            f"deferred proof row {wid} names no admission boundary: {cond!r}"
-                        )
-            else:
-                # a non-deferred future row must not inherit the adapter deferral
-                if "deferred until" in posture:
-                    out.append(f"proof row {wid} inherits a native-adapter deferral it does not have")
     return out
-
 
 # --- 5.5D4b-2c LEG-081 proof-row authority and coverage ---------------------
 # docs/24 owns the nine canonical rows. docs/35 keeps the secret-authority law
@@ -2918,13 +2888,16 @@ A_PROOF_RECORD = re.compile(
 
 
 def proof_row_catalog(root: Path) -> list[tuple[str, str, tuple[str, ...]]]:
-    """[(id, 'Active'|'Retired', successors)] from the typed catalog."""
-    src = _uncomment((root / "spec/proof.rs").read_text(encoding="utf-8"))
+    """(id, state, successors) in declaration order, from the typed catalog.
+    Active rows carry guarantee and projection contracts since 5.5E4d; this
+    lifecycle view records the state name and any successors."""
+    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
     out: list[tuple[str, str, tuple[str, ...]]] = []
-    for m in A_PROOF_RECORD.finditer(src):
-        state = "Active" if m.group(2) == "Active" else "Retired"
-        succ = tuple(re.findall(r'ProofRowId\("(\w+)"\)', m.group(3) or ""))
-        out.append((m.group(1), state, succ))
+    for m in re.finditer(
+            r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
+            r'ProofRowState::(Active|Retired)(?: \{([^}]*(?:\}[^}]*)?)\})? \}', src):
+        successors = tuple(re.findall(r'ProofRowId\("([^"]+)"\)', m.group(3) or ""))
+        out.append((m.group(1), m.group(2), successors))
     return out
 
 
@@ -3729,7 +3702,6 @@ def leg081_authority_findings(root: Path) -> list[str]:
     rows = witness_rows(root)
     meanings = witness_meanings(root)
     want = set(D4B2C_ROWS)
-    want_gates = leg_gates(root, D4B2C_LEG)
 
     # 1. docs/24 binds exactly the nine canonical rows to LEG-081
     owned = {w for w, r in rows.items() if r["leg"] == D4B2C_LEG}
@@ -3745,21 +3717,8 @@ def leg081_authority_findings(root: Path) -> list[str]:
         row = rows[wid]
         if row["duplicate"]:
             out.append(f"docs/24 binds LEG-081 proof row {wid} more than once")
-        if row["proof_owner"] != "TestPak":
-            out.append(f"LEG-081 proof row {wid} names proof owner {row['proof_owner']!r}, not TestPak")
-        if row["gates"] != want_gates:
-            out.append(
-                f"LEG-081 proof row {wid} gates {row['gates']!r} differ from typed LEG-081 gates {want_gates!r}"
-            )
-        out.extend(gate_findings(root, "proof row", wid, gate_list(
-            " ".join(f"GateId::{t}" for t in row["gates"].split("/") if t))))
-        posture = row["posture"].lower()
-        if "future executable: yes" not in posture:
-            out.append(f"LEG-081 proof row {wid} states no future-executable posture")
-        if "bootstrap executed: yes" in posture:
-            out.append(f"LEG-081 proof row {wid} falsely claims bootstrap execution")
-        elif "bootstrap executed: no" not in posture:
-            out.append(f"LEG-081 proof row {wid} does not state that bootstrap did not execute it")
+        # Fence-header owner/gate/posture prose retired with the membership
+        # mirrors (5.5E4d); membership is typed and execution lives in receipts.
         if wid not in meanings:
             out.append(f"LEG-081 proof row {wid} has no authoritative meaning")
 
@@ -3769,34 +3728,9 @@ def leg081_authority_findings(root: Path) -> list[str]:
         out.append("docs/35 reclaims authoritative proof-row ownership; docs/24 owns proof-row identity")
     if W_MEANING_BLOCK.search(d35):
         out.append("docs/35 reclaims per-ID authoritative witness meaning; docs/24 owns it")
-    m = D4B2C_D35_PROJECTION.search(d35)
-    if not m:
-        out.append("docs/35 states no LEG-081 proof-row projection labelled as projected from docs/24")
-    else:
-        target, owner, body = m.groups()
-        if target != D4B2C_LEG:
-            out.append(f"docs/35 projection targets {target}, not LEG-081")
-        if "docs/24" not in owner:
-            out.append(f"docs/35 projection names canonical proof-row owner {owner.strip()!r}, not docs/24")
-        got: list[str] = []
-        for line in body.splitlines():
-            s = line.strip()
-            if not s:
-                continue
-            if line != s or not W_ID.match(s):
-                out.append(f"docs/35 projection line is not a bare proof-row id: {line!r}")
-                continue
-            got.append(s)
-        if len(got) != len(set(got)):
-            out.append("docs/35 projects a duplicate LEG-081 proof-row id")
-        for missing in sorted(want - set(got)):
-            out.append(f"docs/35 omits projected LEG-081 proof row {missing}")
-        for extra in sorted(set(got) - want):
-            owner_leg = rows.get(extra, {}).get("leg")
-            if owner_leg is None:
-                out.append(f"docs/35 projects unknown proof-row id {extra}")
-            else:
-                out.append(f"docs/35 projects {extra}, which docs/24 binds to {owner_leg}")
+    # The docs/35 required-list is a REGISTERED generated view since 5.5E4d
+    # (SecretAuthorityProofRequirements); the universal census and domain
+    # projection laws own its membership now.
 
     # 3. retired vocabulary is owned by retired_proof_row_findings, which sweeps
     #    every document rather than the three this rule happened to know about.
@@ -3967,11 +3901,9 @@ def proof_target_findings(root: Path) -> list[str]:
     exp = witness_expectations(root)
     out: list[str] = []
     for wid, row in sorted(rows.items()):
+        # One primary target per row is now STRUCTURAL: the typed Active state
+        # carries exactly one GuaranteeRef (5.5E4d).
         ref = row["target"]
-        # one primary target per row; supporting references live in the meaning
-        extra = sorted({r for r in G_REF.findall(row["tail"]) if r != ref})
-        if extra:
-            out.append(f"proof row {wid} names more than one primary target: {ref} and {', '.join(extra)}")
         entry = idx.get(ref)
         if entry is None:
             # An unknown *family* never reaches here: W_OWNER_BLOCK only matches
@@ -3983,17 +3915,6 @@ def proof_target_findings(root: Path) -> list[str]:
                 f"{ref.split('-', 1)[0]} guarantee"
             )
             continue
-        # gates resolve from the typed target. Source-block gate text is never authority.
-        if entry["gates"] is None:
-            out.append(
-                f"proof row {wid} targets {ref}, whose {entry['family']} family declares no "
-                f"machine-resolvable gate list"
-            )
-            continue
-        if row["gates"] != entry["gates"]:
-            out.append(
-                f"proof row {wid} gates {row['gates']!r} differ from typed {ref} gates {entry['gates']!r}"
-            )
     for wid, e in sorted(exp.items()):
         if wid not in rows:
             out.append(f"expectation clause names unknown proof row {wid}")
@@ -4093,6 +4014,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(generated_view_findings(root))
     findings.extend(inventory_mirror_findings(root))
     findings.extend(exact_ledger_findings(root))
+    findings.extend(proof_relation_findings(root))
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
@@ -5036,6 +4958,195 @@ def exact_ledger_findings(root: Path) -> list[str]:
             if re.search(r"^PRESERVE\s{2,}semantic law", stripped, re.M):
                 out.append(f"{rel}: an authored coverage disposition inventory "
                            "may not return outside the generated matrix")
+    return out
+
+
+# --- Proof relations and the complete legacy ledger (5.5E4d) -----------------
+# spec/proof.rs is the one membership authority; docs/24 owns meaning; the
+# domain documents own the pressured law; docs/21 is the generated human
+# ledger. This auditor reconstructs every projection independently, proves
+# the contract/target selection laws, and sweeps the retired mirrors.
+A_E4D_ACTIVE = re.compile(
+    r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
+    r'ProofRowState::Active \{ guarantee: GuaranteeRef::(leg|dec)\("([^"]+)"\), '
+    r'projection_contracts: &\[([^\]]*)\] \} \}')
+A_E4D_LEG_FULL = re.compile(
+    r'LegacyObligation \{ id: "(LEG-\d+)", law: "((?:[^"\\]|\\.)*)", '
+    r'legacy_evidence: "((?:[^"\\]|\\.)*)", clean_owner: "([^"]*)", '
+    r'mechanism_disposition: "((?:[^"\\]|\\.)*)", witness_requirement: '
+    r'LegacyWitnessRequirement::(CanonicalProofRows|Planned\("(?:[^"\\]|\\.)*"\)), '
+    r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::(\w+), '
+    r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: '
+    r'ObligationStatus::(\w+) \}')
+A_E4D_PLANNED_TEXT = re.compile(r'Planned\("((?:[^"\\]|\\.)*)"\)')
+# The automatic consumers never appear in projection_contracts: docs/24 and
+# docs/21 receive every relation mechanically.
+A_E4D_AUTOMATIC = {"BP-GAUNTLET-1", "BP-LEGACY-OBLIGATIONS-1"}
+
+
+def proof_relation_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    psrc = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    active = [{"id": m[0], "family": m[1], "guarantee": m[2],
+               "contracts": re.findall(r'ContractId\("([^"]+)"\)', m[3])}
+              for m in A_E4D_ACTIVE.findall(psrc)]
+    contract_ids: dict[str, str] = {}
+    for rel in sorted((root / "docs").glob("*.md")) + sorted((root / "companion").glob("*.md")):
+        front = frontmatter(rel.read_text(encoding="utf-8"))
+        if front.get("contract_id"):
+            contract_ids[front["contract_id"]] = front.get("status", "")
+    for row in active:
+        if not row["contracts"]:
+            out.append(f"active proof row {row['id']} names no projection contract")
+        if len(row["contracts"]) != len(set(row["contracts"])):
+            out.append(f"active proof row {row['id']} repeats a projection contract")
+        for contract in row["contracts"]:
+            if contract in A_E4D_AUTOMATIC:
+                out.append(f"active proof row {row['id']} lists automatic consumer "
+                           f"{contract}; docs/24 and docs/21 receive every relation "
+                           "mechanically")
+            elif contract not in contract_ids:
+                out.append(f"active proof row {row['id']} names projection contract "
+                           f"{contract}, which no authored document declares")
+            elif contract_ids[contract] != "AUTHORITATIVE":
+                out.append(f"active proof row {row['id']} names {contract}, whose "
+                           "document is not an authoritative consumer")
+    # PROOF-RELATIONS block parity (independent grouping).
+    groups: dict[tuple, list[str]] = {}
+    for row in active:
+        groups.setdefault((row["guarantee"], tuple(row["contracts"])), []).append(row["id"])
+    want_rel = ["| Guarantee | Projection contract(s) | Active proof rows |",
+                "| --- | --- | --- |"]
+    for (guarantee, contracts), ids in groups.items():
+        want_rel.append(f"| {guarantee} | {'; '.join(contracts)} | {'; '.join(ids)} |")
+    d24_text = (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8")
+    body = batql_extract_block(d24_text, "PROOF-RELATIONS")
+    if body is None:
+        out.append("docs/24: missing generated block PROOF-RELATIONS")
+    elif body != "\n".join(want_rel):
+        out.append("docs/24: generated block PROOF-RELATIONS does not match its "
+                   "typed derivation")
+    # Domain projections: registered PROOF-REQUIREMENTS targets == the
+    # contract set active rows project to, selected by frontmatter.
+    reg = a_parse_generated_views(root)
+    domain_targets = [reg["views"][n]["targets"][0] for n in reg["order"]
+                      if n in reg["views"] and reg["views"][n].get("marker") == "PROOF-REQUIREMENTS"
+                      and reg["views"][n]["targets"]]
+    target_contracts: dict[str, str] = {}
+    for rel in domain_targets:
+        front = frontmatter((root / rel).read_text(encoding="utf-8")) \
+            if (root / rel).is_file() else {}
+        target_contracts[rel] = front.get("contract_id", "")
+    used = {c for row in active for c in row["contracts"]}
+    registered = set(target_contracts.values())
+    for missing in sorted(used - registered):
+        out.append(f"projection contract {missing} has no registered domain "
+                   "proof view")
+    for phantom in sorted(registered - used):
+        out.append(f"registered domain proof view for {phantom} has no active "
+                   "proof relation")
+    for rel, contract in sorted(target_contracts.items()):
+        text = (root / rel).read_text(encoding="utf-8") if (root / rel).is_file() else ""
+        body = batql_extract_block(text, "PROOF-REQUIREMENTS")
+        if body is None:
+            out.append(f"{rel}: missing generated block PROOF-REQUIREMENTS")
+            continue
+        want_groups: dict[str, list[str]] = {}
+        for row in active:
+            if contract in row["contracts"]:
+                want_groups.setdefault(row["guarantee"], []).append(row["id"])
+        want = ["| Guarantee | Required proof rows |", "| --- | --- |"]
+        for guarantee, ids in want_groups.items():
+            want.append(f"| {guarantee} | {'; '.join(ids)} |")
+        if body != "\n".join(want):
+            out.append(f"{rel}: generated block PROOF-REQUIREMENTS does not match "
+                       "its typed derivation")
+    if "hash_map_iteration_cannot_influence_canonical_observables" in \
+            (root / "docs/03_REPOSITORY_AND_PACKAGES.md").read_text(encoding="utf-8"):
+        out.append("docs/03 carries the hash-map proof row; canonical collection "
+                   "order is docs/04's law")
+    # docs/21 ledger parity, including the witness route cells.
+    lsrc = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    by_leg: dict[str, list[str]] = {}
+    for row in active:
+        if row["family"] == "leg":
+            by_leg.setdefault(row["guarantee"], []).append(row["id"])
+    want_ledger = ["| ID | Retained law | Legacy evidence | Clean owner | Mechanism "
+                   "disposition | Required witness | Gates | Compatibility | "
+                   "Deletion condition | Status |",
+                   "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for m in A_E4D_LEG_FULL.finditer(lsrc):
+        leg, law, evidence, owner, mech, route, gates, compat, deletion, status = m.groups()
+        if not evidence.strip():
+            out.append(f"{leg} carries no legacy evidence pointer")
+        if not mech.strip():
+            out.append(f"{leg} carries no mechanism disposition")
+        if route == "CanonicalProofRows":
+            witness = "; ".join(by_leg.get(leg, []))
+            if not by_leg.get(leg):
+                out.append(f"{leg} claims CanonicalProofRows with no active typed relation")
+        else:
+            witness = A_E4D_PLANNED_TEXT.search(route).group(1)
+            if not witness.strip():
+                out.append(f"{leg} carries an empty planned witness")
+            if by_leg.get(leg):
+                out.append(f"{leg} carries a planned witness AND active proof rows")
+        want_ledger.append(f"| {leg} | {law} | {evidence} | {owner} | {mech} | "
+                           f"{witness} | {_a_gate_token_render(gates, root)} | "
+                           f"{compat} | {deletion} | {status} |")
+    for guarantee in sorted(set(by_leg) - {m.group(1) for m in A_E4D_LEG_FULL.finditer(lsrc)}):
+        out.append(f"a proof relation binds {guarantee}, which no obligation row declares")
+    d21_text = (root / "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md").read_text(encoding="utf-8")
+    body = batql_extract_block(d21_text, "LEGACY-OBLIGATION-LEDGER")
+    if body is None:
+        out.append("docs/21: missing generated block LEGACY-OBLIGATION-LEDGER")
+    elif body != "\n".join(want_ledger):
+        out.append("docs/21: generated block LEGACY-OBLIGATION-LEDGER does not "
+                   "match its typed derivation")
+    # The final mirror sweep: with generated blocks and historical migration
+    # material removed, no membership inventory or retired ownership claim
+    # survives anywhere in the corpus.
+    for rel in sorted((root / "docs").glob("*.md")) + sorted((root / "companion").glob("*.md")):
+        text = rel.read_text(encoding="utf-8")
+        if frontmatter(text).get("status") == "GENERATED":
+            continue
+        stripped = A_GENERATED_BLOCK.sub("", text)
+        stripped = re.sub(r"<!-- HISTORICAL-MIGRATION:BEGIN -->.*?"
+                          r"<!-- HISTORICAL-MIGRATION:END -->", "", stripped, flags=re.S)
+        name = rel.relative_to(root).as_posix()
+        if re.search(r"^\| LEG-\d+ \|", stripped, re.M):
+            out.append(f"{name}: an authored legacy-obligation row may not return "
+                       "outside the generated ledger")
+        if re.search(r"Required witnesses \(proof owner", stripped):
+            out.append(f"{name}: an authored required-witnesses inventory may not "
+                       "return; spec/proof.rs owns membership")
+        if re.search(r"Required proof rows[^\n]*:\s*\n+```text", stripped):
+            out.append(f"{name}: an authored required-proof-rows inventory may not "
+                       "return; the PROOF-REQUIREMENTS projection owns it")
+        if re.search(r"until the documentary convergence pass", stripped):
+            out.append(f"{name}: the temporary documentary-convergence wording may "
+                       "not return")
+        if re.search(r"docs/24 owns proof-row identity|owns proof-row identity and "
+                     r"executable meaning|canonical proof-row owner: docs/24", stripped):
+            out.append(f"{name}: docs/24 may not claim proof-row identity ownership; "
+                       "spec/proof.rs owns identity, docs/24 owns meaning")
+    if "until the documentary convergence pass" in psrc:
+        out.append("spec/proof.rs: the temporary documentary-convergence wording "
+                   "may not return")
+    for field in ("expectation:", "disposition_text:", "meaning:"):
+        if re.search(r"\b" + field.rstrip(":") + r":\s*&'static str", psrc):
+            out.append(f"spec/proof.rs: a {field.rstrip(':')} prose field may not "
+                       "enter the typed catalog; docs/24 owns meaning")
+    # docs/24 doctrine presence.
+    d24_stripped = A_GENERATED_BLOCK.sub("", d24_text)
+    for name, fragment in (
+        ("typed-ownership-split", "spec/proof.rs` owns ProofRowId identity"),
+        ("meaning-stays", "docs/24 owns each active row's authoritative semantic summary"),
+        ("relation-cannot-move-meaning", "A generated relation cannot change proof meaning"),
+        ("prose-cannot-move-rows", "A prose meaning cannot silently move a proof row"),
+    ):
+        if fragment not in d24_stripped:
+            out.append(f"docs/24: typed proof-ownership doctrine absent ({name})")
     return out
 
 
@@ -6473,7 +6584,10 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
     legacy_seed_rows = {
         ident: (law, owner, gate_render(gate_list(gates), root), compat, deletion, status)
         for ident, law, owner, gates, compat, deletion, status in re.findall(
-            r'LegacyObligation \{ id: "([^"]+)", law: "([^"]+)", clean_owner: "([^"]+)", '
+            r'LegacyObligation \{ id: "([^"]+)", law: "([^"]+)", '
+            r'legacy_evidence: "(?:[^"\\]|\\.)*", clean_owner: "([^"]+)", '
+            r'mechanism_disposition: "(?:[^"\\]|\\.)*", witness_requirement: '
+            r'LegacyWitnessRequirement::(?:CanonicalProofRows|Planned\("(?:[^"\\]|\\.)*"\)), '
             r'gates: &\[([^\]]*)\], '
             r"compatibility_disposition: CompatibilityDisposition::(\w+), "
             r"deletion_condition: DeletionCondition::(\w+), "

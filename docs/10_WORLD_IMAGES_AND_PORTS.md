@@ -64,15 +64,17 @@ PakVM never resolves a kernel by display name. The `AttemptReceipt` records the 
 
 This document owns the kernel vocabulary, the two binding modes, and the receipt rule. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-Required proof rows, projected from docs/24 (qualification target: `DEC-062`; canonical proof-row owner: docs/24 Gauntlet):
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-```text
-kernel_cannot_resolve_by_display_name
-kernel_contract_and_implementation_ids_are_not_interchangeable
-qualified_interface_requires_matching_qualification_receipt
-exact_kernel_binding_rejects_another_implementation
-attempt_receipt_records_exact_kernel_implementation
-```
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-062 | kernel_cannot_resolve_by_display_name; kernel_contract_and_implementation_ids_are_not_interchangeable; qualified_interface_requires_matching_qualification_receipt; exact_kernel_binding_rejects_another_implementation; attempt_receipt_records_exact_kernel_implementation |
+| DEC-051 | raw_batql_is_not_a_netbat_invocation; compiler_port_is_not_available_to_guest_programs; compiler_port_is_absent_from_default_server_profile; compiler_output_still_requires_program_validation |
+| DEC-050 | query_program_with_effect_instruction_is_rejected; query_program_cannot_install_process; query_program_cannot_request_write_capability; query_program_over_work_bound_is_denied_before_execution; query_program_result_binds_program_and_grant_identity; entrypoint_receipt_cannot_satisfy_query_program_execution |
+| DEC-049 | entrypoint_cannot_substitute_foreign_program_image; entrypoint_effect_must_be_declared_by_world_interface; query_program_receipt_cannot_satisfy_entrypoint_invocation |
+| LEG-045 | tls_does_not_upgrade_program_or_proof_authority |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## World instance
 
@@ -141,24 +143,6 @@ The compiled image still passes ordinary validation and admission. Source identi
 
 This document owns the boundary law, the invocation classes, the capability envelopes, and the transport posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere. The rows below span four obligations, each qualifying at its own typed gates.
 
-Required proof rows, projected from docs/24 (qualification targets: `DEC-051` for the compilation boundary, `DEC-050` for query-program invocation, `DEC-049` for entrypoint invocation, `LEG-045` for transport authority; canonical proof-row owner: docs/24 Gauntlet):
-
-```text
-raw_batql_is_not_a_netbat_invocation
-compiler_port_is_not_available_to_guest_programs
-compiler_port_is_absent_from_default_server_profile
-compiler_output_still_requires_program_validation
-query_program_with_effect_instruction_is_rejected
-query_program_cannot_install_process
-query_program_cannot_request_write_capability
-query_program_over_work_bound_is_denied_before_execution
-query_program_result_binds_program_and_grant_identity
-entrypoint_receipt_cannot_satisfy_query_program_execution
-entrypoint_cannot_substitute_foreign_program_image
-entrypoint_effect_must_be_declared_by_world_interface
-query_program_receipt_cannot_satisfy_entrypoint_invocation
-tls_does_not_upgrade_program_or_proof_authority
-```
 
 An effect instruction is not a name on a list. It is any node `spec/pakvm_isa.rs` admits with the `Effectful` effect posture, which admission binds to the Effect algebra in both directions. `query_program_with_effect_instruction_is_rejected` therefore covers a node from the day it is admitted; there is no enumeration here to fall out of date, and none anywhere else.
 

@@ -168,6 +168,19 @@ An embedded block inherits no authority from its containing document. A standalo
 | Tier0ReceiptDenominator | embedded-block | bootstrap/selftest.py | DELIVERY_NOTES.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
 | DecisionLedger | embedded-block | spec/dispositions.rs | docs/30_DECISION_AND_REJECTION_LEDGER.md | DECISION-LEDGER | bootstrap/project.py |
 | LegacyInvariantCoverage | embedded-block | spec/legacy_invariant_coverage.rs | docs/34_LEGACY_INVARIANT_COVERAGE.md | LEGACY-INVARIANT-COVERAGE | bootstrap/project.py |
+| LegacyObligationLedger | embedded-block | spec/legacy_obligations.rs; spec/proof.rs | docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md | LEGACY-OBLIGATION-LEDGER | bootstrap/project.py |
+| GauntletProofRelations | embedded-block | spec/proof.rs | docs/24_GAUNTLET.md | PROOF-RELATIONS | bootstrap/project.py |
+| SystemModelProofRequirements | embedded-block | spec/proof.rs | docs/02_SYSTEM_MODEL.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| RepositoryProofRequirements | embedded-block | spec/proof.rs | docs/03_REPOSITORY_AND_PACKAGES.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| TypeSystemProofRequirements | embedded-block | spec/proof.rs | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| StorageProofRequirements | embedded-block | spec/proof.rs | docs/05_STORAGE_FBAT_AND_TILES.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| SyncBatProofRequirements | embedded-block | spec/proof.rs | docs/08_SYNCBAT_RUNTIME.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| BvisorProofRequirements | embedded-block | spec/proof.rs | docs/09_BVISOR.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| WorldPortsProofRequirements | embedded-block | spec/proof.rs | docs/10_WORLD_IMAGES_AND_PORTS.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| TestPakProofRequirements | embedded-block | spec/proof.rs | docs/12_TESTPAK.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| IdentityTimeProofRequirements | embedded-block | spec/proof.rs | docs/16_IDENTITY_TIME_AND_NAVIGATION.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| MigrationProofRequirements | embedded-block | spec/proof.rs | docs/22_MIGRATION_AND_CUTOVER.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| SecretAuthorityProofRequirements | embedded-block | spec/proof.rs | docs/35_CRYPTO_AND_SECRET_AUTHORITY.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
 

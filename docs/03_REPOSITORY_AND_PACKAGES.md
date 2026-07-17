@@ -249,15 +249,13 @@ Every profile in the matrix preserves program semantics (DEC-065). The same prog
 
 This document owns the package inventory, the feature posture, and the qualification matrix. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-Required proof rows, projected from docs/24 (qualification target: `DEC-065`; canonical proof-row owner: docs/24 Gauntlet):
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-```text
-no_std_batpak_has_no_std_dependency_route
-no_std_syncbat_has_no_std_dependency_route
-default_std_does_not_enable_threaded_or_browser_adapters
-browser_and_native_profiles_preserve_program_semantics
-hash_map_iteration_cannot_influence_canonical_observables
-```
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-065 | no_std_batpak_has_no_std_dependency_route; no_std_syncbat_has_no_std_dependency_route; default_std_does_not_enable_threaded_or_browser_adapters; browser_and_native_profiles_preserve_program_semantics |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## Package-internal source grammar
 

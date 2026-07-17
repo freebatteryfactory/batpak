@@ -85,3 +85,13 @@ Do not wait for the full implementation; leaving legacy as default would keep te
 ## Migration receipts
 
 Every imported reader, vector, fixture, kernel, and retired legacy path receives a receipt naming source commit/path, clean owner, semantic obligation, hash, review, proof, and final disposition.
+
+## Required proof rows
+
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| LEG-074 | close_reopen_reimport_returns_zero_new_events |
+<!-- PROOF-REQUIREMENTS:END -->

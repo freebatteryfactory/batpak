@@ -129,3 +129,13 @@ TestPak drives the same Bvisor transition core with scripted ports, crash points
 ## Deferred foreign execution
 
 A future real adopter may earn a separately qualified external-effect adapter for a native tool. Such an adapter receives immutable content-addressed inputs and returns artifacts plus physical evidence. It does not restore an OS-backend matrix to Bvisor's product identity.
+
+## Required proof rows
+
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| LEG-043 | descriptor_postcondition_failure_is_not_reported_applied; fcntl_getfd_failure_fails_closed; fcntl_setfd_failure_fails_closed |
+<!-- PROOF-REQUIREMENTS:END -->

@@ -209,3 +209,13 @@ Hash-map iteration order never influences canonical identity, formatting, diagno
 ## Closed machine enums
 
 Instruction kinds, lifecycle states, authority roles, delivery topologies, and terminal outcomes are closed enums. Exhaustive matches are required. Open extension occurs through explicit composition of data contracts, not wildcard arms.
+
+## Required proof rows
+
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-065 | hash_map_iteration_cannot_influence_canonical_observables |
+<!-- PROOF-REQUIREMENTS:END -->

@@ -280,17 +280,13 @@ Failure must never produce a panic, an abort presented as ordinary refusal, an i
 
 This document owns the allocation discipline, the two canonical failure classes, and the plane coverage list. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-Required proof rows, projected from docs/24 (qualification target: `DEC-066`; canonical proof-row owner: docs/24 Gauntlet):
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-```text
-attacker_length_is_checked_before_reserve
-allocation_failure_returns_resource_exhausted
-declared_work_overrun_returns_budget_exceeded
-resource_exhaustion_never_publishes_partial_event
-resource_exhaustion_never_advances_checkpoint
-artifact_staging_failure_publishes_no_artifact_ref
-pakvm_arena_exhaustion_returns_typed_terminal_disposition
-```
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-066 | attacker_length_is_checked_before_reserve; allocation_failure_returns_resource_exhausted; declared_work_overrun_returns_budget_exceeded; resource_exhaustion_never_publishes_partial_event; resource_exhaustion_never_advances_checkpoint; artifact_staging_failure_publishes_no_artifact_ref; pakvm_arena_exhaustion_returns_typed_terminal_disposition |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## Supervision
 

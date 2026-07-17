@@ -273,7 +273,10 @@ def _witness_column(refs_raw, note):
     text = "; ".join(p for p in parts if p)
     return f"{text} -- {note}" if note else text
 _LEG_ROW = re.compile(
-    r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", clean_owner: "([^"]+)", '
+    r'LegacyObligation \{ id: "([^"]+)", law: "[^"]+", '
+    r'legacy_evidence: "(?:[^"\\]|\\.)*", clean_owner: "([^"]+)", '
+    r'mechanism_disposition: "(?:[^"\\]|\\.)*", witness_requirement: '
+    r'LegacyWitnessRequirement::(?:CanonicalProofRows|Planned\("(?:[^"\\]|\\.)*"\)), '
     r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::\w+, '
     r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: ObligationStatus::(\w+) \}'
 )
@@ -1829,6 +1832,125 @@ def render_legacy_coverage(root: Path) -> str:
     return "\n".join(lines)
 
 
+# --- Proof relations and the complete legacy ledger (5.5E4d) -----------------
+# spec/proof.rs owns proof-row identity, lifecycle, succession, guarantee
+# binding, and projection membership; spec/legacy_obligations.rs owns the
+# complete obligation row. No Python relation map, no LEG witness map, no
+# heading parser, no ContractId-to-path map: domain selection is SOLELY the
+# target document's authored contract_id matching an active row's
+# projection_contracts, with the target path coming from the registry.
+_PROOF_ACTIVE_RE = re.compile(
+    r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
+    r'ProofRowState::Active \{ guarantee: GuaranteeRef::(leg|dec)\("([^"]+)"\), '
+    r'projection_contracts: &\[([^\]]*)\] \} \}')
+_PROOF_RETIRED_RE = re.compile(
+    r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
+    r'ProofRowState::Retired \{ successors: &\[([^\]]*)\] \}')
+_LEG_FULL_RE = re.compile(
+    r'LegacyObligation \{ id: "(LEG-\d+)", law: "((?:[^"\\]|\\.)*)", '
+    r'legacy_evidence: "((?:[^"\\]|\\.)*)", clean_owner: "([^"]*)", '
+    r'mechanism_disposition: "((?:[^"\\]|\\.)*)", witness_requirement: '
+    r'LegacyWitnessRequirement::(?:CanonicalProofRows|Planned\("((?:[^"\\]|\\.)*)"\)), '
+    r'gates: &\[([^\]]*)\], compatibility_disposition: CompatibilityDisposition::(\w+), '
+    r'deletion_condition: DeletionCondition::(\w+), active_or_closed_status: '
+    r'ObligationStatus::(\w+) \}')
+
+
+def parse_proof_relations(root: Path):
+    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    active = [{"id": m[0], "family": m[1], "guarantee": m[2],
+               "contracts": re.findall(r'ContractId\("([^"]+)"\)', m[3])}
+              for m in _PROOF_ACTIVE_RE.findall(src)]
+    retired = [{"id": m[0], "successors": re.findall(r'ProofRowId\("([^"]+)"\)', m[1])}
+               for m in _PROOF_RETIRED_RE.findall(src)]
+    for row in active:
+        if not row["contracts"]:
+            raise Unadmitted(f"active proof row {row['id']} names no projection contract")
+    return active, retired
+
+
+def _doc_contract_id(root: Path, rel: str) -> str:
+    text = (root / rel).read_text(encoding="utf-8")
+    m = re.match(r"---\n(.*?)\n---\n", text, re.S)
+    front = dict(re.findall(r"^(\w+):\s*(.+)$", m.group(1), re.M)) if m else {}
+    contract = front.get("contract_id", "")
+    if not contract:
+        raise Unadmitted(f"{rel} declares no contract_id frontmatter")
+    return contract
+
+
+def render_legacy_obligation_ledger(root: Path) -> str:
+    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    active, _retired = parse_proof_relations(root)
+    by_leg: dict[str, list[str]] = {}
+    for row in active:
+        if row["family"] == "leg":
+            by_leg.setdefault(row["guarantee"], []).append(row["id"])
+    rows = _LEG_FULL_RE.findall(src)
+    if not rows:
+        raise Unadmitted("spec/legacy_obligations.rs declares no complete obligation rows")
+    known = {r[0] for r in rows}
+    for guarantee in by_leg:
+        if guarantee not in known:
+            raise Unadmitted(f"a proof relation binds {guarantee}, which no obligation row declares")
+    lines = ["| ID | Retained law | Legacy evidence | Clean owner | Mechanism disposition "
+             "| Required witness | Gates | Compatibility | Deletion condition | Status |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for (leg, law, evidence, owner, mech, planned, gates, compat, deletion,
+         status) in rows:
+        canonical = "CanonicalProofRows" in re.search(
+            r'id: "' + leg + r'".*?witness_requirement: (\S+?)[,(]', src, re.S).group(1)
+        if canonical:
+            if planned:
+                raise Unadmitted(f"{leg} carries both witness routes")
+            if not by_leg.get(leg):
+                raise Unadmitted(f"{leg} claims CanonicalProofRows with no active relation")
+            witness = "; ".join(by_leg[leg])
+        else:
+            if not planned:
+                raise Unadmitted(f"{leg} has no witness route")
+            if by_leg.get(leg):
+                raise Unadmitted(f"{leg} carries a planned witness AND active proof rows")
+            witness = planned
+        lines.append(f"| {leg} | {law} | {evidence} | {owner} | {mech} | {witness} | "
+                     f"{gate_tokens(gates, root)} | {compat} | {deletion} | {status} |")
+    return "\n".join(lines)
+
+
+def render_proof_relations(root: Path) -> str:
+    active, _retired = parse_proof_relations(root)
+    groups: dict[tuple, list[str]] = {}
+    for row in active:
+        key = (row["family"], row["guarantee"], tuple(row["contracts"]))
+        groups.setdefault(key, []).append(row["id"])
+    lines = ["| Guarantee | Projection contract(s) | Active proof rows |",
+             "| --- | --- | --- |"]
+    for (family, guarantee, contracts), ids in groups.items():
+        lines.append(f"| {guarantee} | {'; '.join(contracts)} | {'; '.join(ids)} |")
+    return "\n".join(lines)
+
+
+def _proof_requirements_renderer(view_name: str):
+    def render(root: Path) -> str:
+        views = {v["name"]: v for v in parse_generated_views(root)}
+        view = views.get(view_name)
+        if view is None or not view["targets"]:
+            raise Unadmitted(f"{view_name} is not a registered domain proof view")
+        contract = _doc_contract_id(root, view["targets"][0])
+        active, _retired = parse_proof_relations(root)
+        groups: dict[str, list[str]] = {}
+        for row in active:
+            if contract in row["contracts"]:
+                groups.setdefault(row["guarantee"], []).append(row["id"])
+        if not groups:
+            raise Unadmitted(f"{view_name}: no active proof relation names {contract}")
+        lines = ["| Guarantee | Required proof rows |", "| --- | --- |"]
+        for guarantee, ids in groups.items():
+            lines.append(f"| {guarantee} | {'; '.join(ids)} |")
+        return "\n".join(lines)
+    return render
+
+
 _VIEW_SURFACE_DISPLAY = {"EmbeddedBlock": "embedded-block",
                          "StandaloneFile": "standalone-file",
                          "CorpusFrontmatter": "corpus-frontmatter"}
@@ -1896,6 +2018,19 @@ VIEW_RENDERERS = {
     "Tier0ReceiptDenominator": render_tier0_receipts,
     "DecisionLedger": render_decision_ledger,
     "LegacyInvariantCoverage": render_legacy_coverage,
+    "LegacyObligationLedger": render_legacy_obligation_ledger,
+    "GauntletProofRelations": render_proof_relations,
+    "SystemModelProofRequirements": _proof_requirements_renderer("SystemModelProofRequirements"),
+    "RepositoryProofRequirements": _proof_requirements_renderer("RepositoryProofRequirements"),
+    "TypeSystemProofRequirements": _proof_requirements_renderer("TypeSystemProofRequirements"),
+    "StorageProofRequirements": _proof_requirements_renderer("StorageProofRequirements"),
+    "SyncBatProofRequirements": _proof_requirements_renderer("SyncBatProofRequirements"),
+    "BvisorProofRequirements": _proof_requirements_renderer("BvisorProofRequirements"),
+    "WorldPortsProofRequirements": _proof_requirements_renderer("WorldPortsProofRequirements"),
+    "TestPakProofRequirements": _proof_requirements_renderer("TestPakProofRequirements"),
+    "IdentityTimeProofRequirements": _proof_requirements_renderer("IdentityTimeProofRequirements"),
+    "MigrationProofRequirements": _proof_requirements_renderer("MigrationProofRequirements"),
+    "SecretAuthorityProofRequirements": _proof_requirements_renderer("SecretAuthorityProofRequirements"),
     "GeneratedViewRegistry": render_generated_view_registry,
 }
 

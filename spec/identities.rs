@@ -385,6 +385,10 @@ pub const NON_CATALOGED_IDENTITY_TERMS: &[NonCatalogedIdentityTerm] = &[
         disposition: IdentityTermDisposition::OwnedElsewhere(ContractId("BP-BATQL-LANGUAGE-1")),
     },
     NonCatalogedIdentityTerm {
+        term: "ProofRowId",
+        disposition: IdentityTermDisposition::OwnedElsewhere(ContractId("BP-GAUNTLET-1")),
+    },
+    NonCatalogedIdentityTerm {
         term: "NavigationId",
         disposition: IdentityTermDisposition::OwnedElsewhere(ContractId("BP-IDENTITY-TIME-NAV-1")),
     },

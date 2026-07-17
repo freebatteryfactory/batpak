@@ -109,14 +109,20 @@ A future compressed profile requires a `CompressionId`, canonical parameters, bo
 
 This document owns the compression posture and the future-profile admission requirements. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere. The two obligations below qualify at their own typed gates; sharing this paragraph does not merge their gate schedules.
 
-Required proof rows, projected from docs/24 (qualification targets: `DEC-063` for the V1 compression posture, `LEG-053` for canonical open or typed refusal; canonical proof-row owner: docs/24 Gauntlet):
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-```text
-compressed_fbat_authority_frame_is_rejected_in_v1
-compressed_vpak_semantic_section_is_rejected_in_v1
-compression_profile_requires_expansion_bound
-future_format_version_fails_with_its_own_typed_disposition
-```
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| LEG-023 | middle_event_deletion_is_rejected; event_reorder_is_rejected; duplicate_payload_splice_is_rejected; cross_lane_predecessor_is_rejected; cross_entity_predecessor_is_rejected; midstream_genesis_is_rejected; forged_index_row_cannot_choose_and_authenticate_bytes |
+| LEG-019 | forged_sibling_cannot_cause_false_loss; agreeing_truncated_table_cannot_cause_false_safety; derived_row_cannot_authenticate_siblings; derived_row_cannot_authenticate_table_count; derived_row_cannot_authenticate_order; derived_row_cannot_authenticate_tail_boundary; derived_row_cannot_prove_absence_or_loss |
+| LEG-028 | page_limit_bounds_discovery_work_not_only_output |
+| LEG-085 | signed_compaction_preserves_or_commits_the_removed_set; compaction_inputs_survive_until_replacement_evidence_is_durable |
+| LEG-086 | matched_kind_decode_failure_is_a_typed_terminal; replay_routes_agree_on_first_failure_and_class |
+| LEG-087 | trapping_host_filesystem_remains_unreached_under_injected_storage |
+| LEG-053 | compressed_fbat_authority_frame_is_rejected_in_v1; compressed_vpak_semantic_section_is_rejected_in_v1; compression_profile_requires_expansion_bound |
+| DEC-063 | future_format_version_fails_with_its_own_typed_disposition |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## Integrity hierarchy
 

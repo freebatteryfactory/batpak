@@ -71,6 +71,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_frontmatter(root, &mut findings);
     check_witness_citations(root, &mut findings);
     check_proof_rows(root, &mut findings);
+    check_proof_relations(root, &mut findings);
     check_toolchain(root, &mut findings);
     check_contract_kinds(&mut findings);
     check_identity_catalogs(root, &mut findings);
@@ -217,7 +218,10 @@ fn check_guarantee_admission(findings: &mut Vec<String>) {
         legacy_obligations::LegacyObligation {
             id: "LEG-000-HOSTILE",
             law: "hostile",
+            legacy_evidence: "hostile evidence",
             clean_owner: "  ",
+            mechanism_disposition: "hostile",
+            witness_requirement: legacy_obligations::LegacyWitnessRequirement::Planned("hostile route"),
             gates: &[gates::GateId::G2],
             compatibility_disposition: legacy_obligations::CompatibilityDisposition::None,
             deletion_condition: legacy_obligations::DeletionCondition::Never,
@@ -1385,65 +1389,24 @@ fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
     }
 }
 
-/// The canonical ACTIVE proof-row identities docs/24 declares, parsed
-/// STRUCTURALLY: only an id line inside the ```text fence that immediately
-/// follows a "Required witnesses (proof owner ...)" header counts. A name
-/// appearing in a migration note, an expectation paragraph, or any other
-/// prose is NOT an active row — the substring search this replaces would
-/// bless exactly the deletion the retention denominator exists to catch.
-fn docs24_active_rows(doc: &str) -> BTreeSet<&str> {
-    let mut out = BTreeSet::new();
-    let mut armed = false;
-    let mut in_fence = false;
-    for line in doc.lines() {
-        if in_fence {
-            if line.trim_end() == "```" {
-                in_fence = false;
-                continue;
-            }
-            let id = line.trim();
-            if !id.is_empty()
-                && id
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-            {
-                out.insert(id);
-            }
-            continue;
-        }
-        if armed {
-            if line.trim().is_empty() {
-                continue;
-            }
-            armed = false;
-            if line.trim_end() == "```text" {
-                in_fence = true;
-            }
-            continue;
-        }
-        if line.contains("Required witnesses (proof owner ") && line.trim_end().ends_with(':') {
-            armed = true;
-        }
-    }
-    out
-}
 
 /// The proof-identity catalog is the living census (5.5E2j). Executed laws:
 /// no identity is both active and retired (or declared twice at all); both
 /// lifecycle states are constructed; every retirement names at least one
 /// successor and never itself; every successor resolves INSIDE the catalog;
 /// and the catalog's active side equals the structurally parsed canonical
-/// docs/24 rows exactly, in both directions. A libtest count proves every
-/// currently declared test executed; this catalog proves no required proof
-/// identity disappeared — different axes, each with its own owner.
-fn check_proof_rows(root: &Path, findings: &mut Vec<String>) {
+/// A libtest count proves every currently declared test executed; this
+/// catalog proves no required proof identity disappeared. Since 5.5E4d the
+/// typed catalog is the one membership authority — different axes, each with
+/// its own owner.
+fn check_proof_rows(_root: &Path, findings: &mut Vec<String>) {
     use proof::{ProofRowState, PROOF_ROWS};
     let mut active: BTreeSet<&str> = BTreeSet::new();
     let mut retired: BTreeSet<&str> = BTreeSet::new();
     for record in PROOF_ROWS {
         // Exhaustive: a new state must be classified here, not defaulted.
         let side = match record.state {
-            ProofRowState::Active => &mut active,
+            ProofRowState::Active { .. } => &mut active,
             ProofRowState::Retired { .. } => &mut retired,
         };
         if !side.insert(record.id.raw()) {
@@ -1535,20 +1498,9 @@ fn check_proof_rows(root: &Path, findings: &mut Vec<String>) {
             ));
         }
     }
-    let doc = fs::read_to_string(root.join("docs/24_GAUNTLET.md")).unwrap_or_default();
-    let canonical = docs24_active_rows(&doc);
-    for missing in canonical.iter().filter(|id| !active.contains(**id)) {
-        findings.push(format!(
-            "docs/24 declares active proof row {missing}, which the typed catalog \
-             never learned"
-        ));
-    }
-    for phantom in active.iter().filter(|id| !canonical.contains(**id)) {
-        findings.push(format!(
-            "typed Active identity {phantom} appears as no canonical docs/24 \
-             active row"
-        ));
-    }
+    // Membership parity against docs/24 fences retired in 5.5E4d: the typed
+    // catalog is the ONE membership authority, docs/24 owns meaning only, and
+    // audit.py proves the meaning entries cover every active row.
 }
 
 /// Typed witness citations RESOLVE (5.5E2). A witness names WHICH owned
@@ -2573,6 +2525,124 @@ fn check_operators(root: &Path, findings: &mut Vec<String>) {
             | operators::NumericSupport::QualifiedProfileOnly
             | operators::NumericSupport::Unsupported
             | operators::NumericSupport::NotApplicable => {}
+        }
+    }
+}
+
+/// The typed proof relations and complete legacy witness routes, EXECUTED
+/// (5.5E4d). Seedcheck runs the real values: nonempty supplemental fields,
+/// exactly one witness route per obligation with the matching relation
+/// posture, resolvable currently-active guarantees, nonempty duplicate-free
+/// resolvable projection contracts, active retired-successors, and the
+/// LEG/DEC-only guarantee family law. It parses no docs/24 meaning prose and
+/// no generated Markdown.
+fn check_proof_relations(root: &Path, findings: &mut Vec<String>) {
+    use proof::{ProofRowState, PROOF_ROWS};
+    let owner_texts = contract_authored_texts(root);
+    let mut leg_active: BTreeMap<&str, usize> = BTreeMap::new();
+    let active_ids: BTreeSet<&str> = PROOF_ROWS
+        .iter()
+        .filter(|r| matches!(r.state, ProofRowState::Active { .. }))
+        .map(|r| r.id.raw())
+        .collect();
+    for record in PROOF_ROWS {
+        match record.state {
+            ProofRowState::Active { guarantee, projection_contracts } => {
+                let raw = match guarantee {
+                    guarantees::GuaranteeRef::Legacy(id) => {
+                        let raw = id.raw();
+                        *leg_active.entry(raw).or_insert(0) += 1;
+                        let row = legacy_obligations::OBLIGATIONS.iter().find(|o| o.id == raw);
+                        match row {
+                            None => findings.push(format!(
+                                "proof row {} binds {}, which no legacy obligation declares",
+                                record.id.raw(), raw)),
+                            Some(o) if !matches!(o.active_or_closed_status,
+                                legacy_obligations::ObligationStatus::Active) => findings.push(
+                                format!("proof row {} binds {}, which is not currently active",
+                                    record.id.raw(), raw)),
+                            _ => {}
+                        }
+                        raw
+                    }
+                    guarantees::GuaranteeRef::Decision(id) => {
+                        let raw = id.raw();
+                        match dispositions::DECISIONS.iter().find(|d| d.id == raw) {
+                            None => findings.push(format!(
+                                "proof row {} binds {}, which no decision declares",
+                                record.id.raw(), raw)),
+                            Some(d) if matches!(d.disposition.guarantee_lifetime(),
+                                guarantees::GuaranteeLifetime::HistoricalCoverageOnly) =>
+                                findings.push(format!(
+                                    "proof row {} binds {}, which is historical coverage only",
+                                    record.id.raw(), raw)),
+                            _ => {}
+                        }
+                        raw
+                    }
+                    _ => {
+                        findings.push(format!(
+                            "proof row {} binds a non-LEG/DEC guarantee family; a new                              family enters when a real active row needs it",
+                            record.id.raw()));
+                        ""
+                    }
+                };
+                let _ = raw;
+                if projection_contracts.is_empty() {
+                    findings.push(format!(
+                        "active proof row {} names no projection contract", record.id.raw()));
+                }
+                let mut seen: BTreeSet<&str> = BTreeSet::new();
+                for contract in projection_contracts {
+                    if !seen.insert(contract.raw()) {
+                        findings.push(format!(
+                            "active proof row {} repeats projection contract {}",
+                            record.id.raw(), contract.raw()));
+                    }
+                    if !owner_texts.contains_key(contract.raw()) {
+                        findings.push(format!(
+                            "active proof row {} names projection contract {}, which no                              authored document declares",
+                            record.id.raw(), contract.raw()));
+                    }
+                }
+            }
+            ProofRowState::Retired { successors } => {
+                for successor in successors {
+                    if !active_ids.contains(successor.raw()) {
+                        findings.push(format!(
+                            "retired proof row {} names successor {}, which is not active",
+                            record.id.raw(), successor.raw()));
+                    }
+                }
+            }
+        }
+    }
+    for obligation in legacy_obligations::OBLIGATIONS {
+        if obligation.legacy_evidence.trim().is_empty() {
+            findings.push(format!("{} carries no legacy evidence pointer", obligation.id));
+        }
+        if obligation.mechanism_disposition.trim().is_empty() {
+            findings.push(format!("{} carries no mechanism disposition", obligation.id));
+        }
+        let active = leg_active.get(obligation.id).copied().unwrap_or(0);
+        match obligation.witness_requirement {
+            legacy_obligations::LegacyWitnessRequirement::CanonicalProofRows => {
+                if active == 0 {
+                    findings.push(format!(
+                        "{} claims CanonicalProofRows with no active typed relation",
+                        obligation.id));
+                }
+            }
+            legacy_obligations::LegacyWitnessRequirement::Planned(text) => {
+                if text.trim().is_empty() {
+                    findings.push(format!("{} carries an empty planned witness", obligation.id));
+                }
+                if active > 0 {
+                    findings.push(format!(
+                        "{} carries a planned witness AND active typed relations",
+                        obligation.id));
+                }
+            }
         }
     }
 }

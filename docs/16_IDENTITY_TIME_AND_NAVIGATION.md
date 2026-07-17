@@ -141,13 +141,14 @@ Distinct version types do not typecheck when substituted for one another. Canoni
 
 `spec/identities.rs` owns WHICH version identities exist and their owner mapping; this document owns their semantic distinctions and the identity commitment laws above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-Required proof rows, projected from docs/24 (qualification target: `DEC-064`; canonical proof-row owner: docs/24 Gauntlet):
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-```text
-program_image_id_is_independent_of_compiler_provenance
-distinct_version_types_do_not_typecheck_when_substituted
-netbat_version_does_not_upgrade_pakvm_isa
-```
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-064 | program_image_id_is_independent_of_compiler_provenance; distinct_version_types_do_not_typecheck_when_substituted; netbat_version_does_not_upgrade_pakvm_isa |
+| DEC-061 | order_by_hlc_uses_commit_tiebreak; cross_store_hlc_order_is_total; hlc_range_is_half_open; frontier_progress_never_uses_hlc_order; observed_wall_time_is_not_promoted_to_hlc |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## Non-cataloged identity-shaped terms
 
@@ -163,6 +164,7 @@ alone.
 ```text
 GateId                         owned elsewhere        BP-GATES-1
 OperatorId                     owned elsewhere        BP-BATQL-LANGUAGE-1
+ProofRowId                     owned elsewhere        BP-GAUNTLET-1
 NavigationId                   owned elsewhere        BP-IDENTITY-TIME-NAV-1
 EntityId                       owned elsewhere        BP-BATQL-LANGUAGE-1
 CustomerId                     owned elsewhere        BP-BATQL-LANGUAGE-1
@@ -286,15 +288,6 @@ HLC remains valid for chronology, temporal filtering, tile pruning, and lag obse
 
 This document owns the HLC ordering rule, the range law, and the forbidden-use list. In DEC-075's composition (`02_SYSTEM_MODEL.md`) these identities are the ChronologyWitness and DurableOrderWitness coordinates; the composition binds them and owns none of their law. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-Required proof rows, projected from docs/24 (qualification target: `DEC-061`; canonical proof-row owner: docs/24 Gauntlet):
-
-```text
-order_by_hlc_uses_commit_tiebreak
-cross_store_hlc_order_is_total
-hlc_range_is_half_open
-frontier_progress_never_uses_hlc_order
-observed_wall_time_is_not_promoted_to_hlc
-```
 
 ## TurnId
 

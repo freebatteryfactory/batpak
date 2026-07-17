@@ -9,6 +9,39 @@ reconciliation_epoch: cleanroom-v1
 
 # Gauntlet
 
+## Typed proof ownership
+
+`spec/proof.rs` owns ProofRowId identity, active or retired lifecycle, succession, guarantee binding, and projection membership. docs/24 owns each active row's authoritative semantic summary, expected observation, and terminal disposition. A generated relation cannot change proof meaning. A prose meaning cannot silently move a proof row to another guarantee.
+
+<!-- PROOF-RELATIONS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Projection contract(s) | Active proof rows |
+| --- | --- | --- |
+| LEG-023 | BP-STORAGE-TILES-1 | middle_event_deletion_is_rejected; event_reorder_is_rejected; duplicate_payload_splice_is_rejected; cross_lane_predecessor_is_rejected; cross_entity_predecessor_is_rejected; midstream_genesis_is_rejected; forged_index_row_cannot_choose_and_authenticate_bytes |
+| LEG-019 | BP-STORAGE-TILES-1 | forged_sibling_cannot_cause_false_loss; agreeing_truncated_table_cannot_cause_false_safety; derived_row_cannot_authenticate_siblings; derived_row_cannot_authenticate_table_count; derived_row_cannot_authenticate_order; derived_row_cannot_authenticate_tail_boundary; derived_row_cannot_prove_absence_or_loss |
+| LEG-028 | BP-STORAGE-TILES-1 | page_limit_bounds_discovery_work_not_only_output |
+| LEG-020 | BP-TESTPAK-1 | allocation_does_not_scale_with_full_matched_set |
+| LEG-043 | BP-BVISOR-1 | descriptor_postcondition_failure_is_not_reported_applied; fcntl_getfd_failure_fails_closed; fcntl_setfd_failure_fails_closed |
+| LEG-074 | BP-MIGRATION-1 | close_reopen_reimport_returns_zero_new_events |
+| LEG-085 | BP-STORAGE-TILES-1 | signed_compaction_preserves_or_commits_the_removed_set; compaction_inputs_survive_until_replacement_evidence_is_durable |
+| LEG-086 | BP-STORAGE-TILES-1 | matched_kind_decode_failure_is_a_typed_terminal; replay_routes_agree_on_first_failure_and_class |
+| LEG-087 | BP-STORAGE-TILES-1 | trapping_host_filesystem_remains_unreached_under_injected_storage |
+| DEC-075 | BP-SYSTEM-MODEL-1 | paired_result_and_receipt_share_one_turn_evaluation; hlc_cannot_substitute_for_commit_sequence; receipt_binds_chronology_and_commit_without_collapsing_them; replay_reconstructs_same_turn_and_returns_original_receipts; lost_acknowledgement_requires_reconciliation_before_retry; port_response_cannot_cross_attempts; driver_await_and_cooperative_drive_produce_equivalent_logical_trace; checkpoint_gap_does_not_duplicate_committed_effect; reconciliation_appends_evidence_without_rewriting_original_observation |
+| LEG-081 | BP-CRYPTO-SECRET-1 | shred_ack_waits_for_backend_durability; crash_before_durable_key_delete_does_not_report_shred_success; reopen_after_ack_cannot_recover_shredded_plaintext; shred_transition_binding_mismatch_is_rejected; stale_or_pre_shred_keyset_restore_is_rejected; foreign_keyset_generation_is_rejected; shredded_unavailable_and_keyset_missing_remain_distinct; snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys; external_key_backend_preserves_shred_semantics |
+| LEG-053 | BP-STORAGE-TILES-1 | compressed_fbat_authority_frame_is_rejected_in_v1; compressed_vpak_semantic_section_is_rejected_in_v1; compression_profile_requires_expansion_bound |
+| DEC-063 | BP-STORAGE-TILES-1 | future_format_version_fails_with_its_own_typed_disposition |
+| DEC-064 | BP-IDENTITY-TIME-NAV-1 | program_image_id_is_independent_of_compiler_provenance; distinct_version_types_do_not_typecheck_when_substituted; netbat_version_does_not_upgrade_pakvm_isa |
+| DEC-061 | BP-IDENTITY-TIME-NAV-1 | order_by_hlc_uses_commit_tiebreak; cross_store_hlc_order_is_total; hlc_range_is_half_open; frontier_progress_never_uses_hlc_order; observed_wall_time_is_not_promoted_to_hlc |
+| DEC-065 | BP-REPOSITORY-PACKAGES-1 | no_std_batpak_has_no_std_dependency_route; no_std_syncbat_has_no_std_dependency_route; default_std_does_not_enable_threaded_or_browser_adapters; browser_and_native_profiles_preserve_program_semantics |
+| DEC-065 | BP-TYPE-SYSTEM-1 | hash_map_iteration_cannot_influence_canonical_observables |
+| DEC-066 | BP-SYNCBAT-1 | attacker_length_is_checked_before_reserve; allocation_failure_returns_resource_exhausted; declared_work_overrun_returns_budget_exceeded; resource_exhaustion_never_publishes_partial_event; resource_exhaustion_never_advances_checkpoint; artifact_staging_failure_publishes_no_artifact_ref; pakvm_arena_exhaustion_returns_typed_terminal_disposition |
+| DEC-062 | BP-WORLD-PORTS-1 | kernel_cannot_resolve_by_display_name; kernel_contract_and_implementation_ids_are_not_interchangeable; qualified_interface_requires_matching_qualification_receipt; exact_kernel_binding_rejects_another_implementation; attempt_receipt_records_exact_kernel_implementation |
+| DEC-068 | BP-TESTPAK-1 | local_domain_type_inside_function_is_rejected; local_domain_type_inside_closure_is_rejected; test_local_nonsemantic_fixture_type_is_allowed; production_expect_is_rejected; test_expect_with_context_is_allowed; unledgered_unsafe_fn_is_rejected; unledgered_pointer_cast_is_rejected; public_flume_receiver_is_rejected; hash_map_iteration_in_canonical_encoder_is_rejected; drawer_module_name_requires_explicit_disposition |
+| DEC-051 | BP-WORLD-PORTS-1 | raw_batql_is_not_a_netbat_invocation; compiler_port_is_not_available_to_guest_programs; compiler_port_is_absent_from_default_server_profile; compiler_output_still_requires_program_validation |
+| DEC-050 | BP-WORLD-PORTS-1 | query_program_with_effect_instruction_is_rejected; query_program_cannot_install_process; query_program_cannot_request_write_capability; query_program_over_work_bound_is_denied_before_execution; query_program_result_binds_program_and_grant_identity; entrypoint_receipt_cannot_satisfy_query_program_execution |
+| DEC-049 | BP-WORLD-PORTS-1 | entrypoint_cannot_substitute_foreign_program_image; entrypoint_effect_must_be_declared_by_world_interface; query_program_receipt_cannot_satisfy_entrypoint_invocation |
+| LEG-045 | BP-WORLD-PORTS-1 | tls_does_not_upgrade_program_or_proof_authority |
+<!-- PROOF-RELATIONS:END -->
+
 ## Purpose
 
 The gauntlet proves that BatPak's claims survive hostile inputs, faults, schedules, stale artifacts, omissions, and self-certification traps. It does not merely count green tests.
@@ -126,19 +159,8 @@ No lane is the sole proof route. A semantic mutant that changes meaning must be 
 
 ## Integrity and predecessor witnesses (LEG-023)
 
-This document owns proof-row identity and executable meaning. `21_LEGACY_SEMANTIC_OBLIGATIONS.md` projects the required witness IDs for each legacy obligation; that projection is audited but is not a second authority. A witness meaning is changed here, never there.
+`spec/proof.rs` owns proof-row identity, lifecycle, succession, guarantee binding, and projection membership; this document owns each active row's semantic summary, expected observation, and terminal disposition. `21_LEGACY_SEMANTIC_OBLIGATIONS.md` projects the required witness IDs for each legacy obligation from the typed relations; that projection is audited but is not a second authority. A witness meaning is changed here, never there.
 
-Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-023`:
-
-```text
-middle_event_deletion_is_rejected
-event_reorder_is_rejected
-duplicate_payload_splice_is_rejected
-cross_lane_predecessor_is_rejected
-cross_entity_predecessor_is_rejected
-midstream_genesis_is_rejected
-forged_index_row_cannot_choose_and_authenticate_bytes
-```
 
 Authoritative meanings:
 
@@ -209,17 +231,6 @@ These are future executable TestPak witnesses. Bootstrap proves their names, own
 
 Unauthenticated derived material may accelerate, locate, or describe suspicion. It cannot authenticate itself, and the two failure directions stay equally visible: it can neither prove safety nor prove loss. A corroborated row proves one row-to-frame relationship and nothing about its neighbours, the table, or what is missing.
 
-Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-019`:
-
-```text
-forged_sibling_cannot_cause_false_loss
-agreeing_truncated_table_cannot_cause_false_safety
-derived_row_cannot_authenticate_siblings
-derived_row_cannot_authenticate_table_count
-derived_row_cannot_authenticate_order
-derived_row_cannot_authenticate_tail_boundary
-derived_row_cannot_prove_absence_or_loss
-```
 
 Authoritative meanings:
 
@@ -283,11 +294,6 @@ derived_row_cannot_prove_absence_or_loss
 
 Bounded traversal is a claim about discovery work, not about the size of the returned vector.
 
-Required witnesses (proof owner TestPak; gates G2), also carried by `LEG-028`:
-
-```text
-page_limit_bounds_discovery_work_not_only_output
-```
 
 Authoritative meanings:
 
@@ -308,11 +314,6 @@ page_limit_bounds_discovery_work_not_only_output
 
 Complexity evidence is a claim about retained work. A small answer computed by materializing everything is not bounded. Cross-references `page_limit_bounds_discovery_work_not_only_output` (LEG-028), which owns the discovery-side claim.
 
-Required witnesses (proof owner TestPak; gates G3/G8), also carried by `LEG-020`:
-
-```text
-allocation_does_not_scale_with_full_matched_set
-```
 
 Authoritative meanings:
 
@@ -334,13 +335,6 @@ allocation_does_not_scale_with_full_matched_set
 
 A requested or attempted mechanism is not an established postcondition. These rows are named now so the proof boundary exists; their execution is intentionally blocked until the relevant adapter is admitted. Their presence claims no native launcher, no descriptor table, and no syscall.
 
-Required witnesses (proof owner TestPak; gates G5; future executable: yes; deferred until: the relevant native or foreign execution adapter is admitted; bootstrap executed: no), also carried by `LEG-043`:
-
-```text
-descriptor_postcondition_failure_is_not_reported_applied
-fcntl_getfd_failure_fails_closed
-fcntl_setfd_failure_fails_closed
-```
 
 Authoritative meanings:
 
@@ -377,11 +371,6 @@ fcntl_setfd_failure_fails_closed
 
 One sharp reproducer inside LEG-074's broader crash-boundary matrix. It does not replace that matrix, and it does not replace the general idempotency-authority export/restore law owned by `LEG-083`.
 
-Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-074`:
-
-```text
-close_reopen_reimport_returns_zero_new_events
-```
 
 Authoritative meanings:
 
@@ -403,12 +392,6 @@ close_reopen_reimport_returns_zero_new_events
 
 ## Proof-carrying compaction witnesses (LEG-085)
 
-Required witnesses (proof owner TestPak; gates G2/G8; future executable: yes; bootstrap executed: no), also carried by `LEG-085`:
-
-```text
-signed_compaction_preserves_or_commits_the_removed_set
-compaction_inputs_survive_until_replacement_evidence_is_durable
-```
 
 Authoritative meanings:
 
@@ -437,12 +420,6 @@ compaction_inputs_survive_until_replacement_evidence_is_durable
 
 ## Typed projection-replay failure witnesses (LEG-086)
 
-Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-086`:
-
-```text
-matched_kind_decode_failure_is_a_typed_terminal
-replay_routes_agree_on_first_failure_and_class
-```
 
 Authoritative meanings:
 
@@ -474,11 +451,6 @@ replay_routes_agree_on_first_failure_and_class
 Mirrors the injected-clock doctrine (LEG-055): an injected backend excludes
 the ambient host resource it replaces, including diagnostics.
 
-Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-087`:
-
-```text
-trapping_host_filesystem_remains_unreached_under_injected_storage
-```
 
 Authoritative meanings:
 
@@ -503,19 +475,6 @@ these rows own the executable meanings. Bootstrap proves their names, owner
 binding, documentary meaning, and cross-surface agreement only: it executes
 no turn, commits no effect, and drives no port.
 
-Required witnesses (proof owner TestPak; gates G2/G5/G6; future executable: yes; bootstrap executed: no), also carried by `DEC-075`:
-
-```text
-paired_result_and_receipt_share_one_turn_evaluation
-hlc_cannot_substitute_for_commit_sequence
-receipt_binds_chronology_and_commit_without_collapsing_them
-replay_reconstructs_same_turn_and_returns_original_receipts
-lost_acknowledgement_requires_reconciliation_before_retry
-port_response_cannot_cross_attempts
-driver_await_and_cooperative_drive_produce_equivalent_logical_trace
-checkpoint_gap_does_not_duplicate_committed_effect
-reconciliation_appends_evidence_without_rewriting_original_observation
-```
 
 Authoritative meanings:
 
@@ -613,19 +572,6 @@ reconciliation_appends_evidence_without_rewriting_original_observation
 
 Canonical proof-row identity and meaning for `LEG-081`. `docs/35_CRYPTO_AND_SECRET_AUTHORITY.md` owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions; it projects these IDs and states no per-row executable meaning. The typed law in `spec/legacy_obligations.rs` is unchanged by this pass: its owner, gates, status, compatibility disposition, deletion condition, and lifetime all stand.
 
-Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-081`:
-
-```text
-shred_ack_waits_for_backend_durability
-crash_before_durable_key_delete_does_not_report_shred_success
-reopen_after_ack_cannot_recover_shredded_plaintext
-shred_transition_binding_mismatch_is_rejected
-stale_or_pre_shred_keyset_restore_is_rejected
-foreign_keyset_generation_is_rejected
-shredded_unavailable_and_keyset_missing_remain_distinct
-snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys
-external_key_backend_preserves_shred_semantics
-```
 
 Authoritative meanings:
 
@@ -793,19 +739,7 @@ shred_transition_binding_mismatch_is_rejected
 
 Canonical proof-row identity and meaning for the V1 compression posture and the format/version open law. `docs/05_STORAGE_FBAT_AND_TILES.md` owns the storage law, the compression posture itself, and the future-profile admission requirements; it projects these IDs and states no per-row executable meaning. The two obligations qualify at their own gates: a shared source paragraph is not a shared gate schedule.
 
-Required witnesses (proof owner TestPak; gates G2/G8), also carried by `DEC-063`:
 
-```text
-compressed_fbat_authority_frame_is_rejected_in_v1
-compressed_vpak_semantic_section_is_rejected_in_v1
-compression_profile_requires_expansion_bound
-```
-
-Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-053`:
-
-```text
-future_format_version_fails_with_its_own_typed_disposition
-```
 
 Authoritative meanings:
 
@@ -857,13 +791,6 @@ future_format_version_fails_with_its_own_typed_disposition
 
 Canonical proof-row identity and meaning for the distinct-version-identity law. `docs/16_IDENTITY_TIME_AND_NAVIGATION.md` owns the version vocabulary, the identity commitments, and the negotiation posture; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-064`:
-
-```text
-program_image_id_is_independent_of_compiler_provenance
-distinct_version_types_do_not_typecheck_when_substituted
-netbat_version_does_not_upgrade_pakvm_isa
-```
 
 Authoritative meanings:
 
@@ -907,15 +834,6 @@ netbat_version_does_not_upgrade_pakvm_isa
 
 Canonical proof-row identity and meaning for the HLC query-ordering and range law. `docs/16_IDENTITY_TIME_AND_NAVIGATION.md` owns the time vocabulary, the lowering rule, and the forbidden-use list; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-061`:
-
-```text
-order_by_hlc_uses_commit_tiebreak
-cross_store_hlc_order_is_total
-hlc_range_is_half_open
-frontier_progress_never_uses_hlc_order
-observed_wall_time_is_not_promoted_to_hlc
-```
 
 Authoritative meanings:
 
@@ -974,15 +892,6 @@ observed_wall_time_is_not_promoted_to_hlc
 
 Canonical proof-row identity and meaning for the no_std/alloc realization matrix, the derived-cache collection posture, and cross-profile semantic equivalence. `docs/03_REPOSITORY_AND_PACKAGES.md` owns the package inventory, the feature posture, and the qualification matrix; `docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md` owns the collection and canonical-order law. Both project these IDs and state no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G0/G5), also carried by `DEC-065`:
-
-```text
-no_std_batpak_has_no_std_dependency_route
-no_std_syncbat_has_no_std_dependency_route
-default_std_does_not_enable_threaded_or_browser_adapters
-browser_and_native_profiles_preserve_program_semantics
-hash_map_iteration_cannot_influence_canonical_observables
-```
 
 Authoritative meanings:
 
@@ -1063,17 +972,6 @@ aliased    0
 
 Canonical proof-row identity and meaning for typed resource exhaustion and the no-partial-publication law. `docs/08_SYNCBAT_RUNTIME.md` owns the allocation discipline, the two canonical failure classes, and the plane coverage list; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G5/G6), also carried by `DEC-066`:
-
-```text
-attacker_length_is_checked_before_reserve
-allocation_failure_returns_resource_exhausted
-declared_work_overrun_returns_budget_exceeded
-resource_exhaustion_never_publishes_partial_event
-resource_exhaustion_never_advances_checkpoint
-artifact_staging_failure_publishes_no_artifact_ref
-pakvm_arena_exhaustion_returns_typed_terminal_disposition
-```
 
 Authoritative meanings:
 
@@ -1150,15 +1048,6 @@ pakvm_arena_exhaustion_returns_typed_terminal_disposition
 
 Canonical proof-row identity and meaning for the kernel identity and binding policy. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the kernel vocabulary, the two binding modes, and the receipt rule; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G4), also carried by `DEC-062`:
-
-```text
-kernel_cannot_resolve_by_display_name
-kernel_contract_and_implementation_ids_are_not_interchangeable
-qualified_interface_requires_matching_qualification_receipt
-exact_kernel_binding_rejects_another_implementation
-attempt_receipt_records_exact_kernel_implementation
-```
 
 Authoritative meanings:
 
@@ -1219,20 +1108,6 @@ attempt_receipt_records_exact_kernel_implementation
 
 Canonical proof-row identity and meaning for the TestPak AST enforcement gate. `docs/12_TESTPAK.md` owns the detector inventory, the required-behavior table, and the defense-in-depth posture; it projects these IDs and states no per-row executable meaning. These rows prove the DETECTOR: that the gate classifies a source pattern as it must. The semantic behaviors the patterns endanger are owned elsewhere and witnessed there — `hash_map_iteration_in_canonical_encoder_is_rejected` proves the gate rejects the source construct, while `hash_map_iteration_cannot_influence_canonical_observables` (DEC-065) proves the runtime observables do not move. Neither substitutes for the other.
 
-Required witnesses (proof owner TestPak; gates G1/G3), also carried by `DEC-068`:
-
-```text
-local_domain_type_inside_function_is_rejected
-local_domain_type_inside_closure_is_rejected
-test_local_nonsemantic_fixture_type_is_allowed
-production_expect_is_rejected
-test_expect_with_context_is_allowed
-unledgered_unsafe_fn_is_rejected
-unledgered_pointer_cast_is_rejected
-public_flume_receiver_is_rejected
-hash_map_iteration_in_canonical_encoder_is_rejected
-drawer_module_name_requires_explicit_disposition
-```
 
 Authoritative meanings:
 
@@ -1353,14 +1228,6 @@ aliased    0
 
 Canonical proof-row identity and meaning for the source-compilation and raw-BatQL authority boundary. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the boundary law, the evidence chain, and the CompilerPort posture; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G4), also carried by `DEC-051`:
-
-```text
-raw_batql_is_not_a_netbat_invocation
-compiler_port_is_not_available_to_guest_programs
-compiler_port_is_absent_from_default_server_profile
-compiler_output_still_requires_program_validation
-```
 
 Authoritative meanings:
 
@@ -1405,20 +1272,11 @@ compiler_output_still_requires_program_validation
     disposition: the ordinary typed validation refusal; the image is judged by its
       canonical bytes, exactly as a client-supplied image would be
 
+```
 ## Query-program invocation witnesses (DEC-050)
 
 Canonical proof-row identity and meaning for ephemeral query-program invocation. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the invocation-class law, the capability envelope, and the response binding; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G4/G5), also carried by `DEC-050`:
-
-```text
-query_program_with_effect_instruction_is_rejected
-query_program_cannot_install_process
-query_program_cannot_request_write_capability
-query_program_over_work_bound_is_denied_before_execution
-query_program_result_binds_program_and_grant_identity
-entrypoint_receipt_cannot_satisfy_query_program_execution
-```
 
 Authoritative meanings:
 
@@ -1492,17 +1350,11 @@ entrypoint_receipt_cannot_satisfy_query_program_execution
     disposition: a typed invocation-class mismatch naming both classes; matching
       ProgramImageId does not make the receipts interchangeable
 
+```
 ## Entrypoint invocation witnesses (DEC-049)
 
 Canonical proof-row identity and meaning for declared WorldImage entrypoint invocation. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the entrypoint contract, the identity binding, and the effect-declaration rule; it projects these IDs and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G5), also carried by `DEC-049`:
-
-```text
-entrypoint_cannot_substitute_foreign_program_image
-entrypoint_effect_must_be_declared_by_world_interface
-query_program_receipt_cannot_satisfy_entrypoint_invocation
-```
 
 Authoritative meanings:
 
@@ -1536,15 +1388,11 @@ query_program_receipt_cannot_satisfy_entrypoint_invocation
     disposition: a typed invocation-class mismatch naming both classes; matching
       ProgramImageId does not make the receipts interchangeable
 
+```
 ## Transport-authority witnesses (LEG-045)
 
 Canonical proof-row identity and meaning for the transport authority boundary. `docs/10_WORLD_IMAGES_AND_PORTS.md` owns the transport posture; it projects this ID and states no per-row executable meaning.
 
-Required witnesses (proof owner TestPak; gates G7), also carried by `LEG-045`:
-
-```text
-tls_does_not_upgrade_program_or_proof_authority
-```
 
 Authoritative meanings:
 

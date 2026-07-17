@@ -226,3 +226,13 @@ The executable witnesses for this law are owned by `docs/24_GAUNTLET.md`
 ## Execution claims
 
 The guest language has strong semantic and capability isolation because it cannot express ambient host operations. An in-process interpreter is not hardware isolation against an interpreter or host-port bug. The security model states that boundary plainly.
+
+## Required proof rows
+
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-075 | paired_result_and_receipt_share_one_turn_evaluation; hlc_cannot_substitute_for_commit_sequence; receipt_binds_chronology_and_commit_without_collapsing_them; replay_reconstructs_same_turn_and_returns_original_receipts; lost_acknowledgement_requires_reconciliation_before_retry; port_response_cannot_cross_attempts; driver_await_and_cooperative_drive_produce_equivalent_logical_trace; checkpoint_gap_does_not_duplicate_committed_effect; reconciliation_appends_evidence_without_rewriting_original_observation |
+<!-- PROOF-REQUIREMENTS:END -->

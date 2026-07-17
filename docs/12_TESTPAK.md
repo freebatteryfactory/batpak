@@ -120,20 +120,14 @@ the danger means.
 
 This document owns the detector inventory, the required-behavior table, and the defense-in-depth posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-Required proof rows, projected from docs/24 (qualification target: `DEC-068`; canonical proof-row owner: docs/24 Gauntlet):
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-```text
-local_domain_type_inside_function_is_rejected
-local_domain_type_inside_closure_is_rejected
-test_local_nonsemantic_fixture_type_is_allowed
-production_expect_is_rejected
-test_expect_with_context_is_allowed
-unledgered_unsafe_fn_is_rejected
-unledgered_pointer_cast_is_rejected
-public_flume_receiver_is_rejected
-hash_map_iteration_in_canonical_encoder_is_rejected
-drawer_module_name_requires_explicit_disposition
-```
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| LEG-020 | allocation_does_not_scale_with_full_matched_set |
+| DEC-068 | local_domain_type_inside_function_is_rejected; local_domain_type_inside_closure_is_rejected; test_local_nonsemantic_fixture_type_is_allowed; production_expect_is_rejected; test_expect_with_context_is_allowed; unledgered_unsafe_fn_is_rejected; unledgered_pointer_cast_is_rejected; public_flume_receiver_is_rejected; hash_map_iteration_in_canonical_encoder_is_rejected; drawer_module_name_requires_explicit_disposition |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## Independent models
 

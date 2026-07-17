@@ -1766,6 +1766,218 @@ def test_exact_ledgers(audit, project) -> list[str]:
     return findings
 
 
+def test_proof_relations(audit, project) -> list[str]:
+    """Named hostile fixtures for 5.5E4d: the complete legacy-obligation owner,
+    typed proof relations, docs/24 meaning laws, domain projections, and the
+    final proof/document mirror sweep."""
+    findings: list[str] = []
+    root = HERE.parent
+    LO, PR = "spec/legacy_obligations.rs", "spec/proof.rs"
+    D21, D24 = ("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md", "docs/24_GAUNTLET.md")
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, edits, needle, validator=None):
+        tmp = gate_sandbox(edits)
+        try:
+            expect(name, (validator or audit.proof_relation_findings)(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if audit.proof_relation_findings(root):
+        fail(f"proof_relations_pass_on_the_real_seed "
+             f"({audit.proof_relation_findings(root)!r})")
+
+    LEDGER = "LEGACY-OBLIGATION-LEDGER does not match its typed derivation"
+    RELS = "PROOF-RELATIONS does not match its typed derivation"
+    DOMAIN = "PROOF-REQUIREMENTS does not match its typed derivation"
+    ROW23 = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+             'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
+             'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } }')
+    for name, rel, old, new, needle in (
+        # The complete legacy owner.
+        ("legacy_obligation_missing_evidence_is_rejected", LO,
+         'legacy_evidence: "03_INVARIANTS.md, store writer runtime"',
+         'legacy_evidence: "  "', "LEG-001 carries no legacy evidence"),
+        ("legacy_obligation_missing_mechanism_disposition_is_rejected", LO,
+         'mechanism_disposition: "Reimplement cleanly"',
+         'mechanism_disposition: "  "', "LEG-001 carries no mechanism disposition"),
+        ("planned_legacy_witness_cannot_be_empty", LO,
+         'LegacyWitnessRequirement::Planned("concurrency model + duplicate-writer refusal")',
+         'LegacyWitnessRequirement::Planned("  ")',
+         "LEG-001 carries an empty planned witness"),
+        ("canonical_legacy_witness_requires_active_proof_rows", LO,
+         'id: "LEG-001", law: "One live writer and one physical commit order per journal", legacy_evidence: "03_INVARIANTS.md, store writer runtime", clean_owner: "batpak::store", mechanism_disposition: "Reimplement cleanly", witness_requirement: LegacyWitnessRequirement::Planned("concurrency model + duplicate-writer refusal")',
+         'id: "LEG-001", law: "One live writer and one physical commit order per journal", legacy_evidence: "03_INVARIANTS.md, store writer runtime", clean_owner: "batpak::store", mechanism_disposition: "Reimplement cleanly", witness_requirement: LegacyWitnessRequirement::CanonicalProofRows',
+         "LEG-001 claims CanonicalProofRows with no active typed relation"),
+        ("planned_legacy_witness_cannot_also_have_active_proof_rows", LO,
+         'id: "LEG-023"', 'id: "LEG-023X"',
+         "a proof relation binds LEG-023, which no obligation row declares"),
+        ("proof_row_cannot_bind_an_unknown_legacy_obligation", PR,
+         'GuaranteeRef::leg("LEG-023")', 'GuaranteeRef::leg("LEG-993")',
+         "a proof relation binds LEG-993, which no obligation row declares"),
+        # Ledger drift.
+        ("legacy_obligation_ledger_missing_row_is_rejected", D21,
+         "| LEG-001 | One live writer", "| One live writer", LEDGER),
+        ("legacy_obligation_ledger_order_drift_is_rejected", D21,
+         "| LEG-001 |", "| LEG-001B |", LEDGER),
+        ("legacy_obligation_law_drift_is_rejected", D21,
+         "One live writer and one physical commit order per journal",
+         "Two live writers per journal", LEDGER),
+        ("legacy_obligation_evidence_drift_is_rejected", D21,
+         "03_INVARIANTS.md, store writer runtime",
+         "04_INVARIANTS.md, store writer runtime", LEDGER),
+        ("legacy_obligation_owner_drift_is_rejected", D21,
+         "| batpak::store | Reimplement cleanly |",
+         "| batpak::journal | Reimplement cleanly |", LEDGER),
+        ("legacy_obligation_mechanism_drift_is_rejected", D21,
+         "| Reimplement cleanly |", "| Rewrite casually |", LEDGER),
+        ("legacy_obligation_witness_drift_is_rejected", D21,
+         "concurrency model + duplicate-writer refusal",
+         "vibes-based concurrency", LEDGER),
+        ("legacy_obligation_status_drift_is_rejected", D21,
+         "| OnSuccessorGateClosure | Active |", "| OnSuccessorGateClosure | Closed |",
+         LEDGER),
+        # Proof relations.
+        ("active_proof_row_requires_a_projection_contract", PR,
+         'guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } }',
+         'guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[] } }',
+         "names no projection contract"),
+        ("active_proof_row_with_unknown_projection_contract_is_rejected", PR,
+         'ContractId("BP-BVISOR-1")', 'ContractId("BP-NOBODY-1")',
+         "which no authored document declares"),
+        ("active_proof_row_with_duplicate_projection_contract_is_rejected", PR,
+         'projection_contracts: &[ContractId("BP-BVISOR-1")]',
+         'projection_contracts: &[ContractId("BP-BVISOR-1"), ContractId("BP-BVISOR-1")]',
+         "repeats a projection contract"),
+        ("generated_document_cannot_consume_active_proof_relation", PR,
+         'ContractId("BP-MIGRATION-1")', 'ContractId("BP-GAUNTLET-1")',
+         "lists automatic consumer BP-GAUNTLET-1"),
+        ("proof_relation_summary_missing_row_is_rejected", D24,
+         "| LEG-023 | BP-STORAGE-TILES-1 |", "| LEG-023X | BP-STORAGE-TILES-1 |",
+         RELS),
+        ("proof_relation_guarantee_drift_is_rejected", D24,
+         "| DEC-075 | BP-SYSTEM-MODEL-1 |", "| DEC-074 | BP-SYSTEM-MODEL-1 |", RELS),
+        ("proof_relation_target_drift_is_rejected", D24,
+         "| LEG-043 | BP-BVISOR-1 |", "| LEG-043 | BP-SYNCBAT-1 |", RELS),
+        # Domain projections.
+        ("domain_proof_projection_missing_row_is_rejected",
+         "docs/09_BVISOR.md",
+         "descriptor_postcondition_failure_is_not_reported_applied; ", "", DOMAIN),
+        ("domain_proof_projection_extra_row_is_rejected", "docs/22_MIGRATION_AND_CUTOVER.md",
+         "| LEG-074 | close_reopen_reimport_returns_zero_new_events |",
+         "| LEG-074 | close_reopen_reimport_returns_zero_new_events; rogue_row |",
+         DOMAIN),
+        ("domain_proof_projection_guarantee_drift_is_rejected",
+         "docs/02_SYSTEM_MODEL.md",
+         "| DEC-075 |", "| DEC-074 |", DOMAIN),
+        ("docs03_hash_map_row_must_move_to_docs04", "docs/03_REPOSITORY_AND_PACKAGES.md",
+         "browser_and_native_profiles_preserve_program_semantics",
+         "browser_and_native_profiles_preserve_program_semantics; hash_map_iteration_cannot_influence_canonical_observables",
+         "docs/03 carries the hash-map proof row"),
+        # Meaning and mirror sweep.
+        ("docs24_cannot_claim_proof_identity_ownership", D24,
+         "`spec/proof.rs` owns proof-row identity, lifecycle, succession, guarantee binding, and projection membership; this document owns",
+         "This document owns proof-row identity and executable meaning; it also owns",
+         "may not claim proof-row identity ownership"),
+        ("documentary_convergence_temporary_wording_cannot_return", D24,
+         "## Typed proof ownership",
+         "The receipt details stay in docs/24 until the documentary convergence pass.\n\n## Typed proof ownership",
+         "temporary documentary-convergence wording may not return"),
+        ("docs24_required_witness_inventory_cannot_return", D24,
+         "## Typed proof ownership",
+         "Required witnesses (proof owner TestPak; gates G2), also carried by `LEG-999`:\n\n## Typed proof ownership",
+         "authored required-witnesses inventory may not return"),
+        ("authored_domain_proof_inventory_cannot_return", "docs/05_STORAGE_FBAT_AND_TILES.md",
+         "## Required proof rows" if False else "`spec/proof.rs` owns proof-row identity and membership.",
+         "Required proof rows, projected from docs/24 (LEG-023):\n\n```text\nmiddle_event_deletion_is_rejected\n```\n\n`spec/proof.rs` owns proof-row identity and membership.",
+         "authored required-proof-rows inventory may not return"),
+        ("authored_legacy_obligation_row_cannot_return", D21,
+         "## Closure rule",
+         "| LEG-999 | Rogue law | e | o | m | w | G2 | None | Never | Active |\n\n## Closure rule",
+         "authored legacy-obligation row may not return"),
+        ("proof_spec_cannot_absorb_expectation_prose", PR,
+         "pub struct ProofRowRecord {",
+         "pub struct ProofRowRecord {\n    pub expectation: &'static str,",
+         "expectation prose field may not enter the typed catalog"),
+    ):
+        probe(name, [(rel, old, new)], needle)
+
+    # Retired lifecycle: successor must be active (seedcheck-side law also
+    # covers it; the audit-side catalog law keeps the census honest).
+    probe("retired_proof_successor_must_be_active",
+          [(PR, 'successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")]',
+            'successors: &[ProofRowId("pre_shred_keyset_restore_is_rejected")]')],
+          "retirement path terminates in no Active identity",
+          validator=audit.proof_row_catalog_findings)
+
+    # GREEN: planned obligation growth.
+    tmp = gate_sandbox([
+        (LO, "pub const OBLIGATIONS: &[LegacyObligation] = &[",
+         "pub const OBLIGATIONS: &[LegacyObligation] = &[\n"
+         '    LegacyObligation { id: "LEG-990", law: "Sandbox growth law", '
+         'legacy_evidence: "sandbox evidence", clean_owner: "batpak::sandbox", '
+         'mechanism_disposition: "Sandbox only", witness_requirement: '
+         'LegacyWitnessRequirement::Planned("structural count-freedom evidence only"), '
+         "gates: &[GateId::G2], compatibility_disposition: CompatibilityDisposition::None, "
+         "deletion_condition: DeletionCondition::OnSuccessorGateClosure, "
+         "active_or_closed_status: ObligationStatus::Active },")])
+    try:
+        _regen_operator_blocks(project, tmp)
+        grown = audit.proof_relation_findings(tmp)
+        d21 = (tmp / D21).read_text(encoding="utf-8")
+        if grown or "| LEG-990 | Sandbox growth law | sandbox evidence |" not in d21:
+            fail(f"planned_obligation_structural_growth_is_lawful ({grown!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # GREEN: canonical proof growth — a new active relation flows into
+    # docs/21, docs/24 relations, and the bound domain document.
+    tmp = gate_sandbox([
+        (PR, ROW23 + ",", ROW23 + ",\n    "
+         'ProofRowRecord { id: ProofRowId("sandbox_growth_row_is_lawful"), '
+         'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
+         'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')])
+    try:
+        _regen_operator_blocks(project, tmp)
+        grown = audit.proof_relation_findings(tmp)
+        ok = ("sandbox_growth_row_is_lawful" in (tmp / D21).read_text(encoding="utf-8")
+              and "sandbox_growth_row_is_lawful" in
+              (tmp / "docs/05_STORAGE_FBAT_AND_TILES.md").read_text(encoding="utf-8"))
+        # The new row lacks a docs/24 meaning entry — exactly the law that
+        # makes Planned->Canonical atomic with meaning admission.
+        meaning_gap = any("has no authoritative meaning" in f
+                          for f in audit.witness_reference_findings(tmp))
+        if grown or not ok or not meaning_gap:
+            fail(f"canonical_proof_growth_is_lawful ({grown!r}, projected={ok}, "
+                 f"meaning_law={meaning_gap})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # GREEN: retired succession — a retired row leaves the projections while
+    # its successor carries the relation.
+    tmp = gate_sandbox([
+        (PR, ROW23,
+         'ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+         'state: ProofRowState::Retired { successors: '
+         '&[ProofRowId("event_reorder_is_rejected")] } }')])
+    try:
+        _regen_operator_blocks(project, tmp)
+        d05 = (tmp / "docs/05_STORAGE_FBAT_AND_TILES.md").read_text(encoding="utf-8")
+        if "middle_event_deletion_is_rejected" in audit.batql_extract_block(
+                d05, "PROOF-REQUIREMENTS"):
+            fail("retired_succession_leaves_current_projections")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return findings
+
+
 def test_numeric(audit) -> list[str]:
     """Named hostile fixtures for the numeric authority contract (docs/37)."""
     findings: list[str] = []
@@ -2043,12 +2255,8 @@ def test_gates(audit, project) -> list[str]:
 
     base_leg = gates_of(root, "LEG-001")
     tmp = gate_sandbox([("spec/legacy_obligations.rs",
-                         'clean_owner: "batpak::store", gates: &[GateId::G2], compatibility_disposition: '
-                         "CompatibilityDisposition::None, deletion_condition: "
-                         "DeletionCondition::OnSuccessorGateClosure",
-                         'clean_owner: "batpak::store", gates: &[], compatibility_disposition: '
-                         "CompatibilityDisposition::None, deletion_condition: "
-                         "DeletionCondition::OnSuccessorGateClosure")])
+                         'Planned("concurrency model + duplicate-writer refusal"), gates: &[GateId::G2]',
+                         'Planned("concurrency model + duplicate-writer refusal"), gates: &[]')])
     if gates_of(tmp, "LEG-001") == base_leg:
         fail("leg_gate_dropped_during_migration_is_detected")
     expect("emptied_gate_list_is_rejected",
@@ -2057,8 +2265,8 @@ def test_gates(audit, project) -> list[str]:
 
     probe("leg_gate_added_during_migration_is_rejected",
           [("spec/legacy_obligations.rs",
-            'clean_owner: "batpak::event", gates: &[GateId::G2]',
-            'clean_owner: "batpak::event", gates: &[GateId::G2, GateId::G2]')],
+            'Planned("historical vectors + future-version refusal"), gates: &[GateId::G2]',
+            'Planned("historical vectors + future-version refusal"), gates: &[GateId::G2, GateId::G2]')],
           audit.gate_reference_findings, "duplicate GateId")
 
     # --- the retired string representation may not survive anywhere ---
@@ -3305,10 +3513,12 @@ def test_integrity_witnesses(audit) -> list[str]:
     if audit.witness_reference_findings(root) or iw(root):
         fail("leg023_witness_contract_passes")
 
-    # Each of the seven witness identities must survive in docs/24.
+    # Each of the seven witness identities must survive in the typed catalog
+    # (5.5E4d: spec/proof.rs owns membership; docs/24 owns meaning only).
     for wid in audit.D4B_LEG023_WITNESSES:
-        probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n", f"{wid} is absent from docs/24",
-              "", validator=iw)
+        probe(f"{wid}_identity_removed_is_rejected", "spec/proof.rs",
+              f'id: ProofRowId("{wid}")', f"{wid} is absent from docs/24",
+              f'id: ProofRowId("{wid}_gone")', validator=iw)
 
     # The resolver: unknown, duplicated, misowned, missing, extra.
     probe("unknown_leg_witness_reference_is_rejected", D21,
@@ -3317,26 +3527,26 @@ def test_integrity_witnesses(audit) -> list[str]:
     probe("duplicate_leg_witness_reference_is_rejected", D21,
           "middle_event_deletion_is_rejected;", "projects a duplicate witness reference",
           "middle_event_deletion_is_rejected; middle_event_deletion_is_rejected;")
-    probe("witness_owned_by_wrong_leg_is_rejected", GA,
-          "), also carried by `LEG-023`:", "which docs/24 binds to LEG-081",
-          "), also carried by `LEG-081`:")
+    probe("witness_owned_by_wrong_leg_is_rejected", "spec/proof.rs",
+          'ProofRowId("cross_lane_predecessor_is_rejected"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023")',
+          "LEG-023 witness cross_lane_predecessor_is_rejected is bound to LEG-081",
+          'ProofRowId("cross_lane_predecessor_is_rejected"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-081")',
+          validator=iw)
     probe("docs21_missing_owned_witness_is_rejected", D21,
           "; midstream_genesis_is_rejected", "omits owned proof row midstream_genesis_is_rejected")
     probe("docs21_extra_witness_is_rejected", D21,
           "middle_event_deletion_is_rejected;",
           "references unknown proof-row id unknown_leg_proof_row_for_fixture",
           "unknown_leg_proof_row_for_fixture; middle_event_deletion_is_rejected;")
-    probe("duplicate_docs24_proof_row_id_is_rejected", GA,
-          "middle_event_deletion_is_rejected\nevent_reorder_is_rejected",
+    ROW23F = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+              'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
+              'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+    probe("duplicate_docs24_proof_row_id_is_rejected", "spec/proof.rs", ROW23F,
           "binds proof-row id middle_event_deletion_is_rejected more than once",
-          "middle_event_deletion_is_rejected\nmiddle_event_deletion_is_rejected\nevent_reorder_is_rejected")
+          ROW23F + "\n    " + ROW23F)
     probe("witness_meaning_removal_is_rejected", GA,
           "midstream_genesis_is_rejected\n    A genesis marker cannot reset an already-started stream.",
           "has no authoritative meaning", "")
-    probe("future_executable_posture_removal_is_rejected", GA,
-          "Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-023`:",
-          "states no future-executable proof owner or gate",
-          "Required witnesses (proof owner Nobody; gates ), also carried by `LEG-023`:")
 
     # Weakening the law itself: each impersonation the law forbids.
     for clause, label in (
@@ -3388,11 +3598,13 @@ def test_derived_material_witnesses(audit) -> list[str]:
     if dm(root) or audit.witness_reference_findings(root):
         fail("d4b2a_witness_contract_passes")
 
-    # every new proof-row identity survives, one probe each
+    # every new proof-row identity survives in the typed catalog (5.5E4d)
     for leg, ids in audit.D4B2A_ROWS.items():
         for wid in ids:
-            probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
-                  f"{leg} witness {wid} is absent from docs/24", "", validator=dm)
+            probe(f"{wid}_identity_removed_is_rejected", "spec/proof.rs",
+                  f'id: ProofRowId("{wid}")',
+                  f"{leg} witness {wid} is absent from docs/24",
+                  f'id: ProofRowId("{wid}_gone")', validator=dm)
 
     # the law's load-bearing clauses -- both duals must stay
     for clause, label in (
@@ -3407,22 +3619,27 @@ def test_derived_material_witnesses(audit) -> list[str]:
         probe(label, LEG, clause, f"LEG-019 law no longer states: {clause}", "", validator=dm)
 
     # bounded discovery and bounded allocation keep distinct owners
-    probe("bounded_output_accepted_as_bounded_discovery_work_is_rejected", GA,
-          "page_limit_bounds_discovery_work_not_only_output\n",
+    probe("bounded_output_accepted_as_bounded_discovery_work_is_rejected", "spec/proof.rs",
+          'id: ProofRowId("page_limit_bounds_discovery_work_not_only_output")',
           "LEG-028 witness page_limit_bounds_discovery_work_not_only_output is absent",
-          "", validator=dm)
-    probe("full_matched_set_allocation_accepted_is_rejected", GA,
-          "allocation_does_not_scale_with_full_matched_set\n",
+          'id: ProofRowId("page_limit_bounds_discovery_work_not_only_output_gone")',
+          validator=dm)
+    probe("full_matched_set_allocation_accepted_is_rejected", "spec/proof.rs",
+          'id: ProofRowId("allocation_does_not_scale_with_full_matched_set")',
           "LEG-020 witness allocation_does_not_scale_with_full_matched_set is absent",
-          "", validator=dm)
-    probe("discovery_and_allocation_sharing_one_owner_is_rejected", GA,
-          "), also carried by `LEG-020`:", "share one qualification target",
-          "), also carried by `LEG-028`:", validator=dm)
+          'id: ProofRowId("allocation_does_not_scale_with_full_matched_set_gone")',
+          validator=dm)
+    probe("discovery_and_allocation_sharing_one_owner_is_rejected", "spec/proof.rs",
+          'ProofRowId("allocation_does_not_scale_with_full_matched_set"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-020")',
+          "share one qualification target",
+          'ProofRowId("allocation_does_not_scale_with_full_matched_set"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-028")',
+          validator=dm)
 
     # resolver coverage for the new rows
-    probe("d4b2a_row_bound_to_wrong_leg_is_rejected", GA,
-          "), also carried by `LEG-019`:", "which docs/24 binds to LEG-023",
-          "), also carried by `LEG-023`:")
+    probe("d4b2a_row_bound_to_wrong_leg_is_rejected", "spec/proof.rs",
+          'ProofRowId("forged_sibling_cannot_cause_false_loss"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-019")',
+          "which docs/24 binds to LEG-023",
+          'ProofRowId("forged_sibling_cannot_cause_false_loss"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023")')
     probe("docs21_missing_a_d4b2a_row_is_rejected", D21,
           "; derived_row_cannot_prove_absence_or_loss",
           "omits owned proof row derived_row_cannot_prove_absence_or_loss")
@@ -3430,30 +3647,23 @@ def test_derived_material_witnesses(audit) -> list[str]:
           "allocation_does_not_scale_with_full_matched_set",
           "references derived_row_cannot_authenticate_order, which docs/24 binds to LEG-019",
           "derived_row_cannot_authenticate_order")
-    probe("duplicate_row_across_d4b1_and_d4b2a_is_rejected", GA,
-          "forged_sibling_cannot_cause_false_loss\n",
+    probe("duplicate_row_across_d4b1_and_d4b2a_is_rejected", "spec/proof.rs",
+          'id: ProofRowId("forged_sibling_cannot_cause_false_loss")',
           "binds proof-row id middle_event_deletion_is_rejected more than once",
-          "middle_event_deletion_is_rejected\n")
+          'id: ProofRowId("middle_event_deletion_is_rejected")')
     probe("d4b2a_meaning_removed_is_rejected", GA,
           "derived_row_cannot_authenticate_order\n    Corroborating row contents does not establish table ordering.",
           "has no authoritative meaning", "")
-    probe("d4b2a_future_executable_posture_removed_is_rejected", GA,
-          "Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-019`:",
-          "states no future-executable proof owner or gate",
-          "Required witnesses (proof owner Nobody; gates ), also carried by `LEG-019`:")
 
     findings.extend(canonical_drift(before))
     return findings
 
 
 def test_deferred_witnesses(audit) -> list[str]:
-    """LEG-043 deferred native rows and the LEG-074 reimport row (5.5D4b-2b).
-
-    Structural only. Bootstrap never called fcntl, never inspected a descriptor
-    table, never launched a native process, never verified a live close-on-exec
-    flag, and ships no native launcher. These fixtures prove the proof boundary
-    is named and honestly deferred -- nothing more.
-    """
+    """LEG-043 deferred native rows and the LEG-074 reimport row (5.5D4b-2b,
+    rebased in 5.5E4d): the typed catalog owns membership; the fence-header
+    posture prose retired with the membership mirrors, and execution evidence
+    lives in run receipts. What survives here is membership and meaning."""
     findings: list[str] = []
     root = HERE.parent
     before = canonical_commitments()
@@ -3473,54 +3683,23 @@ def test_deferred_witnesses(audit) -> list[str]:
             expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
 
     GA = "docs/24_GAUNTLET.md"
-    D21 = "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md"
     dp = audit.deferred_posture_findings
-    H43 = ("Required witnesses (proof owner TestPak; gates G5; future executable: yes; "
-           "deferred until: the relevant native or foreign execution adapter is admitted; "
-           "bootstrap executed: no), also carried by `LEG-043`:")
-    H74 = ("Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; "
-           "bootstrap executed: no), also carried by `LEG-074`:")
 
     if dp(root) or audit.witness_reference_findings(root):
         fail("d4b2b_witness_contract_passes")
 
-    # every new proof-row identity survives
+    # every new proof-row identity survives in the typed catalog
     for leg, ids in audit.D4B2B_ROWS.items():
         for wid in ids:
-            probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
-                  f"{leg} witness {wid} is absent from docs/24", "", validator=dp)
-
-    # deferred posture must be explicit, honest, and admission-bounded
-    probe("leg043_missing_future_executable_posture_is_rejected", GA,
-          "gates G5; future executable: yes; deferred until:",
-          "states no future-executable posture", "gates G5; deferred until:", validator=dp)
-    probe("leg043_missing_deferral_posture_is_rejected", GA,
-          "; deferred until: the relevant native or foreign execution adapter is admitted",
-          "states no deferral condition", "", validator=dp)
-    probe("leg043_vague_later_deferral_is_rejected", GA,
-          "deferred until: the relevant native or foreign execution adapter is admitted",
-          "names no admission boundary", "deferred until: later", validator=dp)
-    probe("leg043_falsely_marked_bootstrap_executed_is_rejected", GA,
-          "bootstrap executed: no), also carried by `LEG-043`:",
-          "falsely claims bootstrap execution",
-          "bootstrap executed: yes), also carried by `LEG-043`:", validator=dp)
-    probe("leg043_falsely_marked_currently_qualified_is_rejected", GA,
-          "bootstrap executed: no), also carried by `LEG-043`:",
-          "falsely claims current executable qualification",
-          "bootstrap executed: no; currently qualified), also carried by `LEG-043`:", validator=dp)
-    probe("leg043_unknown_gate_is_rejected", GA, "gates G5;", "unknown GateId", "gates G12;",
+            probe(f"{wid}_identity_removed_is_rejected", "spec/proof.rs",
+                  f'id: ProofRowId("{wid}")',
+                  f"{leg} witness {wid} is absent from docs/24",
+                  f'id: ProofRowId("{wid}_gone")', validator=dp)
+    probe("leg043_row_bound_to_wrong_leg_is_rejected", "spec/proof.rs",
+          'ProofRowId("fcntl_getfd_failure_fails_closed"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-043")',
+          "LEG-043 witness fcntl_getfd_failure_fails_closed is bound to LEG-074",
+          'ProofRowId("fcntl_getfd_failure_fails_closed"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-074")',
           validator=dp)
-    probe("leg043_gates_differing_from_owning_leg_is_rejected", GA, "gates G5;",
-          "differ from LEG-043 gates", "gates G2;", validator=dp)
-    probe("leg074_incorrectly_marked_native_deferred_is_rejected", GA,
-          "gates G2/G3; future executable: yes; bootstrap executed: no), also carried by `LEG-074`:",
-          "inherits a native-adapter deferral it does not have",
-          "gates G2/G3; future executable: yes; deferred until: the adapter is admitted; "
-          "bootstrap executed: no), also carried by `LEG-074`:", validator=dp)
-    probe("leg074_falsely_marked_bootstrap_executed_is_rejected", GA,
-          "bootstrap executed: no), also carried by `LEG-074`:",
-          "falsely claims bootstrap execution",
-          "bootstrap executed: yes), also carried by `LEG-074`:", validator=dp)
 
     # meanings carry the law they exist to defend
     # A proof row's MEANING is what a future implementation qualifies against.
@@ -3544,24 +3723,17 @@ def test_deferred_witnesses(audit) -> list[str]:
     ):
         probe(label, GA, frag, needle, "", validator=audit.proof_meaning_findings)
 
-    # resolver coverage for the new rows
-    probe("d4b2b_row_bound_to_wrong_leg_is_rejected", GA,
-          "), also carried by `LEG-074`:", "which docs/24 binds to LEG-023",
-          "), also carried by `LEG-023`:")
-    probe("docs21_missing_a_d4b2b_row_is_rejected", D21,
-          "; fcntl_setfd_failure_fails_closed", "omits owned proof row fcntl_setfd_failure_fails_closed")
-    probe("docs21_extra_d4b2b_row_is_rejected", D21,
-          "close_reopen_reimport_returns_zero_new_events",
-          "references fcntl_getfd_failure_fails_closed, which docs/24 binds to LEG-043",
-          "fcntl_getfd_failure_fails_closed")
-    probe("duplicate_row_across_prior_d4b_passes_is_rejected", GA,
-          "fcntl_getfd_failure_fails_closed\n",
+    # resolver coverage for the new rows, on the typed catalog (5.5E4d)
+    probe("d4b2b_row_bound_to_wrong_leg_is_rejected", "spec/proof.rs",
+          'ProofRowId("close_reopen_reimport_returns_zero_new_events"), state: '
+          'ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-074")',
+          "which docs/24 binds to LEG-023",
+          'ProofRowId("close_reopen_reimport_returns_zero_new_events"), state: '
+          'ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023")')
+    probe("duplicate_row_across_prior_d4b_passes_is_rejected", "spec/proof.rs",
+          'ProofRowId("fcntl_getfd_failure_fails_closed"), state',
           "binds proof-row id middle_event_deletion_is_rejected more than once",
-          "middle_event_deletion_is_rejected\n")
-    probe("d4b2b_future_executable_posture_removed_is_rejected", GA, H74,
-          "states no future-executable posture",
-          "Required witnesses (proof owner TestPak; gates G2/G3), also carried by `LEG-074`:",
-          validator=dp)
+          'ProofRowId("middle_event_deletion_is_rejected"), state')
 
     findings.extend(canonical_drift(before))
     return findings
@@ -3616,10 +3788,12 @@ def test_leg081_authority(audit) -> list[str]:
     if "unknown_leg_proof_row_for_fixture" in rows:
         fail("replacement_fixture_id_is_genuinely_unknown")
 
-    # Every canonical identity survives in docs/24.
+    # Every canonical identity survives in the typed catalog (5.5E4d).
     for wid in audit.D4B2C_ROWS:
-        probe(f"{wid}_identity_removed_is_rejected", GA, wid + "\n",
-              f"LEG-081 canonical proof row {wid} is absent from docs/24", "", validator=la)
+        probe(f"{wid}_identity_removed_is_rejected", "spec/proof.rs",
+              f'id: ProofRowId("{wid}")',
+              f"LEG-081 canonical proof row {wid} is absent from docs/24",
+              f'id: ProofRowId("{wid}_gone")', validator=la)
 
     # Retired vocabulary cannot return outside the historical migration note, in
     # ANY document: one registry, one rule. `stale_or_pre_shred_keyset_restore_is_rejected`
@@ -3656,30 +3830,18 @@ def test_leg081_authority(audit) -> list[str]:
     cat = audit.proof_row_catalog_findings
     if cat(HERE.parent):
         fail("proof_row_catalog_passes_on_the_real_seed")
-    probe("typed_active_row_missing_from_docs24_is_rejected", PR,
-          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
-          'state: ProofRowState::Active },\n',
-          "typed Active identity row_invented_in_rust_only appears as no "
-          "canonical docs/24 active row",
-          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
-          'state: ProofRowState::Active },\n'
-          '    ProofRowRecord { id: ProofRowId("row_invented_in_rust_only"), '
-          'state: ProofRowState::Active },\n', validator=cat)
-    probe("docs24_active_row_missing_from_typed_catalog_is_rejected", GA,
-          "raw_batql_is_not_a_netbat_invocation\n",
-          "docs/24 declares active proof row row_added_only_in_docs, which the "
-          "typed catalog never learned",
-          "raw_batql_is_not_a_netbat_invocation\nrow_added_only_in_docs\n",
-          validator=cat)
-    probe("same_identity_cannot_be_active_and_retired", PR,
-          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
-          'state: ProofRowState::Active },\n',
+    # The typed-vs-docs/24 membership parity retired in 5.5E4d: the typed
+    # catalog is the one membership authority, and the meaning-coverage laws
+    # (witness_reference_findings) own the docs/24 side.
+    ROW23C = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+              'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
+              'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+    probe("same_identity_cannot_be_active_and_retired", PR, ROW23C,
           "is declared twice in the proof-identity catalog",
-          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
-          'state: ProofRowState::Active },\n'
-          '    ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
+          ROW23C + '\n    ProofRowRecord { id: '
+          'ProofRowId("middle_event_deletion_is_rejected"), '
           'state: ProofRowState::Retired { successors: '
-          '&[ProofRowId("event_reorder_is_rejected")] } },\n', validator=cat)
+          '&[ProofRowId("event_reorder_is_rejected")] } },', validator=cat)
     # E3 preflight: succession terminates. A two-node cycle satisfies
     # existence and non-self-succession while owning no living obligation;
     # a multi-hop chain through a retired row that reaches an Active identity
@@ -3752,22 +3914,10 @@ def test_leg081_authority(audit) -> list[str]:
           "middle_event_deletion_is_rejected; shred_ack_waits_for_backend_durability;")
 
     # docs/35 projects exactly the nine and reclaims nothing.
-    probe("docs35_leg081_missing_projected_id_is_rejected", D35,
-          "foreign_keyset_generation_is_rejected\n",
-          "docs/35 omits projected LEG-081 proof row foreign_keyset_generation_is_rejected",
-          "", validator=la)
-    probe("docs35_leg081_extra_projected_id_is_rejected", D35,
-          "shred_ack_waits_for_backend_durability\n",
-          "docs/35 projects middle_event_deletion_is_rejected, which docs/24 binds to LEG-023",
-          "shred_ack_waits_for_backend_durability\nmiddle_event_deletion_is_rejected\n",
-          validator=la)
-    probe("docs35_projection_label_removed_is_rejected", D35, PROJ,
-          "docs/35 states no LEG-081 proof-row projection labelled as projected from docs/24",
-          "Required proof rows:", validator=la)
-    probe("docs35_projection_claims_own_canonical_ownership_is_rejected", D35, PROJ,
-          "docs/35 projection names canonical proof-row owner 'docs/35 itself', not docs/24",
-          PROJ.replace("canonical proof-row owner: docs/24 Gauntlet",
-                       "canonical proof-row owner: docs/35 itself"), validator=la)
+    # docs/35's hand list is a REGISTERED generated view since 5.5E4d
+    # (SecretAuthorityProofRequirements): the universal census and domain
+    # projection parity own its membership now. What survives is the reclaim
+    # fence: docs/35 may never again author ownership surfaces.
     probe("docs35_reclaims_authoritative_ownership_is_rejected", D35, LEAK,
           "docs/35 reclaims authoritative proof-row ownership",
           LEAK + "\n\nRequired witnesses (proof owner TestPak; gates G2/G3), also carried by "
@@ -3780,39 +3930,28 @@ def test_leg081_authority(audit) -> list[str]:
           validator=la)
 
     # docs/24 row posture, owner, gates, target, meaning, uniqueness.
-    probe("docs24_leg081_row_bound_to_wrong_leg_is_rejected", GA,
-          "), also carried by `LEG-081`:",
+    probe("docs24_leg081_row_bound_to_wrong_leg_is_rejected", "spec/proof.rs",
+          'ProofRowId("shred_ack_waits_for_backend_durability"), state: '
+          'ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-081")',
           "LEG-081 canonical proof row shred_ack_waits_for_backend_durability is bound to LEG-020",
-          "), also carried by `LEG-020`:", validator=la)
-    probe("docs24_leg081_wrong_proof_owner_is_rejected", GA, H81,
-          "names proof owner 'Nobody', not TestPak",
-          H81.replace("proof owner TestPak", "proof owner Nobody"), validator=la)
-    probe("docs24_leg081_gate_mismatch_is_rejected", GA, H81,
-          "differ from typed LEG-081 gates 'G2/G3'",
-          H81.replace("gates G2/G3;", "gates G2;"), validator=la)
-    probe("docs24_leg081_unknown_gate_is_rejected", GA, H81,
-          "names unknown GateId G12",
-          H81.replace("gates G2/G3;", "gates G2/G12;"), validator=la)
-    probe("docs24_leg081_missing_future_executable_posture_is_rejected", GA, H81,
-          "states no future-executable posture",
-          H81.replace("; future executable: yes", ""), validator=la)
-    probe("docs24_leg081_false_bootstrap_execution_is_rejected", GA, H81,
-          "falsely claims bootstrap execution",
-          H81.replace("bootstrap executed: no", "bootstrap executed: yes"), validator=la)
+          'ProofRowId("shred_ack_waits_for_backend_durability"), state: '
+          'ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-020")',
+          validator=la)
     probe("docs24_leg081_meaning_removal_is_rejected", GA,
           "shred_transition_binding_mismatch_is_rejected\n    The shred transition binds StoreId,"
           " AuthorityGeneration, KeyGeneration, key\n",
           "LEG-081 proof row shred_transition_binding_mismatch_is_rejected has no authoritative meaning",
           "", validator=la)
-    probe("duplicate_leg081_proof_row_id_is_rejected", GA,
-          "foreign_keyset_generation_is_rejected\nshredded_unavailable",
+    ROW81F = ('ProofRowRecord { id: ProofRowId("foreign_keyset_generation_is_rejected"), '
+              'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-081"), '
+              'projection_contracts: &[ContractId("BP-CRYPTO-SECRET-1")] } },')
+    probe("duplicate_leg081_proof_row_id_is_rejected", "spec/proof.rs", ROW81F,
           "docs/24 binds LEG-081 proof row foreign_keyset_generation_is_rejected more than once",
-          "foreign_keyset_generation_is_rejected\nforeign_keyset_generation_is_rejected"
-          "\nshredded_unavailable", validator=la)
-    probe("leg081_proof_row_id_rename_is_rejected", GA,
-          "foreign_keyset_generation_is_rejected\n",
+          ROW81F + "\n    " + ROW81F, validator=la)
+    probe("leg081_proof_row_id_rename_is_rejected", "spec/proof.rs",
+          'ProofRowId("foreign_keyset_generation_is_rejected")',
           "docs/24 binds unexpected proof row foreign_keyset_generation_renamed to LEG-081",
-          "foreign_keyset_generation_renamed\n", validator=la)
+          'ProofRowId("foreign_keyset_generation_renamed")', validator=la)
 
     # Meanings still carry the law they exist to defend.
     for frag, label in (
@@ -3921,77 +4060,18 @@ def test_proof_target_resolver(audit) -> list[str]:
     if audit.leg_gates(root, "DEC-065") != "":
         fail("leg_gates_refuses_a_non_leg_ref")
 
-    # A DEC target resolves through the one canonical row format.
-    probe("dec_target_resolves_through_generic_resolver", GA, H28,
-          "gates 'G2' differ from typed DEC-050 gates 'G4/G5'",
-          "Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-050`:")
-    with isolated_tree() as tmp:
-        p = tmp / GA
-        p.write_text(must_replace(p.read_text(encoding="utf-8"), H28,
-                     "Required witnesses (proof owner TestPak; gates G4/G5), also carried by `DEC-050`:",
-                     "retarget to DEC"), encoding="utf-8")
-        silent("dec_target_with_matching_typed_gates_is_accepted",
-               [f for f in pt(tmp) if W28 in f])
-        if audit.witness_rows(tmp).get(W28, {}).get("target") != "DEC-050":
-            fail("dec_target_is_recorded_as_the_primary_target")
-
-    # SEED / ARCH / QUAL target forms parse and resolve on synthetic rows.
-    with isolated_tree() as tmp:
-        p = tmp / GA
-        p.write_text(must_replace(p.read_text(encoding="utf-8"), H28,
-                     "Required witnesses (proof owner TestPak; gates G2), also carried by `SEED-FBAT-CORE`:",
-                     "retarget to SEED"), encoding="utf-8")
-        silent("seed_target_with_matching_typed_gates_is_accepted",
-               [f for f in pt(tmp) if W28 in f])
-    for ref, fam, want in (("ARCH-batpak", "ARCH", "G0"), ("QUAL-batpak-native", "QUAL", "G0/G5")):
-        probe(f"{fam.lower()}_target_gate_mismatch_is_read_from_the_typed_target", GA, H28,
-              f"differ from typed {ref} gates '{want}'",
-              f"Required witnesses (proof owner TestPak; gates G2), also carried by `{ref}`:")
-        with isolated_tree() as tmp:
-            p2 = tmp / GA
-            p2.write_text(must_replace(p2.read_text(encoding="utf-8"), H28,
-                          f"Required witnesses (proof owner TestPak; gates {want}), "
-                          f"also carried by `{ref}`:", f"retarget to {fam}"), encoding="utf-8")
-            silent(f"{fam.lower()}_target_with_matching_typed_gates_is_accepted",
-                   [f for f in pt(tmp) if W28 in f])
-
-    # Unknown family and unknown member both fail closed.
-    # An unknown family cannot reach the target resolver: the row grammar admits
-    # only the five known prefixes, so the grammar rule is what fails it closed.
-    probe("unknown_guarantee_family_is_rejected", GA, H28,
-          "docs/24 names 'BOGUS-1' as a proof target, which is not a source-qualified GuaranteeRef",
-          "Required witnesses (proof owner TestPak; gates G2), also carried by `BOGUS-1`:",
-          validator=pg)
-    with isolated_tree() as tmp:
-        p = tmp / GA
-        p.write_text(must_replace(p.read_text(encoding="utf-8"), H28,
-                     "Required witnesses (proof owner TestPak; gates G2), also carried by `BOGUS-1`:",
-                     "unknown family"), encoding="utf-8")
-        if W28 in audit.witness_rows(tmp):
-            fail("unknown_family_block_is_not_parsed_as_a_canonical_row")
-    probe("unknown_guarantee_member_fails_closed", GA, H28,
+    # Target selection is TYPED since 5.5E4d: the fence-header retarget,
+    # multi-target, family-grammar, and block-gate-override laws became
+    # structural (an Active row carries exactly one GuaranteeRef and no gate
+    # text). What survives executable here: a dangling member fails closed.
+    probe("unknown_guarantee_member_fails_closed", "spec/proof.rs",
+          'guarantee: GuaranteeRef::dec("DEC-050")',
           "targets DEC-999, which resolves to no existing DEC guarantee",
-          "Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-999`:")
-
-    # A gate schedules qualification; it never owns semantic meaning.
-    probe("gateid_cannot_be_a_proof_target", GA, H28,
-          "names GateId G2 as a proof target",
-          "Required witnesses (proof owner TestPak; gates G2), also carried by `G2`:",
-          validator=pg)
-    probe("free_text_cannot_be_a_proof_target", GA, H28,
-          "as a proof target, which is not a source-qualified GuaranteeRef",
-          "Required witnesses (proof owner TestPak; gates G2), also carried by `batpak::projection`:",
-          validator=pg)
-
-    # One primary target per row.
-    probe("two_primary_targets_is_rejected", GA, H28,
-          "names more than one primary target: LEG-028 and DEC-050",
-          "Required witnesses (proof owner TestPak; gates G2), also carried by `DEC-050` and `LEG-028`:")
-
-    # Gates come from the typed target, never from the source block's text.
-    probe("block_gate_text_cannot_override_the_typed_target", GA, H28,
-          "gates 'G2/G7' differ from typed LEG-028 gates 'G2'",
-          "Required witnesses (proof owner TestPak; gates G2/G7), also carried by `LEG-028`:")
+          'guarantee: GuaranteeRef::dec("DEC-999")')
+    probe("dangling_legacy_guarantee_fails_closed", "spec/proof.rs",
+          'guarantee: GuaranteeRef::leg("LEG-028")',
+          "targets LEG-998, which resolves to no existing LEG guarantee",
+          'guarantee: GuaranteeRef::leg("LEG-998")')
 
     # Structural discovery: heading text is not the parser API.
     #
@@ -4049,9 +4129,16 @@ def test_proof_target_resolver(audit) -> list[str]:
     probe("unfalsifiable_expectation_clause_is_rejected", GA, W28E,
           "expectation clause expects is not falsifiable",
           "    expects: TBD")
-    probe("newly_promoted_row_without_an_expectation_clause_is_rejected", GA,
-          W28 + "\n```", "proof rows carry no expectation clause, above the transitional ceiling of 0",
-          W28 + "\nnewly_promoted_row_without_a_clause\n```")
+    ROW28 = ('ProofRowRecord { id: ProofRowId("page_limit_bounds_discovery_work_not_only_output"), '
+             'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-028"), '
+             'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+    probe("newly_promoted_row_without_an_expectation_clause_is_rejected", "spec/proof.rs",
+          ROW28,
+          "proof rows carry no expectation clause, above the transitional ceiling of 0",
+          ROW28 + '\n    ProofRowRecord { id: '
+          'ProofRowId("newly_promoted_row_without_a_clause"), '
+          'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-028"), '
+          'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
     # Enforcement is universal, not grandfathered: stripping the clause from a
     # long-migrated row is refused exactly like omitting it on a new one.
     probe("stripping_a_migrated_clause_is_rejected", GA, W28C,
@@ -6294,15 +6381,12 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           'successors: &[ProofRowId("committed")]',
           "resolves to no typed catalog identity")
 
-    # The defect the census exists to catch: delete a canonical active row
-    # whose name survives in a historical migration note. The substring
-    # search blessed exactly this deletion; the structural parse refuses it.
-    probe("active_row_deleted_but_name_left_in_migration_note_is_rejected",
-          "docs/24_GAUNTLET.md",
-          "\nstale_or_pre_shred_keyset_restore_is_rejected\n",
-          "\n",
-          "typed Active identity stale_or_pre_shred_keyset_restore_is_rejected "
-          "appears as no canonical docs/24 active row")
+    # The census defect (an active row deleted while a migration note kept
+    # its name) retired with the docs/24 membership parity in 5.5E4d: the
+    # typed catalog in spec/proof.rs is the one membership authority, and
+    # deleting a typed row takes its guarantee binding and its docs/21
+    # projection with it -- witness_reference_findings and the ledger-parity
+    # laws own that refusal now.
 
     # The RUNNING binary refuses a hand-edited toolchain projection and a
     # physical triple sitting in a semantic qualification target (5.5E3a).
@@ -6947,14 +7031,12 @@ def test_contract_kinds(audit) -> list[str]:
           "ContractKind::Error cites admission basis LEG-047, which no "
           "declared row owns")
     tmp = gate_sandbox([("spec/legacy_obligations.rs",
-        'id: "LEG-047", law: "Error handling class and public error shape do '
-        'not drift into side tables", clean_owner: "macbat-compiler", '
+        'Planned("variant addition compile failure/mutant"), '
         'gates: &[GateId::G1, GateId::G2], compatibility_disposition: '
         'CompatibilityDisposition::None, deletion_condition: '
         'DeletionCondition::OnSuccessorGateClosure, active_or_closed_status: '
         'ObligationStatus::Active }',
-        'id: "LEG-047", law: "Error handling class and public error shape do '
-        'not drift into side tables", clean_owner: "macbat-compiler", '
+        'Planned("variant addition compile failure/mutant"), '
         'gates: &[GateId::G1, GateId::G2], compatibility_disposition: '
         'CompatibilityDisposition::None, deletion_condition: '
         'DeletionCondition::OnSuccessorGateClosure, active_or_closed_status: '
@@ -7059,6 +7141,7 @@ def main() -> int:
     findings += test_generated_views(audit, project)
     findings += test_inventory_mirrors(audit, project)
     findings += test_exact_ledgers(audit, project)
+    findings += test_proof_relations(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)
