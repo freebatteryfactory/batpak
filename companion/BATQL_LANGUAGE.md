@@ -102,9 +102,11 @@ These are projections of one typed form, not separate languages.
 
 The readable source, compact source, narration, execution plan, and proof view must agree because they derive from the same canonical syntax tree.
 
-## 1.3 Words are canonical; symbols are typing sugar
+## 1.3 Canonical source surfaces
 
-The parser accepts:
+Arithmetic uses canonical symbols: `*`, `/`, `+`, and `-` are the source spellings, and they have no word form.
+
+Comparisons use canonical word phrases and accept exact symbolic aliases. The canonical phrases are `IS`, `IS NOT`, `IS LESS THAN`, `IS AT MOST`, `IS MORE THAN`, and `IS AT LEAST`; their accepted compact aliases are `=`, `!=`, `<`, `<=`, `>`, and `>=`. The parser accepts:
 
 ```batql
 amount <= limit
@@ -116,26 +118,35 @@ and:
 amount IS AT MOST limit
 ```
 
-Both produce the same typed comparison node.
-
-The default formatter emits:
+Both produce the same typed comparison node. All accepted surfaces lower to one typed `OperatorId`; an alias never creates a parallel semantic operation. The default formatter emits only the canonical surface:
 
 ```batql
 amount IS AT MOST limit
 ```
 
-Supported comparison spellings:
+Logical operators remain canonical words in every source density: `NOT`, `AND`, and `OR` have no symbol form. BatQL does not encourage punctuation soup.
 
-```text
-=     IS
-!=    IS NOT
-<     IS LESS THAN
-<=    IS AT MOST
->     IS MORE THAN
->=    IS AT LEAST
-```
+Spoken narration is not parser syntax: the spoken projection narrates the typed tree and is never accepted source.
 
-`AND`, `OR`, and `NOT` remain words in every density. BatQL does not encourage punctuation soup.
+The exact surface mapping is a generated projection of the typed source (`OperatorSyntax` in `spec/operators.rs`), not a hand-maintained table:
+
+<!-- OPERATORS-SURFACES:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+| OperatorId | Shape | Canonical | Accepted alias |
+| --- | --- | --- | --- |
+| OP-MUL | symbol-only | `*` | - |
+| OP-DIV | symbol-only | `/` | - |
+| OP-ADD | symbol-only | `+` | - |
+| OP-SUB | symbol-only | `-` | - |
+| OP-EQ | word-with-symbol | `IS` | `=` |
+| OP-NE | word-with-symbol | `IS NOT` | `!=` |
+| OP-LT | word-with-symbol | `IS LESS THAN` | `<` |
+| OP-LE | word-with-symbol | `IS AT MOST` | `<=` |
+| OP-GT | word-with-symbol | `IS MORE THAN` | `>` |
+| OP-GE | word-with-symbol | `IS AT LEAST` | `>=` |
+| OP-NOT | word-only | `NOT` | - |
+| OP-AND | word-only | `AND` | - |
+| OP-OR | word-only | `OR` | - |
+<!-- OPERATORS-SURFACES:END -->
 
 ## 1.4 Source order is for humans; plan order is for the machine
 
@@ -1401,13 +1412,13 @@ No unqualified `FLOAT`, `F32`, `F64`, `NaN`, or `Infinity` literal forms exist. 
 BatQL cannot claim strict typing while leaving operator meaning underdetermined. The legal operator matrix below is a generated projection of each operator's typed legality rules (`spec/operators.rs`, `OperatorTypingRule`); anything not derivable from those rules is a compile-time type error. Rules match in declaration order, so `Percent - Percent` is a `PercentagePoints` difference, never a bare same-unit result. `ObservedWallTime - ObservedWallTime` yields `TimeDelta`, a signed diagnostic observation difference that is never `Duration` or any ordering, budget, or deadline authority (docs/16). `Money * Percent` stays `Money` — exact by scale increase, with scale reduction through an explicit named rounding mode; a percentage of money is money, not a new one-off sort.
 
 <!-- OPERATORS-TYPING:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
-### Addition (`+`)
+### Multiplication (`*`)
 
 ```text
-Percent + PercentagePoints       -> Percent
-PercentagePoints + Percent       -> Percent
-Money<USD> + Money<USD>       -> Money<USD>
-Money<USD> + Money<EUR>       -> rejected
+Money<USD> * Decimal          -> Money<USD>
+Money<USD> * Percent          -> Money<USD>
+Duration * Integer            -> Duration
+Money * Money                 -> rejected
 ```
 
 ### Division (`/`)
@@ -1419,13 +1430,13 @@ Money<USD> / Money<EUR>       -> rejected
 dimensional / dimensionless      -> same dimension
 ```
 
-### Multiplication (`*`)
+### Addition (`+`)
 
 ```text
-Money<USD> * Decimal          -> Money<USD>
-Money<USD> * Percent          -> Money<USD>
-Duration * Integer            -> Duration
-Money * Money                 -> rejected
+Percent + PercentagePoints       -> Percent
+PercentagePoints + Percent       -> Percent
+Money<USD> + Money<USD>       -> Money<USD>
+Money<USD> + Money<EUR>       -> rejected
 ```
 
 ### Subtraction (`-`)
@@ -3503,21 +3514,21 @@ cost_clause
 These blocks are generated from `spec/operators.rs` by `bootstrap/project.py` and independently re-checked by `bootstrap/audit.py`. OperatorSpec is the one operator authority; it owns operator relationships and these projected tables and fragments only, never the function, MATCH, declaration, or general lexical grammar. Do not hand-edit the generated content.
 
 <!-- OPERATORS-CATALOG:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
-| OperatorId | Class | Word | Symbol | Arity | Fixity | Precedence | Associativity | Result sort | Exactness |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| OP-ADD | Arithmetic | `+` |  | Binary | Infix | 60 | Left | exact same-unit | Exact |
-| OP-DIV | Arithmetic | `/` |  | Binary | Infix | 70 | Left | Ratio or scaled exact | Exact |
-| OP-MUL | Arithmetic | `*` |  | Binary | Infix | 70 | Left | exact dimensional | Exact |
-| OP-SUB | Arithmetic | `-` |  | Binary | Infix | 60 | Left | exact same-unit | Exact |
-| OP-EQ | Comparison | `IS` | `=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
-| OP-GE | Comparison | `IS AT LEAST` | `>=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
-| OP-GT | Comparison | `IS MORE THAN` | `>` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
-| OP-LE | Comparison | `IS AT MOST` | `<=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
-| OP-LT | Comparison | `IS LESS THAN` | `<` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
-| OP-NE | Comparison | `IS NOT` | `!=` | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
-| OP-AND | Logical | `AND` |  | Binary | Infix | 30 | Left | Truth | NotApplicable |
-| OP-NOT | Logical | `NOT` |  | Unary | Prefix | 40 | NonAssociative | Truth | NotApplicable |
-| OP-OR | Logical | `OR` |  | Binary | Infix | 20 | Left | Truth | NotApplicable |
+| OperatorId | Class | Arity | Fixity | Precedence | Associativity | Result sort | Exactness |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| OP-MUL | Arithmetic | Binary | Infix | 70 | Left | exact dimensional | Exact |
+| OP-DIV | Arithmetic | Binary | Infix | 70 | Left | Ratio or scaled exact | Exact |
+| OP-ADD | Arithmetic | Binary | Infix | 60 | Left | exact same-unit | Exact |
+| OP-SUB | Arithmetic | Binary | Infix | 60 | Left | exact same-unit | Exact |
+| OP-EQ | Comparison | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-NE | Comparison | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-LT | Comparison | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-LE | Comparison | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-GT | Comparison | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-GE | Comparison | Binary | Infix | 50 | NonAssociative | Truth with TypedMargin | Exact |
+| OP-NOT | Logical | Unary | Prefix | 40 | NonAssociative | Truth | NotApplicable |
+| OP-AND | Logical | Binary | Infix | 30 | Left | Truth | NotApplicable |
+| OP-OR | Logical | Binary | Infix | 20 | Left | Truth | NotApplicable |
 <!-- OPERATORS-CATALOG:END -->
 
 The operator grammar fragment defines the operator productions referenced by `comparison`, `arithmetic_expression`, and `logical_expression`:
@@ -3525,10 +3536,10 @@ The operator grammar fragment defines the operator productions referenced by `co
 <!-- OPERATORS-GRAMMAR:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
 ```text
 comparison_operator
-  := IS | IS AT LEAST | IS MORE THAN | IS AT MOST | IS LESS THAN | IS NOT | "=" | ">=" | ">" | "<=" | "<" | "!="
+  := IS | IS NOT | IS LESS THAN | IS AT MOST | IS MORE THAN | IS AT LEAST | "=" | "!=" | "<" | "<=" | ">" | ">="
 
 arithmetic_operator
-  := "+" | "/" | "*" | "-"
+  := "*" | "/" | "+" | "-"
 
 logical_operator
   := AND | OR
@@ -3538,20 +3549,20 @@ logical_operator
 Formatting and spoken projections and legal mutation classes:
 
 <!-- OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
-| OperatorId | Formatting | Spoken | Legal mutation classes |
+| OperatorId | Canonical formatting | Spoken | Legal mutation classes |
 | --- | --- | --- | --- |
-| OP-ADD | `+` | plus | precedence, associativity, constant-folding, parenthesis, unit-checking |
-| OP-DIV | `/` | divided by | precedence, associativity, constant-folding, parenthesis, division-by-zero, scale-adjustment |
 | OP-MUL | `*` | times | precedence, associativity, constant-folding, parenthesis, scale-adjustment |
+| OP-DIV | `/` | divided by | precedence, associativity, constant-folding, parenthesis, division-by-zero, scale-adjustment |
+| OP-ADD | `+` | plus | precedence, associativity, constant-folding, parenthesis, unit-checking |
 | OP-SUB | `-` | minus | precedence, associativity, constant-folding, parenthesis, unit-checking |
 | OP-EQ | `IS` | is | precedence, comparison-direction, margin-sign, parenthesis |
-| OP-GE | `IS AT LEAST` | is at least | precedence, comparison-direction, margin-sign, parenthesis |
-| OP-GT | `IS MORE THAN` | is more than | precedence, comparison-direction, margin-sign, parenthesis |
-| OP-LE | `IS AT MOST` | is at most | precedence, comparison-direction, margin-sign, parenthesis |
-| OP-LT | `IS LESS THAN` | is less than | precedence, comparison-direction, margin-sign, parenthesis |
 | OP-NE | `IS NOT` | is not | precedence, comparison-direction, margin-sign, parenthesis |
-| OP-AND | `AND` | and | precedence, associativity, parenthesis |
+| OP-LT | `IS LESS THAN` | is less than | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-LE | `IS AT MOST` | is at most | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-GT | `IS MORE THAN` | is more than | precedence, comparison-direction, margin-sign, parenthesis |
+| OP-GE | `IS AT LEAST` | is at least | precedence, comparison-direction, margin-sign, parenthesis |
 | OP-NOT | `NOT` | not | precedence, parenthesis |
+| OP-AND | `AND` | and | precedence, associativity, parenthesis |
 | OP-OR | `OR` | or | precedence, associativity, parenthesis |
 <!-- OPERATORS-PROJECTION:END -->
 

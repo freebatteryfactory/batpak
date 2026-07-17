@@ -74,6 +74,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_toolchain(root, &mut findings);
     check_contract_kinds(&mut findings);
     check_identity_catalogs(root, &mut findings);
+    check_operators(root, &mut findings);
     check_commands(root, &mut findings);
     check_mutation(root, &mut findings);
     check_corpus(root, &mut findings);
@@ -2014,49 +2015,183 @@ fn check_unique_ids(findings: &mut Vec<String>) {
             | legacy_invariant_coverage::CoverageDisposition::Requalify => {}
         }
     }
-    let operator_ids: BTreeSet<&str> = operators::OPERATORS.iter().map(|o| o.id).collect();
-    if operator_ids.len() != operators::OPERATORS.len() {
-        findings.push("duplicate operator ID".into());
+}
+
+/// The typed operator surface law, EXECUTED (5.5E3j). Seedcheck runs the real
+/// Rust values: identity/row parity in `OperatorId::ALL` order, token
+/// discipline on both closed surface inventories, owner and basis resolution,
+/// surface adoption, and the class/shape law. It parses no Markdown and no
+/// decision prose; those reconstructions belong to audit.py.
+fn check_operators(root: &Path, findings: &mut Vec<String>) {
+    let owner_texts = contract_authored_texts(root);
+    let decision_ids: BTreeSet<&str> = dispositions::DECISIONS.iter().map(|d| d.id).collect();
+    let mut spellings: BTreeSet<&str> = BTreeSet::new();
+    for id in operators::OperatorId::ALL {
+        let spelling = id.spelling();
+        if spelling.trim().is_empty() {
+            findings.push("empty OperatorId spelling".into());
+        }
+        if !spellings.insert(spelling) {
+            findings.push(format!("duplicate OperatorId spelling {spelling}"));
+        }
+        let rows = operators::OPERATORS.iter().filter(|o| o.id == *id).count();
+        if rows != 1 {
+            findings.push(format!(
+                "OperatorId {spelling} has {rows} OperatorSpec rows; exactly one is lawful"));
+        }
+        if !owner_texts.contains_key(id.semantic_owner().raw()) {
+            findings.push(format!(
+                "operator {spelling} names owner {}, which no document declares",
+                id.semantic_owner().raw()));
+        }
+        if !decision_ids.contains(id.admission_basis().raw()) {
+            findings.push(format!(
+                "operator {spelling} names admission basis {}, which no declared decision owns",
+                id.admission_basis().raw()));
+        }
+    }
+    if operators::OPERATORS.len() != operators::OperatorId::ALL.len() {
+        findings.push(format!(
+            "OPERATORS declares {} rows for {} OperatorId variants",
+            operators::OPERATORS.len(),
+            operators::OperatorId::ALL.len()));
+    }
+    for (index, op) in operators::OPERATORS.iter().enumerate() {
+        if operators::OperatorId::ALL.get(index) != Some(&op.id) {
+            findings.push(format!(
+                "OPERATORS row {} is out of OperatorId::ALL order", op.id.spelling()));
+        }
+    }
+    // The closed word inventory: canonical uppercase word grammar, unique
+    // nonempty tokens, resolved owner and basis, exactly one adopting row.
+    let mut word_tokens: BTreeSet<&str> = BTreeSet::new();
+    for word in operators::OperatorWordSurface::ALL {
+        let token = word.token();
+        let uppercase_words = !token.is_empty()
+            && !token.starts_with(' ')
+            && !token.ends_with(' ')
+            && !token.contains("  ")
+            && token.bytes().all(|b| b.is_ascii_uppercase() || b == b' ');
+        if !uppercase_words {
+            findings.push(format!(
+                "word surface token {token:?} violates the canonical uppercase word grammar"));
+        }
+        if !word_tokens.insert(token) {
+            findings.push(format!("duplicate word surface token {token:?}"));
+        }
+        if !owner_texts.contains_key(word.semantic_owner().raw()) {
+            findings.push(format!(
+                "word surface {token:?} names owner {}, which no document declares",
+                word.semantic_owner().raw()));
+        }
+        if !decision_ids.contains(word.admission_basis().raw()) {
+            findings.push(format!(
+                "word surface {token:?} names admission basis {}, which no declared decision owns",
+                word.admission_basis().raw()));
+        }
+        let adopters = operators::OPERATORS
+            .iter()
+            .filter(|o| o.syntax.canonical_word() == Some(*word))
+            .count();
+        if adopters != 1 {
+            findings.push(format!(
+                "word surface {token:?} is adopted by {adopters} OperatorSpec rows; exactly one is lawful"));
+        }
+    }
+    // The closed symbol inventory: nonempty ASCII punctuation, unique tokens,
+    // resolved owner and basis, exactly one adopting row — an alias stays
+    // attached to its one canonical OperatorId.
+    let mut symbol_tokens: BTreeSet<&str> = BTreeSet::new();
+    for symbol in operators::OperatorSymbolSurface::ALL {
+        let token = symbol.token();
+        if token.is_empty() || !token.bytes().all(|b| b.is_ascii_punctuation()) {
+            findings.push(format!(
+                "symbol surface token {token:?} is not nonempty ASCII punctuation"));
+        }
+        if !symbol_tokens.insert(token) {
+            findings.push(format!("duplicate symbol surface token {token:?}"));
+        }
+        if !owner_texts.contains_key(symbol.semantic_owner().raw()) {
+            findings.push(format!(
+                "symbol surface {token:?} names owner {}, which no document declares",
+                symbol.semantic_owner().raw()));
+        }
+        if !decision_ids.contains(symbol.admission_basis().raw()) {
+            findings.push(format!(
+                "symbol surface {token:?} names admission basis {}, which no declared decision owns",
+                symbol.admission_basis().raw()));
+        }
+        let adopters = operators::OPERATORS
+            .iter()
+            .filter(|o| {
+                o.syntax.canonical_symbol() == Some(*symbol)
+                    || o.syntax.symbol_alias() == Some(*symbol)
+            })
+            .count();
+        if adopters != 1 {
+            findings.push(format!(
+                "symbol surface {token:?} is adopted by {adopters} OperatorSpec rows; exactly one is lawful"));
+        }
     }
     let mut surface_owner: BTreeMap<(&str, &str), &str> = BTreeMap::new();
     for op in operators::OPERATORS {
-        if op.id.trim().is_empty()
-            || op.word_surface.trim().is_empty()
-            || op.semantic_op.trim().is_empty()
+        let spelling = op.id.spelling();
+        if op.syntax.canonical_token().is_empty() {
+            findings.push(format!("operator {spelling} has an empty canonical token"));
+        }
+        if op.semantic_op.trim().is_empty()
             || op.input_sorts.trim().is_empty()
             || op.result_sort.trim().is_empty()
             || op.overflow.trim().is_empty()
             || op.exception.trim().is_empty()
-            || op.formatting.trim().is_empty()
             || op.spoken.trim().is_empty()
             || op.mutation_classes.trim().is_empty()
         {
-            findings.push(format!("incomplete operator {}", op.id));
+            findings.push(format!("incomplete operator {spelling}"));
+        }
+        // The class/shape law is total: arithmetic is symbol-only, comparison
+        // is word-with-symbol-alias, logical is word-only. Exhaustive on both
+        // axes so a new class or shape must be classified here, not defaulted.
+        let lawful_shape = match (op.class, op.syntax) {
+            (operators::OperatorClass::Arithmetic, operators::OperatorSyntax::SymbolOnly(_)) => true,
+            (operators::OperatorClass::Arithmetic, operators::OperatorSyntax::WordOnly(_))
+            | (operators::OperatorClass::Arithmetic, operators::OperatorSyntax::WordWithSymbolAlias(_, _)) => false,
+            (operators::OperatorClass::Comparison, operators::OperatorSyntax::WordWithSymbolAlias(_, _)) => true,
+            (operators::OperatorClass::Comparison, operators::OperatorSyntax::SymbolOnly(_))
+            | (operators::OperatorClass::Comparison, operators::OperatorSyntax::WordOnly(_)) => false,
+            (operators::OperatorClass::Logical, operators::OperatorSyntax::WordOnly(_)) => true,
+            (operators::OperatorClass::Logical, operators::OperatorSyntax::SymbolOnly(_))
+            | (operators::OperatorClass::Logical, operators::OperatorSyntax::WordWithSymbolAlias(_, _)) => false,
+        };
+        if !lawful_shape {
+            findings.push(format!(
+                "operator {spelling} violates the class/shape law: arithmetic is symbol-only, \
+                 comparison is word-with-symbol-alias, logical is word-only"));
         }
         let fixity = match op.fixity {
             operators::Fixity::Prefix => "Prefix",
             operators::Fixity::Infix => "Infix",
         };
-        for surface in [op.word_surface, op.symbol_surface] {
+        let alias_token = match op.syntax.symbol_alias() {
+            Some(symbol) => symbol.token(),
+            None => "",
+        };
+        for surface in [op.syntax.canonical_token(), alias_token] {
             if surface.is_empty() {
                 continue;
             }
-            if let Some(prev) = surface_owner.insert((surface, fixity), op.id) {
-                if prev != op.id {
-                    findings.push(format!("operator token {surface} fixity {fixity} claimed by {prev} and {}", op.id));
+            if let Some(prev) = surface_owner.insert((surface, fixity), spelling) {
+                if prev != spelling {
+                    findings.push(format!(
+                        "operator token {surface} fixity {fixity} claimed by {prev} and {spelling}"));
                 }
             }
-        }
-        match op.class {
-            operators::OperatorClass::Arithmetic
-            | operators::OperatorClass::Comparison
-            | operators::OperatorClass::Logical => {}
         }
         // Typed legality rules (5.5E1): placement is law. A wall-observation
         // difference anywhere but subtraction would leak wall arithmetic past
         // the TimeDelta fence (docs/16); a rate difference IS subtraction.
         if op.typing.is_empty() {
-            findings.push(format!("operator {} declares no typing rules", op.id));
+            findings.push(format!("operator {spelling} declares no typing rules"));
         }
         for rule in op.typing {
             // Exhaustive: a new rule must be classified here, not defaulted.
@@ -2065,26 +2200,26 @@ fn check_unique_ids(findings: &mut Vec<String>) {
                 | operators::OperatorTypingRule::PercentDifference => {
                     if op.semantic_op != "subtract" {
                         findings.push(format!(
-                            "operator {} claims a difference typing rule but is not subtraction", op.id));
+                            "operator {spelling} claims a difference typing rule but is not subtraction"));
                     }
                 }
                 operators::OperatorTypingRule::PercentAdjustment => {
                     if op.semantic_op != "add" && op.semantic_op != "subtract" {
                         findings.push(format!(
-                            "operator {} claims PercentAdjustment outside add/subtract", op.id));
+                            "operator {spelling} claims PercentAdjustment outside add/subtract"));
                     }
                 }
                 operators::OperatorTypingRule::SameSortComparison => {
                     if !matches!(op.class, operators::OperatorClass::Comparison) {
                         findings.push(format!(
-                            "operator {} claims SameSortComparison outside the comparison class", op.id));
+                            "operator {spelling} claims SameSortComparison outside the comparison class"));
                     }
                 }
                 operators::OperatorTypingRule::TruthUnary
                 | operators::OperatorTypingRule::TruthBinary => {
                     if !matches!(op.class, operators::OperatorClass::Logical) {
                         findings.push(format!(
-                            "operator {} claims a Truth typing rule outside the logical class", op.id));
+                            "operator {spelling} claims a Truth typing rule outside the logical class"));
                     }
                 }
                 operators::OperatorTypingRule::SameUnit
@@ -2092,7 +2227,7 @@ fn check_unique_ids(findings: &mut Vec<String>) {
                 | operators::OperatorTypingRule::LikeDimensionRatio => {
                     if !matches!(op.class, operators::OperatorClass::Arithmetic) {
                         findings.push(format!(
-                            "operator {} claims an arithmetic typing rule outside the arithmetic class", op.id));
+                            "operator {spelling} claims an arithmetic typing rule outside the arithmetic class"));
                     }
                 }
             }

@@ -427,12 +427,12 @@ pub const NON_CATALOGED_IDENTITY_TERMS: &[NonCatalogedIdentityTerm] = &[
 ];
 
 /// Spellings whose types already have owners in other spec modules
-/// (architecture.rs, proof.rs, gates.rs). The catalogs may REFERENCE those
-/// types where necessary; they may never re-admit the spellings as catalog
-/// entries — a duplicate variant is a wrapper passport. GateId additionally
-/// appears in the residue table as an owned-elsewhere REFERENCE, which is
-/// lawful; a catalog entry would not be.
-pub const EXISTING_TYPED_OWNER_SPELLINGS: &[&str] = &["PackageId", "ProofRowId", "GateId"];
+/// (architecture.rs, proof.rs, gates.rs, operators.rs). The catalogs may
+/// REFERENCE those types where necessary; they may never re-admit the
+/// spellings as catalog entries — a duplicate variant is a wrapper passport.
+/// GateId and OperatorId additionally appear in the residue table as
+/// owned-elsewhere REFERENCES, which is lawful; a catalog entry would not be.
+pub const EXISTING_TYPED_OWNER_SPELLINGS: &[&str] = &["PackageId", "ProofRowId", "GateId", "OperatorId"];
 
 /// The vocabulary this catalog must NEVER admit: time, order, topology,
 /// coordinate, cursor, and navigation terms owned by docs/16's other

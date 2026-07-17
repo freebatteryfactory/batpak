@@ -528,18 +528,18 @@ independently re-audited:
 <!-- OPERATORS-NUMERIC:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
 | OperatorId | Class | Numeric support |
 | --- | --- | --- |
-| OP-ADD | Arithmetic | ExactSupported |
-| OP-DIV | Arithmetic | ExactSupported |
 | OP-MUL | Arithmetic | ExactSupported |
+| OP-DIV | Arithmetic | ExactSupported |
+| OP-ADD | Arithmetic | ExactSupported |
 | OP-SUB | Arithmetic | ExactSupported |
 | OP-EQ | Comparison | ExactSupported |
-| OP-GE | Comparison | ExactSupported |
-| OP-GT | Comparison | ExactSupported |
-| OP-LE | Comparison | ExactSupported |
-| OP-LT | Comparison | ExactSupported |
 | OP-NE | Comparison | ExactSupported |
-| OP-AND | Logical | NotApplicable |
+| OP-LT | Comparison | ExactSupported |
+| OP-LE | Comparison | ExactSupported |
+| OP-GT | Comparison | ExactSupported |
+| OP-GE | Comparison | ExactSupported |
 | OP-NOT | Logical | NotApplicable |
+| OP-AND | Logical | NotApplicable |
 | OP-OR | Logical | NotApplicable |
 <!-- OPERATORS-NUMERIC:END -->
 

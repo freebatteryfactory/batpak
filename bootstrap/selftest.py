@@ -383,19 +383,23 @@ def test_legacy_manifest_parity(audit) -> list[str]:
 
 
 def _sample_operators() -> list[dict[str, str]]:
+    """Resolved operator rows in the typed 5.5E3j shape (canonical/alias from
+    OperatorSyntax; no word_surface, symbol_surface, or formatting fields)."""
     base = {
         "semantic_op": "s", "input_sorts": "a", "result_sort": "b", "overflow": "o",
-        "exception": "e", "mutation_classes": "m",
+        "exception": "e", "mutation_classes": "m", "numeric_support": "ExactSupported",
     }
     return [
-        {**base, "id": "OP-ADD", "class": "Arithmetic", "word": "+", "symbol": "",
+        {**base, "id": "OP-ADD", "class": "Arithmetic", "shape": "SymbolOnly",
+         "canonical": "+", "alias": "",
          "arity": "Binary", "fixity": "Infix", "precedence": "60", "semantic_op": "add",
          "typing": "OperatorTypingRule::PercentAdjustment, OperatorTypingRule::SameUnit",
-         "associativity": "Left", "exactness": "Exact", "formatting": "+", "spoken": "plus"},
-        {**base, "id": "OP-EQ", "class": "Comparison", "word": "IS", "symbol": "=",
+         "associativity": "Left", "exactness": "Exact", "spoken": "plus"},
+        {**base, "id": "OP-EQ", "class": "Comparison", "shape": "WordWithSymbolAlias",
+         "canonical": "IS", "alias": "=",
          "arity": "Binary", "fixity": "Infix", "precedence": "50",
          "typing": "OperatorTypingRule::SameSortComparison",
-         "associativity": "NonAssociative", "exactness": "Exact", "formatting": "IS", "spoken": "is"},
+         "associativity": "NonAssociative", "exactness": "Exact", "spoken": "is"},
     ]
 
 
@@ -448,12 +452,14 @@ def test_batql(audit, project) -> list[str]:
         fail("altered_generated_operator_projection_is_rejected")
     if expected == audit.batql_render_catalog([ops[0]]):
         fail("missing_generated_operator_row_is_rejected")
-    if expected == audit.batql_render_catalog(ops + [{**ops[0], "id": "OP-XTRA", "word": "~"}]):
+    if expected == audit.batql_render_catalog(ops + [{**ops[0], "id": "OP-XTRA"}]):
         fail("extra_generated_operator_row_is_rejected")
 
-    # 13: canonical order is independent of source array order
-    if audit.batql_render_catalog(ops) != audit.batql_render_catalog(list(reversed(ops))):
-        fail("source_fact_reorder_leaves_generated_output_unchanged")
+    # 13: canonical order comes from OperatorId::ALL, so generated output
+    # FOLLOWS row order — a reorder is visible, never silently re-sorted by
+    # a Python ranking table (5.5E3j; the CLASS_RANK maps are dead).
+    if audit.batql_render_catalog(ops) == audit.batql_render_catalog(list(reversed(ops))):
+        fail("generated_output_follows_operator_id_all_order")
 
     # Typed legality rules (5.5E1): the rules are the operand/result authority,
     # their placement is law, and the two phantom sorts stay dead.
@@ -476,7 +482,7 @@ def test_batql(audit, project) -> list[str]:
             fail("a_phantom_sort_cannot_reenter_the_corpus")
     # A mutated rule regenerates a DIFFERENT matrix: the block is semantic, not
     # decorative. Dropping the percent-difference rule must change the render.
-    stripped = {**ops[0], "id": "OP-SUB", "word": "-", "semantic_op": "subtract",
+    stripped = {**ops[0], "id": "OP-SUB", "canonical": "-", "semantic_op": "subtract",
                 "typing": "OperatorTypingRule::SameUnit"}
     ruled = {**stripped,
              "typing": "OperatorTypingRule::PercentDifference, OperatorTypingRule::SameUnit"}
@@ -486,8 +492,10 @@ def test_batql(audit, project) -> list[str]:
     # 14: the independent generator and auditor projections must agree
     if (
         project.render_catalog(ops) != audit.batql_render_catalog(ops)
+        or project.render_surfaces(ops) != audit.batql_render_surfaces(ops)
         or project.render_grammar(ops) != audit.batql_render_grammar(ops)
         or project.render_projection(ops) != audit.batql_render_projection(ops)
+        or project.render_numeric(ops) != audit.batql_render_numeric(ops)
     ):
         fail("generator_auditor_disagreement_turns_gate_red")
 
@@ -499,6 +507,433 @@ def test_batql(audit, project) -> list[str]:
         fail("floor_ceiling_without_language_change_record_is_rejected")
 
     return findings
+
+
+def _sample_operator_model() -> dict:
+    """A minimal coherent typed operator model (one operator per class) in the
+    exact shape audit.batql_parse_operator_model produces."""
+    row = {
+        "semantic_op": "s", "arity": "Binary", "fixity": "Infix",
+        "precedence": "50", "associativity": "Left",
+        "typing": "OperatorTypingRule::SameSortComparison", "input_sorts": "a",
+        "result_sort": "b", "exactness": "Exact", "overflow": "o",
+        "exception": "e", "spoken": "sp", "mutation_classes": "m",
+        "numeric_support": "ExactSupported",
+    }
+    ids = ("Multiply", "Equal", "Not")
+    return {
+        "src": "",
+        "id_type": "OperatorId",
+        "id_variants": list(ids), "id_all": list(ids),
+        "id_token": {"Multiply": "OP-MUL", "Equal": "OP-EQ", "Not": "OP-NOT"},
+        "id_owner": {v: "BP-BATQL-LANGUAGE-1" for v in ids},
+        "id_basis": {v: "DEC-060" for v in ids},
+        "word_type": "OperatorWordSurface",
+        "word_variants": ["Is", "Not"], "word_all": ["Is", "Not"],
+        "word_token": {"Is": "IS", "Not": "NOT"},
+        "word_owner": {"Is": "BP-BATQL-LANGUAGE-1", "Not": "BP-BATQL-LANGUAGE-1"},
+        "word_basis": {"Is": "DEC-060", "Not": "DEC-060"},
+        "symbol_type": "OperatorSymbolSurface",
+        "symbol_variants": ["Multiply", "Equal"], "symbol_all": ["Multiply", "Equal"],
+        "symbol_token": {"Multiply": "*", "Equal": "="},
+        "symbol_owner": {"Multiply": "BP-BATQL-LANGUAGE-1", "Equal": "BP-BATQL-LANGUAGE-1"},
+        "symbol_basis": {"Multiply": "DEC-060", "Equal": "DEC-060"},
+        "rows": [
+            {**row, "variant": "Multiply", "class": "Arithmetic",
+             "shape": "SymbolOnly", "inner": "OperatorSymbolSurface::Multiply",
+             "semantic_op": "multiply",
+             "typing": "OperatorTypingRule::DimensionalByDimensionless"},
+            {**row, "variant": "Equal", "class": "Comparison",
+             "shape": "WordWithSymbolAlias",
+             "inner": "OperatorWordSurface::Is, OperatorSymbolSurface::Equal",
+             "associativity": "NonAssociative"},
+            {**row, "variant": "Not", "class": "Logical", "shape": "WordOnly",
+             "inner": "OperatorWordSurface::Not", "fixity": "Prefix",
+             "arity": "Unary", "typing": "OperatorTypingRule::TruthUnary",
+             "numeric_support": "NotApplicable"},
+        ],
+    }
+
+
+def test_operator_surfaces(audit, project) -> list[str]:
+    """Named hostile fixtures for the typed operator identity and
+    source-surface closure (5.5E3j): OperatorId, the closed word and symbol
+    surface inventories, OperatorSyntax, the class/shape law, the DEC-060
+    admission boundary, projection provenance, and the retired raw fields."""
+    findings: list[str] = []
+    root = HERE.parent
+    CONTRACTS = {"BP-BATQL-LANGUAGE-1"}
+    DECISIONS = {"DEC-060"}
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def mfind(model) -> list[str]:
+        return audit.batql_operator_model_findings(model)
+
+    def rfind(rows) -> list[str]:
+        return audit.batql_operator_fact_findings(rows)
+
+    def resolved(model) -> list[dict]:
+        return audit.batql_resolve_operator_rows(model, [])
+
+    def batql(tmp) -> list[str]:
+        out: list[str] = []
+        audit.check_batql(tmp, out)
+        return out
+
+    def probe(name, edits, validator, needle):
+        tmp = gate_sandbox(edits)
+        try:
+            expect(name, validator(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # The synthetic model itself is lawful; a red baseline would let every
+    # hostile below pass for the wrong reason.
+    base = _sample_operator_model()
+    baseline = mfind(base) + rfind(resolved(base)) \
+        + audit.batql_operator_authority_findings(base, CONTRACTS, DECISIONS)
+    if baseline:
+        fail(f"typed_operator_model_baseline_is_red ({baseline!r})")
+
+    # Identity/row parity in OperatorId::ALL order.
+    m = _sample_operator_model()
+    m["id_all"] = ["Multiply", "Equal"]
+    expect("operator_id_missing_from_all_is_rejected", mfind(m),
+           "is declared but missing from OperatorId::ALL")
+    m = _sample_operator_model()
+    m["rows"] = m["rows"][:2]
+    expect("operator_id_without_operator_row_is_rejected", mfind(m),
+           "OperatorId::Not has no OperatorSpec row")
+    m = _sample_operator_model()
+    m["rows"] = m["rows"] + [dict(m["rows"][0])]
+    expect("duplicate_operator_id_row_is_rejected", mfind(m),
+           "duplicate OperatorSpec row for OperatorId::Multiply")
+    m = _sample_operator_model()
+    m["rows"] = list(reversed(m["rows"]))
+    expect("operator_row_order_must_equal_operator_id_all", mfind(m),
+           "OPERATORS row order does not equal OperatorId::ALL")
+
+    # The closed surface inventories.
+    m = _sample_operator_model()
+    m["word_all"] = ["Is"]
+    expect("operator_word_surface_missing_from_all_is_rejected", mfind(m),
+           "missing from OperatorWordSurface::ALL")
+    m = _sample_operator_model()
+    m["symbol_all"] = ["Multiply"]
+    expect("operator_symbol_surface_missing_from_all_is_rejected", mfind(m),
+           "missing from OperatorSymbolSurface::ALL")
+    m = _sample_operator_model()
+    for key in ("word_variants", "word_all"):
+        m[key] = m[key] + ["Or"]
+    m["word_token"]["Or"] = "OR"
+    m["word_owner"]["Or"] = "BP-BATQL-LANGUAGE-1"
+    m["word_basis"]["Or"] = "DEC-060"
+    expect("orphan_operator_word_surface_is_rejected", mfind(m),
+           "word surface Or is adopted by no OperatorSpec row")
+    m = _sample_operator_model()
+    for key in ("symbol_variants", "symbol_all"):
+        m[key] = m[key] + ["Add"]
+    m["symbol_token"]["Add"] = "+"
+    m["symbol_owner"]["Add"] = "BP-BATQL-LANGUAGE-1"
+    m["symbol_basis"]["Add"] = "DEC-060"
+    expect("orphan_operator_symbol_surface_is_rejected", mfind(m),
+           "symbol surface Add is adopted by no OperatorSpec row")
+    m = _sample_operator_model()
+    m["word_token"]["Not"] = "IS"
+    expect("duplicate_operator_word_token_is_rejected", mfind(m),
+           "duplicate OperatorWordSurface token 'IS'")
+    m = _sample_operator_model()
+    m["symbol_token"]["Equal"] = "*"
+    expect("duplicate_operator_symbol_token_is_rejected", mfind(m),
+           "duplicate OperatorSymbolSurface token '*'")
+    m = _sample_operator_model()
+    m["word_token"]["Not"] = ""
+    expect("empty_operator_word_token_is_rejected", mfind(m),
+           "OperatorWordSurface::Not declares an empty token")
+    m = _sample_operator_model()
+    m["symbol_token"]["Equal"] = ""
+    expect("empty_operator_symbol_token_is_rejected", mfind(m),
+           "OperatorSymbolSurface::Equal declares an empty token")
+    m = _sample_operator_model()
+    m["word_token"]["Not"] = "!"
+    expect("punctuation_cannot_enter_the_word_inventory", mfind(m),
+           "punctuation can never enter the word inventory")
+    m = _sample_operator_model()
+    m["symbol_token"]["Equal"] = "EQ"
+    expect("a_word_cannot_enter_the_symbol_inventory", mfind(m),
+           "a word can never enter the symbol inventory")
+
+    # Owner and basis resolution across all three families.
+    m = _sample_operator_model()
+    m["id_owner"]["Multiply"] = "BP-NOBODY-1"
+    expect("operator_id_with_unknown_owner_is_rejected",
+           audit.batql_operator_authority_findings(m, CONTRACTS, DECISIONS),
+           "names owner BP-NOBODY-1, which no declared contract owns")
+    m = _sample_operator_model()
+    m["word_owner"]["Is"] = "BP-NOBODY-1"
+    expect("operator_surface_with_unknown_owner_is_rejected",
+           audit.batql_operator_authority_findings(m, CONTRACTS, DECISIONS),
+           "OperatorWordSurface::Is names owner BP-NOBODY-1")
+    m = _sample_operator_model()
+    m["id_basis"]["Multiply"] = "DEC-999"
+    expect("operator_id_with_dangling_basis_is_rejected",
+           audit.batql_operator_authority_findings(m, CONTRACTS, DECISIONS),
+           "admission basis DEC-999, which no declared decision owns")
+    m = _sample_operator_model()
+    m["symbol_basis"]["Equal"] = "DEC-999"
+    expect("operator_surface_with_dangling_basis_is_rejected",
+           audit.batql_operator_authority_findings(m, CONTRACTS, DECISIONS),
+           "OperatorSymbolSurface::Equal names admission basis DEC-999")
+
+    # The class/shape law is total.
+    rows = resolved(_sample_operator_model())
+    arithmetic, comparison, logical = rows[0], rows[1], rows[2]
+    expect("arithmetic_operator_must_be_symbol_only",
+           rfind([{**arithmetic, "shape": "WordWithSymbolAlias", "alias": "*",
+                   "canonical": "TIMES"}]),
+           "its class law requires SymbolOnly")
+    expect("comparison_operator_must_be_word_with_symbol_alias",
+           rfind([{**comparison, "shape": "WordOnly", "alias": ""}]),
+           "its class law requires WordWithSymbolAlias")
+    expect("comparison_symbol_cannot_become_canonical",
+           rfind([{**comparison, "shape": "SymbolOnly", "canonical": "=", "alias": ""}]),
+           "its class law requires WordWithSymbolAlias")
+    expect("logical_operator_must_be_word_only",
+           rfind([{**logical, "shape": "SymbolOnly", "canonical": "!"}]),
+           "its class law requires WordOnly")
+    expect("logical_operator_cannot_gain_a_symbol_alias",
+           rfind([{**logical, "shape": "WordWithSymbolAlias", "alias": "!"}]),
+           "its class law requires WordOnly")
+
+    # Surface/fixity ownership: one surface under one fixity names one
+    # operator; the same surface under a DISTINCT fixity is lawful.
+    expect("same_surface_and_fixity_cannot_name_two_operators",
+           rfind([comparison, {**comparison, "id": "OP-EQ2"}]),
+           "claimed by")
+    lawful = rfind([{**comparison, "fixity": "Prefix"},
+                    {**comparison, "id": "OP-EQ2", "fixity": "Infix"}])
+    if any("claimed by" in f for f in lawful):
+        fail("same_surface_under_distinct_fixity_is_lawful")
+
+    # A comparison alias stays attached to its one canonical OperatorId.
+    m = _sample_operator_model()
+    m["id_variants"] = m["id_all"] = m["id_all"] + ["NotEqual"]
+    m["id_token"]["NotEqual"] = "OP-NE"
+    m["id_owner"]["NotEqual"] = "BP-BATQL-LANGUAGE-1"
+    m["id_basis"]["NotEqual"] = "DEC-060"
+    m["word_variants"] = m["word_all"] = m["word_all"] + ["IsNot"]
+    m["word_token"]["IsNot"] = "IS NOT"
+    m["word_owner"]["IsNot"] = "BP-BATQL-LANGUAGE-1"
+    m["word_basis"]["IsNot"] = "DEC-060"
+    m["rows"] = m["rows"] + [{**m["rows"][1], "variant": "NotEqual",
+                              "inner": "OperatorWordSurface::IsNot, OperatorSymbolSurface::Equal"}]
+    expect("comparison_alias_must_lower_to_the_same_operator_id", mfind(m),
+           "an alias stays attached to one OperatorId")
+
+    # The DEC-060 admission boundary names the typed surface law and the
+    # exact V1 comparison pairs.
+    probe("dec060_must_name_the_operator_surface_boundary",
+          [("spec/dispositions.rs",
+            "and OperatorSyntax the closed source-shape law",
+            "and a closed source-shape law")],
+          batql, "must name the operator surface boundary")
+    probe("dec060_must_name_the_exact_comparison_pairs",
+          [("spec/dispositions.rs",
+            "IS LESS THAN with <,",
+            "IS LESS THAN with <>,")],
+          batql, "do not equal the typed word/symbol mapping")
+
+    # A comparison-pair swap in the typed source is refused by the DEC-060
+    # mapping law even AFTER every projection is regenerated: the hostile
+    # must fail for the syntax law, not for a stale block.
+    tmp = gate_sandbox([
+        ("spec/operators.rs",
+         "OperatorSyntax::WordWithSymbolAlias(OperatorWordSurface::IsLessThan, OperatorSymbolSurface::LessThan)",
+         "OperatorSyntax::WordWithSymbolAlias(OperatorWordSurface::IsLessThan, OperatorSymbolSurface::AtMost)"),
+        ("spec/operators.rs",
+         "OperatorSyntax::WordWithSymbolAlias(OperatorWordSurface::IsAtMost, OperatorSymbolSurface::AtMost)",
+         "OperatorSyntax::WordWithSymbolAlias(OperatorWordSurface::IsAtMost, OperatorSymbolSurface::LessThan)"),
+    ])
+    try:
+        _regen_operator_blocks(project, tmp)
+        expect("comparison_pair_swap_is_rejected_after_regeneration", batql(tmp),
+               "do not equal the typed word/symbol mapping")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # The formatter law and the spoken fence.
+    probe("formatter_must_emit_the_canonical_surface",
+          [("companion/BATQL_LANGUAGE.md", "| OP-EQ | `IS` | is |", "| OP-EQ | `=` | is |")],
+          batql, "not its canonical surface")
+    probe("spoken_projection_cannot_enter_operator_grammar",
+          [("companion/BATQL_LANGUAGE.md",
+            "logical_operator\n  := AND | OR", "logical_operator\n  := AND | OR | times")],
+          batql, "narration is never source syntax")
+    probe("arithmetic_spoken_word_cannot_become_source_syntax",
+          [("companion/BATQL_LANGUAGE.md",
+            'arithmetic_operator\n  := "*" | "/" | "+" | "-"',
+            'arithmetic_operator\n  := "*" | "/" | "+" | "-" | plus')],
+          batql, "narration is never source syntax")
+
+    # The retired raw fields and the empty-string sentinel may not return.
+    probe("raw_word_surface_field_cannot_return",
+          [("spec/operators.rs", 'semantic_op: "multiply"',
+            'word_surface: "*", semantic_op: "multiply"')],
+          batql, "retired raw surface field word_surface may not return")
+    probe("raw_symbol_surface_field_cannot_return",
+          [("spec/operators.rs", 'semantic_op: "equal"',
+            'symbol_surface: "=", semantic_op: "equal"')],
+          batql, "retired raw surface field symbol_surface may not return")
+    probe("duplicate_formatting_field_cannot_return",
+          [("spec/operators.rs", 'spoken: "times"',
+            'formatting: "*", spoken: "times"')],
+          batql, "retired raw surface field formatting may not return")
+    probe("empty_symbol_sentinel_cannot_return",
+          [("spec/operators.rs", 'spoken: "or"', 'spoken: ""')],
+          batql, "empty-string surface sentinel may not return")
+
+    # Projection drift: each fixture edits ONLY the generated document.
+    probe("operator_surface_projection_drift_is_rejected",
+          [("companion/BATQL_LANGUAGE.md",
+            "| OP-NE | word-with-symbol | `IS NOT` | `!=` |",
+            "| OP-NE | word-with-symbol | `!=` | `IS NOT` |")],
+          batql, "generated block OPERATORS-SURFACES does not match")
+    probe("operator_catalog_projection_drift_is_rejected",
+          [("companion/BATQL_LANGUAGE.md",
+            "| OP-MUL | Arithmetic | Binary |", "| OP-MUL | Arithmetic | Unary |")],
+          batql, "generated block OPERATORS-CATALOG does not match")
+    probe("operator_grammar_projection_drift_is_rejected",
+          [("companion/BATQL_LANGUAGE.md",
+            'arithmetic_operator\n  := "*"', 'arithmetic_operator\n  := "**"')],
+          batql, "generated block OPERATORS-GRAMMAR does not match")
+
+    # Provenance: every operator projection's BEGIN marker names the typed
+    # source and the generator byte-exactly.
+    probe("operator_projection_source_marker_drift_is_rejected",
+          [("companion/BATQL_LANGUAGE.md",
+            "OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/project.py",
+            "OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/render.py")],
+          batql, "OPERATORS-PROJECTION BEGIN marker does not name")
+    probe("operator_typing_source_marker_drift_is_rejected",
+          [("companion/BATQL_LANGUAGE.md",
+            "OPERATORS-TYPING:BEGIN generated from spec/operators.rs",
+            "OPERATORS-TYPING:BEGIN generated from spec/architecture.rs")],
+          batql, "OPERATORS-TYPING BEGIN marker does not name")
+    probe("operator_numeric_source_marker_drift_is_rejected",
+          [("docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md",
+            "OPERATORS-NUMERIC:BEGIN generated from spec/operators.rs",
+            "OPERATORS-NUMERIC:BEGIN generated from spec/numeric.rs")],
+          batql, "OPERATORS-NUMERIC BEGIN marker does not name")
+
+    # The identity closure: the residue row rests on the REAL typed owner,
+    # and OperatorId can never re-enter the general identity catalogs.
+    tmp = gate_sandbox([("spec/operators.rs", "pub enum OperatorId {",
+                         "pub enum OperatorTag {")])
+    try:
+        expect("operator_id_residue_requires_a_real_typed_owner",
+               batql(tmp), "no public typed OperatorId owner")
+        expect("operator_id_residue_requires_a_real_typed_owner (wrapper-guard parity)",
+               audit.identity_catalog_findings(tmp),
+               "EXISTING_TYPED_OWNER_SPELLINGS lists OperatorId, which no spec")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    probe("operator_id_cannot_enter_the_general_identity_catalog",
+          [("spec/identities.rs",
+            'entry!("RotationId", "BP-CRYPTO-SECRET-1")',
+            'entry!("OperatorId", "BP-CRYPTO-SECRET-1")')],
+          audit.identity_catalog_findings,
+          "duplicates a spelling that already has a typed spec owner")
+
+    # GREEN structural growth — count-freedom evidence ONLY. A sandbox-only
+    # synthetic comparison operator with typed identity, both surfaces, an
+    # explicit owner and basis, DEC-060 naming, authored companion adoption,
+    # and regenerated projections passes every gate: no frozen numeric count
+    # guards the inventory. This does NOT admit the operator into real BatQL.
+    tmp = gate_sandbox([
+        ("spec/operators.rs", "    Not,\n    And,\n    Or,\n}",
+         "    Not,\n    And,\n    Or,\n    Congruent,\n}"),
+        ("spec/operators.rs", "        OperatorId::Or,\n    ];",
+         "        OperatorId::Or,\n        OperatorId::Congruent,\n    ];"),
+        ("spec/operators.rs", '            OperatorId::Or => "OP-OR",\n        }',
+         '            OperatorId::Or => "OP-OR",\n            OperatorId::Congruent => "OP-CONG",\n        }'),
+        ("spec/operators.rs",
+         '            OperatorId::Or => ContractId("BP-BATQL-LANGUAGE-1"),\n        }',
+         '            OperatorId::Or => ContractId("BP-BATQL-LANGUAGE-1"),\n            OperatorId::Congruent => ContractId("BP-BATQL-LANGUAGE-1"),\n        }'),
+        ("spec/operators.rs",
+         '            OperatorId::Or => DecisionId("DEC-060"),\n        }',
+         '            OperatorId::Or => DecisionId("DEC-060"),\n            OperatorId::Congruent => DecisionId("DEC-060"),\n        }'),
+        ("spec/operators.rs", "    Not,\n    And,\n    Or,\n}",
+         "    Not,\n    And,\n    Or,\n    IsRoughly,\n}"),
+        ("spec/operators.rs", "        OperatorWordSurface::Or,\n    ];",
+         "        OperatorWordSurface::Or,\n        OperatorWordSurface::IsRoughly,\n    ];"),
+        ("spec/operators.rs", '            OperatorWordSurface::Or => "OR",\n        }',
+         '            OperatorWordSurface::Or => "OR",\n            OperatorWordSurface::IsRoughly => "IS ROUGHLY",\n        }'),
+        ("spec/operators.rs",
+         '            OperatorWordSurface::Or => ContractId("BP-BATQL-LANGUAGE-1"),\n        }',
+         '            OperatorWordSurface::Or => ContractId("BP-BATQL-LANGUAGE-1"),\n            OperatorWordSurface::IsRoughly => ContractId("BP-BATQL-LANGUAGE-1"),\n        }'),
+        ("spec/operators.rs",
+         '            OperatorWordSurface::Or => DecisionId("DEC-060"),\n        }',
+         '            OperatorWordSurface::Or => DecisionId("DEC-060"),\n            OperatorWordSurface::IsRoughly => DecisionId("DEC-060"),\n        }'),
+        ("spec/operators.rs", "    MoreThan,\n    AtLeast,\n}",
+         "    MoreThan,\n    AtLeast,\n    Congruent,\n}"),
+        ("spec/operators.rs", "        OperatorSymbolSurface::AtLeast,\n    ];",
+         "        OperatorSymbolSurface::AtLeast,\n        OperatorSymbolSurface::Congruent,\n    ];"),
+        ("spec/operators.rs", '            OperatorSymbolSurface::AtLeast => ">=",\n        }',
+         '            OperatorSymbolSurface::AtLeast => ">=",\n            OperatorSymbolSurface::Congruent => "~",\n        }'),
+        ("spec/operators.rs",
+         '            OperatorSymbolSurface::AtLeast => ContractId("BP-BATQL-LANGUAGE-1"),\n        }',
+         '            OperatorSymbolSurface::AtLeast => ContractId("BP-BATQL-LANGUAGE-1"),\n            OperatorSymbolSurface::Congruent => ContractId("BP-BATQL-LANGUAGE-1"),\n        }'),
+        ("spec/operators.rs",
+         '            OperatorSymbolSurface::AtLeast => DecisionId("DEC-060"),\n        }',
+         '            OperatorSymbolSurface::AtLeast => DecisionId("DEC-060"),\n            OperatorSymbolSurface::Congruent => DecisionId("DEC-060"),\n        }'),
+        ("spec/operators.rs", "numeric_support: NumericSupport::NotApplicable },\n];",
+         "numeric_support: NumericSupport::NotApplicable },\n"
+         '    OperatorSpec { id: OperatorId::Congruent, class: OperatorClass::Comparison, '
+         "syntax: OperatorSyntax::WordWithSymbolAlias(OperatorWordSurface::IsRoughly, "
+         'OperatorSymbolSurface::Congruent), semantic_op: "congruent", arity: Arity::Binary, '
+         "fixity: Fixity::Infix, precedence: 50, associativity: Associativity::NonAssociative, "
+         'typing: &[OperatorTypingRule::SameSortComparison], input_sorts: "exact same-sort pair", '
+         'result_sort: "Truth with TypedMargin", exactness: Exactness::Exact, overflow: "none", '
+         'exception: "cross-sort comparison is a type error", spoken: "is roughly", '
+         'mutation_classes: "precedence, comparison-direction, margin-sign, parenthesis", '
+         "numeric_support: NumericSupport::ExactSupported },\n];"),
+        ("spec/dispositions.rs", "IS AT LEAST with >=, and NOT AND OR are word-only",
+         "IS AT LEAST with >=, IS ROUGHLY with ~, and NOT AND OR are word-only"),
+        ("companion/BATQL_LANGUAGE.md",
+         "Spoken narration is not parser syntax: the spoken projection narrates the typed tree and is never accepted source.",
+         "Spoken narration is not parser syntax: the spoken projection narrates the typed tree and is never accepted source.\n\n"
+         "A sandbox-only synthetic comparison `IS ROUGHLY` (compact alias `~`) may be "
+         "added here as structural count-freedom evidence."),
+    ])
+    try:
+        _regen_operator_blocks(project, tmp)
+        grown = batql(tmp)
+        if grown:
+            fail(f"synthetic_operator_structural_growth_is_lawful ({grown!r})")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return findings
+
+
+def _regen_operator_blocks(project, tmp) -> None:
+    """Regenerate every operator projection in a sandbox from its typed source,
+    so semantic hostiles fail for the intended syntax law and never for a
+    stale generated block."""
+    ops = project.parse_operators(tmp)
+    for name, render in project.BLOCK_RENDER.items():
+        path = tmp / project.BLOCK_FILE[name]
+        text = path.read_text(encoding="utf-8")
+        body = render(ops)
+        text = project.block_pattern(name).sub(
+            lambda m, body=body: m.group(1) + body + m.group(3), text)
+        path.write_bytes(text.encode("utf-8"))
 
 
 def test_numeric(audit) -> list[str]:
@@ -518,10 +953,11 @@ def test_numeric(audit) -> list[str]:
 
     # OperatorSpec arithmetic row lacking an approximate-support posture is rejected
     arith_no_posture = [{
-        "id": "OP-ADD", "class": "Arithmetic", "word": "+", "symbol": "",
+        "id": "OP-ADD", "class": "Arithmetic", "shape": "SymbolOnly",
+        "canonical": "+", "alias": "",
         "semantic_op": "s", "arity": "Binary", "fixity": "Infix", "precedence": "60",
         "associativity": "Left", "input_sorts": "a", "result_sort": "b", "exactness": "Exact",
-        "overflow": "o", "exception": "e", "formatting": "+", "spoken": "plus",
+        "overflow": "o", "exception": "e", "spoken": "plus",
         "mutation_classes": "m", "numeric_support": "NotApplicable",
     }]
     if not any("lacks an approximate-support posture" in x for x in audit.batql_operator_fact_findings(arith_no_posture)):
@@ -5349,6 +5785,30 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "use spec::promotion::PromotionRequirement;",
              "let _: PromotionRequirement = ProofPolicySurface::CandidatePromotion;",
              "expected `PromotionRequirement`, found `ProofPolicySurface`"),
+            # 5.5E3j: the operator identity and both source surfaces are
+            # typed — no raw string mints them, the word and symbol
+            # inventories never substitute for one another, and a spoken
+            # narration string is not a source-syntax shape.
+            ("raw_string_cannot_substitute_for_operator_id",
+             "use spec::operators::OperatorId;",
+             'let _: OperatorId = "OP-MUL";',
+             "expected `OperatorId`, found `&str`"),
+            ("raw_string_cannot_substitute_for_operator_word_surface",
+             "use spec::operators::OperatorWordSurface;",
+             'let _: OperatorWordSurface = "IS";',
+             "expected `OperatorWordSurface`, found `&str`"),
+            ("raw_string_cannot_substitute_for_operator_symbol_surface",
+             "use spec::operators::OperatorSymbolSurface;",
+             'let _: OperatorSymbolSurface = "=";',
+             "expected `OperatorSymbolSurface`, found `&str`"),
+            ("operator_word_surface_cannot_substitute_for_operator_symbol_surface",
+             "use spec::operators::{OperatorSymbolSurface, OperatorWordSurface};",
+             "let _: OperatorSymbolSurface = OperatorWordSurface::Is;",
+             "expected `OperatorSymbolSurface`, found `OperatorWordSurface`"),
+            ("spoken_string_cannot_substitute_for_operator_syntax",
+             "use spec::operators::OperatorSyntax;",
+             'let _: OperatorSyntax = "times";',
+             "expected `OperatorSyntax`, found `&str`"),
         ):
             src = tmp / f"{name}.rs"
             src.write_text(
@@ -5741,6 +6201,7 @@ def main() -> int:
     findings += test_stale_derivation(audit, HERE.parent)
     findings += test_legacy_manifest_parity(audit)
     findings += test_batql(audit, project)
+    findings += test_operator_surfaces(audit, project)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)
