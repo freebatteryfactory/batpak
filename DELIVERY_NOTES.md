@@ -24,7 +24,7 @@ Every count below is a generated derivation of a typed denominator or the curren
 | package edges | 19 | EDGES |
 | qualification profiles | 6 | QUALIFICATION_PROFILES |
 | SEED guarantees | 25 | spec/invariants.rs SEED inventory |
-| decision rows | 75 | spec/dispositions.rs DECISIONS |
+| decision rows | 76 | spec/dispositions.rs DECISIONS |
 | legacy semantic obligations | 87 | spec/legacy_obligations.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |

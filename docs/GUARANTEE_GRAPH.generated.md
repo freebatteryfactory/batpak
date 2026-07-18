@@ -19,14 +19,14 @@ navigation only; the owning fact is authoritative. Do not edit.
 | --- | --- |
 | SEED | 25 |
 | LEG | 87 |
-| DEC | 75 |
+| DEC | 76 |
 | ARCH | 9 |
 | QUAL | 6 |
 
 ## Totals
 
 ```text
-nodes: 202
+nodes: 203
 edges: 9
 unresolved references: 0
 ```
@@ -37,7 +37,7 @@ unresolved references: 0
 | --- | --- |
 | ArchitectureConstraint | 19 |
 | BootstrapAssertion | 2 |
-| Decision | 75 |
+| Decision | 76 |
 | LegacyObligation | 87 |
 | QualificationRequirement | 6 |
 | SemanticLaw | 13 |
@@ -47,14 +47,14 @@ unresolved references: 0
 | GuaranteeLifetime | Nodes |
 | --- | --- |
 | HistoricalCoverageOnly | 4 |
-| Permanent | 103 |
+| Permanent | 104 |
 | UntilCompatibilityExpiry | 8 |
 | UntilGate | 87 |
 
 ## Active versus closed
 
 ```text
-active (gating): 198
+active (gating): 199
 closed evidence: 0
 historical coverage only: 4
 ```
@@ -286,6 +286,7 @@ admission and never reaches this table.
 | DEC-073 | DEC | Decision | Permanent | Capability | docs/30_DECISION_AND_REJECTION_LEDGER.md | G4/G5/G8/G9 | - | NoFamilyWitness |
 | DEC-074 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G9 | - | NoFamilyWitness |
 | DEC-075 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G2/G5/G6 | - | NoFamilyWitness |
+| DEC-076 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 | - | NoFamilyWitness |
 | ARCH-batpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
 | ARCH-batpak-cli | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
 | ARCH-batpak-examples | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |

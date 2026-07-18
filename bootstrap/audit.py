@@ -4541,6 +4541,106 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
     return out
 
 
+A_XR_SPEC = "spec/tier0_cross_run.rs"
+
+
+def tier0_cross_run_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / A_XR_SPEC
+    if not path.is_file():
+        return [f"missing {A_XR_SPEC}"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+
+    # Independent reconstruction (regex, no shared parse with the spec crate) of
+    # the cross-run same-source comparator (5.5E6c). The verdict is EXECUTED by
+    # seedcheck (compare_runs over verified qualifications); here we prove the
+    # SHAPE is admissible: the outcomes, the preconditions, and — the load-
+    # bearing property — that the source-identity coordinates are exactly the
+    # deterministic ones and NO compiled-artifact digest is treated as a source
+    # coordinate.
+    def variants(enum: str) -> set[str]:
+        head = src.find(f"pub enum {enum} {{")
+        if head < 0:
+            out.append(f"{A_XR_SPEC}: declares no {enum}")
+            return set()
+        body = src[head: src.find("\n}", head)]
+        return set(re.findall(r"^\s{4}(\w+)\s*(?:\{|,|\()", body, re.M))
+
+    # The comparison result names exactly its three outcomes.
+    if variants("CrossRunComparison") != {"NotComparable", "DifferentSource", "SameSource"}:
+        out.append(f"{A_XR_SPEC}: CrossRunComparison is not the three-outcome result "
+                   "(NotComparable | DifferentSource | SameSource)")
+
+    # Non-comparability names exactly its three precondition failures.
+    if variants("NotComparable") != {"FrozenExportSource", "MissingHostedRun", "SameHostedRun"}:
+        out.append(f"{A_XR_SPEC}: NotComparable does not name exactly the frozen-export, "
+                   "missing-hosted-run, and same-hosted-run preconditions")
+
+    # The source-identity coordinates are EXACTLY the five deterministic ones;
+    # an executable/artifact coordinate here would be the dishonest-red mistake.
+    expected_div = {"SourceCommit", "SourceTree", "SpecManifestDigest",
+                    "WorkflowDigest", "MaterializerOutputTree"}
+    div = variants("SourceDivergence")
+    if div != expected_div:
+        out.append(f"{A_XR_SPEC}: SourceDivergence is not exactly the five source-identity "
+                   "coordinates (commit, tree, spec-manifest, workflow, materializer-output-tree)")
+    if any(("xecutable" in v) or ("Artifact" in v) for v in div):
+        out.append(f"{A_XR_SPEC}: SourceDivergence treats a compiled-artifact digest as a "
+                   "source coordinate; executable digests legitimately differ across runs")
+
+    # Side and the two agreement classifications.
+    if variants("Side") != {"Left", "Right", "Both"}:
+        out.append(f"{A_XR_SPEC}: Side is not Left/Right/Both")
+    if variants("ToolchainAgreement") != {"Identical", "Divergent"}:
+        out.append(f"{A_XR_SPEC}: ToolchainAgreement is not Identical/Divergent")
+    if variants("TargetAgreement") != {"SameTarget", "CrossTarget"}:
+        out.append(f"{A_XR_SPEC}: TargetAgreement is not SameTarget/CrossTarget")
+
+    # compare_runs actually EMITS every declared outcome — no coordinate is
+    # declared but never checked, and no precondition is unreachable — consumes
+    # the load-bearing materializer output tree, and inspects no executable digest.
+    fn_head = src.find("pub fn compare_runs(")
+    fn_end = src.find("\n#[cfg(test)]", fn_head) if fn_head >= 0 else -1
+    fn_body = src[fn_head: fn_end if fn_end >= 0 else len(src)] if fn_head >= 0 else ""
+    if not fn_body:
+        out.append(f"{A_XR_SPEC}: declares no compare_runs")
+    else:
+        for variant in sorted(expected_div):
+            if f"SourceDivergence::{variant}" not in fn_body:
+                out.append(f"{A_XR_SPEC}: compare_runs never emits the {variant} divergence")
+        for variant in ("FrozenExportSource", "MissingHostedRun", "SameHostedRun"):
+            if f"NotComparable::{variant}" not in fn_body:
+                out.append(f"{A_XR_SPEC}: compare_runs never emits NotComparable::{variant}")
+        if "materializer_output_tree" not in fn_body:
+            out.append(f"{A_XR_SPEC}: compare_runs ignores the materializer output tree")
+        if "executable_digest" in fn_body:
+            out.append(f"{A_XR_SPEC}: compare_runs inspects an executable digest; compiled "
+                       "artifacts legitimately differ across independent runs")
+
+    # The proof is sealed (compare_runs is its sole constructor) and retains the
+    # proven-common coordinates plus the two attesting run identities.
+    proof_head = src.find("pub struct SameSourceProof {")
+    proof_body = src[proof_head: src.find("\n}", proof_head)] if proof_head >= 0 else ""
+    if "_seal: ()" not in proof_body:
+        out.append(f"{A_XR_SPEC}: SameSourceProof is not sealed; compare_runs is not its "
+                   "sole constructor")
+    for field in ("commit", "tree", "spec_manifest_digest", "workflow_digest",
+                  "materializer_output_tree", "left_run", "right_run"):
+        if f"{field}:" not in proof_body:
+            out.append(f"{A_XR_SPEC}: SameSourceProof retains no {field}")
+
+    # The retained binding the comparator consumes is exposed by the sealed E6b
+    # qualification, and seedcheck executes the comparator end to end.
+    bq = _uncomment((root / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8"))
+    if "fn materializer_output_tree(&self) -> Sha256Digest" not in bq:
+        out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
+                   "materializer_output_tree() accessor for the cross-run comparator")
+    sc = (root / "bootstrap/seedcheck.rs").read_text(encoding="utf-8")
+    if "check_tier0_cross_run" not in sc or "compare_runs(" not in sc:
+        out.append("bootstrap/seedcheck.rs: does not execute the cross-run comparator")
+    return out
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -4586,6 +4686,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(syncbat_firewall_findings(root))
     findings.extend(bootstrap_output_findings(root))
     findings.extend(bootstrap_qualification_findings(root))
+    findings.extend(tier0_cross_run_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))

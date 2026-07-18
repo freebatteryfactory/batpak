@@ -2013,7 +2013,7 @@ def test_inventory_mirrors(audit, project) -> list[str]:
          "| SEED guarantees | 25 |", "| SEED guarantees | 24 |",
          "generated block BUNDLE-INVENTORY does not match"),
         ("bundle_inventory_decision_count_tracks_decisions", DN,
-         "| decision rows | 75 |", "| decision rows | 74 |",
+         "| decision rows | 76 |", "| decision rows | 75 |",
          "generated block BUNDLE-INVENTORY does not match"),
         ("bundle_inventory_legacy_count_tracks_obligations", DN,
          "| legacy semantic obligations | 87 |", "| legacy semantic obligations | 86 |",
@@ -2408,7 +2408,7 @@ def test_exact_ledgers(audit, project) -> list[str]:
           'subject: "Sandbox growth", successor: "structural count-freedom evidence only", '
           "stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },")],
         [(D30, "| DEC-990 | RETAIN-AS-EVIDENCE |"),
-         ("DELIVERY_NOTES.md", "| decision rows | 76 |")],
+         ("DELIVERY_NOTES.md", "| decision rows | 77 |")],
         [audit.exact_ledger_findings])
     regen_and_check(
         "coverage_structural_growth_is_lawful",
@@ -3116,8 +3116,8 @@ def test_decisions(audit, project) -> list[str]:
     for profile in ("InternalConsistency", "SignedHistory", "ExternallyAnchoredHistory"):
         if profile in node_ids:
             fail(f"authenticated-history profile added as a graph node: {profile}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 75:
-        fail("decision node count is not 75")
+    if len([n for n in nodes if n["family"] == "DEC"]) != 76:
+        fail("decision node count is not 76")
 
     if [(n["id"], n.get("dclass"), n["gate_posture"]) for n in project.guarantee_nodes(root) if n["family"] == "DEC"] != \
        [(n["id"], n.get("dclass"), n["gate_posture"]) for n in audit.guarantee_derive(root)[0] if n["family"] == "DEC"]:
@@ -3781,9 +3781,9 @@ def test_specialization(audit, project) -> list[str]:
                       "SpecializationKey", "WorkObservation"):
         if synthetic in ids:
             fail(f"synthetic specialization node introduced: {synthetic}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 75:
-        fail("decision_node_count_is_not_75")
-    if len(nodes) != 202 or len(edges) != 9:
+    if len([n for n in nodes if n["family"] == "DEC"]) != 76:
+        fail("decision_node_count_is_not_76")
+    if len(nodes) != 203 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     return findings
 
@@ -3980,9 +3980,9 @@ def test_proof_policy(audit) -> list[str]:
                       "MutationResult", "ProofPolicySurface", "Killed", "Survived"):
         if synthetic in ids:
             fail(f"synthetic mutation node introduced: {synthetic}")
-    if len([n for n in nodes if n["family"] == "DEC"]) != 75:
-        fail("decision_node_count_is_not_75")
-    if len(nodes) != 202 or len(edges) != 9:
+    if len([n for n in nodes if n["family"] == "DEC"]) != 76:
+        fail("decision_node_count_is_not_76")
+    if len(nodes) != 203 or len(edges) != 9:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
     live_decisions = len(audit.G_DEC_ROW.findall(
@@ -5540,7 +5540,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     # The index resolves every declared guarantee, and only those.
     idx = audit.guarantee_index(root)
-    if len(idx) != 202:
+    if len(idx) != 203:
         fail(f"guarantee_index_covers_every_guarantee (got {len(idx)})")
     for ref, want in (("LEG-081", "G2/G3"), ("DEC-065", "G0/G5"), ("SEED-FBAT-CORE", "G2")):
         if audit.guarantee_gates(root, ref) != want:

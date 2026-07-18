@@ -471,6 +471,11 @@ impl VerifiedTier0Receipt {
 /// hosted runs describe the same promoted source. The private seal prevents
 /// bypass of the verified shape — it does NOT prove the inputs were computed
 /// honestly; `bootstrap/receiptcheck.rs` is the independent computer of those.
+///
+/// The `materializer_output_tree` is a projection of the Materialize receipt's
+/// output-tree digest, lifted by `verify` to a first-class binding because it is
+/// THE cross-run same-source coordinate (5.5E6c): two independent hosted runs of
+/// one source recompute it to identical bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifiedTier0Qualification {
     source: SourceBinding,
@@ -478,6 +483,7 @@ pub struct VerifiedTier0Qualification {
     target: RustTargetTriple,
     hosted_run: Option<GitHubActionsRunBinding>,
     receipts: Vec<VerifiedTier0Receipt>,
+    materializer_output_tree: Sha256Digest,
     _seal: (),
 }
 
@@ -496,6 +502,15 @@ impl VerifiedTier0Qualification {
     }
     pub fn receipts(&self) -> &[VerifiedTier0Receipt] {
         &self.receipts
+    }
+    /// The materializer's canonical output-tree digest — the load-bearing
+    /// cross-run same-source coordinate (5.5E6c). `verify` lifts it from the
+    /// Materialize receipt so the comparator reads one deterministic,
+    /// source-derived digest without re-scanning the receipt vector. Total:
+    /// every verified qualification binds exactly one Materialize receipt
+    /// carrying an output tree.
+    pub const fn materializer_output_tree(&self) -> Sha256Digest {
+        self.materializer_output_tree
     }
 }
 
@@ -815,16 +830,36 @@ pub fn verify(
         }
     }
 
-    if errors.is_empty() {
-        Ok(VerifiedTier0Qualification {
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    // Lift the materializer output tree to a first-class binding (5.5E6c). An
+    // empty error set guarantees exactly one Materialize receipt carrying
+    // `ExecutableAndOutputTree`, so the `None` arm is unreachable; it is folded
+    // into a verification error rather than a panic to keep `verify` total and
+    // this crate panic-free.
+    let materializer_output_tree = verified.iter().find_map(|r| match (r.kind, r.artifact) {
+        (
+            Tier0ReceiptKind::Materialize,
+            Tier0ArtifactEvidence::ExecutableAndOutputTree {
+                output_tree_digest, ..
+            },
+        ) => Some(output_tree_digest),
+        _ => None,
+    });
+    match materializer_output_tree {
+        Some(tree) => Ok(VerifiedTier0Qualification {
             source: obs.source,
             toolchain: obs.toolchain,
             target: obs.target,
             hosted_run: obs.hosted_run,
             receipts: verified,
+            materializer_output_tree: tree,
             _seal: (),
-        })
-    } else {
-        Err(errors)
+        }),
+        None => Err(vec![Tier0VerificationError::Denominator {
+            kind: Tier0ReceiptKind::Materialize,
+            rule: Tier0VerificationRule::MissingRequiredReceipt,
+        }]),
     }
 }
