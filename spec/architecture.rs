@@ -917,6 +917,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/corpus.rs",
     "spec/generated_views.rs",
     "spec/bootstrap_output.rs",
+    "spec/bootstrap_qualification.rs",
     "spec/identities.rs",
     "spec/mutation.rs",
     "spec/promotion.rs",

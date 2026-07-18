@@ -543,7 +543,7 @@ impl GeneratedView {
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::Tier0ReceiptDenominator => GeneratedViewSpec {
-                authority_sources: &["bootstrap/selftest.py"],
+                authority_sources: &["spec/bootstrap_qualification.rs"],
                 target: GeneratedViewTarget::Static(&["DELIVERY_NOTES.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("TIER0-RECEIPT-DENOMINATOR"),

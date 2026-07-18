@@ -126,6 +126,51 @@ impl RustupComponent {
     }
 }
 
+/// A physical compiler/build target triple (5.5E6a): WHERE a binary was
+/// compiled, linked, and run. This is deliberately distinct from
+/// `QualificationEnvironment`, which says WHAT semantic profile must hold
+/// (no_std + alloc, native std, wasm host). A receipt binds a triple; a
+/// semantic environment can never substitute for one, and the two share no
+/// type, spelling, or authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustTargetTriple {
+    /// The authoritative Windows target: link.exe and the Windows SDK.
+    X86_64PcWindowsMsvc,
+    /// The supplemental Windows target: developer machines that carry a GNU
+    /// toolchain and never install MSVC Build Tools.
+    X86_64PcWindowsGnu,
+}
+
+impl RustTargetTriple {
+    /// Every admitted physical target, in canonical order (authoritative first).
+    pub const ALL: &'static [RustTargetTriple] = &[
+        RustTargetTriple::X86_64PcWindowsMsvc,
+        RustTargetTriple::X86_64PcWindowsGnu,
+    ];
+
+    /// The exact rustc/cargo triple spelling.
+    pub const fn triple(self) -> &'static str {
+        match self {
+            RustTargetTriple::X86_64PcWindowsMsvc => "x86_64-pc-windows-msvc",
+            RustTargetTriple::X86_64PcWindowsGnu => "x86_64-pc-windows-gnu",
+        }
+    }
+
+    /// Whether a receipt bound to this triple is the AUTHORITATIVE Windows
+    /// qualification. The supplemental target is local, corroborating evidence
+    /// and never closes a gate on its own.
+    pub const fn is_authoritative(self) -> bool {
+        match self {
+            RustTargetTriple::X86_64PcWindowsMsvc => true,
+            RustTargetTriple::X86_64PcWindowsGnu => false,
+        }
+    }
+}
+
+/// The one authoritative Windows target. A qualification that closes a gate
+/// must carry receipts bound to this triple.
+pub const AUTHORITATIVE_TARGET: RustTargetTriple = RustTargetTriple::X86_64PcWindowsMsvc;
+
 /// The one toolchain authority. Two version fields because they answer
 /// DIFFERENT questions and may never be flattened into one string:
 ///

@@ -12,6 +12,7 @@
 
 pub mod architecture;
 pub mod bootstrap_output;
+pub mod bootstrap_qualification;
 pub mod commands;
 pub mod compiler_assumptions;
 pub mod contracts;

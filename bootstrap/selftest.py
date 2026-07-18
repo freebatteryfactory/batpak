@@ -104,13 +104,23 @@ def executed_and_passed() -> list[str]:
 # a zero exit plus a "NOT QUALIFIED LOCALLY" line never satisfies the
 # authoritative profile, and the hosted workflow consumes this inventory
 # through the flag instead of owning a copied list.
-REQUIRED_TIER0_RECEIPTS = (
-    ("tier0-law-fixtures", False),
-    ("tier0-seedcheck", True),
-    ("tier0-materialize", True),
-    ("tier0-seedcheck-tests", True),
-    ("tier0-spec-tests", True),
-)
+def _typed_tier0_denominator() -> tuple:
+    """The Tier 0 denominator, DERIVED from the typed owner (5.5E6a): the slug
+    and whether the receipt binds an executable artifact digest come from
+    spec/bootstrap_qualification.rs, not a hand-authored tuple here. selftest
+    is the executor, never the denominator authority."""
+    src = (HERE.parent / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8")
+    slugs = dict(re.findall(r"Tier0ReceiptKind::(\w+) => \"([^\"]+)\"", src))
+    order = re.findall(r"Tier0ReceiptKind::(\w+),",
+                       re.search(r"pub const ALL:.*?&\[(.*?)\];", src, re.S).group(1))
+    policy = dict(re.findall(r"Tier0ReceiptKind::(\w+) => Tier0ArtifactPolicy::(\w+)", src))
+    rows = []
+    for kind in order:
+        rows.append((slugs[kind], policy[kind] != "FixtureSet"))
+    return tuple(rows)
+
+
+REQUIRED_TIER0_RECEIPTS = _typed_tier0_denominator()
 
 
 def unearned_required_receipts(required_target: str) -> list[str]:
@@ -2071,14 +2081,14 @@ def test_inventory_mirrors(audit, project) -> list[str]:
          "| Markdown documents | 47 |", "| Markdown documents | 46 |",
          "generated block BUNDLE-INVENTORY does not match"),
         ("tier0_receipt_missing_from_projection_is_rejected", DN,
-         "| tier0-materialize | yes |\n", "",
+         "| tier0-materialize | ExecutableAndOutputTree |\n", "",
          "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
-        ("tier0_receipt_artifact_binding_drift_is_rejected", DN,
-         "| tier0-seedcheck | yes |", "| tier0-seedcheck | no |",
+        ("tier0_receipt_artifact_policy_drift_is_rejected", DN,
+         "| tier0-seedcheck | Executable |", "| tier0-seedcheck | FixtureSet |",
          "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
         ("tier0_projection_order_drift_is_rejected", DN,
-         "| tier0-law-fixtures | no |\n| tier0-seedcheck | yes |",
-         "| tier0-seedcheck | yes |\n| tier0-law-fixtures | no |",
+         "| tier0-law-fixtures | FixtureSet |\n| tier0-seedcheck | Executable |",
+         "| tier0-seedcheck | Executable |\n| tier0-law-fixtures | FixtureSet |",
          "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
     ):
         probe(name, [(rel, old, new)], needle)
@@ -4793,6 +4803,70 @@ def test_bootstrap_output(audit, project) -> list[str]:
             1, oracle_check=False)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+    findings.extend(canonical_drift(before))
+    return findings
+
+
+def test_bootstrap_qualification(audit) -> list[str]:
+    """The typed Tier 0 receipt policy (5.5E6a). The admission ALGEBRA is
+    executed by seedcheck (the tier0-seedcheck receipt); these fixtures pin the
+    typed-owner laws the auditor reconstructs: closed inventories, the
+    denominator's move out of Python, the product-identity firewall, the
+    authoritative target, and the Delivery Notes projection."""
+    findings: list[str] = []
+    root = HERE.parent
+    before = canonical_commitments()
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    def expect(name: str, produced, needle: str) -> None:
+        if not any(needle in f for f in produced):
+            fail(f"{name} (wanted {needle!r}, got {produced!r})")
+
+    def probe(name, rel, old, needle, new=""):
+        tmp = gate_sandbox([(rel, old, new)])
+        try:
+            expect(name, audit.bootstrap_qualification_findings(tmp), needle)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    BQ = "spec/bootstrap_qualification.rs"
+    TC = "spec/toolchain.rs"
+
+    if audit.bootstrap_qualification_findings(root):
+        fail(f"bootstrap_qualification_contract_passes "
+             f"(got {audit.bootstrap_qualification_findings(root)!r})")
+
+    probe("tier0_receipt_kind_missing_from_all_is_rejected", BQ,
+          "        Tier0ReceiptKind::SpecTests,\n    ];",
+          "SpecTests is authored but ALL omits it",
+          "    ];")
+    probe("duplicate_tier0_slug_is_rejected", BQ,
+          'Tier0ReceiptKind::SpecTests => "tier0-spec-tests",',
+          "is claimed twice",
+          'Tier0ReceiptKind::SpecTests => "tier0-seedcheck",')
+    probe("wrong_authoritative_target_is_rejected", TC,
+          "pub const AUTHORITATIVE_TARGET: RustTargetTriple = RustTargetTriple::X86_64PcWindowsMsvc;",
+          "not the MSVC triple",
+          "pub const AUTHORITATIVE_TARGET: RustTargetTriple = RustTargetTriple::X86_64PcWindowsGnu;")
+    probe("product_receipt_id_cannot_substitute_for_tier0_kind", BQ,
+          "pub enum Tier0ReceiptKind {",
+          "reuses the product ReceiptId",
+          "pub type ReceiptId = u32;\n\npub enum Tier0ReceiptKind {")
+    # Built at run time so THIS source never contains the contiguous
+    # hand-authored tuple the audit law scans for.
+    forged_denominator = ('REQUIRED_TIER0_RECEIPTS = ((' + '"tier0-'
+                          + 'law-fixtures", False),)')
+    probe("python_denominator_cannot_return", "bootstrap/selftest.py",
+          "REQUIRED_TIER0_RECEIPTS = _typed_tier0_denominator()",
+          "hand-authored slug tuple",
+          forged_denominator)
+    probe("tier0_denominator_block_drift_is_rejected", "DELIVERY_NOTES.md",
+          "| tier0-materialize | ExecutableAndOutputTree |",
+          "does not match its typed derivation",
+          "| tier0-materialize | Executable |")
 
     findings.extend(canonical_drift(before))
     return findings
@@ -8618,6 +8692,7 @@ def main() -> int:
     findings += test_exact_ledgers(audit, project)
     findings += test_proof_relations(audit, project)
     findings += test_bootstrap_output(audit, project)
+    findings += test_bootstrap_qualification(audit)
     findings += test_numeric(audit)
     findings += test_guarantees(audit, project)
     findings += test_gates(audit, project)
@@ -8679,6 +8754,7 @@ def main() -> int:
                "package identity",
                "contract kinds",
                "isolated materializer output",
+               "typed Tier 0 receipt policy",
                "rust specification compile"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]

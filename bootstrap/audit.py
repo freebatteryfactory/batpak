@@ -4316,6 +4316,103 @@ def bootstrap_output_findings(root: Path) -> list[str]:
     return out
 
 
+# --- 5.5E6a typed Tier 0 receipt policy -------------------------------------
+A_BQ_SPEC = "spec/bootstrap_qualification.rs"
+
+
+def bootstrap_qualification_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    path = root / A_BQ_SPEC
+    if not path.is_file():
+        return [f"missing {A_BQ_SPEC}"]
+    src = _uncomment(path.read_text(encoding="utf-8"))
+    tc = _uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
+
+    def variants(text: str, enum: str) -> list[str]:
+        head = text.find(f"pub enum {enum} {{")
+        if head < 0:
+            out.append(f"{A_BQ_SPEC}: declares no {enum}")
+            return []
+        return re.findall(r"^\s{4}(\w+),$", text[head: text.find("\n}", head)], re.M)
+
+    def all_of(text: str, enum: str) -> list[str]:
+        m = re.search(r"pub const ALL: &'static \[" + enum + r"\] = &\[(.*?)\];", text, re.S)
+        return re.findall(enum + r"::(\w+)", m.group(1)) if m else []
+
+    # Closed vocabularies equal their ALL inventory, both directions.
+    for text, enum in ((src, "Tier0ReceiptKind"), (src, "Tier0ArtifactPolicy"),
+                       (tc, "RustTargetTriple")):
+        authored = variants(text, enum)
+        listed = all_of(text, enum)
+        for name in authored:
+            if name not in listed:
+                out.append(f"{enum}::{name} is authored but ALL omits it")
+        for name in listed:
+            if name not in authored:
+                out.append(f"{enum}::ALL lists {name}, which the enum does not author")
+        if not listed:
+            out.append(f"{enum}::ALL is empty")
+
+    # Every Tier0ReceiptKind has a nonempty unique slug and a total policy arm.
+    kinds = all_of(src, "Tier0ReceiptKind")
+    slugs = dict(re.findall(r'Tier0ReceiptKind::(\w+) => "([^"]+)"', src))
+    policy = dict(re.findall(r"Tier0ReceiptKind::(\w+) => Tier0ArtifactPolicy::(\w+)", src))
+    seen: set[str] = set()
+    for kind in kinds:
+        s = slugs.get(kind, "")
+        if not s:
+            out.append(f"{A_BQ_SPEC}: {kind} projects no slug")
+        elif s in seen:
+            out.append(f"{A_BQ_SPEC}: slug {s} is claimed twice")
+        seen.add(s)
+        if kind not in policy:
+            out.append(f"{A_BQ_SPEC}: {kind} names no artifact policy")
+
+    # The authoritative target is the MSVC triple, distinct from the semantic
+    # QualificationEnvironment.
+    auth = re.search(r"pub const AUTHORITATIVE_TARGET: RustTargetTriple = "
+                     r"RustTargetTriple::(\w+);", tc)
+    if not auth or auth.group(1) != "X86_64PcWindowsMsvc":
+        out.append("spec/toolchain.rs: AUTHORITATIVE_TARGET is not the MSVC triple")
+    if "QualificationEnvironment" in src:
+        out.append(f"{A_BQ_SPEC}: speaks QualificationEnvironment; a semantic environment "
+                   "is not a physical target")
+
+    # The denominator moved out of Python: selftest DERIVES it, never authors a
+    # literal slug tuple, and the product ReceiptId cannot substitute.
+    st = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
+    if "_typed_tier0_denominator" not in st:
+        out.append("bootstrap/selftest.py: does not derive the Tier 0 denominator from "
+                   "the typed owner")
+    if re.search(r'REQUIRED_TIER0_RECEIPTS = \(\s*\("tier0-', st):
+        out.append("bootstrap/selftest.py: REQUIRED_TIER0_RECEIPTS is a hand-authored "
+                   "slug tuple; the typed owner is the denominator")
+    if "ReceiptId" in src:
+        out.append(f"{A_BQ_SPEC}: reuses the product ReceiptId; Tier0ReceiptKind is the "
+                   "bootstrap receipt identity")
+
+    # The Delivery Notes denominator block equals the typed projection.
+    dn = (root / "DELIVERY_NOTES.md")
+    if dn.is_file():
+        m = re.search(r"<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN[^>]*-->\n(.*?)\n"
+                      r"<!-- TIER0-RECEIPT-DENOMINATOR:END -->",
+                      dn.read_text(encoding="utf-8"), re.S)
+        if not m:
+            out.append("DELIVERY_NOTES.md: carries no TIER0-RECEIPT-DENOMINATOR block")
+        else:
+            rows = [tuple(c.strip() for c in line.strip("|").split("|"))
+                    for line in m.group(1).splitlines()
+                    if line.startswith("|") and not line.startswith("| ---")
+                    and not line.startswith("| Receipt")]
+            want = [(slugs[k], policy[k]) for k in kinds]
+            if rows != want:
+                out.append("DELIVERY_NOTES.md: the Tier 0 denominator block does not "
+                           "match its typed derivation")
+    else:
+        out.append("missing DELIVERY_NOTES.md")
+    return out
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -4360,6 +4457,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(proof_terminal_findings(root))
     findings.extend(syncbat_firewall_findings(root))
     findings.extend(bootstrap_output_findings(root))
+    findings.extend(bootstrap_qualification_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
@@ -4952,16 +5050,21 @@ def inventory_mirror_findings(root: Path) -> list[str]:
                   f"{environments.get(env, '?')} | {_a_gate_token_render(gates, root)} | "
                   f"{req} |"
                   for pkg, profile, env, gates, req in A_QUAL_FULL.findall(arch)]
-    # Tier 0 receipt denominator, from the harness that enforces it.
-    harness = (root / "bootstrap/selftest.py").read_text(encoding="utf-8") \
-        if (root / "bootstrap/selftest.py").is_file() else ""
-    tier0_body = re.search(r"REQUIRED_TIER0_RECEIPTS = \((.*?)\n\)", harness, re.S)
-    want_tier0 = [f"| {name} | {'yes' if bound == 'True' else 'no'} |"
-                  for name, bound in A_TIER0_ROWS.findall(tier0_body.group(1))] \
-        if tier0_body else []
-    if harness and not want_tier0:
-        out.append("bootstrap/selftest.py declares no parseable "
-                   "REQUIRED_TIER0_RECEIPTS denominator")
+    # Tier 0 receipt denominator, from the typed owner it now lives in (5.5E6a).
+    bq_path = root / "spec/bootstrap_qualification.rs"
+    bq = bq_path.read_text(encoding="utf-8") if bq_path.is_file() else ""
+    bq_order_body = re.search(
+        r"pub const ALL: &'static \[Tier0ReceiptKind\] = &\[(.*?)\];", bq, re.S)
+    bq_order = re.findall(r"Tier0ReceiptKind::(\w+),", bq_order_body.group(1)) \
+        if bq_order_body else []
+    bq_slugs = dict(re.findall(r'Tier0ReceiptKind::(\w+) => "([^"]+)"', bq))
+    bq_policy = dict(re.findall(
+        r"Tier0ReceiptKind::(\w+) => Tier0ArtifactPolicy::(\w+)", bq))
+    want_tier0 = [f"| {bq_slugs[k]} | {bq_policy[k]} |" for k in bq_order
+                  if k in bq_slugs and k in bq_policy]
+    if bq and not want_tier0:
+        out.append("spec/bootstrap_qualification.rs declares no parseable "
+                   "Tier 0 receipt denominator")
     # Bundle inventory: every count independently derived.
     md_paths = _a_tracked_markdown(root)
     reg = a_parse_generated_views(root)

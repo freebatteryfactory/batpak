@@ -1849,22 +1849,26 @@ def render_bundle_inventory(root: Path) -> str:
 
 
 def render_tier0_receipts(root: Path) -> str:
-    """The required Tier 0 receipt denominator, parsed from the harness that
-    enforces it. This block declares WHAT is required; run receipts carry
-    whether a particular run passed."""
-    harness_path = root / "bootstrap/selftest.py"
-    if not harness_path.is_file():
-        raise Unadmitted("bootstrap/selftest.py is absent; the Tier 0 denominator refuses")
-    src = harness_path.read_text(encoding="utf-8")
-    body = re.search(r"REQUIRED_TIER0_RECEIPTS = \((.*?)\n\)", src, re.S)
-    if not body:
-        raise Unadmitted("bootstrap/selftest.py declares no REQUIRED_TIER0_RECEIPTS")
-    rows = re.findall(r'\("([^"]+)", (True|False)\)', body.group(1))
-    if not rows:
-        raise Unadmitted("REQUIRED_TIER0_RECEIPTS parses to no rows")
-    lines = ["| Receipt | Artifact-bound |", "| --- | --- |"]
-    for name, bound in rows:
-        lines.append(f"| {name} | {'yes' if bound == 'True' else 'no'} |")
+    """The required Tier 0 receipt denominator, parsed from the typed owner
+    spec/bootstrap_qualification.rs (5.5E6a). This block declares WHAT is
+    required and each receipt's artifact policy; run receipts carry whether a
+    particular run passed. The denominator is no longer a Python authority."""
+    src_path = root / "spec/bootstrap_qualification.rs"
+    if not src_path.is_file():
+        raise Unadmitted("spec/bootstrap_qualification.rs is absent; the Tier 0 denominator refuses")
+    src = src_path.read_text(encoding="utf-8")
+    order_body = re.search(r"pub const ALL: &'static \[Tier0ReceiptKind\] = &\[(.*?)\];",
+                           src, re.S)
+    if not order_body:
+        raise Unadmitted("spec/bootstrap_qualification.rs declares no Tier0ReceiptKind::ALL")
+    order = re.findall(r"Tier0ReceiptKind::(\w+),", order_body.group(1))
+    slugs = dict(re.findall(r'Tier0ReceiptKind::(\w+) => "([^"]+)"', src))
+    policy = dict(re.findall(r"Tier0ReceiptKind::(\w+) => Tier0ArtifactPolicy::(\w+)", src))
+    if not order or not slugs or not policy:
+        raise Unadmitted("spec/bootstrap_qualification.rs Tier 0 policy parses to nothing")
+    lines = ["| Receipt | Artifact policy |", "| --- | --- |"]
+    for kind in order:
+        lines.append(f"| {slugs[kind]} | {policy[kind]} |")
     return "\n".join(lines)
 
 

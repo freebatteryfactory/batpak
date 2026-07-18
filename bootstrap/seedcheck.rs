@@ -4,8 +4,8 @@
 // links it instead of textually mounting its modules, so no tracked
 // suppression exists and every pub spec item is API by construction.
 use spec::{
-    architecture, bootstrap_output, commands, contracts, dispositions, generated_views,
-    identities, gates, guarantees, invariants, legacy_invariant_coverage,
+    architecture, bootstrap_output, bootstrap_qualification, commands, contracts, dispositions,
+    generated_views, identities, gates, guarantees, invariants, legacy_invariant_coverage,
     legacy_obligations, operators, pakvm_isa, proof, reconciliation, syncbat_firewall,
     toolchain,
 };
@@ -87,6 +87,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_promotion(root, &mut findings);
     check_syncbat_shape(root, &mut findings);
     check_bootstrap_output(&mut findings);
+    check_bootstrap_qualification(&mut findings);
     check_source_debt(root, &mut findings);
     findings
 }
@@ -2799,6 +2800,125 @@ fn check_bootstrap_output(findings: &mut Vec<String>) {
         if !seen.insert(path) {
             findings.push(format!("expanded Gate0 path {path} is planned twice"));
         }
+    }
+}
+
+/// The typed Tier 0 receipt algebra, EXECUTED (5.5E6a). Seedcheck runs the
+/// real admission over honest and dishonest observations: an incoherent shape
+/// (executed-not-compiled, passed-not-executed, an artifact-required kind with
+/// no artifact, a materializer with no output tree, an authoritative receipt
+/// with no hosted run) must be refused, and a complete honest set must qualify.
+fn check_bootstrap_qualification(findings: &mut Vec<String>) {
+    use bootstrap_qualification as bq;
+    use toolchain::{RustTargetTriple, AUTHORITATIVE_TARGET};
+
+    // Every kind has a nonempty unique slug and a total artifact policy.
+    let mut slugs: Vec<&str> = Vec::new();
+    for &kind in bq::Tier0ReceiptKind::ALL {
+        if kind.slug().is_empty() {
+            findings.push(format!("Tier0ReceiptKind {kind:?} has an empty slug"));
+        }
+        if slugs.contains(&kind.slug()) {
+            findings.push(format!("Tier0 slug {} is claimed twice", kind.slug()));
+        }
+        slugs.push(kind.slug());
+        // artifact_policy is total by exhaustive match; requires_* are const.
+        let _ = kind.artifact_policy();
+    }
+
+    // A fully honest observation on the authoritative target, with every
+    // binding present, admits. This is the template every refusal perturbs.
+    let honest = |kind: bq::Tier0ReceiptKind, target: RustTargetTriple| bq::ReceiptObservation {
+        kind,
+        target,
+        available: true,
+        compiled: true,
+        executed: true,
+        passed: true,
+        source_bound: true,
+        toolchain_bound: true,
+        artifact_bound: true,
+        output_tree_bound: true,
+        hosted_run_bound: true,
+    };
+
+    // Executed observations that admit, and dishonest ones that must not.
+    let mut admitted: Vec<bq::AdmittedTier0Receipt> = Vec::new();
+    for &kind in bq::Tier0ReceiptKind::ALL {
+        match honest(kind, AUTHORITATIVE_TARGET).admit() {
+            Ok(receipt) => admitted.push(receipt),
+            Err(e) => findings.push(format!(
+                "an honest {} receipt was refused: {:?}", kind.slug(), e)),
+        }
+    }
+
+    let refuse = |obs: bq::ReceiptObservation,
+                  want: bq::Tier0AdmissionError,
+                  label: &str,
+                  findings: &mut Vec<String>| {
+        match obs.admit() {
+            Ok(_) => findings.push(format!("{label}: an incoherent observation admitted")),
+            Err(e) if e == want => {}
+            Err(e) => findings.push(format!("{label}: refused for the wrong law: {e:?}")),
+        }
+    };
+
+    let k = bq::Tier0ReceiptKind::Seedcheck;
+    let mat = bq::Tier0ReceiptKind::Materialize;
+    refuse(bq::ReceiptObservation { compiled: false, ..honest(k, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::ExecutedWithoutCompilation,
+           "executed_without_compilation", findings);
+    refuse(bq::ReceiptObservation { executed: false, ..honest(k, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::PassedWithoutExecution,
+           "passed_without_execution", findings);
+    refuse(bq::ReceiptObservation { artifact_bound: false, ..honest(k, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::ArtifactRequiredButUnbound,
+           "artifact_required_but_unbound", findings);
+    refuse(bq::ReceiptObservation { output_tree_bound: false, ..honest(mat, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::MaterializerWithoutOutputTree,
+           "materializer_without_output_tree", findings);
+    refuse(bq::ReceiptObservation { hosted_run_bound: false, ..honest(k, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::AuthoritativeWithoutHostedRun,
+           "authoritative_without_hosted_run", findings);
+    refuse(bq::ReceiptObservation { source_bound: false, ..honest(k, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::SourceUnbound, "source_unbound", findings);
+    refuse(bq::ReceiptObservation { available: false, ..honest(k, AUTHORITATIVE_TARGET) },
+           bq::Tier0AdmissionError::NotAvailable, "not_available", findings);
+
+    // Every refusal law names its owner and repair.
+    for e in [
+        bq::Tier0AdmissionError::NotAvailable,
+        bq::Tier0AdmissionError::ExecutedWithoutCompilation,
+        bq::Tier0AdmissionError::PassedWithoutExecution,
+        bq::Tier0AdmissionError::ArtifactRequiredButUnbound,
+        bq::Tier0AdmissionError::MaterializerWithoutOutputTree,
+        bq::Tier0AdmissionError::AuthoritativeWithoutHostedRun,
+    ] {
+        if !e.law().contains("owner:") {
+            findings.push(format!("admission error {e:?} names no owner"));
+        }
+    }
+
+    // The complete honest set qualifies at the authoritative target; a set
+    // missing one kind does not, and a supplemental-only set does not qualify
+    // the authoritative target.
+    if let Err(errs) = bq::qualifies(&admitted, AUTHORITATIVE_TARGET) {
+        findings.push(format!("a complete honest receipt set did not qualify: {errs:?}"));
+    }
+    if !admitted.is_empty() {
+        let short = &admitted[1..];
+        if bq::qualifies(short, AUTHORITATIVE_TARGET).is_ok() {
+            findings.push("an incomplete receipt set qualified the authoritative target".into());
+        }
+    }
+    let gnu_only: Vec<bq::AdmittedTier0Receipt> = bq::Tier0ReceiptKind::ALL
+        .iter()
+        .filter_map(|&kind| {
+            honest(kind, RustTargetTriple::X86_64PcWindowsGnu).admit().ok()
+        })
+        .collect();
+    if bq::qualifies(&gnu_only, AUTHORITATIVE_TARGET).is_ok() {
+        findings.push("a supplemental-only set qualified the authoritative target".into());
     }
 }
 

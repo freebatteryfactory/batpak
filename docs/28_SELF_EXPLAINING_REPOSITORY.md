@@ -165,7 +165,7 @@ An embedded block inherits no authority from its containing document. A standalo
 | PackageEdges | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | PACKAGE-EDGES | bootstrap/project.py |
 | QualificationProfiles | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | QUALIFICATION-PROFILES | bootstrap/project.py |
 | BundleInventory | embedded-block | spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs | DELIVERY_NOTES.md | BUNDLE-INVENTORY | bootstrap/project.py |
-| Tier0ReceiptDenominator | embedded-block | bootstrap/selftest.py | DELIVERY_NOTES.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
+| Tier0ReceiptDenominator | embedded-block | spec/bootstrap_qualification.rs | DELIVERY_NOTES.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
 | DecisionLedger | embedded-block | spec/dispositions.rs | docs/30_DECISION_AND_REJECTION_LEDGER.md | DECISION-LEDGER | bootstrap/project.py |
 | LegacyInvariantCoverage | embedded-block | spec/legacy_invariant_coverage.rs | docs/34_LEGACY_INVARIANT_COVERAGE.md | LEGACY-INVARIANT-COVERAGE | bootstrap/project.py |
 | LegacyObligationLedger | embedded-block | spec/legacy_obligations.rs; spec/proof.rs | docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md | LEGACY-OBLIGATION-LEDGER | bootstrap/project.py |

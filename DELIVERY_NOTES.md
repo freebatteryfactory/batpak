@@ -66,14 +66,14 @@ The package topology lives in `spec/architecture.rs` and its generated projectio
 
 The required Tier 0 receipt denominator is a generated projection of the harness that enforces it:
 
-<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN generated from bootstrap/selftest.py by bootstrap/project.py; do not edit -->
-| Receipt | Artifact-bound |
+<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN generated from spec/bootstrap_qualification.rs by bootstrap/project.py; do not edit -->
+| Receipt | Artifact policy |
 | --- | --- |
-| tier0-law-fixtures | no |
-| tier0-seedcheck | yes |
-| tier0-materialize | yes |
-| tier0-seedcheck-tests | yes |
-| tier0-spec-tests | yes |
+| tier0-law-fixtures | FixtureSet |
+| tier0-seedcheck | Executable |
+| tier0-materialize | ExecutableAndOutputTree |
+| tier0-seedcheck-tests | Executable |
+| tier0-spec-tests | Executable |
 <!-- TIER0-RECEIPT-DENOMINATOR:END -->
 
 Every listed receipt is required. A receipt qualifies only when availability, compilation, execution, passing disposition, physical target, and required artifact/source binding all hold.
