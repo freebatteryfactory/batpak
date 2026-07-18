@@ -410,6 +410,43 @@ pub struct GitHubActionsRunBinding {
 /// comparator compares against this constant, never a copied literal.
 pub const AUTHORITATIVE_WORKFLOW_PATH: &str = ".github/workflows/msvc-qualification.yml";
 
+/// The exact CPython release the bootstrap gates run under (5.5E6c2). Most Tier 0
+/// gates are executed by Python (project/audit/freeze/selftest), so the
+/// interpreter is part of the BUILDER IDENTITY, alongside rustc and cargo.
+/// Rendered canonically as `MAJOR.MINOR.PATCH`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PythonRelease {
+    pub major: u16,
+    pub minor: u16,
+    pub patch: u16,
+}
+
+impl PythonRelease {
+    /// Canonical `MAJOR.MINOR.PATCH` spelling.
+    pub fn render(self) -> String {
+        format!("{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+/// The bootstrap runtime a qualification ran under (5.5E6c2). One admitted
+/// implementation: the `python-release` binding MEANS a CPython release, and the
+/// verifier refuses another implementation. A one-member `PythonImplementation`
+/// enum would be vocabulary nobody consumes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BootstrapRuntimeBinding {
+    pub python_release: PythonRelease,
+}
+
+/// The one authoritative bootstrap Python release (5.5E6c2). A qualification that
+/// closes a gate on the authoritative target MUST run under this exact CPython
+/// release. The tracked workflow's `setup-python` version is a PROJECTION of this
+/// typed selection, never its owner (`BP-PUBLIC-API-CI-RELEASE-1`). Pinning the
+/// exact patch makes cross-run promotion confirmation's runtime equality
+/// satisfiable: the candidate and confirming runs bind the identical release, and
+/// two runs on the same WRONG runtime are still refused against this anchor.
+pub const AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE: PythonRelease =
+    PythonRelease { major: 3, minor: 12, patch: 10 };
+
 // ===========================================================================
 // Observations (5.5E6b): the raw, possibly-incoherent report
 // ===========================================================================
@@ -441,6 +478,7 @@ pub struct Tier0ReceiptObservation {
 pub struct Tier0QualificationObservation {
     pub source: SourceBinding,
     pub toolchain: ToolchainBinding,
+    pub bootstrap_runtime: BootstrapRuntimeBinding,
     pub target: RustTargetTriple,
     pub hosted_run: Option<GitHubActionsRunBinding>,
     pub receipts: Vec<Tier0ReceiptObservation>,
@@ -488,6 +526,7 @@ impl VerifiedTier0Receipt {
 pub struct VerifiedTier0Qualification {
     source: SourceBinding,
     toolchain: ToolchainBinding,
+    bootstrap_runtime: BootstrapRuntimeBinding,
     target: RustTargetTriple,
     hosted_run: Option<GitHubActionsRunBinding>,
     receipts: Vec<VerifiedTier0Receipt>,
@@ -501,6 +540,13 @@ impl VerifiedTier0Qualification {
     }
     pub const fn toolchain(&self) -> &ToolchainBinding {
         &self.toolchain
+    }
+    /// The bootstrap runtime (CPython release) this qualification ran under —
+    /// builder identity beside rustc/cargo (5.5E6c2). Promotion confirmation
+    /// requires two runs to share it; the authoritative target must bind exactly
+    /// `AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE`.
+    pub const fn bootstrap_runtime(&self) -> &BootstrapRuntimeBinding {
+        &self.bootstrap_runtime
     }
     pub const fn target(&self) -> RustTargetTriple {
         self.target
@@ -545,6 +591,7 @@ pub enum Tier0VerificationRule {
     ReceiptsOutOfCanonicalOrder,
     SourceCannotQualifyAuthoritativeTarget,
     AuthoritativeTargetWithoutHostedRun,
+    AuthoritativeBootstrapRuntimeMismatch,
 }
 
 impl Tier0VerificationRule {
@@ -563,6 +610,7 @@ impl Tier0VerificationRule {
         Tier0VerificationRule::ReceiptsOutOfCanonicalOrder,
         Tier0VerificationRule::SourceCannotQualifyAuthoritativeTarget,
         Tier0VerificationRule::AuthoritativeTargetWithoutHostedRun,
+        Tier0VerificationRule::AuthoritativeBootstrapRuntimeMismatch,
     ];
 
     /// The contract that owns this rule's semantics.
@@ -580,7 +628,8 @@ impl Tier0VerificationRule {
             | Tier0VerificationRule::DuplicateReceipt
             | Tier0VerificationRule::ReceiptsOutOfCanonicalOrder => TIER0_DENOMINATOR_OWNER,
             Tier0VerificationRule::SourceCannotQualifyAuthoritativeTarget
-            | Tier0VerificationRule::AuthoritativeTargetWithoutHostedRun => {
+            | Tier0VerificationRule::AuthoritativeTargetWithoutHostedRun
+            | Tier0VerificationRule::AuthoritativeBootstrapRuntimeMismatch => {
                 TIER0_HOSTED_QUALIFICATION_OWNER
             }
         }
@@ -615,6 +664,8 @@ impl Tier0VerificationRule {
                 "a frozen export is supplemental and cannot qualify the authoritative target",
             Tier0VerificationRule::AuthoritativeTargetWithoutHostedRun =>
                 "an authoritative-target qualification binds a hosted-run identity",
+            Tier0VerificationRule::AuthoritativeBootstrapRuntimeMismatch =>
+                "an authoritative-target qualification runs under the selected bootstrap Python release",
         }
     }
 
@@ -647,6 +698,8 @@ impl Tier0VerificationRule {
                 "qualify the authoritative target from a real git checkout",
             Tier0VerificationRule::AuthoritativeTargetWithoutHostedRun =>
                 "bind the hosted GitHub Actions run identity",
+            Tier0VerificationRule::AuthoritativeBootstrapRuntimeMismatch =>
+                "run the authoritative qualification under AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE",
         }
     }
 }
@@ -836,6 +889,14 @@ pub fn verify(
                 rule: Tier0VerificationRule::AuthoritativeTargetWithoutHostedRun,
             });
         }
+        // The authoritative target runs under the ONE selected bootstrap runtime.
+        // A supplemental lane may record a different release, but two runs on the
+        // same WRONG runtime cannot pass an equality check against this anchor.
+        if obs.bootstrap_runtime.python_release != AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE {
+            errors.push(Tier0VerificationError::Qualification {
+                rule: Tier0VerificationRule::AuthoritativeBootstrapRuntimeMismatch,
+            });
+        }
     }
 
     if !errors.is_empty() {
@@ -859,6 +920,7 @@ pub fn verify(
         Some(tree) => Ok(VerifiedTier0Qualification {
             source: obs.source,
             toolchain: obs.toolchain,
+            bootstrap_runtime: obs.bootstrap_runtime,
             target: obs.target,
             hosted_run: obs.hosted_run,
             receipts: verified,

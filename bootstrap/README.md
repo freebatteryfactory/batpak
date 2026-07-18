@@ -20,8 +20,17 @@ rustc bootstrap/materialize.rs -o target/materialize
 python bootstrap/selftest.py --emit-evidence ../batpak-tier0
 rustc bootstrap/receiptcheck.rs --extern spec=libspec.rlib -o target/receiptcheck
 ./target/receiptcheck verify ../batpak-tier0/tier0-evidence/qualification.t0 \
-    --root . --evidence ../batpak-tier0/tier0-evidence
+    --root . --evidence ../batpak-tier0/tier0-evidence \
+    --python-executable "$(command -v python)"
 ```
+
+`receiptcheck` verifies the `BATPAK-TIER0-QUALIFICATION/2` grammar and the exact
+evidence-bundle set (no unmanifested `.pdb`/scratch, no external artifact swapped
+for the bundle's own `qualification.t0`); it probes the exact interpreter given by
+`--python-executable` (never a `python`/`python3` search) and requires CPython at
+the artifact's bound release. `receiptcheck compare … --require-promotion-confirmation`
+independently reverifies two uploaded bundles and runs the sealed
+`compare_runs` + `confirm_promotion` (5.5E6c1/E6c2).
 
 `seedcheck.rs`, `materialize.rs`, and `receiptcheck.rs` each link the real `spec` rlib (`rustc --edition 2024 --crate-type rlib --crate-name spec -o libspec.rlib spec/lib.rs`), the exact library boundary production uses; the lines above elide the rlib build for brevity.
 

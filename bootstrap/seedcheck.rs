@@ -2877,6 +2877,9 @@ fn check_bootstrap_qualification(findings: &mut Vec<String>) {
         cargo_commit: bq::ToolchainCommit::from_bytes([0u8; 20]),
         toolchain_file_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
     };
+    let runtime = bq::BootstrapRuntimeBinding {
+        python_release: bq::AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE,
+    };
     let hosted = || {
         Some(bq::GitHubActionsRunBinding {
             repository: "freebatteryfactory/batpak".to_owned(),
@@ -2894,6 +2897,7 @@ fn check_bootstrap_qualification(findings: &mut Vec<String>) {
         bq::Tier0QualificationObservation {
             source,
             toolchain,
+            bootstrap_runtime: runtime,
             target,
             hosted_run,
             receipts: bq::Tier0ReceiptKind::ALL
@@ -2969,6 +2973,10 @@ fn check_bootstrap_qualification(findings: &mut Vec<String>) {
          }, findings);
     want(base(), R::AuthoritativeTargetWithoutHostedRun, "authoritative_without_hosted_run",
          &|o| o.hosted_run = None, findings);
+    want(base(), R::AuthoritativeBootstrapRuntimeMismatch, "authoritative_wrong_python_runtime",
+         &|o| o.bootstrap_runtime = bq::BootstrapRuntimeBinding {
+             python_release: bq::PythonRelease { major: 3, minor: 11, patch: 9 },
+         }, findings);
 
     // Every rule names a nonempty law, a repair, and one of the three declared
     // owners — no rule is unowned or unexplained.
@@ -3022,6 +3030,7 @@ fn check_tier0_cross_run(findings: &mut Vec<String>) {
         git: bool,
         hosted: bool,
         exe: u8,
+        python: (u16, u16, u16),
     }
 
     let evidence = |kind: bq::Tier0ReceiptKind, exe: u8, otree: u8| -> bq::Tier0ArtifactEvidence {
@@ -3080,6 +3089,13 @@ fn check_tier0_cross_run(findings: &mut Vec<String>) {
         let obs = bq::Tier0QualificationObservation {
             source,
             toolchain,
+            bootstrap_runtime: bq::BootstrapRuntimeBinding {
+                python_release: bq::PythonRelease {
+                    major: s.python.0,
+                    minor: s.python.1,
+                    patch: s.python.2,
+                },
+            },
             target: s.target,
             hosted_run,
             receipts: bq::Tier0ReceiptKind::ALL
@@ -3119,6 +3135,7 @@ fn check_tier0_cross_run(findings: &mut Vec<String>) {
         git: true,
         hosted: true,
         exe: 7,
+        python: (3, 12, 10),
     };
 
     let compare = |right: &Spec,
@@ -3250,17 +3267,26 @@ fn check_tier0_cross_run(findings: &mut Vec<String>) {
     }
 
     // The same source qualified on a second target is still SameSource, recorded
-    // as a cross-target pair. A GNU git checkout WITH a hosted run is comparable.
+    // as a cross-target pair. A GNU git checkout WITH a hosted run is comparable,
+    // and a supplemental lane may run under a different (non-authoritative)
+    // CPython release — recorded as a divergent bootstrap-runtime agreement.
     let cross_target = Spec {
         run_id: 200,
         target: RustTargetTriple::X86_64PcWindowsGnu,
         exe: 55,
+        python: (3, 11, 9),
         ..base
     };
     match compare(&cross_target, "cross-target", findings) {
         Some(xr::CrossRunComparison::SameSource(p)) => {
             if !matches!(p.target_agreement(), xr::TargetAgreement::CrossTarget { .. }) {
                 findings.push("cross-run cross-target pair was not recorded as cross-target".to_owned());
+            }
+            if !matches!(
+                p.bootstrap_runtime_agreement(),
+                xr::BootstrapRuntimeAgreement::Divergent { .. }
+            ) {
+                findings.push("cross-run differing bootstrap runtime was not recorded as divergent".to_owned());
             }
         }
         Some(other) => findings.push(format!(

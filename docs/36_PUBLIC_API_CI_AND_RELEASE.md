@@ -110,13 +110,15 @@ anti-vacuous, and tied to the exact changed trust boundary.
 
 The bootstrap gate qualification is itself evidence, not a green checkmark. A run
 produces a canonical, line-oriented `qualification.t0` artifact
-(`Tier0QualificationArtifactVersion`, `BATPAK-TIER0-QUALIFICATION/1`, owned in
+(`Tier0QualificationArtifactVersion`, `BATPAK-TIER0-QUALIFICATION/2`, owned in
 `spec/bootstrap_qualification.rs`) that binds, for one physical target: the
 source posture (a real git checkout for the authoritative lane, or a frozen
 `git archive` export for a supplemental local lane), the exact toolchain, the
-hosted-run identity when the target is authoritative, and one receipt per
-`Tier0ReceiptKind::ALL` carrying typed stage outcomes and concrete
-artifact-evidence digests.
+bootstrap Python runtime, the hosted-run identity when the target is
+authoritative, and one receipt per `Tier0ReceiptKind::ALL` carrying typed stage
+outcomes and concrete artifact-evidence digests. The `v2` format version governs
+both the artifact grammar and the exact admitted evidence-bundle layout it rides
+in (5.5E6c2); a `v1` artifact is historical evidence only and cannot qualify.
 
 `bootstrap/selftest.py` is the evidence PRODUCER; `bootstrap/receiptcheck.rs` is
 the independent VERIFIER. receiptcheck links the real `spec` rlib, recomputes
@@ -132,6 +134,27 @@ owns which hosted target and run posture may close a gate; the receipt algebra
 that names the authoritative target without a hosted-run identity, or that rides
 a frozen export, is refused — a local machine produces only the supplemental
 `x86_64-pc-windows-gnu` lane, never the authoritative receipt.
+
+### Builder identity and the exact evidence envelope (5.5E6c2)
+
+The builder is bound, not assumed. rustc and cargo are pinned via
+`rust-toolchain.toml`; the bootstrap Python runtime is the typed authority
+`AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE` in `spec/bootstrap_qualification.rs`
+(owned by `BP-PUBLIC-API-CI-RELEASE-1`), of which the workflow's `setup-python`
+version is a projection the audit refuses to let drift; an authoritative
+qualification under any other CPython release is refused, and `receiptcheck`
+probes the exact interpreter (never a `python`/`python3` search) and requires
+CPython at the artifact's release. Every external Action the qualification
+workflow uses is pinned to an immutable commit (audit refuses a movable tag,
+branch, or abbreviated SHA in any workflow or local composite action). The
+evidence bundle is an exact admitted set — `qualification.t0`,
+`law-fixtures.manifest`, the per-kind gate executables, the materialized Gate-0
+candidate tree, and (for the upload-ready hosted posture) `run-metadata.t0` — and
+`receiptcheck` refuses any unmanifested file, compiler scratch (`.pdb`/`.lib`),
+symlink, or case-folded duplicate, and refuses an external artifact substituted
+for the bundle's own `qualification.t0`. Promotion confirmation therefore
+requires, beyond same committed source, an identical toolchain AND bootstrap
+runtime and an exact envelope on both independently verified runs.
 
 ### Cross-run same-source corroboration and promotion confirmation (5.5E6c/E6c1, DEC-076)
 

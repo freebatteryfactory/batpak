@@ -4595,6 +4595,8 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
         out.append(f"{A_XR_SPEC}: ToolchainAgreement is not Identical/Divergent")
     if variants("TargetAgreement") != {"SameTarget", "CrossTarget"}:
         out.append(f"{A_XR_SPEC}: TargetAgreement is not SameTarget/CrossTarget")
+    if variants("BootstrapRuntimeAgreement") != {"Identical", "Divergent"}:
+        out.append(f"{A_XR_SPEC}: BootstrapRuntimeAgreement is not Identical/Divergent")
 
     # compare_runs actually EMITS every declared outcome — no coordinate is
     # declared but never checked, and no precondition is unreachable — consumes
@@ -4630,7 +4632,8 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
         out.append(f"{A_XR_SPEC}: SameSourceProof is not sealed; compare_runs is not its "
                    "sole constructor")
     for field in ("commit", "tree", "spec_manifest_digest", "workflow_digest",
-                  "materializer_output_tree", "left_run", "right_run"):
+                  "materializer_output_tree", "left_run", "right_run",
+                  "bootstrap_runtime_agreement"):
         if f"{field}:" not in proof_body:
             out.append(f"{A_XR_SPEC}: SameSourceProof retains no {field}")
 
@@ -4638,12 +4641,13 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     # error algebra names exactly the posture requirements it adds over
     # same-source; its sealed proof retains the confirmed authority.
     expected_pc_err = {"NotSameSource", "NonAuthoritativeTarget", "CrossTarget",
-                       "ToolchainDivergent", "RepositoryMismatch",
-                       "NonCanonicalWorkflowPath"}
+                       "ToolchainDivergent", "BootstrapRuntimeDivergent",
+                       "RepositoryMismatch", "NonCanonicalWorkflowPath"}
     if variants("PromotionConfirmationError") != expected_pc_err:
-        out.append(f"{A_XR_SPEC}: PromotionConfirmationError is not exactly the six promotion "
+        out.append(f"{A_XR_SPEC}: PromotionConfirmationError is not exactly the seven promotion "
                    "posture refusals (not-same-source, non-authoritative-target, cross-target, "
-                   "toolchain-divergent, repository-mismatch, non-canonical-workflow-path)")
+                   "toolchain-divergent, bootstrap-runtime-divergent, repository-mismatch, "
+                   "non-canonical-workflow-path)")
 
     pc_head = src.find("pub struct PromotionConfirmationProof {")
     pc_body = src[pc_head: src.find("\n}", pc_head)] if pc_head >= 0 else ""
@@ -4685,11 +4689,93 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     if "AUTHORITATIVE_WORKFLOW_PATH" not in bq:
         out.append("spec/bootstrap_qualification.rs: declares no AUTHORITATIVE_WORKFLOW_PATH "
                    "constant for promotion confirmation")
+
+    # Builder-identity perimeter (5.5E6c2): typed Python authority, the runtime
+    # binding, the authoritative-runtime rule, and the v2 format bump.
+    for needed in ("AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE", "struct PythonRelease",
+                   "struct BootstrapRuntimeBinding", "AuthoritativeBootstrapRuntimeMismatch"):
+        if needed not in bq:
+            out.append(f"spec/bootstrap_qualification.rs: missing builder-identity item {needed!r}")
+    if "fn bootstrap_runtime(&self) -> &BootstrapRuntimeBinding" not in bq:
+        out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
+                   "bootstrap_runtime() accessor")
+    rc_raw = (root / "bootstrap/receiptcheck.rs").read_text(encoding="utf-8")
+    if 'expect_exact("BATPAK-TIER0-QUALIFICATION/2")' not in rc_raw:
+        out.append("bootstrap/receiptcheck.rs: does not parse the v2 qualification magic")
+    if 'expect_exact("BATPAK-TIER0-QUALIFICATION/1")' in rc_raw:
+        out.append("bootstrap/receiptcheck.rs: still parses the retired v1 qualification magic")
+    for needed in ("check_bundle_shape", "probe_python", "python-release",
+                   "--python-executable"):
+        if needed not in rc_raw:
+            out.append(f"bootstrap/receiptcheck.rs: missing E6c2 perimeter piece {needed!r}")
+    st_raw = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
+    if '"BATPAK-TIER0-QUALIFICATION/2"' not in st_raw:
+        out.append("bootstrap/selftest.py: producer does not emit the v2 qualification magic")
+
     sc = (root / "bootstrap/seedcheck.rs").read_text(encoding="utf-8")
     if "check_tier0_cross_run" not in sc or "compare_runs(" not in sc:
         out.append("bootstrap/seedcheck.rs: does not execute the cross-run comparator")
     if "confirm_promotion(" not in sc:
         out.append("bootstrap/seedcheck.rs: does not execute the promotion confirmation")
+    return out
+
+
+def workflow_pinning_findings(root: Path) -> list[str]:
+    """Every `uses:` in a qualification workflow or local composite action must
+    reference immutable-content code (5.5E6c2): a local `./` action (bytes bound
+    by the git tree), an external action/reusable-workflow pinned by a full 40-hex
+    commit, or a docker action pinned by a sha256 digest. Movable tags, branches,
+    expressions, and abbreviated SHAs are refused. The qualification workflow's
+    setup-python version projects the typed AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE."""
+    out: list[str] = []
+    wf_dir = root / ".github" / "workflows"
+    act_dir = root / ".github" / "actions"
+    files: list[Path] = []
+    if wf_dir.is_dir():
+        for pat in ("*.yml", "*.yaml"):
+            files.extend(sorted(wf_dir.glob(pat)))
+    if act_dir.is_dir():
+        for pat in ("action.yml", "action.yaml"):
+            files.extend(sorted(act_dir.rglob(pat)))
+    uses_re = re.compile(r'^\s*(?:-\s*)?uses:\s*(\S+)')
+    full_sha = re.compile(r'^[0-9a-fA-F]{40}$')
+    docker_digest = re.compile(r'^docker://[^@]+@sha256:[0-9a-f]{64}$')
+    for f in files:
+        rel = f.relative_to(root).as_posix()
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            m = uses_re.match(line)
+            if not m:
+                continue
+            ref = m.group(1).strip().strip('"').strip("'")
+            if ref.startswith("./") or ref.startswith("../"):
+                continue
+            if ref.startswith("docker://"):
+                if not docker_digest.match(ref):
+                    out.append(f"{rel}:{i}: docker action {ref!r} is not sha256-digest pinned")
+                continue
+            if "@" not in ref:
+                out.append(f"{rel}:{i}: uses {ref!r} has no pinned ref")
+                continue
+            if not full_sha.match(ref.rsplit("@", 1)[1]):
+                out.append(f"{rel}:{i}: uses {ref!r} is not pinned by a full 40-hex commit "
+                           "(movable tag, branch, expression, or abbreviated SHA)")
+    wf = wf_dir / "msvc-qualification.yml"
+    if wf.is_file():
+        bq = (root / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8")
+        m = re.search(r"AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE:\s*PythonRelease\s*=\s*"
+                      r"PythonRelease\s*\{\s*major:\s*(\d+),\s*minor:\s*(\d+),\s*patch:\s*(\d+)",
+                      bq)
+        if not m:
+            out.append("spec/bootstrap_qualification.rs: cannot read "
+                       "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE for the workflow projection check")
+        else:
+            want = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+            pv = re.search(r'python-version:\s*"([^"]+)"', wf.read_text(encoding="utf-8"))
+            if not pv:
+                out.append("msvc-qualification.yml: no pinned setup-python python-version")
+            elif pv.group(1) != want:
+                out.append(f"msvc-qualification.yml: setup-python python-version {pv.group(1)!r} "
+                           f"does not equal the typed authority {want!r}")
     return out
 
 
@@ -4739,6 +4825,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(bootstrap_output_findings(root))
     findings.extend(bootstrap_qualification_findings(root))
     findings.extend(tier0_cross_run_findings(root))
+    findings.extend(workflow_pinning_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))

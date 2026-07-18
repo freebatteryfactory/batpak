@@ -16,11 +16,17 @@
 //! ```text
 //! receiptcheck policy
 //! receiptcheck verify <qualification.t0> --root <source-root> --evidence <bundle-root>
+//!     --python-executable <interpreter> [--upload-ready]
 //! receiptcheck compare
 //!     --candidate-artifact <t0> --candidate-evidence <bundle> --candidate-run-metadata <meta>
 //!     --cleanroom-artifact <t0> --cleanroom-evidence <bundle> --cleanroom-run-metadata <meta>
-//!     --root <source-root> [--require-promotion-confirmation]
+//!     --root <source-root> --python-executable <interpreter> [--require-promotion-confirmation]
 //! ```
+//!
+//! The artifact must be the bundle's own `qualification.t0`; the bundle shape is
+//! exact (no unmanifested `.pdb`/scratch); the interpreter is probed at the exact
+//! path (never a `python`/`python3` search) and must be CPython at the artifact's
+//! release. The v2 grammar binds the builder Python runtime (5.5E6c2).
 //!
 //! `compare` is the wire end of the cross-run algebra (5.5E6c1): it independently
 //! verifies BOTH uploaded bundles, ties each to its hosted run's own record
@@ -29,10 +35,10 @@
 //! Python never parses or duplicates the comparator law.
 
 use spec::bootstrap_qualification::{
-    self as bq, CompilationOutcome, ExecutionAttempt, ExecutionOutcome, GitCommitSha,
-    GitHubActionsRunBinding, GitTreeSha, Sha256Digest, SourceBinding, Tier0ArtifactEvidence,
-    Tier0QualificationObservation, Tier0ReceiptKind, Tier0ReceiptObservation, ToolchainBinding,
-    ToolchainCommit, VerifiedTier0Qualification,
+    self as bq, BootstrapRuntimeBinding, CompilationOutcome, ExecutionAttempt, ExecutionOutcome,
+    GitCommitSha, GitHubActionsRunBinding, GitTreeSha, PythonRelease, Sha256Digest, SourceBinding,
+    Tier0ArtifactEvidence, Tier0QualificationObservation, Tier0ReceiptKind, Tier0ReceiptObservation,
+    ToolchainBinding, ToolchainCommit, VerifiedTier0Qualification,
 };
 use spec::tier0_cross_run::{compare_runs, confirm_promotion, CrossRunComparison};
 use spec::toolchain::{RustRelease, RustTargetTriple};
@@ -52,11 +58,11 @@ fn main() {
         Some("compare") => mode_compare(&args[2..]),
         _ => Err(
             "usage: receiptcheck policy | receiptcheck verify <artifact> \
-             --root <root> --evidence <bundle> | receiptcheck compare \
-             --candidate-artifact <t0> --candidate-evidence <bundle> \
+             --root <root> --evidence <bundle> --python-executable <py> [--upload-ready] \
+             | receiptcheck compare --candidate-artifact <t0> --candidate-evidence <bundle> \
              --candidate-run-metadata <meta> --cleanroom-artifact <t0> \
              --cleanroom-evidence <bundle> --cleanroom-run-metadata <meta> \
-             --root <root> [--require-promotion-confirmation]"
+             --root <root> --python-executable <py> [--require-promotion-confirmation]"
                 .to_owned(),
         ),
     };
@@ -85,6 +91,12 @@ struct VerifyPaths {
     artifact: PathBuf,
     root: PathBuf,
     evidence: PathBuf,
+    /// The exact interpreter that ran the Python gates (setup-python's
+    /// `python-path` / `sys.executable`) — probed, never searched for (5.5E6c2).
+    python_executable: PathBuf,
+    /// Whether the evidence bundle is the upload-ready hosted shape (run-metadata
+    /// required) rather than the pre-upload core shape (run-metadata absent).
+    upload_ready: bool,
 }
 
 fn parse_verify_args(args: &[String]) -> Result<VerifyPaths, String> {
@@ -94,6 +106,8 @@ fn parse_verify_args(args: &[String]) -> Result<VerifyPaths, String> {
         .clone();
     let mut root: Option<String> = None;
     let mut evidence: Option<String> = None;
+    let mut python: Option<String> = None;
+    let mut upload_ready = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -105,6 +119,15 @@ fn parse_verify_args(args: &[String]) -> Result<VerifyPaths, String> {
                 evidence = Some(args.get(i + 1).ok_or("--evidence requires a value")?.clone());
                 i += 2;
             }
+            "--python-executable" => {
+                python =
+                    Some(args.get(i + 1).ok_or("--python-executable requires a value")?.clone());
+                i += 2;
+            }
+            "--upload-ready" => {
+                upload_ready = true;
+                i += 1;
+            }
             other => return Err(format!("unknown verify flag {other}")),
         }
     }
@@ -112,20 +135,41 @@ fn parse_verify_args(args: &[String]) -> Result<VerifyPaths, String> {
         artifact: PathBuf::from(artifact),
         root: PathBuf::from(root.ok_or("verify requires --root")?),
         evidence: PathBuf::from(evidence.ok_or("verify requires --evidence")?),
+        python_executable: PathBuf::from(python.ok_or("verify requires --python-executable")?),
+        upload_ready,
     })
 }
 
-/// Independently verify ONE uploaded qualification: read the strict artifact,
-/// recompute and compare every digest from the bytes on disk, then call the
-/// sealed `bq::verify`. Shared by `verify` and both sides of `compare`.
+/// Independently verify ONE uploaded qualification: bind the artifact to the
+/// bundle, read the strict artifact, recompute and compare every digest from the
+/// bytes on disk, enforce the exact bundle shape, then call the sealed
+/// `bq::verify`. Shared by `verify` and both sides of `compare`.
 fn verify_one(paths: &VerifyPaths) -> Result<VerifiedTier0Qualification, String> {
+    // The verified artifact must be the bundle's OWN qualification.t0 — no
+    // external answer sheet may be swapped for the artifact inside the bundle.
+    let bundle_artifact = paths.evidence.join("qualification.t0");
+    let resolved_artifact = fs::canonicalize(&paths.artifact)
+        .map_err(|e| format!("cannot resolve artifact path {}: {e}", paths.artifact.display()))?;
+    let resolved_bundle = fs::canonicalize(&bundle_artifact).map_err(|e| {
+        format!("cannot resolve bundle qualification.t0 {}: {e}", bundle_artifact.display())
+    })?;
+    if resolved_artifact != resolved_bundle {
+        return Err(format!(
+            "artifact {} is not the bundle's own qualification.t0 ({})",
+            paths.artifact.display(),
+            bundle_artifact.display()
+        ));
+    }
+
     let raw = fs::read(&paths.artifact)
         .map_err(|e| format!("cannot read artifact {}: {e}", paths.artifact.display()))?;
     let lines = strict_lines(&raw)?;
     let doc = parse_artifact(&lines)?;
 
-    // Independently recompute and compare every digest the artifact claims.
+    // Independently recompute and compare every digest the artifact claims, then
+    // enforce the exact admitted evidence-bundle shape.
     recompute_and_compare(&doc, paths)?;
+    check_bundle_shape(&paths.evidence, &doc, paths.upload_ready)?;
 
     // Build the typed observation and call the sealed verifier.
     let observation = doc.to_observation();
@@ -201,6 +245,7 @@ struct ComparePaths {
     cleanroom_evidence: PathBuf,
     cleanroom_run_metadata: PathBuf,
     root: PathBuf,
+    python_executable: PathBuf,
     require_promotion_confirmation: bool,
 }
 
@@ -221,7 +266,8 @@ fn parse_compare_args(args: &[String]) -> Result<ComparePaths, String> {
             | "--cleanroom-artifact"
             | "--cleanroom-evidence"
             | "--cleanroom-run-metadata"
-            | "--root" => {
+            | "--root"
+            | "--python-executable" => {
                 let value = args
                     .get(i + 1)
                     .ok_or_else(|| format!("{flag} requires a value"))?
@@ -248,6 +294,7 @@ fn parse_compare_args(args: &[String]) -> Result<ComparePaths, String> {
         cleanroom_evidence: get("--cleanroom-evidence")?,
         cleanroom_run_metadata: get("--cleanroom-run-metadata")?,
         root: get("--root")?,
+        python_executable: get("--python-executable")?,
         require_promotion_confirmation: require,
     })
 }
@@ -363,17 +410,22 @@ fn mode_compare(args: &[String]) -> Result<(), String> {
     self_check_sha256()?;
     let p = parse_compare_args(args)?;
 
-    // Independently verify BOTH uploaded bundles from the bytes on disk.
+    // Independently verify BOTH uploaded bundles from the bytes on disk. Both are
+    // downloaded hosted bundles, so both take the upload-ready shape.
     let candidate = verify_one(&VerifyPaths {
         artifact: p.candidate_artifact.clone(),
         root: p.root.clone(),
         evidence: p.candidate_evidence.clone(),
+        python_executable: p.python_executable.clone(),
+        upload_ready: true,
     })
     .map_err(|e| format!("candidate: {e}"))?;
     let cleanroom = verify_one(&VerifyPaths {
         artifact: p.cleanroom_artifact.clone(),
         root: p.root.clone(),
         evidence: p.cleanroom_evidence.clone(),
+        python_executable: p.python_executable.clone(),
+        upload_ready: true,
     })
     .map_err(|e| format!("cleanroom: {e}"))?;
 
@@ -501,6 +553,7 @@ struct ParsedReceipt {
 struct ArtifactDoc {
     source: ParsedSource,
     toolchain: ParsedToolchain,
+    python_release: PythonRelease,
     target: RustTargetTriple,
     hosted_run: Option<ParsedHostedRun>,
     receipts: Vec<ParsedReceipt>,
@@ -560,6 +613,9 @@ impl ArtifactDoc {
         Tier0QualificationObservation {
             source,
             toolchain,
+            bootstrap_runtime: BootstrapRuntimeBinding {
+                python_release: self.python_release,
+            },
             target: self.target,
             hosted_run,
             receipts,
@@ -620,19 +676,33 @@ impl<'a> Cursor<'a> {
     }
 }
 
-fn parse_release(s: &str) -> Result<RustRelease, String> {
+/// Parse a canonical `MAJOR.MINOR.PATCH` release triple. The spelling must be
+/// canonical: `parse -> render -> byte-equal(input)`, so `03.012.010` and other
+/// noncanonical spellings that merely parse numerically are refused (5.5E6c2).
+fn canonical_triple(s: &str) -> Result<(u16, u16, u16), String> {
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 3 {
         return Err(format!("release {s:?} is not MAJOR.MINOR.PATCH"));
     }
-    let major = parts[0].parse().map_err(|_| format!("bad major in {s:?}"))?;
-    let minor = parts[1].parse().map_err(|_| format!("bad minor in {s:?}"))?;
-    let patch = parts[2].parse().map_err(|_| format!("bad patch in {s:?}"))?;
-    Ok(RustRelease {
-        major,
-        minor,
-        patch,
-    })
+    let major: u16 = parts[0].parse().map_err(|_| format!("bad major in {s:?}"))?;
+    let minor: u16 = parts[1].parse().map_err(|_| format!("bad minor in {s:?}"))?;
+    let patch: u16 = parts[2].parse().map_err(|_| format!("bad patch in {s:?}"))?;
+    if format!("{major}.{minor}.{patch}") != s {
+        return Err(format!(
+            "release {s:?} is not canonical (expected {major}.{minor}.{patch})"
+        ));
+    }
+    Ok((major, minor, patch))
+}
+
+fn parse_release(s: &str) -> Result<RustRelease, String> {
+    let (major, minor, patch) = canonical_triple(s)?;
+    Ok(RustRelease { major, minor, patch })
+}
+
+fn parse_python_release(s: &str) -> Result<PythonRelease, String> {
+    let (major, minor, patch) = canonical_triple(s)?;
+    Ok(PythonRelease { major, minor, patch })
 }
 
 fn parse_target(s: &str) -> Result<RustTargetTriple, String> {
@@ -649,7 +719,7 @@ fn sha256_from_hex(s: &str) -> Result<Sha256Digest, String> {
 
 fn parse_artifact(lines: &[String]) -> Result<ArtifactDoc, String> {
     let mut c = Cursor::new(lines);
-    c.expect_exact("BATPAK-TIER0-QUALIFICATION/1")?;
+    c.expect_exact("BATPAK-TIER0-QUALIFICATION/2")?;
 
     // Source block, dispatched on source-kind.
     let source_kind = c.expect_key("source-kind")?;
@@ -697,6 +767,9 @@ fn parse_artifact(lines: &[String]) -> Result<ArtifactDoc, String> {
         toolchain_file_digest,
     };
 
+    // Bootstrap runtime block (v2): the CPython release the Python gates ran under.
+    let python_release = parse_python_release(&c.expect_key("python-release")?)?;
+
     // Target and optional hosted-run block.
     let target = parse_target(&c.expect_key("target")?)?;
     let hosted_run = if c.peek() == Some("github-repository")
@@ -742,6 +815,7 @@ fn parse_artifact(lines: &[String]) -> Result<ArtifactDoc, String> {
     Ok(ArtifactDoc {
         source,
         toolchain,
+        python_release,
         target,
         hosted_run,
         receipts,
@@ -891,6 +965,22 @@ fn recompute_and_compare(doc: &ArtifactDoc, paths: &VerifyPaths) -> Result<(), S
         ));
     }
 
+    // Bootstrap runtime: probe the EXACT interpreter that ran the Python gates
+    // (never a search) and require CPython at the artifact's claimed release.
+    let (python_impl, python_release) = probe_python(&paths.python_executable)?;
+    if python_impl != "cpython" {
+        return Err(format!(
+            "python-implementation mismatch: artifact requires cpython, actual {python_impl:?}"
+        ));
+    }
+    if python_release != doc.python_release {
+        return Err(format!(
+            "python-release mismatch: artifact {}, actual {}",
+            doc.python_release.render(),
+            python_release.render()
+        ));
+    }
+
     // Per-receipt artifact evidence.
     for r in &doc.receipts {
         match r.evidence {
@@ -1005,6 +1095,140 @@ fn probe_tool(tool: &str, args: &[&str]) -> Result<(RustRelease, ToolchainCommit
     let release = release.ok_or_else(|| format!("{tool} reported no release"))?;
     let commit = commit.ok_or_else(|| format!("{tool} reported no usable commit-hash"))?;
     Ok((release, commit))
+}
+
+/// Probe the EXACT interpreter path (never a `python`/`python3` search): its
+/// implementation name and release (5.5E6c2). receiptcheck asks the interpreter
+/// selftest / setup-python selected, so the verifier and the producer agree.
+fn probe_python(python: &Path) -> Result<(String, PythonRelease), String> {
+    let out = Command::new(python)
+        .args([
+            "-c",
+            "import sys; print(sys.implementation.name); \
+             print(sys.version_info.major, sys.version_info.minor, sys.version_info.micro)",
+        ])
+        .output()
+        .map_err(|e| format!("cannot run python {}: {e}", python.display()))?;
+    if !out.status.success() {
+        return Err(format!("python {} exited nonzero", python.display()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut lines = text.lines();
+    let implementation = lines
+        .next()
+        .ok_or("python reported no implementation")?
+        .trim()
+        .to_owned();
+    let version_line = lines.next().ok_or("python reported no version")?;
+    let parts: Vec<&str> = version_line.split_whitespace().collect();
+    if parts.len() != 3 {
+        return Err(format!(
+            "python version line {version_line:?} is not MAJOR MINOR MICRO"
+        ));
+    }
+    let major = parts[0].parse().map_err(|_| "bad python major".to_owned())?;
+    let minor = parts[1].parse().map_err(|_| "bad python minor".to_owned())?;
+    let patch = parts[2].parse().map_err(|_| "bad python micro".to_owned())?;
+    Ok((implementation, PythonRelease { major, minor, patch }))
+}
+
+// ===========================================================================
+// Exact evidence-bundle shape (5.5E6c2): no unmanifested material
+// ===========================================================================
+
+/// Enforce the exact admitted evidence-bundle shape. The bundle carries EXACTLY
+/// the admitted files — no compiler scratch (`.pdb`/`.lib`), no unmanifested
+/// material, no symlink or special file, no case-folded duplicate.
+/// `run-metadata.t0` is CONDITIONAL: forbidden in the core/supplemental posture,
+/// required in the upload-ready hosted posture. `gate0-candidate/` internals stay
+/// bound by the materializer output-tree digest.
+fn check_bundle_shape(evidence: &Path, doc: &ArtifactDoc, upload_ready: bool) -> Result<(), String> {
+    let hosted =
+        doc.hosted_run.is_some() && matches!(doc.source, ParsedSource::GitCheckout { .. });
+    let run_metadata_required = upload_ready && hosted;
+    let allowed_files = ["qualification.t0", "law-fixtures.manifest"];
+    let allowed_dirs = ["executables", "gate0-candidate"];
+
+    let mut seen_lower: BTreeMap<String, String> = BTreeMap::new();
+    let mut saw_run_metadata = false;
+    for entry in fs::read_dir(evidence)
+        .map_err(|e| format!("cannot read evidence bundle {}: {e}", evidence.display()))?
+    {
+        let entry = entry.map_err(|e| format!("bundle entry error: {e}"))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let ft = entry
+            .file_type()
+            .map_err(|e| format!("cannot stat bundle entry {name}: {e}"))?;
+        if ft.is_symlink() {
+            return Err(format!("evidence bundle contains a symlink: {name}"));
+        }
+        if let Some(prev) = seen_lower.insert(name.to_lowercase(), name.clone()) {
+            return Err(format!("evidence bundle case-folds {prev:?} and {name:?}"));
+        }
+        if ft.is_dir() {
+            if !allowed_dirs.contains(&name.as_str()) {
+                return Err(format!("unadmitted directory in evidence bundle: {name}"));
+            }
+        } else if ft.is_file() {
+            if name == "run-metadata.t0" {
+                saw_run_metadata = true;
+                if !run_metadata_required {
+                    return Err(
+                        "a core/supplemental evidence bundle must not carry run-metadata.t0"
+                            .to_owned(),
+                    );
+                }
+            } else if !allowed_files.contains(&name.as_str()) {
+                return Err(format!("unmanifested file in evidence bundle: {name}"));
+            }
+        } else {
+            return Err(format!("evidence bundle entry {name} is neither file nor dir"));
+        }
+    }
+    if run_metadata_required && !saw_run_metadata {
+        return Err("upload-ready hosted bundle is missing run-metadata.t0".to_owned());
+    }
+
+    // executables/ holds exactly one host-suffixed exe per non-fixture-set kind
+    // (derived from Tier0ReceiptKind::ALL, never a hardcoded list).
+    let exe_dir = evidence.join("executables");
+    let admitted_exes: Vec<&str> = Tier0ReceiptKind::ALL
+        .iter()
+        .filter(|k| k.artifact_policy() != bq::Tier0ArtifactPolicy::FixtureSet)
+        .map(|k| k.slug())
+        .collect();
+    let mut seen_exe_lower: BTreeMap<String, String> = BTreeMap::new();
+    for entry in fs::read_dir(&exe_dir)
+        .map_err(|e| format!("cannot read executables/ {}: {e}", exe_dir.display()))?
+    {
+        let entry = entry.map_err(|e| format!("executables/ entry error: {e}"))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let ft = entry
+            .file_type()
+            .map_err(|e| format!("cannot stat executables/ entry {name}: {e}"))?;
+        if ft.is_symlink() {
+            return Err(format!("executables/ contains a symlink: {name}"));
+        }
+        if !ft.is_file() {
+            return Err(format!("executables/ contains a non-file entry: {name}"));
+        }
+        if let Some(prev) = seen_exe_lower.insert(name.to_lowercase(), name.clone()) {
+            return Err(format!("executables/ case-folds {prev:?} and {name:?}"));
+        }
+        // Accept `<slug>` or `<slug>.exe`; refuse a stray `.pdb`/`.lib`, an extra
+        // exe, or any other scratch output.
+        let stem = name.strip_suffix(".exe").unwrap_or(&name);
+        if !admitted_exes.contains(&stem) {
+            return Err(format!("unmanifested file in executables/: {name}"));
+        }
+    }
+    for slug in &admitted_exes {
+        let base = exe_dir.join(slug);
+        if !base.is_file() && !base.with_extension("exe").is_file() {
+            return Err(format!("executables/ is missing the {slug} gate binary"));
+        }
+    }
+    Ok(())
 }
 
 // ===========================================================================

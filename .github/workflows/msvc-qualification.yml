@@ -45,11 +45,18 @@ jobs:
   qualify:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-      - uses: actions/setup-python@v5
+      # The builder's Python runtime is a PROJECTION of the typed authority
+      # spec/bootstrap_qualification.rs AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE; the
+      # exact patch is pinned so the candidate and confirming runs bind the
+      # identical CPython release. audit.py refuses drift from the typed constant.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        id: bootstrap-python
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
+          architecture: "x64"
+          check-latest: false
 
       - name: toolchain evidence
         shell: pwsh
@@ -95,12 +102,18 @@ jobs:
             run-id=$env:GITHUB_RUN_ID `
             run-attempt=$env:GITHUB_RUN_ATTEMPT
 
+      # Independently verify the UPLOAD-READY hosted bundle shape (run-metadata
+      # required, exact admitted files, artifact bound to the bundle) BEFORE
+      # publishing it (5.5E6c2).
+      - name: verify upload-ready hosted evidence bundle
+        run: python bootstrap/selftest.py --verify-bundle "${{ runner.temp }}/evidence/tier0-evidence" .
+
       # Publish the verified evidence bundle, named to bind the exact source,
       # target, run id, and attempt. No branch name becomes source identity.
       # Upload happens only after the gate passed. Only the tier0-evidence dir
       # (not the build work dir) is published.
       - name: upload verified evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: batpak-tier0-${{ github.sha }}-x86_64-pc-windows-msvc-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/evidence/tier0-evidence
@@ -110,7 +123,7 @@ jobs:
 
       - name: download candidate evidence
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           pattern: batpak-tier0-${{ github.sha }}-x86_64-pc-windows-msvc-${{ inputs.candidate_run_id }}-*
           path: candidate-download

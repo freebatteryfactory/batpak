@@ -59,8 +59,8 @@
 //! Provenance equivalence is not promotion equivalence.
 
 use crate::bootstrap_qualification::{
-    GitCommitSha, GitHubActionsRunBinding, GitTreeSha, Sha256Digest, SourceBinding,
-    ToolchainBinding, VerifiedTier0Qualification, AUTHORITATIVE_WORKFLOW_PATH,
+    BootstrapRuntimeBinding, GitCommitSha, GitHubActionsRunBinding, GitTreeSha, Sha256Digest,
+    SourceBinding, ToolchainBinding, VerifiedTier0Qualification, AUTHORITATIVE_WORKFLOW_PATH,
 };
 use crate::toolchain::RustTargetTriple;
 
@@ -141,6 +141,19 @@ pub enum ToolchainAgreement {
     },
 }
 
+/// Whether two same-source runs ran under the same bootstrap runtime (CPython
+/// release). Like the toolchain, a divergent runtime does NOT weaken the
+/// same-source verdict — it records that the source was reproduced under a
+/// different builder interpreter. Promotion confirmation requires `Identical`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootstrapRuntimeAgreement {
+    Identical(BootstrapRuntimeBinding),
+    Divergent {
+        left: BootstrapRuntimeBinding,
+        right: BootstrapRuntimeBinding,
+    },
+}
+
 /// Whether two same-source runs qualified the same physical target. A cross-
 /// target pair still describes one source — it is ORTHOGONAL corroboration (the
 /// same source qualified on a second platform: broader coverage, not automatically
@@ -173,6 +186,7 @@ pub struct SameSourceProof {
     right_run: GitHubActionsRunBinding,
     toolchain_agreement: ToolchainAgreement,
     target_agreement: TargetAgreement,
+    bootstrap_runtime_agreement: BootstrapRuntimeAgreement,
     _seal: (),
 }
 
@@ -205,6 +219,11 @@ impl SameSourceProof {
     }
     pub const fn target_agreement(&self) -> &TargetAgreement {
         &self.target_agreement
+    }
+    /// Whether the two runs ran under the same bootstrap runtime — recorded as
+    /// corroboration strength, required `Identical` for promotion confirmation.
+    pub const fn bootstrap_runtime_agreement(&self) -> &BootstrapRuntimeAgreement {
+        &self.bootstrap_runtime_agreement
     }
 }
 
@@ -245,6 +264,7 @@ struct ComparableRun<'a> {
     materializer_output_tree: Sha256Digest,
     hosted_run: &'a GitHubActionsRunBinding,
     toolchain: &'a ToolchainBinding,
+    bootstrap_runtime: &'a BootstrapRuntimeBinding,
     target: RustTargetTriple,
 }
 
@@ -278,6 +298,7 @@ fn as_comparable(q: &VerifiedTier0Qualification) -> Result<ComparableRun<'_>, Si
         materializer_output_tree: q.materializer_output_tree(),
         hosted_run,
         toolchain: q.toolchain(),
+        bootstrap_runtime: q.bootstrap_runtime(),
         target: q.target(),
     })
 }
@@ -386,6 +407,14 @@ pub fn compare_runs(
             right: r.target,
         }
     };
+    let bootstrap_runtime_agreement = if l.bootstrap_runtime == r.bootstrap_runtime {
+        BootstrapRuntimeAgreement::Identical(*l.bootstrap_runtime)
+    } else {
+        BootstrapRuntimeAgreement::Divergent {
+            left: *l.bootstrap_runtime,
+            right: *r.bootstrap_runtime,
+        }
+    };
 
     CrossRunComparison::SameSource(SameSourceProof {
         commit: l.commit,
@@ -397,6 +426,7 @@ pub fn compare_runs(
         right_run: r.hosted_run.clone(),
         toolchain_agreement,
         target_agreement,
+        bootstrap_runtime_agreement,
         _seal: (),
     })
 }
@@ -422,6 +452,7 @@ pub struct PromotionConfirmationProof {
     same_source: SameSourceProof,
     target: RustTargetTriple,
     toolchain: ToolchainBinding,
+    bootstrap_runtime: BootstrapRuntimeBinding,
     candidate_run: GitHubActionsRunBinding,
     cleanroom_run: GitHubActionsRunBinding,
     _seal: (),
@@ -440,6 +471,10 @@ impl PromotionConfirmationProof {
     /// The identical pinned toolchain both runs ran on.
     pub const fn toolchain(&self) -> &ToolchainBinding {
         &self.toolchain
+    }
+    /// The identical pinned bootstrap runtime (CPython release) both runs ran on.
+    pub const fn bootstrap_runtime(&self) -> &BootstrapRuntimeBinding {
+        &self.bootstrap_runtime
     }
     /// The candidate-branch hosted run.
     pub const fn candidate_run(&self) -> &GitHubActionsRunBinding {
@@ -477,6 +512,12 @@ pub enum PromotionConfirmationError {
     ToolchainDivergent {
         candidate: ToolchainBinding,
         cleanroom: ToolchainBinding,
+    },
+    /// The two runs ran under DIFFERENT bootstrap runtimes. Same-source tolerates
+    /// this; promotion confirmation requires the identical pinned CPython release.
+    BootstrapRuntimeDivergent {
+        candidate: BootstrapRuntimeBinding,
+        cleanroom: BootstrapRuntimeBinding,
     },
     /// The two runs ran in DIFFERENT repositories.
     RepositoryMismatch {
@@ -539,6 +580,17 @@ pub fn confirm_promotion(
         });
     };
 
+    // Identical pinned bootstrap runtime (CPython release) — the interpreter that
+    // executed the Python gates is builder identity beside rustc/cargo.
+    let BootstrapRuntimeAgreement::Identical(bootstrap_runtime) =
+        *same_source.bootstrap_runtime_agreement()
+    else {
+        return Err(PromotionConfirmationError::BootstrapRuntimeDivergent {
+            candidate: *candidate.bootstrap_runtime(),
+            cleanroom: *cleanroom.bootstrap_runtime(),
+        });
+    };
+
     // Same repository, canonical authoritative workflow, on both distinct runs.
     let cand_run = same_source.left_run();
     let clean_run = same_source.right_run();
@@ -569,6 +621,7 @@ pub fn confirm_promotion(
         same_source,
         target: cand_target,
         toolchain,
+        bootstrap_runtime,
         candidate_run,
         cleanroom_run,
         _seal: (),
@@ -579,9 +632,9 @@ pub fn confirm_promotion(
 mod tests {
     use super::*;
     use crate::bootstrap_qualification::{
-        verify, CompilationOutcome, ExecutionAttempt, ExecutionOutcome, Tier0ArtifactEvidence,
-        Tier0ArtifactPolicy, Tier0QualificationObservation, Tier0ReceiptKind,
-        Tier0ReceiptObservation, ToolchainCommit,
+        verify, BootstrapRuntimeBinding, CompilationOutcome, ExecutionAttempt, ExecutionOutcome,
+        PythonRelease, Tier0ArtifactEvidence, Tier0ArtifactPolicy, Tier0QualificationObservation,
+        Tier0ReceiptKind, Tier0ReceiptObservation, Tier0VerificationRule, ToolchainCommit,
     };
     use crate::toolchain::{RustRelease, AUTHORITATIVE_TARGET};
 
@@ -606,11 +659,13 @@ mod tests {
         repository: &'static str,
         workflow_path: &'static str,
         exe: u8,
+        python: (u16, u16, u16),
     }
 
     impl RunSpec {
         /// The canonical authoritative run: git checkout, MSVC, hosted, canonical
-        /// workflow. Tests perturb one dial with struct-update syntax.
+        /// workflow, the authoritative CPython release. Tests perturb one dial
+        /// with struct-update syntax.
         const fn base() -> RunSpec {
             RunSpec {
                 commit: 1,
@@ -624,13 +679,13 @@ mod tests {
                 repository: REPO,
                 workflow_path: AUTHORITATIVE_WORKFLOW_PATH,
                 exe: 7,
+                python: (3, 12, 10),
             }
         }
     }
 
-    /// Build a verified qualification from a synthetic run description, through
-    /// the sealed `verify`.
-    fn verified_run(s: RunSpec) -> VerifiedTier0Qualification {
+    /// The raw observation for a synthetic run description.
+    fn observe(s: RunSpec) -> Tier0QualificationObservation {
         let source = SourceBinding::GitCheckout {
             commit: GitCommitSha::from_bytes([s.commit; 20]),
             tree: GitTreeSha::from_bytes([s.tree; 20]),
@@ -665,7 +720,7 @@ mod tests {
                 }
             })
             .collect();
-        let obs = Tier0QualificationObservation {
+        Tier0QualificationObservation {
             source,
             toolchain: ToolchainBinding {
                 rustc_release: RustRelease { major: 1, minor: 97, patch: 0 },
@@ -673,6 +728,13 @@ mod tests {
                 cargo_release: RustRelease { major: 1, minor: 97, patch: 0 },
                 cargo_commit: ToolchainCommit::from_bytes([s.tc; 20]),
                 toolchain_file_digest: Sha256Digest::from_bytes([s.tc; 32]),
+            },
+            bootstrap_runtime: BootstrapRuntimeBinding {
+                python_release: PythonRelease {
+                    major: s.python.0,
+                    minor: s.python.1,
+                    patch: s.python.2,
+                },
             },
             target: s.target,
             hosted_run: Some(GitHubActionsRunBinding {
@@ -684,8 +746,13 @@ mod tests {
                 runner_image_version: "synthetic".to_owned(),
             }),
             receipts,
-        };
-        verify(obs).expect("synthetic authoritative qualification verifies")
+        }
+    }
+
+    /// Build a verified qualification from a synthetic run description, through
+    /// the sealed `verify`.
+    fn verified_run(s: RunSpec) -> VerifiedTier0Qualification {
+        verify(observe(s)).expect("synthetic authoritative qualification verifies")
     }
 
     #[test]
@@ -728,6 +795,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn same_source_records_bootstrap_runtime_agreement() {
+        // A supplemental GNU run under a different CPython release still describes
+        // the same committed source snapshot; the comparator RECORDS the runtime
+        // divergence as corroboration strength without defeating same-source
+        // (builder identity, not a source coordinate).
+        let authoritative = verified_run(RunSpec::base());
+        let supplemental = verified_run(RunSpec {
+            run_id: 200,
+            target: RustTargetTriple::X86_64PcWindowsGnu,
+            python: (3, 11, 9),
+            exe: 8,
+            ..RunSpec::base()
+        });
+        match compare_runs(&authoritative, &supplemental) {
+            CrossRunComparison::SameSource(p) => assert!(matches!(
+                p.bootstrap_runtime_agreement(),
+                BootstrapRuntimeAgreement::Divergent { .. }
+            )),
+            other => panic!("expected SameSource across lanes, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn authoritative_target_wrong_python_runtime_is_rejected() {
+        // The authoritative target must run under AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE.
+        // A different CPython release is refused at verification, so two runs on the
+        // same WRONG runtime can never both verify and slip past an equality check.
+        let errors = verify(observe(RunSpec { python: (3, 11, 9), ..RunSpec::base() }))
+            .expect_err("a wrong authoritative Python runtime must be refused");
+        assert!(errors
+            .iter()
+            .any(|e| e.rule() == Tier0VerificationRule::AuthoritativeBootstrapRuntimeMismatch));
+    }
+
     // ---- promotion confirmation (5.5E6c1) ----
 
     #[test]
@@ -742,6 +844,10 @@ mod tests {
         assert_eq!(proof.target(), AUTHORITATIVE_TARGET);
         assert_eq!(proof.candidate_run().run_id, 100);
         assert_eq!(proof.cleanroom_run().run_id, 200);
+        assert_eq!(
+            proof.bootstrap_runtime().python_release,
+            PythonRelease { major: 3, minor: 12, patch: 10 }
+        );
     }
 
     #[test]

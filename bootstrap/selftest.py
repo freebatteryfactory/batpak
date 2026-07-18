@@ -8565,7 +8565,7 @@ def _t0_canonical_artifact() -> str:
     d64 = {c: c * 64 for c in "abcdef012345"}
     h40 = {c: c * 40 for c in "abcd"}
     lines = [
-        "BATPAK-TIER0-QUALIFICATION/1",
+        "BATPAK-TIER0-QUALIFICATION/2",
         "source-kind: frozen-export",
         f"spec-manifest-digest: {d64['a']}",
         f"export-tree-digest: {d64['b']}",
@@ -8574,6 +8574,7 @@ def _t0_canonical_artifact() -> str:
         "cargo-release: 1.97.0",
         f"cargo-commit: {h40['b']}",
         f"toolchain-file-digest: {d64['c']}",
+        "python-release: 3.12.10",
         "target: x86_64-pc-windows-gnu",
         f"receipt: tier0-law-fixtures compiled=succeeded execution=attempted "
         f"outcome=passed evidence=fixture-set digest={d64['d']}",
@@ -8640,10 +8641,15 @@ def test_receiptcheck_refuses_dishonest_artifacts() -> list[str]:
         good = _t0_canonical_artifact()
 
         def refuses(name: str, text, needle: str) -> None:
-            art = tmp / f"{name}.t0"
+            # The artifact must be the bundle's own qualification.t0 (5.5E6c2), so
+            # each perturbation is written there; the grammar refusal fires before
+            # any digest recompute or bundle-shape check.
+            art = tmp / "qualification.t0"
             art.write_bytes(text.encode("utf-8") if isinstance(text, str) else text)
             proc = subprocess.run([str(rc), "verify", str(art), "--root", str(tmp),
-                                   "--evidence", str(tmp)], capture_output=True, text=True)
+                                   "--evidence", str(tmp),
+                                   "--python-executable", sys.executable],
+                                  capture_output=True, text=True)
             out = (proc.stdout + proc.stderr)
             if proc.returncode == 0:
                 findings.append(f"receiptcheck_{name} FAILED (artifact was admitted)")
@@ -8662,11 +8668,20 @@ def test_receiptcheck_refuses_dishonest_artifacts() -> list[str]:
                 good.replace("target: x86_64-pc-windows-gnu\n",
                              "target: x86_64-pc-windows-gnu \n"),
                 "artifact line has trailing whitespace")
-        # Fixed header and section order.
-        refuses("wrong_version_line_is_rejected",
-                good.replace("BATPAK-TIER0-QUALIFICATION/1",
-                             "BATPAK-TIER0-QUALIFICATION/2", 1),
+        # Fixed header and section order. The retired v1 magic cannot satisfy the
+        # v2 builder-binding format (5.5E6c2).
+        refuses("qualification_v1_cannot_satisfy_v2_builder_binding",
+                good.replace("BATPAK-TIER0-QUALIFICATION/2",
+                             "BATPAK-TIER0-QUALIFICATION/1", 1),
                 "expected line")
+        # A noncanonical release spelling that merely parses numerically is refused.
+        refuses("noncanonical_release_spelling_is_rejected",
+                good.replace("rustc-release: 1.97.0", "rustc-release: 1.097.0", 1),
+                "is not canonical")
+        # The bootstrap Python runtime must be bound.
+        refuses("python_runtime_must_be_bound",
+                good.replace("python-release: 3.12.10\n", "", 1),
+                "expected key")
         refuses("reordered_source_keys_are_rejected",
                 good.replace(
                     f"spec-manifest-digest: {'a' * 64}\nexport-tree-digest: {'b' * 64}",
@@ -8696,6 +8711,141 @@ def test_receiptcheck_refuses_dishonest_artifacts() -> list[str]:
                 "duplicate receipt token key")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    return findings
+
+
+def test_receiptcheck_bundle_perimeter() -> list[str]:
+    """The verifier enforces the EXACT evidence-bundle shape (5.5E6c2): a real GNU
+    bundle verifies, but a stray PDB/scratch file in executables/, an unmanifested
+    top-level file, a supplemental bundle carrying run-metadata, and an external
+    artifact substituted for the bundle's own qualification.t0 are all refused."""
+    findings: list[str] = []
+    root = HERE.parent
+    rustc = shutil.which("rustc")
+    if not rustc:
+        print("selftest: receiptcheck_bundle_perimeter unavailable (no rustc)")
+        return findings
+    work = Path(tempfile.mkdtemp(prefix="batpak-bundle-perimeter-"))
+    try:
+        bundle = work / "tier0-evidence"
+        _artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)
+        if problems:
+            print("selftest: receiptcheck_bundle_perimeter unavailable "
+                  f"(GNU evidence incomplete: {problems[0]})")
+            return findings
+        wrlib = work / "libspec.rlib"
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", _T0_GNU,
+                 "--crate-type", "rlib", "--crate-name", "spec", "-o", str(wrlib),
+                 str(root / "spec/lib.rs")], capture_output=True, text=True).returncode != 0:
+            print("selftest: receiptcheck_bundle_perimeter unavailable (spec rlib)")
+            return findings
+        rc = work / ("receiptcheck" + (".exe" if os.name == "nt" else ""))
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", _T0_GNU,
+                 "--crate-name", "receiptcheck", "--extern", f"spec={wrlib}",
+                 "-o", str(rc), str(root / "bootstrap/receiptcheck.rs")],
+                capture_output=True, text=True).returncode != 0 or not rc.is_file():
+            print("selftest: receiptcheck_bundle_perimeter unavailable (receiptcheck)")
+            return findings
+
+        def verify_bundle():
+            proc = subprocess.run(
+                [str(rc), "verify", str(bundle / "qualification.t0"),
+                 "--root", str(source_root), "--evidence", str(bundle),
+                 "--python-executable", sys.executable], capture_output=True, text=True)
+            return proc.returncode, (proc.stdout + proc.stderr)
+
+        rcode, out = verify_bundle()
+        if rcode != 0:
+            findings.append(f"receiptcheck_honest_gnu_bundle_verifies FAILED ({out.strip()[:200]})")
+
+        def refuses_bundle(name, make, unmake, needle):
+            make()
+            try:
+                rcode, out = verify_bundle()
+                if rcode == 0:
+                    findings.append(f"receiptcheck_{name} FAILED (bundle was admitted)")
+                elif needle not in out:
+                    findings.append(f"receiptcheck_{name} FAILED "
+                                    f"(wanted {needle!r}, got {out.strip()[:200]!r})")
+            finally:
+                unmake()
+
+        exe_dir = bundle / "executables"
+        pdb = exe_dir / "tier0-seedcheck.pdb"
+        refuses_bundle("pdb_cannot_enter_tier0_evidence_bundle",
+                       lambda: pdb.write_bytes(b"stray"),
+                       lambda: pdb.unlink(missing_ok=True),
+                       "unmanifested file in executables/")
+        lib = exe_dir / "tier0-seedcheck.lib"
+        refuses_bundle("compiler_scratch_output_cannot_enter_evidence_bundle",
+                       lambda: lib.write_bytes(b"scratch"),
+                       lambda: lib.unlink(missing_ok=True),
+                       "unmanifested file in executables/")
+        top = bundle / "extra.txt"
+        refuses_bundle("unmanifested_evidence_file_is_rejected",
+                       lambda: top.write_bytes(b"extra"),
+                       lambda: top.unlink(missing_ok=True),
+                       "unmanifested file in evidence bundle")
+        meta = bundle / "run-metadata.t0"
+        refuses_bundle("local_bundle_carrying_run_metadata",
+                       lambda: meta.write_bytes(b"BATPAK-TIER0-RUN-METADATA/1\n"),
+                       lambda: meta.unlink(missing_ok=True),
+                       "must not carry run-metadata.t0")
+
+        other = work / "elsewhere"
+        other.mkdir()
+        (other / "qualification.t0").write_bytes((bundle / "qualification.t0").read_bytes())
+        proc = subprocess.run(
+            [str(rc), "verify", str(other / "qualification.t0"),
+             "--root", str(source_root), "--evidence", str(bundle),
+             "--python-executable", sys.executable], capture_output=True, text=True)
+        eout = proc.stdout + proc.stderr
+        if proc.returncode == 0:
+            findings.append("receiptcheck_external_qualification_artifact_cannot_"
+                            "substitute_for_bundle_artifact FAILED (admitted)")
+        elif "is not the bundle's own qualification.t0" not in eout:
+            findings.append("receiptcheck_external_qualification_artifact_cannot_"
+                            "substitute_for_bundle_artifact FAILED "
+                            f"(got {eout.strip()[:200]!r})")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return findings
+
+
+def test_workflow_pinning() -> list[str]:
+    """audit.workflow_pinning_findings refuses movable/abbreviated/docker-untagged
+    action references and accepts local `./` actions and full-SHA pins (5.5E6c2)."""
+    findings: list[str] = []
+    audit = load("audit")
+    work = Path(tempfile.mkdtemp(prefix="batpak-wf-pin-"))
+    try:
+        wf = work / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        sha = "3" * 40
+
+        def one(uses: str) -> bool:
+            (wf / "x.yml").write_text(
+                "on: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n"
+                f"      - uses: {uses}\n", encoding="utf-8", newline="\n")
+            return any("x.yml" in f for f in audit.workflow_pinning_findings(work))
+
+        cases = [
+            (f"actions/checkout@{sha}", False),
+            ("actions/checkout@v4", True),
+            ("actions/checkout@main", True),
+            (f"actions/checkout@{'3' * 10}", True),
+            ("./.github/actions/local", False),
+            ("docker://alpine:3.14", True),
+            (f"docker://alpine@sha256:{'a' * 64}", False),
+        ]
+        for uses, want in cases:
+            got = one(uses)
+            if got != want:
+                findings.append(f"workflow_pinning {uses!r}: expected finding={want}, got {got}")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     return findings
 
 
@@ -8832,20 +8982,25 @@ def _t0_law_fixtures(rustc, edition, target, rlib, work: Path) -> tuple[str, lis
 def _t0_gate_exe(rustc, edition, target, rlib, source_root: Path, bundle: Path,
                  slug: str, src_rel: str, expect: str, extra: tuple = (),
                  run_args=None, link_spec: bool = True) -> tuple[str | None, list[str]]:
-    """Build one executable gate into the bundle, run it, and return its
-    evidence tail on pass. The exit code and the expected banner must agree."""
-    exe = bundle / "executables" / (slug + (".exe" if os.name == "nt" else ""))
-    if not _t0_build(rustc, edition, target, rlib, source_root / src_rel, exe,
+    """Build one executable gate in the WORK dir, run it, then COPY only the
+    admitted executable into the evidence bundle (5.5E6c2) — the evidence dir is
+    never a compiler scratch dir, so link residue (`.pdb`/`.lib`) never enters it.
+    The exit code and the expected banner must agree."""
+    suffix = ".exe" if os.name == "nt" else ""
+    built = bundle.parent / "t0-work" / (slug + suffix)
+    if not _t0_build(rustc, edition, target, rlib, source_root / src_rel, built,
                      extra, link_spec):
         return None, [f"{slug}: did not build for {target}"]
     proc = subprocess.run(
-        [str(exe), *(run_args if run_args is not None else (str(source_root),))],
+        [str(built), *(run_args if run_args is not None else (str(source_root),))],
         capture_output=True, text=True)
     out = proc.stdout + proc.stderr
     if proc.returncode != 0 or expect not in out:
         head = " / ".join(out.splitlines()[:6])
         return None, [f"{slug}: executed and did not pass ({head})"]
-    digest = hashlib.sha256(exe.read_bytes()).hexdigest()
+    dest = bundle / "executables" / (slug + suffix)
+    shutil.copyfile(built, dest)
+    digest = hashlib.sha256(dest.read_bytes()).hexdigest()
     return f"evidence=executable digest={digest}", []
 
 
@@ -8985,20 +9140,23 @@ def produce_tier0_evidence(bundle: Path,
     if tail:
         tails["tier0-spec-tests"] = tail
 
-    # Materializer: build, run into the candidate tree, digest the tree.
-    mat_exe = bundle / "executables" / ("tier0-materialize"
-                                        + (".exe" if os.name == "nt" else ""))
+    # Materializer: build in WORK, run into the candidate tree, copy only the
+    # admitted executable into the bundle, digest the copied exe and the tree.
+    mat_suffix = ".exe" if os.name == "nt" else ""
+    mat_built = work / ("tier0-materialize" + mat_suffix)
+    mat_exe = bundle / "executables" / ("tier0-materialize" + mat_suffix)
     candidate = bundle / "gate0-candidate"
     if not _t0_build(rustc, edition, target, rlib,
-                     source_root / "bootstrap/materialize.rs", mat_exe):
+                     source_root / "bootstrap/materialize.rs", mat_built):
         problems.append(f"tier0-materialize: did not build for {target}")
     else:
-        mp = subprocess.run([str(mat_exe), "--seed", str(source_root),
+        mp = subprocess.run([str(mat_built), "--seed", str(source_root),
                              "--output", str(candidate)], capture_output=True, text=True)
         if mp.returncode != 0 or not candidate.is_dir():
             problems.append("tier0-materialize: did not materialize the candidate "
                             f"({mp.stderr.strip()[:160]})")
         else:
+            shutil.copyfile(mat_built, mat_exe)
             ed = hashlib.sha256(mat_exe.read_bytes()).hexdigest()
             otd = _t0_tree_digest(candidate)
             tails["tier0-materialize"] = (f"evidence=executable+output-tree "
@@ -9024,10 +9182,12 @@ def produce_tier0_evidence(bundle: Path,
         return None, source_root, [str(exc)]
     toolchain_file_digest = hashlib.sha256(
         (source_root / "rust-toolchain.toml").read_bytes()).hexdigest()
-    lines = ["BATPAK-TIER0-QUALIFICATION/1", *source_lines,
+    python_rel = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    lines = ["BATPAK-TIER0-QUALIFICATION/2", *source_lines,
              f"rustc-release: {rustc_rel}", f"rustc-commit: {rustc_commit}",
              f"cargo-release: {cargo_rel}", f"cargo-commit: {cargo_commit}",
              f"toolchain-file-digest: {toolchain_file_digest}",
+             f"python-release: {python_rel}",
              f"target: {target}"]
     if hosted:
         lines += hosted
@@ -9057,7 +9217,9 @@ def verify_tier0_evidence(bundle: Path, artifact: Path, source_root: Path,
             capture_output=True, text=True).returncode != 0 or not rc.is_file():
         return False, "receiptcheck did not build"
     proc = subprocess.run([str(rc), "verify", str(artifact), "--root", str(source_root),
-                           "--evidence", str(bundle)], capture_output=True, text=True)
+                           "--evidence", str(bundle),
+                           "--python-executable", sys.executable],
+                          capture_output=True, text=True)
     return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
 
 
@@ -9139,6 +9301,7 @@ def _confirm_promotion(candidate_bundle: str, candidate_meta: str,
              "--cleanroom-evidence", str(clean),
              "--cleanroom-run-metadata", str(Path(cleanroom_meta).resolve()),
              "--root", str(root_p),
+             "--python-executable", sys.executable,
              "--require-promotion-confirmation"],
             capture_output=True, text=True)
         print((proc.stdout + proc.stderr).strip())
@@ -9146,6 +9309,49 @@ def _confirm_promotion(candidate_bundle: str, candidate_meta: str,
             print("selftest: promotion confirmation FAILED", file=sys.stderr)
             return 1
         print("selftest: promotion confirmed (verified by bootstrap/receiptcheck.rs)")
+        return 0
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _verify_bundle(bundle: str, root: str) -> int:
+    """Build receiptcheck and verify the UPLOAD-READY hosted evidence bundle shape
+    (5.5E6c2): run-metadata required, exact admitted files, artifact bound to the
+    bundle. Run after the workflow writes run-metadata and before upload."""
+    rustc = shutil.which("rustc")
+    if not rustc:
+        print("selftest: rustc absent; cannot verify bundle", file=sys.stderr)
+        return 1
+    root_p = Path(root).resolve()
+    bundle_p = Path(bundle).resolve()
+    work = Path(tempfile.mkdtemp(prefix="batpak-tier0-verify-"))
+    try:
+        rlib = work / "libspec.rlib"
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", _T0_MSVC,
+                 "--crate-type", "rlib", "--crate-name", "spec", "-o", str(rlib),
+                 str(root_p / "spec/lib.rs")],
+                capture_output=True, text=True).returncode != 0:
+            print("selftest: spec rlib did not build for verify-bundle", file=sys.stderr)
+            return 1
+        rc = work / ("receiptcheck" + (".exe" if os.name == "nt" else ""))
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", _T0_MSVC,
+                 "--crate-name", "receiptcheck", "--extern", f"spec={rlib}",
+                 "-o", str(rc), str(root_p / "bootstrap/receiptcheck.rs")],
+                capture_output=True, text=True).returncode != 0 or not rc.is_file():
+            print("selftest: receiptcheck did not build for verify-bundle", file=sys.stderr)
+            return 1
+        proc = subprocess.run(
+            [str(rc), "verify", str(bundle_p / "qualification.t0"),
+             "--root", str(root_p), "--evidence", str(bundle_p),
+             "--upload-ready", "--python-executable", sys.executable],
+            capture_output=True, text=True)
+        print((proc.stdout + proc.stderr).strip())
+        if proc.returncode != 0:
+            print("selftest: upload-ready bundle verification FAILED", file=sys.stderr)
+            return 1
+        print("selftest: upload-ready hosted bundle verified (bootstrap/receiptcheck.rs)")
         return 0
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -9161,6 +9367,8 @@ def main() -> int:
         return _emit_run_metadata(argv0[1], argv0[2:])
     if argv0[:1] == ["--confirm-promotion"] and len(argv0) == 6:
         return _confirm_promotion(*argv0[1:])
+    if argv0[:1] == ["--verify-bundle"] and len(argv0) == 3:
+        return _verify_bundle(argv0[1], argv0[2])
     if len(argv0) == 2 and argv0[0] == "--emit-evidence":
         bundle = Path(argv0[1]).resolve() / "tier0-evidence"
         artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)
@@ -9252,6 +9460,8 @@ def main() -> int:
     findings += test_compiler_assumptions(audit)
     findings += test_promotion(audit)
     findings += test_receiptcheck_refuses_dishonest_artifacts()
+    findings += test_receiptcheck_bundle_perimeter()
+    findings += test_workflow_pinning()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
