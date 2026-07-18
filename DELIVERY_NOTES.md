@@ -78,6 +78,8 @@ The required Tier 0 receipt denominator is a generated projection of the harness
 
 Every listed receipt is required. A receipt qualifies only when availability, compilation, execution, passing disposition, physical target, and required artifact/source binding all hold.
 
+Membership is enforced by evidence, not prose (5.5E6b). `bootstrap/selftest.py` produces a canonical `qualification.t0` artifact and an evidence bundle from a real gate run; `bootstrap/receiptcheck.rs` independently recomputes every digest and calls the sealed `spec::bootstrap_qualification::verify`, which enforces this exact denominator, per-kind artifact policy, single target, source posture, and the hosted-run requirement for the authoritative target. No Python predicate judges qualification.
+
 This block declares the denominator. It does not claim that the latest run passed. Candidate and cleanroom qualification outcomes belong to exact-SHA, exact-target run receipts, not timeless prose.
 
 `spec/gates.rs` is the one gate identity: every gate-bearing fact carries `&'static [GateId]`, never a slash-delimited string.

@@ -135,6 +135,11 @@ pub enum VersionIdentityKind {
     /// Sweep-discovered beside LayoutId in docs/02; the old docs/16 version
     /// fence omitted it.
     Layout,
+    /// The Tier 0 qualification evidence artifact format (5.5E6b). An
+    /// independently versioned, line-oriented bootstrap format — distinct from
+    /// `ReceiptSchema` (the product receipt codec), the `ReleaseSeal` schema,
+    /// and the product `ReceiptId`. Its first line names its own version.
+    Tier0QualificationArtifact,
 }
 
 /// One catalog entry: the canonical spelling and the declared contract that
@@ -305,6 +310,7 @@ impl VersionIdentityKind {
         VersionIdentityKind::ReceiptSchema,
         VersionIdentityKind::Schema,
         VersionIdentityKind::Layout,
+        VersionIdentityKind::Tier0QualificationArtifact,
     ];
 
     pub const fn entry(self) -> CatalogEntry {
@@ -325,6 +331,9 @@ impl VersionIdentityKind {
             VersionIdentityKind::ReceiptSchema => entry!("ReceiptSchemaVersion", "BP-RECEIPTS-1"),
             VersionIdentityKind::Schema => entry!("SchemaVersion", "BP-SCHEMA-CODEC-1"),
             VersionIdentityKind::Layout => entry!("LayoutVersion", "BP-SYSTEM-MODEL-1"),
+            VersionIdentityKind::Tier0QualificationArtifact => {
+                entry!("Tier0QualificationArtifactVersion", "BP-RECEIPTS-1")
+            }
         }
     }
 }

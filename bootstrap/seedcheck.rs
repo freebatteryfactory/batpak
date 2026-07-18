@@ -2803,14 +2803,16 @@ fn check_bootstrap_output(findings: &mut Vec<String>) {
     }
 }
 
-/// The typed Tier 0 receipt algebra, EXECUTED (5.5E6a). Seedcheck runs the
-/// real admission over honest and dishonest observations: an incoherent shape
-/// (executed-not-compiled, passed-not-executed, an artifact-required kind with
-/// no artifact, a materializer with no output tree, an authoritative receipt
-/// with no hosted run) must be refused, and a complete honest set must qualify.
+/// The typed Tier 0 qualification algebra, EXECUTED (5.5E6a; rebuilt for the
+/// evidence-verification algebra in 5.5E6b). Seedcheck runs the real `verify`
+/// over an honest whole qualification and over a perturbation for EVERY rule in
+/// `Tier0VerificationRule::ALL` — no rule is a fire alarm whose battery was
+/// never installed. The concrete digest recomputation lives in
+/// bootstrap/receiptcheck.rs; here we exercise the typed shape/denominator/
+/// target/source/hosted-run laws.
 fn check_bootstrap_qualification(findings: &mut Vec<String>) {
     use bootstrap_qualification as bq;
-    use toolchain::{RustTargetTriple, AUTHORITATIVE_TARGET};
+    use toolchain::{RustRelease, RustTargetTriple, AUTHORITATIVE_TARGET};
 
     // Every kind has a nonempty unique slug and a total artifact policy.
     let mut slugs: Vec<&str> = Vec::new();
@@ -2822,103 +2824,167 @@ fn check_bootstrap_qualification(findings: &mut Vec<String>) {
             findings.push(format!("Tier0 slug {} is claimed twice", kind.slug()));
         }
         slugs.push(kind.slug());
-        // artifact_policy is total by exhaustive match; requires_* are const.
         let _ = kind.artifact_policy();
     }
 
-    // A fully honest observation on the authoritative target, with every
-    // binding present, admits. This is the template every refusal perturbs.
-    let honest = |kind: bq::Tier0ReceiptKind, target: RustTargetTriple| bq::ReceiptObservation {
-        kind,
-        target,
-        available: true,
-        compiled: true,
-        executed: true,
-        passed: true,
-        source_bound: true,
-        toolchain_bound: true,
-        artifact_bound: true,
-        output_tree_bound: true,
-        hosted_run_bound: true,
+    // Honest evidence exactly matching a kind's policy.
+    fn evidence(kind: bq::Tier0ReceiptKind) -> bq::Tier0ArtifactEvidence {
+        match kind.artifact_policy() {
+            bq::Tier0ArtifactPolicy::FixtureSet => bq::Tier0ArtifactEvidence::FixtureSet {
+                digest: bq::Sha256Digest::from_bytes([0u8; 32]),
+            },
+            bq::Tier0ArtifactPolicy::Executable => bq::Tier0ArtifactEvidence::Executable {
+                digest: bq::Sha256Digest::from_bytes([1u8; 32]),
+            },
+            bq::Tier0ArtifactPolicy::ExecutableAndOutputTree => {
+                bq::Tier0ArtifactEvidence::ExecutableAndOutputTree {
+                    executable_digest: bq::Sha256Digest::from_bytes([2u8; 32]),
+                    output_tree_digest: bq::Sha256Digest::from_bytes([3u8; 32]),
+                }
+            }
+        }
+    }
+    fn receipt(
+        kind: bq::Tier0ReceiptKind,
+        target: RustTargetTriple,
+    ) -> bq::Tier0ReceiptObservation {
+        bq::Tier0ReceiptObservation {
+            kind,
+            target,
+            available: true,
+            compilation: bq::CompilationOutcome::Succeeded,
+            execution: bq::ExecutionAttempt::Attempted,
+            outcome: Some(bq::ExecutionOutcome::Passed),
+            artifact: Some(evidence(kind)),
+        }
+    }
+
+    let git_source = || bq::SourceBinding::GitCheckout {
+        commit: bq::GitCommitSha::from_bytes([0u8; 20]),
+        tree: bq::GitTreeSha::from_bytes([0u8; 20]),
+        spec_manifest_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
+        workflow_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
     };
-
-    // Executed observations that admit, and dishonest ones that must not.
-    let mut admitted: Vec<bq::AdmittedTier0Receipt> = Vec::new();
-    for &kind in bq::Tier0ReceiptKind::ALL {
-        match honest(kind, AUTHORITATIVE_TARGET).admit() {
-            Ok(receipt) => admitted.push(receipt),
-            Err(e) => findings.push(format!(
-                "an honest {} receipt was refused: {:?}", kind.slug(), e)),
-        }
-    }
-
-    let refuse = |obs: bq::ReceiptObservation,
-                  want: bq::Tier0AdmissionError,
-                  label: &str,
-                  findings: &mut Vec<String>| {
-        match obs.admit() {
-            Ok(_) => findings.push(format!("{label}: an incoherent observation admitted")),
-            Err(e) if e == want => {}
-            Err(e) => findings.push(format!("{label}: refused for the wrong law: {e:?}")),
-        }
+    let export_source = || bq::SourceBinding::FrozenExport {
+        spec_manifest_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
+        export_tree_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
     };
-
-    let k = bq::Tier0ReceiptKind::Seedcheck;
-    let mat = bq::Tier0ReceiptKind::Materialize;
-    refuse(bq::ReceiptObservation { compiled: false, ..honest(k, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::ExecutedWithoutCompilation,
-           "executed_without_compilation", findings);
-    refuse(bq::ReceiptObservation { executed: false, ..honest(k, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::PassedWithoutExecution,
-           "passed_without_execution", findings);
-    refuse(bq::ReceiptObservation { artifact_bound: false, ..honest(k, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::ArtifactRequiredButUnbound,
-           "artifact_required_but_unbound", findings);
-    refuse(bq::ReceiptObservation { output_tree_bound: false, ..honest(mat, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::MaterializerWithoutOutputTree,
-           "materializer_without_output_tree", findings);
-    refuse(bq::ReceiptObservation { hosted_run_bound: false, ..honest(k, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::AuthoritativeWithoutHostedRun,
-           "authoritative_without_hosted_run", findings);
-    refuse(bq::ReceiptObservation { source_bound: false, ..honest(k, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::SourceUnbound, "source_unbound", findings);
-    refuse(bq::ReceiptObservation { available: false, ..honest(k, AUTHORITATIVE_TARGET) },
-           bq::Tier0AdmissionError::NotAvailable, "not_available", findings);
-
-    // Every refusal law names its owner and repair.
-    for e in [
-        bq::Tier0AdmissionError::NotAvailable,
-        bq::Tier0AdmissionError::ExecutedWithoutCompilation,
-        bq::Tier0AdmissionError::PassedWithoutExecution,
-        bq::Tier0AdmissionError::ArtifactRequiredButUnbound,
-        bq::Tier0AdmissionError::MaterializerWithoutOutputTree,
-        bq::Tier0AdmissionError::AuthoritativeWithoutHostedRun,
-    ] {
-        if !e.law().contains("owner:") {
-            findings.push(format!("admission error {e:?} names no owner"));
-        }
-    }
-
-    // The complete honest set qualifies at the authoritative target; a set
-    // missing one kind does not, and a supplemental-only set does not qualify
-    // the authoritative target.
-    if let Err(errs) = bq::qualifies(&admitted, AUTHORITATIVE_TARGET) {
-        findings.push(format!("a complete honest receipt set did not qualify: {errs:?}"));
-    }
-    if !admitted.is_empty() {
-        let short = &admitted[1..];
-        if bq::qualifies(short, AUTHORITATIVE_TARGET).is_ok() {
-            findings.push("an incomplete receipt set qualified the authoritative target".into());
-        }
-    }
-    let gnu_only: Vec<bq::AdmittedTier0Receipt> = bq::Tier0ReceiptKind::ALL
-        .iter()
-        .filter_map(|&kind| {
-            honest(kind, RustTargetTriple::X86_64PcWindowsGnu).admit().ok()
+    let toolchain = bq::ToolchainBinding {
+        rustc_release: RustRelease { major: 1, minor: 97, patch: 0 },
+        rustc_commit: bq::ToolchainCommit::from_bytes([0u8; 20]),
+        cargo_release: RustRelease { major: 1, minor: 97, patch: 0 },
+        cargo_commit: bq::ToolchainCommit::from_bytes([0u8; 20]),
+        toolchain_file_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
+    };
+    let hosted = || {
+        Some(bq::GitHubActionsRunBinding {
+            repository: "freebatteryfactory/batpak".to_owned(),
+            workflow_path: ".github/workflows/msvc-qualification.yml".to_owned(),
+            run_id: 1,
+            run_attempt: 1,
+            runner_image_os: "Windows".to_owned(),
+            runner_image_version: "0".to_owned(),
         })
-        .collect();
-    if bq::qualifies(&gnu_only, AUTHORITATIVE_TARGET).is_ok() {
-        findings.push("a supplemental-only set qualified the authoritative target".into());
+    };
+    let build = |target: RustTargetTriple,
+                 hosted_run: Option<bq::GitHubActionsRunBinding>,
+                 source: bq::SourceBinding|
+     -> bq::Tier0QualificationObservation {
+        bq::Tier0QualificationObservation {
+            source,
+            toolchain,
+            target,
+            hosted_run,
+            receipts: bq::Tier0ReceiptKind::ALL
+                .iter()
+                .map(|&k| receipt(k, target))
+                .collect(),
+        }
+    };
+
+    // The honest MSVC qualification verifies; the honest supplemental GNU
+    // qualification (frozen export, no hosted run) also verifies.
+    if let Err(errs) = bq::verify(build(AUTHORITATIVE_TARGET, hosted(), git_source())) {
+        let rules: Vec<_> = errs.iter().map(|e| e.rule()).collect();
+        findings.push(format!("an honest authoritative qualification was refused: {rules:?}"));
+    }
+    if let Err(errs) = bq::verify(build(
+        RustTargetTriple::X86_64PcWindowsGnu,
+        None,
+        export_source(),
+    )) {
+        let rules: Vec<_> = errs.iter().map(|e| e.rule()).collect();
+        findings.push(format!("an honest supplemental GNU qualification was refused: {rules:?}"));
+    }
+
+    // Perturb the honest MSVC qualification once per rule; verify must refuse
+    // AND report that specific rule.
+    let want = |mut obs: bq::Tier0QualificationObservation,
+                rule: bq::Tier0VerificationRule,
+                label: &str,
+                mutate: &dyn Fn(&mut bq::Tier0QualificationObservation),
+                findings: &mut Vec<String>| {
+        mutate(&mut obs);
+        match bq::verify(obs) {
+            Ok(_) => findings.push(format!("{label}: an incoherent qualification verified")),
+            Err(errs) => {
+                if !errs.iter().any(|e| e.rule() == rule) {
+                    let got: Vec<_> = errs.iter().map(|e| e.rule()).collect();
+                    findings.push(format!("{label}: refused, but not for {rule:?}: {got:?}"));
+                }
+            }
+        }
+    };
+    let base = || build(AUTHORITATIVE_TARGET, hosted(), git_source());
+    use bq::Tier0VerificationRule as R;
+    want(base(), R::ReceiptNotAvailable, "not_available",
+         &|o| o.receipts[0].available = false, findings);
+    want(base(), R::ExecutionOutcomeWithoutAttempt, "outcome_without_attempt",
+         &|o| o.receipts[0].execution = bq::ExecutionAttempt::NotAttempted, findings);
+    want(base(), R::ExecutionAttemptWithoutOutcome, "attempt_without_outcome",
+         &|o| o.receipts[0].outcome = None, findings);
+    want(base(), R::ExecutionAfterFailedCompilation, "execution_after_failed_compilation",
+         &|o| o.receipts[0].compilation = bq::CompilationOutcome::Failed, findings);
+    want(base(), R::ReceiptNotPassed, "not_passed",
+         &|o| o.receipts[0].outcome = Some(bq::ExecutionOutcome::Failed), findings);
+    want(base(), R::ArtifactMissing, "artifact_missing",
+         &|o| o.receipts[0].artifact = None, findings);
+    want(base(), R::ArtifactPolicyMismatch, "artifact_policy_mismatch",
+         &|o| o.receipts[1].artifact = Some(bq::Tier0ArtifactEvidence::FixtureSet {
+             digest: bq::Sha256Digest::from_bytes([9u8; 32]),
+         }), findings);
+    want(base(), R::ReceiptTargetMismatch, "receipt_target_mismatch",
+         &|o| o.receipts[0].target = RustTargetTriple::X86_64PcWindowsGnu, findings);
+    want(base(), R::MissingRequiredReceipt, "missing_required_receipt",
+         &|o| { o.receipts.pop(); }, findings);
+    want(base(), R::DuplicateReceipt, "duplicate_receipt",
+         &|o| { let last = o.receipts[o.receipts.len() - 1]; o.receipts.push(last); }, findings);
+    want(base(), R::ReceiptsOutOfCanonicalOrder, "out_of_canonical_order",
+         &|o| o.receipts.reverse(), findings);
+    want(base(), R::SourceCannotQualifyAuthoritativeTarget, "export_cannot_qualify_authoritative",
+         &|o| o.source = bq::SourceBinding::FrozenExport {
+             spec_manifest_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
+             export_tree_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
+         }, findings);
+    want(base(), R::AuthoritativeTargetWithoutHostedRun, "authoritative_without_hosted_run",
+         &|o| o.hosted_run = None, findings);
+
+    // Every rule names a nonempty law, a repair, and one of the three declared
+    // owners — no rule is unowned or unexplained.
+    for &rule in bq::Tier0VerificationRule::ALL {
+        if rule.law().is_empty() {
+            findings.push(format!("verification rule {rule:?} has an empty law"));
+        }
+        if rule.repair().is_empty() {
+            findings.push(format!("verification rule {rule:?} has an empty repair"));
+        }
+        let owner = rule.owner();
+        let known = owner == bq::TIER0_RECEIPT_ALGEBRA_OWNER
+            || owner == bq::TIER0_DENOMINATOR_OWNER
+            || owner == bq::TIER0_HOSTED_QUALIFICATION_OWNER;
+        if !known {
+            findings.push(format!("verification rule {rule:?} names an unknown owner {owner:?}"));
+        }
     }
 }
 

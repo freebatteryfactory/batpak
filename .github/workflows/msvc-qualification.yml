@@ -48,14 +48,16 @@ jobs:
       - name: freeze --check
         run: python bootstrap/freeze.py --check
 
-      # One run: the suite must pass AND every receipt in the canonical Tier 0
-      # denominator (REQUIRED_TIER0_RECEIPTS in selftest.py) must be executed,
-      # passed, artifact-bound where the receipt binds an artifact, and bound
-      # to the MSVC triple. The denominator lives in ONE place — selftest —
-      # and --require-receipts turns any unearned or misbound receipt into a
-      # nonzero exit, so this lane cannot stay green when a receipt disappears,
-      # never executes, or falls back to another target. The prior shape — a
-      # PowerShell loop over a copied three-receipt list — went green while
-      # tier0-law-fixtures and tier0-spec-tests were never required at all.
+      # One run: the suite must pass AND selftest must PRODUCE concrete Tier 0
+      # evidence for the MSVC target — a git-checkout qualification.t0 binding
+      # this run's commit, tree, toolchain, and hosted-run identity, one receipt
+      # per Tier0ReceiptKind::ALL with recomputed artifact digests — which the
+      # independent bootstrap/receiptcheck.rs then verifies against the sealed
+      # spec::bootstrap_qualification::verify (5.5E6b). The denominator lives in
+      # the typed owner (spec/bootstrap_qualification.rs), not in Python;
+      # --require-receipts fails nonzero when any receipt is missing, unbound,
+      # misbound, or refused by the verifier. The prior shape — a PowerShell loop
+      # over a copied three-receipt list — went green while tier0-law-fixtures
+      # and tier0-spec-tests were never required at all.
       - name: selftest (Tier 0 receipts on MSVC)
         run: python bootstrap/selftest.py --require-receipts x86_64-pc-windows-msvc

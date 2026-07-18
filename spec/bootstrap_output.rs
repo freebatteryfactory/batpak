@@ -164,46 +164,62 @@ pub const fn binary_target(package: PackageId) -> Option<&'static str> {
     }
 }
 
-/// One portable relative-path grammar for every planned output path (5.5E5a).
-/// The plan is language-neutral POSIX identity, but the authoritative host is
-/// Windows: a path that is clean under forward-slash rules can still acquire
-/// filesystem meaning through a backslash, a drive colon, a trailing dot, or a
-/// reserved device name. This law admits only paths that are safe on every
-/// platform the candidate is published to. Case-fold collision is a PLAN-level
-/// property (two paths colliding), checked where the plan is expanded, not
-/// here.
+/// One portable relative-path grammar for every planned output path (5.5E5a,
+/// rebuilt as a POSITIVE grammar in 5.5E6b). The plan is language-neutral POSIX
+/// identity, but the authoritative host is Windows: a path that is clean under
+/// forward-slash rules can still acquire filesystem meaning through a
+/// backslash, a drive colon, a trailing dot, a Windows-invalid metacharacter,
+/// or a reserved device name.
+///
+/// A negative filter (reject these bad characters) is the wrong shape: it
+/// admits everything nobody thought to forbid, which is how the E5a form let a
+/// non-ASCII component and the Windows-invalid set `< > " | ? *` through. This
+/// law instead SPELLS OUT what a component may contain — ASCII
+/// `[A-Za-z0-9._-]` only — so a byte that cannot be spelled cannot smuggle a
+/// device colon, a backslash separator, a wildcard, or a non-ASCII homoglyph.
+/// The allow-list subsumes the old backslash/colon/control/space rejections by
+/// construction. Case-fold collision is a PLAN-level property (two paths
+/// colliding), checked where the plan is expanded, not here.
 pub fn is_portable_gate0_relative_path(path: &str) -> bool {
     if path.is_empty() || path.starts_with('/') {
         return false;
     }
-    if path.contains('\\') || path.contains(':') {
+    path.split('/').all(is_portable_gate0_path_component)
+}
+
+/// The positive component grammar. A single path segment is portable iff it is
+/// nonempty, is not a traversal token, is drawn only from the ASCII portable
+/// set, does not end in a dot, and is not a Windows reserved device stem.
+pub fn is_portable_gate0_path_component(component: &str) -> bool {
+    if component.is_empty() || component == "." || component == ".." {
         return false;
     }
-    if path.chars().any(|c| (c as u32) < 0x20 || c == '\u{7f}') {
+    // Positive character grammar: ASCII `[A-Za-z0-9._-]` only. This rejects, by
+    // construction, every non-ASCII byte, every Windows-invalid character
+    // (`< > : " | ? * \`), whitespace, and every control character — the
+    // component simply cannot be spelled with them.
+    if !component
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-')
+    {
         return false;
     }
-    for component in path.split('/') {
-        if component.is_empty() || component == "." || component == ".." {
-            return false;
-        }
-        if component.ends_with('.') || component.ends_with(' ') {
-            return false;
-        }
-        // Windows reserved device names, with or without an extension, are
-        // refused regardless of case: `NUL`, `com1.rs`, `AUX` all bind to a
-        // device, not a file.
-        let stem = component.split('.').next().unwrap_or(component);
-        let upper = stem.to_ascii_uppercase();
-        let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-            || (upper.len() == 4
-                && (upper.starts_with("COM") || upper.starts_with("LPT"))
-                && upper.as_bytes()[3].is_ascii_digit()
-                && upper.as_bytes()[3] != b'0');
-        if reserved {
-            return false;
-        }
+    // A component may not end in a dot: Windows silently strips trailing dots,
+    // so `foo.` and `foo` would collide on the authoritative host. (A trailing
+    // space is already impossible under the character grammar above.)
+    if component.ends_with('.') {
+        return false;
     }
-    true
+    // Windows reserved device names, with or without an extension, bind to a
+    // device rather than a file, regardless of case: `NUL`, `com1.rs`, `AUX`.
+    let stem = component.split('.').next().unwrap_or(component);
+    let upper = stem.to_ascii_uppercase();
+    let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (upper.len() == 4
+            && (upper.starts_with("COM") || upper.starts_with("LPT"))
+            && upper.as_bytes()[3].is_ascii_digit()
+            && upper.as_bytes()[3] != b'0');
+    !reserved
 }
 
 /// The common workspace license expression every generated manifest inherits.

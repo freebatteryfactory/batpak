@@ -4191,26 +4191,35 @@ def bootstrap_output_findings(root: Path) -> list[str]:
         out.append("missing docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
 
     # Every expanded plan path obeys one portable-path law, independently
-    # reconstructed here (5.5E5a). The forward-slash-only posture the old
-    # inline check carried admitted a backslash, a drive colon, or a Windows
-    # device name on the authoritative host; this reconstruction refuses them.
-    def portable(path: str) -> bool:
-        if not path or path.startswith("/") or "\\" in path or ":" in path:
+    # reconstructed here (5.5E5a; rebuilt as a POSITIVE grammar in 5.5E6b). The
+    # old negative filter admitted everything nobody forbade — a non-ASCII
+    # component and the Windows-invalid set `< > " | ? *` slipped through. This
+    # reconstruction spells out what a component MAY contain (ASCII
+    # `[A-Za-z0-9._-]` only), so a byte that cannot be spelled cannot smuggle a
+    # backslash separator, a drive colon, a wildcard, or a homoglyph.
+    def portable_component(component: str) -> bool:
+        if component in ("", ".", ".."):
             return False
-        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in path):
+        if not all(
+            ("a" <= c <= "z") or ("A" <= c <= "Z") or ("0" <= c <= "9")
+            or c in "._-"
+            for c in component
+        ):
             return False
-        for component in path.split("/"):
-            if component in ("", ".", ".."):
-                return False
-            if component.endswith(".") or component.endswith(" "):
-                return False
-            stem = component.split(".")[0].upper()
-            if stem in ("CON", "PRN", "AUX", "NUL"):
-                return False
-            if (len(stem) == 4 and stem[:3] in ("COM", "LPT")
-                    and stem[3].isdigit() and stem[3] != "0"):
-                return False
+        if component.endswith("."):
+            return False
+        stem = component.split(".")[0].upper()
+        if stem in ("CON", "PRN", "AUX", "NUL"):
+            return False
+        if (len(stem) == 4 and stem[:3] in ("COM", "LPT")
+                and stem[3].isdigit() and stem[3] != "0"):
+            return False
         return True
+
+    def portable(path: str) -> bool:
+        if not path or path.startswith("/"):
+            return False
+        return all(portable_component(c) for c in path.split("/"))
 
     folded: dict[str, str] = {}
     for path in expected_paths:
@@ -4381,12 +4390,17 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
     # The denominator moved out of Python: selftest DERIVES it, never authors a
     # literal slug tuple, and the product ReceiptId cannot substitute.
     st = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
-    if "_typed_tier0_denominator" not in st:
-        out.append("bootstrap/selftest.py: does not derive the Tier 0 denominator from "
-                   "the typed owner")
+    # 5.5E6b: the Tier 0 admission authority left Python. selftest holds no
+    # hand-authored denominator and no Python pass-predicate; it produces
+    # concrete evidence and delegates the verdict to the independent verifier
+    # bootstrap/receiptcheck.rs. A reintroduced slug tuple, or a selftest that
+    # no longer delegates, is refused here.
     if re.search(r'REQUIRED_TIER0_RECEIPTS = \(\s*\("tier0-', st):
         out.append("bootstrap/selftest.py: REQUIRED_TIER0_RECEIPTS is a hand-authored "
-                   "slug tuple; the typed owner is the denominator")
+                   "slug tuple; Tier0ReceiptKind::ALL is the one denominator")
+    if "verify_tier0_evidence(" not in st:
+        out.append("bootstrap/selftest.py: does not delegate Tier 0 qualification to "
+                   "the independent verifier bootstrap/receiptcheck.rs")
     if "ReceiptId" in src:
         out.append(f"{A_BQ_SPEC}: reuses the product ReceiptId; Tier0ReceiptKind is the "
                    "bootstrap receipt identity")
@@ -4410,6 +4424,120 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
                            "match its typed derivation")
     else:
         out.append("missing DELIVERY_NOTES.md")
+
+    # === E6b: the evidence-verification algebra is internally coherent ======
+    # Independent reconstruction (regex, no shared parse with the spec crate):
+    # the rule inventory equals its ALL both directions; every rule carries an
+    # owner, a law, and a repair; ownership resolves only to the three declared
+    # owners; the artifact-evidence sum matches the policy vocabulary exactly;
+    # and the concrete-digest and refusal primitives are present. This proves
+    # the SHAPES are admissible; bootstrap/receiptcheck.rs proves the concrete
+    # evidence matches them, and seedcheck executes verify() against each rule.
+    rule_enum = "Tier0VerificationRule"
+    rule_authored = variants(src, rule_enum)
+    rule_listed = all_of(src, rule_enum)
+    for name in rule_authored:
+        if name not in rule_listed:
+            out.append(f"{rule_enum}::{name} is authored but ALL omits it")
+    for name in rule_listed:
+        if name not in rule_authored:
+            out.append(f"{rule_enum}::ALL lists {name}, which the enum does not author")
+    if not rule_listed:
+        out.append(f"{rule_enum}::ALL is empty")
+
+    def arm_body(fn_sig: str) -> str:
+        m = re.search(re.escape(fn_sig) + r"\s*\{(.*?)\n    \}", src, re.S)
+        return m.group(1) if m else ""
+
+    owner_body = arm_body("pub const fn owner(self) -> ContractId")
+    law_body = arm_body("pub const fn law(self) -> &'static str")
+    repair_body = arm_body("pub const fn repair(self) -> &'static str")
+    for label, body in (("owner", owner_body), ("law", law_body),
+                        ("repair", repair_body)):
+        if not body:
+            out.append(f"{A_BQ_SPEC}: {rule_enum} declares no {label}() arm")
+    for name in rule_authored:
+        token = f"{rule_enum}::{name}"
+        if token not in owner_body:
+            out.append(f"{A_BQ_SPEC}: rule {name} names no owning contract")
+        if f"{token} =>" not in law_body:
+            out.append(f"{A_BQ_SPEC}: rule {name} states no law")
+        if f"{token} =>" not in repair_body:
+            out.append(f"{A_BQ_SPEC}: rule {name} states no repair")
+    # Every law and repair arm is a nonempty string literal.
+    for label, body in (("law", law_body), ("repair", repair_body)):
+        for name, text in re.findall(
+                rule_enum + r"::(\w+) =>\s*\"((?:[^\"\\]|\\.)*)\"", body):
+            if not text.strip():
+                out.append(f"{A_BQ_SPEC}: rule {name} {label} is empty")
+
+    # The three owners, and only those three, resolve rule ownership; each is
+    # declared with its authoritative contract id.
+    owner_decl = dict(re.findall(
+        r'pub const (TIER0_\w+_OWNER): ContractId =\s*ContractId\("([^"]+)"\);', src))
+    expected_owners = {
+        "TIER0_RECEIPT_ALGEBRA_OWNER": "BP-RECEIPTS-1",
+        "TIER0_DENOMINATOR_OWNER": "BP-BOOTSTRAP-1",
+        "TIER0_HOSTED_QUALIFICATION_OWNER": "BP-PUBLIC-API-CI-RELEASE-1",
+    }
+    if owner_decl != expected_owners:
+        out.append(f"{A_BQ_SPEC}: the three Tier 0 ownership constants are not "
+                   "declared with their authoritative contract ids")
+    owners_used = set(re.findall(r"TIER0_\w+_OWNER", owner_body))
+    for used in owners_used:
+        if used not in expected_owners:
+            out.append(f"{A_BQ_SPEC}: owner() resolves to {used}, not a declared "
+                       "Tier 0 ownership constant")
+    for declared in expected_owners:
+        if declared not in owners_used:
+            out.append(f"{A_BQ_SPEC}: ownership constant {declared} owns no rule")
+
+    # The artifact-evidence sum matches the policy vocabulary one-to-one, and
+    # each evidence variant reports the same-named policy.
+    ev_head = src.find("pub enum Tier0ArtifactEvidence {")
+    ev_body = src[ev_head: src.find("\n}", ev_head)] if ev_head >= 0 else ""
+    ev_variants = set(re.findall(r"^\s{4}(\w+)\s*(?:\{|,)", ev_body, re.M))
+    policy_variants = set(variants(src, "Tier0ArtifactPolicy"))
+    if not ev_variants or ev_variants != policy_variants:
+        out.append(f"{A_BQ_SPEC}: Tier0ArtifactEvidence variants do not match the "
+                   "Tier0ArtifactPolicy vocabulary")
+    ev_policy = re.findall(
+        r"Tier0ArtifactEvidence::(\w+) \{ \.\. \} => \{?\s*Tier0ArtifactPolicy::(\w+)",
+        src)
+    for variant, mapped in ev_policy:
+        if variant != mapped:
+            out.append(f"{A_BQ_SPEC}: evidence {variant} reports policy {mapped}")
+    if {v for v, _ in ev_policy} != ev_variants:
+        out.append(f"{A_BQ_SPEC}: Tier0ArtifactEvidence::policy() is not total")
+
+    # A slug resolves back to its kind, and the refusal error names its rule.
+    if "pub fn from_slug(" not in src:
+        out.append(f"{A_BQ_SPEC}: Tier0ReceiptKind has no from_slug resolver")
+    err_head = src.find("pub enum Tier0VerificationError {")
+    err_body = src[err_head: src.find("\n}", err_head)] if err_head >= 0 else ""
+    for arm in ("Receipt", "Denominator", "Qualification"):
+        if f"{arm} {{" not in err_body:
+            out.append(f"{A_BQ_SPEC}: Tier0VerificationError omits its {arm} arm")
+    if "pub const fn rule(self) -> Tier0VerificationRule" not in src:
+        out.append(f"{A_BQ_SPEC}: Tier0VerificationError projects no rule()")
+
+    # The concrete-digest and hex-parse primitives are present and
+    # lowercase-strict: a Tier 0 evidence digest is its own bootstrap type.
+    for prim in ("Sha256Digest", "GitCommitSha", "GitTreeSha", "ToolchainCommit"):
+        impl = re.search(r"impl " + prim + r" \{(.*?)\n\}", src, re.S)
+        body = impl.group(1) if impl else ""
+        if "fn from_hex(" not in body or "fn render(" not in body:
+            out.append(f"{A_BQ_SPEC}: {prim} is not a from_hex/render digest primitive")
+    hex_err = set(variants(src, "HexParseError"))
+    if hex_err != {"WrongLength", "NonLowerHexDigit"}:
+        out.append(f"{A_BQ_SPEC}: HexParseError does not distinguish a wrong length "
+                   "from a non-lowercase-hex digit")
+
+    # receiptcheck.rs is the authoritative independent computer, and it is wired
+    # into the required-file denominator so it can never silently vanish.
+    if "bootstrap/receiptcheck.rs" not in \
+            (root / "spec/architecture.rs").read_text(encoding="utf-8"):
+        out.append("spec/architecture.rs: REQUIRED_DOCS omits bootstrap/receiptcheck.rs")
     return out
 
 

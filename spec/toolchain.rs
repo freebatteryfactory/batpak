@@ -159,16 +159,19 @@ impl RustTargetTriple {
     /// Whether a receipt bound to this triple is the AUTHORITATIVE Windows
     /// qualification. The supplemental target is local, corroborating evidence
     /// and never closes a gate on its own.
+    ///
+    /// Authority has ONE owner: `AUTHORITATIVE_TARGET`. A per-variant
+    /// `true`/`false` match here would be a second declaration of the same
+    /// fact — move authority to a new triple and the two would silently
+    /// disagree. This compares against the single constant instead.
     pub const fn is_authoritative(self) -> bool {
-        match self {
-            RustTargetTriple::X86_64PcWindowsMsvc => true,
-            RustTargetTriple::X86_64PcWindowsGnu => false,
-        }
+        matches!(self, AUTHORITATIVE_TARGET)
     }
 }
 
 /// The one authoritative Windows target. A qualification that closes a gate
-/// must carry receipts bound to this triple.
+/// must carry receipts bound to this triple. This constant is the SOLE owner
+/// of the authority fact; `is_authoritative()` compares against it.
 pub const AUTHORITATIVE_TARGET: RustTargetTriple = RustTargetTriple::X86_64PcWindowsMsvc;
 
 /// The one toolchain authority. Two version fields because they answer

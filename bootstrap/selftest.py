@@ -94,65 +94,16 @@ def executed_and_passed() -> list[str]:
             if r["available"] and r["executed"] and r["passed"]]
 
 
-# The canonical Tier 0 receipt denominator, in one place (5.5E2c). Each entry
-# is (name, artifact_bound): an artifact-bound receipt must carry the exact
-# "<triple> artifact sha256:... source sha256:..." binding qualify_binary
-# records; the law-fixture suite runs many short-lived binaries and binds the
-# triple only. The authoritative hosted lane passes --require-receipts
-# <triple>, and then EVERY receipt named here must be available, compiled,
-# executed, passed, and bound to that exact triple or selftest exits nonzero:
-# a zero exit plus a "NOT QUALIFIED LOCALLY" line never satisfies the
-# authoritative profile, and the hosted workflow consumes this inventory
-# through the flag instead of owning a copied list.
-def _typed_tier0_denominator() -> tuple:
-    """The Tier 0 denominator, DERIVED from the typed owner (5.5E6a): the slug
-    and whether the receipt binds an executable artifact digest come from
-    spec/bootstrap_qualification.rs, not a hand-authored tuple here. selftest
-    is the executor, never the denominator authority."""
-    src = (HERE.parent / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8")
-    slugs = dict(re.findall(r"Tier0ReceiptKind::(\w+) => \"([^\"]+)\"", src))
-    order = re.findall(r"Tier0ReceiptKind::(\w+),",
-                       re.search(r"pub const ALL:.*?&\[(.*?)\];", src, re.S).group(1))
-    policy = dict(re.findall(r"Tier0ReceiptKind::(\w+) => Tier0ArtifactPolicy::(\w+)", src))
-    rows = []
-    for kind in order:
-        rows.append((slugs[kind], policy[kind] != "FixtureSet"))
-    return tuple(rows)
+# The Tier 0 receipt DENOMINATOR left Python entirely in 5.5E6b. The one
+# denominator is Tier0ReceiptKind::ALL in spec/bootstrap_qualification.rs.
+# selftest produces concrete evidence (produce_tier0_evidence) and the
+# independent verifier bootstrap/receiptcheck.rs computes membership, ordering,
+# policy, and pass posture from the typed owner, refusing a dishonest receipt
+# there. There is no Python admission predicate and no hand-authored
+# required-receipt tuple: an all-green row of Python booleans was exactly the
+# shape E6b replaced with recomputed concrete evidence.
 
 
-REQUIRED_TIER0_RECEIPTS = _typed_tier0_denominator()
-
-
-def unearned_required_receipts(required_target: str) -> list[str]:
-    """Every required receipt that did NOT earn its place for this target."""
-    problems: list[str] = []
-    # A receipt binds WHERE a binary ran — a physical target triple. A
-    # semantic qualification environment ("std", "no_std + alloc") answers a
-    # different question and cannot substitute (5.5E3a).
-    if not re.fullmatch(r"[a-z0-9_]+(-[a-z0-9_]+){2,}", required_target):
-        return [f"required target {required_target!r} is not a physical target "
-                "triple; a semantic qualification environment answers WHAT must "
-                "hold, never WHERE a binary ran"]
-    for name, artifact_bound in REQUIRED_TIER0_RECEIPTS:
-        rows = [r for r in QUALIFICATION_RECEIPTS if r["name"] == name]
-        if not rows:
-            problems.append(f"{name}: no receipt was recorded")
-            continue
-        binding = (re.escape(required_target)
-                   + (r" artifact sha256:[0-9a-f]+ source sha256:[0-9a-f]+"
-                      if artifact_bound else ""))
-        # Every claimed stage, explicitly — including compiled. Execution
-        # normally implies compilation in reality, but the law refuses a
-        # contradictory receipt shape (executed yet compiled=False) instead
-        # of relying on a reader to repair it mentally (5.5E2g).
-        if not any(r["available"] and r["compiled"] is True and r["executed"]
-                   and r["passed"]
-                   and r["target"] and re.fullmatch(binding, str(r["target"]))
-                   for r in rows):
-            got = "; ".join(str(r["target"] or r["reason"] or "unearned") for r in rows)
-            problems.append(f"{name}: no executed, passed receipt bound to "
-                            f"{required_target} (got: {got})")
-    return problems
 def _tree_digest(root: Path) -> str:
     """A digest of the typed source snapshot a qualification represents."""
     h = hashlib.sha256()
@@ -2413,8 +2364,9 @@ def test_exact_ledgers(audit, project) -> list[str]:
             "")],
           "DEC-064 forward-policy fields do not name FrameVersion")
     probe("dec064_omitting_layout_version_is_rejected",
-          [(DI, "SchemaVersion and LayoutVersion are distinct types",
-            "SchemaVersion are distinct types"),
+          [(DI, "SchemaVersion LayoutVersion and Tier0QualificationArtifactVersion "
+            "are distinct types",
+            "SchemaVersion and Tier0QualificationArtifactVersion are distinct types"),
            (DI, "LayoutVersion versions physical organization under LayoutId "
             "and never schema meaning; ", "")],
           "DEC-064 forward-policy fields do not name LayoutVersion")
@@ -2472,15 +2424,18 @@ def test_exact_ledgers(audit, project) -> list[str]:
         [audit.exact_ledger_findings])
     regen_and_check(
         "version_structural_growth_is_lawful",
-        [(ID, "        VersionIdentityKind::Layout,\n    ];",
-          "        VersionIdentityKind::Layout,\n"
+        [(ID, "        VersionIdentityKind::Tier0QualificationArtifact,\n    ];",
+          "        VersionIdentityKind::Tier0QualificationArtifact,\n"
           "        VersionIdentityKind::Gadget,\n    ];"),
-         (ID, "    Layout,\n}", "    Layout,\n    Gadget,\n}"),
+         (ID, "    Tier0QualificationArtifact,\n}",
+          "    Tier0QualificationArtifact,\n    Gadget,\n}"),
          (ID, 'VersionIdentityKind::Layout => entry!("LayoutVersion", ',
           'VersionIdentityKind::Gadget => entry!("GadgetVersion", "BP-STORAGE-TILES-1"),\n'
           '            VersionIdentityKind::Layout => entry!("LayoutVersion", '),
-         (DI, "SchemaVersion and LayoutVersion are distinct types",
-          "SchemaVersion LayoutVersion and GadgetVersion are distinct types"),
+         (DI, "SchemaVersion LayoutVersion and Tier0QualificationArtifactVersion "
+          "are distinct types",
+          "SchemaVersion LayoutVersion Tier0QualificationArtifactVersion and "
+          "GadgetVersion are distinct types"),
          ("docs/05_STORAGE_FBAT_AND_TILES.md",
           "preserving three independent version identities.",
           "preserving three independent version identities. GadgetVersion is a "
@@ -4856,13 +4811,14 @@ def test_bootstrap_qualification(audit) -> list[str]:
           "reuses the product ReceiptId",
           "pub type ReceiptId = u32;\n\npub enum Tier0ReceiptKind {")
     # Built at run time so THIS source never contains the contiguous
-    # hand-authored tuple the audit law scans for.
+    # hand-authored tuple the audit law scans for. The Python denominator left
+    # in E6b; a reintroduced slug tuple must redden the audit.
     forged_denominator = ('REQUIRED_TIER0_RECEIPTS = ((' + '"tier0-'
                           + 'law-fixtures", False),)')
     probe("python_denominator_cannot_return", "bootstrap/selftest.py",
-          "REQUIRED_TIER0_RECEIPTS = _typed_tier0_denominator()",
+          "def _tree_digest(root: Path) -> str:",
           "hand-authored slug tuple",
-          forged_denominator)
+          forged_denominator + "\n\n\ndef _tree_digest(root: Path) -> str:")
     probe("tier0_denominator_block_drift_is_rejected", "DELIVERY_NOTES.md",
           "| tier0-materialize | ExecutableAndOutputTree |",
           "does not match its typed derivation",
@@ -8600,66 +8556,533 @@ def test_contract_kinds(audit) -> list[str]:
     return findings
 
 
-def test_required_receipt_denominator() -> list[str]:
-    """Dishonest receipt shapes must refuse the authoritative denominator.
+def _t0_canonical_artifact() -> str:
+    """A well-formed frozen-export qualification.t0 whose digests need not match
+    any bundle: every hostile below is refused at PARSE, before receiptcheck
+    recomputes a single digest. The verify()-level rules (denominator, policy,
+    target, source, hosted-run) are exercised directly against the sealed spec
+    by seedcheck; these fixtures pin the STRICT GRAMMAR the artifact rides on."""
+    d64 = {c: c * 64 for c in "abcdef012345"}
+    h40 = {c: c * 40 for c in "abcd"}
+    lines = [
+        "BATPAK-TIER0-QUALIFICATION/1",
+        "source-kind: frozen-export",
+        f"spec-manifest-digest: {d64['a']}",
+        f"export-tree-digest: {d64['b']}",
+        "rustc-release: 1.97.0",
+        f"rustc-commit: {h40['a']}",
+        "cargo-release: 1.97.0",
+        f"cargo-commit: {h40['b']}",
+        f"toolchain-file-digest: {d64['c']}",
+        "target: x86_64-pc-windows-gnu",
+        f"receipt: tier0-law-fixtures compiled=succeeded execution=attempted "
+        f"outcome=passed evidence=fixture-set digest={d64['d']}",
+        f"receipt: tier0-seedcheck compiled=succeeded execution=attempted "
+        f"outcome=passed evidence=executable digest={d64['e']}",
+        f"receipt: tier0-materialize compiled=succeeded execution=attempted "
+        f"outcome=passed evidence=executable+output-tree "
+        f"executable-digest={d64['f']} output-tree-digest={d64['0']}",
+        f"receipt: tier0-seedcheck-tests compiled=succeeded execution=attempted "
+        f"outcome=passed evidence=executable digest={d64['1']}",
+        f"receipt: tier0-spec-tests compiled=succeeded execution=attempted "
+        f"outcome=passed evidence=executable digest={d64['2']}",
+    ]
+    return "\n".join(lines) + "\n"
 
-    The earned predicate claims available + compiled + executed + passed +
-    target-bound. Each stage is checked explicitly: a receipt whose fields
-    contradict reality — executed and passed yet compiled=False — is a
-    contradictory shape the law refuses, never a gap a reader repairs
-    mentally. Runs against fabricated receipts and restores the live list on
-    every exit path."""
+
+def test_receiptcheck_refuses_dishonest_artifacts() -> list[str]:
+    """The independent verifier refuses every artifact-grammar perturbation.
+
+    Replaces the retired Python admission predicate (5.5E6b): there is no
+    Python judgment to fool anymore. These build the REAL receiptcheck and feed
+    it perturbations of a canonical qualification.t0, asserting each is refused
+    for its exact reason. Grammar refusals fire before any digest recompute, so
+    no evidence bundle is needed; the digest-mismatch and typed verify() rules
+    are proven by the producer round-trip and by seedcheck respectively."""
     findings: list[str] = []
-    saved = list(QUALIFICATION_RECEIPTS)
-    triple = "x86_64-pc-windows-msvc"
-
-    def earned(name, bound):
-        binding = f"{triple} artifact sha256:{'a' * 12} source sha256:{'b' * 12}"
-        return {"name": name, "available": True, "compiled": True,
-                "executed": True, "passed": True, "reason": None,
-                "target": binding if bound else triple}
-
-    def full_set():
-        return [earned(n, b) for n, b in REQUIRED_TIER0_RECEIPTS]
-
-    def case(name, receipts, expect_refusal):
-        QUALIFICATION_RECEIPTS[:] = receipts
-        got = unearned_required_receipts(triple)
-        if bool(got) != expect_refusal:
-            findings.append(f"required_receipt_{name} FAILED (got {got!r})")
-
+    root = HERE.parent
+    # Evidence independence (5.5E6b): the verifier computes its own digests and
+    # defers to no producer. It carries a self-checked internal SHA-256 and
+    # shells out to no python — its lone "selftest.py" mention is a comment
+    # asserting exactly this, not a call.
+    rc_src = (root / "bootstrap/receiptcheck.rs").read_text(encoding="utf-8")
+    if "fn sha256(" not in rc_src or "self_check_sha256" not in rc_src:
+        findings.append("receiptcheck_computes_its_own_sha256 FAILED "
+                        "(no self-checked internal hasher)")
+    if re.search(r'Command::new\(\s*"python', rc_src) or "import selftest" in rc_src:
+        findings.append("receiptcheck_does_not_defer_to_the_producer FAILED "
+                        "(shells out to or imports selftest)")
+    rustc = shutil.which("rustc")
+    if not rustc:
+        print("selftest: receiptcheck_refuses_dishonest_artifacts unavailable (no rustc)")
+        return findings
+    tmp = Path(tempfile.mkdtemp(prefix="batpak-hostile-t0-"))
     try:
-        case("all_earned_passes", full_set(), False)
-        rs = full_set()
-        rs[1] = dict(rs[1], compiled=False)
-        case("uncompiled_yet_executed_receipt_is_refused", rs, True)
-        rs = full_set()
-        rs[0] = dict(rs[0], executed=False, passed=None)
-        case("unexecuted_receipt_is_refused", rs, True)
-        rs = full_set()
-        rs[2] = dict(rs[2], passed=False)
-        case("failed_receipt_is_refused", rs, True)
-        case("missing_receipt_is_refused",
-             [r for r in full_set() if r["name"] != "tier0-spec-tests"], True)
-        rs = full_set()
-        rs[3] = dict(rs[3], target=str(rs[3]["target"]).replace(
-            triple, "x86_64-pc-windows-gnu"))
-        case("wrong_triple_receipt_is_refused", rs, True)
-        rs = full_set()
-        rs[4] = dict(rs[4], target=triple)
-        case("unbound_artifact_receipt_is_refused", rs, True)
-        # A semantic environment where a triple is required (5.5E3a).
-        QUALIFICATION_RECEIPTS[:] = full_set()
-        if not unearned_required_receipts("std"):
-            findings.append(
-                "required_receipt_semantic_target_cannot_substitute_for_"
-                "physical_triple FAILED")
+        target = _t0_working_exe_target(rustc, TOOLCHAIN_EDITION, tmp)
+        rlib = tmp / "libspec.rlib"
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", target,
+                 "--crate-type", "rlib", "--crate-name", "spec", "-o", str(rlib),
+                 str(root / "spec/lib.rs")], capture_output=True, text=True).returncode != 0:
+            print("selftest: receiptcheck_refuses_dishonest_artifacts unavailable "
+                  "(spec rlib did not build)")
+            return findings
+        rc = tmp / ("receiptcheck" + (".exe" if os.name == "nt" else ""))
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", target,
+                 "--crate-name", "receiptcheck", "--extern", f"spec={rlib}",
+                 "-o", str(rc), str(root / "bootstrap/receiptcheck.rs")],
+                capture_output=True, text=True).returncode != 0 or not rc.is_file():
+            print("selftest: receiptcheck_refuses_dishonest_artifacts unavailable "
+                  "(receiptcheck did not build)")
+            return findings
+
+        good = _t0_canonical_artifact()
+
+        def refuses(name: str, text, needle: str) -> None:
+            art = tmp / f"{name}.t0"
+            art.write_bytes(text.encode("utf-8") if isinstance(text, str) else text)
+            proc = subprocess.run([str(rc), "verify", str(art), "--root", str(tmp),
+                                   "--evidence", str(tmp)], capture_output=True, text=True)
+            out = (proc.stdout + proc.stderr)
+            if proc.returncode == 0:
+                findings.append(f"receiptcheck_{name} FAILED (artifact was admitted)")
+            elif needle not in out:
+                findings.append(f"receiptcheck_{name} FAILED "
+                                f"(wanted {needle!r}, got {out.strip()[:160]!r})")
+
+        # Strict byte grammar.
+        refuses("crlf_is_rejected", good.replace("\n", "\r\n", 1),
+                "artifact contains a CR byte")
+        refuses("missing_final_newline_is_rejected", good[:-1],
+                "artifact has no final newline")
+        refuses("non_ascii_byte_is_rejected", good.replace("frozen-export", "frozen-expørt"),
+                "artifact contains a non-ASCII byte")
+        refuses("trailing_whitespace_is_rejected",
+                good.replace("target: x86_64-pc-windows-gnu\n",
+                             "target: x86_64-pc-windows-gnu \n"),
+                "artifact line has trailing whitespace")
+        # Fixed header and section order.
+        refuses("wrong_version_line_is_rejected",
+                good.replace("BATPAK-TIER0-QUALIFICATION/1",
+                             "BATPAK-TIER0-QUALIFICATION/2", 1),
+                "expected line")
+        refuses("reordered_source_keys_are_rejected",
+                good.replace(
+                    f"spec-manifest-digest: {'a' * 64}\nexport-tree-digest: {'b' * 64}",
+                    f"export-tree-digest: {'b' * 64}\nspec-manifest-digest: {'a' * 64}"),
+                "expected key")
+        refuses("unknown_key_is_rejected",
+                good.replace("target: x86_64-pc-windows-gnu\n",
+                             "target: x86_64-pc-windows-gnu\nbogus-key: 1\n"),
+                "unexpected line in receipts block")
+        # Strict lowercase, full-length hex.
+        refuses("uppercase_hex_is_rejected",
+                good.replace(f"spec-manifest-digest: {'a' * 64}",
+                             f"spec-manifest-digest: {'A' + 'a' * 63}"),
+                "bad sha256 digest")
+        refuses("abbreviated_hex_is_rejected",
+                good.replace(f"toolchain-file-digest: {'c' * 64}",
+                             "toolchain-file-digest: cccc"),
+                "bad sha256 digest")
+        # Receipt tokens: only known slugs, no duplicate keys. A product
+        # ReceiptId is not a Tier0ReceiptKind slug (5.5E6b).
+        refuses("unknown_receipt_slug_is_rejected",
+                good.replace("receipt: tier0-seedcheck ", "receipt: tier0-bogus "),
+                "unknown receipt slug")
+        refuses("duplicate_receipt_token_is_rejected",
+                good.replace("receipt: tier0-seedcheck compiled=succeeded",
+                             "receipt: tier0-seedcheck compiled=succeeded compiled=succeeded"),
+                "duplicate receipt token key")
     finally:
-        QUALIFICATION_RECEIPTS[:] = saved
+        shutil.rmtree(tmp, ignore_errors=True)
     return findings
 
 
+# === 5.5E6b: Tier 0 evidence producer ======================================
+# selftest is the OBSERVATION PRODUCER, not the admission authority. It runs
+# the real Tier 0 gates against a clean export, retains the concrete evidence
+# (executables, the materialized candidate tree, a fixture ledger), writes the
+# canonical qualification.t0 artifact, and hands the whole thing to the
+# independent verifier bootstrap/receiptcheck.rs. receiptcheck recomputes every
+# digest from the bytes on disk and calls the sealed spec::verify. A dishonest
+# receipt is caught THERE, not by a Python predicate here. The tree-digest
+# algorithm below mirrors receiptcheck.rs collect_tree/tree_digest exactly;
+# the artifact grammar mirrors its strict parser. Both are implemented
+# independently and must agree byte for byte.
+
+_T0_GNU = "x86_64-pc-windows-gnu"
+_T0_MSVC = "x86_64-pc-windows-msvc"
+_T0_SLUGS = ("tier0-law-fixtures", "tier0-seedcheck", "tier0-materialize",
+             "tier0-seedcheck-tests", "tier0-spec-tests")
+_T0_WORKFLOW_PATH = ".github/workflows/msvc-qualification.yml"
+
+
+def _t0_tree_digest(root: Path) -> str:
+    """Deterministic tree digest matching receiptcheck.rs exactly: one row per
+    entry ('<rel>\\tdir\\t-' or '<rel>\\tfile\\t<sha256hex>'), rel with '/'
+    separators relative to root, the root itself excluded; sort the full rows,
+    join each followed by '\\n', sha256 the join."""
+    rows: list[str] = []
+    for path in root.rglob("*"):
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink() or (not path.is_dir() and not path.is_file()):
+            raise RuntimeError(f"tree entry {rel} is neither file nor dir")
+        if path.is_dir():
+            rows.append(f"{rel}\tdir\t-")
+        else:
+            rows.append(f"{rel}\tfile\t{hashlib.sha256(path.read_bytes()).hexdigest()}")
+    rows.sort()
+    return hashlib.sha256("".join(r + "\n" for r in rows).encode("utf-8")).hexdigest()
+
+
+def _t0_probe(tool: str) -> tuple[str, str]:
+    """The default toolchain's release and commit hash, parsed the way
+    receiptcheck's probe_tool does — so the artifact this producer writes and
+    the verifier that re-probes agree. Raises when the tool reports no usable
+    commit (a channel with no commit-hash cannot produce authoritative
+    evidence locally; hosted CI owns that lane)."""
+    args = ["-vV"] if tool == "rustc" else ["-Vv"]
+    out = subprocess.run([tool, *args], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise RuntimeError(f"{tool} {args} exited nonzero")
+    release = commit = None
+    for line in out.stdout.splitlines():
+        if line.startswith("release: "):
+            release = line[len("release: "):].strip()
+        if line.startswith("commit-hash: "):
+            commit = line[len("commit-hash: "):].strip()
+    if not release or not commit or not re.fullmatch(r"[0-9a-f]{40}", commit or ""):
+        raise RuntimeError(f"{tool} reported no usable release/commit "
+                           f"(release={release!r} commit={commit!r})")
+    return release, commit
+
+
+def _t0_working_exe_target(rustc, edition, work: Path) -> str:
+    """A target that builds AND links a runnable exe on THIS machine: the host
+    default when its linker works (the hosted MSVC runner), else the gnu target
+    (local dev whose MSVC linker is absent)."""
+    probe = work / "t0probe.rs"
+    probe.write_text("fn main() {}\n", encoding="utf-8")
+    for target in (None, _T0_GNU):
+        exe = work / ("t0probe" + (".exe" if os.name == "nt" else ""))
+        if exe.exists():
+            exe.unlink()
+        flags = ["--target", target] if target else []
+        if subprocess.run([rustc, "--edition", edition, *flags, "-o", str(exe),
+                           str(probe)], capture_output=True, text=True).returncode == 0 \
+                and exe.is_file():
+            if target:
+                return target
+            m = re.search(r"host: (\S+)", subprocess.run(
+                [rustc, "-vV"], capture_output=True, text=True).stdout)
+            return m.group(1) if m else _T0_GNU
+    return _T0_GNU
+
+
+def _t0_build(rustc, edition, target, rlib, src: Path, out_exe: Path,
+              extra: tuple = (), link_spec: bool = True) -> bool:
+    """Build one binary for `target`. The rlib name MUST be lib*.rlib for rustc
+    to accept it as an extern crate."""
+    cmd = [rustc, "--edition", edition, "--target", target,
+           "--crate-name", out_exe.stem.replace("-", "_")]
+    if link_spec:
+        cmd += ["--extern", f"spec={rlib}"]
+    cmd += [*extra, "-o", str(out_exe), str(src)]
+    return subprocess.run(cmd, capture_output=True, text=True).returncode == 0 \
+        and out_exe.is_file()
+
+
+def _t0_law_fixtures(rustc, edition, target, rlib, work: Path) -> tuple[str, list[str]]:
+    """Run compile-fail law fixtures through the real toolchain and record a
+    ledger. Each fixture is a hostile consumer that MUST fail to compile with
+    its own reason; a fixture that compiles is a hole in the boundary. Returns
+    (manifest_text, problems)."""
+    fixtures = (
+        ("guarantee_identity_cannot_be_minted",
+         "use spec::guarantees::{GuaranteeRef, SeedId};\n"
+         "fn main() { let _ = GuaranteeRef::Seed(SeedId(\"SEED-FORGED\")); }",
+         "cannot initialize a tuple struct which contains private fields"),
+        ("qualification_id_cannot_carry_a_string_package",
+         "use spec::guarantees::QualificationId;\n"
+         "fn main() { let _ = QualificationId { package: \"batpak\", profile: \"semantic\" }; }",
+         "expected `PackageId`, found `&str`"),
+    )
+    rows: list[str] = []
+    problems: list[str] = []
+    for identity, body, want in fixtures:
+        srcf = work / f"{identity}.rs"
+        srcf.write_text(body + "\n", encoding="utf-8")
+        proc = subprocess.run(
+            [rustc, "--edition", edition, "--target", target,
+             "--extern", f"spec={rlib}", "--emit=metadata",
+             "-o", str(work / f"{identity}.rmeta"), str(srcf)],
+            capture_output=True, text=True)
+        diag = proc.stdout + proc.stderr
+        observed = "refused" if proc.returncode != 0 else "ADMITTED"
+        if proc.returncode == 0:
+            problems.append(f"law-fixture {identity} compiled; the boundary is open")
+        elif want not in diag:
+            problems.append(f"law-fixture {identity} failed for the wrong reason")
+        diag_digest = hashlib.sha256(diag.encode("utf-8")).hexdigest()
+        rows.append(f"{identity} | compile-fail | refused | {observed} | {diag_digest} | -")
+    return "\n".join(rows) + "\n", problems
+
+
+def _t0_gate_exe(rustc, edition, target, rlib, source_root: Path, bundle: Path,
+                 slug: str, src_rel: str, expect: str, extra: tuple = (),
+                 run_args=None, link_spec: bool = True) -> tuple[str | None, list[str]]:
+    """Build one executable gate into the bundle, run it, and return its
+    evidence tail on pass. The exit code and the expected banner must agree."""
+    exe = bundle / "executables" / (slug + (".exe" if os.name == "nt" else ""))
+    if not _t0_build(rustc, edition, target, rlib, source_root / src_rel, exe,
+                     extra, link_spec):
+        return None, [f"{slug}: did not build for {target}"]
+    proc = subprocess.run(
+        [str(exe), *(run_args if run_args is not None else (str(source_root),))],
+        capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    if proc.returncode != 0 or expect not in out:
+        head = " / ".join(out.splitlines()[:6])
+        return None, [f"{slug}: executed and did not pass ({head})"]
+    digest = hashlib.sha256(exe.read_bytes()).hexdigest()
+    return f"evidence=executable digest={digest}", []
+
+
+def _t0_git(root: Path, rev: str) -> str | None:
+    """A 40-hex object id from `git rev-parse`, or None."""
+    p = subprocess.run(["git", "-C", str(root), "rev-parse", rev],
+                       capture_output=True, text=True)
+    out = p.stdout.strip()
+    return out if p.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", out) else None
+
+
+def _t0_hosted_run_lines() -> list[str] | None:
+    """The hosted GitHub Actions run block from the environment, or None when
+    not under Actions: a local machine cannot mint an authoritative hosted
+    receipt. Values are single ASCII tokens with no trailing whitespace."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    os_name = (os.environ.get("ImageOS") or os.environ.get("RUNNER_OS", "")).strip()
+    os_version = (os.environ.get("ImageVersion")
+                  or os.environ.get("RUNNER_ARCH", "")).strip()
+    if not (repo and run_id.isdigit() and run_attempt.isdigit()
+            and os_name and os_version):
+        return None
+    return [
+        f"github-repository: {repo}",
+        f"github-workflow-path: {_T0_WORKFLOW_PATH}",
+        f"github-run-id: {run_id}",
+        f"github-run-attempt: {run_attempt}",
+        f"runner-image-os: {os_name}",
+        f"runner-image-version: {os_version}",
+    ]
+
+
+def produce_tier0_evidence(bundle: Path,
+                           target: str) -> tuple[Path | None, Path | None, list[str]]:
+    """Run every Tier 0 gate for `target`, materialize the Gate-0 candidate, and
+    write the canonical qualification.t0 + evidence bundle. The authoritative
+    MSVC target rides a git-checkout source with a hosted-run binding; the
+    supplemental GNU target rides a clean frozen `git archive` export. Returns
+    (artifact, source_root, problems); a nonempty problems list means the
+    evidence is incomplete and no artifact should be trusted."""
+    repo = HERE.parent
+    rustc = shutil.which("rustc")
+    if not rustc:
+        return None, None, ["rustc absent; no Tier 0 evidence can be produced"]
+    edition = TOOLCHAIN_EDITION
+    problems: list[str] = []
+    authoritative = (target == _T0_MSVC)
+
+    if bundle.exists():
+        shutil.rmtree(bundle, ignore_errors=True)
+    (bundle / "executables").mkdir(parents=True)
+    work = bundle.parent / "t0-work"
+    if work.exists():
+        shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+
+    # Source root and posture. The authoritative lane qualifies the real git
+    # checkout (binding its commit, tree, and hosted-run identity); the
+    # supplemental lane qualifies a clean export that carries no .git.
+    hosted: list[str] | None = None
+    if authoritative:
+        source_root = repo
+        commit = _t0_git(repo, "HEAD")
+        tree = _t0_git(repo, "HEAD^{tree}")
+        hosted = _t0_hosted_run_lines()
+        wf = repo / _T0_WORKFLOW_PATH
+        if not (commit and tree):
+            return None, None, ["authoritative target requires a git checkout; "
+                                "no HEAD commit/tree found"]
+        if hosted is None:
+            return None, None, ["authoritative target requires a hosted GitHub "
+                                "Actions run; no runner environment found"]
+        if not wf.is_file():
+            return None, None, [f"authoritative target requires {_T0_WORKFLOW_PATH}"]
+        source_lines = [
+            "source-kind: git-checkout",
+            f"git-commit: {commit}",
+            f"git-tree: {tree}",
+            "spec-manifest-digest: "
+            + hashlib.sha256((repo / "SPEC.sha256").read_bytes()).hexdigest(),
+            f"workflow-path: {_T0_WORKFLOW_PATH}",
+            f"workflow-digest: {hashlib.sha256(wf.read_bytes()).hexdigest()}",
+        ]
+    else:
+        source_root = bundle.parent / "t0-export"
+        if source_root.exists():
+            shutil.rmtree(source_root, ignore_errors=True)
+        source_root.mkdir(parents=True)
+        archive = subprocess.run(["git", "archive", "HEAD"], cwd=repo, capture_output=True)
+        if archive.returncode != 0:
+            return None, None, ["git archive HEAD failed; not a clean checkout"]
+        if subprocess.run(["tar", "-x", "-C", str(source_root)], input=archive.stdout,
+                          capture_output=True).returncode != 0:
+            return None, None, ["tar extraction of the export failed"]
+        source_lines = [
+            "source-kind: frozen-export",
+            "spec-manifest-digest: "
+            + hashlib.sha256((source_root / "SPEC.sha256").read_bytes()).hexdigest(),
+            f"export-tree-digest: {_t0_tree_digest(source_root)}",
+        ]
+
+    # The spec rlib for the target, built once from the source root.
+    rlib = work / "libspec.rlib"
+    if subprocess.run(
+            [rustc, "--edition", edition, "--target", target, "--crate-type",
+             "rlib", "--crate-name", "spec", "-o", str(rlib),
+             str(source_root / "spec/lib.rs")],
+            capture_output=True, text=True).returncode != 0:
+        return None, source_root, [f"the spec rlib did not build for {target}"]
+
+    # Executable gates.
+    tails: dict[str, str] = {}
+    tail, probs = _t0_gate_exe(rustc, edition, target, rlib, source_root, bundle,
+                               "tier0-seedcheck", "bootstrap/seedcheck.rs",
+                               "seedcheck: PASS")
+    problems += probs
+    if tail:
+        tails["tier0-seedcheck"] = tail
+    n_sc = (source_root / "bootstrap/seedcheck.rs").read_text(
+        encoding="utf-8").count("#[test]")
+    tail, probs = _t0_gate_exe(rustc, edition, target, rlib, source_root, bundle,
+                               "tier0-seedcheck-tests", "bootstrap/seedcheck.rs",
+                               f"test result: ok. {n_sc} passed",
+                               extra=("--test",), run_args=())
+    problems += probs
+    if tail:
+        tails["tier0-seedcheck-tests"] = tail
+    n_spec = sum(p.read_text(encoding="utf-8").count("#[test]")
+                 for p in sorted((source_root / "spec").glob("*.rs")))
+    tail, probs = _t0_gate_exe(rustc, edition, target, rlib, source_root, bundle,
+                               "tier0-spec-tests", "spec/lib.rs",
+                               f"test result: ok. {n_spec} passed",
+                               extra=("--test",), run_args=(), link_spec=False)
+    problems += probs
+    if tail:
+        tails["tier0-spec-tests"] = tail
+
+    # Materializer: build, run into the candidate tree, digest the tree.
+    mat_exe = bundle / "executables" / ("tier0-materialize"
+                                        + (".exe" if os.name == "nt" else ""))
+    candidate = bundle / "gate0-candidate"
+    if not _t0_build(rustc, edition, target, rlib,
+                     source_root / "bootstrap/materialize.rs", mat_exe):
+        problems.append(f"tier0-materialize: did not build for {target}")
+    else:
+        mp = subprocess.run([str(mat_exe), "--seed", str(source_root),
+                             "--output", str(candidate)], capture_output=True, text=True)
+        if mp.returncode != 0 or not candidate.is_dir():
+            problems.append("tier0-materialize: did not materialize the candidate "
+                            f"({mp.stderr.strip()[:160]})")
+        else:
+            ed = hashlib.sha256(mat_exe.read_bytes()).hexdigest()
+            otd = _t0_tree_digest(candidate)
+            tails["tier0-materialize"] = (f"evidence=executable+output-tree "
+                                          f"executable-digest={ed} output-tree-digest={otd}")
+
+    # Law fixtures: compile-fail ledger.
+    manifest_text, fx_probs = _t0_law_fixtures(rustc, edition, target, rlib, work)
+    problems += fx_probs
+    (bundle / "law-fixtures.manifest").write_text(manifest_text, encoding="utf-8",
+                                                  newline="\n")
+    tails["tier0-law-fixtures"] = ("evidence=fixture-set digest="
+                                   + hashlib.sha256(
+                                       (bundle / "law-fixtures.manifest").read_bytes()).hexdigest())
+
+    if problems:
+        return None, source_root, problems
+
+    # Toolchain bindings, then the artifact.
+    try:
+        rustc_rel, rustc_commit = _t0_probe("rustc")
+        cargo_rel, cargo_commit = _t0_probe("cargo")
+    except RuntimeError as exc:
+        return None, source_root, [str(exc)]
+    toolchain_file_digest = hashlib.sha256(
+        (source_root / "rust-toolchain.toml").read_bytes()).hexdigest()
+    lines = ["BATPAK-TIER0-QUALIFICATION/1", *source_lines,
+             f"rustc-release: {rustc_rel}", f"rustc-commit: {rustc_commit}",
+             f"cargo-release: {cargo_rel}", f"cargo-commit: {cargo_commit}",
+             f"toolchain-file-digest: {toolchain_file_digest}",
+             f"target: {target}"]
+    if hosted:
+        lines += hosted
+    for slug in _T0_SLUGS:
+        lines.append(f"receipt: {slug} compiled=succeeded execution=attempted "
+                     f"outcome=passed {tails[slug]}")
+    artifact = bundle / "qualification.t0"
+    artifact.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return artifact, source_root, []
+
+
+def verify_tier0_evidence(bundle: Path, artifact: Path, source_root: Path,
+                          target: str) -> tuple[bool, str]:
+    """Compile bootstrap/receiptcheck.rs and run it as the AUTHORITATIVE
+    verifier over the produced evidence. selftest never re-implements the
+    judgment; it delegates to the independent computer."""
+    rustc = shutil.which("rustc")
+    if not rustc:
+        return False, "rustc absent; receiptcheck cannot run"
+    work = bundle.parent / "t0-work"
+    rlib = work / "libspec.rlib"
+    rc = work / ("receiptcheck" + (".exe" if os.name == "nt" else ""))
+    if subprocess.run(
+            [rustc, "--edition", TOOLCHAIN_EDITION, "--target", target,
+             "--crate-name", "receiptcheck", "--extern", f"spec={rlib}",
+             "-o", str(rc), str(source_root / "bootstrap/receiptcheck.rs")],
+            capture_output=True, text=True).returncode != 0 or not rc.is_file():
+        return False, "receiptcheck did not build"
+    proc = subprocess.run([str(rc), "verify", str(artifact), "--root", str(source_root),
+                           "--evidence", str(bundle)], capture_output=True, text=True)
+    return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
+
+
 def main() -> int:
+    # --emit-evidence <dir>: produce the Tier 0 evidence bundle and hand it to
+    # the independent verifier (5.5E6b). A standalone mode: it builds the real
+    # gates against a clean export, writes qualification.t0, and reports
+    # receiptcheck's verdict — no admission predicate of its own.
+    argv0 = sys.argv[1:]
+    if len(argv0) == 2 and argv0[0] == "--emit-evidence":
+        bundle = Path(argv0[1]).resolve() / "tier0-evidence"
+        artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)
+        if problems:
+            print("selftest: TIER0 EVIDENCE INCOMPLETE:", file=sys.stderr)
+            for p in problems:
+                print(f"- {p}", file=sys.stderr)
+            return 1
+        ok, out = verify_tier0_evidence(bundle, artifact, source_root, _T0_GNU)
+        print(out)
+        if not ok:
+            print("selftest: receiptcheck REFUSED the produced evidence", file=sys.stderr)
+            return 1
+        print(f"selftest: tier0 evidence verified by receiptcheck ({artifact})")
+        return 0
+
     # --require-receipts <triple>: the authoritative-lane posture (5.5E2c).
     # Without it, receipts render honestly but an unearned one is a printed
     # "NOT QUALIFIED LOCALLY" line and exit zero — correct for a machine with
@@ -8723,7 +9146,7 @@ def main() -> int:
     findings += test_corpus_epoch(audit)
     findings += test_compiler_assumptions(audit)
     findings += test_promotion(audit)
-    findings += test_required_receipt_denominator()
+    findings += test_receiptcheck_refuses_dishonest_artifacts()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
@@ -8763,15 +9186,35 @@ def main() -> int:
         # A passing aggregate must never absorb a check that did not run.
         print("selftest: NOT QUALIFIED LOCALLY: " + ", ".join(unearned))
     if require_target:
-        problems = unearned_required_receipts(require_target)
-        if problems:
-            print("selftest: REQUIRED RECEIPTS NOT EARNED "
-                  f"(--require-receipts {require_target}):", file=sys.stderr)
-            for p in problems:
-                print(f"- {p}", file=sys.stderr)
+        # Compat surface (5.5E6b): the flag no longer runs a Python admission
+        # predicate. It produces concrete evidence for the requested target and
+        # delegates the verdict to the independent verifier. The authoritative
+        # MSVC lane rides a git-checkout with a hosted-run binding (the hosted
+        # runner); the supplemental GNU lane rides a clean frozen export.
+        if require_target not in (_T0_MSVC, _T0_GNU):
+            print(f"selftest: --require-receipts {require_target} is not a Tier 0 "
+                  f"qualification target ({_T0_MSVC} or {_T0_GNU})", file=sys.stderr)
             return 1
-        print(f"selftest: receipts-qualified target={require_target} "
-              f"receipts={len(REQUIRED_TIER0_RECEIPTS)}/{len(REQUIRED_TIER0_RECEIPTS)}")
+        bundle = Path(tempfile.mkdtemp(prefix="batpak-tier0-evidence-")) / "tier0-evidence"
+        try:
+            artifact, source_root, problems = produce_tier0_evidence(bundle, require_target)
+            if problems:
+                print("selftest: REQUIRED RECEIPTS NOT EARNED "
+                      f"(--require-receipts {require_target}):", file=sys.stderr)
+                for p in problems:
+                    print(f"- {p}", file=sys.stderr)
+                return 1
+            ok, out = verify_tier0_evidence(bundle, artifact, source_root, require_target)
+            if not ok:
+                print("selftest: receiptcheck REFUSED the produced evidence "
+                      f"(--require-receipts {require_target}):", file=sys.stderr)
+                print(out, file=sys.stderr)
+                return 1
+            print(out)
+            print(f"selftest: receipts-qualified target={require_target} "
+                  "(verified by bootstrap/receiptcheck.rs)")
+        finally:
+            shutil.rmtree(bundle.parent, ignore_errors=True)
     return 0
 
 

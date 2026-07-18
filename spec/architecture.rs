@@ -924,6 +924,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "rust-toolchain.toml",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",
+    "bootstrap/receiptcheck.rs",
     "bootstrap/materialize.rs",
     "bootstrap/audit.py",
     "bootstrap/freeze.py",

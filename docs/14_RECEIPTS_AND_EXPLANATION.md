@@ -13,6 +13,8 @@ reconciliation_epoch: cleanroom-v1
 
 A receipt records what was admitted, attempted, completed, denied, deferred, persisted, replayed, verified, projected, imported, exported, or inspected. It is structured evidence, not a debug log. Every receipt states the `ReceiptSchemaVersion` it was written under; a reader never guesses a receipt's shape.
 
+This contract also authors one bootstrap-only version identity, kept deliberately apart from the product receipt vocabulary: `Tier0QualificationArtifactVersion`, the version of the line-oriented Tier 0 qualification evidence artifact (`BATPAK-TIER0-QUALIFICATION/1`, owned in `spec/bootstrap_qualification.rs`). It versions how a bootstrap gate qualification is serialized for independent verification by `bootstrap/receiptcheck.rs`. It is NOT a `ReceiptSchemaVersion` (which versions a product receipt's shape), NOT the `ReleaseSeal` schema, NOT a product `ReceiptId`, and NOT the hosted GitHub artifact's upload name; substituting any of those for it does not typecheck.
+
 ## Receipt families
 
 ```text

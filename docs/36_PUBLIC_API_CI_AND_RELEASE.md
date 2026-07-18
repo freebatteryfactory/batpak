@@ -106,6 +106,33 @@ API/semver, WASM, Windows, and release/preflight parity — not merely a
 compile-green toolchain bump. Release-grade proof is freshness-bound, hostile,
 anti-vacuous, and tied to the exact changed trust boundary.
 
+## Tier 0 qualification evidence (5.5E6b)
+
+The bootstrap gate qualification is itself evidence, not a green checkmark. A run
+produces a canonical, line-oriented `qualification.t0` artifact
+(`Tier0QualificationArtifactVersion`, `BATPAK-TIER0-QUALIFICATION/1`, owned in
+`spec/bootstrap_qualification.rs`) that binds, for one physical target: the
+source posture (a real git checkout for the authoritative lane, or a frozen
+`git archive` export for a supplemental local lane), the exact toolchain, the
+hosted-run identity when the target is authoritative, and one receipt per
+`Tier0ReceiptKind::ALL` carrying typed stage outcomes and concrete
+artifact-evidence digests.
+
+`bootstrap/selftest.py` is the evidence PRODUCER; `bootstrap/receiptcheck.rs` is
+the independent VERIFIER. receiptcheck links the real `spec` rlib, recomputes
+every digest from the bytes on disk, checks each against the artifact's claims
+under a strict ASCII/LF grammar, and only then calls the sealed
+`spec::bootstrap_qualification::verify`. The producer holds no admission
+predicate: membership in the denominator, per-kind artifact policy, single
+target, source posture, and the hosted-run requirement for the authoritative
+`x86_64-pc-windows-msvc` target are all decided by the typed verifier. This lane
+owns which hosted target and run posture may close a gate; the receipt algebra
+(`BP-RECEIPTS-1`) owns what a receipt means, and the bootstrap denominator
+(`BP-BOOTSTRAP-1`) owns which gates the qualification requires. A qualification
+that names the authoritative target without a hosted-run identity, or that rides
+a frozen export, is refused — a local machine produces only the supplemental
+`x86_64-pc-windows-gnu` lane, never the authoritative receipt.
+
 ## Release seal and refusal (DEC-058)
 
 A release receipt binds every field of the typed inventory
