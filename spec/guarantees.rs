@@ -151,6 +151,13 @@ impl GuaranteeRef {
     pub(crate) const fn dec(raw: &'static str) -> GuaranteeRef {
         GuaranteeRef::Decision(DecisionId(raw))
     }
+    /// A SEED guarantee reference. Authored first in 5.5F1, where the charter's
+    /// SEED refinements are the first native relations to cite a sibling SEED row
+    /// (e.g. SEED-MODEL-TRACE-SEPARATION refines SEED-INDEPENDENT-ORACLE) — the
+    /// exact "appears when an authored relation first needs one" condition above.
+    pub(crate) const fn seed(raw: &'static str) -> GuaranteeRef {
+        GuaranteeRef::Seed(SeedId(raw))
+    }
 }
 
 /// One typed witness citation (5.5E2): WHICH owned evidence obligation a law

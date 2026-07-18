@@ -895,6 +895,8 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md",
     "docs/36_PUBLIC_API_CI_AND_RELEASE.md",
     "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md",
+    "docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md",
+    "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
     "docs/GUARANTEE_GRAPH.generated.md",
     "companion/BATQL_LANGUAGE.md",
     "spec/architecture.rs",

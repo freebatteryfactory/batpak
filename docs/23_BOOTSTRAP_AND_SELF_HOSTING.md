@@ -164,4 +164,11 @@ Each SEED fact carries its own guarantee classification (DEC-070); `spec/invaria
 | SEED-ECS-NOT-ONTOLOGY | ArchitectureConstraint | Permanent | docs/18_DATA_ORIENTED_ECS.md | G8 | BP-ECS-1; BP-FINAL-AUDIT-1 | - |
 | SEED-BVISOR-HONESTY | SemanticLaw | Permanent | docs/09_BVISOR.md | G5 | LEG-042; LEG-043 | - |
 | SEED-BATQL-FROZEN | SemanticLaw | Permanent | companion/BATQL_LANGUAGE.md | G4 | BP-BATQL-LANGUAGE-1; DEC-060 -- section 13 language-change law | DerivesFrom DEC-060 |
+| SEED-LAYERED-DYNAMIC-VERIFICATION | SemanticLaw | Permanent | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G0/G3/G9 | DEC-077; BP-DYNAMIC-VERIFICATION-1 -- layered verification axes; no assurance ladder | DerivesFrom DEC-077; Refines SEED-AVAILABILITY-AXES |
+| SEED-MODEL-TRACE-SEPARATION | SemanticLaw | Permanent | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G3/G6/G9 | DEC-077; BP-DYNAMIC-VERIFICATION-1 -- model/trace separation; projection is not the sole oracle | DerivesFrom DEC-077; Refines SEED-INDEPENDENT-ORACLE |
+| SEED-RUNTIME-CONFORMANCE-NO-REWRITE | SemanticLaw | Permanent | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G3/G6/G9 | DEC-078; BP-DYNAMIC-VERIFICATION-1 -- refuse-or-append conformance; never rewrite law, history, or disposition | DerivesFrom DEC-078; Refines DEC-075 |
+| SEED-CANDIDATE-NOT-AUTHORITY | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | DEC-079; DEC-080; BP-SPROUTING-1 -- candidate noncanonical until qualified; origin confers no authority | DerivesFrom DEC-079; DerivesFrom DEC-080; Refines SEED-ONE-OWNER |
+| SEED-BOUNDED-SEARCH | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | DEC-081; BP-SPROUTING-1 -- declared search bounds; work receipts | DerivesFrom DEC-081 |
+| SEED-HOLDOUT-INDEPENDENCE | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | DEC-081; BP-SPROUTING-1 -- evaluation-set roles; holdout cannot reuse search inputs | DerivesFrom DEC-081; Refines SEED-INDEPENDENT-ORACLE |
+| SEED-GENERATE-WIDE-QUALIFY-DEEP | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G0/G3/G9 | DEC-082; BP-SPROUTING-1 -- dependency-ordered frontier; later green cannot bless earlier red; frozen judge | DerivesFrom DEC-082; Refines DEC-048; Refines DEC-075 |
 <!-- SEED-CLASSIFICATION:END -->

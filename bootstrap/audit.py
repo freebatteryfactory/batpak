@@ -1264,7 +1264,7 @@ def guarantee_seed_rows(root: Path) -> list[dict]:
 # in the TYPE, and each tag owns exactly one id prefix. A bare string or a
 # mistagged reference is a relation trying to bypass the typed identity.
 G_REL_CONSTRUCTOR = re.compile(r"GuaranteeRef::(\w+)\(\"([^\"]+)\"\)")
-G_REL_TAG_PREFIX = {"leg": "LEG-", "dec": "DEC-"}
+G_REL_TAG_PREFIX = {"leg": "LEG-", "dec": "DEC-", "seed": "SEED-"}
 
 
 def guarantee_typed_relation_findings(rows: list[dict]) -> list[str]:
@@ -1635,8 +1635,8 @@ def guarantee_lifetime_findings(nodes: list[dict], leg_meta: dict[str, dict], ed
 
 def guarantee_classification_findings(seed_rows: list[dict]) -> list[str]:
     out = []
-    if len(seed_rows) != 25:
-        out.append(f"SEED classification has {len(seed_rows)} rows, expected 25")
+    if len(seed_rows) != 32:
+        out.append(f"SEED classification has {len(seed_rows)} rows, expected 32")
     ids = [r["id"] for r in seed_rows]
     if len(ids) != len(set(ids)):
         out.append("duplicate SEED guarantee id")

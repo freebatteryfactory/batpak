@@ -17,17 +17,17 @@ navigation only; the owning fact is authoritative. Do not edit.
 
 | Family | Nodes |
 | --- | --- |
-| SEED | 25 |
+| SEED | 32 |
 | LEG | 87 |
-| DEC | 76 |
+| DEC | 82 |
 | ARCH | 9 |
 | QUAL | 6 |
 
 ## Totals
 
 ```text
-nodes: 203
-edges: 9
+nodes: 216
+edges: 24
 unresolved references: 0
 ```
 
@@ -37,24 +37,24 @@ unresolved references: 0
 | --- | --- |
 | ArchitectureConstraint | 19 |
 | BootstrapAssertion | 2 |
-| Decision | 76 |
+| Decision | 82 |
 | LegacyObligation | 87 |
 | QualificationRequirement | 6 |
-| SemanticLaw | 13 |
+| SemanticLaw | 20 |
 
 ## Counts by lifetime
 
 | GuaranteeLifetime | Nodes |
 | --- | --- |
 | HistoricalCoverageOnly | 4 |
-| Permanent | 104 |
+| Permanent | 117 |
 | UntilCompatibilityExpiry | 8 |
 | UntilGate | 87 |
 
 ## Active versus closed
 
 ```text
-active (gating): 199
+active (gating): 212
 closed evidence: 0
 historical coverage only: 4
 ```
@@ -88,6 +88,13 @@ historical coverage only: 4
 | SEED-ECS-NOT-ONTOLOGY | ArchitectureConstraint | Permanent | docs/18_DATA_ORIENTED_ECS.md | G8 | BP-ECS-1; BP-FINAL-AUDIT-1 | - |
 | SEED-BVISOR-HONESTY | SemanticLaw | Permanent | docs/09_BVISOR.md | G5 | LEG-042; LEG-043 | - |
 | SEED-BATQL-FROZEN | SemanticLaw | Permanent | companion/BATQL_LANGUAGE.md | G4 | BP-BATQL-LANGUAGE-1; DEC-060 -- section 13 language-change law | DerivesFrom DEC-060 |
+| SEED-LAYERED-DYNAMIC-VERIFICATION | SemanticLaw | Permanent | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G0/G3/G9 | DEC-077; BP-DYNAMIC-VERIFICATION-1 -- layered verification axes; no assurance ladder | DerivesFrom DEC-077; Refines SEED-AVAILABILITY-AXES |
+| SEED-MODEL-TRACE-SEPARATION | SemanticLaw | Permanent | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G3/G6/G9 | DEC-077; BP-DYNAMIC-VERIFICATION-1 -- model/trace separation; projection is not the sole oracle | DerivesFrom DEC-077; Refines SEED-INDEPENDENT-ORACLE |
+| SEED-RUNTIME-CONFORMANCE-NO-REWRITE | SemanticLaw | Permanent | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G3/G6/G9 | DEC-078; BP-DYNAMIC-VERIFICATION-1 -- refuse-or-append conformance; never rewrite law, history, or disposition | DerivesFrom DEC-078; Refines DEC-075 |
+| SEED-CANDIDATE-NOT-AUTHORITY | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | DEC-079; DEC-080; BP-SPROUTING-1 -- candidate noncanonical until qualified; origin confers no authority | DerivesFrom DEC-079; DerivesFrom DEC-080; Refines SEED-ONE-OWNER |
+| SEED-BOUNDED-SEARCH | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | DEC-081; BP-SPROUTING-1 -- declared search bounds; work receipts | DerivesFrom DEC-081 |
+| SEED-HOLDOUT-INDEPENDENCE | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | DEC-081; BP-SPROUTING-1 -- evaluation-set roles; holdout cannot reuse search inputs | DerivesFrom DEC-081; Refines SEED-INDEPENDENT-ORACLE |
+| SEED-GENERATE-WIDE-QUALIFY-DEEP | SemanticLaw | Permanent | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G0/G3/G9 | DEC-082; BP-SPROUTING-1 -- dependency-ordered frontier; later green cannot bless earlier red; frozen judge | DerivesFrom DEC-082; Refines DEC-048; Refines DEC-075 |
 
 ## Nodes
 
@@ -103,14 +110,20 @@ admission and never reaches this table.
 | SEED-AVAILABILITY-AXES | SEED | SemanticLaw | Permanent | - | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G2 | - | RowDeclared |
 | SEED-BATQL-FROZEN | SEED | SemanticLaw | Permanent | - | companion/BATQL_LANGUAGE.md | G4 | - | RowDeclared |
 | SEED-BOUNDED-PUSH | SEED | SemanticLaw | Permanent | - | docs/17_DELIVERY_AND_CONCURRENCY.md | G6 | - | RowDeclared |
+| SEED-BOUNDED-SEARCH | SEED | SemanticLaw | Permanent | - | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | - | RowDeclared |
 | SEED-BVISOR-HONESTY | SEED | SemanticLaw | Permanent | - | docs/09_BVISOR.md | G5 | - | RowDeclared |
+| SEED-CANDIDATE-NOT-AUTHORITY | SEED | SemanticLaw | Permanent | - | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | - | RowDeclared |
 | SEED-CONCEPT-SPINE | SEED | ArchitectureConstraint | Permanent | - | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | - | RowDeclared |
 | SEED-DOC-STATUS | SEED | BootstrapAssertion | Permanent | - | docs/00_CONSTITUTION.md | G0 | - | RowDeclared |
 | SEED-ECS-NOT-ONTOLOGY | SEED | ArchitectureConstraint | Permanent | - | docs/18_DATA_ORIENTED_ECS.md | G8 | - | RowDeclared |
 | SEED-EXPLICIT-EFFECTS | SEED | SemanticLaw | Permanent | - | docs/08_SYNCBAT_RUNTIME.md | G6 | - | RowDeclared |
 | SEED-FBAT-CORE | SEED | ArchitectureConstraint | Permanent | - | docs/05_STORAGE_FBAT_AND_TILES.md | G2 | - | RowDeclared |
+| SEED-GENERATE-WIDE-QUALIFY-DEEP | SEED | SemanticLaw | Permanent | - | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G0/G3/G9 | - | RowDeclared |
+| SEED-HOLDOUT-INDEPENDENCE | SEED | SemanticLaw | Permanent | - | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | G3/G8/G9 | - | RowDeclared |
 | SEED-INDEPENDENT-ORACLE | SEED | SemanticLaw | Permanent | - | docs/24_GAUNTLET.md | G3/G8 | - | RowDeclared |
+| SEED-LAYERED-DYNAMIC-VERIFICATION | SEED | SemanticLaw | Permanent | - | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G0/G3/G9 | - | RowDeclared |
 | SEED-LEGACY-OBLIGATION | SEED | SemanticLaw | Permanent | - | docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md | G0/G9 | - | RowDeclared |
+| SEED-MODEL-TRACE-SEPARATION | SEED | SemanticLaw | Permanent | - | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G3/G6/G9 | - | RowDeclared |
 | SEED-MUTERPRATER-SCOPE | SEED | ArchitectureConstraint | Permanent | - | docs/12_TESTPAK.md | G3 | - | RowDeclared |
 | SEED-NO-AMBIENT-AUTHORITY | SEED | SemanticLaw | Permanent | - | docs/07_PAKVM_ISA.md | G5 | - | RowDeclared |
 | SEED-NO-DUAL-PRODUCT | SEED | ArchitectureConstraint | Permanent | - | docs/02_SYSTEM_MODEL.md | G0 | - | RowDeclared |
@@ -120,6 +133,7 @@ admission and never reaches this table.
 | SEED-NO-STD-SEMANTIC-PROFILES | SEED | ArchitectureConstraint | Permanent | - | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0/G5 | - | RowDeclared |
 | SEED-ONE-OWNER | SEED | SemanticLaw | Permanent | - | docs/00_CONSTITUTION.md | G0 | - | RowDeclared |
 | SEED-PAKVM-NAME | SEED | SemanticLaw | Permanent | - | docs/07_PAKVM_ISA.md | G0/G5 | - | RowDeclared |
+| SEED-RUNTIME-CONFORMANCE-NO-REWRITE | SEED | SemanticLaw | Permanent | - | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | G3/G6/G9 | - | RowDeclared |
 | SEED-SEMANTIC-ZERO-LEAKAGE | SEED | ArchitectureConstraint | Permanent | - | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0 | - | RowDeclared |
 | SEED-SYNC-FIRST | SEED | ArchitectureConstraint | Permanent | - | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | - | RowDeclared |
 | SEED-SYNCBAT-ONE-HEARTBEAT | SEED | ArchitectureConstraint | Permanent | - | docs/03_REPOSITORY_AND_PACKAGES.md | G0 | - | RowDeclared |
@@ -287,6 +301,12 @@ admission and never reaches this table.
 | DEC-074 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G9 | - | NoFamilyWitness |
 | DEC-075 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G2/G5/G6 | - | NoFamilyWitness |
 | DEC-076 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0 | - | NoFamilyWitness |
+| DEC-077 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0/G3/G9 | - | NoFamilyWitness |
+| DEC-078 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G6/G9 | - | NoFamilyWitness |
+| DEC-079 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G8/G9 | - | NoFamilyWitness |
+| DEC-080 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G8/G9 | - | NoFamilyWitness |
+| DEC-081 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G8/G9 | - | NoFamilyWitness |
+| DEC-082 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0/G3/G9 | - | NoFamilyWitness |
 | ARCH-batpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
 | ARCH-batpak-cli | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
 | ARCH-batpak-examples | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
@@ -309,10 +329,25 @@ admission and never reaches this table.
 | --- | --- | --- |
 | SEED-AVAILABILITY-AXES | DerivesFrom | DEC-030 |
 | SEED-BATQL-FROZEN | DerivesFrom | DEC-060 |
+| SEED-BOUNDED-SEARCH | DerivesFrom | DEC-081 |
+| SEED-CANDIDATE-NOT-AUTHORITY | DerivesFrom | DEC-079 |
+| SEED-CANDIDATE-NOT-AUTHORITY | DerivesFrom | DEC-080 |
+| SEED-CANDIDATE-NOT-AUTHORITY | Refines | SEED-ONE-OWNER |
 | SEED-CONCEPT-SPINE | DerivesFrom | DEC-068 |
+| SEED-GENERATE-WIDE-QUALIFY-DEEP | DerivesFrom | DEC-082 |
+| SEED-GENERATE-WIDE-QUALIFY-DEEP | Refines | DEC-048 |
+| SEED-GENERATE-WIDE-QUALIFY-DEEP | Refines | DEC-075 |
+| SEED-HOLDOUT-INDEPENDENCE | DerivesFrom | DEC-081 |
+| SEED-HOLDOUT-INDEPENDENCE | Refines | SEED-INDEPENDENT-ORACLE |
+| SEED-LAYERED-DYNAMIC-VERIFICATION | DerivesFrom | DEC-077 |
+| SEED-LAYERED-DYNAMIC-VERIFICATION | Refines | SEED-AVAILABILITY-AXES |
+| SEED-MODEL-TRACE-SEPARATION | DerivesFrom | DEC-077 |
+| SEED-MODEL-TRACE-SEPARATION | Refines | SEED-INDEPENDENT-ORACLE |
 | SEED-MUTERPRATER-SCOPE | DerivesFrom | DEC-015 |
 | SEED-NO-INLINE-DOMAIN-TYPES | DerivesFrom | DEC-068 |
 | SEED-NO-STD-SEMANTIC-PROFILES | DerivesFrom | DEC-065 |
+| SEED-RUNTIME-CONFORMANCE-NO-REWRITE | DerivesFrom | DEC-078 |
+| SEED-RUNTIME-CONFORMANCE-NO-REWRITE | Refines | DEC-075 |
 | SEED-SEMANTIC-ZERO-LEAKAGE | DerivesFrom | DEC-068 |
 | SEED-SYNC-FIRST | Refines | LEG-080 |
 | SEED-TIME-AXES | DerivesFrom | DEC-061 |

@@ -18,19 +18,19 @@ Every count below is a generated derivation of a typed denominator or the curren
 <!-- BUNDLE-INVENTORY:BEGIN generated from spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs by bootstrap/project.py; do not edit -->
 | Metric | Count | Derivation |
 | --- | --- | --- |
-| numbered architecture documents | 38 | current tracked docs matching docs/[0-9][0-9]_*.md |
-| Markdown documents | 47 | current eligible Markdown corpus |
+| numbered architecture documents | 40 | current tracked docs matching docs/[0-9][0-9]_*.md |
+| Markdown documents | 49 | current eligible Markdown corpus |
 | Cargo packages | 9 | PackageId::ALL with PACKAGES parity |
 | package edges | 19 | EDGES |
 | qualification profiles | 6 | QUALIFICATION_PROFILES |
-| SEED guarantees | 25 | spec/invariants.rs SEED inventory |
-| decision rows | 76 | spec/dispositions.rs DECISIONS |
+| SEED guarantees | 32 | spec/invariants.rs SEED inventory |
+| decision rows | 82 | spec/dispositions.rs DECISIONS |
 | legacy semantic obligations | 87 | spec/legacy_obligations.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
 | registered generated views | 57 | GeneratedView::ALL |
 | static generated target instances | 58 | expansion of every Static registry target |
-| corpus-frontmatter bindings | 47 | the eligible Markdown corpus reached by CorpusEpochMembership |
+| corpus-frontmatter bindings | 49 | the eligible Markdown corpus reached by CorpusEpochMembership |
 <!-- BUNDLE-INVENTORY:END -->
 
 The bundle also carries, nonnumerically:
