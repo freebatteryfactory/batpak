@@ -1,18 +1,45 @@
-# Mandatory hosted Windows MSVC qualification (Phase 5.5 D4d).
+# Mandatory hosted Windows MSVC qualification (Phase 5.5 D4d; artifact
+# comparison and promotion confirmation added in 5.5E6c1).
 #
 # The authoritative Windows receipt for BatPak is x86_64-pc-windows-msvc:
 # compile, link, run, test, source binding, artifact binding. Local machines
 # hold only supplemental GNU receipts and never install MSVC Build Tools; this
 # hosted runner carries link.exe and the Windows SDK.
 #
-# A repository-caused failure here blocks Phase 6. A runner-infrastructure
-# failure is evidence of an unavailable runner, never converted into a pass.
+# Two postures:
+#   * Ordinary qualification (push, or dispatch with no candidate): qualify the
+#     current checkout, verify it with the independent receiptcheck, and UPLOAD
+#     the verified evidence bundle bound to this exact commit, target, run id,
+#     and attempt.
+#   * Promotion confirmation (dispatch with candidate_run_id): additionally
+#     download the candidate run's evidence, require the candidate run's OWN
+#     record to say success at the exact same SHA/repository/workflow, then run
+#     `receiptcheck compare --require-promotion-confirmation`, which independently
+#     reverifies BOTH bundles and runs the sealed compare_runs + confirm_promotion.
+#
+# The workflow never fast-forwards cleanroom: promotion stays the explicit action
+# between candidate qualification and confirmation. A repository-caused failure
+# blocks Phase 6; a runner-infrastructure failure is evidence of an unavailable
+# runner, never converted into a pass.
 name: msvc-qualification
 
 on:
   push:
     branches: [cleanroom, main]
   workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: "Candidate run id to confirm (empty = ordinary qualification)"
+        required: false
+        default: ""
+      candidate_run_attempt:
+        description: "Candidate run attempt to confirm"
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   qualify:
@@ -35,10 +62,6 @@ jobs:
           }
 
       # The four gates, in canonical order, against the exact checked-out tree.
-      # selftest's Tier 0 receipts compile, link, and RUN seedcheck,
-      # materialize, and the seedcheck --test harness on the MSVC host triple,
-      # artifact-bound and source-bound; the law fixtures exercise the
-      # compile-fail refusals through the same toolchain.
       - name: project --check
         run: python bootstrap/project.py --check
 
@@ -48,16 +71,81 @@ jobs:
       - name: freeze --check
         run: python bootstrap/freeze.py --check
 
-      # One run: the suite must pass AND selftest must PRODUCE concrete Tier 0
-      # evidence for the MSVC target — a git-checkout qualification.t0 binding
-      # this run's commit, tree, toolchain, and hosted-run identity, one receipt
-      # per Tier0ReceiptKind::ALL with recomputed artifact digests — which the
-      # independent bootstrap/receiptcheck.rs then verifies against the sealed
-      # spec::bootstrap_qualification::verify (5.5E6b). The denominator lives in
-      # the typed owner (spec/bootstrap_qualification.rs), not in Python;
-      # --require-receipts fails nonzero when any receipt is missing, unbound,
-      # misbound, or refused by the verifier. The prior shape — a PowerShell loop
-      # over a copied three-receipt list — went green while tier0-law-fixtures
-      # and tier0-spec-tests were never required at all.
-      - name: selftest (Tier 0 receipts on MSVC)
-        run: python bootstrap/selftest.py --require-receipts x86_64-pc-windows-msvc
+      # The gate: the full suite must pass AND selftest must PRODUCE concrete
+      # Tier 0 evidence for the MSVC target which the independent
+      # bootstrap/receiptcheck.rs verifies against the sealed
+      # spec::bootstrap_qualification::verify (5.5E6b). --emit persists the
+      # verified bundle for upload (5.5E6c1). It MUST live OUTSIDE the checkout:
+      # the authoritative lane's seed root IS the repo, and the materializer
+      # refuses to write the Gate-0 candidate inside the seed root (the E5
+      # seed-root isolation law). runner.temp is outside the workspace.
+      - name: selftest (Tier 0 receipts on MSVC) + persist bundle
+        run: python bootstrap/selftest.py --require-receipts x86_64-pc-windows-msvc --emit "${{ runner.temp }}/evidence"
+
+      # This run's OWN record, written (as strict LF/ASCII bytes, by Python)
+      # only AFTER the gate passed, inside the bundle so it uploads with it.
+      - name: this run's record
+        shell: pwsh
+        run: |
+          python bootstrap/selftest.py --emit-run-metadata "${{ runner.temp }}/evidence/tier0-evidence/run-metadata.t0" `
+            conclusion=success `
+            head-sha=$env:GITHUB_SHA `
+            repository=$env:GITHUB_REPOSITORY `
+            workflow-path=.github/workflows/msvc-qualification.yml `
+            run-id=$env:GITHUB_RUN_ID `
+            run-attempt=$env:GITHUB_RUN_ATTEMPT
+
+      # Publish the verified evidence bundle, named to bind the exact source,
+      # target, run id, and attempt. No branch name becomes source identity.
+      # Upload happens only after the gate passed. Only the tier0-evidence dir
+      # (not the build work dir) is published.
+      - name: upload verified evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: batpak-tier0-${{ github.sha }}-x86_64-pc-windows-msvc-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence/tier0-evidence
+          if-no-files-found: error
+
+      # ---- promotion-confirmation posture (candidate_run_id supplied) ----
+
+      - name: download candidate evidence
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: batpak-tier0-${{ github.sha }}-x86_64-pc-windows-msvc-${{ inputs.candidate_run_id }}-*
+          path: candidate-download
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          merge-multiple: true
+
+      # The candidate run's OWN record, from the GitHub Actions API — NOT the
+      # self-asserted metadata inside the uploaded bundle. It must say success at
+      # the exact same head SHA, repository, and workflow this run checked out.
+      - name: candidate run record (from the GitHub API)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/${{ inputs.candidate_run_id }}/attempts/${{ inputs.candidate_run_attempt }}" | ConvertFrom-Json
+          if ($run.conclusion -ne "success") {
+            Write-Error "candidate run conclusion is '$($run.conclusion)', not success"
+            exit 1
+          }
+          python bootstrap/selftest.py --emit-run-metadata candidate-run-metadata.t0 `
+            conclusion=$($run.conclusion) `
+            head-sha=$($run.head_sha) `
+            repository=$env:GITHUB_REPOSITORY `
+            workflow-path=$($run.path) `
+            run-id=${{ inputs.candidate_run_id }} `
+            run-attempt=${{ inputs.candidate_run_attempt }}
+
+      # Independently reverify BOTH bundles and run the sealed cross-run algebra:
+      # compare_runs + confirm_promotion. Exits nonzero unless promotion confirms.
+      - name: confirm promotion (reverify + compare)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        run: >
+          python bootstrap/selftest.py --confirm-promotion
+          candidate-download candidate-run-metadata.t0
+          "${{ runner.temp }}/evidence/tier0-evidence" "${{ runner.temp }}/evidence/tier0-evidence/run-metadata.t0"
+          .

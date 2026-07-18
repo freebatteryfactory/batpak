@@ -402,6 +402,14 @@ pub struct GitHubActionsRunBinding {
     pub runner_image_version: String,
 }
 
+/// The ONE canonical workflow path that produces authoritative Tier 0 evidence.
+/// A hosted run whose `workflow_path` is not this exact string did not run the
+/// authoritative qualification, so it cannot stand as either side of a promotion
+/// confirmation (5.5E6c1). Owned by `BP-PUBLIC-API-CI-RELEASE-1`, the hosted
+/// qualification posture; the tracked workflow file lives at this path and the
+/// comparator compares against this constant, never a copied literal.
+pub const AUTHORITATIVE_WORKFLOW_PATH: &str = ".github/workflows/msvc-qualification.yml";
+
 // ===========================================================================
 // Observations (5.5E6b): the raw, possibly-incoherent report
 // ===========================================================================

@@ -2,18 +2,24 @@
 //!
 //! E6b sealed a `VerifiedTier0Qualification` that RETAINS every binding. E6c
 //! asks the question those retained bindings exist to answer: do two INDEPENDENT
-//! hosted runs describe the SAME promoted source?
+//! hosted runs describe the SAME committed source snapshot? A candidate-branch
+//! run happens BEFORE promotion, so the corroborated thing is a committed source
+//! snapshot, not yet a "promoted" one — E6c1 adds a strictly stronger
+//! `confirm_promotion` for the candidate-to-cleanroom promotion question.
 //!
 //! ## The honest boundary, grounded in real evidence
 //!
-//! Two real hosted MSVC runs of one commit (`8d811dab`, runs `29629647060` and
-//! `29629798576`) printed byte-identical source-commit, git-tree, spec-manifest,
-//! workflow, and materializer-output-tree digests — but DIFFERENT seedcheck,
-//! materialize, and spec-tests EXECUTABLE digests. An MSVC build is not
-//! byte-reproducible. A comparator that demanded executable-digest equality would
-//! FALSELY reject two legitimately-same-source runs: a dishonest red. So the
-//! same-source proof rests only on the deterministic, source-derived
-//! coordinates:
+//! Two real hosted MSVC runs of one commit (`8d811dab`) printed byte-identical
+//! source-commit, git-tree, spec-manifest, workflow, and materializer-output-tree
+//! digests — but DIFFERENT seedcheck, materialize, and spec-tests EXECUTABLE
+//! digests. This is NOT a universal law that "MSVC builds are never
+//! byte-reproducible": the current Tier 0 contract simply does not REQUIRE
+//! cross-run executable-byte identity, and each run independently binds its own
+//! executables. A comparator that demanded executable-digest equality would
+//! therefore FALSELY reject two legitimately-same-source runs: a dishonest red. A
+//! later reproducible-build law may ADD executable equality as stronger
+//! corroboration without redefining today's source identity. So the same-source
+//! proof rests only on the deterministic, source-derived coordinates:
 //!
 //! ```text
 //! source commit          committed, git-checkout only
@@ -40,10 +46,21 @@
 //! FABRICATING the conclusion; it does not re-prove that either run's inputs were
 //! computed honestly — `bootstrap/receiptcheck.rs` already recomputed those, per
 //! run, before `verify` sealed each qualification this comparator consumes.
+//!
+//! ## Same-source is not promotion confirmation (5.5E6c1)
+//!
+//! Same-source corroboration and promotion confirmation are DIFFERENT questions,
+//! and conflating them would smuggle the conclusion into the premise. Two runs
+//! can describe one committed source snapshot across different targets or
+//! toolchains (orthogonal corroboration) yet not confirm a candidate-to-cleanroom
+//! promotion. `confirm_promotion` is the strictly stronger check: it requires a
+//! `SameSourceProof` AND that both runs qualified the AUTHORITATIVE target under
+//! the IDENTICAL pinned toolchain in the SAME repository and canonical workflow.
+//! Provenance equivalence is not promotion equivalence.
 
 use crate::bootstrap_qualification::{
     GitCommitSha, GitHubActionsRunBinding, GitTreeSha, Sha256Digest, SourceBinding,
-    ToolchainBinding, VerifiedTier0Qualification,
+    ToolchainBinding, VerifiedTier0Qualification, AUTHORITATIVE_WORKFLOW_PATH,
 };
 use crate::toolchain::RustTargetTriple;
 
@@ -125,9 +142,11 @@ pub enum ToolchainAgreement {
 }
 
 /// Whether two same-source runs qualified the same physical target. A cross-
-/// target pair still describes one source — it is a STRONGER statement (the same
-/// source qualified on two platforms), and their executable digests differ by
-/// construction.
+/// target pair still describes one source — it is ORTHOGONAL corroboration (the
+/// same source qualified on a second platform: broader coverage, not automatically
+/// stronger along every assurance axis), and their executable digests differ by
+/// construction. A cross-target pair does NOT confirm a promotion, which requires
+/// the authoritative target on both sides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetAgreement {
     SameTarget(RustTargetTriple),
@@ -137,10 +156,12 @@ pub enum TargetAgreement {
     },
 }
 
-/// A sealed proof that two INDEPENDENT hosted runs describe the same promoted
-/// source. Obtainable ONLY through `compare_runs`. Retains the proven-common
-/// source coordinates, the two DISTINCT run identities that independently
-/// attested them, and the toolchain/target agreement strength.
+/// A sealed proof that two INDEPENDENT hosted runs describe the same committed
+/// source snapshot. Obtainable ONLY through `compare_runs`. Retains the
+/// proven-common source coordinates, the two DISTINCT run identities that
+/// independently attested them, and the toolchain/target agreement strength. It
+/// is NECESSARY but not SUFFICIENT for a promotion confirmation (see
+/// `confirm_promotion`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SameSourceProof {
     commit: GitCommitSha,
@@ -195,7 +216,7 @@ pub enum CrossRunComparison {
     /// Comparable, but the runs describe DIFFERENT sources; EVERY differing
     /// coordinate is named (collected, never short-circuited).
     DifferentSource(Vec<SourceDivergence>),
-    /// Two independent runs describe the SAME promoted source.
+    /// Two independent runs describe the SAME committed source snapshot.
     SameSource(SameSourceProof),
 }
 
@@ -207,7 +228,7 @@ impl CrossRunComparison {
             _ => None,
         }
     }
-    /// Whether the two runs describe the same promoted source.
+    /// Whether the two runs describe the same committed source snapshot.
     pub const fn is_same_source(&self) -> bool {
         matches!(self, CrossRunComparison::SameSource(_))
     }
@@ -380,61 +401,262 @@ pub fn compare_runs(
     })
 }
 
+// ===========================================================================
+// Promotion confirmation (5.5E6c1): strictly stronger than same-source
+// ===========================================================================
+
+/// A sealed proof that a candidate qualification run and a cleanroom
+/// qualification run CONFIRM the promotion of one committed source snapshot to
+/// the authoritative target. Obtainable ONLY through `confirm_promotion`.
+///
+/// This is strictly stronger than `SameSourceProof`. Same-source asks "do these
+/// two runs describe one committed source snapshot?" and tolerates a cross-target
+/// or cross-toolchain pair as orthogonal corroboration. Promotion confirmation
+/// additionally requires that BOTH runs qualified the AUTHORITATIVE target under
+/// the IDENTICAL pinned toolchain, in the SAME repository and canonical workflow —
+/// the exact posture the candidate-exact-SHA and cleanroom-exact-SHA runs share
+/// across a lawful fast-forward. It retains the same-source proof, the confirmed
+/// authoritative target and toolchain, and the two DISTINCT run identities.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromotionConfirmationProof {
+    same_source: SameSourceProof,
+    target: RustTargetTriple,
+    toolchain: ToolchainBinding,
+    candidate_run: GitHubActionsRunBinding,
+    cleanroom_run: GitHubActionsRunBinding,
+    _seal: (),
+}
+
+impl PromotionConfirmationProof {
+    /// The same-source proof this confirmation is built on. Promotion
+    /// confirmation inherits every same-source coordinate and adds authority.
+    pub const fn same_source(&self) -> &SameSourceProof {
+        &self.same_source
+    }
+    /// The authoritative target both runs qualified.
+    pub const fn target(&self) -> RustTargetTriple {
+        self.target
+    }
+    /// The identical pinned toolchain both runs ran on.
+    pub const fn toolchain(&self) -> &ToolchainBinding {
+        &self.toolchain
+    }
+    /// The candidate-branch hosted run.
+    pub const fn candidate_run(&self) -> &GitHubActionsRunBinding {
+        &self.candidate_run
+    }
+    /// The cleanroom hosted run.
+    pub const fn cleanroom_run(&self) -> &GitHubActionsRunBinding {
+        &self.cleanroom_run
+    }
+}
+
+/// Why two verified qualifications do NOT confirm a promotion — even when they
+/// may still corroborate the same committed source snapshot. Each arm names the
+/// exact posture requirement promotion confirmation adds over same-source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PromotionConfirmationError {
+    /// The two runs are not even same-source. Promotion confirmation is strictly
+    /// stronger, so it inherits every same-source refusal; the underlying
+    /// comparison (a divergence or a not-comparable precondition) is carried.
+    NotSameSource(CrossRunComparison),
+    /// A side qualified a NON-authoritative target. Promotion confirms only the
+    /// authoritative target; a supplemental target never promotes.
+    NonAuthoritativeTarget {
+        which: Side,
+        target: RustTargetTriple,
+    },
+    /// The two runs qualified DIFFERENT targets. A cross-target pair is orthogonal
+    /// corroboration of one source, not a confirmation of one promotion.
+    CrossTarget {
+        candidate: RustTargetTriple,
+        cleanroom: RustTargetTriple,
+    },
+    /// The two runs ran on DIFFERENT toolchains. Same-source tolerates this;
+    /// promotion confirmation requires the identical pinned toolchain on both.
+    ToolchainDivergent {
+        candidate: ToolchainBinding,
+        cleanroom: ToolchainBinding,
+    },
+    /// The two runs ran in DIFFERENT repositories.
+    RepositoryMismatch {
+        candidate: String,
+        cleanroom: String,
+    },
+    /// A run's workflow path is not the canonical authoritative workflow
+    /// (`AUTHORITATIVE_WORKFLOW_PATH`). `which` names the offending side(s).
+    NonCanonicalWorkflowPath { which: Side, path: String },
+}
+
+/// Confirm that a candidate run and a cleanroom run promote one committed source
+/// snapshot to the authoritative target.
+///
+/// Same-source is necessary but not sufficient: this additionally requires the
+/// authoritative target on BOTH sides, the identical pinned toolchain, the same
+/// repository, and the canonical authoritative workflow path — the posture the
+/// candidate-exact-SHA and cleanroom-exact-SHA runs share across a lawful
+/// fast-forward. The two runs are already DISTINCT (same-source refuses one run
+/// compared against itself), and each qualification was already independently
+/// verified before `verify` sealed it (and, on the wire, recomputed by
+/// `bootstrap/receiptcheck.rs`). `candidate` becomes the left run and `cleanroom`
+/// the right run of the retained same-source proof.
+pub fn confirm_promotion(
+    candidate: &VerifiedTier0Qualification,
+    cleanroom: &VerifiedTier0Qualification,
+) -> Result<PromotionConfirmationProof, PromotionConfirmationError> {
+    // Same-source first — promotion confirmation inherits every same-source arm.
+    let comparison = compare_runs(candidate, cleanroom);
+    let CrossRunComparison::SameSource(same_source) = comparison else {
+        return Err(PromotionConfirmationError::NotSameSource(comparison));
+    };
+
+    // Both sides must qualify the authoritative target.
+    let cand_target = candidate.target();
+    let clean_target = cleanroom.target();
+    let cand_auth = cand_target.is_authoritative();
+    let clean_auth = clean_target.is_authoritative();
+    if !cand_auth || !clean_auth {
+        return Err(PromotionConfirmationError::NonAuthoritativeTarget {
+            which: Side::of(!cand_auth, !clean_auth),
+            target: if !cand_auth { cand_target } else { clean_target },
+        });
+    }
+    // Both authoritative implies the same target today (one authoritative target
+    // exists), but name a cross-target pair explicitly so this stays honest if a
+    // second authoritative target is ever admitted.
+    if cand_target != clean_target {
+        return Err(PromotionConfirmationError::CrossTarget {
+            candidate: cand_target,
+            cleanroom: clean_target,
+        });
+    }
+
+    // Identical pinned toolchain — recorded, not merely observed, by same-source.
+    let ToolchainAgreement::Identical(toolchain) = *same_source.toolchain_agreement() else {
+        return Err(PromotionConfirmationError::ToolchainDivergent {
+            candidate: *candidate.toolchain(),
+            cleanroom: *cleanroom.toolchain(),
+        });
+    };
+
+    // Same repository, canonical authoritative workflow, on both distinct runs.
+    let cand_run = same_source.left_run();
+    let clean_run = same_source.right_run();
+    if cand_run.repository != clean_run.repository {
+        return Err(PromotionConfirmationError::RepositoryMismatch {
+            candidate: cand_run.repository.clone(),
+            cleanroom: clean_run.repository.clone(),
+        });
+    }
+    let cand_canon = cand_run.workflow_path == AUTHORITATIVE_WORKFLOW_PATH;
+    let clean_canon = clean_run.workflow_path == AUTHORITATIVE_WORKFLOW_PATH;
+    if !cand_canon || !clean_canon {
+        return Err(PromotionConfirmationError::NonCanonicalWorkflowPath {
+            which: Side::of(!cand_canon, !clean_canon),
+            path: if !cand_canon {
+                cand_run.workflow_path.clone()
+            } else {
+                clean_run.workflow_path.clone()
+            },
+        });
+    }
+
+    // Clone the run identities into owned values so the same-source proof can be
+    // moved into the confirmation without an outstanding borrow.
+    let candidate_run = cand_run.clone();
+    let cleanroom_run = clean_run.clone();
+    Ok(PromotionConfirmationProof {
+        same_source,
+        target: cand_target,
+        toolchain,
+        candidate_run,
+        cleanroom_run,
+        _seal: (),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::bootstrap_qualification::{
         verify, CompilationOutcome, ExecutionAttempt, ExecutionOutcome, Tier0ArtifactEvidence,
-        Tier0QualificationObservation, Tier0ReceiptKind, Tier0ReceiptObservation,
+        Tier0ArtifactPolicy, Tier0QualificationObservation, Tier0ReceiptKind,
+        Tier0ReceiptObservation, ToolchainCommit,
     };
     use crate::toolchain::{RustRelease, AUTHORITATIVE_TARGET};
 
-    /// The exact source-identity coordinates two real hosted MSVC runs of commit
-    /// `8d811dab` printed (runs `29629647060` and `29629798576`). They are the
-    /// regression anchor: the comparator must call these two runs same-source
-    /// even though their compiled-executable digests differ.
-    const REAL_COMMIT: &str = "8d811dabd522492bfac6858b1d698d2014765692";
-    const REAL_TREE: &str = "f9ab1895748d901b9de75ac446f0c9d349c21c04";
-    const REAL_OUTPUT_TREE: &str =
-        "fddae89ac400f549f481bb3c4063002190450df9d67edfd546c6717a3cbf2bb6";
-    const REAL_LEFT_RUN: u64 = 29629647060;
-    const REAL_RIGHT_RUN: u64 = 29629798576;
+    const REPO: &str = "owner/repo";
 
-    /// Build a verified authoritative (MSVC git-checkout + hosted-run)
-    /// qualification with controllable commit/tree/output-tree, run id, and a
-    /// per-run executable salt (real MSVC builds are not byte-reproducible).
-    fn verified_run(commit: &str, tree: &str, output_tree: &str, run_id: u64, exe: u8) -> VerifiedTier0Qualification {
+    /// A fully SYNTHETIC run description: every coordinate is an invented dial.
+    /// No historical commit, run id, or runner image is asserted to be a real
+    /// artifact here — these tests prove the comparator/confirmation LOGIC.
+    /// Actual hosted run-pair evidence is proven by the workflow integration path
+    /// (`receiptcheck compare` over two uploaded bundles), not by a unit test; a
+    /// unit fixture cannot masquerade as a hosted comparison.
+    #[derive(Clone, Copy)]
+    struct RunSpec {
+        commit: u8,
+        tree: u8,
+        manifest: u8,
+        workflow: u8,
+        otree: u8,
+        tc: u8,
+        run_id: u64,
+        target: RustTargetTriple,
+        repository: &'static str,
+        workflow_path: &'static str,
+        exe: u8,
+    }
+
+    impl RunSpec {
+        /// The canonical authoritative run: git checkout, MSVC, hosted, canonical
+        /// workflow. Tests perturb one dial with struct-update syntax.
+        const fn base() -> RunSpec {
+            RunSpec {
+                commit: 1,
+                tree: 2,
+                manifest: 3,
+                workflow: 4,
+                otree: 5,
+                tc: 6,
+                run_id: 100,
+                target: AUTHORITATIVE_TARGET,
+                repository: REPO,
+                workflow_path: AUTHORITATIVE_WORKFLOW_PATH,
+                exe: 7,
+            }
+        }
+    }
+
+    /// Build a verified qualification from a synthetic run description, through
+    /// the sealed `verify`.
+    fn verified_run(s: RunSpec) -> VerifiedTier0Qualification {
         let source = SourceBinding::GitCheckout {
-            commit: GitCommitSha::from_hex(commit).unwrap(),
-            tree: GitTreeSha::from_hex(tree).unwrap(),
-            spec_manifest_digest: Sha256Digest::from_bytes([3u8; 32]),
-            workflow_digest: Sha256Digest::from_bytes([4u8; 32]),
+            commit: GitCommitSha::from_bytes([s.commit; 20]),
+            tree: GitTreeSha::from_bytes([s.tree; 20]),
+            spec_manifest_digest: Sha256Digest::from_bytes([s.manifest; 32]),
+            workflow_digest: Sha256Digest::from_bytes([s.workflow; 32]),
         };
-        let output = Sha256Digest::from_hex(output_tree).unwrap();
         let receipts = Tier0ReceiptKind::ALL
             .iter()
             .map(|&kind| {
                 let artifact = match kind.artifact_policy() {
-                    crate::bootstrap_qualification::Tier0ArtifactPolicy::FixtureSet => {
-                        Tier0ArtifactEvidence::FixtureSet {
-                            digest: Sha256Digest::from_bytes([exe; 32]),
-                        }
-                    }
-                    crate::bootstrap_qualification::Tier0ArtifactPolicy::Executable => {
-                        Tier0ArtifactEvidence::Executable {
-                            digest: Sha256Digest::from_bytes([exe; 32]),
-                        }
-                    }
-                    crate::bootstrap_qualification::Tier0ArtifactPolicy::ExecutableAndOutputTree => {
+                    Tier0ArtifactPolicy::FixtureSet => Tier0ArtifactEvidence::FixtureSet {
+                        digest: Sha256Digest::from_bytes([s.exe; 32]),
+                    },
+                    Tier0ArtifactPolicy::Executable => Tier0ArtifactEvidence::Executable {
+                        digest: Sha256Digest::from_bytes([s.exe; 32]),
+                    },
+                    Tier0ArtifactPolicy::ExecutableAndOutputTree => {
                         Tier0ArtifactEvidence::ExecutableAndOutputTree {
-                            executable_digest: Sha256Digest::from_bytes([exe; 32]),
-                            output_tree_digest: output,
+                            executable_digest: Sha256Digest::from_bytes([s.exe; 32]),
+                            output_tree_digest: Sha256Digest::from_bytes([s.otree; 32]),
                         }
                     }
                 };
                 Tier0ReceiptObservation {
                     kind,
-                    target: AUTHORITATIVE_TARGET,
+                    target: s.target,
                     available: true,
                     compilation: CompilationOutcome::Succeeded,
                     execution: ExecutionAttempt::Attempted,
@@ -447,44 +669,38 @@ mod tests {
             source,
             toolchain: ToolchainBinding {
                 rustc_release: RustRelease { major: 1, minor: 97, patch: 0 },
-                rustc_commit: crate::bootstrap_qualification::ToolchainCommit::from_bytes([6u8; 20]),
+                rustc_commit: ToolchainCommit::from_bytes([s.tc; 20]),
                 cargo_release: RustRelease { major: 1, minor: 97, patch: 0 },
-                cargo_commit: crate::bootstrap_qualification::ToolchainCommit::from_bytes([6u8; 20]),
-                toolchain_file_digest: Sha256Digest::from_bytes([6u8; 32]),
+                cargo_commit: ToolchainCommit::from_bytes([s.tc; 20]),
+                toolchain_file_digest: Sha256Digest::from_bytes([s.tc; 32]),
             },
-            target: AUTHORITATIVE_TARGET,
+            target: s.target,
             hosted_run: Some(GitHubActionsRunBinding {
-                repository: "freebatteryfactory/batpak".to_owned(),
-                workflow_path: ".github/workflows/msvc-qualification.yml".to_owned(),
-                run_id,
+                repository: s.repository.to_owned(),
+                workflow_path: s.workflow_path.to_owned(),
+                run_id: s.run_id,
                 run_attempt: 1,
-                runner_image_os: "Windows".to_owned(),
-                runner_image_version: "win25-vs2026/20260714.173".to_owned(),
+                runner_image_os: "synthetic".to_owned(),
+                runner_image_version: "synthetic".to_owned(),
             }),
             receipts,
         };
-        verify(obs).expect("honest authoritative qualification verifies")
+        verify(obs).expect("synthetic authoritative qualification verifies")
     }
 
     #[test]
-    fn two_real_hosted_runs_prove_same_source() {
-        // The two runs share every source-identity coordinate but carry
-        // DIFFERENT executable digests (exe 1 vs exe 2) — exactly as the real
-        // MSVC runs did. The comparator must still call them same-source.
-        let left = verified_run(REAL_COMMIT, REAL_TREE, REAL_OUTPUT_TREE, REAL_LEFT_RUN, 1);
-        let right = verified_run(REAL_COMMIT, REAL_TREE, REAL_OUTPUT_TREE, REAL_RIGHT_RUN, 2);
+    fn synthetic_same_source_runs_allow_different_executable_digests() {
+        // Two runs share every source-identity coordinate but carry DIFFERENT
+        // executable digests (exe 7 vs 8). The comparator must still call them
+        // same-source: the current contract requires no executable-byte identity.
+        let left = verified_run(RunSpec::base());
+        let right = verified_run(RunSpec { run_id: 200, exe: 8, ..RunSpec::base() });
         let proof = match compare_runs(&left, &right) {
             CrossRunComparison::SameSource(p) => p,
-            other => panic!("expected SameSource for two real runs, got {other:?}"),
+            other => panic!("expected SameSource, got {other:?}"),
         };
-        assert_eq!(proof.commit(), GitCommitSha::from_hex(REAL_COMMIT).unwrap());
-        assert_eq!(proof.tree(), GitTreeSha::from_hex(REAL_TREE).unwrap());
-        assert_eq!(
-            proof.materializer_output_tree(),
-            Sha256Digest::from_hex(REAL_OUTPUT_TREE).unwrap()
-        );
-        assert_eq!(proof.left_run().run_id, REAL_LEFT_RUN);
-        assert_eq!(proof.right_run().run_id, REAL_RIGHT_RUN);
+        assert_eq!(proof.left_run().run_id, 100);
+        assert_eq!(proof.right_run().run_id, 200);
         assert!(matches!(proof.toolchain_agreement(), ToolchainAgreement::Identical(_)));
         assert!(matches!(proof.target_agreement(), TargetAgreement::SameTarget(_)));
     }
@@ -492,17 +708,10 @@ mod tests {
     #[test]
     fn a_different_output_tree_is_named_not_same_source() {
         // Same commit and tree, but the independently-recomputed materializer
-        // output tree differs — reproducibility is broken, and the comparator
-        // must NAME that coordinate rather than call the runs same-source.
-        let real = verified_run(REAL_COMMIT, REAL_TREE, REAL_OUTPUT_TREE, REAL_LEFT_RUN, 1);
-        let forged = verified_run(
-            REAL_COMMIT,
-            REAL_TREE,
-            "0000000000000000000000000000000000000000000000000000000000000000",
-            REAL_RIGHT_RUN,
-            2,
-        );
-        match compare_runs(&real, &forged) {
+        // output tree differs — the comparator must NAME that coordinate.
+        let left = verified_run(RunSpec::base());
+        let right = verified_run(RunSpec { run_id: 200, otree: 9, exe: 8, ..RunSpec::base() });
+        match compare_runs(&left, &right) {
             CrossRunComparison::DifferentSource(divs) => assert!(divs
                 .iter()
                 .any(|d| matches!(d, SourceDivergence::MaterializerOutputTree { .. }))),
@@ -512,10 +721,105 @@ mod tests {
 
     #[test]
     fn one_run_compared_to_itself_is_not_two_witnesses() {
-        let run = verified_run(REAL_COMMIT, REAL_TREE, REAL_OUTPUT_TREE, REAL_LEFT_RUN, 1);
+        let run = verified_run(RunSpec::base());
         assert_eq!(
             compare_runs(&run, &run),
             CrossRunComparison::NotComparable(NotComparable::SameHostedRun)
         );
+    }
+
+    // ---- promotion confirmation (5.5E6c1) ----
+
+    #[test]
+    fn two_authoritative_runs_confirm_promotion() {
+        // The candidate-exact-SHA and cleanroom-exact-SHA posture: same source,
+        // authoritative target, identical toolchain, same repository, canonical
+        // workflow, two distinct runs. Executable digests still differ.
+        let candidate = verified_run(RunSpec::base());
+        let cleanroom = verified_run(RunSpec { run_id: 200, exe: 8, ..RunSpec::base() });
+        let proof = confirm_promotion(&candidate, &cleanroom)
+            .expect("two authoritative same-source runs confirm promotion");
+        assert_eq!(proof.target(), AUTHORITATIVE_TARGET);
+        assert_eq!(proof.candidate_run().run_id, 100);
+        assert_eq!(proof.cleanroom_run().run_id, 200);
+    }
+
+    #[test]
+    fn different_run_ids_are_required() {
+        // One run confirmed against itself is not two witnesses; promotion
+        // confirmation inherits the same-source refusal.
+        let run = verified_run(RunSpec::base());
+        assert!(matches!(
+            confirm_promotion(&run, &run),
+            Err(PromotionConfirmationError::NotSameSource(
+                CrossRunComparison::NotComparable(NotComparable::SameHostedRun)
+            ))
+        ));
+    }
+
+    #[test]
+    fn different_executable_digests_are_lawful() {
+        // The dedicated statement of the honest boundary: an executable-digest
+        // difference alone neither defeats same-source nor promotion confirmation.
+        let candidate = verified_run(RunSpec::base());
+        let cleanroom = verified_run(RunSpec { run_id: 200, exe: 200, ..RunSpec::base() });
+        assert!(confirm_promotion(&candidate, &cleanroom).is_ok());
+    }
+
+    #[test]
+    fn same_source_cross_target_does_not_confirm_promotion() {
+        // The same source on a second (supplemental GNU) target still corroborates
+        // same-source, but the non-authoritative side cannot confirm a promotion.
+        let candidate = verified_run(RunSpec::base());
+        let cleanroom = verified_run(RunSpec {
+            run_id: 200,
+            target: RustTargetTriple::X86_64PcWindowsGnu,
+            exe: 8,
+            ..RunSpec::base()
+        });
+        assert!(compare_runs(&candidate, &cleanroom).is_same_source());
+        assert!(matches!(
+            confirm_promotion(&candidate, &cleanroom),
+            Err(PromotionConfirmationError::NonAuthoritativeTarget { which: Side::Right, .. })
+        ));
+    }
+
+    #[test]
+    fn same_source_different_toolchain_does_not_confirm_promotion() {
+        let candidate = verified_run(RunSpec::base());
+        let cleanroom = verified_run(RunSpec { run_id: 200, tc: 99, exe: 8, ..RunSpec::base() });
+        assert!(compare_runs(&candidate, &cleanroom).is_same_source());
+        assert!(matches!(
+            confirm_promotion(&candidate, &cleanroom),
+            Err(PromotionConfirmationError::ToolchainDivergent { .. })
+        ));
+    }
+
+    #[test]
+    fn same_source_different_repository_does_not_confirm_promotion() {
+        let candidate = verified_run(RunSpec::base());
+        let cleanroom =
+            verified_run(RunSpec { run_id: 200, repository: "other/repo", exe: 8, ..RunSpec::base() });
+        assert!(compare_runs(&candidate, &cleanroom).is_same_source());
+        assert!(matches!(
+            confirm_promotion(&candidate, &cleanroom),
+            Err(PromotionConfirmationError::RepositoryMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn same_source_different_workflow_path_does_not_confirm_promotion() {
+        let candidate = verified_run(RunSpec::base());
+        let cleanroom = verified_run(RunSpec {
+            run_id: 200,
+            workflow_path: ".github/workflows/not-canonical.yml",
+            exe: 8,
+            ..RunSpec::base()
+        });
+        assert!(compare_runs(&candidate, &cleanroom).is_same_source());
+        assert!(matches!(
+            confirm_promotion(&candidate, &cleanroom),
+            Err(PromotionConfirmationError::NonCanonicalWorkflowPath { which: Side::Right, .. })
+        ));
     }
 }

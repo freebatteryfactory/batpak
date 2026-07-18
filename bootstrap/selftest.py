@@ -9061,12 +9061,106 @@ def verify_tier0_evidence(bundle: Path, artifact: Path, source_root: Path,
     return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
 
 
+def _emit_run_metadata(path: str, pairs: list[str]) -> int:
+    """Write a strict BATPAK-TIER0-RUN-METADATA/1 file from key=value pairs
+    (5.5E6c1). The confirming workflow supplies the fields — from the runner
+    environment for its own run, from the GitHub Actions API for the candidate
+    run — and Python controls the exact LF/ASCII bytes receiptcheck's strict
+    reader demands. No field becomes source identity: it is the run's OWN record
+    that `receiptcheck compare` ties each uploaded bundle to."""
+    order = ["conclusion", "head-sha", "repository", "workflow-path", "run-id", "run-attempt"]
+    got: dict[str, str] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            print(f"selftest: run-metadata field {pair!r} is not key=value", file=sys.stderr)
+            return 2
+        key, value = pair.split("=", 1)
+        if key not in order:
+            print(f"selftest: unknown run-metadata field {key!r}", file=sys.stderr)
+            return 2
+        if key in got:
+            print(f"selftest: duplicate run-metadata field {key!r}", file=sys.stderr)
+            return 2
+        if not value:
+            print(f"selftest: run-metadata field {key!r} is empty", file=sys.stderr)
+            return 2
+        got[key] = value
+    missing = [key for key in order if key not in got]
+    if missing:
+        print(f"selftest: run-metadata missing fields {missing}", file=sys.stderr)
+        return 2
+    lines = ["BATPAK-TIER0-RUN-METADATA/1"] + [f"{key}: {got[key]}" for key in order]
+    Path(path).write_text("\n".join(lines) + "\n", encoding="ascii", newline="\n")
+    print(f"selftest: wrote run metadata ({path})")
+    return 0
+
+
+def _confirm_promotion(candidate_bundle: str, candidate_meta: str,
+                       cleanroom_bundle: str, cleanroom_meta: str,
+                       root: str) -> int:
+    """Build receiptcheck and run `compare --require-promotion-confirmation` over
+    two verified bundles and their run-record metadata (5.5E6c1). selftest builds
+    and invokes; receiptcheck independently recomputes both bundles and COMPUTES
+    the comparison — Python never parses or duplicates the comparator law."""
+    rustc = shutil.which("rustc")
+    if not rustc:
+        print("selftest: rustc absent; cannot confirm promotion", file=sys.stderr)
+        return 1
+    # Each bundle argument points DIRECTLY at a tier0-evidence directory (the
+    # uploaded/downloaded artifact contents), holding qualification.t0 beside its
+    # executables, gate0-candidate tree, and fixture manifest.
+    root_p = Path(root).resolve()
+    cand = Path(candidate_bundle).resolve()
+    clean = Path(cleanroom_bundle).resolve()
+    work = Path(tempfile.mkdtemp(prefix="batpak-tier0-compare-"))
+    try:
+        rlib = work / "libspec.rlib"
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", _T0_MSVC,
+                 "--crate-type", "rlib", "--crate-name", "spec", "-o", str(rlib),
+                 str(root_p / "spec/lib.rs")],
+                capture_output=True, text=True).returncode != 0:
+            print("selftest: spec rlib did not build for compare", file=sys.stderr)
+            return 1
+        rc = work / ("receiptcheck" + (".exe" if os.name == "nt" else ""))
+        if subprocess.run(
+                [rustc, "--edition", TOOLCHAIN_EDITION, "--target", _T0_MSVC,
+                 "--crate-name", "receiptcheck", "--extern", f"spec={rlib}",
+                 "-o", str(rc), str(root_p / "bootstrap/receiptcheck.rs")],
+                capture_output=True, text=True).returncode != 0 or not rc.is_file():
+            print("selftest: receiptcheck did not build for compare", file=sys.stderr)
+            return 1
+        proc = subprocess.run(
+            [str(rc), "compare",
+             "--candidate-artifact", str(cand / "qualification.t0"),
+             "--candidate-evidence", str(cand),
+             "--candidate-run-metadata", str(Path(candidate_meta).resolve()),
+             "--cleanroom-artifact", str(clean / "qualification.t0"),
+             "--cleanroom-evidence", str(clean),
+             "--cleanroom-run-metadata", str(Path(cleanroom_meta).resolve()),
+             "--root", str(root_p),
+             "--require-promotion-confirmation"],
+            capture_output=True, text=True)
+        print((proc.stdout + proc.stderr).strip())
+        if proc.returncode != 0:
+            print("selftest: promotion confirmation FAILED", file=sys.stderr)
+            return 1
+        print("selftest: promotion confirmed (verified by bootstrap/receiptcheck.rs)")
+        return 0
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main() -> int:
     # --emit-evidence <dir>: produce the Tier 0 evidence bundle and hand it to
     # the independent verifier (5.5E6b). A standalone mode: it builds the real
     # gates against a clean export, writes qualification.t0, and reports
     # receiptcheck's verdict — no admission predicate of its own.
     argv0 = sys.argv[1:]
+    if argv0[:1] == ["--emit-run-metadata"] and len(argv0) >= 2:
+        return _emit_run_metadata(argv0[1], argv0[2:])
+    if argv0[:1] == ["--confirm-promotion"] and len(argv0) == 6:
+        return _confirm_promotion(*argv0[1:])
     if len(argv0) == 2 and argv0[0] == "--emit-evidence":
         bundle = Path(argv0[1]).resolve() / "tier0-evidence"
         artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)
@@ -9088,12 +9182,23 @@ def main() -> int:
     # "NOT QUALIFIED LOCALLY" line and exit zero — correct for a machine with
     # no linker, never sufficient for the authoritative profile.
     require_target = None
+    require_emit = None
     argv = sys.argv[1:]
-    if len(argv) == 2 and argv[0] == "--require-receipts":
+    if len(argv) >= 2 and argv[0] == "--require-receipts":
         require_target = argv[1]
+        rest = argv[2:]
+        if rest[:1] == ["--emit"] and len(rest) == 2:
+            # Persist the produced bundle at <dir>/tier0-evidence for upload
+            # (5.5E6c1), instead of a temp dir the run discards.
+            require_emit = rest[1]
+        elif rest:
+            print(f"selftest: unknown --require-receipts arguments {rest!r} "
+                  "(usage: --require-receipts <triple> [--emit <dir>])", file=sys.stderr)
+            return 2
     elif argv:
         print(f"selftest: unknown arguments {argv!r} "
-              "(usage: selftest.py [--require-receipts <triple>])", file=sys.stderr)
+              "(usage: selftest.py [--require-receipts <triple> [--emit <dir>]])",
+              file=sys.stderr)
         return 2
     freeze = load("freeze")
     audit = load("audit")
@@ -9195,7 +9300,10 @@ def main() -> int:
             print(f"selftest: --require-receipts {require_target} is not a Tier 0 "
                   f"qualification target ({_T0_MSVC} or {_T0_GNU})", file=sys.stderr)
             return 1
-        bundle = Path(tempfile.mkdtemp(prefix="batpak-tier0-evidence-")) / "tier0-evidence"
+        if require_emit:
+            bundle = Path(require_emit).resolve() / "tier0-evidence"
+        else:
+            bundle = Path(tempfile.mkdtemp(prefix="batpak-tier0-evidence-")) / "tier0-evidence"
         try:
             artifact, source_root, problems = produce_tier0_evidence(bundle, require_target)
             if problems:
@@ -9213,8 +9321,12 @@ def main() -> int:
             print(out)
             print(f"selftest: receipts-qualified target={require_target} "
                   "(verified by bootstrap/receiptcheck.rs)")
+            if require_emit:
+                print(f"selftest: tier0 evidence bundle persisted ({bundle})")
         finally:
-            shutil.rmtree(bundle.parent, ignore_errors=True)
+            # Persisted bundles (for upload) survive; temp bundles are discarded.
+            if not require_emit:
+                shutil.rmtree(bundle.parent, ignore_errors=True)
     return 0
 
 

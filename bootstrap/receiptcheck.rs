@@ -16,14 +16,25 @@
 //! ```text
 //! receiptcheck policy
 //! receiptcheck verify <qualification.t0> --root <source-root> --evidence <bundle-root>
+//! receiptcheck compare
+//!     --candidate-artifact <t0> --candidate-evidence <bundle> --candidate-run-metadata <meta>
+//!     --cleanroom-artifact <t0> --cleanroom-evidence <bundle> --cleanroom-run-metadata <meta>
+//!     --root <source-root> [--require-promotion-confirmation]
 //! ```
+//!
+//! `compare` is the wire end of the cross-run algebra (5.5E6c1): it independently
+//! verifies BOTH uploaded bundles, ties each to its hosted run's own record
+//! (conclusion, head SHA, repository, workflow, run id, attempt), then calls the
+//! sealed `compare_runs` and `confirm_promotion`. It computes the comparison —
+//! Python never parses or duplicates the comparator law.
 
 use spec::bootstrap_qualification::{
     self as bq, CompilationOutcome, ExecutionAttempt, ExecutionOutcome, GitCommitSha,
     GitHubActionsRunBinding, GitTreeSha, Sha256Digest, SourceBinding, Tier0ArtifactEvidence,
     Tier0QualificationObservation, Tier0ReceiptKind, Tier0ReceiptObservation, ToolchainBinding,
-    ToolchainCommit,
+    ToolchainCommit, VerifiedTier0Qualification,
 };
+use spec::tier0_cross_run::{compare_runs, confirm_promotion, CrossRunComparison};
 use spec::toolchain::{RustRelease, RustTargetTriple};
 
 use std::collections::BTreeMap;
@@ -38,9 +49,14 @@ fn main() {
     let result = match mode {
         Some("policy") => mode_policy(),
         Some("verify") => mode_verify(&args[2..]),
+        Some("compare") => mode_compare(&args[2..]),
         _ => Err(
             "usage: receiptcheck policy | receiptcheck verify <artifact> \
-             --root <root> --evidence <bundle>"
+             --root <root> --evidence <bundle> | receiptcheck compare \
+             --candidate-artifact <t0> --candidate-evidence <bundle> \
+             --candidate-run-metadata <meta> --cleanroom-artifact <t0> \
+             --cleanroom-evidence <bundle> --cleanroom-run-metadata <meta> \
+             --root <root> [--require-promotion-confirmation]"
                 .to_owned(),
         ),
     };
@@ -99,22 +115,21 @@ fn parse_verify_args(args: &[String]) -> Result<VerifyPaths, String> {
     })
 }
 
-fn mode_verify(args: &[String]) -> Result<(), String> {
-    // The internal SHA-256 must agree with the standard before it may judge.
-    self_check_sha256()?;
-
-    let paths = parse_verify_args(args)?;
+/// Independently verify ONE uploaded qualification: read the strict artifact,
+/// recompute and compare every digest from the bytes on disk, then call the
+/// sealed `bq::verify`. Shared by `verify` and both sides of `compare`.
+fn verify_one(paths: &VerifyPaths) -> Result<VerifiedTier0Qualification, String> {
     let raw = fs::read(&paths.artifact)
         .map_err(|e| format!("cannot read artifact {}: {e}", paths.artifact.display()))?;
     let lines = strict_lines(&raw)?;
     let doc = parse_artifact(&lines)?;
 
     // Independently recompute and compare every digest the artifact claims.
-    recompute_and_compare(&doc, &paths)?;
+    recompute_and_compare(&doc, paths)?;
 
     // Build the typed observation and call the sealed verifier.
     let observation = doc.to_observation();
-    let verified = bq::verify(observation).map_err(|errors| {
+    bq::verify(observation).map_err(|errors| {
         let mut lines = vec![format!("typed verification refused ({} rule(s)):", errors.len())];
         for e in errors {
             let rule = e.rule();
@@ -127,7 +142,15 @@ fn mode_verify(args: &[String]) -> Result<(), String> {
             ));
         }
         lines.join("\n")
-    })?;
+    })
+}
+
+fn mode_verify(args: &[String]) -> Result<(), String> {
+    // The internal SHA-256 must agree with the standard before it may judge.
+    self_check_sha256()?;
+
+    let paths = parse_verify_args(args)?;
+    let verified = verify_one(&paths)?;
 
     // Success: print the FULL binding values (the hosted run banner may
     // abbreviate afterward, but the artifact-derived truth is printed in full).
@@ -163,6 +186,244 @@ fn mode_verify(args: &[String]) -> Result<(), String> {
 
 fn debug_rule(rule: bq::Tier0VerificationRule) -> String {
     format!("{rule:?}")
+}
+
+// ===========================================================================
+// compare: independently verify both bundles, tie each to its hosted run's own
+// record, then run the sealed cross-run algebra (5.5E6c1)
+// ===========================================================================
+
+struct ComparePaths {
+    candidate_artifact: PathBuf,
+    candidate_evidence: PathBuf,
+    candidate_run_metadata: PathBuf,
+    cleanroom_artifact: PathBuf,
+    cleanroom_evidence: PathBuf,
+    cleanroom_run_metadata: PathBuf,
+    root: PathBuf,
+    require_promotion_confirmation: bool,
+}
+
+fn parse_compare_args(args: &[String]) -> Result<ComparePaths, String> {
+    let mut m: BTreeMap<&str, String> = BTreeMap::new();
+    let mut require = false;
+    let mut i = 0;
+    while i < args.len() {
+        let flag = args[i].as_str();
+        match flag {
+            "--require-promotion-confirmation" => {
+                require = true;
+                i += 1;
+            }
+            "--candidate-artifact"
+            | "--candidate-evidence"
+            | "--candidate-run-metadata"
+            | "--cleanroom-artifact"
+            | "--cleanroom-evidence"
+            | "--cleanroom-run-metadata"
+            | "--root" => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| format!("{flag} requires a value"))?
+                    .clone();
+                if m.insert(flag, value).is_some() {
+                    return Err(format!("duplicate compare flag {flag}"));
+                }
+                i += 2;
+            }
+            other => return Err(format!("unknown compare flag {other}")),
+        }
+    }
+    let get = |key: &str| -> Result<PathBuf, String> {
+        m.get(key)
+            .cloned()
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("compare requires {key}"))
+    };
+    Ok(ComparePaths {
+        candidate_artifact: get("--candidate-artifact")?,
+        candidate_evidence: get("--candidate-evidence")?,
+        candidate_run_metadata: get("--candidate-run-metadata")?,
+        cleanroom_artifact: get("--cleanroom-artifact")?,
+        cleanroom_evidence: get("--cleanroom-evidence")?,
+        cleanroom_run_metadata: get("--cleanroom-run-metadata")?,
+        root: get("--root")?,
+        require_promotion_confirmation: require,
+    })
+}
+
+/// A hosted run's OWN record, exported from the GitHub Actions API by the
+/// confirming workflow. `compare` ties each uploaded bundle to the run that
+/// produced it: a branch name never becomes source identity, and only a run
+/// whose own record says `success` and whose head SHA matches the bundle's git
+/// commit can stand as a promotion side.
+struct RunMetadata {
+    conclusion: String,
+    head_sha: GitCommitSha,
+    repository: String,
+    workflow_path: String,
+    run_id: u64,
+    run_attempt: u32,
+}
+
+fn parse_run_metadata(path: &Path) -> Result<RunMetadata, String> {
+    let raw = fs::read(path)
+        .map_err(|e| format!("cannot read run metadata {}: {e}", path.display()))?;
+    let lines = strict_lines(&raw)?;
+    let mut c = Cursor::new(&lines);
+    c.expect_exact("BATPAK-TIER0-RUN-METADATA/1")?;
+    let conclusion = c.expect_key("conclusion")?;
+    let head_sha = GitCommitSha::from_hex(&c.expect_key("head-sha")?)
+        .map_err(|e| format!("bad head-sha in run metadata: {e:?}"))?;
+    let repository = c.expect_key("repository")?;
+    let workflow_path = c.expect_key("workflow-path")?;
+    let run_id = c
+        .expect_key("run-id")?
+        .parse()
+        .map_err(|_| "run-id is not a u64".to_owned())?;
+    let run_attempt = c
+        .expect_key("run-attempt")?
+        .parse()
+        .map_err(|_| "run-attempt is not a u32".to_owned())?;
+    if !c.at_end() {
+        return Err("trailing content after run metadata".to_owned());
+    }
+    Ok(RunMetadata {
+        conclusion,
+        head_sha,
+        repository,
+        workflow_path,
+        run_id,
+        run_attempt,
+    })
+}
+
+/// Tie a verified qualification to its run's own record: the record must say
+/// `success`, name the same repository, workflow, run id, and attempt the
+/// artifact bound, and its head SHA must equal the artifact's git commit.
+fn cross_check_run(
+    side: &str,
+    verified: &VerifiedTier0Qualification,
+    meta: &RunMetadata,
+) -> Result<(), String> {
+    if meta.conclusion != "success" {
+        return Err(format!(
+            "{side} run metadata conclusion is {:?}, not success",
+            meta.conclusion
+        ));
+    }
+    let run = verified
+        .hosted_run()
+        .ok_or_else(|| format!("{side} qualification binds no hosted run"))?;
+    if run.repository != meta.repository {
+        return Err(format!(
+            "{side} artifact repository {:?} does not match run metadata {:?}",
+            run.repository, meta.repository
+        ));
+    }
+    if run.workflow_path != meta.workflow_path {
+        return Err(format!(
+            "{side} artifact workflow path {:?} does not match run metadata {:?}",
+            run.workflow_path, meta.workflow_path
+        ));
+    }
+    if run.run_id != meta.run_id {
+        return Err(format!(
+            "{side} artifact run id {} does not match run metadata {}",
+            run.run_id, meta.run_id
+        ));
+    }
+    if run.run_attempt != meta.run_attempt {
+        return Err(format!(
+            "{side} artifact run attempt {} does not match run metadata {}",
+            run.run_attempt, meta.run_attempt
+        ));
+    }
+    match verified.source() {
+        SourceBinding::GitCheckout { commit, .. } => {
+            if *commit != meta.head_sha {
+                return Err(format!(
+                    "{side} run metadata head-sha {} does not match the artifact git commit {}",
+                    meta.head_sha.render(),
+                    commit.render()
+                ));
+            }
+        }
+        SourceBinding::FrozenExport { .. } => {
+            return Err(format!(
+                "{side} artifact is a frozen export; a promotion side must be a git checkout"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn mode_compare(args: &[String]) -> Result<(), String> {
+    // The internal SHA-256 must agree with the standard before it may judge.
+    self_check_sha256()?;
+    let p = parse_compare_args(args)?;
+
+    // Independently verify BOTH uploaded bundles from the bytes on disk.
+    let candidate = verify_one(&VerifyPaths {
+        artifact: p.candidate_artifact.clone(),
+        root: p.root.clone(),
+        evidence: p.candidate_evidence.clone(),
+    })
+    .map_err(|e| format!("candidate: {e}"))?;
+    let cleanroom = verify_one(&VerifyPaths {
+        artifact: p.cleanroom_artifact.clone(),
+        root: p.root.clone(),
+        evidence: p.cleanroom_evidence.clone(),
+    })
+    .map_err(|e| format!("cleanroom: {e}"))?;
+
+    // Tie each bundle to its hosted run's own record.
+    let candidate_meta = parse_run_metadata(&p.candidate_run_metadata)?;
+    let cleanroom_meta = parse_run_metadata(&p.cleanroom_run_metadata)?;
+    cross_check_run("candidate", &candidate, &candidate_meta)?;
+    cross_check_run("cleanroom", &cleanroom, &cleanroom_meta)?;
+
+    // Same-source is always computed (informational); promotion confirmation is
+    // the strictly stronger verdict the confirming run requires.
+    let comparison = compare_runs(&candidate, &cleanroom);
+    let same_source = match &comparison {
+        CrossRunComparison::SameSource(_) => "same-source".to_owned(),
+        CrossRunComparison::DifferentSource(divs) => {
+            format!("different-source ({} divergence(s): {divs:?})", divs.len())
+        }
+        CrossRunComparison::NotComparable(reason) => format!("not-comparable ({reason:?})"),
+    };
+
+    if p.require_promotion_confirmation {
+        let proof = confirm_promotion(&candidate, &cleanroom)
+            .map_err(|e| format!("promotion confirmation refused: {e:?}"))?;
+        let commit = match candidate.source() {
+            SourceBinding::GitCheckout { commit, .. } => commit.render(),
+            SourceBinding::FrozenExport { .. } => "-(frozen-export)".to_owned(),
+        };
+        println!("receiptcheck: PASS");
+        println!("mode: compare");
+        println!("promotion-confirmed: yes");
+        println!("same-source: {same_source}");
+        println!("source-commit: {commit}");
+        println!("target: {}", proof.target().triple());
+        println!(
+            "candidate-run: {} attempt {}",
+            proof.candidate_run().run_id,
+            proof.candidate_run().run_attempt
+        );
+        println!(
+            "cleanroom-run: {} attempt {}",
+            proof.cleanroom_run().run_id,
+            proof.cleanroom_run().run_attempt
+        );
+    } else {
+        println!("receiptcheck: PASS");
+        println!("mode: compare");
+        println!("promotion-confirmed: not-required");
+        println!("same-source: {same_source}");
+    }
+    Ok(())
 }
 
 // ===========================================================================

@@ -133,27 +133,41 @@ that names the authoritative target without a hosted-run identity, or that rides
 a frozen export, is refused — a local machine produces only the supplemental
 `x86_64-pc-windows-gnu` lane, never the authoritative receipt.
 
-### Cross-run same-source corroboration (5.5E6c, DEC-076)
+### Cross-run same-source corroboration and promotion confirmation (5.5E6c/E6c1, DEC-076)
 
 The sealed `VerifiedTier0Qualification` retains every binding so two INDEPENDENT
-hosted runs can be proven to describe the same promoted source.
+hosted runs can be proven to describe the same committed source snapshot.
 `spec/tier0_cross_run.rs` owns the comparator: `compare_runs` over two verified
 qualifications returns a sealed same-source proof, a named divergence, or a
 not-comparable verdict. Same-source rests ONLY on the deterministic,
 source-derived coordinates — source commit, source tree, spec-manifest digest,
 hosted-workflow digest, and the independently-recomputed materializer
-output-tree. Compiled-artifact (executable) digests are not byte-reproducible
-across independent runs: two real hosted MSVC runs of one commit printed
-identical source and output-tree digests but different seedcheck, materialize,
-and spec-tests executable digests. The comparator therefore treats an executable
-digest difference as expected build-nondeterminism, never a same-source
-divergence — demanding executable-digest equality would be a dishonest red. A
-differing toolchain or physical target does not defeat same-source; it is
-recorded as corroboration strength. Comparison requires two distinct hosted-run
-identities (a run compared against itself is refused) and two git-checkout
-sources (a frozen export binds no commit or tree to compare). The proof is
-sealed: `compare_runs` is its only constructor, and `bootstrap/seedcheck.rs`
-executes the comparator across every outcome at the Tier 0 gate.
+output-tree. A candidate-branch run happens BEFORE promotion, so same-source
+names a committed source snapshot, not yet a "promoted" one.
+
+The current Tier 0 contract does not require cross-run executable-byte identity:
+each run independently binds its own executables, so a differing compiled-artifact
+executable digest is never a same-source or promotion divergence — demanding
+executable-digest equality would be a dishonest red. Two real hosted MSVC runs of
+one commit printed identical source and output-tree digests but different
+seedcheck, materialize, and spec-tests executable digests. A later
+reproducible-build law may ADD executable equality as stronger corroboration
+without redefining today's source identity. A differing toolchain or physical
+target does not defeat same-source; it is recorded as orthogonal corroboration
+strength. Comparison requires two distinct hosted-run identities (a run compared
+against itself is refused) and two git-checkout sources (a frozen export binds no
+commit or tree to compare).
+
+PROMOTION CONFIRMATION is strictly stronger than same-source. `confirm_promotion`
+requires a `SameSourceProof` AND that both runs qualified the authoritative target
+under an identical pinned toolchain, in the same repository and the canonical
+authoritative workflow path — the posture the candidate-exact-SHA and
+cleanroom-exact-SHA runs share across a lawful fast-forward. Provenance
+equivalence is not promotion equivalence. Both proofs are sealed (`compare_runs`
+and `confirm_promotion` are their only constructors); `bootstrap/receiptcheck.rs`
+independently recomputes each run's evidence and exposes a `compare` mode that
+verifies both bundles and runs both proofs, and `bootstrap/seedcheck.rs` executes
+both across every outcome at the Tier 0 gate.
 
 ## Release seal and refusal (DEC-058)
 

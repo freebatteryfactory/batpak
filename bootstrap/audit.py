@@ -4600,7 +4600,12 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     # declared but never checked, and no precondition is unreachable — consumes
     # the load-bearing materializer output tree, and inspects no executable digest.
     fn_head = src.find("pub fn compare_runs(")
-    fn_end = src.find("\n#[cfg(test)]", fn_head) if fn_head >= 0 else -1
+    # Bound compare_runs at the next top-level item (confirm_promotion) so the
+    # executable-digest scan below does not reach into confirm_promotion or the
+    # in-crate test module.
+    fn_end = src.find("\npub fn confirm_promotion(", fn_head) if fn_head >= 0 else -1
+    if fn_end < 0:
+        fn_end = src.find("\n#[cfg(test)]", fn_head) if fn_head >= 0 else -1
     fn_body = src[fn_head: fn_end if fn_end >= 0 else len(src)] if fn_head >= 0 else ""
     if not fn_body:
         out.append(f"{A_XR_SPEC}: declares no compare_runs")
@@ -4629,15 +4634,62 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
         if f"{field}:" not in proof_body:
             out.append(f"{A_XR_SPEC}: SameSourceProof retains no {field}")
 
+    # Promotion confirmation (5.5E6c1) is STRICTLY STRONGER than same-source. Its
+    # error algebra names exactly the posture requirements it adds over
+    # same-source; its sealed proof retains the confirmed authority.
+    expected_pc_err = {"NotSameSource", "NonAuthoritativeTarget", "CrossTarget",
+                       "ToolchainDivergent", "RepositoryMismatch",
+                       "NonCanonicalWorkflowPath"}
+    if variants("PromotionConfirmationError") != expected_pc_err:
+        out.append(f"{A_XR_SPEC}: PromotionConfirmationError is not exactly the six promotion "
+                   "posture refusals (not-same-source, non-authoritative-target, cross-target, "
+                   "toolchain-divergent, repository-mismatch, non-canonical-workflow-path)")
+
+    pc_head = src.find("pub struct PromotionConfirmationProof {")
+    pc_body = src[pc_head: src.find("\n}", pc_head)] if pc_head >= 0 else ""
+    if "_seal: ()" not in pc_body:
+        out.append(f"{A_XR_SPEC}: PromotionConfirmationProof is not sealed; confirm_promotion is "
+                   "not its sole constructor")
+    for field in ("same_source", "target", "toolchain", "candidate_run", "cleanroom_run"):
+        if f"{field}:" not in pc_body:
+            out.append(f"{A_XR_SPEC}: PromotionConfirmationProof retains no {field}")
+
+    # confirm_promotion builds on the same-source proof, refuses on every added
+    # posture requirement, requires the authoritative target, and pins the
+    # canonical authoritative workflow — a promotion cannot be confirmed from a
+    # branch name or a supplemental target.
+    cp_head = src.find("pub fn confirm_promotion(")
+    cp_end = src.find("\n#[cfg(test)]", cp_head) if cp_head >= 0 else -1
+    cp_body = src[cp_head: cp_end if cp_end >= 0 else len(src)] if cp_head >= 0 else ""
+    if not cp_body:
+        out.append(f"{A_XR_SPEC}: declares no confirm_promotion")
+    else:
+        for variant in sorted(expected_pc_err):
+            if f"PromotionConfirmationError::{variant}" not in cp_body:
+                out.append(f"{A_XR_SPEC}: confirm_promotion never emits the {variant} refusal")
+        if "compare_runs(" not in cp_body or "SameSource" not in cp_body:
+            out.append(f"{A_XR_SPEC}: confirm_promotion does not build on the same-source proof")
+        if "is_authoritative()" not in cp_body:
+            out.append(f"{A_XR_SPEC}: confirm_promotion does not require the authoritative target")
+        if "AUTHORITATIVE_WORKFLOW_PATH" not in cp_body:
+            out.append(f"{A_XR_SPEC}: confirm_promotion does not pin the canonical authoritative "
+                       "workflow path")
+
     # The retained binding the comparator consumes is exposed by the sealed E6b
-    # qualification, and seedcheck executes the comparator end to end.
+    # qualification, the canonical workflow path is owned there, and seedcheck
+    # executes both the comparator and the promotion confirmation end to end.
     bq = _uncomment((root / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8"))
     if "fn materializer_output_tree(&self) -> Sha256Digest" not in bq:
         out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
                    "materializer_output_tree() accessor for the cross-run comparator")
+    if "AUTHORITATIVE_WORKFLOW_PATH" not in bq:
+        out.append("spec/bootstrap_qualification.rs: declares no AUTHORITATIVE_WORKFLOW_PATH "
+                   "constant for promotion confirmation")
     sc = (root / "bootstrap/seedcheck.rs").read_text(encoding="utf-8")
     if "check_tier0_cross_run" not in sc or "compare_runs(" not in sc:
         out.append("bootstrap/seedcheck.rs: does not execute the cross-run comparator")
+    if "confirm_promotion(" not in sc:
+        out.append("bootstrap/seedcheck.rs: does not execute the promotion confirmation")
     return out
 
 
