@@ -34,3 +34,4 @@ pub mod reconciliation;
 pub mod syncbat_firewall;
 pub mod tier0_cross_run;
 pub mod toolchain;
+pub mod verification;

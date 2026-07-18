@@ -117,6 +117,7 @@ pub enum GeneratedView {
     MigrationProofRequirements,
     SecretAuthorityProofRequirements,
     Gate0MaterializationPlan,
+    VerificationPlans,
     GeneratedViewRegistry,
 }
 
@@ -178,6 +179,7 @@ impl GeneratedView {
         GeneratedView::MigrationProofRequirements,
         GeneratedView::SecretAuthorityProofRequirements,
         GeneratedView::Gate0MaterializationPlan,
+        GeneratedView::VerificationPlans,
         GeneratedView::GeneratedViewRegistry,
     ];
 
@@ -239,6 +241,7 @@ impl GeneratedView {
             GeneratedView::MigrationProofRequirements => "MigrationProofRequirements",
             GeneratedView::SecretAuthorityProofRequirements => "SecretAuthorityProofRequirements",
             GeneratedView::Gate0MaterializationPlan => "Gate0MaterializationPlan",
+            GeneratedView::VerificationPlans => "VerificationPlans",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
         }
     }
@@ -666,6 +669,15 @@ impl GeneratedView {
                 target: GeneratedViewTarget::Static(&["docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("GATE0-MATERIALIZATION-PLAN"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::VerificationPlans => GeneratedViewSpec {
+                authority_sources: &["spec/proof.rs", "spec/verification.rs"],
+                target: GeneratedViewTarget::Static(&[
+                    "docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md",
+                ]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("VERIFICATION-PLANS"),
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {

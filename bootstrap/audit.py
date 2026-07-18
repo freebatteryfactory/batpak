@@ -675,7 +675,7 @@ def proof_terminal_findings(root: Path) -> list[str]:
     names = re.findall(r"ProofUnitTerminal::(\w+)", src[start: src.index("\n];", start)])
     if len(names) != len(set(names)):
         out.append("a proof terminal is listed twice")
-    fn = src[src.index("pub const fn counts_green"):]
+    fn = src[src.index("pub const fn is_positive_semantic_terminal"):]
     fn = fn[: fn.index("\n    }")]
     green = [n for arm, verdict in re.findall(
         r"((?:ProofUnitTerminal::\w+\s*\|?\s*)+)=>\s*(true|false)", fn)
@@ -2576,10 +2576,11 @@ def witness_rows(root: Path) -> dict[str, dict]:
     and the retired fence headers are no longer parsed for anything."""
     src = (root / "spec/proof.rs").read_text(encoding="utf-8")
     out: dict[str, dict] = {}
-    for wid, family, guarantee, _contracts in re.findall(
+    for wid, family, guarantee, _contracts, _claim, _plan in re.findall(
             r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
             r'ProofRowState::Active \{ guarantee: GuaranteeRef::(leg|dec)\("([^"]+)"\), '
-            r'projection_contracts: &\[([^\]]*)\] \} \}', src):
+            r'projection_contracts: &\[([^\]]*)\], '
+            r'claim: VerificationClaimKind::(\w+), verification: ([A-Z0-9_]+) \} \}', src):
         if wid in out:
             out[wid]["duplicate"] = True
             continue
@@ -4811,6 +4812,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(inventory_mirror_findings(root))
     findings.extend(exact_ledger_findings(root))
     findings.extend(proof_relation_findings(root))
+    findings.extend(verification_findings(root))
     findings.extend(identity_catalog_findings(root))
     findings.extend(command_catalog_findings(root))
     findings.extend(mutation_findings(root))
@@ -5774,7 +5776,8 @@ def exact_ledger_findings(root: Path) -> list[str]:
 A_E4D_ACTIVE = re.compile(
     r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
     r'ProofRowState::Active \{ guarantee: GuaranteeRef::(leg|dec)\("([^"]+)"\), '
-    r'projection_contracts: &\[([^\]]*)\] \} \}')
+    r'projection_contracts: &\[([^\]]*)\], '
+    r'claim: VerificationClaimKind::(\w+), verification: ([A-Z0-9_]+) \} \}')
 A_E4D_LEG_FULL = re.compile(
     r'LegacyObligation \{ id: "(LEG-\d+)", law: "((?:[^"\\]|\\.)*)", '
     r'legacy_evidence: "((?:[^"\\]|\\.)*)", clean_owner: "([^"]*)", '
@@ -5787,6 +5790,170 @@ A_E4D_PLANNED_TEXT = re.compile(r'Planned\("((?:[^"\\]|\\.)*)"\)')
 # The automatic consumers never appear in projection_contracts: docs/24 and
 # docs/21 receive every relation mechanically.
 A_E4D_AUTOMATIC = {"BP-GAUNTLET-1", "BP-LEGACY-OBLIGATIONS-1"}
+
+
+# 5.5F2 (DEC-077/DEC-078, docs/38): the verification plane's frozen axis
+# vocabularies. Distinct typed axes, never one ordered ladder — the guard
+# below is SHAPE-based, so a synonym ladder (ConfidenceTier, TrustGrade)
+# walks into the same refusal as the named ones.
+A_VERIFICATION_AXES = {
+    "VerificationBasis": {"ContractProjection", "IndependentReference",
+                          "DirectBoundary", "RuntimeObservation"},
+    "VerificationMethod": {"StructuralRule", "CompileRefusal", "PropertySequence",
+                           "BoundedStateExploration", "ScheduleExploration",
+                           "DeterministicSimulation", "DifferentialExecution",
+                           "TranslationValidation", "FaultInjection", "CrashRecovery",
+                           "Fuzzing", "Mutation", "ComplexityContract",
+                           "BenchmarkEnvelope", "HistoryReplay"},
+    "VerificationClaimKind": {"Safety", "Liveness", "BoundedResponse", "Convergence",
+                              "Stability", "NonOscillation", "Determinism",
+                              "Refinement", "Conformance", "ResourceEnvelope"},
+    "VerificationCoverage": {"Sampled", "Bounded", "ExhaustiveWithinDeclaredModel",
+                             "ObservedHistory"},
+    "VerificationEnforcementPosture": {"Blocking", "Quarantine", "Advisory"},
+    "VerificationLane": {"PullRequestFast", "Merge", "Scheduled", "Release", "Runtime"},
+    "IndependentEvidenceRouteKind": {"DifferentialImplementation", "HostileBoundary",
+                                     "IndependentHistoryReplay"},
+    "RuntimeVerificationMode": {"PreventiveGuard", "InBandObservation", "OfflineReplay"},
+    "RuntimeVerificationDisposition": {"GuardAdmitted", "GuardRefused",
+                                       "NoDivergenceObserved",
+                                       "ConformantForObservedHistory", "Divergent",
+                                       "Incomplete", "Stale", "Unsupported"},
+}
+# Tool names are receipts, never methods: the one lawful tool enum names the
+# repository's own bootstrap tools, and a verification tool vocabulary is a
+# ladder rung wearing a lab coat.
+A_VERIFICATION_TOOL_NAMES = ("VerificationToolId", "LoomMethod", "KaniMethod",
+                             "TlaMethod", "StaterightMethod")
+A_VERIFICATION_PLAN = re.compile(
+    r'pub const (PLAN_[A-Z0-9_]+): &\[VerificationRequirement\] = &\[(.*?)\];',
+    re.S)
+A_VERIFICATION_REQ = re.compile(
+    r'VerificationRequirement \{ method: VerificationMethod::(\w+), '
+    r'basis: VerificationBasis::(\w+), coverage: VerificationCoverage::(\w+), '
+    r'lane: VerificationLane::(\w+), enforcement: VerificationEnforcementPosture::(\w+), '
+    r'independent_route: (None|Some\(IndependentEvidenceRouteKind::\w+\)) \}')
+
+
+def verification_findings(root: Path) -> list[str]:
+    """The typed verification plane, independently reconstructed: frozen axis
+    vocabularies, the shape-based anti-ladder guard, tool-neutral methods,
+    plan admissibility, and route kinds closed by adoption."""
+    out: list[str] = []
+    vsrc = (root / "spec/verification.rs").read_text(encoding="utf-8")
+    psrc = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    # Frozen axes: each enum exists with exactly its ruled variants.
+    for axis, want in A_VERIFICATION_AXES.items():
+        m = re.search(r"pub enum " + re.escape(axis) + r" \{(.*?)\n\}", vsrc, re.S)
+        got = set(re.findall(r"^\s{4}(\w+),", m.group(1), re.M)) if m else set()
+        if not got:
+            out.append(f"spec/verification.rs declares no {axis}")
+        elif got != want:
+            out.append(f"{axis} variants {sorted(got)} != frozen {sorted(want)}")
+    # Shape guard: no ordering, ranking, scoring, or numeric conversion on
+    # any verification axis or aggregate.
+    for pattern, law in (
+        (r"derive\(([^)]*\b(?:PartialOrd|Ord)\b[^)]*)\)",
+         "derives an ordering on a verification type"),
+        (r"impl\s+(?:PartialOrd|Ord)\b", "implements an ordering on a verification type"),
+        (r"fn\s+(?:rank|level|assurance_score|score)\b",
+         "exposes a rank/level/score on the verification plane"),
+        (r"\bas\s+(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize|f32|f64)\b",
+         "numerically converts a verification axis"),
+    ):
+        if re.search(pattern, vsrc):
+            out.append(f"spec/verification.rs {law}; the axes are not a ladder (DEC-077)")
+    # Tool-neutral methods: a tool-name vocabulary may not exist anywhere in
+    # the spec as a declaration.
+    for rel in sorted((root / "spec").glob("*.rs")):
+        src_i = rel.read_text(encoding="utf-8")
+        for name in A_VERIFICATION_TOOL_NAMES:
+            if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b", src_i, re.M):
+                out.append(f"{rel.name} declares tool vocabulary {name}; methods stay "
+                           "tool-neutral and tools are receipts")
+    # The retired spelling stays retired.
+    for rel in ("spec/proof.rs", "bootstrap/seedcheck.rs", "bootstrap/audit.py"):
+        if re.search(r"\bcounts_green\s*\(", (root / rel).read_text(encoding="utf-8")):
+            out.append(f"{rel} still calls counts_green; the seam is "
+                       "is_positive_semantic_terminal (5.5F2)")
+    # Named plans: parse, admit, and require nonempty duplicate-free tuples.
+    plans: dict[str, list[tuple]] = {}
+    for name, body in A_VERIFICATION_PLAN.findall(psrc):
+        reqs = A_VERIFICATION_REQ.findall(body)
+        raw_count = body.count("VerificationRequirement {")
+        if raw_count != len(reqs):
+            out.append(f"plan {name} carries a requirement the reconstruction cannot parse")
+        if not reqs:
+            out.append(f"plan {name} is empty; an active row cannot ride an empty plan")
+        if len(reqs) != len(set(reqs)):
+            out.append(f"plan {name} repeats a requirement")
+        for method, basis, coverage, lane, enforcement, route in reqs:
+            for axis, value in (("VerificationMethod", method),
+                                ("VerificationBasis", basis),
+                                ("VerificationCoverage", coverage),
+                                ("VerificationLane", lane),
+                                ("VerificationEnforcementPosture", enforcement)):
+                if value not in A_VERIFICATION_AXES[axis]:
+                    out.append(f"plan {name} names unknown {axis}::{value}")
+            if route != "None":
+                kind = route[len("Some(IndependentEvidenceRouteKind::"):-1]
+                if kind not in A_VERIFICATION_AXES["IndependentEvidenceRouteKind"]:
+                    out.append(f"plan {name} names unknown route kind {kind}")
+                if basis == "ContractProjection":
+                    out.append(f"plan {name} lets a ContractProjection supply an "
+                               "independent route; admission refuses this shape")
+            if basis == "RuntimeObservation" and coverage != "ObservedHistory":
+                out.append(f"plan {name} pairs runtime observation with {coverage}; "
+                           "runtime observation covers observed history only")
+            if coverage == "ObservedHistory" and basis != "RuntimeObservation":
+                out.append(f"plan {name} claims observed-history coverage without "
+                           "runtime observation")
+        plans[name] = reqs
+    # Every active row references a declared plan and a ruled claim; route
+    # kinds are closed by adoption.
+    adopted_routes: set[str] = set()
+    for m in A_E4D_ACTIVE.finditer(psrc):
+        wid, claim, plan = m.group(1), m.group(5), m.group(6)
+        if claim not in A_VERIFICATION_AXES["VerificationClaimKind"]:
+            out.append(f"active proof row {wid} claims unknown kind {claim}")
+        if plan not in plans:
+            out.append(f"active proof row {wid} references undeclared plan {plan}")
+        else:
+            for _m, _b, _c, _l, _e, route in plans[plan]:
+                if route != "None":
+                    adopted_routes.add(route[len("Some(IndependentEvidenceRouteKind::"):-1])
+    for kind in sorted(A_VERIFICATION_AXES["IndependentEvidenceRouteKind"] - adopted_routes):
+        out.append(f"IndependentEvidenceRouteKind::{kind} has no active proof-row "
+                   "adopter; a route kind arrives with its adopter, never before")
+    # The runtime matrix in the typed source is the ruled matrix: the three
+    # refused pairings must not appear in the admitting arms.
+    matrix = re.search(r"pub const fn admits\(.*?\n    \}", vsrc, re.S)
+    if not matrix:
+        out.append("spec/verification.rs declares no admits() runtime matrix")
+    else:
+        arm = matrix.group(0)
+        guard = re.search(r"PreventiveGuard => matches!\(\s*disposition,\s*([^)]*)\)", arm)
+        inband = re.search(r"InBandObservation => matches!\(\s*disposition,\s*([^)]*)\)", arm)
+        replay = re.search(r"OfflineReplay => matches!\(\s*disposition,\s*([^)]*)\)", arm)
+        if not (guard and inband and replay):
+            out.append("the admits() matrix does not classify all three runtime modes")
+        else:
+            if "ConformantForObservedHistory" in guard.group(1) + inband.group(1):
+                out.append("a guard or in-band mode admits ConformantForObservedHistory; "
+                           "only independent offline replay concludes conformance")
+            if "NoDivergenceObserved" in replay.group(1):
+                out.append("offline replay admits NoDivergenceObserved; replay concludes "
+                           "for observed history, it does not narrate a live trace")
+            if "GuardRefused" not in guard.group(1):
+                out.append("the preventive guard cannot refuse; a guard needs no replay "
+                           "before refusing")
+    # The product verification plane never imports the Tier 0 cross-run
+    # comparator as authority (naming it in prose as an analogy is lawful;
+    # a use declaration is not).
+    if re.search(r"use\s+(?:crate|spec)::tier0_cross_run", vsrc):
+        out.append("spec/verification.rs imports tier0_cross_run; the Tier 0 law is an "
+                   "analogy, never product verification authority")
+    return out
 
 
 def proof_relation_findings(root: Path) -> list[str]:

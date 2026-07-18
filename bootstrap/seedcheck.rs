@@ -7,7 +7,7 @@ use spec::{
     architecture, bootstrap_output, bootstrap_qualification, commands, contracts, dispositions,
     generated_views, identities, gates, guarantees, invariants, legacy_invariant_coverage,
     legacy_obligations, operators, pakvm_isa, proof, reconciliation, syncbat_firewall,
-    tier0_cross_run, toolchain,
+    tier0_cross_run, toolchain, verification,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,6 +68,7 @@ fn inspect(root: &Path) -> Vec<String> {
     check_reconciliation(&mut findings);
     check_release_seal(&mut findings);
     check_proof_terminals(&mut findings);
+    check_verification(&mut findings);
     check_guarantee_admission(&mut findings);
     check_frontmatter(root, &mut findings);
     check_witness_citations(root, &mut findings);
@@ -1637,8 +1638,11 @@ fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {
 }
 
 /// SEED-AUDITED-DENOMINATOR (5.5E1): the proof-terminal vocabulary is typed
-/// and only Passed counts green -- the fence is executed through the real
-/// counts_green(), so reclassifying a terminal reddens the running binary.
+/// and only Passed is the positive semantic terminal -- the fence is executed
+/// through the real is_positive_semantic_terminal() (renamed from
+/// counts_green in 5.5F2), so reclassifying a terminal reddens the running
+/// binary. The positive terminal is one qualification input, never the
+/// verdict: requirement qualification is spec/verification.rs law.
 fn check_proof_terminals(findings: &mut Vec<String>) {
     use proof::ProofUnitTerminal as T;
     let mut seen = BTreeSet::new();
@@ -1656,14 +1660,217 @@ fn check_proof_terminals(findings: &mut Vec<String>) {
         findings.push(format!(
             "a proof terminal is missing from PROOF_UNIT_TERMINALS ({} of 7)", seen.len()));
     }
-    if !T::Passed.counts_green() {
-        findings.push("Passed no longer counts green; the denominator is vacuous".into());
+    if !T::Passed.is_positive_semantic_terminal() {
+        findings.push("Passed is no longer the positive semantic terminal; the denominator is vacuous".into());
     }
     for t in [T::Failed, T::Refused, T::Unsupported, T::SkippedWithAuthority,
               T::Expired, T::Superseded] {
-        if t.counts_green() {
+        if t.is_positive_semantic_terminal() {
             findings.push(format!(
-                "proof terminal {t:?} counts green; only Passed may (SEED-AUDITED-DENOMINATOR)"));
+                "proof terminal {t:?} is positive; only Passed may be (SEED-AUDITED-DENOMINATOR)"));
+        }
+    }
+}
+
+/// 5.5F2 (DEC-077/DEC-078, docs/38): the typed verification plane is
+/// executed law, not declared vocabulary. This check runs the runtime
+/// mode/result matrix over EVERY combination, exercises every admission and
+/// qualification refusal arm through the sealed constructors, and executes
+/// the DEC-075 planted-disagreement law — a projection witness and an
+/// independent-reference witness that disagree refuse the row rather than
+/// letting the generated projection win.
+fn check_verification(findings: &mut Vec<String>) {
+    use verification::{
+        admit, qualify, qualify_row, ExecutedRequirementEvidence,
+        IndependentEvidenceRouteKind, RequirementAdmissionError,
+        RequirementQualificationError, RowQualificationError, RuntimeVerificationDisposition,
+        RuntimeVerificationMode, VerificationBasis, VerificationClaimKind, VerificationCoverage,
+        VerificationEnforcementPosture, VerificationLane, VerificationMethod,
+        VerificationRequirement, INDEPENDENT_EVIDENCE_ROUTE_KINDS,
+        RUNTIME_VERIFICATION_DISPOSITIONS, RUNTIME_VERIFICATION_MODES, VERIFICATION_BASES,
+        VERIFICATION_CLAIM_KINDS, VERIFICATION_COVERAGES, VERIFICATION_ENFORCEMENT_POSTURES,
+        VERIFICATION_LANES, VERIFICATION_METHODS,
+    };
+    // Closed inventories are complete and duplicate-free.
+    let counts = [
+        ("VERIFICATION_BASES", VERIFICATION_BASES.len(), 4),
+        ("VERIFICATION_METHODS", VERIFICATION_METHODS.len(), 15),
+        ("VERIFICATION_CLAIM_KINDS", VERIFICATION_CLAIM_KINDS.len(), 10),
+        ("VERIFICATION_COVERAGES", VERIFICATION_COVERAGES.len(), 4),
+        ("VERIFICATION_ENFORCEMENT_POSTURES", VERIFICATION_ENFORCEMENT_POSTURES.len(), 3),
+        ("VERIFICATION_LANES", VERIFICATION_LANES.len(), 5),
+        ("INDEPENDENT_EVIDENCE_ROUTE_KINDS", INDEPENDENT_EVIDENCE_ROUTE_KINDS.len(), 3),
+        ("RUNTIME_VERIFICATION_MODES", RUNTIME_VERIFICATION_MODES.len(), 3),
+        ("RUNTIME_VERIFICATION_DISPOSITIONS", RUNTIME_VERIFICATION_DISPOSITIONS.len(), 8),
+    ];
+    for (name, got, want) in counts {
+        if got != want {
+            findings.push(format!("{name} carries {got} entries, expected {want}"));
+        }
+    }
+    // The exact runtime mode/result matrix, every combination classified.
+    use RuntimeVerificationDisposition as D;
+    use RuntimeVerificationMode as M;
+    for mode in RUNTIME_VERIFICATION_MODES {
+        for disposition in RUNTIME_VERIFICATION_DISPOSITIONS {
+            let admitted = mode.admits(*disposition);
+            let lawful = match (mode, disposition) {
+                (M::PreventiveGuard, D::GuardAdmitted | D::GuardRefused | D::Unsupported) => true,
+                (M::InBandObservation,
+                 D::NoDivergenceObserved | D::Divergent | D::Incomplete | D::Stale
+                 | D::Unsupported) => true,
+                (M::OfflineReplay,
+                 D::ConformantForObservedHistory | D::Divergent | D::Incomplete | D::Stale
+                 | D::Unsupported) => true,
+                _ => false,
+            };
+            if admitted != lawful {
+                findings.push(format!(
+                    "runtime matrix drift: {mode:?} + {disposition:?} admits()={admitted}, law says {lawful}"));
+            }
+        }
+    }
+    let base = VerificationRequirement {
+        method: VerificationMethod::PropertySequence,
+        basis: VerificationBasis::DirectBoundary,
+        coverage: VerificationCoverage::Sampled,
+        lane: VerificationLane::Merge,
+        enforcement: VerificationEnforcementPosture::Blocking,
+        independent_route: Some(IndependentEvidenceRouteKind::HostileBoundary),
+    };
+    let matching = ExecutedRequirementEvidence {
+        method: base.method,
+        basis: base.basis,
+        coverage: base.coverage,
+        lane: base.lane,
+        enforcement: base.enforcement,
+        route: base.independent_route,
+        executed: true,
+        fresh: true,
+        artifacts_bound: true,
+        counterexample_outstanding: false,
+        terminal: proof::ProofUnitTerminal::Passed,
+    };
+    // Admission refuses every incoherent shape.
+    if !matches!(
+        admit(VerificationRequirement { basis: VerificationBasis::ContractProjection, ..base }),
+        Err(RequirementAdmissionError::ProjectionCannotSupplyIndependentRoute)
+    ) {
+        findings.push("a ContractProjection supplied an independent route and was admitted".into());
+    }
+    if !matches!(
+        admit(VerificationRequirement {
+            basis: VerificationBasis::RuntimeObservation,
+            independent_route: None,
+            ..base
+        }),
+        Err(RequirementAdmissionError::RuntimeObservationRequiresObservedHistory)
+    ) {
+        findings.push("runtime observation admitted without observed-history coverage".into());
+    }
+    if !matches!(
+        admit(VerificationRequirement {
+            coverage: VerificationCoverage::ObservedHistory,
+            ..base
+        }),
+        Err(RequirementAdmissionError::ObservedHistoryRequiresRuntimeObservation)
+    ) {
+        findings.push("observed-history coverage admitted without runtime observation".into());
+    }
+    let Ok(admitted) = admit(base) else {
+        findings.push("a coherent requirement failed admission".into());
+        return;
+    };
+    if qualify(&admitted, &matching).is_err() {
+        findings.push("exactly-matching evidence failed qualification".into());
+    }
+    // Every axis mismatch refuses; no coverage ranking, no lane substitution.
+    let refusals: [(ExecutedRequirementEvidence, &str); 8] = [
+        (ExecutedRequirementEvidence { method: VerificationMethod::Fuzzing, ..matching },
+         "method mismatch"),
+        (ExecutedRequirementEvidence {
+            coverage: VerificationCoverage::ExhaustiveWithinDeclaredModel, ..matching },
+         "exhaustive evidence satisfied a sampled requirement"),
+        (ExecutedRequirementEvidence { lane: VerificationLane::PullRequestFast, ..matching },
+         "a faster lane satisfied the declared lane"),
+        (ExecutedRequirementEvidence { route: None, ..matching },
+         "a missing independent route qualified"),
+        (ExecutedRequirementEvidence { executed: false, ..matching }, "an unexecuted plan qualified"),
+        (ExecutedRequirementEvidence { fresh: false, ..matching }, "stale evidence qualified"),
+        (ExecutedRequirementEvidence { artifacts_bound: false, ..matching },
+         "unbound artifacts qualified"),
+        (ExecutedRequirementEvidence {
+            terminal: proof::ProofUnitTerminal::Expired, ..matching },
+         "a non-positive terminal qualified"),
+    ];
+    for (evidence, law) in refusals {
+        if qualify(&admitted, &evidence).is_ok() {
+            findings.push(format!("verification qualification law failed: {law}"));
+        }
+    }
+    if !matches!(
+        qualify(&admitted, &ExecutedRequirementEvidence {
+            counterexample_outstanding: true, ..matching }),
+        Err(RequirementQualificationError::CounterexampleOutstanding)
+    ) {
+        findings.push("an outstanding counterexample did not refuse qualification".into());
+    }
+    // DEC-075 planted disagreement: projection says Passed, the independent
+    // reference says Failed; the row refuses and never trusts the projection.
+    let replay = VerificationRequirement {
+        method: VerificationMethod::HistoryReplay,
+        basis: VerificationBasis::IndependentReference,
+        independent_route: Some(IndependentEvidenceRouteKind::IndependentHistoryReplay),
+        ..base
+    };
+    let projection_plan = VerificationRequirement {
+        basis: VerificationBasis::ContractProjection,
+        independent_route: None,
+        ..base
+    };
+    let independent = ExecutedRequirementEvidence {
+        method: VerificationMethod::HistoryReplay,
+        basis: VerificationBasis::IndependentReference,
+        route: Some(IndependentEvidenceRouteKind::IndependentHistoryReplay),
+        terminal: proof::ProofUnitTerminal::Failed,
+        ..matching
+    };
+    let projection = ExecutedRequirementEvidence {
+        basis: VerificationBasis::ContractProjection,
+        route: None,
+        terminal: proof::ProofUnitTerminal::Passed,
+        ..matching
+    };
+    match qualify_row(
+        VerificationClaimKind::Determinism,
+        &[replay, projection_plan],
+        &[independent, projection],
+    ) {
+        Err(RowQualificationError::ProjectionDisagreesWithIndependentReference { .. }) => {}
+        other => findings.push(format!(
+            "planted projection/independent disagreement did not refuse the row: {other:?}")),
+    }
+    // The route-kind vocabulary is closed by adoption: every kind is consumed
+    // by at least one active proof-row plan today.
+    for kind in INDEPENDENT_EVIDENCE_ROUTE_KINDS {
+        let adopted = proof::PROOF_ROWS.iter().any(|record| match record.state {
+            proof::ProofRowState::Active { verification, .. } => verification
+                .iter()
+                .any(|requirement| requirement.independent_route == Some(*kind)),
+            proof::ProofRowState::Retired { .. } => false,
+        });
+        if !adopted {
+            findings.push(format!(
+                "IndependentEvidenceRouteKind::{kind:?} has no active proof-row adopter; \
+                 a route kind arrives with its adopter, never before"));
+        }
+    }
+    // Every claim kind that IS adopted stays within the closed vocabulary
+    // (exhaustive classification executes the enum; unreachable variants are
+    // ruled vocabulary awaiting their gates, not deleted silently).
+    for record in proof::PROOF_ROWS {
+        if let proof::ProofRowState::Active { claim, .. } = record.state {
+            let _named: VerificationClaimKind = claim;
         }
     }
 }
@@ -2551,7 +2758,27 @@ fn check_proof_relations(root: &Path, findings: &mut Vec<String>) {
         .collect();
     for record in PROOF_ROWS {
         match record.state {
-            ProofRowState::Active { guarantee, projection_contracts } => {
+            ProofRowState::Active { guarantee, projection_contracts, claim: _, verification } => {
+                // 5.5F2 plan laws: nonempty, duplicate-free, admissible — a
+                // default rubber-stamp plan cannot exist, and an incoherent
+                // requirement cannot hide inside an authored plan.
+                if verification.is_empty() {
+                    findings.push(format!(
+                        "active proof row {} carries an empty verification plan",
+                        record.id.raw()));
+                }
+                for (i, requirement) in verification.iter().enumerate() {
+                    if verification[..i].contains(requirement) {
+                        findings.push(format!(
+                            "active proof row {} repeats a verification requirement",
+                            record.id.raw()));
+                    }
+                    if let Err(error) = verification::admit(*requirement) {
+                        findings.push(format!(
+                            "active proof row {} carries an inadmissible requirement: {error:?}",
+                            record.id.raw()));
+                    }
+                }
                 let raw = match guarantee {
                     guarantees::GuaranteeRef::Legacy(id) => {
                         let raw = id.raw();

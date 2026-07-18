@@ -28,8 +28,8 @@ Every count below is a generated derivation of a typed denominator or the curren
 | legacy semantic obligations | 87 | spec/legacy_obligations.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
-| registered generated views | 57 | GeneratedView::ALL |
-| static generated target instances | 58 | expansion of every Static registry target |
+| registered generated views | 58 | GeneratedView::ALL |
+| static generated target instances | 59 | expansion of every Static registry target |
 | corpus-frontmatter bindings | 49 | the eligible Markdown corpus reached by CorpusEpochMembership |
 <!-- BUNDLE-INVENTORY:END -->
 

@@ -2478,7 +2478,7 @@ def test_proof_relations(audit, project) -> list[str]:
     DOMAIN = "PROOF-REQUIREMENTS does not match its typed derivation"
     ROW23 = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
              'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
-             'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } }')
+             'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } }')
     for name, rel, old, new, needle in (
         # The complete legacy owner.
         ("legacy_obligation_missing_evidence_is_rejected", LO,
@@ -2525,8 +2525,8 @@ def test_proof_relations(audit, project) -> list[str]:
          LEDGER),
         # Proof relations.
         ("active_proof_row_requires_a_projection_contract", PR,
-         'guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } }',
-         'guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[] } }',
+         'guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } }',
+         'guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } }',
          "names no projection contract"),
         ("active_proof_row_with_unknown_projection_contract_is_rejected", PR,
          'ContractId("BP-BVISOR-1")', 'ContractId("BP-NOBODY-1")',
@@ -2622,7 +2622,7 @@ def test_proof_relations(audit, project) -> list[str]:
         (PR, ROW23 + ",", ROW23 + ",\n    "
          'ProofRowRecord { id: ProofRowId("sandbox_growth_row_is_lawful"), '
          'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
-         'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')])
+         'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },')])
     try:
         _regen_operator_blocks(project, tmp)
         grown = audit.proof_relation_findings(tmp)
@@ -5042,7 +5042,7 @@ def test_integrity_witnesses(audit) -> list[str]:
           "unknown_leg_proof_row_for_fixture; middle_event_deletion_is_rejected;")
     ROW23F = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
               'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
-              'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+              'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },')
     probe("duplicate_docs24_proof_row_id_is_rejected", "spec/proof.rs", ROW23F,
           "binds proof-row id middle_event_deletion_is_rejected more than once",
           ROW23F + "\n    " + ROW23F)
@@ -5337,7 +5337,7 @@ def test_leg081_authority(audit) -> list[str]:
     # (witness_reference_findings) own the docs/24 side.
     ROW23C = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), '
               'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
-              'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+              'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },')
     probe("same_identity_cannot_be_active_and_retired", PR, ROW23C,
           "is declared twice in the proof-identity catalog",
           ROW23C + '\n    ProofRowRecord { id: '
@@ -5446,7 +5446,7 @@ def test_leg081_authority(audit) -> list[str]:
           "", validator=la)
     ROW81F = ('ProofRowRecord { id: ProofRowId("foreign_keyset_generation_is_rejected"), '
               'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-081"), '
-              'projection_contracts: &[ContractId("BP-CRYPTO-SECRET-1")] } },')
+              'projection_contracts: &[ContractId("BP-CRYPTO-SECRET-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },')
     probe("duplicate_leg081_proof_row_id_is_rejected", "spec/proof.rs", ROW81F,
           "docs/24 binds LEG-081 proof row foreign_keyset_generation_is_rejected more than once",
           ROW81F + "\n    " + ROW81F, validator=la)
@@ -5633,14 +5633,14 @@ def test_proof_target_resolver(audit) -> list[str]:
           "    expects: TBD")
     ROW28 = ('ProofRowRecord { id: ProofRowId("page_limit_bounds_discovery_work_not_only_output"), '
              'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-028"), '
-             'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+             'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::ResourceEnvelope, verification: PLAN_COMPLEXITY } },')
     probe("newly_promoted_row_without_an_expectation_clause_is_rejected", "spec/proof.rs",
           ROW28,
           "proof rows carry no expectation clause, above the transitional ceiling of 0",
           ROW28 + '\n    ProofRowRecord { id: '
           'ProofRowId("newly_promoted_row_without_a_clause"), '
           'state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-028"), '
-          'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")] } },')
+          'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::ResourceEnvelope, verification: PLAN_COMPLEXITY } },')
     # Enforcement is universal, not grandfathered: stripping the clause from a
     # long-migrated row is refused exactly like omitting it on a new one.
     probe("stripping_a_migrated_clause_is_rejected", GA, W28C,
@@ -7933,7 +7933,8 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "applications")
 
     # SEED-AUDITED-DENOMINATOR's fence is executed law: reclassifying Expired
-    # as green must redden the running seedcheck through counts_green().
+    # as green must redden the running seedcheck through
+    # is_positive_semantic_terminal().
     probe("expired_proof_counting_green_is_refused",
           "spec/proof.rs",
           "            ProofUnitTerminal::Passed => true,\n"
@@ -7949,7 +7950,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "            | ProofUnitTerminal::Unsupported\n"
           "            | ProofUnitTerminal::SkippedWithAuthority\n"
           "            | ProofUnitTerminal::Superseded => false,",
-          "counts green; only Passed may")
+          "is positive; only Passed may be")
 
     # DEC-075's retry fence is executed law, not a comment: reclassifying
     # elapsed wall time as an admissible retry signal must redden the running
@@ -8814,6 +8815,108 @@ def test_receiptcheck_bundle_perimeter() -> list[str]:
     return findings
 
 
+def test_verification_plane() -> list[str]:
+    """audit.verification_findings: the frozen axes, the shape-based
+    anti-ladder guard, tool-neutral methods, plan admissibility, route kinds
+    closed by adoption, the runtime matrix, and the retired counts_green
+    spelling (5.5F2). Each hostile mutates a sandbox copy of the real spec and
+    expects its detector to fire; the unmutated copy must yield zero findings
+    so no detector over-fires."""
+    findings: list[str] = []
+    audit = load("audit")
+    root = HERE.parent
+    base = Path(tempfile.mkdtemp(prefix="batpak-verif-"))
+    try:
+        (base / "spec").mkdir()
+        (base / "bootstrap").mkdir()
+        for rel in sorted((root / "spec").glob("*.rs")):
+            shutil.copyfile(rel, base / "spec" / rel.name)
+        for rel in ("bootstrap/seedcheck.rs", "bootstrap/audit.py"):
+            shutil.copyfile(root / rel, base / rel)
+        clean = audit.verification_findings(base)
+        if clean:
+            findings.append(f"verification_plane baseline is not clean: {clean[:3]}")
+
+        vpath = base / "spec" / "verification.rs"
+        ppath = base / "spec" / "proof.rs"
+        vsrc = vpath.read_text(encoding="utf-8")
+        psrc = ppath.read_text(encoding="utf-8")
+
+        def expect(name: str, needle: str) -> None:
+            got = audit.verification_findings(base)
+            if not any(needle in f for f in got):
+                findings.append(f"{name} FAILED (no finding containing {needle!r})")
+            vpath.write_text(vsrc, encoding="utf-8", newline="\n")
+            ppath.write_text(psrc, encoding="utf-8", newline="\n")
+
+        def mutate(path: Path, source: str, old: str, new: str, what: str) -> bool:
+            if old not in source:
+                findings.append(f"{what}: probe target absent, mutation never applied")
+                return False
+            path.write_text(source.replace(old, new, 1), encoding="utf-8", newline="\n")
+            return True
+
+        if mutate(vpath, vsrc, "#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum VerificationCoverage",
+                  "#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]\npub enum VerificationCoverage",
+                  "ordered_coverage"):
+            expect("verification_axis_ordering_is_rejected", "derives an ordering")
+        vpath.write_text(vsrc + "\npub fn score(_x: bool) {}\n", encoding="utf-8", newline="\n")
+        expect("verification_score_fn_is_rejected", "rank/level/score")
+        vpath.write_text(
+            vsrc + "\npub fn strength(c: VerificationCoverage) -> u8 { c as u8 }\n",
+            encoding="utf-8", newline="\n")
+        expect("verification_numeric_conversion_is_rejected", "numerically converts")
+        vpath.write_text(vsrc + "\npub enum VerificationToolId { Placeholder }\n",
+                         encoding="utf-8", newline="\n")
+        expect("verification_tool_vocabulary_is_rejected", "tool vocabulary VerificationToolId")
+        vpath.write_text(vsrc + "\nuse crate::tier0_cross_run as _t0;\n",
+                         encoding="utf-8", newline="\n")
+        expect("tier0_import_into_verification_is_rejected", "never product verification authority")
+        if mutate(vpath, vsrc, "    ExhaustiveWithinDeclaredModel,\n    ObservedHistory,\n}",
+                  "    ExhaustiveWithinDeclaredModel,\n    ObservedHistory,\n    Extra,\n}",
+                  "extra_coverage_variant"):
+            expect("verification_axis_variant_drift_is_rejected", "!= frozen")
+        if mutate(vpath, vsrc,
+                  "D::NoDivergenceObserved | D::Divergent | D::Incomplete | D::Stale | D::Unsupported",
+                  "D::NoDivergenceObserved | D::ConformantForObservedHistory | D::Divergent | D::Incomplete | D::Stale | D::Unsupported",
+                  "inband_conformant"):
+            expect("in_band_conformance_is_rejected", "only independent offline replay")
+        ppath.write_text(
+            psrc + "\n// fn _retired() { let _ = ProofUnitTerminal::Passed.counts_green(); }\n",
+            encoding="utf-8", newline="\n")
+        expect("counts_green_reintroduction_is_rejected", "still calls counts_green")
+        hostile_plan = ("pub const PLAN_HOSTILE_BOUNDARY: &[VerificationRequirement] = "
+                        "&[VerificationRequirement { method: VerificationMethod::PropertySequence, "
+                        "basis: VerificationBasis::DirectBoundary")
+        if mutate(ppath, psrc, hostile_plan,
+                  hostile_plan.replace("VerificationBasis::DirectBoundary",
+                                       "VerificationBasis::ContractProjection"),
+                  "projection_route_plan"):
+            expect("projection_supplied_route_in_plan_is_rejected",
+                   "ContractProjection supply an ")
+        if mutate(ppath, psrc,
+                  "independent_route: Some(IndependentEvidenceRouteKind::DifferentialImplementation) }];",
+                  "independent_route: None }];", "orphan_differential_route"):
+            expect("route_kind_without_adopter_is_rejected",
+                   "IndependentEvidenceRouteKind::DifferentialImplementation has no active")
+        row = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), state: '
+               'ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), '
+               'projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], '
+               'claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } }')
+        if mutate(ppath, psrc, row,
+                  row.replace("VerificationClaimKind::Safety", "VerificationClaimKind::Bogus"),
+                  "bogus_claim"):
+            expect("unknown_claim_kind_is_rejected", "claims unknown kind Bogus")
+        if mutate(ppath, psrc, row,
+                  row.replace("verification: PLAN_HOSTILE_BOUNDARY",
+                              "verification: PLAN_NONEXISTENT"),
+                  "undeclared_plan"):
+            expect("undeclared_plan_reference_is_rejected", "undeclared plan PLAN_NONEXISTENT")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    return findings
+
+
 def test_workflow_pinning() -> list[str]:
     """audit.workflow_pinning_findings refuses movable/abbreviated/docker-untagged
     action references and accepts local `./` actions and full-SHA pins (5.5E6c2)."""
@@ -9462,6 +9565,7 @@ def main() -> int:
     findings += test_receiptcheck_refuses_dishonest_artifacts()
     findings += test_receiptcheck_bundle_perimeter()
     findings += test_workflow_pinning()
+    findings += test_verification_plane()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)

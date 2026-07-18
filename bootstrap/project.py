@@ -1690,6 +1690,42 @@ def parse_generated_views(root: Path) -> list[dict]:
     return views
 
 
+# --- Verification plans (5.5F2, DEC-077/DEC-078) -----------------------------
+# The typed owners already contain the truth; these regexes parse them
+# directly. No Python claim, method, coverage, lane, enforcement, or route
+# spelling map exists here.
+_V_PLAN_ROW = re.compile(
+    r'pub const (PLAN_[A-Z0-9_]+): &\[VerificationRequirement\] = &\[(.*?)\];', re.S)
+_V_REQ_ROW = re.compile(
+    r'VerificationRequirement \{ method: VerificationMethod::(\w+), '
+    r'basis: VerificationBasis::(\w+), coverage: VerificationCoverage::(\w+), '
+    r'lane: VerificationLane::(\w+), enforcement: VerificationEnforcementPosture::(\w+), '
+    r'independent_route: (?:None|Some\(IndependentEvidenceRouteKind::(\w+)\)) \}')
+_V_ACTIVE_ROW = re.compile(
+    r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
+    r'ProofRowState::Active \{ [^}]*claim: VerificationClaimKind::(\w+), '
+    r'verification: ([A-Z0-9_]+) \} \}')
+
+
+def render_verification_plans(root: Path) -> str:
+    """docs/38 VERIFICATION-PLANS: the named plans' exact axis tuples and
+    every active proof row's claim + plan, parsed from spec/proof.rs."""
+    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    lines = ["| Plan | Method | Basis | Coverage | Lane | Enforcement | Independent route |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
+    for name, body in _V_PLAN_ROW.findall(src):
+        for m in _V_REQ_ROW.finditer(body):
+            route = m.group(6) or "-"
+            lines.append(f"| {name} | {m.group(1)} | {m.group(2)} | {m.group(3)} | "
+                         f"{m.group(4)} | {m.group(5)} | {route} |")
+    lines.append("")
+    lines.append("| Active proof row | Claim | Plan |")
+    lines.append("| --- | --- | --- |")
+    for wid, claim, plan in _V_ACTIVE_ROW.findall(src):
+        lines.append(f"| {wid} | {claim} | {plan} |")
+    return "\n".join(lines)
+
+
 def canonical_block(marker: str, source: str, body: str) -> str:
     """One embedded view, marker AND body: the BEGIN provenance is generated
     mechanically from the registry, never preserved from the target. Multiple
@@ -1968,7 +2004,8 @@ def render_legacy_coverage(root: Path) -> str:
 _PROOF_ACTIVE_RE = re.compile(
     r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
     r'ProofRowState::Active \{ guarantee: GuaranteeRef::(leg|dec)\("([^"]+)"\), '
-    r'projection_contracts: &\[([^\]]*)\] \} \}')
+    r'projection_contracts: &\[([^\]]*)\], '
+    r'claim: VerificationClaimKind::(\w+), verification: ([A-Z0-9_]+) \} \}')
 _PROOF_RETIRED_RE = re.compile(
     r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
     r'ProofRowState::Retired \{ successors: &\[([^\]]*)\] \}')
@@ -2158,6 +2195,7 @@ VIEW_RENDERERS = {
     "MigrationProofRequirements": _proof_requirements_renderer("MigrationProofRequirements"),
     "SecretAuthorityProofRequirements": _proof_requirements_renderer("SecretAuthorityProofRequirements"),
     "Gate0MaterializationPlan": render_gate0_plan,
+    "VerificationPlans": render_verification_plans,
     "GeneratedViewRegistry": render_generated_view_registry,
 }
 
