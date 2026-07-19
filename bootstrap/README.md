@@ -41,14 +41,14 @@ merely because structure passes.
 ## Running order
 
 ```sh
-python bootstrap/freeze.py .
-python bootstrap/freeze.py . --check
-python bootstrap/audit.py .
+python -I bootstrap/freeze.py .
+python -I bootstrap/freeze.py . --check
+python -I bootstrap/audit.py .
 rustc bootstrap/seedcheck.rs -o target/seedcheck
 ./target/seedcheck .
 rustc bootstrap/materialize.rs -o target/materialize
 ./target/materialize --seed . --output ../batpak-gate0-candidate
-python bootstrap/selftest.py --emit-evidence ../batpak-tier0
+python -I bootstrap/selftest.py --emit-evidence ../batpak-tier0
 rustc bootstrap/receiptcheck.rs --extern spec=libspec.rlib -o target/receiptcheck
 ./target/receiptcheck verify ../batpak-tier0/tier0-evidence/qualification.t0 \
     --root . --evidence ../batpak-tier0/tier0-evidence \

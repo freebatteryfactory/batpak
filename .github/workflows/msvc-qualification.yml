@@ -70,13 +70,13 @@ jobs:
 
       # The four gates, in canonical order, against the exact checked-out tree.
       - name: project --check
-        run: python bootstrap/project.py --check
+        run: python -I bootstrap/project.py --check
 
       - name: audit
-        run: python bootstrap/audit.py
+        run: python -I bootstrap/audit.py
 
       - name: freeze --check
-        run: python bootstrap/freeze.py --check
+        run: python -I bootstrap/freeze.py --check
 
       # The gate: the full suite must pass AND selftest must PRODUCE concrete
       # Tier 0 evidence for the MSVC target which the independent
@@ -87,14 +87,14 @@ jobs:
       # refuses to write the Gate-0 candidate inside the seed root (the E5
       # seed-root isolation law). runner.temp is outside the workspace.
       - name: selftest (Tier 0 receipts on MSVC) + persist bundle
-        run: python bootstrap/selftest.py --require-receipts x86_64-pc-windows-msvc --emit "${{ runner.temp }}/evidence"
+        run: python -I bootstrap/selftest.py --require-receipts x86_64-pc-windows-msvc --emit "${{ runner.temp }}/evidence"
 
       # This run's OWN record, written (as strict LF/ASCII bytes, by Python)
       # only AFTER the gate passed, inside the bundle so it uploads with it.
       - name: this run's record
         shell: pwsh
         run: |
-          python bootstrap/selftest.py --emit-run-metadata "${{ runner.temp }}/evidence/tier0-evidence/run-metadata.t0" `
+          python -I bootstrap/selftest.py --emit-run-metadata "${{ runner.temp }}/evidence/tier0-evidence/run-metadata.t0" `
             conclusion=success `
             head-sha=$env:GITHUB_SHA `
             repository=$env:GITHUB_REPOSITORY `
@@ -106,7 +106,7 @@ jobs:
       # required, exact admitted files, artifact bound to the bundle) BEFORE
       # publishing it (5.5E6c2).
       - name: verify upload-ready hosted evidence bundle
-        run: python bootstrap/selftest.py --verify-bundle "${{ runner.temp }}/evidence/tier0-evidence" .
+        run: python -I bootstrap/selftest.py --verify-bundle "${{ runner.temp }}/evidence/tier0-evidence" .
 
       # Publish the verified evidence bundle, named to bind the exact source,
       # target, run id, and attempt. No branch name becomes source identity.
@@ -145,7 +145,7 @@ jobs:
             Write-Error "candidate run conclusion is '$($run.conclusion)', not success"
             exit 1
           }
-          python bootstrap/selftest.py --emit-run-metadata candidate-run-metadata.t0 `
+          python -I bootstrap/selftest.py --emit-run-metadata candidate-run-metadata.t0 `
             conclusion=$($run.conclusion) `
             head-sha=$($run.head_sha) `
             repository=$env:GITHUB_REPOSITORY `
@@ -158,7 +158,7 @@ jobs:
       - name: confirm promotion (reverify + compare)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
         run: >
-          python bootstrap/selftest.py --confirm-promotion
+          python -I bootstrap/selftest.py --confirm-promotion
           candidate-download candidate-run-metadata.t0
           "${{ runner.temp }}/evidence/tier0-evidence" "${{ runner.temp }}/evidence/tier0-evidence/run-metadata.t0"
           .

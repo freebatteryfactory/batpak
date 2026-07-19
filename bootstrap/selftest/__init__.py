@@ -102,6 +102,7 @@ from .verification import (
     test_verification_plane,
     test_sprouting_plane,
     test_bootstrap_topology,
+    test_isolated_execution,
 )
 
 
@@ -216,6 +217,7 @@ def main() -> int:
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
     findings += test_bootstrap_topology(audit)
+    findings += test_isolated_execution(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
     if findings:
@@ -245,7 +247,8 @@ def main() -> int:
                "isolated materializer output",
                "typed Tier 0 receipt policy",
                "rust specification compile",
-               "bootstrap_topology"] + executed_and_passed()
+               "bootstrap_topology",
+               "isolated-interpreter execution"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]
     print("selftest: PASS (" + " + ".join(claimed) + ")")

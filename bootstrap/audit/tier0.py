@@ -817,6 +817,21 @@ def workflow_pinning_findings(root: Path) -> list[str]:
             elif pv.group(1) != want:
                 out.append(f"msvc-qualification.yml: setup-python python-version {pv.group(1)!r} "
                            f"does not equal the typed authority {want!r}")
+        # Isolated-mode law (Wave-2 seam closure): every bootstrap gate
+        # invocation in the qualification workflow must run `python -I`
+        # (isolated: no site packages, no PYTHON* env, no implicit sys.path
+        # entry) so accidental site-package access can neither rescue nor
+        # sabotage a gate. The tools load each other by absolute path, so
+        # isolation costs them nothing; a plain `python` here silently
+        # re-admits the ambient interpreter environment into the perimeter.
+        for i, line in enumerate(wf.read_text(encoding="utf-8").splitlines(), 1):
+            if not re.search(r'bootstrap/(?:project|audit|freeze|selftest)\.py', line):
+                continue
+            if not re.search(r'\bpython(?:3)?\b', line):
+                continue
+            if not re.search(r'\bpython(?:3)?\s+-I\b', line):
+                out.append(f"msvc-qualification.yml:{i}: bootstrap gate invocation without "
+                           "isolated mode (python -I is law for bootstrap gates)")
     return out
 
 
@@ -1015,7 +1030,9 @@ _TOPOLOGY_SIZE_CEILINGS: dict[str, int] = {
     "bootstrap/audit/__init__.py": 1200,
     "bootstrap/audit/architecture.py": 1400,
     "bootstrap/audit/catalogs.py": 1300,
-    "bootstrap/audit/tier0.py": 1300,
+    # 1300 -> 1400 (Wave-2 seam closure ruling): the isolated-mode workflow
+    # law landed here, its ruled home beside the other workflow projections.
+    "bootstrap/audit/tier0.py": 1400,
     "bootstrap/selftest/catalogs.py": 2100,
     "bootstrap/selftest/corpus.py": 1100,
     "bootstrap/selftest/inventory.py": 1600,

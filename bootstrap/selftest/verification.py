@@ -1,6 +1,9 @@
 """Verification-plane, sprouting-plane, and workflow-pinning fixtures."""
 from __future__ import annotations
+import os
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from .core import (
@@ -302,6 +305,84 @@ def test_workflow_pinning() -> list[str]:
             if got != want:
                 findings.append(f"workflow_pinning {uses!r}: expected finding={want}, got {got}")
     finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return findings
+
+
+def test_isolated_execution(audit) -> list[str]:
+    """The bootstrap gates run under `python -I` (isolated interpreter). The
+    canary proves a PYTHONPATH stdlib-shadowing poison is POTENT under a plain
+    interpreter and INVISIBLE under -I; the three read-only gates then run as
+    real `python -I` subprocesses against the canonical tree inside that
+    poisoned environment and still pass, proving accidental site-package
+    access can neither rescue nor sabotage a gate; the workflow mutation
+    proves the audit refuses a qualification workflow that drops -I from a
+    gate invocation; the neuter proves that refusal is live, not decorative."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    poison = Path(tempfile.mkdtemp(prefix="batpak-iso-poison-"))
+    work = Path(tempfile.mkdtemp(prefix="batpak-iso-wf-"))
+    try:
+        # Canary: a module shadowing stdlib pathlib that detonates on import.
+        (poison / "pathlib.py").write_text(
+            "raise RuntimeError('site poison reached the interpreter')\n",
+            encoding="utf-8", newline="\n")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(poison)
+        probe = "import pathlib; print(pathlib.Path('.'))"
+        plain = subprocess.run([sys.executable, "-c", probe],
+                               env=env, capture_output=True, text=True)
+        if plain.returncode == 0:
+            fail("canary_poison_is_potent_under_plain_python")
+        isolated = subprocess.run([sys.executable, "-I", "-c", probe],
+                                  env=env, capture_output=True, text=True)
+        if isolated.returncode != 0:
+            fail("canary_poison_is_invisible_under_isolated_python")
+
+        # The real read-only gates as `python -I` subprocesses in the poisoned
+        # environment, invoked exactly as the qualification workflow invokes
+        # them (no root argument; cwd is the tree).
+        root = HERE.parent
+        for name, argv in (
+            ("project_check_under_isolation", ("bootstrap/project.py", "--check")),
+            ("audit_under_isolation", ("bootstrap/audit.py",)),
+            ("freeze_check_under_isolation", ("bootstrap/freeze.py", "--check")),
+        ):
+            r = subprocess.run([sys.executable, "-I", *argv], cwd=root,
+                               env=env, capture_output=True, text=True)
+            if r.returncode != 0:
+                tail = (r.stderr or r.stdout).strip().splitlines()[-1:] or ["<no output>"]
+                fail(f"{name} (rc={r.returncode}: {tail[0][:160]})")
+
+        # A qualification workflow that drops -I from a gate invocation is
+        # refused; restoring -I silences the finding; neutering the guard
+        # silences the refusal itself.
+        wf_dir = work / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        wf = wf_dir / "msvc-qualification.yml"
+        needle = "without isolated mode"
+        wf.write_text("jobs:\n  q:\n    steps:\n"
+                      "      - run: python bootstrap/audit.py\n",
+                      encoding="utf-8", newline="\n")
+        if not any(needle in f for f in audit.workflow_pinning_findings(work)):
+            fail("plain_python_gate_invocation_is_refused")
+        with neutered_validator(
+                "audit",
+                r"            if not re.search(r'\bpython(?:3)?\s+-I\b', line):",
+                "            if False:",
+        ) as neutered:
+            if any(needle in f for f in neutered.workflow_pinning_findings(work)):
+                fail("neutering_the_isolation_rule_silences_it")
+        wf.write_text("jobs:\n  q:\n    steps:\n"
+                      "      - run: python -I bootstrap/audit.py\n",
+                      encoding="utf-8", newline="\n")
+        if any(needle in f for f in audit.workflow_pinning_findings(work)):
+            fail("isolated_gate_invocation_is_lawful")
+    finally:
+        shutil.rmtree(poison, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
     return findings
 
