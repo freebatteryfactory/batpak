@@ -318,10 +318,10 @@ def bootstrap_output_findings(root: Path) -> list[str]:
                        "compiled SPEC.sha256 seed manifest")
 
     # The dedicated isolated qualification exists and the generic binary route
-    # no longer carries tier0-materialize.
-    st_path = root / "bootstrap/selftest.py"
-    if st_path.is_file():
-        st = st_path.read_text(encoding="utf-8")
+    # no longer carries tier0-materialize. Read the whole tool (shim + package)
+    # so a decomposition cannot move the symbol out of the detector's view.
+    st = _bootstrap_source(root, "selftest")
+    if st:
         if "def qualify_materializer" not in st:
             out.append("bootstrap/selftest.py: no dedicated isolated materializer "
                        "qualification exists")
