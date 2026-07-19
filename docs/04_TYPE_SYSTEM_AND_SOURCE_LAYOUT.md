@@ -34,7 +34,7 @@ src/event/replay.rs   replay operations
 src/event/tests.rs    refusal and seam tests
 ```
 
-Subdomains recursively adopt the same grammar when they earn it: a sub-concept starts as one focused file and graduates to a directory only with independent vocabulary, multiple operations, and its own proof or effect boundary. Size alone never earns a directory. Top level is the exception: every top-level domain is a directory, universally.
+Subdomains recursively adopt the same grammar when they earn it: a sub-concept starts as one focused file and graduates to a directory when it has an independent owner or boundary and any one of shared vocabulary consumed by multiple siblings, multiple meaningful operations, or its own proof, trust, durable, wire, or effect boundary. Size alone never earns a directory. Top level is the exception: every top-level domain is a directory, universally.
 
 No global type drawer, generic helper drawer, fake microcrate, wildcard façade, or duplicate semantic owner exists. Forbidden module names without an explicit ruling: `_types`, `common`, `shared`, `helpers`, `utils`, `functions`, `logic`, `misc`. A crate-root or cross-domain type drawer, public exposure of a domain's internal types module, and domain-significant types hidden inside unrelated operation files are all forbidden.
 

@@ -1,3 +1,6 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
 use crate::guarantees::ContractId;
 use crate::toolchain::RustTargetTriple;
 use super::*;

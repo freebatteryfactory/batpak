@@ -1,3 +1,5 @@
+use alloc::borrow::ToOwned;
+
 use crate::bootstrap_qualification::{
     AUTHORITATIVE_WORKFLOW_PATH, GitCommitSha, GitHubActionsRunBinding, GitTreeSha, Sha256Digest,
     SourceBinding, ToolchainBinding, VerifiedTier0Qualification,

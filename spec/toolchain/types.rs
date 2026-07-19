@@ -1,3 +1,7 @@
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// An exact Rust release — the compiler that qualifies this foundation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RustRelease {

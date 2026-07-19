@@ -14,10 +14,11 @@ const FORBIDDEN_MODULE_NAMES: [&str; 8] =
 /// directory whose mod.rs is the facade and whose private types.rs carries
 /// the domain-boundary canonical nouns; no sibling door file, crate-root
 /// type drawer, generic helper drawer, wildcard facade, dangling facade
-/// declaration, phantom generated-view authority source, or unmanifested
-/// module file exists. Ten rules, each producing a distinct finding that
-/// names the offending path; the future AST gate owns finer placement law,
-/// so nothing here parses Rust beyond comment/string-blind line scanning.
+/// declaration, phantom generated-view authority source, unmanifested
+/// module file, orphan domain directory, or orphan carrier file exists.
+/// Twelve rules, each producing a distinct finding that names the offending
+/// path; the future AST gate owns finer placement law, so nothing here
+/// parses Rust beyond comment/string-blind line scanning.
 pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
     let spec = root.join("spec");
     let Ok(lib_text) = fs::read_to_string(spec.join("lib.rs")) else {
@@ -54,8 +55,10 @@ pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
             continue; // R1 already named the absent facade.
         };
         let sanitized = sanitize_rust(&mod_text);
+        let declared = module_declarations(&sanitized);
         let mut mounts_types = false;
-        for (child, public) in module_declarations(&sanitized) {
+        for (child, public) in &declared {
+            let (child, public) = (child.as_str(), *public);
             if child == "types" {
                 mounts_types = true;
                 // R7: the noun carrier is private vocabulary, re-exported
@@ -88,6 +91,55 @@ pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
                 "glob re-export in spec/{name}/mod.rs; public items pass through an explicit re-export list, never a wildcard facade"
             ));
         }
+        // R12 (reverse of R6): every immediate source child of the domain is
+        // a declared carrier. `#[cfg(test)] mod tests;` counts (attributes
+        // are stripped by module_declarations) and a declaration may resolve
+        // to a child/mod.rs subdirectory instead of a sibling file.
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue; // R1 already named the absent directory.
+        };
+        let mut children: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+        children.sort();
+        for child_path in children {
+            if !child_path.is_file()
+                || !child_path.extension().is_some_and(|extension| extension == "rs")
+            {
+                continue;
+            }
+            let Some(stem) = child_path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            if stem == "mod" {
+                continue;
+            }
+            if !declared.iter().any(|(child, _)| child == stem) {
+                findings.push(format!(
+                    "orphan carrier spec/{name}/{stem}.rs is declared by no mod statement in spec/{name}/mod.rs; every domain child passes through the facade"
+                ));
+            }
+        }
+    }
+    // R11 (reverse of R1): every domain directory on disk is a declared
+    // facade — a mod.rs-bearing spec/ subdirectory lib.rs never mounts is an
+    // orphan domain, invisible to the compiler and every census.
+    if let Ok(entries) = fs::read_dir(&spec) {
+        let mut dirs: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+        dirs.sort();
+        for dir in dirs {
+            if !dir.is_dir() || !dir.join("mod.rs").is_file() {
+                continue;
+            }
+            let Some(name) = dir.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if !domains.iter().any(|domain| domain == name) {
+                findings.push(format!(
+                    "orphan domain directory spec/{name}/ carries a mod.rs facade but spec/lib.rs declares no pub mod {name}"
+                ));
+            }
+        }
+    } else {
+        findings.push("cannot read the spec/ directory; the domain census is the grammar denominator".to_string());
     }
     // R4: no universal type drawer at the crate root.
     if spec.join("types.rs").exists() {

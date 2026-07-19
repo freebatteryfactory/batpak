@@ -1,3 +1,6 @@
+use alloc::format;
+use alloc::string::String;
+
 use crate::toolchain::RustRelease;
 use super::*;
 

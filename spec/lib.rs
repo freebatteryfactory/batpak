@@ -10,7 +10,12 @@
 //! `dead_code_pub_in_binary` can police the binaries without misclassifying
 //! library facts.
 
+#![no_std]
+
+extern crate alloc;
+
 pub mod architecture;
+pub mod authenticated_history;
 pub mod bootstrap_output;
 pub mod bootstrap_qualification;
 pub mod commands;
@@ -31,6 +36,7 @@ pub mod promotion;
 pub mod pakvm_isa;
 pub mod proof;
 pub mod reconciliation;
+pub mod release;
 pub mod sprouting;
 pub mod syncbat_firewall;
 pub mod tier0_cross_run;

@@ -1,4 +1,4 @@
-use spec::{architecture, guarantees, reconciliation, sprouting, verification};
+use spec::{authenticated_history, guarantees, reconciliation, release, sprouting, verification};
 use std::collections::BTreeSet;
 
 /// 5.5F3 (DEC-079..082/DEC-073, docs/39): the typed sprouting plane is
@@ -241,28 +241,44 @@ pub(crate) fn check_sprouting(findings: &mut Vec<String>) {
 /// hand-authored lists disagreed about kernel receipts and SBOM evidence
 /// until this enum existed; the projections now derive from it.
 pub(crate) fn check_release_seal(findings: &mut Vec<String>) {
-    use architecture::ReleaseSealField as F;
+    use release::ReleaseSealField as F;
     let mut seen = BTreeSet::new();
-    for field in architecture::RELEASE_SEAL_FIELDS {
+    for field in release::RELEASE_SEAL_FIELDS {
         // Exhaustive: a new field must be classified here, not defaulted.
         match field {
             F::SourceTree | F::Toolchain | F::DependencyGraph | F::GeneratedFacts
             | F::CompatibilityCorpus | F::TestDispositions | F::MutationDispositions
-            | F::FuzzDispositions | F::BenchmarkDispositions | F::CompilerAssumptionLedger
-            | F::DependencyLedger | F::KernelQualificationSet | F::PackageContents
-            | F::PublicApi | F::Sbom | F::LicenseEvidence | F::ProofFreshness => {}
+            | F::FuzzDispositions | F::BenchmarkDispositions | F::ModelDispositions
+            | F::RuntimeConformanceDispositions | F::CompilerAssumptionLedger
+            | F::DependencyLedger | F::KernelQualificationSet | F::CandidatePromotionSet
+            | F::PackageContents | F::PublicApi | F::Sbom | F::LicenseEvidence
+            | F::ProofFreshness => {}
         }
         if !seen.insert(format!("{field:?}")) {
             findings.push(format!("release-seal field {field:?} is listed twice"));
         }
     }
-    if seen.len() != 17 {
+    if seen.len() != 20 {
         findings.push(format!(
-            "a release-seal field is missing from RELEASE_SEAL_FIELDS ({} of 17)", seen.len()));
+            "a release-seal field is missing from RELEASE_SEAL_FIELDS ({} of 20)", seen.len()));
     }
     if !seen.contains("KernelQualificationSet") {
         findings.push("the kernel qualification set left the seal; an empty set \
                        states 'no kernels admitted', it never disappears".into());
+    }
+    // The three F4 disposition/promotion fields obey the same law: empty is
+    // evidence, missing is an incomplete envelope.
+    if !seen.contains("ModelDispositions") {
+        findings.push("the model dispositions left the seal; an empty set states \
+                       'no model evaluations admitted', it never disappears".into());
+    }
+    if !seen.contains("RuntimeConformanceDispositions") {
+        findings.push("the runtime-conformance dispositions left the seal; an empty set \
+                       states 'no runtime conformance observed', it never disappears".into());
+    }
+    if !seen.contains("CandidatePromotionSet") {
+        findings.push("the candidate promotion set left the seal; an empty set states \
+                       'no candidates promoted', it never disappears".into());
     }
 }
 
@@ -353,7 +369,7 @@ pub(crate) fn check_candidate_containment(findings: &mut Vec<String>) {
 /// or rollback verification of any kind, and proves nothing about cryptography.
 /// It proves the CONTRACT cannot be weakened.
 pub(crate) fn check_authenticated_history(findings: &mut Vec<String>) {
-    use architecture::{
+    use authenticated_history::{
         AuthenticatedHistoryProfile, AuthenticityClaim, FreshnessClaim, IntegrityClaim,
         RollbackResistanceClaim, WitnessDisposition, WitnessPolicy,
     };
@@ -478,7 +494,7 @@ pub(crate) fn check_authenticated_history(findings: &mut Vec<String>) {
     }
     // A required witness fails closed on every frozen failure class, including
     // one that was never supplied.
-    for disposition in architecture::REQUIRED_WITNESS_FAILURE_SET {
+    for disposition in authenticated_history::REQUIRED_WITNESS_FAILURE_SET {
         match disposition {
             WitnessDisposition::NotApplicable | WitnessDisposition::Verified => {
                 findings.push(format!(
@@ -488,23 +504,23 @@ pub(crate) fn check_authenticated_history(findings: &mut Vec<String>) {
             _ => {}
         }
     }
-    if !architecture::REQUIRED_WITNESS_FAILURE_SET.contains(&WitnessDisposition::NotProvided) {
+    if !authenticated_history::REQUIRED_WITNESS_FAILURE_SET.contains(&WitnessDisposition::NotProvided) {
         findings.push("a required witness that was never supplied is not a refusal".into());
     }
     // Optional: optional to supply, mandatory to validate once supplied.
-    if architecture::OPTIONAL_WITNESS_REFUSAL_SET.contains(&WitnessDisposition::NotProvided) {
+    if authenticated_history::OPTIONAL_WITNESS_REFUSAL_SET.contains(&WitnessDisposition::NotProvided) {
         findings.push("OPTIONAL_WITNESS_REFUSAL_SET refuses an absent optional witness".into());
     }
-    for disposition in architecture::REQUIRED_WITNESS_FAILURE_SET {
+    for disposition in authenticated_history::REQUIRED_WITNESS_FAILURE_SET {
         if *disposition != WitnessDisposition::NotProvided
-            && !architecture::OPTIONAL_WITNESS_REFUSAL_SET.contains(disposition)
+            && !authenticated_history::OPTIONAL_WITNESS_REFUSAL_SET.contains(disposition)
         {
             findings.push(format!(
                 "a supplied {disposition:?} optional witness may degrade to absence or success"
             ));
         }
     }
-    if architecture::REFUSAL_PARTIAL_CLAIM_LAW.trim().is_empty() {
+    if authenticated_history::REFUSAL_PARTIAL_CLAIM_LAW.trim().is_empty() {
         findings.push("no refusal/partial-evidence law is stated".into());
     }
 }

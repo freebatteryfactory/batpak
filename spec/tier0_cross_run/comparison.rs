@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::bootstrap_qualification::{
     BootstrapRuntimeBinding, GitCommitSha, GitHubActionsRunBinding, GitTreeSha, Sha256Digest,
     SourceBinding, ToolchainBinding, VerifiedTier0Qualification,

@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use crate::bootstrap_qualification::{
     AUTHORITATIVE_WORKFLOW_PATH, BootstrapRuntimeBinding, ToolchainBinding,
     VerifiedTier0Qualification,

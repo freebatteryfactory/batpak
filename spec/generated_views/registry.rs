@@ -329,7 +329,7 @@ impl GeneratedView {
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::ReleaseSeal => GeneratedViewSpec {
-                authority_sources: &["spec/architecture/release_seal.rs"],
+                authority_sources: &["spec/release/inventory.rs"],
                 target: GeneratedViewTarget::Static(&["docs/36_PUBLIC_API_CI_AND_RELEASE.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("RELEASE-SEAL"),
