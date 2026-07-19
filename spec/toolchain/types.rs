@@ -187,7 +187,7 @@ pub struct ToolchainProfile {
 }
 
 pub const TOOLCHAIN: ToolchainProfile = ToolchainProfile {
-    exact_rust_release: RustRelease { major: 1, minor: 97, patch: 0 },
+    exact_rust_release: RustRelease { major: 1, minor: 97, patch: 1 },
     rust_version_floor: RustVersionFloor { major: 1, minor: 97 },
     edition: RustEdition::Rust2024,
     cargo_resolver: CargoResolver::V3,

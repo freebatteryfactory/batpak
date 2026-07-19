@@ -1700,9 +1700,9 @@ def _t0_canonical_artifact() -> str:
         "source-kind: frozen-export",
         f"spec-manifest-digest: {d64['a']}",
         f"export-tree-digest: {d64['b']}",
-        "rustc-release: 1.97.0",
+        "rustc-release: 1.97.1",
         f"rustc-commit: {h40['a']}",
-        "cargo-release: 1.97.0",
+        "cargo-release: 1.97.1",
         f"cargo-commit: {h40['b']}",
         f"toolchain-file-digest: {d64['c']}",
         "python-release: 3.12.10",
@@ -1811,7 +1811,7 @@ def test_receiptcheck_refuses_dishonest_artifacts() -> list[str]:
                 "expected line")
         # A noncanonical release spelling that merely parses numerically is refused.
         refuses("noncanonical_release_spelling_is_rejected",
-                good.replace("rustc-release: 1.97.0", "rustc-release: 1.097.0", 1),
+                good.replace("rustc-release: 1.97.1", "rustc-release: 1.097.1", 1),
                 "is not canonical")
         # The bootstrap Python runtime must be bound.
         refuses("python_runtime_must_be_bound",

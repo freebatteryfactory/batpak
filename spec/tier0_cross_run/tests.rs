@@ -97,9 +97,9 @@ use crate::toolchain::RustTargetTriple;
         Tier0QualificationObservation {
             source,
             toolchain: ToolchainBinding {
-                rustc_release: RustRelease { major: 1, minor: 97, patch: 0 },
+                rustc_release: RustRelease { major: 1, minor: 97, patch: 1 },
                 rustc_commit: ToolchainCommit::from_bytes([s.tc; 20]),
-                cargo_release: RustRelease { major: 1, minor: 97, patch: 0 },
+                cargo_release: RustRelease { major: 1, minor: 97, patch: 1 },
                 cargo_commit: ToolchainCommit::from_bytes([s.tc; 20]),
                 toolchain_file_digest: Sha256Digest::from_bytes([s.tc; 32]),
             },

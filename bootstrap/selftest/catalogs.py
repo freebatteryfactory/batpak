@@ -1399,7 +1399,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     # physical triple sitting in a semantic qualification target (5.5E3a).
     probe("hand_edited_toolchain_projection_reddens_seedcheck",
           "rust-toolchain.toml",
-          'channel = "1.97.0"',
+          'channel = "1.97.1"',
           'channel = "1.96.0"',
           "toolchain tracked rust-toolchain.toml violated")
     # 5.5E3a1: the environment is a closed enum, so a triple in the field is
@@ -2042,12 +2042,12 @@ def test_toolchain(audit) -> list[str]:
         tc = tmp / "spec/toolchain/types.rs"
         tc.write_text(must_replace(
             tc.read_text(encoding="utf-8"),
-            "RustRelease { major: 1, minor: 97, patch: 0 }",
+            "RustRelease { major: 1, minor: 97, patch: 1 }",
             "RustRelease { major: 1, minor: 98, patch: 0 }",
             "newer_qualifying_compiler"), encoding="utf-8")
         rt = tmp / "rust-toolchain.toml"
         rt.write_text(must_replace(rt.read_text(encoding="utf-8"),
-                      'channel = "1.97.0"', 'channel = "1.98.0"',
+                      'channel = "1.97.1"', 'channel = "1.98.0"',
                       "newer channel"), encoding="utf-8")
         got = audit.toolchain_findings(tmp)
         if got:
@@ -2056,12 +2056,12 @@ def test_toolchain(audit) -> list[str]:
         tc = tmp / "spec/toolchain/types.rs"
         tc.write_text(must_replace(
             tc.read_text(encoding="utf-8"),
-            "RustRelease { major: 1, minor: 97, patch: 0 }",
+            "RustRelease { major: 1, minor: 97, patch: 1 }",
             "RustRelease { major: 1, minor: 96, patch: 0 }",
             "older_qualifying_compiler"), encoding="utf-8")
         rt = tmp / "rust-toolchain.toml"
         rt.write_text(must_replace(rt.read_text(encoding="utf-8"),
-                      'channel = "1.97.0"', 'channel = "1.96.0"',
+                      'channel = "1.97.1"', 'channel = "1.96.0"',
                       "older channel"), encoding="utf-8")
         got = audit.toolchain_findings(tmp)
         if not any("below the declared MSRV floor" in f for f in got):
@@ -2094,7 +2094,7 @@ def test_toolchain(audit) -> list[str]:
 
     # Hand-editing or losing the tracked projection is refused.
     probe("root_toolchain_channel_mismatch_is_rejected", "rust-toolchain.toml",
-          'channel = "1.97.0"', 'channel = "1.96.0"',
+          'channel = "1.97.1"', 'channel = "1.96.0"',
           "does not equal the deterministic projection")
     probe("root_toolchain_component_omission_is_rejected", "rust-toolchain.toml",
           'components = ["clippy", "rustfmt"]', 'components = ["clippy"]',

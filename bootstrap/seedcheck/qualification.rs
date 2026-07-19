@@ -192,9 +192,9 @@ pub(crate) fn check_bootstrap_qualification(findings: &mut Vec<String>) {
         export_tree_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
     };
     let toolchain = bq::ToolchainBinding {
-        rustc_release: RustRelease { major: 1, minor: 97, patch: 0 },
+        rustc_release: RustRelease { major: 1, minor: 97, patch: 1 },
         rustc_commit: bq::ToolchainCommit::from_bytes([0u8; 20]),
-        cargo_release: RustRelease { major: 1, minor: 97, patch: 0 },
+        cargo_release: RustRelease { major: 1, minor: 97, patch: 1 },
         cargo_commit: bq::ToolchainCommit::from_bytes([0u8; 20]),
         toolchain_file_digest: bq::Sha256Digest::from_bytes([0u8; 32]),
     };
