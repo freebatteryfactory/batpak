@@ -2225,7 +2225,7 @@ def produce_tier0_evidence(bundle: Path,
     if tail:
         tails["tier0-seedcheck-tests"] = tail
     n_spec = sum(p.read_text(encoding="utf-8").count("#[test]")
-                 for p in sorted((source_root / "spec").glob("*.rs")))
+                 for p in sorted((source_root / "spec").rglob("*.rs")))
     tail, probs = _t0_gate_exe(rustc, edition, target, rlib, source_root, bundle,
                                "tier0-spec-tests", "spec/lib.rs",
                                f"test result: ok. {n_spec} passed",
