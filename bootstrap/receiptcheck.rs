@@ -33,6 +33,13 @@
 //! (conclusion, head SHA, repository, workflow, run id, attempt), then calls the
 //! sealed `compare_runs` and `confirm_promotion`. It computes the comparison —
 //! Python never parses or duplicates the comparator law.
+//!
+//! `campaign-verify` (F5, R4) independently recomputes and validates the
+//! mini-supernova campaign-evidence bundle:
+//! ```text
+//! receiptcheck campaign-verify <bundle>
+//!     --judge-root <dir> --envelope <file> --source-commit <40-hex>
+//! ```
 
 use std::env;
 
@@ -41,7 +48,9 @@ use std::env;
 #[path = "receiptcheck/digests.rs"] mod digests;
 #[path = "receiptcheck/bundle.rs"] mod bundle;
 #[path = "receiptcheck/hashing.rs"] mod hashing;
+#[path = "receiptcheck/campaign.rs"] mod campaign;
 
+use crate::campaign::mode_campaign_verify;
 use crate::modes::{mode_compare, mode_policy, mode_verify};
 
 fn main() {
@@ -51,13 +60,16 @@ fn main() {
         Some("policy") => mode_policy(),
         Some("verify") => mode_verify(&args[2..]),
         Some("compare") => mode_compare(&args[2..]),
+        Some("campaign-verify") => mode_campaign_verify(&args[2..]),
         _ => Err(
             "usage: receiptcheck policy | receiptcheck verify <artifact> \
              --root <root> --evidence <bundle> --python-executable <py> [--upload-ready] \
              | receiptcheck compare --candidate-artifact <t0> --candidate-evidence <bundle> \
              --candidate-run-metadata <meta> --cleanroom-artifact <t0> \
              --cleanroom-evidence <bundle> --cleanroom-run-metadata <meta> \
-             --root <root> --python-executable <py> [--require-promotion-confirmation]"
+             --root <root> --python-executable <py> [--require-promotion-confirmation] \
+             | receiptcheck campaign-verify <bundle> --judge-root <dir> \
+             --envelope <file> --source-commit <sha>"
                 .to_owned(),
         ),
     };

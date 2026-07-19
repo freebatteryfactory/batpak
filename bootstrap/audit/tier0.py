@@ -1248,7 +1248,7 @@ _TOPOLOGY_EFFECT_WHITELIST: dict[tuple[str, str], str] = {
     # VIEW_RENDERERS = { ... the registry-driven renderer table (incl. the two
     # F4-prelude catalog renderers and the four F4-B projection renderers) ... }
     ("bootstrap/project/__init__.py", "VIEW_RENDERERS"):
-        "16b68d84414b7f20c2a72bf68836fd9a52cbb5199c5a6ebc80cf637f614d198d",
+        "41d5636bd922b1a2607875c3c73b86159eae55a453247110fc2ae5d78747e0dd",
 }
 
 

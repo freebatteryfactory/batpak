@@ -12,6 +12,8 @@ public surface, preserving the CLI argv contract exactly:
     selftest.py --emit-run-metadata <path> <pairs...>
     selftest.py --verify-bundle <bundle> <root>
     selftest.py --confirm-promotion <6 args>
+    selftest.py --supernova <campaign-root>
+    selftest.py --supernova-compare <own-bundle> <candidate-bundle>
 """
 from __future__ import annotations
 

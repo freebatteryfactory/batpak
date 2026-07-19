@@ -289,6 +289,39 @@ artifact binds the exact judge digest it was produced under. DEC-082
 enters `GeneratedView::ALL` in F5 when its typed closure owner and real
 rehearsal adopter land.
 
+<!-- CAMPAIGN-CLOSURE-GRAPH:BEGIN generated from spec/campaign/types.rs by bootstrap/project.py; do not edit -->
+```text
+Closure node fields (one node per lineage record)
+  candidate             CandidateId
+  realization_posture   RealizationPosture
+  frontier              FrontierState
+  terminal              Option<CampaignTerminal>
+  freshness             EvidenceFreshness
+
+Closure edge kinds (derived from required record fields)
+  Parent         Read from the `parents` field
+  Dependency     Read from a `dependency_commitments` entry
+  Reuse          Read from a reuse-key match
+  Invalidation   Read from an invalidation receipt
+
+Campaign terminals (denominator home)
+  Promoted            remains_in_denominator true
+  Refused             remains_in_denominator true
+  Invalidated         remains_in_denominator true
+  ArchitectRequired   remains_in_denominator true
+
+Frontier states
+  Qualified
+  BlockedByDependency
+  Invalidated
+
+Evidence freshness
+  Fresh
+  StaleByJudgeChange
+  StaleByDependencyChange
+```
+<!-- CAMPAIGN-CLOSURE-GRAPH:END -->
+
 ## 8. Sprouting vocabulary (generated)
 
 `spec/sprouting/types.rs` owns the frozen campaign vocabulary — candidate origins,
@@ -360,5 +393,5 @@ DEC-048 / DEC-075 dependency-ordered advancement refined here
 spec/sprouting/     F3 candidate lifecycle and RealizationPosture
 spec/identities/    F3 candidate lineage identity alongside kernel and content
 spec/architecture/   FORBIDDEN_TARGET_PATHS and campaign-root topology
-GeneratedView::ALL  F4 closure view a campaign must enter before landing
+GeneratedView::ALL  F5 CampaignClosureGraph view; typed owner spec/campaign/
 ```

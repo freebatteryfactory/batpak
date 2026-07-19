@@ -194,6 +194,7 @@ An embedded block inherits no authority from its containing document. A standalo
 | VerificationRuntimeMatrix | embedded-block | spec/verification/types.rs | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | VERIFICATION-RUNTIME-MATRIX | bootstrap/project.py |
 | SproutingPromotionMatrix | embedded-block | spec/promotion/types.rs; spec/sprouting/inventory.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | SPROUTING-PROMOTION-MATRIX | bootstrap/project.py |
 | ReleaseSealMatrix | embedded-block | spec/release/types.rs; spec/release/inventory.rs | docs/36_PUBLIC_API_CI_AND_RELEASE.md | RELEASE-SEAL-MATRIX | bootstrap/project.py |
+| CampaignClosureGraph | embedded-block | spec/campaign/types.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | CAMPAIGN-CLOSURE-GRAPH | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views/registry.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 | SpecModuleCatalog | embedded-block | spec/lib.rs | spec/README.md | SPEC-MODULE-CATALOG | bootstrap/project.py |
 | BootstrapToolCatalog | embedded-block | spec/guarantees/types.rs | bootstrap/README.md | BOOTSTRAP-TOOL-CATALOG | bootstrap/project.py |
@@ -216,8 +217,8 @@ The repository describes its own size the same way it describes everything else:
 | legacy semantic obligations | 87 | spec/legacy_obligations/inventory.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
-| registered generated views | 67 | GeneratedView::ALL |
-| static generated target instances | 68 | expansion of every Static registry target |
+| registered generated views | 68 | GeneratedView::ALL |
+| static generated target instances | 69 | expansion of every Static registry target |
 | corpus-frontmatter bindings | 46 | the eligible Markdown corpus reached by CorpusEpochMembership |
 <!-- BUNDLE-INVENTORY:END -->
 

@@ -138,6 +138,26 @@ jobs:
           # between the claimed artifact and the downloaded bundle.
           include-hidden-files: true
 
+      # F5 mini-supernova campaign rehearsal (docs/24 rehearsal witnesses):
+      # execute the complete candidate-authority cycle in miniature against
+      # campaign roots OUTSIDE the checkout, and block on the independent
+      # `receiptcheck campaign-verify` of the produced campaign-evidence
+      # bundle. BOTH postures run this step: the candidate run produces its
+      # bundle here, and the confirming run executes ITS OWN rehearsal here
+      # before comparing authoritative results below.
+      - name: mini-supernova campaign rehearsal + independent bundle verification
+        run: python -I bootstrap/selftest.py --supernova "${{ runner.temp }}/supernova"
+
+      # Publish the verified campaign evidence (bundle + envelope + receipts),
+      # named to bind the exact source, run id, and attempt.
+      - name: upload campaign evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: batpak-campaign-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/supernova/evidence
+          if-no-files-found: error
+          include-hidden-files: true
+
       # ---- promotion-confirmation posture (candidate_run_id supplied) ----
 
       - name: download candidate evidence
@@ -181,3 +201,23 @@ jobs:
           candidate-download candidate-run-metadata.t0
           "${{ runner.temp }}/evidence/tier0-evidence" "${{ runner.temp }}/evidence/tier0-evidence/run-metadata.t0"
           .
+
+      # The candidate run's campaign evidence, for the Stability law: the
+      # confirming rehearsal executed above must have changed no
+      # authoritative result (terminals, frontier state, dispositions).
+      - name: download candidate campaign evidence
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: batpak-campaign-${{ github.sha }}-${{ inputs.candidate_run_id }}-*
+          path: candidate-campaign
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          merge-multiple: true
+
+      - name: confirm campaign stability (authoritative-result equality)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        run: >
+          python -I bootstrap/selftest.py --supernova-compare
+          "${{ runner.temp }}/supernova/evidence/campaign-evidence.bundle"
+          candidate-campaign/campaign-evidence.bundle

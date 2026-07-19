@@ -114,10 +114,18 @@ def test_verification_plane() -> list[str]:
                   "projection_route_plan"):
             expect("projection_supplied_route_in_plan_is_rejected",
                    "gives ContractProjection a route")
-        if mutate(ppath, psrc,
-                  "route: IndependentEvidenceRouteKind::IndependentHistoryReplay }",
-                  "route: IndependentEvidenceRouteKind::DifferentialImplementation }",
-                  "orphan_replay_route"):
+        replay_route = "route: IndependentEvidenceRouteKind::IndependentHistoryReplay }"
+        if replay_route not in psrc:
+            findings.append("orphan_replay_route: probe target absent, mutation never applied")
+        else:
+            # EVERY adopter must vanish for the orphan law to bite: F5's
+            # PLAN_RUNTIME_CONFORMANCE is a second IndependentHistoryReplay
+            # adopter, and one surviving adopter lawfully satisfies closure.
+            ppath.write_text(
+                psrc.replace(
+                    replay_route,
+                    "route: IndependentEvidenceRouteKind::DifferentialImplementation }"),
+                encoding="utf-8", newline="\n")
             expect("route_kind_without_adopter_is_rejected",
                    "IndependentEvidenceRouteKind::IndependentHistoryReplay has no active")
         row = ('ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), state: '

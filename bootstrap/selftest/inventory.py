@@ -1458,9 +1458,10 @@ def test_exact_ledgers(audit, project) -> list[str]:
             "")],
           "DEC-064 forward-policy fields do not name FrameVersion")
     probe("dec064_omitting_layout_version_is_rejected",
-          [(DI, "SchemaVersion LayoutVersion and Tier0QualificationArtifactVersion "
-            "are distinct types",
-            "SchemaVersion and Tier0QualificationArtifactVersion are distinct types"),
+          [(DI, "SchemaVersion LayoutVersion CandidateManifestVersion and "
+            "Tier0QualificationArtifactVersion are distinct types",
+            "SchemaVersion CandidateManifestVersion and "
+            "Tier0QualificationArtifactVersion are distinct types"),
            (DI, "LayoutVersion versions physical organization under LayoutId "
             "and never schema meaning; ", "")],
           "DEC-064 forward-policy fields do not name LayoutVersion")
@@ -1527,9 +1528,10 @@ def test_exact_ledgers(audit, project) -> list[str]:
          (ID, 'VersionIdentityKind::Layout => entry!("LayoutVersion", ',
           'VersionIdentityKind::Gadget => entry!("GadgetVersion", "BP-STORAGE-TILES-1"),\n'
           '            VersionIdentityKind::Layout => entry!("LayoutVersion", '),
-         (DI, "SchemaVersion LayoutVersion and Tier0QualificationArtifactVersion "
-          "are distinct types",
-          "SchemaVersion LayoutVersion Tier0QualificationArtifactVersion and "
+         (DI, "SchemaVersion LayoutVersion CandidateManifestVersion and "
+          "Tier0QualificationArtifactVersion are distinct types",
+          "SchemaVersion LayoutVersion CandidateManifestVersion "
+          "Tier0QualificationArtifactVersion and "
           "GadgetVersion are distinct types"),
          ("docs/05_STORAGE_FBAT_AND_TILES.md",
           "preserving three independent version identities.",

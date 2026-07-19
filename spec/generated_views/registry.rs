@@ -70,6 +70,7 @@ pub enum GeneratedView {
     VerificationRuntimeMatrix,
     SproutingPromotionMatrix,
     ReleaseSealMatrix,
+    CampaignClosureGraph,
     GeneratedViewRegistry,
     SpecModuleCatalog,
     BootstrapToolCatalog,
@@ -141,6 +142,7 @@ impl GeneratedView {
         GeneratedView::VerificationRuntimeMatrix,
         GeneratedView::SproutingPromotionMatrix,
         GeneratedView::ReleaseSealMatrix,
+        GeneratedView::CampaignClosureGraph,
         GeneratedView::GeneratedViewRegistry,
         GeneratedView::SpecModuleCatalog,
         GeneratedView::BootstrapToolCatalog,
@@ -212,6 +214,7 @@ impl GeneratedView {
             GeneratedView::VerificationRuntimeMatrix => "VerificationRuntimeMatrix",
             GeneratedView::SproutingPromotionMatrix => "SproutingPromotionMatrix",
             GeneratedView::ReleaseSealMatrix => "ReleaseSealMatrix",
+            GeneratedView::CampaignClosureGraph => "CampaignClosureGraph",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
             GeneratedView::SpecModuleCatalog => "SpecModuleCatalog",
             GeneratedView::BootstrapToolCatalog => "BootstrapToolCatalog",
@@ -732,6 +735,23 @@ impl GeneratedView {
                 target: GeneratedViewTarget::Static(&["docs/36_PUBLIC_API_CI_AND_RELEASE.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("RELEASE-SEAL-MATRIX"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            // The campaign closure graph SCHEMA (F5, DEC-082): the typed
+            // closure node field set, the derived closure edge kinds, the
+            // terminal denominator-home law, and the frontier/freshness axes
+            // of the typed campaign owner. The view projects the schema the
+            // campaign's runtime-minted records will instantiate — never
+            // runtime candidate data: no campaign has run at generation time,
+            // the same way GateInventory projects gate rows, not gate
+            // executions.
+            GeneratedView::CampaignClosureGraph => GeneratedViewSpec {
+                authority_sources: &["spec/campaign/types.rs"],
+                target: GeneratedViewTarget::Static(&[
+                    "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
+                ]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("CAMPAIGN-CLOSURE-GRAPH"),
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {

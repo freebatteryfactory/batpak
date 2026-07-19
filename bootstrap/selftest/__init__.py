@@ -89,6 +89,11 @@ from .proof import (
     test_proof_relations,
     test_proof_target_resolver,
 )
+from .supernova import (
+    compare_supernova_cli,
+    run_supernova_cli,
+    test_supernova,
+)
 from .tier0 import (
     _T0_GNU,
     _T0_MSVC,
@@ -124,6 +129,15 @@ def main() -> int:
         return _confirm_promotion(*argv0[1:])
     if argv0[:1] == ["--verify-bundle"] and len(argv0) == 3:
         return _verify_bundle(argv0[1], argv0[2])
+    # --supernova <dir>: execute the F5 mini-supernova campaign rehearsal with
+    # persistent roots under <dir> (OUTSIDE the checkout) and block on the
+    # independent receiptcheck campaign-verify. Both hosted postures run it.
+    if argv0[:1] == ["--supernova"] and len(argv0) == 2:
+        return run_supernova_cli(argv0[1])
+    # --supernova-compare <own-bundle> <candidate-bundle>: the Stability law --
+    # the confirming rehearsal's authoritative results must be identical.
+    if argv0[:1] == ["--supernova-compare"] and len(argv0) == 3:
+        return compare_supernova_cli(argv0[1], argv0[2])
     if len(argv0) == 2 and argv0[0] == "--emit-evidence":
         bundle = Path(argv0[1]).resolve() / "tier0-evidence"
         artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)
@@ -226,6 +240,7 @@ def main() -> int:
     findings += test_bootstrap_topology(audit)
     findings += test_isolated_execution(audit)
     findings += test_python_tooling(audit)
+    findings += test_supernova()
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
     if findings:

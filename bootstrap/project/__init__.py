@@ -37,6 +37,7 @@ if __name__ not in sys.modules:  # pragma: no cover - loader-dependent
 import re
 from pathlib import Path
 
+from .campaign import render_campaign_closure_graph
 from .domains import (
     ARCH_SPEC,
     BO_SPEC,
@@ -244,6 +245,7 @@ __all__ = [
     "release_seal_matrix_rows",
     "render_bootstrap_tool_catalog",
     "render_bundle_inventory",
+    "render_campaign_closure_graph",
     "render_catalog",
     "render_command_namespace",
     "render_compiler_assumptions",
@@ -364,6 +366,7 @@ VIEW_RENDERERS = {
     "VerificationRuntimeMatrix": render_runtime_verification_matrix,
     "SproutingPromotionMatrix": render_sprouting_promotion_matrix,
     "ReleaseSealMatrix": render_release_seal_matrix,
+    "CampaignClosureGraph": render_campaign_closure_graph,
     "GeneratedViewRegistry": render_generated_view_registry,
     "SpecModuleCatalog": render_spec_module_catalog,
     "BootstrapToolCatalog": render_bootstrap_tool_catalog,
