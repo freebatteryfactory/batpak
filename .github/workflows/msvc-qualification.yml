@@ -132,6 +132,11 @@ jobs:
           name: batpak-tier0-${{ github.sha }}-x86_64-pc-windows-msvc-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/evidence/tier0-evidence
           if-no-files-found: error
+          # The Gate-0 workspace carries .cargo/config.toml; upload-artifact
+          # silently excludes hidden (dot-prefixed) paths by default, which
+          # the SGB confirming run caught as an output-tree digest mismatch
+          # between the claimed artifact and the downloaded bundle.
+          include-hidden-files: true
 
       # ---- promotion-confirmation posture (candidate_run_id supplied) ----
 
