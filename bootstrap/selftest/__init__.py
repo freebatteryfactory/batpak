@@ -31,6 +31,7 @@ from .catalogs import (
     test_promotion,
     test_rust_specification_compiles,
     test_seedcheck_executes_its_law,
+    test_source_grammar,
     test_toolchain,
 )
 from .core import (
@@ -217,6 +218,7 @@ def main() -> int:
     findings += test_verification_plane()
     findings += test_sprouting_plane()
     findings += test_seedcheck_executes_its_law(audit)
+    findings += test_source_grammar(audit)
     findings += test_rust_specification_compiles(audit)
     findings += test_probe_harness(audit)
     findings += test_bootstrap_topology(audit)

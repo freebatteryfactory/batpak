@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 #[path = "seedcheck/tier0.rs"] mod tier0;
 #[path = "seedcheck/tokens.rs"] mod tokens;
 #[path = "seedcheck/isa.rs"] mod isa;
+#[path = "seedcheck/grammar.rs"] mod grammar;
 #[cfg(test)]
 #[path = "seedcheck/tests.rs"]
 mod tests;
@@ -36,6 +37,7 @@ use crate::qualification::*;
 use crate::tier0::*;
 use crate::tokens::*;
 use crate::isa::*;
+use crate::grammar::*;
 
 fn main() {
     let root = env::args().nth(1).map_or_else(|| PathBuf::from("."), PathBuf::from);
@@ -86,6 +88,7 @@ fn inspect(root: &Path) -> Vec<String> {
     for relative in architecture::FORBIDDEN_TARGET_PATHS {
         if root.join(relative).exists() { findings.push(format!("forbidden target path exists: {relative}")); }
     }
+    check_source_grammar(root, &mut findings);
     check_graph(&mut findings);
     check_profiles(&mut findings);
     check_authenticated_history(&mut findings);

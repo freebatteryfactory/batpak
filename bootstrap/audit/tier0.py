@@ -1084,7 +1084,9 @@ _TOPOLOGY_SIZE_CEILINGS: dict[str, int] = {
     # 1400 -> 1500 (F4-prelude ruling): the hardened topology matcher, the
     # runbook isolation rule, and the uv.lock parity law all landed here.
     "bootstrap/audit/tier0.py": 1500,
-    "bootstrap/selftest/catalogs.py": 2100,
+    # 2100 -> 2300 (SGB tranche 4b ruling): the source-grammar hostile/neuter
+    # battery landed beside the seedcheck-mutation probes, its ruled home.
+    "bootstrap/selftest/catalogs.py": 2300,
     "bootstrap/selftest/corpus.py": 1100,
     "bootstrap/selftest/inventory.py": 1600,
     "bootstrap/selftest/proof.py": 1100,

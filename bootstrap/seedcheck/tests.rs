@@ -46,3 +46,22 @@
     fn bootstrap_detector_fixture_does_not_grade_itself() {
         assert!(production_debt("let banned = [r#\"panic!\"#, r\".unwrap(\"];").is_empty());
     }
+
+    #[test]
+    fn module_declarations_parse_visibility_and_attributes() {
+        let decls = crate::grammar::module_declarations(
+            "mod types;\npub mod door;\n#[cfg(test)] mod tests;\npub(crate) mod inner;\n");
+        assert_eq!(decls, vec![
+            ("types".to_string(), false),
+            ("door".to_string(), true),
+            ("tests".to_string(), false),
+            ("inner".to_string(), true),
+        ]);
+    }
+
+    #[test]
+    fn glob_reexport_is_detected_and_explicit_lists_are_not() {
+        assert!(crate::grammar::has_glob_reexport("pub use types::*;"));
+        assert!(crate::grammar::has_glob_reexport("pub use types::{A, inner::*};"));
+        assert!(!crate::grammar::has_glob_reexport("pub use types::{A, B};\nuse super::*;"));
+    }
