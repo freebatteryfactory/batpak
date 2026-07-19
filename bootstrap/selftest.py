@@ -935,17 +935,23 @@ def load(name: str, base: Path | None = None):
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         # A package's relative imports resolve through sys.modules; register
-        # for the duration of exec, then release the name so two loads (e.g.
-        # canonical and a neutered copy) never alias each other.
-        previous = sys.modules.get(name)
+        # for the duration of exec. The WHOLE namespace (the package name and
+        # every `name.sub` entry) is snapshotted, cleared, and restored so two
+        # loads (e.g. canonical and a neutered copy) can never alias each
+        # other's submodules through the import cache.
+        prefix = name + "."
+        saved = {k: v for k, v in sys.modules.items()
+                 if k == name or k.startswith(prefix)}
+        for k in saved:
+            del sys.modules[k]
         sys.modules[name] = module
         try:
             spec.loader.exec_module(module)
         finally:
-            if previous is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = previous
+            for k in [k for k in sys.modules
+                      if k == name or k.startswith(prefix)]:
+                del sys.modules[k]
+            sys.modules.update(saved)
         return module
     spec = importlib.util.spec_from_file_location(name, root / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
