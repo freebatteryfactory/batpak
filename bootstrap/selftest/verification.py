@@ -5,7 +5,9 @@ import tempfile
 from pathlib import Path
 from .core import (
     HERE,
+    gate_sandbox,
     load,
+    neutered_validator,
 )
 
 
@@ -276,4 +278,73 @@ def test_workflow_pinning() -> list[str]:
                 findings.append(f"workflow_pinning {uses!r}: expected finding={want}, got {got}")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    return findings
+
+
+def test_bootstrap_topology(audit) -> list[str]:
+    """audit.bootstrap_topology_findings: the eight-rule AST topology law over
+    the bootstrap Python plane. h0 proves the canonical tree is clean; h1..h7
+    each mutate a sandbox copy of bootstrap/ and prove the matching rule bites;
+    n1..n3 neuter the rule's own source line and prove the detector goes silent.
+    A claimed negative test is itself a claim, so every hostile asserts its
+    specific needle and every neuter asserts that same needle disappears."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    # h0: the canonical tree carries no topology findings (run FIRST).
+    if audit.bootstrap_topology_findings(HERE.parent) != []:
+        fail("h0 canonical-clean")
+
+    # Each positive hostile appends to a fresh sandbox copy (gate_sandbox copies
+    # the whole bootstrap/ tree; the append mutates only the copy) and asserts
+    # its needle fires. h1/h3/h5 sandboxes are kept for the neuter re-runs.
+    hostiles = [
+        ("h1", "bootstrap/audit/corpus.py", "\nfrom project import registry\n",
+         "static import of sibling bootstrap tool 'project'"),
+        ("h2", "bootstrap/project/registry.py", "\nimport sys\nsys.path.append('x')\n",
+         "sys.path mutation"),
+        ("h3", "bootstrap/selftest/domains.py", "\nimport requests\n",
+         "non-stdlib import 'requests'"),
+        ("h4", "bootstrap/audit/batql.py", "\nprint('boot')\n",
+         "import-time effect"),
+        ("h5", "bootstrap/project/registry.py", "# pad\n" * 1000,
+         "exceeds its ratchet ceiling"),
+        ("h6", "bootstrap/freeze.py", "# pad\n" * 60,
+         "entry shim has"),
+        ("h7", "bootstrap/project/registry.py", "\nfrom .domains import PLAN_DOMAINS\n",
+         "import cycle"),
+    ]
+    kept: dict[str, Path] = {}
+    try:
+        for name, rel, addition, needle in hostiles:
+            sandbox = gate_sandbox([])
+            path = sandbox / rel
+            path.write_text(path.read_text(encoding="utf-8") + addition, encoding="utf-8")
+            if not any(needle in f for f in audit.bootstrap_topology_findings(sandbox)):
+                fail(f"{name} did not fire ({needle!r})")
+            if name in ("h1", "h3", "h5"):
+                kept[name] = sandbox
+            else:
+                shutil.rmtree(sandbox, ignore_errors=True)
+
+        # Neuter proof: replacing the rule's own guard line with "if False:"
+        # makes its hostile go silent. Each target is a unique single line in
+        # bootstrap/audit/tier0.py (verified across the shim + package).
+        neuters = [
+            ("n1", "h1", "if pkg is not None and first in _TOPOLOGY_TOOLS:",
+             "static import of sibling bootstrap tool 'project'"),
+            ("n2", "h3", "elif first not in sys.stdlib_module_names:",
+             "non-stdlib import 'requests'"),
+            ("n3", "h5", "if count > ceiling:",
+             "exceeds its ratchet ceiling"),
+        ]
+        for name, hkey, target, needle in neuters:
+            with neutered_validator("audit", target) as neutered:
+                if any(needle in f for f in neutered.bootstrap_topology_findings(kept[hkey])):
+                    fail(f"{name} did not silence ({needle!r})")
+    finally:
+        for sandbox in kept.values():
+            shutil.rmtree(sandbox, ignore_errors=True)
     return findings

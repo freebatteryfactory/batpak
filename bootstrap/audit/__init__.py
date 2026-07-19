@@ -319,6 +319,7 @@ from .tier0 import (
     A_XR_SPEC,
     bootstrap_output_findings,
     bootstrap_qualification_findings,
+    bootstrap_topology_findings,
     python_tooling_findings,
     tier0_cross_run_findings,
     toolchain_findings,
@@ -526,6 +527,7 @@ __all__ = [
     "batql_resolve_operator_rows",
     "bootstrap_output_findings",
     "bootstrap_qualification_findings",
+    "bootstrap_topology_findings",
     "candidate_fences",
     "candidate_summary",
     "casefold_collisions",
@@ -680,6 +682,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(tier0_cross_run_findings(root))
     findings.extend(workflow_pinning_findings(root))
     findings.extend(python_tooling_findings(root))
+    findings.extend(bootstrap_topology_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))

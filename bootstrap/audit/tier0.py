@@ -7,7 +7,9 @@ qualification lives in selftest. Shares no parser with bootstrap/project.py.
 """
 from __future__ import annotations
 
+import ast
 import re
+import sys
 from pathlib import Path
 
 from .corpus import G_QUAL_ROW, _bootstrap_source, _uncomment
@@ -981,5 +983,298 @@ def toolchain_findings(root: Path) -> list[str]:
             out.append(f"QualificationProfile {pkg}:{profile} names environment "
                        f"{variant}, which the QualificationEnvironment enum "
                        "does not declare")
+    return out
+
+
+# --- Wave-2 AST topology law over the bootstrap Python plane -----------------
+# A structural law over the bootstrap Python plane (three packages + four entry
+# shims), enforced by re-parsing every module with ast. It authors the first
+# import-provenance enforcement and the first size ratchet: entry shims stay
+# thin, package modules have no import-time effects, no file mutates sys.path,
+# no package statically imports a sibling bootstrap tool (only the dynamic
+# load() is lawful), the intra-package import graph stays acyclic, every import
+# resolves to the standard library, and no file drifts past its ratchet ceiling.
+_TOPOLOGY_TOOLS = ("audit", "project", "selftest", "freeze")
+_TOPOLOGY_PACKAGES = ("audit", "project", "selftest")
+
+# R8 size ratchet: measured line counts of every file over 1000 lines, rounded
+# UP to the next multiple of 100. Every other file in scope has ceiling 1000.
+# tier0.py grows in this change; its ceiling is set from the post-edit count.
+_TOPOLOGY_SIZE_CEILINGS: dict[str, int] = {
+    "bootstrap/audit/__init__.py": 1200,
+    "bootstrap/audit/architecture.py": 1400,
+    "bootstrap/audit/catalogs.py": 1300,
+    "bootstrap/audit/tier0.py": 1300,
+    "bootstrap/selftest/catalogs.py": 2100,
+    "bootstrap/selftest/corpus.py": 1100,
+    "bootstrap/selftest/inventory.py": 1600,
+    "bootstrap/selftest/proof.py": 1100,
+    "bootstrap/selftest/tier0.py": 2500,
+}
+
+
+def _topology_files(root: Path) -> list[tuple[str, Path]]:
+    """Scope set S: every *.py under bootstrap/ except __pycache__ -- the four
+    entry shims plus the flat package modules, as (posix-relpath, path)."""
+    boot = root / "bootstrap"
+    out: list[tuple[str, Path]] = []
+    for name in _TOPOLOGY_TOOLS:
+        shim = boot / f"{name}.py"
+        if shim.is_file():
+            out.append((shim.relative_to(root).as_posix(), shim))
+    for name in _TOPOLOGY_PACKAGES:
+        pkg = boot / name
+        if pkg.is_dir():
+            for p in pkg.rglob("*.py"):
+                if "__pycache__" not in p.parts:
+                    out.append((p.relative_to(root).as_posix(), p))
+    out.sort(key=lambda item: item[0])
+    return out
+
+
+def _topology_is_sys_path(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Attribute) and node.attr == "path"
+            and isinstance(node.value, ast.Name) and node.value.id == "sys")
+
+
+def _topology_syspath_violations(tree: ast.AST, rel: str) -> list[str]:
+    """R3: sys.path as an assignment target, method receiver, or call arg."""
+    out: list[str] = []
+    seen: set[int] = set()
+
+    def flag(node: ast.AST) -> None:
+        if node.lineno not in seen:
+            seen.add(node.lineno)
+            out.append(f"{rel}:{node.lineno}: sys.path mutation")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute) and _topology_is_sys_path(node.func.value):
+                flag(node.func.value)
+            for arg in list(node.args) + [k.value for k in node.keywords]:
+                if _topology_is_sys_path(arg):
+                    flag(arg)
+        elif isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                base = tgt.value if isinstance(tgt, ast.Subscript) else tgt
+                if _topology_is_sys_path(base):
+                    flag(base)
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            tgt = node.target
+            base = tgt.value if isinstance(tgt, ast.Subscript) else tgt
+            if _topology_is_sys_path(base):
+                flag(base)
+    return out
+
+
+def _topology_import_violations(tree: ast.AST, rel: str, pkg: str | None) -> list[str]:
+    """R4/R5 (cross-package, absolute-sibling) and R7 (stdlib-only). Import and
+    ImportFrom fold into one (first-segment, spelling) stream so each rule has a
+    single guard. Relative imports (level >= 1) stay inside the package and pass
+    both."""
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            refs = [(alias.name.split(".")[0], alias.name) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level and node.level >= 1:
+                continue
+            mod = node.module or ""
+            refs = [(mod.split(".")[0], mod)]
+        else:
+            continue
+        for first, spelling in refs:
+            if pkg is not None and first in _TOPOLOGY_TOOLS:
+                out.append(f"{rel}:{node.lineno}: static import of sibling "
+                           f"bootstrap tool '{first}' (only dynamic load() is lawful)")
+            elif first not in sys.stdlib_module_names:
+                out.append(f"{rel}:{node.lineno}: non-stdlib import "
+                           f"'{spelling}' (bootstrap runtime is stdlib-only)")
+    return out
+
+
+# R2 treats a module-level Assign as an import-time EFFECT only when its value
+# performs an impure call: a Call whose callee is not a pure constructor. Pure
+# constructors (re.compile plus the stdlib container/scalar builtins) and lambda
+# bodies (deferred, not run at import) build module-level constants with no side
+# effect -- the pervasive precompiled-regex / frozenset / dict-of-lambda idiom
+# the census under-counted (see report). A call that reaches the file system or
+# a local builder still trips, and is grandfathered by name below.
+_TOPOLOGY_PURE_BUILTINS = frozenset({
+    "frozenset", "set", "tuple", "list", "dict", "bytes", "bytearray",
+    "str", "int", "float", "bool", "complex", "range"})
+
+# Grandfathered import-time bindings. TOOLCHAIN_EDITION is the packet-recorded
+# exemption (reads the typed toolchain edition); HERE (Path().resolve()) and the
+# two ISA-row constants were found during census reconciliation and are flagged
+# prominently in the report.
+_TOPOLOGY_EFFECT_WHITELIST = frozenset({
+    ("bootstrap/selftest/core.py", "TOOLCHAIN_EDITION"),
+    ("bootstrap/selftest/core.py", "HERE"),
+    ("bootstrap/selftest/domains.py", "WINDOWING_ROWS"),
+    ("bootstrap/selftest/domains.py", "WINDOWING_OUTPUTS"),
+    ("bootstrap/project/__init__.py", "VIEW_RENDERERS"),
+})
+
+
+def _topology_pure_ctor(func: ast.AST) -> bool:
+    if isinstance(func, ast.Name):
+        return func.id in _TOPOLOGY_PURE_BUILTINS
+    return (isinstance(func, ast.Attribute) and func.attr == "compile"
+            and isinstance(func.value, ast.Name) and func.value.id == "re")
+
+
+def _topology_impure(node: ast.AST) -> bool:
+    """True if evaluating `node` at import time makes an impure call. A lambda
+    body is deferred, so a lambda is pure to construct; a Call is pure only when
+    its callee is a pure constructor and its evaluated arguments are pure too."""
+    if isinstance(node, ast.Lambda):
+        return False
+    if isinstance(node, ast.Call):
+        if not _topology_pure_ctor(node.func):
+            return True
+        parts = list(node.args) + [k.value for k in node.keywords]
+        return any(_topology_impure(p) for p in parts)
+    return any(_topology_impure(c) for c in ast.iter_child_nodes(node))
+
+
+def _topology_stmt_ok(stmt: ast.stmt, rel: str) -> bool:
+    if isinstance(stmt, (ast.Import, ast.ImportFrom, ast.FunctionDef,
+                         ast.AsyncFunctionDef, ast.ClassDef, ast.Assert)):
+        return True
+    if isinstance(stmt, ast.Expr):
+        return isinstance(stmt.value, ast.Constant)
+    if isinstance(stmt, ast.If):
+        # An `if __name__ ...:` guard (including the self-registration block)
+        # runs only under a name binding, never as a plain import-time effect.
+        return any(isinstance(n, ast.Name) and n.id == "__name__"
+                   for n in ast.walk(stmt.test))
+    if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+        targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+        names = [t.id for t in targets if isinstance(t, ast.Name)]
+        if "__all__" in names:
+            return True
+        if any((rel, n) in _TOPOLOGY_EFFECT_WHITELIST for n in names):
+            return True
+        if stmt.value is None:
+            return True
+        return not _topology_impure(stmt.value)
+    return False
+
+
+def _topology_toplevel_violations(tree: ast.Module, rel: str) -> list[str]:
+    """R2: package modules carry no import-time effects outside the whitelist."""
+    out: list[str] = []
+    for stmt in tree.body:
+        if not _topology_stmt_ok(stmt, rel):
+            out.append(f"{rel}:{stmt.lineno}: import-time effect "
+                       f"({type(stmt).__name__}) outside the whitelist")
+    return out
+
+
+def _topology_find_cycle(nodes: set, edges: dict) -> list | None:
+    color: dict = {}
+    stack: list = []
+    box: dict = {"cycle": None}
+
+    def visit(u) -> bool:
+        color[u] = 1
+        stack.append(u)
+        for v in sorted(edges.get(u, ())):
+            state = color.get(v, 0)
+            if state == 1:
+                box["cycle"] = stack[stack.index(v):]
+                return True
+            if state == 0 and visit(v):
+                return True
+        stack.pop()
+        color[u] = 2
+        return False
+
+    for n in sorted(nodes):
+        if color.get(n, 0) == 0 and visit(n):
+            break
+    return box["cycle"]
+
+
+def _topology_cycle_violations(root: Path) -> list[str]:
+    """R6: the intra-package relative-import digraph must be acyclic."""
+    out: list[str] = []
+    boot = root / "bootstrap"
+    for pkg in _TOPOLOGY_PACKAGES:
+        pdir = boot / pkg
+        if not pdir.is_dir():
+            continue
+        modules = {p.stem: p for p in sorted(pdir.glob("*.py"))}
+        edges: dict = {}
+        for stem, path in modules.items():
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            targets: set = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.level == 1:
+                    if node.module:
+                        head = node.module.split(".")[0]
+                        if head in modules:
+                            targets.add(head)
+                    else:
+                        for alias in node.names:
+                            if alias.name in modules:
+                                targets.add(alias.name)
+            targets.discard(stem)
+            edges[stem] = targets
+        cycle = _topology_find_cycle(set(modules), edges)
+        if cycle:
+            i = cycle.index(min(cycle))
+            rot = cycle[i:] + cycle[:i]
+            chain = " -> ".join(f"{m}.py" for m in rot + [rot[0]])
+            out.append(f"bootstrap/{pkg}: import cycle: {chain}")
+    return out
+
+
+def _topology_sort_key(finding: str) -> tuple:
+    head, _, rest = finding.partition(":")
+    m = re.match(r"\s*(\d+):", rest)
+    return (head, int(m.group(1)) if m else 0, finding)
+
+
+def bootstrap_topology_findings(root: Path) -> list[str]:
+    """The bootstrap Python plane must hold its structural shape. Eight rules
+    over scope set S (every bootstrap *.py except __pycache__): R1 thin entry
+    shims (<= 90 lines), R2 no import-time effects in package modules, R3 no
+    sys.path mutation, R4/R5 no static sibling-tool imports, R6 acyclic
+    intra-package imports, R7 stdlib-only imports, R8 the size ratchet. Empty
+    list == PASS; a SyntaxError is itself a finding."""
+    out: list[str] = []
+    for rel, path in _topology_files(root):
+        text = path.read_text(encoding="utf-8")
+        count = text.count("\n")
+        is_shim = rel.count("/") == 1
+        # R1 thin-CLI.
+        if is_shim and count > 90:
+            out.append(f"{rel}: entry shim has {count} lines (> 90); "
+                       "entry shims must stay thin")
+        # R8 size-ratchet.
+        ceiling = _TOPOLOGY_SIZE_CEILINGS.get(rel, 1000)
+        if count > ceiling:
+            out.append(f"{rel}: {count} lines exceeds its ratchet ceiling "
+                       f"{ceiling} (raise the ceiling only by ruling)")
+        try:
+            tree = ast.parse(text)
+        except SyntaxError as exc:
+            out.append(f"{rel}:{exc.lineno or 0}: syntax error: {exc.msg}")
+            continue
+        # R3 (all files), R4/R5 + R7 (all files; sibling rule package-only).
+        out.extend(_topology_syspath_violations(tree, rel))
+        out.extend(_topology_import_violations(
+            tree, rel, None if is_shim else rel.split("/")[1]))
+        # R2 (package modules only; shims are loaders, exempt).
+        if not is_shim:
+            out.extend(_topology_toplevel_violations(tree, rel))
+    # R6 (per package).
+    out.extend(_topology_cycle_violations(root))
+    out.sort(key=_topology_sort_key)
     return out
 
