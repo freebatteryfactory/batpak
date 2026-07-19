@@ -118,7 +118,7 @@ chacha20poly1305 = { version = "0.10", optional = true, default-features = false
 # Optional: only pulled in by `payload-encryption`. OS CSPRNG for symmetric key
 # material; version 0.3 reuses the exact `getrandom` already in the production
 # graph (via tempfile), so the feature adds no new crate version. MIT OR Apache-2.0.
-getrandom = { version = "0.3", optional = true }
+getrandom = { version = "0.4", optional = true }
 # NO TOKIO. Invariant 1.
 
 # wasm32-unknown-unknown has no ambient OS RNG: route UUIDv7 randomness through
