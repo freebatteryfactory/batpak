@@ -1300,17 +1300,13 @@ def _topology_stmt_ok(stmt: ast.stmt, rel: str) -> bool:
         # H2: an assert is lawful only if neither test nor message calls impurely.
         if _topology_impure(stmt.test):
             return False
-        if stmt.msg is not None and _topology_impure(stmt.msg):
-            return False
-        return True
+        return not (stmt.msg is not None and _topology_impure(stmt.msg))
     if isinstance(stmt, ast.If):
         # H1: a top-level If is lawful ONLY as the exact main guard (any file),
         # or as the self-registration block in the two package doors.
         if _topology_is_main_guard(stmt.test):
             return True
-        if rel in _TOPOLOGY_SELFREG_FILES and _topology_is_self_register(stmt.test):
-            return True
-        return False
+        return rel in _TOPOLOGY_SELFREG_FILES and _topology_is_self_register(stmt.test)
     if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
         targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
         names = [t.id for t in targets if isinstance(t, ast.Name)]
