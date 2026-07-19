@@ -19,7 +19,11 @@ import hashlib
 from pathlib import Path
 
 EXCLUDE = {"SPEC.sha256"}
-EXCLUDE_DIRS = {".git", "target", "__pycache__"}
+# .ruff_cache: derived lint-tool output (same class as __pycache__). Twice now
+# a local `ruff check` run from the checkout dropped its cache into the tree
+# and the freeze swept it (F4 prelude, SGB battery); the exclusion belongs in
+# the enumerator itself, not in operator discipline.
+EXCLUDE_DIRS = {".git", "target", "__pycache__", ".ruff_cache"}
 EXCLUDE_SUFFIXES = {".zip", ".pyc"}
 
 
