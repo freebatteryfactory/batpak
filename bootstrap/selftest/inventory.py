@@ -909,13 +909,13 @@ def test_generated_views(audit, project) -> list[str]:
     # projector: no frozen numeric count guards the registry. This does not
     # justify a real new generated surface.
     tmp = sandbox([
-        (GV, "    GeneratedViewRegistry,\n}",
-         "    GeneratedViewRegistry,\n    FutureLedger,\n}"),
-        (GV, "        GeneratedView::GeneratedViewRegistry,\n    ];",
-         "        GeneratedView::GeneratedViewRegistry,\n"
+        (GV, "    BootstrapToolCatalog,\n}",
+         "    BootstrapToolCatalog,\n    FutureLedger,\n}"),
+        (GV, "        GeneratedView::BootstrapToolCatalog,\n    ];",
+         "        GeneratedView::BootstrapToolCatalog,\n"
          "        GeneratedView::FutureLedger,\n    ];"),
-        (GV, '            GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",\n        }',
-         '            GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",\n'
+        (GV, '            GeneratedView::BootstrapToolCatalog => "BootstrapToolCatalog",\n        }',
+         '            GeneratedView::BootstrapToolCatalog => "BootstrapToolCatalog",\n'
          '            GeneratedView::FutureLedger => "FutureLedger",\n        }'),
         (GV,
          'marker: Some("GENERATED-VIEW-REGISTRY"),\n'
@@ -932,8 +932,8 @@ def test_generated_views(audit, project) -> list[str]:
          "                generator: BootstrapToolId::ProjectPy,\n"
          "            },"),
         ("bootstrap/project/__init__.py",
-         '    "GeneratedViewRegistry": render_generated_view_registry,\n}',
-         '    "GeneratedViewRegistry": render_generated_view_registry,\n'
+         '    "BootstrapToolCatalog": render_bootstrap_tool_catalog,\n}',
+         '    "BootstrapToolCatalog": render_bootstrap_tool_catalog,\n'
          '    "FutureLedger": lambda root: "sandbox-only future ledger body",\n}'),
     ])
     try:
