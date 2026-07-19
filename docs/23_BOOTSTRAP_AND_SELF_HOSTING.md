@@ -29,7 +29,7 @@ signed documents and typed seed facts
 
 ## Stage 0: signed seed
 
-The current bundle, `spec/*.rs`, `audit.py`, `freeze.py`, `seedcheck.rs`, and `materialize.rs` are the starting authority. Seedcheck validates shape and stale architecture before production code exists. Materialize consumes the same package facts to publish an isolated Gate-0 workspace candidate outside the signed seed tree.
+The current bundle, `spec/lib.rs` with the concept-door module trees under `spec/`, `audit.py`, `freeze.py`, `seedcheck.rs`, and `materialize.rs` are the starting authority. Seedcheck validates shape and stale architecture before production code exists. Materialize consumes the same package facts to publish an isolated Gate-0 workspace candidate outside the signed seed tree.
 
 ## Materialization law
 

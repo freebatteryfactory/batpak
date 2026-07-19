@@ -9,6 +9,7 @@ in here. Standard library only; shares no parser with bootstrap/audit.py.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from .guarantees import Unadmitted, gate_tokens
 from .registry import _spec_module_source, parse_generated_views
@@ -240,10 +241,8 @@ def pakvm_specs(root: Path) -> list[dict]:
             for r in _struct_rows(src, "PAKVM_ALGEBRA_POLICIES", "PakVmAlgebraPolicy")}
     cpol = {r["class"].split("::")[-1]: r
             for r in _struct_rows(src, "PAKVM_NODE_CLASS_POLICIES", "PakVmNodeClassPolicy")}
-    origins = {}
     body = _const_fn_body(src, "source_origin")
-    for alg, val in re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*\"([^\"]*)\"", body):
-        origins[alg] = val
+    origins = dict(re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*\"([^\"]*)\"", body))
     out = []
     for n in nodes:
         alg, cls = algebra.get(n), klass.get(n)
@@ -694,7 +693,7 @@ def render_proof_relations(root: Path) -> str:
         groups.setdefault(key, []).append(row["id"])
     lines = ["| Guarantee | Projection contract(s) | Active proof rows |",
              "| --- | --- | --- |"]
-    for (family, guarantee, contracts), ids in groups.items():
+    for (_family, guarantee, contracts), ids in groups.items():
         lines.append(f"| {guarantee} | {'; '.join(contracts)} | {'; '.join(ids)} |")
     return "\n".join(lines)
 

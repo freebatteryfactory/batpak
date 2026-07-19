@@ -13,6 +13,7 @@ Determinism is host-independent by construction:
 Standard library only.
 """
 from __future__ import annotations
+
 import argparse
 import hashlib
 from pathlib import Path

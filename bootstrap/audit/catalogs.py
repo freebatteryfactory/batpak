@@ -12,8 +12,8 @@ import re
 from pathlib import Path
 
 from .corpus import (
-    EXCLUDE_DIRS,
     A_GENERATED_BLOCK,
+    EXCLUDE_DIRS,
     G_DEC_ROW,
     G_LEG_ROW,
     _spec_module_source,
@@ -22,7 +22,6 @@ from .corpus import (
     declared_contract_ids,
     frontmatter,
 )
-
 
 # --- Admitted contract kinds (5.5E3c, block form 5.5E4a) ---------------------
 # spec/contracts.rs owns the admitted set; docs/06 projects it through the

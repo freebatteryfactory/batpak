@@ -67,6 +67,8 @@ pub enum GeneratedView {
     SpecializedPlanCandidatePolicy,
     SproutingProofRequirements,
     GeneratedViewRegistry,
+    SpecModuleCatalog,
+    BootstrapToolCatalog,
 }
 
 impl GeneratedView {
@@ -132,6 +134,8 @@ impl GeneratedView {
         GeneratedView::SpecializedPlanCandidatePolicy,
         GeneratedView::SproutingProofRequirements,
         GeneratedView::GeneratedViewRegistry,
+        GeneratedView::SpecModuleCatalog,
+        GeneratedView::BootstrapToolCatalog,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -197,6 +201,8 @@ impl GeneratedView {
             GeneratedView::SpecializedPlanCandidatePolicy => "SpecializedPlanCandidatePolicy",
             GeneratedView::SproutingProofRequirements => "SproutingProofRequirements",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
+            GeneratedView::SpecModuleCatalog => "SpecModuleCatalog",
+            GeneratedView::BootstrapToolCatalog => "BootstrapToolCatalog",
         }
     }
 
@@ -664,6 +670,20 @@ impl GeneratedView {
                 target: GeneratedViewTarget::Static(&["docs/28_SELF_EXPLAINING_REPOSITORY.md"]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("GENERATED-VIEW-REGISTRY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SpecModuleCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/lib.rs"],
+                target: GeneratedViewTarget::Static(&["spec/README.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SPEC-MODULE-CATALOG"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::BootstrapToolCatalog => GeneratedViewSpec {
+                authority_sources: &["spec/guarantees.rs"],
+                target: GeneratedViewTarget::Static(&["bootstrap/README.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("BOOTSTRAP-TOOL-CATALOG"),
                 generator: BootstrapToolId::ProjectPy,
             },
         }

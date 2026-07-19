@@ -78,6 +78,20 @@ jobs:
       - name: freeze --check
         run: python -I bootstrap/freeze.py --check
 
+      # Development-tooling gate (F4 prelude): ruff lints the bootstrap plane
+      # under the LOCKED uv environment (uv.lock hashes verify the tool supply
+      # chain; uv itself is version-pinned). The venv lives OUTSIDE the
+      # checkout so no derived files enter the judged tree. `ruff format` and
+      # the staged rule families are NOT gates yet (see pyproject.toml).
+      - name: dev tooling (uv sync --locked + ruff check)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet uv==0.8.14
+          $env:UV_PROJECT_ENVIRONMENT = "${{ runner.temp }}/uvenv"
+          $env:RUFF_CACHE_DIR = "${{ runner.temp }}/ruffcache"
+          uv sync --locked --group dev
+          uv run --no-sync ruff check bootstrap
+
       # The gate: the full suite must pass AND selftest must PRODUCE concrete
       # Tier 0 evidence for the MSVC target which the independent
       # bootstrap/receiptcheck.rs verifies against the sealed

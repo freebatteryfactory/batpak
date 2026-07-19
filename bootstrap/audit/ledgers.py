@@ -27,7 +27,6 @@ from .corpus import (
 )
 from .guarantees import G_LEG_ROW, g_package_projection
 
-
 # --- Generated-view registry (5.5E4a) ----------------------------------------
 # spec/generated_views.rs is the closed denominator of every repository-
 # generated view. This auditor parses the typed registry INDEPENDENTLY of

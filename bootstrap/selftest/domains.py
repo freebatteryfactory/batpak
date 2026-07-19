@@ -1,6 +1,7 @@
 """Domain fixtures: PakVM semantic ISA, SyncBat authority firewall and
 crossing requiredness, and DEC-075 reconciliation."""
 from __future__ import annotations
+
 from .core import (
     HERE,
     _resolve_edit_carrier,
@@ -70,7 +71,7 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     try:
         auditor = audit.pakvm_isa_views(root)
         generator = project.pakvm_specs(root)
-    except Exception as exc:  # noqa: BLE001 - a crash here is itself the finding
+    except Exception as exc:
         auditor, generator = [], []
         fail(f"both_derivations_admit_the_isa ({exc!r})")
     if len(auditor) != 36 or len(generator) != 36:
@@ -79,7 +80,7 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     # sharing no code to compute it.
     if [v["node"] for v in auditor] != [s["node"] for s in generator]:
         fail("independent_derivations_agree_on_the_node_inventory")
-    for a, g in zip(auditor, generator):
+    for a, g in zip(auditor, generator, strict=False):
         if (a["algebra"], a["class"], a["effect"], a["capability"], a["work_formula"],
                 a["units"], a["evidence"], a["boundedness"]) != (
                 g["algebra"], g["class"], g["effect"], g["capability"], g["work_formula"],
@@ -155,7 +156,7 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
             for marker, render in (("PAKVM-SEMANTIC-ISA", project.render_pakvm_isa),
                                    ("PAKVM-SIGNATURES", project.render_pakvm_signatures)):
                 pat = project.block_pattern(marker)
-                text = pat.sub(lambda m: m.group(1) + render(tmp) + m.group(3), text)
+                text = pat.sub(lambda m, render=render: m.group(1) + render(tmp) + m.group(3), text)
             d07.write_text(text, encoding="utf-8")
             produced = pf(tmp)
             if any("drifted" in f for f in produced):
@@ -318,7 +319,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
                     ("SYNCBAT-CROSSINGS", project.render_syncbat_crossings)):
                 body = render(tmp)
                 text = project.block_pattern(marker).sub(
-                    lambda m: m.group(1) + body + m.group(3), text)
+                    lambda m, body=body: m.group(1) + body + m.group(3), text)
         except project.Unadmitted:
             return False
         d.write_text(text, encoding="utf-8")
@@ -342,7 +343,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
     try:
         auditor = audit.syncbat_firewall_views(root)
         generator = project.syncbat_firewall_facts(root)
-    except Exception as exc:  # noqa: BLE001 - a crash here is itself the finding
+    except Exception as exc:
         auditor, generator = {}, {}
         fail(f"both_derivations_admit_the_firewall ({exc!r})")
     if auditor and generator:
@@ -591,7 +592,7 @@ def test_syncbat_requiredness(audit, project) -> list[str]:
                     ("SYNCBAT-CROSSINGS", project.render_syncbat_crossings)):
                 body = render(tmp)
                 text = project.block_pattern(marker).sub(
-                    lambda m: m.group(1) + body + m.group(3), text)
+                    lambda m, body=body: m.group(1) + body + m.group(3), text)
         except project.Unadmitted:
             return False
         d.write_text(text, encoding="utf-8")

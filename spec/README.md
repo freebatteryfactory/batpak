@@ -26,11 +26,48 @@ rlib (5.5E2), every `pub` item below is API by construction, and each binary
 links that one boundary instead of textually mounting modules. When a module
 names a fact another module owns, it consumes it — it never restates it.
 
+## Module census
+
+The exact module set and shape, generated from `spec/lib.rs` — the census is
+machine-derived and audited, never hand-counted here.
+
+<!-- SPEC-MODULE-CATALOG:BEGIN generated from spec/lib.rs by bootstrap/project.py; do not edit -->
+| Module | Shape |
+| --- | --- |
+| `architecture.rs` | concept door + `architecture/` (5 modules) |
+| `bootstrap_output.rs` | single module |
+| `bootstrap_qualification.rs` | concept door + `bootstrap_qualification/` (4 modules) |
+| `commands.rs` | single module |
+| `compiler_assumptions.rs` | single module |
+| `contracts.rs` | single module |
+| `corpus.rs` | single module |
+| `dispositions.rs` | single module |
+| `gates.rs` | single module |
+| `generated_views.rs` | concept door + `generated_views/` (2 modules) |
+| `guarantees.rs` | concept door + `guarantees/` (2 modules) |
+| `identities.rs` | single module |
+| `invariants.rs` | single module |
+| `legacy_invariant_coverage.rs` | single module |
+| `legacy_obligations.rs` | single module |
+| `mutation.rs` | single module |
+| `operators.rs` | single module |
+| `promotion.rs` | single module |
+| `pakvm_isa.rs` | concept door + `pakvm_isa/` (5 modules) |
+| `proof.rs` | single module |
+| `reconciliation.rs` | single module |
+| `sprouting.rs` | single module |
+| `syncbat_firewall.rs` | single module |
+| `tier0_cross_run.rs` | concept door + `tier0_cross_run/` (3 modules) |
+| `toolchain.rs` | single module |
+| `verification.rs` | concept door + `verification/` (6 modules) |
+| | 26 modules behind the one `lib.rs` boundary |
+<!-- SPEC-MODULE-CATALOG:END -->
+
 ## Module catalog
 
-Twenty-six modules plus the `lib.rs` door. Each row states what that file owns;
-the file's own top doc comment is the binding claim, and this row must not widen
-it. The order matches `spec/lib.rs`.
+Each row states what that file owns; the file's own top doc comment is the
+binding claim, and this row must not widen it. This catalog is authored
+meaning; the census above is the generated mirror of the declared module set.
 
 | File | Owns |
 | --- | --- |
@@ -70,9 +107,10 @@ fact.
 
 ## Anti-drift
 
-This catalog is corrected in the same commit as any module addition or removal —
-a new `pub mod` without a new row here is a defect, not a follow-up. There is no
-separate audit "module census" check to lean on: the census is `spec/lib.rs` (the
-declared module set that the rlib boundary makes real) together with the freeze
-manifest `SPEC.sha256` (the exact byte set every tool is bound to). A module that
-is not in both is not part of the seed.
+The census block above is generated from `spec/lib.rs` by `bootstrap/project.py`
+and held current by `project.py --check`; a new `pub mod` regenerates it in the
+same commit or the gate refuses. The authored catalog rows carry meaning only —
+when a module is added or removed, its authored row is corrected in the same
+commit, and the freeze manifest `SPEC.sha256` binds the exact byte set every
+tool sees. A module that is not in `spec/lib.rs` and the manifest is not part
+of the seed.

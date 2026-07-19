@@ -1,6 +1,7 @@
 """Numeric authority, guarantee classification, and guarantee-admission
 authority hostile fixtures."""
 from __future__ import annotations
+
 from .core import (
     HERE,
     canonical_commitments,

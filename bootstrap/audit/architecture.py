@@ -13,7 +13,6 @@ from pathlib import Path
 from .corpus import _const_variants, _enum_variants, _spec_module_source, _uncomment
 from .guarantees import gate_findings, gate_list
 
-
 # --- DEC-075 reconciliation composition (5.5E1d) ----------------------------
 # AUDITOR half: independent parse, independent render, plus the cross-document
 # laws the generator cannot see. Shares no parsing with project.py.
@@ -308,7 +307,7 @@ def claim_axis_findings(root: Path) -> list[str]:
             out.append(f"{name} claims {got} != frozen bundle {want}")
     # Axis coherence, for these three profiles and this witness model.
     for name, got in bundles.items():
-        integrity, authenticity, freshness, rollback = got
+        integrity, _authenticity, freshness, rollback = got
         if integrity != "InternalConsistencyVerified":
             out.append(f"{name} success bundle does not verify integrity")
         if (freshness == "WitnessedGenerationVerified") != (rollback == "ScopedToVerifiedWitness"):
@@ -387,7 +386,6 @@ def authenticated_history_findings(root: Path) -> list[str]:
             out.append(f"{r['profile']} names no implementation gate")
         if not r["release_gates"]:
             out.append(f"{r['profile']} names no release qualification gate")
-    src = _spec_module_source(root, "architecture")
     declared = _enum_variants(root, "WitnessDisposition")
     if not declared:
         out.append("spec/architecture.rs declares no WitnessDisposition")
@@ -969,7 +967,7 @@ def pakvm_isa_findings(root: Path) -> list[str]:
         rows = [r for r in rows if not r.startswith("| Node ")]
         if len(rows) != len(views):
             out.append(f"{A_ISA_DOC}: projects {len(rows)} PakVM nodes, {len(views)} admit")
-        for row, v in zip(rows, views):
+        for row, v in zip(rows, views, strict=False):
             cells = [c.strip() for c in row.strip().strip("|").split("|")]
             want = [v["name"], v["algebra"], v["class"], v["effect"], v["capability"],
                     v["boundedness"], v["work_formula"], "/".join(v["units"]), v["evidence"]]

@@ -7,6 +7,7 @@ operates on synthetic temporary trees and leaves no repository artifacts. The
 argv contract is preserved byte-exactly.
 """
 from __future__ import annotations
+
 import sys
 
 if __name__ not in sys.modules:  # pragma: no cover - loader-dependent
@@ -18,91 +19,93 @@ if __name__ not in sys.modules:  # pragma: no cover - loader-dependent
 import shutil
 import tempfile
 from pathlib import Path
+
+from .catalogs import (
+    test_commands,
+    test_compiler_assumptions,
+    test_contract_kinds,
+    test_corpus_epoch,
+    test_identity_catalogs,
+    test_mutation,
+    test_package_identity,
+    test_promotion,
+    test_rust_specification_compiles,
+    test_seedcheck_executes_its_law,
+    test_toolchain,
+)
 from .core import (
     HERE,
-    load,
+    QUALIFICATION_RECEIPTS,
     canonical_commitments,
     canonical_drift,
-    render_receipts,
     executed_and_passed,
-    QUALIFICATION_RECEIPTS,
-)
-from .tier0 import (
-    test_bootstrap_output,
-    test_bootstrap_qualification,
-    test_receiptcheck_refuses_dishonest_artifacts,
-    test_receiptcheck_bundle_perimeter,
-    produce_tier0_evidence,
-    verify_tier0_evidence,
-    _emit_run_metadata,
-    _confirm_promotion,
-    _verify_bundle,
-    _T0_GNU,
-    _T0_MSVC,
-)
-from .inventory import (
-    test_manifest_ordering,
-    test_casefold_collision,
-    test_stale_vocabulary,
-    test_stale_derivation,
-    test_legacy_manifest_parity,
-    test_batql,
-    test_operator_surfaces,
-    test_generated_views,
-    test_inventory_mirrors,
-    test_exact_ledgers,
-)
-from .proof import (
-    test_proof_relations,
-    test_proof_policy,
-    test_integrity_witnesses,
-    test_derived_material_witnesses,
-    test_deferred_witnesses,
-    test_leg081_authority,
-    test_proof_target_resolver,
-)
-from .guarantees import (
-    test_numeric,
-    test_guarantees,
-    test_guarantee_authority,
+    load,
+    render_receipts,
 )
 from .corpus import (
-    test_gates,
-    test_decisions,
     test_authenticated_history,
-    test_document_law,
+    test_bundle_inventory_decision_count,
     test_claim_receipt_law,
-    test_substrate,
-    test_specialization,
-    test_delivery_notes_d2,
-    test_probe_harness,
     test_control_characters,
+    test_decisions,
+    test_document_law,
+    test_gates,
+    test_probe_harness,
+    test_specialization,
+    test_substrate,
 )
 from .domains import (
     test_pakvm_semantic_isa,
+    test_reconciliation,
     test_syncbat_firewall,
     test_syncbat_requiredness,
-    test_reconciliation,
 )
-from .catalogs import (
-    test_toolchain,
-    test_package_identity,
-    test_contract_kinds,
-    test_identity_catalogs,
-    test_commands,
-    test_mutation,
-    test_corpus_epoch,
-    test_compiler_assumptions,
-    test_promotion,
-    test_seedcheck_executes_its_law,
-    test_rust_specification_compiles,
+from .guarantees import (
+    test_guarantee_authority,
+    test_guarantees,
+    test_numeric,
+)
+from .inventory import (
+    test_batql,
+    test_casefold_collision,
+    test_exact_ledgers,
+    test_generated_views,
+    test_inventory_mirrors,
+    test_legacy_manifest_parity,
+    test_manifest_ordering,
+    test_operator_surfaces,
+    test_stale_derivation,
+    test_stale_vocabulary,
+)
+from .proof import (
+    test_deferred_witnesses,
+    test_derived_material_witnesses,
+    test_integrity_witnesses,
+    test_leg081_authority,
+    test_proof_policy,
+    test_proof_relations,
+    test_proof_target_resolver,
+)
+from .tier0 import (
+    _T0_GNU,
+    _T0_MSVC,
+    _confirm_promotion,
+    _emit_run_metadata,
+    _verify_bundle,
+    produce_tier0_evidence,
+    test_bootstrap_output,
+    test_bootstrap_qualification,
+    test_receiptcheck_bundle_perimeter,
+    test_receiptcheck_refuses_dishonest_artifacts,
+    verify_tier0_evidence,
 )
 from .verification import (
-    test_workflow_pinning,
-    test_verification_plane,
-    test_sprouting_plane,
     test_bootstrap_topology,
     test_isolated_execution,
+    test_python_tooling,
+    test_sprouting_plane,
+    test_verification_plane,
+    test_workflow_pinning,
 )
 
 
@@ -187,7 +190,7 @@ def main() -> int:
     findings += test_claim_receipt_law(audit)
     findings += test_substrate(audit)
     findings += test_specialization(audit, project)
-    findings += test_delivery_notes_d2(audit)
+    findings += test_bundle_inventory_decision_count(audit)
     findings += test_proof_policy(audit)
     findings += test_integrity_witnesses(audit)
     findings += test_derived_material_witnesses(audit)
@@ -218,6 +221,7 @@ def main() -> int:
     findings += test_probe_harness(audit)
     findings += test_bootstrap_topology(audit)
     findings += test_isolated_execution(audit)
+    findings += test_python_tooling(audit)
     findings += canonical_drift(canonical_before)
     findings += test_control_characters(audit)
     if findings:
@@ -248,7 +252,8 @@ def main() -> int:
                "typed Tier 0 receipt policy",
                "rust specification compile",
                "bootstrap_topology",
-               "isolated-interpreter execution"] + executed_and_passed()
+               "isolated-interpreter execution",
+               "python-tooling lock"] + executed_and_passed()
     unearned = [r["name"] for r in QUALIFICATION_RECEIPTS
                 if not (r["available"] and r["executed"] and r["passed"])]
     print("selftest: PASS (" + " + ".join(claimed) + ")")

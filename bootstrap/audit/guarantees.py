@@ -20,7 +20,6 @@ from .corpus import (
     declared_contract_ids,
 )
 
-
 # --- Guarantee graph (DEC-070): INDEPENDENT derivation, comparison, rules -----
 # This is the AUDITOR half. It derives guarantee nodes/edges from the source
 # facts with its own parsers and rules, then compares against the generated
@@ -229,7 +228,7 @@ def guarantee_typed_witness_findings(root: Path, rows: list[dict]) -> list[str]:
 def guarantee_leg_meta(root: Path) -> dict[str, dict]:
     leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
     out = {}
-    for lid, owner, gate, compat, deletion, status in G_LEG_ROW.findall(leg):  # noqa: E501
+    for lid, owner, gate, compat, deletion, status in G_LEG_ROW.findall(leg):
         out[lid] = {"owner": owner, "gate_names": gate_list(gate), "compat": compat,
                     "deletion": deletion, "status": status}
     return out

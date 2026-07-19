@@ -2,9 +2,11 @@
 claim-receipt law, control characters, substrate, specialization, delivery
 notes, and the probe-harness isolation fixtures."""
 from __future__ import annotations
+
 import shutil
 import tempfile
 from pathlib import Path
+
 from .core import (
     HERE,
     ProbeError,
@@ -129,7 +131,7 @@ def test_gates(audit, project) -> list[str]:
           [("docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md",
             "| concurrency model + duplicate-writer refusal | G2 |",
             "| concurrency model + duplicate-writer refusal | G3 |")],
-          lambda tmp: [f for f in (lambda o: (audit.check_seed_ids(tmp, o), o)[1])([])],
+          lambda tmp: list((lambda o: (audit.check_seed_ids(tmp, o), o)[1])([])),
           "legacy seed/document mismatch")
 
     # --- generator and auditor agree; source order does not change bytes ---
@@ -941,16 +943,17 @@ def test_specialization(audit, project) -> list[str]:
     return findings
 
 
-def test_delivery_notes_d2(audit) -> list[str]:
-    """The delivery inventory tracks the live decision count — through the
-    generated BUNDLE-INVENTORY derivation (5.5E4b), never an authored number."""
+def test_bundle_inventory_decision_count(audit) -> list[str]:
+    """The bundle inventory (docs/28) tracks the live decision count — through
+    the generated BUNDLE-INVENTORY derivation (5.5E4b), never an authored
+    number."""
     findings: list[str] = []
     root = HERE.parent
     text = (root / "docs/28_SELF_EXPLAINING_REPOSITORY.md").read_text(encoding="utf-8")
     live = len(audit.G_DEC_ROW.findall(
         (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
     if f"| decision rows | {live} |" not in text:
-        findings.append("delivery_notes_tracks_live_decision_count FAILED")
+        findings.append("bundle_inventory_tracks_live_decision_count FAILED")
     return findings
 
 

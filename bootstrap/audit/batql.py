@@ -18,7 +18,6 @@ from .corpus import (
     frontmatter,
 )
 
-
 # --- BatQL: OperatorSpec parity, grammar closure, proof disposition ----------
 # This is the AUDITOR half of the generator/auditor pair. It recomputes the
 # operator projection INDEPENDENTLY of bootstrap/project.py (its own parser,
@@ -538,7 +537,7 @@ def batql_grammar_closure_findings(fences: list[str]) -> tuple[list[str], int, i
                 defined.append(line)
                 continue
             stripped = line.strip()
-            if stripped.startswith(":=") or stripped.startswith("|"):
+            if stripped.startswith((":=", "|")):
                 rhs = stripped[2:] if stripped.startswith(":=") else stripped[1:]
                 rhs = re.sub(r"<[^>]*>", " ", rhs)
                 rhs = re.sub(r'"[^"]*"', " ", rhs)
@@ -681,11 +680,11 @@ def batql_operator_corpus_findings(root: Path, model: dict,
         if fragment not in authored:
             out.append(f"companion/BATQL_LANGUAGE.md 1.3: operator surface doctrine "
                        f"absent ({name})")
-    for variant, token in sorted(model["word_token"].items()):
+    for _variant, token in sorted(model["word_token"].items()):
         if token and not re.search(r"\b" + re.escape(token) + r"\b", authored):
             out.append(f"companion/BATQL_LANGUAGE.md: the authored body does not "
                        f"author operator surface token {token!r}")
-    for variant, token in sorted(model["symbol_token"].items()):
+    for _variant, token in sorted(model["symbol_token"].items()):
         if token and token not in authored:
             out.append(f"companion/BATQL_LANGUAGE.md: the authored body does not "
                        f"author operator surface token {token!r}")

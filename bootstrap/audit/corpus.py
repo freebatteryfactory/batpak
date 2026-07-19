@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 STATUSES = {"AUTHORITATIVE", "GENERATED", "EVIDENCE-ONLY", "SUPERSEDED", "REJECTED"}
 REQUIRED_FRONT = {"status", "contract_id", "authority_scope", "supersedes", "last_reconciled",
                   "reconciliation_epoch"}
@@ -292,7 +291,7 @@ def control_character_findings(root: Path) -> list[str]:
             continue
         data = path.read_bytes()
         for offset, byte in enumerate(data):
-            if byte < 0x20 and byte not in CONTROL_ALLOWED or byte == 0x7F:
+            if (byte < 0x20 and byte not in CONTROL_ALLOWED) or byte == 0x7F:
                 out.append(f"{rel}: byte {offset}: forbidden control character U+{byte:04X}")
                 break
     return out

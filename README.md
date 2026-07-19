@@ -85,15 +85,8 @@ The remaining numbered documents close the storage, schema, delivery, proof, sec
 
 ## Independent checks
 
-```sh
-python bootstrap/freeze.py . --check
-python bootstrap/audit.py .
-rustc bootstrap/seedcheck.rs -o target/seedcheck
-./target/seedcheck .
-rustc bootstrap/materialize.rs -o target/materialize
-# Run ./target/materialize --seed . --output <new-candidate-root> only when
-# creating the Gate-0 source skeleton. Both roots are required; there is no
-# default and no positional form, and the output root must sit outside the seed.
-```
-
-`audit.py` and `freeze.py` use only the Python standard library. `seedcheck.rs` uses only Rust's standard library and remains independent after TestPak self-hosts.
+The operational runbook — canonical command order, the `python -I` isolated-mode
+law for every Python gate, and the spec-rlib build the Rust tools link against —
+lives in [bootstrap/README.md](bootstrap/README.md). This root document is an
+entrypoint, not a second runbook; the Python tools use only the standard
+library, and the Rust tools link only the typed `spec` crate.

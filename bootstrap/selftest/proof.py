@@ -1,7 +1,9 @@
 """Proof-relation, proof-policy, integrity/derived/deferred witness, LEG-081
 authority, and proof-target-resolver hostile fixtures."""
 from __future__ import annotations
+
 import shutil
+
 from .core import (
     HERE,
     _regen_operator_blocks,
@@ -412,7 +414,7 @@ def test_proof_policy(audit) -> list[str]:
     live_decisions = len(audit.G_DEC_ROW.findall(
         (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
     if f"| decision rows | {live_decisions} |" not in text:
-        fail("delivery_notes_tracks_live_decision_count")
+        fail("bundle_inventory_tracks_live_decision_count")
     return findings
 
 
@@ -707,10 +709,6 @@ def test_leg081_authority(audit) -> list[str]:
     D35 = "docs/35_CRYPTO_AND_SECRET_AUTHORITY.md"
     la = audit.leg081_authority_findings
     pm = audit.proof_meaning_findings
-    H81 = ("Required witnesses (proof owner TestPak; gates G2/G3; future executable: yes; "
-           "bootstrap executed: no), also carried by `LEG-081`:")
-    PROJ = ("Required proof rows, projected from docs/24 (qualification target: LEG-081; "
-            "canonical proof-row owner: docs/24 Gauntlet):")
     LEAK = "travel only through an explicit, independent ceremony."
 
     if la(root) or audit.witness_reference_findings(root) or pm(root):
@@ -967,7 +965,6 @@ def test_proof_target_resolver(audit) -> list[str]:
     pt = audit.proof_target_findings
     pg = audit.proof_target_grammar_findings
     # LEG-028 owns exactly one row, so retargeting its block cannot collide.
-    H28 = "Required witnesses (proof owner TestPak; gates G2), also carried by `LEG-028`:"
     W28 = "page_limit_bounds_discovery_work_not_only_output"
 
     if pt(root) or pg(root) or audit.witness_reference_findings(root):

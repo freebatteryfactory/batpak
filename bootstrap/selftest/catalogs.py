@@ -2,12 +2,14 @@
 lanes, corpus epoch, compiler assumptions, promotion, toolchain, package
 identity, contract kinds, seedcheck execution, and rust-spec compilation."""
 from __future__ import annotations
+
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
 from .core import (
     HERE,
     TOOLCHAIN_EDITION,

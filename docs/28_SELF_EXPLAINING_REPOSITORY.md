@@ -187,6 +187,8 @@ An embedded block inherits no authority from its containing document. A standalo
 | SpecializedPlanCandidatePolicy | embedded-block | spec/sprouting.rs | docs/07_PAKVM_ISA.md | SPECIALIZED-PLAN-CANDIDATE-POLICY | bootstrap/project.py |
 | SproutingProofRequirements | embedded-block | spec/proof.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
+| SpecModuleCatalog | embedded-block | spec/lib.rs | spec/README.md | SPEC-MODULE-CATALOG | bootstrap/project.py |
+| BootstrapToolCatalog | embedded-block | spec/guarantees.rs | bootstrap/README.md | BOOTSTRAP-TOOL-CATALOG | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
 
 ## Bundle inventory
@@ -206,8 +208,8 @@ The repository describes its own size the same way it describes everything else:
 | legacy semantic obligations | 87 | spec/legacy_obligations.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
-| registered generated views | 61 | GeneratedView::ALL |
-| static generated target instances | 62 | expansion of every Static registry target |
+| registered generated views | 63 | GeneratedView::ALL |
+| static generated target instances | 64 | expansion of every Static registry target |
 | corpus-frontmatter bindings | 46 | the eligible Markdown corpus reached by CorpusEpochMembership |
 <!-- BUNDLE-INVENTORY:END -->
 

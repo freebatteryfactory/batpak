@@ -9,13 +9,32 @@ reconciliation_epoch: cleanroom-v1
 
 # Bootstrap Tools
 
-Seven standard-library-only tools qualify and publish the signed seed before
-TestPak self-hosts. This README is their map: what each file is, how they stay
-independent, and the exact order to run them. The Python tools use only the
+The standard-library-only bootstrap tools qualify and publish the signed seed
+before TestPak self-hosts. This README is their map: what each file is, how they
+stay independent, and the exact order to run them. The Python tools use only the
 Python standard library; the Rust tools link only Rust's standard library plus
 the real `spec` rlib.
 
-## The seven tools
+## Tool census
+
+The exact tool set, generated from the typed denominator `BootstrapToolId`
+(`spec/guarantees.rs`) whose every `path()` seedcheck requires to exist.
+
+<!-- BOOTSTRAP-TOOL-CATALOG:BEGIN generated from spec/guarantees.rs by bootstrap/project.py; do not edit -->
+| Tool | Law path |
+| --- | --- |
+| `project.py` | `bootstrap/project.py` |
+| `audit.py` | `bootstrap/audit.py` |
+| `freeze.py` | `bootstrap/freeze.py` |
+| `selftest.py` | `bootstrap/selftest.py` |
+| `seedcheck` | `bootstrap/seedcheck.rs` |
+| `materialize` | `bootstrap/materialize.rs` |
+| `receiptcheck` | `bootstrap/receiptcheck.rs` |
+<!-- BOOTSTRAP-TOOL-CATALOG:END -->
+
+## Tool roles
+
+Authored meaning per tool; the census above is the generated mirror.
 
 | File | Role | Owns |
 | --- | --- | --- |

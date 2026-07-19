@@ -7,9 +7,9 @@ no parsing with bootstrap/audit.py.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from .guarantees import Unadmitted
-
 
 COMPANION = "companion/BATQL_LANGUAGE.md"
 

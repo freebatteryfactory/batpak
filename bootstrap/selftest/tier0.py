@@ -2,15 +2,17 @@
 qualification, the independent output oracle, the evidence-bundle producer, and
 the require-receipts / emit / verify-bundle / confirm-promotion modes."""
 from __future__ import annotations
+
 import hashlib
-import os
 import json
+import os
 import re
-import sys
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
 from .core import (
     HERE,
     TOOLCHAIN_EDITION,
@@ -21,7 +23,6 @@ from .core import (
     receipt,
     spec_module_source,
 )
-
 
 # The Tier 0 receipt DENOMINATOR left Python entirely in 5.5E6b. The one
 # denominator is Tier0ReceiptKind::ALL in spec/bootstrap_qualification.rs.
@@ -1383,7 +1384,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
                 for fixture, row in zip(
                         ("browser_storage_profile_requires_named_feature",
                          "syncbat_browser_profile_requires_named_feature"),
-                        sorted(wasm, key=lambda r: r["profile"])):
+                        sorted(wasm, key=lambda r: r["profile"]), strict=False):
                     expect(fixture,
                            mutated(lambda m2, row=row: by_name(
                                m2, names[row["package"]])["features"].pop(
@@ -1403,7 +1404,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
                     fail("macbat_proc_macro_skeleton_must_compile (no proc-macro target)")
                 for fixture, pid in zip(("batpak_no_std_skeleton_must_compile",
                                          "syncbat_no_std_skeleton_must_compile"),
-                                        facts["no_std"]):
+                                        facts["no_std"], strict=False):
                     proc = cargo_run("check", "--target", exe_triple, "-p", names[pid],
                                      "--no-default-features")
                     if proc.returncode != 0:
@@ -1427,7 +1428,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
                 if proc.returncode != 0:
                     fail("ambient_cargo_build_target_cannot_redirect_qualification "
                          "(explicit --target did not survive an incompatible "
-                         f"CARGO_BUILD_TARGET):\n"
+                         "CARGO_BUILD_TARGET):\n"
                          + "\n".join(proc.stderr.splitlines()[-4:]))
                 proc = cargo_run("run", "-q", "--target", exe_triple, "-p", names[ex_pid],
                                  "--bin", facts["binary_targets"][ex_pid])
@@ -2109,8 +2110,9 @@ def _t0_hosted_run_lines() -> list[str] | None:
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
-    os_name = (os.environ.get("ImageOS") or os.environ.get("RUNNER_OS", "")).strip()
-    os_version = (os.environ.get("ImageVersion")
+    os_name = (os.environ.get("ImageOS")  # noqa: SIM112 - GitHub's runner var is mixed-case
+               or os.environ.get("RUNNER_OS", "")).strip()
+    os_version = (os.environ.get("ImageVersion")  # noqa: SIM112 - GitHub's runner var is mixed-case
                   or os.environ.get("RUNNER_ARCH", "")).strip()
     if not (repo and run_id.isdigit() and run_attempt.isdigit()
             and os_name and os_version):

@@ -18,7 +18,6 @@ from .corpus import (
     batql_extract_block,
 )
 
-
 # 5.5F2 (DEC-077/DEC-078, docs/38): the verification plane's frozen axis
 # vocabularies. Distinct typed axes, never one ordered ladder — the guard
 # below is SHAPE-based, so a synonym ladder (ConfidenceTier, TrustGrade)

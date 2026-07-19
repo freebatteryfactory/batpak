@@ -40,6 +40,12 @@ line-length = 100
 [tool.ruff.lint]
 # Exactly the ruled selection — no more, no less. Change only by ruling.
 select = ["E", "F", "I", "B", "UP", "SIM", "C4", "PIE", "PERF", "RUF", "C90"]
+# STAGED, not yet gating (F4-prelude ruling): these four families demand a
+# wholesale rewrite of the freshly-decomposed plane (line-rewrap, loop->
+# comprehension conversion, complexity restructuring, literal-concat
+# rewrites). Each leaves this list only through its own remediation slice
+# with a receipt. Everything NOT listed here gates for real in CI.
+ignore = ["E501", "PERF401", "C901", "RUF005"]
 
 [tool.ruff.lint.mccabe]
 # Generous ceiling for the bake; ratchet downward in a later sub-wave.
@@ -50,8 +56,10 @@ max-complexity = 25
 # suppression must live inline, name WHY, and carry a narrow rule code — never
 # a file-wide or code-wide amnesty added here.
 
-# Formatting is judged by `ruff format --check` in gates (report drift, never
-# auto-fix): the gate fails on unformatted code rather than rewriting it.
+# Formatting via `ruff format --check` is STAGED, not yet gating (F4-prelude
+# ruling): activating it today would reformat all 30 bootstrap modules in one
+# stroke, churning the decomposed plane the shape bake just byte-preserved.
+# It becomes a gate through its own dedicated reformat slice with a receipt.
 [tool.ruff.format]
 
 # --- mypy (static typing) ----------------------------------------------------

@@ -1,11 +1,13 @@
 """Verification-plane, sprouting-plane, and workflow-pinning fixtures."""
 from __future__ import annotations
+
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
 from .core import (
     HERE,
     gate_sandbox,
@@ -309,6 +311,50 @@ def test_workflow_pinning() -> list[str]:
     return findings
 
 
+def test_python_tooling(audit) -> list[str]:
+    """audit.python_tooling_findings: the uv.lock requirement and
+    lock-to-manifest parity (F4 prelude). A deleted lock and a dev tool
+    declared but not locked are refused; neutering the lock-existence guard
+    silences the refusal; the assembled fixture tree is clean."""
+    findings: list[str] = []
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    root = HERE.parent
+    work = Path(tempfile.mkdtemp(prefix="batpak-pytool-"))
+    try:
+        (work / "spec").mkdir()
+        shutil.copyfile(root / "spec/bootstrap_qualification.rs",
+                        work / "spec/bootstrap_qualification.rs")
+        if (root / "spec/bootstrap_qualification").is_dir():
+            shutil.copytree(root / "spec/bootstrap_qualification",
+                            work / "spec/bootstrap_qualification")
+        for rel in (".python-version", "pyproject.toml", "uv.lock"):
+            shutil.copyfile(root / rel, work / rel)
+        if audit.python_tooling_findings(work):
+            fail("python_tooling_fixture_baseline_is_clean")
+        (work / "uv.lock").unlink()
+        if not any("uv.lock: missing" in f for f in audit.python_tooling_findings(work)):
+            fail("deleted_uv_lock_is_refused")
+        with neutered_validator("audit", "    if not lock_path.is_file():",
+                                "    if False:") as neutered:
+            if any("uv.lock: missing" in f for f in neutered.python_tooling_findings(work)):
+                fail("neutering_the_lock_requirement_silences_it")
+        shutil.copyfile(root / "uv.lock", work / "uv.lock")
+        pp = (root / "pyproject.toml").read_text(encoding="utf-8")
+        if '"ruff' not in pp:
+            fail("python_tooling_fixture_expects_ruff_declared")
+        (work / "pyproject.toml").write_text(
+            pp.replace('"ruff', '"ruffian', 1), encoding="utf-8", newline="\n")
+        if not any("lock-to-manifest parity" in f
+                   for f in audit.python_tooling_findings(work)):
+            fail("unlocked_declared_dev_tool_is_refused")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return findings
+
+
 def test_isolated_execution(audit) -> list[str]:
     """The bootstrap gates run under `python -I` (isolated interpreter). The
     canary proves a PYTHONPATH stdlib-shadowing poison is POTENT under a plain
@@ -389,11 +435,15 @@ def test_isolated_execution(audit) -> list[str]:
 
 def test_bootstrap_topology(audit) -> list[str]:
     """audit.bootstrap_topology_findings: the eight-rule AST topology law over
-    the bootstrap Python plane. h0 proves the canonical tree is clean; h1..h7
+    the bootstrap Python plane. h0 proves the canonical tree is clean; h1..h11
     each mutate a sandbox copy of bootstrap/ and prove the matching rule bites;
-    n1..n3 neuter the rule's own source line and prove the detector goes silent.
-    A claimed negative test is itself a claim, so every hostile asserts its
-    specific needle and every neuter asserts that same needle disappears."""
+    n1..n6 neuter the rule's own source line and prove the detector goes silent.
+    h8..h11 harden the AST matcher against four architect-verified bypasses: a
+    non-comparison `if __name__:` guard, an impure assert, a grandfathered name
+    rebound to an impure value, and a sys.path mutation reached through a
+    `from sys import path as p` alias. A claimed negative test is itself a claim,
+    so every hostile asserts its specific needle and every neuter asserts that
+    same needle disappears."""
     findings: list[str] = []
 
     def fail(name: str) -> None:
@@ -405,7 +455,8 @@ def test_bootstrap_topology(audit) -> list[str]:
 
     # Each positive hostile appends to a fresh sandbox copy (gate_sandbox copies
     # the whole bootstrap/ tree; the append mutates only the copy) and asserts
-    # its needle fires. h1/h3/h5 sandboxes are kept for the neuter re-runs.
+    # its needle fires. h1/h3/h5 and the four hardening hostiles h9/h10/h11
+    # sandboxes are kept for the neuter re-runs.
     hostiles = [
         ("h1", "bootstrap/audit/corpus.py", "\nfrom project import registry\n",
          "static import of sibling bootstrap tool 'project'"),
@@ -421,6 +472,22 @@ def test_bootstrap_topology(audit) -> list[str]:
          "entry shim has"),
         ("h7", "bootstrap/project/registry.py", "\nfrom .domains import PLAN_DOMAINS\n",
          "import cycle"),
+        # H1: a bare `if __name__:` is not the exact Compare(==, "__main__")
+        # guard, so it is an import-time effect, not a lawful main guard.
+        ("h8", "bootstrap/audit/batql.py", "\nif __name__:\n    print('runs')\n",
+         "import-time effect"),
+        # H2: an assert whose test performs an impure call runs at import time.
+        ("h9", "bootstrap/audit/batql.py", "\nassert open('side-effect.txt', 'w')\n",
+         "import-time effect"),
+        # H3: a grandfathered name rebound to an impure value has a different
+        # value-dump digest, so the exemption lapses and the effect fires.
+        ("h10", "bootstrap/selftest/core.py", "\nTOOLCHAIN_EDITION = open('x').read()\n",
+         "import-time effect"),
+        # H4: a sys.path mutation reached through a `from sys import path as p`
+        # alias is still a sys.path mutation.
+        ("h11", "bootstrap/project/registry.py",
+         "\nfrom sys import path as p\np.append('ambient')\n",
+         "sys.path mutation"),
     ]
     kept: dict[str, Path] = {}
     try:
@@ -430,14 +497,16 @@ def test_bootstrap_topology(audit) -> list[str]:
             path.write_text(path.read_text(encoding="utf-8") + addition, encoding="utf-8")
             if not any(needle in f for f in audit.bootstrap_topology_findings(sandbox)):
                 fail(f"{name} did not fire ({needle!r})")
-            if name in ("h1", "h3", "h5"):
+            if name in ("h1", "h3", "h5", "h9", "h10", "h11"):
                 kept[name] = sandbox
             else:
                 shutil.rmtree(sandbox, ignore_errors=True)
 
         # Neuter proof: replacing the rule's own guard line with "if False:"
         # makes its hostile go silent. Each target is a unique single line in
-        # bootstrap/audit/tier0.py (verified across the shim + package).
+        # bootstrap/audit/tier0.py (verified across the shim + package). n4/n5/n6
+        # neuter the three hardening guards: the assert-impurity check, the
+        # grandfather digest comparison, and the sys.path-alias mutation check.
         neuters = [
             ("n1", "h1", "if pkg is not None and first in _TOPOLOGY_TOOLS:",
              "static import of sibling bootstrap tool 'project'"),
@@ -445,6 +514,12 @@ def test_bootstrap_topology(audit) -> list[str]:
              "non-stdlib import 'requests'"),
             ("n3", "h5", "if count > ceiling:",
              "exceeds its ratchet ceiling"),
+            ("n4", "h9", "if _topology_impure(stmt.test):",
+             "import-time effect"),
+            ("n5", "h10", "if value_digest != exempt_digest:",
+             "import-time effect"),
+            ("n6", "h11", "if is_path_alias(recv) and node.func.attr in _TOPOLOGY_PATH_METHODS:",
+             "sys.path mutation"),
         ]
         for name, hkey, target, needle in neuters:
             with neutered_validator("audit", target) as neutered:

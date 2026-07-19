@@ -12,3 +12,6 @@
 # interpreter now materializes __pycache__ beside the packages it loads.
 __pycache__/
 *.pyc
+# Ruff's lint cache is derived build output; gates additionally redirect it
+# outside the tree (RUFF_CACHE_DIR) so it never enters a judged checkout.
+.ruff_cache/

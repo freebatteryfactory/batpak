@@ -9,11 +9,11 @@ bootstrap/audit.py.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
-from .guarantees import Unadmitted, gate_tokens, guarantee_seed, _DEC_ROW, _LEG_ROW
+from .guarantees import _DEC_ROW, _LEG_ROW, Unadmitted, gate_tokens, guarantee_seed
 from .operators import parse_operators
 from .registry import _spec_module_source, parse_generated_views
-
 
 NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
@@ -164,7 +164,7 @@ def parse_compiler_assumptions(root):
     inventory = re.findall(r"\bCompilerAssumptionKind::(\w+)", all_body.group(1)) \
         if all_body else []
     fields = {}
-    for name, pat in (
+    for name, _pat in (
             ("spelling", r'"([^"]*)"'),
             ("basis", r'GuaranteeRef::dec\("([^"]+)"\)'),
             ("marker", r"(true|false)"),
@@ -628,4 +628,58 @@ def render_tier0_receipts(root: Path) -> str:
     lines = ["| Receipt | Artifact policy |", "| --- | --- |"]
     for kind in order:
         lines.append(f"| {slugs[kind]} | {policy[kind]} |")
+    return "\n".join(lines)
+
+
+def render_spec_module_catalog(root: Path) -> str:
+    """The exact spec module census, serialized from spec/lib.rs (the declared
+    module set the rlib boundary makes real). Each row states the module and
+    its physical shape; a same-name directory is the concept-door module tree
+    the Wave-2 bake introduced. Descriptions stay authored prose: this block
+    owns the census, never the meaning."""
+    lib = root / "spec/lib.rs"
+    if not lib.is_file():
+        raise Unadmitted("spec/lib.rs is absent; the module catalog refuses")
+    mods = re.findall(r"^pub mod (\w+);", lib.read_text(encoding="utf-8"), re.M)
+    if not mods:
+        raise Unadmitted("spec/lib.rs declares no public modules")
+    lines = ["| Module | Shape |", "| --- | --- |"]
+    for m in mods:
+        tree = root / "spec" / m
+        if tree.is_dir():
+            n = len(sorted(tree.glob("*.rs")))
+            lines.append(f"| `{m}.rs` | concept door + `{m}/` ({n} modules) |")
+        else:
+            lines.append(f"| `{m}.rs` | single module |")
+    lines.append(f"| | {len(mods)} modules behind the one `lib.rs` boundary |")
+    return "\n".join(lines)
+
+
+def render_bootstrap_tool_catalog(root: Path) -> str:
+    """The exact bootstrap tool census, serialized from the typed denominator
+    BootstrapToolId (spec/guarantees.rs): ALL order, display spelling, and the
+    law path whose existence seedcheck enforces. Role descriptions stay
+    authored prose."""
+    src = _spec_module_source(root, "guarantees")
+    order_body = re.search(
+        r"pub const ALL: &'static \[BootstrapToolId\] = &\[(.*?)\];", src, re.S)
+    if not order_body:
+        raise Unadmitted("spec/guarantees.rs declares no BootstrapToolId::ALL")
+    order = re.findall(r"BootstrapToolId::(\w+),", order_body.group(1))
+
+    def arms(fn_name: str) -> dict[str, str]:
+        start = src.find(f"pub const fn {fn_name}(")
+        if start < 0:
+            raise Unadmitted(f"spec/guarantees.rs: BootstrapToolId::{fn_name} absent")
+        rest = src[start:]
+        nxt = rest.find("\n    pub const fn ", 1)
+        body = rest if nxt < 0 else rest[:nxt]
+        return dict(re.findall(r'BootstrapToolId::(\w+) => "([^"]+)"', body))
+
+    paths, displays = arms("path"), arms("display")
+    if not order or set(order) != set(paths) or set(order) != set(displays):
+        raise Unadmitted("spec/guarantees.rs BootstrapToolId census is incomplete")
+    lines = ["| Tool | Law path |", "| --- | --- |"]
+    for v in order:
+        lines.append(f"| `{displays[v]}` | `{paths[v]}` |")
     return "\n".join(lines)

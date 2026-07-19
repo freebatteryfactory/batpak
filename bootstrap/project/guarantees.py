@@ -9,9 +9,9 @@ derivation logic with bootstrap/audit.py.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from .registry import _spec_module_source
-
 
 # --- Guarantee graph (DEC-070) -----------------------------------------------
 GUARANTEE_DOC = "docs/GUARANTEE_GRAPH.generated.md"

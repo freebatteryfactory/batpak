@@ -4,15 +4,15 @@ guarded-mutation sandbox, and the canonical-validator commitments.
 HERE resolves the bootstrap/ directory (the package parent), so every consumer
 still sees bootstrap/ and root = HERE.parent still resolves the repo root."""
 from __future__ import annotations
+
 import contextlib
 import hashlib
 import importlib.util
 import re
-import sys
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-
 
 HERE = Path(__file__).resolve().parent.parent
 

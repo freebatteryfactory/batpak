@@ -7,6 +7,7 @@ Standard library only.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 def block_pattern(name: str) -> re.Pattern[str]:

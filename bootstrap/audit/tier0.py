@@ -8,6 +8,7 @@ qualification lives in selftest. Shares no parser with bootstrap/project.py.
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -19,7 +20,6 @@ from .corpus import (
     _spec_module_source,
     _uncomment,
 )
-
 
 # --- 5.5E5 Gate-0 materializer output shape ----------------------------------
 # spec/bootstrap_output.rs owns the candidate's file shape; the materializer
@@ -246,10 +246,8 @@ def bootstrap_output_findings(root: Path) -> list[str]:
         stem = component.split(".")[0].upper()
         if stem in ("CON", "PRN", "AUX", "NUL"):
             return False
-        if (len(stem) == 4 and stem[:3] in ("COM", "LPT")
-                and stem[3].isdigit() and stem[3] != "0"):
-            return False
-        return True
+        return not (len(stem) == 4 and stem[:3] in ("COM", "LPT")
+                    and stem[3].isdigit() and stem[3] != "0")
 
     def portable(path: str) -> bool:
         if not path or path.startswith("/"):
@@ -788,7 +786,7 @@ def workflow_pinning_findings(root: Path) -> list[str]:
             if not m:
                 continue
             ref = m.group(1).strip().strip('"').strip("'")
-            if ref.startswith("./") or ref.startswith("../"):
+            if ref.startswith(("./", "../")):
                 continue
             if ref.startswith("docker://"):
                 if not docker_digest.match(ref):
@@ -832,6 +830,22 @@ def workflow_pinning_findings(root: Path) -> list[str]:
             if not re.search(r'\bpython(?:3)?\s+-I\b', line):
                 out.append(f"msvc-qualification.yml:{i}: bootstrap gate invocation without "
                            "isolated mode (python -I is law for bootstrap gates)")
+    else:
+        out.append(".github/workflows/msvc-qualification.yml: missing (the hosted "
+                   "qualification workflow is a required, audited input)")
+    # The isolated-mode law also binds the authoritative runbooks: a plain
+    # `python bootstrap/...` instruction molts back into practice even when
+    # the workflow stays lawful.
+    for runbook in ("README.md", "bootstrap/README.md"):
+        rb = root / runbook
+        if not rb.is_file():
+            continue
+        for i, line in enumerate(rb.read_text(encoding="utf-8").splitlines(), 1):
+            if not re.search(r'\bpython(?:3)?\s+bootstrap/', line):
+                continue
+            if not re.search(r'\bpython(?:3)?\s+-I\s+bootstrap/', line):
+                out.append(f"{runbook}:{i}: runbook instructs a plain-python bootstrap "
+                           "invocation (python -I is law for bootstrap gates)")
     return out
 
 
@@ -888,6 +902,40 @@ def python_tooling_findings(root: Path) -> list[str]:
         if dep and re.search(r'["\']', dep.group(1)):
             out.append("pyproject.toml: [project].dependencies declares runtime packages; "
                        "the bootstrap runtime must stay standard-library-only")
+
+    # (c) uv.lock is a required, independently checked input (F4 prelude): the
+    # dev-tooling gate runs from it with hash verification, so a deleted or
+    # manifest-divergent lock silently un-pins the tool supply chain.
+    lock_path = root / "uv.lock"
+    if not lock_path.is_file():
+        out.append("uv.lock: missing (the locked dev-tooling environment is a "
+                   "required, audited input)")
+    if lock_path.is_file() and pp_path.is_file():
+        import tomllib
+        try:
+            lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            lock = None
+            out.append(f"uv.lock: unparseable ({exc})")
+        try:
+            manifest = tomllib.loads(pp_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            manifest = None
+            out.append(f"pyproject.toml: unparseable ({exc})")
+        if lock is not None and manifest is not None:
+            declared = set()
+            for req in manifest.get("dependency-groups", {}).get("dev", []):
+                m2 = re.match(r"[A-Za-z0-9_.-]+", str(req))
+                if m2:
+                    declared.add(m2.group(0).lower().replace("_", "-"))
+            locked = {str(pkg.get("name", "")).lower().replace("_", "-")
+                      for pkg in lock.get("package", [])}
+            for name in sorted(declared - locked):
+                out.append(f"uv.lock: declared dev tool {name!r} is not locked "
+                           "(lock-to-manifest parity)")
+            if "requires-python" not in lock:
+                out.append("uv.lock: carries no requires-python (cannot bind the "
+                           "lock to the pinned interpreter line)")
     return out
 
 
@@ -1032,7 +1080,9 @@ _TOPOLOGY_SIZE_CEILINGS: dict[str, int] = {
     "bootstrap/audit/catalogs.py": 1300,
     # 1300 -> 1400 (Wave-2 seam closure ruling): the isolated-mode workflow
     # law landed here, its ruled home beside the other workflow projections.
-    "bootstrap/audit/tier0.py": 1400,
+    # 1400 -> 1500 (F4-prelude ruling): the hardened topology matcher, the
+    # runbook isolation rule, and the uv.lock parity law all landed here.
+    "bootstrap/audit/tier0.py": 1500,
     "bootstrap/selftest/catalogs.py": 2100,
     "bootstrap/selftest/corpus.py": 1100,
     "bootstrap/selftest/inventory.py": 1600,
@@ -1060,15 +1110,39 @@ def _topology_files(root: Path) -> list[tuple[str, Path]]:
     return out
 
 
-def _topology_is_sys_path(node: ast.AST) -> bool:
-    return (isinstance(node, ast.Attribute) and node.attr == "path"
-            and isinstance(node.value, ast.Name) and node.value.id == "sys")
+# Mutating methods on a sys.path alias -- `p.append(...)` is a mutation exactly
+# as `sys.path.append(...)` is (H4).
+_TOPOLOGY_PATH_METHODS = frozenset({
+    "append", "insert", "extend", "remove", "clear", "pop"})
 
 
 def _topology_syspath_violations(tree: ast.AST, rel: str) -> list[str]:
-    """R3: sys.path as an assignment target, method receiver, or call arg."""
+    """R3 (H4): sys.path mutation via `<sys-alias>.path` (an assignment target,
+    method receiver, or call arg), OR via a name bound by `from sys import path
+    [as X]` used as an assign/augmented target, a mutating-method receiver, or a
+    call argument. Two alias families are collected first -- names bound to
+    sys.path, and module aliases for `sys` (seeded with `sys` so bare sys.path
+    still bites) -- so a rename cannot smuggle a mutation past the matcher."""
     out: list[str] = []
     seen: set[int] = set()
+    path_names: set[str] = set()
+    sys_aliases: set[str] = {"sys"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "sys":
+                    sys_aliases.add(alias.asname or "sys")
+        elif isinstance(node, ast.ImportFrom) and not (node.level or 0) and node.module == "sys":
+            for alias in node.names:
+                if alias.name == "path":
+                    path_names.add(alias.asname or "path")
+
+    def is_sys_path(node: ast.AST) -> bool:
+        return (isinstance(node, ast.Attribute) and node.attr == "path"
+                and isinstance(node.value, ast.Name) and node.value.id in sys_aliases)
+
+    def is_path_alias(node: ast.AST) -> bool:
+        return isinstance(node, ast.Name) and node.id in path_names
 
     def flag(node: ast.AST) -> None:
         if node.lineno not in seen:
@@ -1077,20 +1151,24 @@ def _topology_syspath_violations(tree: ast.AST, rel: str) -> list[str]:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute) and _topology_is_sys_path(node.func.value):
-                flag(node.func.value)
+            if isinstance(node.func, ast.Attribute):
+                recv = node.func.value
+                if is_sys_path(recv):
+                    flag(recv)
+                if is_path_alias(recv) and node.func.attr in _TOPOLOGY_PATH_METHODS:
+                    flag(recv)
             for arg in list(node.args) + [k.value for k in node.keywords]:
-                if _topology_is_sys_path(arg):
+                if is_sys_path(arg) or is_path_alias(arg):
                     flag(arg)
         elif isinstance(node, ast.Assign):
             for tgt in node.targets:
                 base = tgt.value if isinstance(tgt, ast.Subscript) else tgt
-                if _topology_is_sys_path(base):
+                if is_sys_path(base) or is_path_alias(base):
                     flag(base)
         elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
             tgt = node.target
             base = tgt.value if isinstance(tgt, ast.Subscript) else tgt
-            if _topology_is_sys_path(base):
+            if is_sys_path(base) or is_path_alias(base):
                 flag(base)
     return out
 
@@ -1132,17 +1210,28 @@ _TOPOLOGY_PURE_BUILTINS = frozenset({
     "frozenset", "set", "tuple", "list", "dict", "bytes", "bytearray",
     "str", "int", "float", "bool", "complex", "range"})
 
-# Grandfathered import-time bindings. TOOLCHAIN_EDITION is the packet-recorded
-# exemption (reads the typed toolchain edition); HERE (Path().resolve()) and the
-# two ISA-row constants were found during census reconciliation and are flagged
-# prominently in the report.
-_TOPOLOGY_EFFECT_WHITELIST = frozenset({
-    ("bootstrap/selftest/core.py", "TOOLCHAIN_EDITION"),
-    ("bootstrap/selftest/core.py", "HERE"),
-    ("bootstrap/selftest/domains.py", "WINDOWING_ROWS"),
-    ("bootstrap/selftest/domains.py", "WINDOWING_OUTPUTS"),
-    ("bootstrap/project/__init__.py", "VIEW_RENDERERS"),
-})
+# Grandfathered import-time bindings (H3). The exemption binds to an EXACT value
+# shape: each entry maps (relpath, name) to the sha256 hexdigest of
+# ast.dump(value), computed from the canonical a8bc571e sources. Rebinding a
+# whitelisted name to a different value no longer inherits the exemption.
+_TOPOLOGY_EFFECT_WHITELIST: dict[tuple[str, str], str] = {
+    # TOOLCHAIN_EDITION = _toolchain_edition()  (reads the typed toolchain edition)
+    ("bootstrap/selftest/core.py", "TOOLCHAIN_EDITION"):
+        "617504c69a1910ee59aadb7ade254594dad79efd0dbd0e208b0e0540db709263",
+    # HERE = Path(__file__).resolve().parent.parent
+    ("bootstrap/selftest/core.py", "HERE"):
+        "c2ce60a0a3687f5b2ed5498c1cafb122c267ebcd1ceba22d77997e6b0dbe0053",
+    # WINDOWING_ROWS = _isa_class_row("Windowing", "QueryDataflow", "Rows")
+    ("bootstrap/selftest/domains.py", "WINDOWING_ROWS"):
+        "3ed3d0de723cebd36e617afc4bf865eb4044175ab4f993617613254e047042b8",
+    # WINDOWING_OUTPUTS = _isa_class_row("Windowing", "QueryDataflow", "EmittedOutputs")
+    ("bootstrap/selftest/domains.py", "WINDOWING_OUTPUTS"):
+        "0f630ede7b4c2999c1cdc6a632308032dc2c6f1963eb2115bb48a9eb40b092ef",
+    # VIEW_RENDERERS = { ... the registry-driven renderer table (incl. the two
+    # F4-prelude catalog renderers) ... }
+    ("bootstrap/project/__init__.py", "VIEW_RENDERERS"):
+        "562e513a54c1554184200282fe87a84f3bc23430176bdb96739cea33d0752b75",
+}
 
 
 def _topology_pure_ctor(func: ast.AST) -> bool:
@@ -1166,26 +1255,78 @@ def _topology_impure(node: ast.AST) -> bool:
     return any(_topology_impure(c) for c in ast.iter_child_nodes(node))
 
 
+# H1: the only top-level If packages authored to run at import time.
+# _TOPOLOGY_SELFREG_FILES are the two package doors that self-register into
+# sys.modules for loader paths that exec them without a prior sys.modules entry.
+_TOPOLOGY_SELFREG_FILES = frozenset({
+    "bootstrap/project/__init__.py",
+    "bootstrap/selftest/__init__.py",
+})
+
+
+def _topology_is_main_guard(test: ast.AST) -> bool:
+    """H1(a): the exact `if __name__ == "__main__":` guard shape --
+    Compare(Name('__name__'), [Eq], [Constant('__main__')]) -- and nothing
+    looser (a bare `if __name__:` or `if __name__ == x:` is rejected)."""
+    return (isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name) and test.left.id == "__name__"
+            and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq)
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == "__main__")
+
+
+def _topology_is_self_register(test: ast.AST) -> bool:
+    """H1(b): the loader self-registration block's FULL test shape --
+    Compare(Name('__name__'), [NotIn], [Attribute(value=Name('sys'),
+    attr='modules')]) -- verified via ast.dump on the canonical door files."""
+    return (isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name) and test.left.id == "__name__"
+            and len(test.ops) == 1 and isinstance(test.ops[0], ast.NotIn)
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Attribute)
+            and test.comparators[0].attr == "modules"
+            and isinstance(test.comparators[0].value, ast.Name)
+            and test.comparators[0].value.id == "sys")
+
+
 def _topology_stmt_ok(stmt: ast.stmt, rel: str) -> bool:
     if isinstance(stmt, (ast.Import, ast.ImportFrom, ast.FunctionDef,
-                         ast.AsyncFunctionDef, ast.ClassDef, ast.Assert)):
+                         ast.AsyncFunctionDef, ast.ClassDef)):
         return True
     if isinstance(stmt, ast.Expr):
         return isinstance(stmt.value, ast.Constant)
+    if isinstance(stmt, ast.Assert):
+        # H2: an assert is lawful only if neither test nor message calls impurely.
+        if _topology_impure(stmt.test):
+            return False
+        if stmt.msg is not None and _topology_impure(stmt.msg):
+            return False
+        return True
     if isinstance(stmt, ast.If):
-        # An `if __name__ ...:` guard (including the self-registration block)
-        # runs only under a name binding, never as a plain import-time effect.
-        return any(isinstance(n, ast.Name) and n.id == "__name__"
-                   for n in ast.walk(stmt.test))
+        # H1: a top-level If is lawful ONLY as the exact main guard (any file),
+        # or as the self-registration block in the two package doors.
+        if _topology_is_main_guard(stmt.test):
+            return True
+        if rel in _TOPOLOGY_SELFREG_FILES and _topology_is_self_register(stmt.test):
+            return True
+        return False
     if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
         targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
         names = [t.id for t in targets if isinstance(t, ast.Name)]
         if "__all__" in names:
             return True
-        if any((rel, n) in _TOPOLOGY_EFFECT_WHITELIST for n in names):
-            return True
         if stmt.value is None:
             return True
+        # H3: a whitelisted (relpath, name) is exempt ONLY when ast.dump(value)
+        # hashes to the recorded digest; on drift the value is judged as impure.
+        for n in names:
+            exempt_digest = _TOPOLOGY_EFFECT_WHITELIST.get((rel, n))
+            if exempt_digest is not None:
+                value_digest = hashlib.sha256(ast.dump(stmt.value).encode("utf-8")).hexdigest()
+                if value_digest != exempt_digest:
+                    return not _topology_impure(stmt.value)
+                return True
         return not _topology_impure(stmt.value)
     return False
 

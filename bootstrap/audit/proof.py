@@ -13,7 +13,6 @@ from pathlib import Path
 from .corpus import _spec_module_source
 from .guarantees import G_REF, decision_rows, gate_inventory, guarantee_index
 
-
 # --- 5.5D1 substrate law: sharpened LEG statements may not be weakened -------
 # Each phrase is the load-bearing clause of its obligation. Losing one silently
 # returns the substrate to the ambiguity higher layers had to work around.
@@ -951,10 +950,10 @@ def candidate_fences(root: Path) -> list[dict]:
     for p in sorted((root / "docs").glob("*.md")):
         text = p.read_text(encoding="utf-8")
         for m in D4B3B0_FENCE.finditer(text):
-            ids = [l.strip() for l in m.group(1).splitlines() if l.strip()]
+            ids = [ln.strip() for ln in m.group(1).splitlines() if ln.strip()]
             if not ids or not all(D4B3B0_CAND_ID.match(i) for i in ids):
                 continue
-            before = [l for l in text[: m.start()].splitlines() if l.strip()]
+            before = [ln for ln in text[: m.start()].splitlines() if ln.strip()]
             label = before[-1] if before else ""
             has_meta = (
                 "proof owner" in label.lower()

@@ -1,10 +1,12 @@
 """Manifest ordering, stale-vocabulary, legacy parity, BatQL operator surfaces,
 the generated-view registry, inventory mirrors, and exact ledgers."""
 from __future__ import annotations
+
 import importlib.util
 import shutil
 import tempfile
 from pathlib import Path
+
 from .core import (
     HERE,
     _regen_operator_blocks,
@@ -34,7 +36,7 @@ def test_manifest_ordering(freeze) -> list[str]:
 def test_casefold_collision(audit) -> list[str]:
     findings: list[str] = []
     collisions = audit.casefold_collisions(["Foo.md", "foo.md", "bar.md"])
-    if [("Foo.md", "foo.md")] != collisions:
+    if collisions != [("Foo.md", "foo.md")]:
         findings.append(f"expected Foo.md/foo.md collision, got {collisions}")
     unrelated = audit.casefold_collisions(["a.md", "b.md", "nested/a.md"])
     if unrelated:
@@ -289,8 +291,8 @@ def _sample_operator_model() -> dict:
         "id_type": "OperatorId",
         "id_variants": list(ids), "id_all": list(ids),
         "id_token": {"Multiply": "OP-MUL", "Equal": "OP-EQ", "Not": "OP-NOT"},
-        "id_owner": {v: "BP-BATQL-LANGUAGE-1" for v in ids},
-        "id_basis": {v: "DEC-060" for v in ids},
+        "id_owner": dict.fromkeys(ids, "BP-BATQL-LANGUAGE-1"),
+        "id_basis": dict.fromkeys(ids, "DEC-060"),
         "word_type": "OperatorWordSurface",
         "word_variants": ["Is", "Not"], "word_all": ["Is", "Not"],
         "word_token": {"Is": "IS", "Not": "NOT"},
