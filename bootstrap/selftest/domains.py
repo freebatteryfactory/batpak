@@ -544,6 +544,65 @@ def test_reconciliation(audit, project) -> list[str]:
         got = audit.release_seal_findings(tmp)
         if not any("instead of naming the typed" in f for f in got):
             fail(f"a_decision_restating_the_seal_list_is_refused (got {got!r})")
+    # Pre-F5 item A: the empty-set posture is a TYPED axis projected from the
+    # exhaustive empty_set_posture() match, never from doc-comment prose.
+    # (p1) A posture-bearing doc-comment mutation leaves the regenerated
+    # matrix BYTE-IDENTICAL: doc comments no longer feed the projection.
+    pristine = project.render_release_seal_matrix(root)
+    DOC_PHRASE = ('Mandatory\n    /// even when empty: an empty set states '
+                  '"no model evaluations admitted"')
+    with isolated_tree() as tmp:
+        p = tmp / _resolve_edit_carrier(root, "spec/release.rs", DOC_PHRASE)
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"), DOC_PHRASE,
+            'Rationale\n    /// prose only: an empty set states '
+            '"no model evaluations admitted"',
+            "mutate a posture-bearing doc comment"), encoding="utf-8")
+        if project.render_release_seal_matrix(tmp) != pristine:
+            fail("a_doc_comment_mutation_does_not_alter_the_matrix")
+    # (p2) Flipping one typed arm changes the projection AND the stale docs/36
+    # block is detected as drift from the typed classification.
+    SBOM_ARM = "            ReleaseSealField::Sbom => EmptySetPosture::ExplicitEvenWhenEmpty,"
+    with isolated_tree() as tmp:
+        p = tmp / _resolve_edit_carrier(root, "spec/release.rs", SBOM_ARM)
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"), SBOM_ARM,
+            "            ReleaseSealField::Sbom => EmptySetPosture::NotSetValued,",
+            "flip a typed posture arm"), encoding="utf-8")
+        if project.render_release_seal_matrix(tmp) == pristine:
+            fail("a_flipped_posture_arm_changes_the_projection")
+        got = audit.release_seal_findings(tmp)
+        if not any("release-seal-matrix block drifted" in f for f in got):
+            fail(f"a_flipped_posture_arm_is_detected_as_matrix_drift (got {got!r})")
+    # An arm deleted outright is a compile refusal in the crate (the p3
+    # fixture beside the seedcheck-mutation probes proves that); here the
+    # textual auditor names the unclassified field and the generator REFUSES
+    # to complete it rather than rendering a hole.
+    with isolated_tree() as tmp:
+        p = tmp / _resolve_edit_carrier(root, "spec/release.rs", SBOM_ARM)
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"), SBOM_ARM + "\n", "",
+            "delete a posture arm"), encoding="utf-8")
+        got = audit.release_seal_findings(tmp)
+        if not any("does not exhaustively classify" in f for f in got):
+            fail(f"a_deleted_posture_arm_is_refused_by_the_auditor (got {got!r})")
+        try:
+            project.release_seal_matrix_rows(tmp)
+            fail("the_generator_refuses_an_unclassified_seal_field")
+        except project.Unadmitted:
+            pass
+    # A wildcard arm would classify future fields by default — the exact
+    # defect the exhaustive match exists to forbid.
+    PF_ARM = "            ReleaseSealField::ProofFreshness => EmptySetPosture::NotSetValued,"
+    with isolated_tree() as tmp:
+        p = tmp / _resolve_edit_carrier(root, "spec/release.rs", PF_ARM)
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"), PF_ARM,
+            "            _ => EmptySetPosture::NotSetValued,",
+            "wildcard the classification"), encoding="utf-8")
+        got = audit.release_seal_findings(tmp)
+        if not any("wildcard arm" in f for f in got):
+            fail(f"a_wildcard_posture_arm_is_refused (got {got!r})")
     findings.extend(canonical_drift(before))
     return findings
 

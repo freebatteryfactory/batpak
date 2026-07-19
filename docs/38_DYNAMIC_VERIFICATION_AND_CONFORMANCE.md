@@ -425,6 +425,12 @@ those typed facts.
 | PLAN_FRONTIER_EXPLORATION | BoundedStateExploration | DirectBoundary(HostileBoundary) | Bounded | Scheduled | Blocking |
 | PLAN_BENCHMARK_ADVISORY | BenchmarkEnvelope | DirectBoundary | Sampled | Release | Advisory |
 | PLAN_HOLDOUT_QUARANTINE | DifferentialExecution | IndependentReference(DifferentialImplementation) | Bounded | Scheduled | Quarantine |
+| PLAN_MUTATION | Mutation | IndependentReference(DifferentialImplementation) | Sampled | Merge | Blocking |
+| PLAN_FUZZING | Fuzzing | DirectBoundary(HostileBoundary) | Bounded | Scheduled | Blocking |
+| PLAN_DETERMINISTIC_SIMULATION | DeterministicSimulation | DirectBoundary | Bounded | Merge | Blocking |
+| PLAN_RUNTIME_CONFORMANCE | PropertySequence | RuntimeObservation | ObservedHistory | Runtime | Quarantine |
+| PLAN_RUNTIME_CONFORMANCE | HistoryReplay | IndependentReference(IndependentHistoryReplay) | ObservedHistory | Merge | Blocking |
+| PLAN_CAMPAIGN_CLOSURE | StructuralRule | DirectBoundary | ExhaustiveWithinDeclaredModel | Merge | Blocking |
 
 | Active proof row | Claim | Plan |
 | --- | --- | --- |
@@ -534,6 +540,15 @@ those typed facts.
 | candidate_cannot_modify_frozen_judge | Safety | PLAN_HOSTILE_BOUNDARY |
 | later_green_cannot_bless_unresolved_dependency | Safety | PLAN_FRONTIER_EXPLORATION |
 | specialized_plan_benchmark_is_advisory_only | ResourceEnvelope | PLAN_BENCHMARK_ADVISORY |
+| planted_semantic_mutant_is_activated_and_killed | Safety | PLAN_MUTATION |
+| bounded_generated_trace_attack_holds_boundary | Safety | PLAN_FUZZING |
+| deterministic_replay_equality_of_simulated_trace | Determinism | PLAN_DETERMINISTIC_SIMULATION |
+| runtime_capture_appends_observed_history_without_rewrite | Safety | PLAN_RUNTIME_CONFORMANCE |
+| offline_replay_concludes_conformance_for_captured_history | Conformance | PLAN_RUNTIME_CONFORMANCE |
+| every_admitted_campaign_obligation_reaches_a_terminal | Liveness | PLAN_CAMPAIGN_CLOSURE |
+| candidate_search_terminates_within_declared_budget | BoundedResponse | PLAN_COMPLEXITY |
+| bounded_repair_loop_reaches_stable_qualified_frontier | Convergence | PLAN_PROPERTY |
+| confirming_rerun_changes_no_authoritative_result | Stability | PLAN_PROPERTY |
 <!-- VERIFICATION-PLANS:END -->
 
 ## 9. Ownership

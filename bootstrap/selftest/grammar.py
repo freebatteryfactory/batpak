@@ -98,6 +98,14 @@ def test_source_grammar(_audit) -> list[str]:
         # satisfied by the manifest row, so exactly R12 fires.
         planted(tree, "spec/corpus/stray.rs", b"// hostile: orphan carrier\n")
 
+    def mutate_extern_std(tree: Path) -> None:
+        # A deliberate std relink in a NON-TEST carrier. The gate never
+        # compiles the mutated tree (build/scan split), so the refusal that
+        # fires is the SOURCE law R13 — never rustc's no_std complaint, and
+        # never compile luck on a target that happens to carry std.
+        path = tree / "spec/corpus/types.rs"
+        path.write_bytes(b"extern crate std;\nuse std::vec::Vec;\n" + path.read_bytes())
+
     exe_root = Path(tempfile.mkdtemp(prefix="batpak-grammar-exe-"))
     try:
         build_dir = exe_root / "canonical"
@@ -195,6 +203,11 @@ def test_source_grammar(_audit) -> list[str]:
         hostile("orphan_carrier_is_rejected", mutate_orphan_carrier,
                 "orphan carrier spec/corpus/stray.rs is declared by no mod statement "
                 "in spec/corpus/mod.rs; every domain child passes through the facade")
+        # R13: a deliberate `extern crate std` relink in a non-test carrier.
+        hostile("extern_std_relink_in_spec_source_is_rejected", mutate_extern_std,
+                "spec source spec/corpus/types.rs declares extern crate std (line 1); "
+                "the spec is #![no_std] source law and a deliberate std relink "
+                "is refused (extern crate alloc stays lawful)")
 
         def neuter(name: str, blind: str, mutate) -> None:
             # Blind ONE rule in a copied grammar.rs, rebuild, rerun the same
@@ -235,6 +248,8 @@ def test_source_grammar(_audit) -> list[str]:
                "if !domains.iter().any(|domain| domain == name) {", mutate_orphan_domain)
         neuter("neutered_orphan_carrier_rule_goes_silent",
                "if !declared.iter().any(|(child, _)| child == stem) {", mutate_orphan_carrier)
+        neuter("neutered_extern_std_rule_goes_silent",
+               "if relink.is_some() {", mutate_extern_std)
 
         receipt("source-grammar-fixtures", available=True, compiled=True, executed=True,
                 passed=not findings,

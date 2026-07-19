@@ -54,6 +54,50 @@ pub const PLAN_FRONTIER_EXPLORATION: &[VerificationRequirement] = &[Verification
 pub const PLAN_BENCHMARK_ADVISORY: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::BenchmarkEnvelope, basis: VerificationBasis::DirectBoundary { route: None }, coverage: VerificationCoverage::Sampled, lane: VerificationLane::Release, enforcement: VerificationEnforcementPosture::Advisory }];
 pub const PLAN_HOLDOUT_QUARANTINE: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::DifferentialExecution, basis: VerificationBasis::IndependentReference { route: IndependentEvidenceRouteKind::DifferentialImplementation }, coverage: VerificationCoverage::Bounded, lane: VerificationLane::Scheduled, enforcement: VerificationEnforcementPosture::Quarantine }];
 
+/// F5 campaign-rehearsal plans (R1/R2/R7). Each names the exact axis tuple
+/// the mini-supernova rehearsal executes; the rehearsal harness realizes the
+/// rows below literally, so every tuple here is executed law, never
+/// aspiration, and the adopter-closure law in seedcheck holds every
+/// method/coverage/lane/claim variant to a live adopter among these rows.
+///
+/// The real planted semantic mutant: it compiles, passes the deliberately
+/// insufficient happy-path test, changes semantics, and is recorded
+/// ACTIVATED; the separately implemented witness executing differentially —
+/// the independent reference, never the subject grading itself — kills it.
+pub const PLAN_MUTATION: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::Mutation, basis: VerificationBasis::IndependentReference { route: IndependentEvidenceRouteKind::DifferentialImplementation }, coverage: VerificationCoverage::Sampled, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking }];
+/// R2: a genuine bounded generated-trace attack on the real boundary. The
+/// generator is a seeded deterministic PRNG and the receipt records the
+/// exact seed and bounds, so the candidate run and the confirming run
+/// reproduce the identical attack; the witness executes every generated
+/// trace against the boundary under test — never a decorative fixture.
+pub const PLAN_FUZZING: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::Fuzzing, basis: VerificationBasis::DirectBoundary { route: Some(IndependentEvidenceRouteKind::HostileBoundary) }, coverage: VerificationCoverage::Bounded, lane: VerificationLane::Scheduled, enforcement: VerificationEnforcementPosture::Blocking }];
+/// R1: deterministic replay-equality of a FULLY SIMULATED trace of the
+/// mini-ledger relation. The distinct observable property is trace
+/// replay-equality under full simulation — explicitly not interleaving
+/// exploration (that is ScheduleExploration) and not reachable-set
+/// exploration (that is BoundedStateExploration). Bounded coverage: a
+/// declared bounded set of simulated traces, each replayed to equality.
+pub const PLAN_DETERMINISTIC_SIMULATION: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::DeterministicSimulation, basis: VerificationBasis::DirectBoundary { route: None }, coverage: VerificationCoverage::Bounded, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking }];
+/// R7: the ObservedHistory/Runtime cluster, adopted as ONE cluster. The
+/// capture requirement records the executing subject's append-only observed
+/// history in the runtime lane; in-band observation may state
+/// NoDivergenceObserved and never conformance, so its posture is Quarantine
+/// — an observed divergence quarantines the candidate and never blocks the
+/// running boundary (docs/38 section 6). The offline requirement
+/// independently replays that complete recorded history and is the only
+/// route to ConformantForObservedHistory, feeding the release envelope's
+/// runtime-conformance dispositions. Capture without replay concludes
+/// nothing; replay without capture has no history — one plan carries both.
+pub const PLAN_RUNTIME_CONFORMANCE: &[VerificationRequirement] = &[
+    VerificationRequirement { method: VerificationMethod::PropertySequence, basis: VerificationBasis::RuntimeObservation, coverage: VerificationCoverage::ObservedHistory, lane: VerificationLane::Runtime, enforcement: VerificationEnforcementPosture::Quarantine },
+    VerificationRequirement { method: VerificationMethod::HistoryReplay, basis: VerificationBasis::IndependentReference { route: IndependentEvidenceRouteKind::IndependentHistoryReplay }, coverage: VerificationCoverage::ObservedHistory, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking },
+];
+/// Structural closure over the campaign's typed records, exhaustive within
+/// the declared campaign model: every admitted obligation of THIS campaign
+/// is walked to its terminal by the independent bundle verification at
+/// merge. Coverage of the declared model is not coverage of its law.
+pub const PLAN_CAMPAIGN_CLOSURE: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::StructuralRule, basis: VerificationBasis::DirectBoundary { route: None }, coverage: VerificationCoverage::ExhaustiveWithinDeclaredModel, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking }];
+
 pub const PROOF_ROWS: &[ProofRowRecord] = &[
     ProofRowRecord { id: ProofRowId("middle_event_deletion_is_rejected"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },
     ProofRowRecord { id: ProofRowId("event_reorder_is_rejected"), state: ProofRowState::Active { guarantee: GuaranteeRef::leg("LEG-023"), projection_contracts: &[ContractId("BP-STORAGE-TILES-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },
@@ -161,6 +205,17 @@ pub const PROOF_ROWS: &[ProofRowRecord] = &[
     ProofRowRecord { id: ProofRowId("candidate_cannot_modify_frozen_judge"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-082"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Safety, verification: PLAN_HOSTILE_BOUNDARY } },
     ProofRowRecord { id: ProofRowId("later_green_cannot_bless_unresolved_dependency"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-082"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Safety, verification: PLAN_FRONTIER_EXPLORATION } },
     ProofRowRecord { id: ProofRowId("specialized_plan_benchmark_is_advisory_only"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-073"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::ResourceEnvelope, verification: PLAN_BENCHMARK_ADVISORY } },
+    // F5 mini-supernova rehearsal rows. Realized literally by the campaign
+    // rehearsal harness; docs/24 owns each row's semantic meaning.
+    ProofRowRecord { id: ProofRowId("planted_semantic_mutant_is_activated_and_killed"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-081"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Safety, verification: PLAN_MUTATION } },
+    ProofRowRecord { id: ProofRowId("bounded_generated_trace_attack_holds_boundary"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-080"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Safety, verification: PLAN_FUZZING } },
+    ProofRowRecord { id: ProofRowId("deterministic_replay_equality_of_simulated_trace"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-081"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Determinism, verification: PLAN_DETERMINISTIC_SIMULATION } },
+    ProofRowRecord { id: ProofRowId("runtime_capture_appends_observed_history_without_rewrite"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-078"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Safety, verification: PLAN_RUNTIME_CONFORMANCE } },
+    ProofRowRecord { id: ProofRowId("offline_replay_concludes_conformance_for_captured_history"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-078"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Conformance, verification: PLAN_RUNTIME_CONFORMANCE } },
+    ProofRowRecord { id: ProofRowId("every_admitted_campaign_obligation_reaches_a_terminal"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-080"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Liveness, verification: PLAN_CAMPAIGN_CLOSURE } },
+    ProofRowRecord { id: ProofRowId("candidate_search_terminates_within_declared_budget"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-081"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::BoundedResponse, verification: PLAN_COMPLEXITY } },
+    ProofRowRecord { id: ProofRowId("bounded_repair_loop_reaches_stable_qualified_frontier"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-082"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Convergence, verification: PLAN_PROPERTY } },
+    ProofRowRecord { id: ProofRowId("confirming_rerun_changes_no_authoritative_result"), state: ProofRowState::Active { guarantee: GuaranteeRef::dec("DEC-076"), projection_contracts: &[ContractId("BP-SPROUTING-1")], claim: VerificationClaimKind::Stability, verification: PLAN_PROPERTY } },
     ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"), state: ProofRowState::Retired { successors: &[ProofRowId("stale_or_pre_shred_keyset_restore_is_rejected")] } },
     ProofRowRecord { id: ProofRowId("shredded_and_keyset_missing_remain_distinct"), state: ProofRowState::Retired { successors: &[ProofRowId("shredded_unavailable_and_keyset_missing_remain_distinct")] } },
     ProofRowRecord { id: ProofRowId("snapshot_and_fork_exclude_keys_by_default"), state: ProofRowState::Retired { successors: &[ProofRowId("snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys")] } },

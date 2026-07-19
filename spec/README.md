@@ -42,6 +42,7 @@ machine-derived and audited, never hand-counted here.
 | `authenticated_history/` | domain directory (2 modules) |
 | `bootstrap_output/` | domain directory (2 modules) |
 | `bootstrap_qualification/` | domain directory (4 modules) |
+| `campaign/` | domain directory (3 modules) |
 | `commands/` | domain directory (2 modules) |
 | `compiler_assumptions/` | domain directory (2 modules) |
 | `contracts/` | domain directory (2 modules) |
@@ -66,7 +67,7 @@ machine-derived and audited, never hand-counted here.
 | `tier0_cross_run/` | domain directory (5 modules) |
 | `toolchain/` | domain directory (2 modules) |
 | `verification/` | domain directory (7 modules) |
-| | 28 modules behind the one `lib.rs` boundary |
+| | 29 modules behind the one `lib.rs` boundary |
 <!-- SPEC-MODULE-CATALOG:END -->
 
 ## Domain catalog

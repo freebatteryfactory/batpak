@@ -105,12 +105,12 @@ candidate content            bound independently via ContentDigest or another ad
 candidate parents            explicit parent CandidateIds recorded on the candidate manifest
 kernel specialization        may additionally carry KernelContractId, KernelImplementationId,
                              QualifiedKernelId, and KernelQualificationReceiptId per their existing meanings
-candidate manifest format    independently versioned only when the actual serialized schema lands
+candidate manifest format    independently versioned as CandidateManifestVersion, minted with the serialized schema (BATPAK-CANDIDATE-MANIFEST/1) in spec/campaign/
 ```
 
 `ContentDigest` is a `BindingKind` content commitment, not a version snapshot,
-and the candidate manifest gains a version identity only when its serialized
-schema actually lands — so candidate identity, candidate content, and candidate
+and the candidate manifest's serialized schema landed with the F5 campaign
+records, so its version identity `CandidateManifestVersion` is minted — candidate identity, candidate content, and candidate
 parents are three distinct facts carried by three distinct mechanisms, never one
 collapsed axis. A specialized kernel candidate may carry BOTH a candidate lineage
 identity (its `CandidateId` object) AND a `KernelImplementationId` (its
@@ -286,8 +286,8 @@ evidence invalidation on judge change
 The judge root is a content-addressed `FrozenJudgeSnapshot`, and every evidence
 artifact binds the exact judge digest it was produced under. DEC-082
 (Architecture, Lock) owns the whole-tree topology. The campaign closure graph
-must enter `GeneratedView::ALL` before it may land; that view is authored in F4,
-not F1.
+enters `GeneratedView::ALL` in F5 when its typed closure owner and real
+rehearsal adopter land.
 
 ## 8. Sprouting vocabulary (generated)
 
@@ -335,10 +335,12 @@ Repair authorities
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-079 | candidate_origin_confers_no_authority; scaffold_cannot_close_realization; qualified_nursery_record_is_not_promoted_source |
-| DEC-080 | law_changing_candidate_cannot_enter_realization_preserving_lane |
-| DEC-081 | search_budget_is_declared_and_receipted; search_and_holdout_sets_are_disjoint; failed_holdout_candidate_is_quarantined |
-| DEC-082 | candidate_cannot_modify_frozen_judge; later_green_cannot_bless_unresolved_dependency |
+| DEC-080 | law_changing_candidate_cannot_enter_realization_preserving_lane; bounded_generated_trace_attack_holds_boundary; every_admitted_campaign_obligation_reaches_a_terminal |
+| DEC-081 | search_budget_is_declared_and_receipted; search_and_holdout_sets_are_disjoint; failed_holdout_candidate_is_quarantined; planted_semantic_mutant_is_activated_and_killed; deterministic_replay_equality_of_simulated_trace; candidate_search_terminates_within_declared_budget |
+| DEC-082 | candidate_cannot_modify_frozen_judge; later_green_cannot_bless_unresolved_dependency; bounded_repair_loop_reaches_stable_qualified_frontier |
 | DEC-073 | specialized_plan_benchmark_is_advisory_only |
+| DEC-078 | runtime_capture_appends_observed_history_without_rewrite; offline_replay_concludes_conformance_for_captured_history |
+| DEC-076 | confirming_rerun_changes_no_authoritative_result |
 <!-- PROOF-REQUIREMENTS:END -->
 
 ## Ownership

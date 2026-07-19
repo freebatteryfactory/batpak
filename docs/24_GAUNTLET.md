@@ -41,10 +41,12 @@ reconciliation_epoch: cleanroom-v1
 | DEC-049 | BP-WORLD-PORTS-1 | entrypoint_cannot_substitute_foreign_program_image; entrypoint_effect_must_be_declared_by_world_interface; query_program_receipt_cannot_satisfy_entrypoint_invocation |
 | LEG-045 | BP-WORLD-PORTS-1 | tls_does_not_upgrade_program_or_proof_authority |
 | DEC-079 | BP-SPROUTING-1 | candidate_origin_confers_no_authority; scaffold_cannot_close_realization; qualified_nursery_record_is_not_promoted_source |
-| DEC-080 | BP-SPROUTING-1 | law_changing_candidate_cannot_enter_realization_preserving_lane |
-| DEC-081 | BP-SPROUTING-1 | search_budget_is_declared_and_receipted; search_and_holdout_sets_are_disjoint; failed_holdout_candidate_is_quarantined |
-| DEC-082 | BP-SPROUTING-1 | candidate_cannot_modify_frozen_judge; later_green_cannot_bless_unresolved_dependency |
+| DEC-080 | BP-SPROUTING-1 | law_changing_candidate_cannot_enter_realization_preserving_lane; bounded_generated_trace_attack_holds_boundary; every_admitted_campaign_obligation_reaches_a_terminal |
+| DEC-081 | BP-SPROUTING-1 | search_budget_is_declared_and_receipted; search_and_holdout_sets_are_disjoint; failed_holdout_candidate_is_quarantined; planted_semantic_mutant_is_activated_and_killed; deterministic_replay_equality_of_simulated_trace; candidate_search_terminates_within_declared_budget |
+| DEC-082 | BP-SPROUTING-1 | candidate_cannot_modify_frozen_judge; later_green_cannot_bless_unresolved_dependency; bounded_repair_loop_reaches_stable_qualified_frontier |
 | DEC-073 | BP-SPROUTING-1 | specialized_plan_benchmark_is_advisory_only |
+| DEC-078 | BP-SPROUTING-1 | runtime_capture_appends_observed_history_without_rewrite; offline_replay_concludes_conformance_for_captured_history |
+| DEC-076 | BP-SPROUTING-1 | confirming_rerun_changes_no_authoritative_result |
 <!-- PROOF-RELATIONS:END -->
 
 ## Purpose
@@ -1596,6 +1598,94 @@ later_green_cannot_bless_unresolved_dependency
       dependency
     disposition: a typed dependency-order refusal; a green descendant that
       promotes over an unqualified ancestor fails the witness
+```
+
+## Mini-supernova rehearsal witnesses (DEC-076, DEC-078, DEC-080, DEC-081, DEC-082)
+
+The F5 rehearsal's proof rows bind campaign behavior the harness actually
+executes: an activated and killed semantic mutant, a seeded bounded trace
+attack, deterministic replay-equality of a fully simulated trace, capture-then-
+offline-replay runtime conformance, and the four campaign-liveness claims.
+
+Authoritative meanings:
+
+```text
+planted_semantic_mutant_is_activated_and_killed
+    A planted semantic mutant that compiles and passes the deliberately
+    insufficient happy-path test is recorded as activated and is killed by
+    the independent differential route or the holdout set.
+    expects: the mutant's activation is recorded in campaign evidence; the
+      independently implemented witness or holdout evaluation terminates it
+      in a recorded kill, never a silent skip
+    disposition: a recorded kill; a surviving semantic mutant fails the
+      witness and quarantines the candidate
+
+bounded_generated_trace_attack_holds_boundary
+    A seeded deterministic generator attacks the real boundary with a
+    bounded trace set; the receipt binds the exact seed and bounds so the
+    candidate and confirming runs reproduce the identical attack.
+    expects: every generated illegal trace terminates in a typed refusal at
+      the boundary; the receipt records seed, bounds, and traces executed
+    disposition: the boundary holds with typed refusals; an unrefused
+      illegal trace or an unreceipted attack fails the witness
+
+deterministic_replay_equality_of_simulated_trace
+    A fully simulated trace re-executes to identical states and observables
+    — replay-equality of the complete simulation, distinct from interleaving
+    exploration and from reachable-set exploration.
+    expects: re-execution of the declared bounded trace set yields byte- and
+      state-identical observables on every trace
+    disposition: equality holds; any divergence is a typed failure naming
+      the first divergent step
+
+runtime_capture_appends_observed_history_without_rewrite
+    In-band runtime capture appends observed history and never rewrites,
+    and in-band observation states at most that no divergence was observed.
+    expects: the captured history is append-only across the rehearsal; the
+      in-band side never emits a conformance conclusion
+    disposition: an append-only observation record; a rewrite or an in-band
+      conformance claim fails the witness
+
+offline_replay_concludes_conformance_for_captured_history
+    Only independent offline replay of the complete captured history may
+    conclude conformance for that history.
+    expects: offline replay of the full captured history terminates in
+      conformant-for-observed-history or a typed divergence
+    disposition: conformance concluded only offline; divergence quarantines
+      the candidate rather than blocking the running boundary
+
+every_admitted_campaign_obligation_reaches_a_terminal
+    Every admitted candidate obligation reaches Promoted, Refused,
+    Invalidated, or ArchitectRequired; no obligation silently drops from
+    the denominator.
+    expects: the campaign closure evidence shows one terminal per admitted
+      obligation, with ArchitectRequired visible and campaign-stopping
+    disposition: terminals visible in the denominator; a missing terminal
+      or a vanished ArchitectRequired outcome fails the witness
+
+candidate_search_terminates_within_declared_budget
+    Candidate search stops within its declared CandidateSearchBudget, and
+    the receipt binds declared bounds to actual use.
+    expects: the search receipt records declared versus actual candidates,
+      logical work, memory, and monotonic time, all within bounds
+    disposition: a within-budget termination receipt; an overrun or a stop
+      without a bound-binding receipt fails the witness
+
+bounded_repair_loop_reaches_stable_qualified_frontier
+    The RepairOfCandidate lineage converges: the bounded repair loop
+    reaches a trusted frontier that is qualified and stops moving.
+    expects: after the repair child qualifies, the frontier advances
+      dependency-first and then remains stable under re-evaluation
+    disposition: a stable qualified frontier; oscillation or an unbounded
+      repair sequence fails the witness
+
+confirming_rerun_changes_no_authoritative_result
+    The confirming run re-executes the rehearsal and every authoritative
+    result is identical to the candidate run's.
+    expects: terminals, frontier state, and dispositions from the confirming
+      rehearsal equal the candidate rehearsal's bound results
+    disposition: identical authority across the two runs; any drift refuses
+      promotion confirmation
 ```
 
 ## Substrate proof families (5.5D1)

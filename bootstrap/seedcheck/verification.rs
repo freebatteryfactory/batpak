@@ -410,6 +410,53 @@ pub(crate) fn check_verification(findings: &mut Vec<String>) {
                  a route kind arrives with its adopter, never before"));
         }
     }
+    // R6 (F5): the method, coverage, lane, and claim vocabularies are closed
+    // by adoption exactly like the route kinds — every variant is consumed by
+    // at least one Active proof row's plan (for claims, named as an active
+    // row's primary claim), and a variant without a live adopter does not
+    // exist here. VerificationBasis has no total slice (its variants carry
+    // route payloads), so basis completeness stays the exhaustive
+    // classification above, not an adoption loop.
+    let adopted_by_active_plan = |test: &dyn Fn(&VerificationRequirement) -> bool| {
+        proof::PROOF_ROWS.iter().any(|record| match record.state {
+            proof::ProofRowState::Active { verification, .. } => {
+                verification.iter().any(test)
+            }
+            proof::ProofRowState::Retired { .. } => false,
+        })
+    };
+    for method in VERIFICATION_METHODS {
+        if !adopted_by_active_plan(&|requirement| requirement.method == *method) {
+            findings.push(format!(
+                "VerificationMethod::{method:?} has no active proof-row adopter; \
+                 a technique class survives only while a live plan consumes it"));
+        }
+    }
+    for coverage in VERIFICATION_COVERAGES {
+        if !adopted_by_active_plan(&|requirement| requirement.coverage == *coverage) {
+            findings.push(format!(
+                "VerificationCoverage::{coverage:?} has no active proof-row adopter; \
+                 a coverage strength exists only while a live plan demands it"));
+        }
+    }
+    for lane in VERIFICATION_LANES {
+        if !adopted_by_active_plan(&|requirement| requirement.lane == *lane) {
+            findings.push(format!(
+                "VerificationLane::{lane:?} has no active proof-row adopter; \
+                 a lane exists only while a live plan executes in it"));
+        }
+    }
+    for kind in VERIFICATION_CLAIM_KINDS {
+        let adopted = proof::PROOF_ROWS.iter().any(|record| matches!(
+            record.state,
+            proof::ProofRowState::Active { claim, .. } if claim == *kind
+        ));
+        if !adopted {
+            findings.push(format!(
+                "VerificationClaimKind::{kind:?} has no active proof-row adopter; \
+                 a claim kind arrives with its adopter, never before"));
+        }
+    }
     // Every active row's claim stays within the closed vocabulary.
     for record in proof::PROOF_ROWS {
         if let proof::ProofRowState::Active { claim, .. } = record.state {

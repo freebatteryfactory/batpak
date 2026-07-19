@@ -334,7 +334,10 @@ A_SPROUTING_PROMOTION_REQUIREMENTS = {
     "AuditablePromotionReceipt"}
 # Lineage and lifecycle are DERIVED from required manifest and receipt fields,
 # never a parallel edge enum, lifecycle ladder, invalidation registry, or a
-# manifest-version type minted before a serialized schema lands.
+# parallel manifest-version TYPE: the serialized schema landed with
+# spec/campaign/ CandidateManifest and its version identity lives in the
+# identities catalog; a spec type named CandidateManifestVersion stays
+# forbidden as a second owner of that fact.
 A_SPROUTING_FORBIDDEN = ("CandidateEvidenceRelation", "CandidateLifecycle",
                          "Invalidates", "CandidateManifestVersion")
 

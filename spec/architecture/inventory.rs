@@ -209,6 +209,7 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "spec/promotion/mod.rs",
     "spec/release/mod.rs",
     "spec/authenticated_history/mod.rs",
+    "spec/campaign/mod.rs",
     "rust-toolchain.toml",
     "bootstrap/README.md",
     "bootstrap/seedcheck.rs",

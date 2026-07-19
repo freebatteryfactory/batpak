@@ -18,6 +18,7 @@ pub mod architecture;
 pub mod authenticated_history;
 pub mod bootstrap_output;
 pub mod bootstrap_qualification;
+pub mod campaign;
 pub mod commands;
 pub mod compiler_assumptions;
 pub mod contracts;

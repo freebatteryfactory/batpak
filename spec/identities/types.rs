@@ -99,6 +99,17 @@ pub enum VersionIdentityKind {
     /// Sweep-discovered beside LayoutId in docs/02; the old docs/16 version
     /// fence omitted it.
     Layout,
+    /// The candidate lineage MANIFEST format (F5): the persisted,
+    /// line-oriented serialization of a `spec/campaign/` `CandidateRecord`,
+    /// whose first line names its own version
+    /// (`BATPAK-CANDIDATE-MANIFEST/1`). Distinct from `IdentityKind::Candidate`
+    /// (the lineage OBJECT this format serializes), from `ContentDigest` (the
+    /// content commitment a manifest carries), and from
+    /// `Tier0QualificationArtifact` (the Tier 0 evidence format). Minted now
+    /// because the serialized schema lands with the F5 campaign: docs/39 §3's
+    /// "independently versioned only when the actual serialized schema lands"
+    /// condition is met, and no unversioned "temporary" format ever exists.
+    CandidateManifest,
     /// The Tier 0 qualification evidence artifact format (5.5E6b). An
     /// independently versioned, line-oriented bootstrap format — distinct from
     /// `ReceiptSchema` (the product receipt codec), the `ReleaseSeal` schema,
@@ -276,6 +287,7 @@ impl VersionIdentityKind {
         VersionIdentityKind::ReceiptSchema,
         VersionIdentityKind::Schema,
         VersionIdentityKind::Layout,
+        VersionIdentityKind::CandidateManifest,
         VersionIdentityKind::Tier0QualificationArtifact,
     ];
 
@@ -297,6 +309,9 @@ impl VersionIdentityKind {
             VersionIdentityKind::ReceiptSchema => entry!("ReceiptSchemaVersion", "BP-RECEIPTS-1"),
             VersionIdentityKind::Schema => entry!("SchemaVersion", "BP-SCHEMA-CODEC-1"),
             VersionIdentityKind::Layout => entry!("LayoutVersion", "BP-SYSTEM-MODEL-1"),
+            VersionIdentityKind::CandidateManifest => {
+                entry!("CandidateManifestVersion", "BP-SPROUTING-1")
+            }
             VersionIdentityKind::Tier0QualificationArtifact => {
                 entry!("Tier0QualificationArtifactVersion", "BP-RECEIPTS-1")
             }

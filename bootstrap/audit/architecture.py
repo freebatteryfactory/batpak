@@ -147,6 +147,38 @@ def release_seal_findings(root: Path) -> list[str]:
         out.append("docs/36 carries no generated release-seal block")
     elif m.group(1) != "\n".join(["```text"] + fields + ["```"]):
         out.append("docs/36 release-seal block drifted from the typed inventory")
+    # Pre-F5 item A: the empty-set posture is a TYPED axis. The auditor
+    # independently parses the empty_set_posture() match — which must classify
+    # every seal field by name, never through a wildcard — and holds the
+    # docs/36 matrix projection to those arms. Doc comments carry rationale;
+    # they are never the classification.
+    fn_start = src.find("pub const fn empty_set_posture")
+    if fn_start < 0:
+        out.append("spec/release/types.rs declares no empty_set_posture() classification")
+    else:
+        fn_body = src[fn_start: src.index("\n    }", fn_start)]
+        arms: dict[str, str] = {}
+        for arm, value in re.findall(
+                r"((?:ReleaseSealField::\w+\s*\|?\s*)+)=>\s*EmptySetPosture::(\w+)",
+                fn_body):
+            for v in re.findall(r"ReleaseSealField::(\w+)", arm):
+                arms[v] = value
+        if re.search(r"(?m)^\s*_\s*=>", fn_body):
+            out.append("empty_set_posture() classifies through a wildcard arm; "
+                       "every seal field is classified by name")
+        if set(arms) != set(fields):
+            out.append("empty_set_posture() does not exhaustively classify "
+                       f"RELEASE_SEAL_FIELDS ({sorted(set(arms) ^ set(fields))})")
+        m = re.search(r"RELEASE-SEAL-MATRIX:BEGIN[^>]*-->\n(.*?)"
+                      r"\n<!-- RELEASE-SEAL-MATRIX:END", doc, re.S)
+        if m is None:
+            out.append("docs/36 carries no generated release-seal-matrix block")
+        elif set(arms) >= set(fields):
+            want = ["| Field | Empty-set posture |", "| --- | --- |"] + [
+                f"| {f} | {arms[f]} |" for f in fields]
+            if m.group(1) != "\n".join(want):
+                out.append("docs/36 release-seal-matrix block drifted from the "
+                           "typed empty_set_posture classification")
     disp = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     row = re.search(r'DecisionSpec \{ id: "DEC-058".*?successor: "([^"]*)"', disp, re.S)
     if row is None:

@@ -131,6 +131,7 @@ KernelManifestVersion          BP-PUBLIC-API-CI-RELEASE-1
 ReceiptSchemaVersion           BP-RECEIPTS-1
 SchemaVersion                  BP-SCHEMA-CODEC-1
 LayoutVersion                  BP-SYSTEM-MODEL-1
+CandidateManifestVersion       BP-SPROUTING-1
 Tier0QualificationArtifactVersion BP-RECEIPTS-1
 ```
 <!-- VERSION-CATALOG:END -->

@@ -196,7 +196,9 @@ both across every outcome at the Tier 0 gate.
 
 A release receipt binds every field of the typed inventory
 (`spec/release/`, `ReleaseSealField`) — this list is a generated projection of
-it. Every field is mandatory even when its set is empty: an empty set is
+it. Every field is mandatory, and set-valued fields carry the typed
+`EmptySetPosture::ExplicitEvenWhenEmpty` classification distinguishing explicit
+emptiness from omission: an empty set is
 evidence, a missing field is an incomplete envelope. `KernelQualificationSet`
 empty states "no kernels admitted" (KernelImplementationId +
 KernelQualificationReceiptId per admitted kernel), it never disappears from
@@ -239,26 +241,26 @@ ProofFreshness
 <!-- RELEASE-SEAL-MATRIX:BEGIN generated from spec/release/types.rs; spec/release/inventory.rs by bootstrap/project.py; do not edit -->
 | Field | Empty-set posture |
 | --- | --- |
-| SourceTree | - |
-| Toolchain | - |
-| DependencyGraph | - |
-| GeneratedFacts | - |
-| CompatibilityCorpus | - |
-| TestDispositions | - |
-| MutationDispositions | - |
-| FuzzDispositions | - |
-| BenchmarkDispositions | - |
-| ModelDispositions | mandatory even when empty |
-| RuntimeConformanceDispositions | mandatory even when empty |
-| CompilerAssumptionLedger | - |
-| DependencyLedger | - |
-| KernelQualificationSet | mandatory even when empty |
-| CandidatePromotionSet | mandatory even when empty |
-| PackageContents | - |
-| PublicApi | - |
-| Sbom | - |
-| LicenseEvidence | - |
-| ProofFreshness | - |
+| SourceTree | NotSetValued |
+| Toolchain | NotSetValued |
+| DependencyGraph | NotSetValued |
+| GeneratedFacts | NotSetValued |
+| CompatibilityCorpus | ExplicitEvenWhenEmpty |
+| TestDispositions | ExplicitEvenWhenEmpty |
+| MutationDispositions | ExplicitEvenWhenEmpty |
+| FuzzDispositions | ExplicitEvenWhenEmpty |
+| BenchmarkDispositions | ExplicitEvenWhenEmpty |
+| ModelDispositions | ExplicitEvenWhenEmpty |
+| RuntimeConformanceDispositions | ExplicitEvenWhenEmpty |
+| CompilerAssumptionLedger | ExplicitEvenWhenEmpty |
+| DependencyLedger | ExplicitEvenWhenEmpty |
+| KernelQualificationSet | ExplicitEvenWhenEmpty |
+| CandidatePromotionSet | ExplicitEvenWhenEmpty |
+| PackageContents | ExplicitEvenWhenEmpty |
+| PublicApi | ExplicitEvenWhenEmpty |
+| Sbom | ExplicitEvenWhenEmpty |
+| LicenseEvidence | ExplicitEvenWhenEmpty |
+| ProofFreshness | NotSetValued |
 <!-- RELEASE-SEAL-MATRIX:END -->
 
 A release is refused when any of these holds:

@@ -15,8 +15,9 @@ const FORBIDDEN_MODULE_NAMES: [&str; 8] =
 /// the domain-boundary canonical nouns; no sibling door file, crate-root
 /// type drawer, generic helper drawer, wildcard facade, dangling facade
 /// declaration, phantom generated-view authority source, unmanifested
-/// module file, orphan domain directory, or orphan carrier file exists.
-/// Twelve rules, each producing a distinct finding that names the offending
+/// module file, orphan domain directory, orphan carrier file, or non-test
+/// `extern crate std` relink exists.
+/// Thirteen rules, each producing a distinct finding that names the offending
 /// path; the future AST gate owns finer placement law, so nothing here
 /// parses Rust beyond comment/string-blind line scanning.
 pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
@@ -158,6 +159,29 @@ pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
     // R5: the whole tree, recursively; drawers hide in subdirectories too.
     let mut sources: Vec<PathBuf> = Vec::new();
     walk_spec(&spec, root, &mut sources, findings);
+    // R13: no non-test spec source relinks std. `#![no_std]` on the facade
+    // does not prevent a deliberate `extern crate std` inside a carrier, so
+    // the refusal is SOURCE law scanned here, never compile luck. `extern
+    // crate alloc` stays lawful, and tests.rs carriers compile under the
+    // host test harness and are exempt per the existing test exclusion.
+    for path in &sources {
+        if path.file_stem().and_then(|stem| stem.to_str()) == Some("tests") {
+            continue;
+        }
+        let rel = posix(path.strip_prefix(root).unwrap_or(path));
+        match fs::read_to_string(path) {
+            Ok(text) => {
+                let relink = extern_std_line(&sanitize_rust(&text));
+                if relink.is_some() {
+                    findings.push(format!(
+                        "spec source {rel} declares extern crate std (line {}); the spec is #![no_std] source law and a deliberate std relink is refused (extern crate alloc stays lawful)",
+                        relink.unwrap_or(0)
+                    ));
+                }
+            }
+            Err(_) => findings.push(format!("cannot read {rel}")),
+        }
+    }
     // R9: every generated-view authority source is a real byte carrier.
     match fs::read_to_string(spec.join("generated_views/registry.rs")) {
         Ok(registry) => {
@@ -224,6 +248,40 @@ pub(crate) fn module_declarations(sanitized: &str) -> Vec<(String, bool)> {
         }
     }
     out
+}
+
+/// The 1-based line of the first `extern crate std` declaration (bare,
+/// public, or renamed) in comment/string-blind source, if any. Line-scanned
+/// like module_declarations: leading attributes and any `pub` spelling are
+/// stripped, so a cfg-gated or re-exported relink cannot hide behind its own
+/// decoration. Only `std` is refused; `extern crate alloc` stays lawful.
+pub(crate) fn extern_std_line(sanitized: &str) -> Option<usize> {
+    for (index, line) in sanitized.lines().enumerate() {
+        let mut rest = line.trim();
+        while rest.starts_with("#[") {
+            match rest.find(']') {
+                Some(end) => rest = rest[end + 1..].trim_start(),
+                None => break,
+            }
+        }
+        let rest = if let Some(after) = rest.strip_prefix("pub ") {
+            after.trim_start()
+        } else if let Some(after) = rest.strip_prefix("pub(") {
+            match after.find(')') {
+                Some(close) => after[close + 1..].trim_start(),
+                None => rest,
+            }
+        } else {
+            rest
+        };
+        if let Some(after) = rest.strip_prefix("extern crate std") {
+            let after = after.trim_start();
+            if after.starts_with(';') || after.starts_with("as ") {
+                return Some(index + 1);
+            }
+        }
+    }
+    None
 }
 
 /// Whether comment/string-blind source contains a wildcard re-export. The

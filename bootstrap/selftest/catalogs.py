@@ -1495,6 +1495,39 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
           "generated_from:", "produced_from:",
           "missing generated_from: in docs/GUARANTEE_GRAPH.generated.md")
 
+    # Pre-F5 item A (p3): the empty-set posture axis grows only through the
+    # typed match. A new seal field added to the ENUM and the INVENTORY but
+    # given no empty_set_posture() arm is refused by rustc itself — the
+    # exhaustive wildcard-free match in spec/release/types.rs stops compiling
+    # (E0004), the strongest refusal form. run_seedcheck returns the rustc
+    # output for a compile-refused mutation, so the probe asserts the exact
+    # non-exhaustiveness error naming the unclassified variant.
+    with isolated_tree() as tmp:
+        p = tmp / "spec/release/types.rs"
+        p.write_text(must_replace(
+            p.read_text(encoding="utf-8"),
+            "    ProofFreshness,\n}",
+            "    ProofFreshness,\n    RehearsalEvidence,\n}",
+            "posture-growth enum variant"), encoding="utf-8")
+        inv = tmp / "spec/release/inventory.rs"
+        inv.write_text(must_replace(
+            inv.read_text(encoding="utf-8"),
+            "    ReleaseSealField::ProofFreshness,\n",
+            "    ReleaseSealField::ProofFreshness,\n"
+            "    ReleaseSealField::RehearsalEvidence,\n",
+            "posture-growth inventory row"), encoding="utf-8")
+        code, out = run_seedcheck(tmp)
+        if code == -1:
+            print("selftest: new_seal_field_without_posture_arm_fails_compilation "
+                  "unavailable (no working linker)")
+        elif code == 0:
+            findings.append("new_seal_field_without_posture_arm_fails_compilation "
+                            "FAILED (the unclassified field compiled and passed)")
+        elif "non-exhaustive patterns" not in out or "RehearsalEvidence" not in out:
+            findings.append(
+                "new_seal_field_without_posture_arm_fails_compilation FAILED "
+                f"(wanted rustc E0004 naming RehearsalEvidence, got {out.strip()[:300]!r})")
+
     receipt("tier0-law-fixtures", available=True, compiled=True, executed=True,
             passed=not findings,
             target=", ".join(sorted(used_triples)) or "no triple resolved")
