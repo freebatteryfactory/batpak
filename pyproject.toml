@@ -1,0 +1,73 @@
+# =============================================================================
+# batpak-bootstrap-tooling — DEVELOPMENT tooling manifest ONLY.
+#
+# The bootstrap RUNTIME is standard-library-only on the pinned CPython release
+# (see .python-version, a projection of the typed authority
+# AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE in spec/bootstrap_qualification.rs).
+# `python -I` (isolated, no site, no env) must ALWAYS run the bootstrap tools:
+# they import nothing beyond the standard library. This manifest owns exactly
+# ONE plane — the DEVELOPMENT tooling plane (lint / type / coverage / property /
+# supply-chain) — and NEVER a runtime dependency. Do not add anything to
+# [project].dependencies: a runtime dependency here would be a lie about the
+# bootstrap's stdlib-only guarantee, and bootstrap/audit.py refuses it.
+# =============================================================================
+
+[project]
+name = "batpak-bootstrap-tooling"
+version = "0.0.0"
+requires-python = "==3.12.*"
+# Deliberately empty and kept empty: the bootstrap runtime is stdlib-only.
+dependencies = []
+
+# PEP 735 development dependency group. These tools run in CI/dev gates only;
+# they are never imported by any bootstrap runtime module. Pins constrain the
+# major (for pre-1.0 tools, the leading minor that acts as the major) so an
+# incompatible next major cannot silently enter — conservative current stables.
+[dependency-groups]
+dev = [
+    "ruff>=0.9,<1.0",
+    "mypy>=1.13,<2.0",
+    "coverage[toml]>=7.6,<8.0",
+    "hypothesis>=6.100,<7.0",
+    "pip-audit>=2.7,<3.0",
+]
+
+# --- ruff (lint + format) ----------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Exactly the ruled selection — no more, no less. Change only by ruling.
+select = ["E", "F", "I", "B", "UP", "SIM", "C4", "PIE", "PERF", "RUF", "C90"]
+
+[tool.ruff.lint.mccabe]
+# Generous ceiling for the bake; ratchet downward in a later sub-wave.
+max-complexity = 25
+
+[tool.ruff.lint.per-file-ignores]
+# INTENTIONALLY EMPTY. No blanket noqa, no unexplained `type: ignore`. Every
+# suppression must live inline, name WHY, and carry a narrow rule code — never
+# a file-wide or code-wide amnesty added here.
+
+# Formatting is judged by `ruff format --check` in gates (report drift, never
+# auto-fix): the gate fails on unformatted code rather than rewriting it.
+[tool.ruff.format]
+
+# --- mypy (static typing) ----------------------------------------------------
+[tool.mypy]
+strict = true
+# EMPTY FOR NOW, BY DESIGN. Strict typing arrives per-package as the bootstrap
+# Python is decomposed in later sub-waves; each package is added to this list
+# when it is made strict-clean. This is NOT a permanent legacy island: the list
+# only ever grows toward full coverage, and no path is exempted from strictness.
+files = []
+
+# --- coverage.py -------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = ["bootstrap"]
+
+[tool.coverage.report]
+# INFORMATIONAL ONLY for now — no `fail_under` yet. We establish a real baseline
+# from the decomposed test suite first, then set a threshold in a later sub-wave.

@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-ROOT-README
 authority_scope: entrypoint and reading order
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -81,7 +81,7 @@ When two documents disagree, do not average them. Apply [Status and Supersession
 17. [Public API, CI, and Release](docs/36_PUBLIC_API_CI_AND_RELEASE.md)
 18. [Agent Finish-Line Checklist](docs/33_AGENT_FINISH_LINE_CHECKLIST.md)
 
-The remaining numbered documents close the storage, schema, delivery, proof, security, migration, bootstrap, command, and workflow details.
+The remaining numbered documents close the storage, schema, delivery, proof, security, migration, bootstrap, command, workflow, dynamic-verification and conformance, and sprouting-nursery and promotion details.
 
 ## Independent checks
 
@@ -91,7 +91,9 @@ python bootstrap/audit.py .
 rustc bootstrap/seedcheck.rs -o target/seedcheck
 ./target/seedcheck .
 rustc bootstrap/materialize.rs -o target/materialize
-# Run ./target/materialize . only when creating the Gate-0 source skeleton.
+# Run ./target/materialize --seed . --output <new-candidate-root> only when
+# creating the Gate-0 source skeleton. Both roots are required; there is no
+# default and no positional form, and the output root must sit outside the seed.
 ```
 
 `audit.py` and `freeze.py` use only the Python standard library. `seedcheck.rs` uses only Rust's standard library and remains independent after TestPak self-hosts.

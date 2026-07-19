@@ -22,7 +22,6 @@ STALE_CONTEXT_BY_PATH = {
     "docs/29_STATUS_AND_SUPERSESSION.md": "SupersessionGuide",
     "docs/33_AGENT_FINISH_LINE_CHECKLIST.md": "SupersessionGuide",
     "docs/31_FINAL_CONTRADICTION_AUDIT.md": "RejectionRecord",
-    "FINAL_RECONCILIATION.md": "RejectionRecord",
     "docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md": "LegacyEvidence",
     "docs/34_LEGACY_INVARIANT_COVERAGE.md": "LegacyEvidence",
     "docs/22_MIGRATION_AND_CUTOVER.md": "MigrationCompatibility",
@@ -1179,6 +1178,7 @@ G_WITNESS_TOOL = re.compile(r"WitnessRef::BootstrapTool\(BootstrapToolId::(\w+)\
 G_WITNESS_TOOL_NAMES = {
     "ProjectPy": "project.py", "AuditPy": "audit.py", "FreezePy": "freeze.py",
     "SelftestPy": "selftest.py", "Seedcheck": "seedcheck", "Materialize": "materialize",
+    "Receiptcheck": "receiptcheck",
 }
 
 
@@ -4406,14 +4406,15 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
         out.append(f"{A_BQ_SPEC}: reuses the product ReceiptId; Tier0ReceiptKind is the "
                    "bootstrap receipt identity")
 
-    # The Delivery Notes denominator block equals the typed projection.
-    dn = (root / "DELIVERY_NOTES.md")
+    # The Tier 0 denominator block equals the typed projection.
+    dn = (root / "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
     if dn.is_file():
         m = re.search(r"<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN[^>]*-->\n(.*?)\n"
                       r"<!-- TIER0-RECEIPT-DENOMINATOR:END -->",
                       dn.read_text(encoding="utf-8"), re.S)
         if not m:
-            out.append("DELIVERY_NOTES.md: carries no TIER0-RECEIPT-DENOMINATOR block")
+            out.append("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md: carries no "
+                       "TIER0-RECEIPT-DENOMINATOR block")
         else:
             rows = [tuple(c.strip() for c in line.strip("|").split("|"))
                     for line in m.group(1).splitlines()
@@ -4421,10 +4422,10 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
                     and not line.startswith("| Receipt")]
             want = [(slugs[k], policy[k]) for k in kinds]
             if rows != want:
-                out.append("DELIVERY_NOTES.md: the Tier 0 denominator block does not "
-                           "match its typed derivation")
+                out.append("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md: the Tier 0 "
+                           "denominator block does not match its typed derivation")
     else:
-        out.append("missing DELIVERY_NOTES.md")
+        out.append("missing docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
 
     # === E6b: the evidence-verification algebra is internally coherent ======
     # Independent reconstruction (regex, no shared parse with the spec crate):
@@ -4780,6 +4781,62 @@ def workflow_pinning_findings(root: Path) -> list[str]:
     return out
 
 
+def python_tooling_findings(root: Path) -> list[str]:
+    """The Python tooling plane must stay honest about the bootstrap runtime.
+    `.python-version` PROJECTS the typed authority
+    AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE (spec/bootstrap_qualification.rs) —
+    it is never a second authority, so its MAJOR.MINOR.PATCH is parsed FROM the
+    constant, never hardcoded. `pyproject.toml` owns only the development tooling
+    plane: its `requires-python` must agree with that major.minor, and it must
+    NOT declare a populated `[project].dependencies` list — the bootstrap runtime
+    stays standard-library-only (a lawful dev dependency group is fine)."""
+    out: list[str] = []
+    bq_path = root / "spec/bootstrap_qualification.rs"
+    if not bq_path.is_file():
+        out.append("spec/bootstrap_qualification.rs: missing; cannot resolve the typed "
+                   "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE authority")
+        return out
+    bq = bq_path.read_text(encoding="utf-8")
+    m = re.search(r"AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE[^;]*major:\s*(\d+),"
+                  r"[^;]*minor:\s*(\d+),[^;]*patch:\s*(\d+)", bq, re.S)
+    if not m:
+        out.append("spec/bootstrap_qualification.rs: cannot read "
+                   "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE for the python-tooling projection check")
+        return out
+    want_full = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    want_mm = f"{m.group(1)}.{m.group(2)}"
+
+    # (a) .python-version projects the exact MAJOR.MINOR.PATCH of the authority.
+    pv_path = root / ".python-version"
+    if not pv_path.is_file():
+        out.append(".python-version: missing (must project "
+                   "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE)")
+    else:
+        got = pv_path.read_text(encoding="utf-8").strip()
+        if got != want_full:
+            out.append(f".python-version: {got!r} does not equal the typed authority "
+                       f"{want_full!r}")
+
+    # (b) pyproject.toml owns only the dev tooling plane: requires-python agrees
+    # with the authority's major.minor, and no populated runtime dependency list.
+    pp_path = root / "pyproject.toml"
+    if not pp_path.is_file():
+        out.append("pyproject.toml: missing (development tooling manifest)")
+    else:
+        pp = pp_path.read_text(encoding="utf-8")
+        rp = re.search(r'requires-python\s*=\s*"([^"]+)"', pp)
+        if not rp:
+            out.append("pyproject.toml: no requires-python declared")
+        elif want_mm not in rp.group(1):
+            out.append(f"pyproject.toml: requires-python {rp.group(1)!r} is not consistent "
+                       f"with the typed authority major.minor {want_mm!r}")
+        dep = re.search(r'^\s*dependencies\s*=\s*\[(.*?)\]', pp, re.S | re.M)
+        if dep and re.search(r'["\']', dep.group(1)):
+            out.append("pyproject.toml: [project].dependencies declares runtime packages; "
+                       "the bootstrap runtime must stay standard-library-only")
+    return out
+
+
 def check_guarantees(root: Path, findings: list[str]) -> None:
     if not (root / "spec/guarantees.rs").is_file():
         findings.append("missing spec/guarantees.rs")
@@ -4829,6 +4886,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(bootstrap_qualification_findings(root))
     findings.extend(tier0_cross_run_findings(root))
     findings.extend(workflow_pinning_findings(root))
+    findings.extend(python_tooling_findings(root))
     findings.extend(guarantee_classification_findings(seed_rows))
     findings.extend(guarantee_relation_findings(node_ids, edges))
     findings.extend(guarantee_lifetime_findings(nodes, leg_meta, edges))
@@ -5312,9 +5370,9 @@ A_TIER0_ROWS = re.compile(r'\("([^"]+)", (True|False)\)')
 A_E4B_DOCTRINE = (
     ("docs/03_REPOSITORY_AND_PACKAGES.md", "feature-coverage-distinction",
      "They are not additional QualificationProfile identities unless they enter"),
-    ("DELIVERY_NOTES.md", "denominator-not-a-run-claim",
+    ("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md", "denominator-not-a-run-claim",
      "This block declares the denominator. It does not claim that the latest run passed."),
-    ("DELIVERY_NOTES.md", "receipts-carry-outcomes",
+    ("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md", "receipts-carry-outcomes",
      "exact-SHA, exact-target run receipts, not timeless prose"),
     ("docs/29_STATUS_AND_SUPERSESSION.md", "authored-metadata-epoch",
      "ReconciliationEpoch corpus membership"),
@@ -5335,19 +5393,19 @@ A_E4B_RETIRED = (
      re.compile(r"[↑↑]")),
     ("docs/03_REPOSITORY_AND_PACKAGES.md", "five-profile target matrix",
      re.compile(r"^batpak semantic\s+no_std", re.M)),
-    ("DELIVERY_NOTES.md", "authored bundle counts",
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "authored bundle counts",
      re.compile(r"^\d+ (?:numbered|declared|retained|one-for-one|concrete|bootstrap|architectural|classified) ", re.M)),
-    ("DELIVERY_NOTES.md", "volatile word count",
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "volatile word count",
      re.compile(r"\d[\d,]*\+? words")),
-    ("DELIVERY_NOTES.md", "107-row legacy claim",
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "107-row legacy claim",
      re.compile(r"\b107-row\b")),
-    ("DELIVERY_NOTES.md", "static validation PASS table",
+    ("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md", "static validation PASS table",
      re.compile(r"Validation completed in this delivery environment")),
-    ("DELIVERY_NOTES.md", "historical no-rustc claim",
+    ("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md", "historical no-rustc claim",
      re.compile(r"did not contain `?rustc`?|structurally inspected but not compiled")),
-    ("DELIVERY_NOTES.md", "authored package topology",
+    ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "authored package topology",
      re.compile(r"Frozen package direction")),
-    ("DELIVERY_NOTES.md", "current run id embedded as timeless law",
+    ("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md", "current run id embedded as timeless law",
      re.compile(r"\b\d{10,}\b")),
 )
 
@@ -5492,8 +5550,8 @@ def inventory_mirror_findings(root: Path) -> list[str]:
         ("docs/03_REPOSITORY_AND_PACKAGES.md", "PACKAGE-INVENTORY", want_pkg),
         ("docs/03_REPOSITORY_AND_PACKAGES.md", "PACKAGE-EDGES", want_edges),
         ("docs/03_REPOSITORY_AND_PACKAGES.md", "QUALIFICATION-PROFILES", want_quals),
-        ("DELIVERY_NOTES.md", "BUNDLE-INVENTORY", want_bundle),
-        ("DELIVERY_NOTES.md", "TIER0-RECEIPT-DENOMINATOR", want_tier0),
+        ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "BUNDLE-INVENTORY", want_bundle),
+        ("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md", "TIER0-RECEIPT-DENOMINATOR", want_tier0),
     ):
         path = root / rel
         body = batql_extract_block(path.read_text(encoding="utf-8"), marker) \
@@ -5509,7 +5567,9 @@ def inventory_mirror_findings(root: Path) -> list[str]:
     # both judged with every generated block stripped.
     stripped: dict[str, str] = {}
     for rel in ("README.md", "docs/03_REPOSITORY_AND_PACKAGES.md",
-                "DELIVERY_NOTES.md", "docs/29_STATUS_AND_SUPERSESSION.md"):
+                "docs/28_SELF_EXPLAINING_REPOSITORY.md",
+                "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
+                "docs/29_STATUS_AND_SUPERSESSION.md"):
         path = root / rel
         stripped[rel] = A_GENERATED_BLOCK.sub("", path.read_text(encoding="utf-8")) \
             if path.is_file() else ""

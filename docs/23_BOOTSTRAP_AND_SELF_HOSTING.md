@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-BOOTSTRAP-1
 authority_scope: bootstrap braid, stage order, seedcheck, materialization, and self-hosting
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -85,6 +85,38 @@ The complete expanded plan:
 | crates/syncbat/src/port.rs | SyncBat plane / Module | SyncBatPlane::Port |
 | crates/syncbat/src/port/README.md | SyncBat plane / DirectoryReadme | SyncBatPlane::Port |
 <!-- GATE0-MATERIALIZATION-PLAN:END -->
+
+## First implementation action
+
+The first Gate-0 actions execute this plan in order:
+
+1. Install the pinned Rust toolchain.
+2. Compile and run `bootstrap/seedcheck.rs`.
+3. Run `bootstrap/audit.py` and `bootstrap/freeze.py --check`.
+4. Compile and run `bootstrap/materialize.rs` with explicit `--seed` and `--output` roots to materialize and qualify the isolated Gate-0 candidate. Do not write the skeleton into the signed seed tree.
+5. Compile `batpak` and `syncbat` semantic profiles under `no_std + alloc`.
+6. Do not copy legacy source.
+7. Begin Gate 1 MacBat only after the Gate-0 review packet closes.
+
+## Tier 0 receipt denominator
+
+The required Tier 0 receipt denominator is a generated projection of the harness that enforces it:
+
+<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN generated from spec/bootstrap_qualification.rs by bootstrap/project.py; do not edit -->
+| Receipt | Artifact policy |
+| --- | --- |
+| tier0-law-fixtures | FixtureSet |
+| tier0-seedcheck | Executable |
+| tier0-materialize | ExecutableAndOutputTree |
+| tier0-seedcheck-tests | Executable |
+| tier0-spec-tests | Executable |
+<!-- TIER0-RECEIPT-DENOMINATOR:END -->
+
+Every listed receipt is required. A receipt qualifies only when availability, compilation, execution, passing disposition, physical target, and required artifact/source binding all hold.
+
+Membership is enforced by evidence, not prose (5.5E6b). `bootstrap/selftest.py` produces a canonical `qualification.t0` artifact and an evidence bundle from a real gate run; `bootstrap/receiptcheck.rs` independently recomputes every digest and calls the sealed `spec::bootstrap_qualification::verify`, which enforces this exact denominator, per-kind artifact policy, single target, source posture, and the hosted-run requirement for the authoritative target. No Python predicate judges qualification.
+
+This block declares the denominator. It does not claim that the latest run passed. Candidate and cleanroom qualification outcomes belong to exact-SHA, exact-target run receipts, not timeless prose.
 
 ## Stage 1: MacBat
 

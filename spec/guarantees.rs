@@ -194,9 +194,11 @@ impl ContractId {
     }
 }
 
-/// The closed inventory of bootstrap tools a witness may cite. Closed by the
-/// factory's actual tools, not by citation: seedcheck consumes every variant
-/// by requiring `path()` to exist in the tree it checks.
+/// The closed inventory of ALL bootstrap tools (Wave-2 ruling: the meaning is
+/// the factory's complete tool set, not merely the currently-cited witness
+/// tools). Closed by the factory's actual tools, not by citation: seedcheck
+/// consumes every variant by requiring `path()` to exist in the tree it
+/// checks, executed over `ALL`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BootstrapToolId {
     ProjectPy,
@@ -205,9 +207,22 @@ pub enum BootstrapToolId {
     SelftestPy,
     Seedcheck,
     Materialize,
+    /// The independent Tier 0 evidence computer (5.5E6b/E6c2).
+    Receiptcheck,
 }
 
 impl BootstrapToolId {
+    /// Every tool, in declaration order.
+    pub const ALL: &'static [BootstrapToolId] = &[
+        BootstrapToolId::ProjectPy,
+        BootstrapToolId::AuditPy,
+        BootstrapToolId::FreezePy,
+        BootstrapToolId::SelftestPy,
+        BootstrapToolId::Seedcheck,
+        BootstrapToolId::Materialize,
+        BootstrapToolId::Receiptcheck,
+    ];
+
     /// The repository path the identity names.
     pub const fn path(self) -> &'static str {
         match self {
@@ -217,6 +232,7 @@ impl BootstrapToolId {
             BootstrapToolId::SelftestPy => "bootstrap/selftest.py",
             BootstrapToolId::Seedcheck => "bootstrap/seedcheck.rs",
             BootstrapToolId::Materialize => "bootstrap/materialize.rs",
+            BootstrapToolId::Receiptcheck => "bootstrap/receiptcheck.rs",
         }
     }
 
@@ -229,6 +245,7 @@ impl BootstrapToolId {
             BootstrapToolId::SelftestPy => "selftest.py",
             BootstrapToolId::Seedcheck => "seedcheck",
             BootstrapToolId::Materialize => "materialize",
+            BootstrapToolId::Receiptcheck => "receiptcheck",
         }
     }
 }

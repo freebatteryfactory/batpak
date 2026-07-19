@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-STATUS-1
 authority_scope: document statuses, precedence, supersession, and stale-evidence behavior
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -110,3 +110,28 @@ empty product umbrella
 meaning-free umbrella
 ```
 <!-- STALE-VOCAB:END -->
+
+## Pass evidence registry
+
+The clean-room reached v1 across four passes. Only the final pass is current
+law; the earlier passes are retained as external evidence.
+
+```text
+pass       role               disposition
+Pass 1     external evidence  retained conceptual base
+Pass 2     external evidence  package map rejected, named ideas imported
+Pass 3     external evidence  recovery ruling
+Final v1   current authority  cleanroom-v1
+```
+
+Prior pass bundles remain external evidence, deliberately not copied into the
+authoritative tree so stale architecture cannot masquerade as current law; git
+history preserves the bytes.
+
+### Pass chronology
+
+Pass 1 found the correct machine-centered architecture; it remains the conceptual base. Pass 2 added useful status, availability, portability, delivery, schema, identity, and ECS work, but over-split the single machine into separate packages. That package map is rejected and holds no authority, and Pass 2 is not a normative predecessor: its retained ideas were rewritten into their current owners rather than inherited. Pass 3 issued the recovery ruling — it restored Pass 1 as the base and rejected the split product models: a separate product for the durable journal format, an empty top-level product shell, a universal type directory, the platform-shell product model, and the package-by-purity rule. Final v1 is the current authority: it places the runtime, PakVM, Bvisor, world, and port planes inside the one SyncBat machine and keeps the useful Pass 2 laws under that recovered machine.
+
+### What "final" means
+
+Architecture, ownership, dependency direction, package boundaries, language boundaries, and semantic laws are frozen. Exact constants — opcode numbers, byte offsets, benchmark thresholds, and adapter-specific physical guarantees — remain gate-scoped implementation selections owned by `docs/32_IMPLEMENTATION_CONSTANTS.md`; each is chosen only inside its named gate with goldens and conformance evidence, and none may reopen the frozen architecture.

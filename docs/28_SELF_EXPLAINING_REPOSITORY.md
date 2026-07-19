@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-SELF-EXPLAINING-1
 authority_scope: source navigation, headers, type ledger, dossiers, diagnostics, and context
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -164,8 +164,8 @@ An embedded block inherits no authority from its containing document. A standalo
 | PackageInventory | embedded-block | spec/architecture.rs | README.md; docs/03_REPOSITORY_AND_PACKAGES.md | PACKAGE-INVENTORY | bootstrap/project.py |
 | PackageEdges | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | PACKAGE-EDGES | bootstrap/project.py |
 | QualificationProfiles | embedded-block | spec/architecture.rs | docs/03_REPOSITORY_AND_PACKAGES.md | QUALIFICATION-PROFILES | bootstrap/project.py |
-| BundleInventory | embedded-block | spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs | DELIVERY_NOTES.md | BUNDLE-INVENTORY | bootstrap/project.py |
-| Tier0ReceiptDenominator | embedded-block | spec/bootstrap_qualification.rs | DELIVERY_NOTES.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
+| BundleInventory | embedded-block | spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | BUNDLE-INVENTORY | bootstrap/project.py |
+| Tier0ReceiptDenominator | embedded-block | spec/bootstrap_qualification.rs | docs/23_BOOTSTRAP_AND_SELF_HOSTING.md | TIER0-RECEIPT-DENOMINATOR | bootstrap/project.py |
 | DecisionLedger | embedded-block | spec/dispositions.rs | docs/30_DECISION_AND_REJECTION_LEDGER.md | DECISION-LEDGER | bootstrap/project.py |
 | LegacyInvariantCoverage | embedded-block | spec/legacy_invariant_coverage.rs | docs/34_LEGACY_INVARIANT_COVERAGE.md | LEGACY-INVARIANT-COVERAGE | bootstrap/project.py |
 | LegacyObligationLedger | embedded-block | spec/legacy_obligations.rs; spec/proof.rs | docs/21_LEGACY_SEMANTIC_OBLIGATIONS.md | LEGACY-OBLIGATION-LEDGER | bootstrap/project.py |
@@ -188,6 +188,28 @@ An embedded block inherits no authority from its containing document. A standalo
 | SproutingProofRequirements | embedded-block | spec/proof.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
+
+## Bundle inventory
+
+The repository describes its own size the same way it describes everything else: by projection. Every row below is a generated derivation of a typed denominator or the current tracked tree — never an authored count — and the exact numbers that affect machine law are derived from `spec/`, so human prose can never override them.
+
+<!-- BUNDLE-INVENTORY:BEGIN generated from spec/architecture.rs; spec/invariants.rs; spec/dispositions.rs; spec/legacy_obligations.rs; spec/legacy_invariant_coverage.rs; spec/operators.rs; spec/generated_views.rs by bootstrap/project.py; do not edit -->
+| Metric | Count | Derivation |
+| --- | --- | --- |
+| numbered architecture documents | 40 | current tracked docs matching docs/[0-9][0-9]_*.md |
+| Markdown documents | 46 | current eligible Markdown corpus |
+| Cargo packages | 9 | PackageId::ALL with PACKAGES parity |
+| package edges | 19 | EDGES |
+| qualification profiles | 6 | QUALIFICATION_PROFILES |
+| SEED guarantees | 32 | spec/invariants.rs SEED inventory |
+| decision rows | 82 | spec/dispositions.rs DECISIONS |
+| legacy semantic obligations | 87 | spec/legacy_obligations.rs OBLIGATIONS |
+| legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
+| BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
+| registered generated views | 61 | GeneratedView::ALL |
+| static generated target instances | 62 | expansion of every Static registry target |
+| corpus-frontmatter bindings | 46 | the eligible Markdown corpus reached by CorpusEpochMembership |
+<!-- BUNDLE-INVENTORY:END -->
 
 ## Exact mirrors and semantic owners
 

@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-REPOSITORY-PACKAGES-1
 authority_scope: repository cutover, package graph, and source tree
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -28,7 +28,6 @@ No Git merge crosses from legacy into the clean branch. Imported behavior passes
 BatPak/
 ├── README.md
 ├── AGENTS.md
-├── FINAL_RECONCILIATION.md
 ├── Cargo.toml
 ├── rust-toolchain.toml
 ├── justfile

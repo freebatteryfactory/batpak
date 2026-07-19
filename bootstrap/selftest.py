@@ -1896,8 +1896,10 @@ def test_inventory_mirrors(audit, project) -> list[str]:
     findings: list[str] = []
     root = HERE.parent
     AR = "spec/architecture.rs"
-    RM, D3, DN, D29 = ("README.md", "docs/03_REPOSITORY_AND_PACKAGES.md",
-                       "DELIVERY_NOTES.md", "docs/29_STATUS_AND_SUPERSESSION.md")
+    RM, D3, D29 = ("README.md", "docs/03_REPOSITORY_AND_PACKAGES.md",
+                   "docs/29_STATUS_AND_SUPERSESSION.md")
+    D28 = "docs/28_SELF_EXPLAINING_REPOSITORY.md"
+    D23 = "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"
 
     def fail(name: str) -> None:
         findings.append(f"{name} FAILED")
@@ -2000,44 +2002,44 @@ def test_inventory_mirrors(audit, project) -> list[str]:
         ("qualification_requirement_drift_is_rejected", D3,
          "storage-port law compile without std |", "storage-port law need std |",
          "generated block QUALIFICATION-PROFILES does not match"),
-        ("bundle_inventory_package_count_tracks_package_id_all", DN,
+        ("bundle_inventory_package_count_tracks_package_id_all", D28,
          "| Cargo packages | 9 |", "| Cargo packages | 8 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_edge_count_tracks_edges", DN,
+        ("bundle_inventory_edge_count_tracks_edges", D28,
          "| package edges | 19 |", "| package edges | 18 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_profile_count_tracks_profiles", DN,
+        ("bundle_inventory_profile_count_tracks_profiles", D28,
          "| qualification profiles | 6 |", "| qualification profiles | 5 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_seed_count_tracks_seed", DN,
+        ("bundle_inventory_seed_count_tracks_seed", D28,
          "| SEED guarantees | 32 |", "| SEED guarantees | 31 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_decision_count_tracks_decisions", DN,
+        ("bundle_inventory_decision_count_tracks_decisions", D28,
          "| decision rows | 82 |", "| decision rows | 81 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_legacy_count_tracks_obligations", DN,
+        ("bundle_inventory_legacy_count_tracks_obligations", D28,
          "| legacy semantic obligations | 87 |", "| legacy semantic obligations | 86 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_coverage_count_tracks_source_invariant_ids", DN,
+        ("bundle_inventory_coverage_count_tracks_source_invariant_ids", D28,
          "| legacy invariant declarations | 115 |", "| legacy invariant declarations | 107 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_operator_count_tracks_operator_id_all", DN,
+        ("bundle_inventory_operator_count_tracks_operator_id_all", D28,
          "| BatQL operators | 13 |", "| BatQL operators | 12 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_generated_view_count_tracks_registry", DN,
+        ("bundle_inventory_generated_view_count_tracks_registry", D28,
          f"| registered generated views | {len(audit.a_parse_generated_views(root)['order'])} |",
          "| registered generated views | 1 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("bundle_inventory_markdown_count_tracks_eligible_corpus", DN,
-         "| Markdown documents | 49 |", "| Markdown documents | 48 |",
+        ("bundle_inventory_markdown_count_tracks_eligible_corpus", D28,
+         "| Markdown documents | 46 |", "| Markdown documents | 45 |",
          "generated block BUNDLE-INVENTORY does not match"),
-        ("tier0_receipt_missing_from_projection_is_rejected", DN,
+        ("tier0_receipt_missing_from_projection_is_rejected", D23,
          "| tier0-materialize | ExecutableAndOutputTree |\n", "",
          "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
-        ("tier0_receipt_artifact_policy_drift_is_rejected", DN,
+        ("tier0_receipt_artifact_policy_drift_is_rejected", D23,
          "| tier0-seedcheck | Executable |", "| tier0-seedcheck | FixtureSet |",
          "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
-        ("tier0_projection_order_drift_is_rejected", DN,
+        ("tier0_projection_order_drift_is_rejected", D23,
          "| tier0-law-fixtures | FixtureSet |\n| tier0-seedcheck | Executable |",
          "| tier0-seedcheck | Executable |\n| tier0-law-fixtures | FixtureSet |",
          "generated block TIER0-RECEIPT-DENOMINATOR does not match"),
@@ -2058,22 +2060,22 @@ def test_inventory_mirrors(audit, project) -> list[str]:
         ("docs03_five_profile_mirror_cannot_return", D3,
          "\nbatpak semantic    no_std + alloc\n",
          "retired authored mirror may not return (five-profile target matrix)"),
-        ("authored_bundle_counts_cannot_return", DN,
+        ("authored_bundle_counts_cannot_return", D28,
          "\n19 declared package edges\n",
          "retired authored mirror may not return (authored bundle counts)"),
-        ("legacy_107_row_count_is_rejected", DN,
+        ("legacy_107_row_count_is_rejected", D28,
          "\n107-row legacy catalog coverage equivalence PASS\n",
          "retired authored mirror may not return (107-row legacy claim)"),
-        ("volatile_word_count_cannot_return", DN,
+        ("volatile_word_count_cannot_return", D28,
          "\n31,000+ words of architecture\n",
          "retired authored mirror may not return (volatile word count)"),
-        ("static_validation_pass_table_cannot_return", DN,
+        ("static_validation_pass_table_cannot_return", D23,
          "\n## Validation completed in this delivery environment\n",
          "retired authored mirror may not return (static validation PASS table)"),
-        ("historical_no_rustc_claim_cannot_return", DN,
+        ("historical_no_rustc_claim_cannot_return", D23,
          "\nThe environment did not contain `rustc` or `cargo`.\n",
          "retired authored mirror may not return (historical no-rustc claim)"),
-        ("delivery_notes_cannot_embed_current_run_ids_as_timeless_law", DN,
+        ("delivery_notes_cannot_embed_current_run_ids_as_timeless_law", D23,
          "\nHosted run 29593750281 was green.\n",
          "retired authored mirror may not return (current run id embedded as timeless law)"),
     ):
@@ -2098,7 +2100,7 @@ def test_inventory_mirrors(audit, project) -> list[str]:
         probe(name, [(rel, fragment, "RETIRED FRAGMENT")], needle)
     # Multi-source provenance: order IS provenance.
     probe("bundle_inventory_multi_source_order_drift_is_rejected",
-          [(DN, "BUNDLE-INVENTORY:BEGIN generated from spec/architecture.rs; spec/invariants.rs;",
+          [(D28, "BUNDLE-INVENTORY:BEGIN generated from spec/architecture.rs; spec/invariants.rs;",
             "BUNDLE-INVENTORY:BEGIN generated from spec/invariants.rs; spec/architecture.rs;")],
           "not its registered authority source",
           validator=audit.generated_view_findings)
@@ -2123,7 +2125,7 @@ def test_inventory_mirrors(audit, project) -> list[str]:
         grown = audit.inventory_mirror_findings(tmp) + audit.generated_view_findings(tmp)
         doc3 = (tmp / D3).read_text(encoding="utf-8")
         if grown or "| batpak | sandbox-growth | wasm32 host | G2/G5 |" not in doc3 \
-                or "| qualification profiles | 7 |" not in (tmp / DN).read_text(encoding="utf-8"):
+                or "| qualification profiles | 7 |" not in (tmp / D28).read_text(encoding="utf-8"):
             fail(f"qualification_profile_structural_growth_is_lawful ({grown!r})")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -2408,7 +2410,7 @@ def test_exact_ledgers(audit, project) -> list[str]:
           'subject: "Sandbox growth", successor: "structural count-freedom evidence only", '
           "stale_aliases: &[], stale_allowed_contexts: &[], replacement_contract: None },")],
         [(D30, "| DEC-990 | RETAIN-AS-EVIDENCE |"),
-         ("DELIVERY_NOTES.md", "| decision rows | 83 |")],
+         ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "| decision rows | 83 |")],
         [audit.exact_ledger_findings])
     regen_and_check(
         "coverage_structural_growth_is_lawful",
@@ -2853,8 +2855,7 @@ def gate_sandbox(edits):
     # refusal, not a sandbox convenience. The root-level documents joined it
     # in 5.5E4b: they carry registered generated views, so a sandbox that
     # regenerates through the registry needs them present.
-    for rel in ("rust-toolchain.toml", "README.md", "DELIVERY_NOTES.md",
-                "AGENTS.md", "FINAL_RECONCILIATION.md"):
+    for rel in ("rust-toolchain.toml", "README.md", "AGENTS.md"):
         if (root / rel).is_file():
             shutil.copy2(root / rel, tmp / rel)
     for rel, old, new in edits:
@@ -3793,7 +3794,7 @@ def test_delivery_notes_d2(audit) -> list[str]:
     generated BUNDLE-INVENTORY derivation (5.5E4b), never an authored number."""
     findings: list[str] = []
     root = HERE.parent
-    text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
+    text = (root / "docs/28_SELF_EXPLAINING_REPOSITORY.md").read_text(encoding="utf-8")
     live = len(audit.G_DEC_ROW.findall(
         (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
     if f"| decision rows | {live} |" not in text:
@@ -3984,7 +3985,7 @@ def test_proof_policy(audit) -> list[str]:
         fail("decision_node_count_is_not_82")
     if len(nodes) != 216 or len(edges) != 24:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
-    text = (root / "DELIVERY_NOTES.md").read_text(encoding="utf-8")
+    text = (root / "docs/28_SELF_EXPLAINING_REPOSITORY.md").read_text(encoding="utf-8")
     live_decisions = len(audit.G_DEC_ROW.findall(
         (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
     if f"| decision rows | {live_decisions} |" not in text:
@@ -4644,7 +4645,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
             tmp = gate_sandbox(edits)
             try:
                 # the sandbox must be a COMPLETE seed for validate_seed
-                for rel in ("SPEC.sha256", "history/README.md"):
+                for rel in ("SPEC.sha256",):
                     if (root / rel).is_file():
                         (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(root / rel, tmp / rel)
@@ -4768,7 +4769,7 @@ def test_bootstrap_qualification(audit) -> list[str]:
     executed by seedcheck (the tier0-seedcheck receipt); these fixtures pin the
     typed-owner laws the auditor reconstructs: closed inventories, the
     denominator's move out of Python, the product-identity firewall, the
-    authoritative target, and the Delivery Notes projection."""
+    authoritative target, and the docs/23 Tier 0 denominator projection."""
     findings: list[str] = []
     root = HERE.parent
     before = canonical_commitments()
@@ -4819,7 +4820,7 @@ def test_bootstrap_qualification(audit) -> list[str]:
           "def _tree_digest(root: Path) -> str:",
           "hand-authored slug tuple",
           forged_denominator + "\n\n\ndef _tree_digest(root: Path) -> str:")
-    probe("tier0_denominator_block_drift_is_rejected", "DELIVERY_NOTES.md",
+    probe("tier0_denominator_block_drift_is_rejected", "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
           "| tier0-materialize | ExecutableAndOutputTree |",
           "does not match its typed derivation",
           "| tier0-materialize | Executable |")

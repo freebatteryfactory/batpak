@@ -53,6 +53,14 @@ fn inspect(root: &Path) -> Vec<String> {
     for relative in architecture::REQUIRED_DOCS {
         if !root.join(relative).is_file() { findings.push(format!("missing required file {relative}")); }
     }
+    // The closed bootstrap-tool inventory is the factory's COMPLETE tool set:
+    // every variant's path must exist, cited by a witness or not (Wave-2
+    // BootstrapToolId ruling).
+    for tool in guarantees::BootstrapToolId::ALL {
+        if !root.join(tool.path()).is_file() {
+            findings.push(format!("bootstrap tool {} does not exist", tool.path()));
+        }
+    }
     for relative in architecture::FORBIDDEN_TARGET_PATHS {
         if root.join(relative).exists() { findings.push(format!("forbidden target path exists: {relative}")); }
     }

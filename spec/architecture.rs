@@ -855,8 +855,6 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "README.md",
     "SPEC.sha256",
     "AGENTS.md",
-    "FINAL_RECONCILIATION.md",
-    "DELIVERY_NOTES.md",
     "docs/00_CONSTITUTION.md",
     "docs/01_FACTORY.md",
     "docs/02_SYSTEM_MODEL.md",
@@ -933,7 +931,6 @@ pub const REQUIRED_DOCS: &[&str] = &[
     "bootstrap/freeze.py",
     "bootstrap/project.py",
     "spec/README.md",
-    "history/README.md",
 ];
 
 pub const FORBIDDEN_TARGET_PATHS: &[&str] = &[
