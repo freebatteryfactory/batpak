@@ -1791,12 +1791,14 @@ def test_generated_views(audit, project) -> list[str]:
             "GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/render.py")],
           "names generator bootstrap/render.py, not bootstrap/project.py")
 
-    # Dispatcher parity and the registry bypass fence.
+    # Dispatcher parity and the registry bypass fence. The dispatcher literal
+    # lives in the project package since SW3c; the shim carries no map.
+    PYPKG = "bootstrap/project/__init__.py"
     probe("projector_dispatcher_omission_is_rejected",
-          [(PY, '    "GateInventory": render_gate_inventory,\n', "")],
+          [(PYPKG, '    "GateInventory": render_gate_inventory,\n', "")],
           "registered generated view GateInventory has no projector dispatcher entry")
     probe("unregistered_projector_dispatcher_entry_is_rejected",
-          [(PY, '    "GateInventory": render_gate_inventory,\n',
+          [(PYPKG, '    "GateInventory": render_gate_inventory,\n',
             '    "GateInventory": render_gate_inventory,\n'
             '    "RogueView": render_gate_inventory,\n')],
           "projector dispatcher entry RogueView serializes no registered view")
@@ -1887,7 +1889,8 @@ def test_generated_views(audit, project) -> list[str]:
          '                marker: Some("FUTURE-LEDGER"),\n'
          "                generator: BootstrapToolId::ProjectPy,\n"
          "            },"),
-        (PY, '    "GeneratedViewRegistry": render_generated_view_registry,\n}',
+        ("bootstrap/project/__init__.py",
+         '    "GeneratedViewRegistry": render_generated_view_registry,\n}',
          '    "GeneratedViewRegistry": render_generated_view_registry,\n'
          '    "FutureLedger": lambda root: "sandbox-only future ledger body",\n}'),
     ])
