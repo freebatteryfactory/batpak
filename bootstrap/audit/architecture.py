@@ -131,10 +131,10 @@ def release_seal_findings(root: Path) -> list[str]:
     the field list independently, checks the docs/36 projection, and refuses a
     decision row that restates the list instead of naming the owner."""
     out: list[str] = []
-    src = _spec_module_source(root, "architecture")
+    src = _spec_module_source(root, "release")
     start = src.find("pub const RELEASE_SEAL_FIELDS")
     if start < 0:
-        return ["spec/architecture/release_seal.rs declares no RELEASE_SEAL_FIELDS"]
+        return ["spec/release/inventory.rs declares no RELEASE_SEAL_FIELDS"]
     fields = re.findall(r"ReleaseSealField::(\w+)", src[start: src.index("\n];", start)])
     if len(fields) != len(set(fields)):
         out.append("a release-seal field is listed twice")
@@ -163,6 +163,8 @@ def release_seal_findings(root: Path) -> list[str]:
 # The profile TABLE dissolved in 5.5E2: every authenticated-history fact is a
 # const fn on AuthenticatedHistoryProfile, so the auditor parses the match arms
 # of the fn that owns each fact — the same posture as decision_lifetime_map.
+# The claim algebra graduated to its own domain in F4: the owning bytes are
+# spec/authenticated_history/ (spec::authenticated_history), not architecture.
 A_AH_FN_ARM = re.compile(
     r"((?:AuthenticatedHistoryProfile::\w+\s*\|?\s*)+)=>\s*"
     r"(\{.*?\}|&\[[^\]]*\]|\w+(?:\([^)]*\))?)",
@@ -228,7 +230,7 @@ A_CLAIM_LADDER_NAMES = ("SecurityPosture", "VerificationLevel", "AssuranceLevel"
 def ah_fn_arms(root: Path, name: str) -> dict[str, str]:
     """AuthenticatedHistoryProfile variant -> that profile's value expression,
     parsed from the const fn that owns the fact."""
-    src = _uncomment(_spec_module_source(root, "architecture"))
+    src = _uncomment(_spec_module_source(root, "authenticated_history"))
     body = re.search(
         r"pub const fn " + re.escape(name) + r"\(self\)[^{]*\{\s*match self \{(.*?)\n    \}",
         src, re.S)
@@ -269,30 +271,35 @@ def authenticated_history_rows(root: Path) -> list[dict]:
 
 
 def claim_bundles(root: Path) -> dict[str, tuple[str, str, str, str]]:
-    src = _spec_module_source(root, "architecture")
+    src = _spec_module_source(root, "authenticated_history")
     return {m[0]: (m[1], m[2], m[3], m[4]) for m in A_CLAIM_BUNDLE.findall(src)}
 
 
 def claim_axis_findings(root: Path) -> list[str]:
     """Four independently representable claim axes, no ladder, no flattening."""
     out: list[str] = []
-    src = _spec_module_source(root, "architecture")
-    for term in A_RETIRED_CLAIM_VOCAB:
-        if term in src:
-            out.append(f"spec/architecture/ reintroduces retired claim vocabulary {term}")
-    for name in A_CLAIM_LADDER_NAMES:
-        # A DECLARATION, not a doc comment naming what must never be built.
-        if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b", src, re.M):
-            out.append(f"spec/architecture/ introduces a generic security ladder {name}")
+    src = _spec_module_source(root, "authenticated_history")
+    # The retired vocabulary and the generic-ladder names are refused in the
+    # claim algebra's own domain AND its former architecture home: a flattened
+    # claim type sneaking back through either surface is the same defect.
+    for dom in ("authenticated_history", "architecture"):
+        dom_src = src if dom == "authenticated_history" else _spec_module_source(root, dom)
+        for term in A_RETIRED_CLAIM_VOCAB:
+            if term in dom_src:
+                out.append(f"spec/{dom}/ reintroduces retired claim vocabulary {term}")
+        for name in A_CLAIM_LADDER_NAMES:
+            # A DECLARATION, not a doc comment naming what must never be built.
+            if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b", dom_src, re.M):
+                out.append(f"spec/{dom}/ introduces a generic security ladder {name}")
     for axis, want in A_CLAIM_AXES.items():
         got = _enum_variants(root, axis)
         if not got:
-            out.append(f"spec/architecture/authenticated_history.rs declares no {axis}")
+            out.append(f"spec/authenticated_history/types.rs declares no {axis}")
         elif got != want:
             out.append(f"{axis} variants {sorted(got)} != frozen {sorted(want)}")
     fields = re.search(r"pub struct AuthenticatedHistoryClaims \{(.*?)\n\}", src, re.S)
     if not fields:
-        out.append("spec/architecture/authenticated_history.rs declares no AuthenticatedHistoryClaims")
+        out.append("spec/authenticated_history/types.rs declares no AuthenticatedHistoryClaims")
     else:
         for want in ("integrity: IntegrityClaim", "authenticity: AuthenticityClaim",
                      "freshness: FreshnessClaim", "rollback_resistance: RollbackResistanceClaim"):
@@ -313,7 +320,7 @@ def claim_axis_findings(root: Path) -> list[str]:
         if (freshness == "WitnessedGenerationVerified") != (rollback == "ScopedToVerifiedWitness"):
             out.append(f"{name} lets freshness and rollback resistance drift apart")
     if not re.search(r"^pub const REFUSAL_PARTIAL_CLAIM_LAW: &str =", src, re.M):
-        out.append("spec/architecture/authenticated_history.rs states no refusal/partial-evidence law")
+        out.append("spec/authenticated_history/types.rs states no refusal/partial-evidence law")
     return out
 
 
@@ -321,7 +328,7 @@ def authenticated_history_findings(root: Path) -> list[str]:
     rows = authenticated_history_rows(root)
     out: list[str] = list(claim_axis_findings(root))
     if not rows:
-        return out + ["spec/architecture/authenticated_history.rs derives no authenticated-history profile facts"]
+        return out + ["spec/authenticated_history/types.rs derives no authenticated-history profile facts"]
     names = [r["profile"] for r in rows]
     if set(names) != set(A_FROZEN_MATRIX):
         out.append(f"authenticated-history profile set {sorted(names)} != frozen {sorted(A_FROZEN_MATRIX)}")
@@ -388,7 +395,7 @@ def authenticated_history_findings(root: Path) -> list[str]:
             out.append(f"{r['profile']} names no release qualification gate")
     declared = _enum_variants(root, "WitnessDisposition")
     if not declared:
-        out.append("spec/architecture/authenticated_history.rs declares no WitnessDisposition")
+        out.append("spec/authenticated_history/types.rs declares no WitnessDisposition")
     else:
         missing = A_WITNESS_DISPOSITIONS - declared
         if missing:
@@ -409,9 +416,12 @@ def authenticated_history_findings(root: Path) -> list[str]:
 def retired_claim_vocabulary_findings(root: Path) -> list[str]:
     """The flattened claim type may not return through any authoritative surface."""
     out: list[str] = []
-    _decomposed = {"spec/architecture/": "architecture", "spec/dispositions/": "dispositions",
+    _decomposed = {"spec/architecture/": "architecture",
+                   "spec/authenticated_history/": "authenticated_history",
+                   "spec/dispositions/": "dispositions",
                    "spec/guarantees/": "guarantees"}
-    for rel in ("spec/architecture/", "spec/dispositions/", "spec/guarantees/",
+    for rel in ("spec/architecture/", "spec/authenticated_history/",
+                "spec/dispositions/", "spec/guarantees/",
                 "docs/14_RECEIPTS_AND_EXPLANATION.md", "docs/19_SECURITY_MODEL.md",
                 "docs/05_STORAGE_FBAT_AND_TILES.md", "docs/31_FINAL_CONTRADICTION_AUDIT.md"):
         if rel in _decomposed:

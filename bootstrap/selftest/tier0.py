@@ -1654,8 +1654,8 @@ def test_bootstrap_qualification(audit) -> list[str]:
              f"(got {audit.bootstrap_qualification_findings(root)!r})")
 
     probe("tier0_receipt_kind_missing_from_all_is_rejected", BQ,
-          "        Tier0ReceiptKind::SpecTests,\n    ];",
-          "SpecTests is authored but ALL omits it",
+          "        Tier0ReceiptKind::SpecRlib,\n    ];",
+          "SpecRlib is authored but ALL omits it",
           "    ];")
     probe("duplicate_tier0_slug_is_rejected", BQ,
           'Tier0ReceiptKind::SpecTests => "tier0-spec-tests",',
@@ -1682,6 +1682,20 @@ def test_bootstrap_qualification(audit) -> list[str]:
           "| tier0-materialize | ExecutableAndOutputTree |",
           "does not match its typed derivation",
           "| tier0-materialize | Executable |")
+
+    # F4: the spec-rlib compilation receipt is pinned independently — a
+    # corrupted slug removes the sixth kind from the denominator, and a
+    # producer without the dedicated gate leaves the receipt unearned. The
+    # gate-def anchor is concatenated at run time so THIS source never
+    # contains the contiguous token the audit law scans for.
+    probe("spec_rlib_receipt_cannot_leave_the_denominator", BQ,
+          'Tier0ReceiptKind::SpecRlib => "tier0-spec-rlib",',
+          "omits the tier0-spec-rlib",
+          'Tier0ReceiptKind::SpecRlib => "tier0-spec-lib",')
+    probe("spec_rlib_gate_cannot_be_retired", "bootstrap/selftest/tier0.py",
+          "def _t0_spec_" + "rlib_gate",
+          "no dedicated spec-rlib compilation gate",
+          "def _t0_retired_spec_gate")
 
     findings.extend(canonical_drift(before))
     return findings
@@ -1718,6 +1732,8 @@ def _t0_canonical_artifact() -> str:
         f"outcome=passed evidence=executable digest={d64['1']}",
         f"receipt: tier0-spec-tests compiled=succeeded execution=attempted "
         f"outcome=passed evidence=executable digest={d64['2']}",
+        f"receipt: tier0-spec-rlib compiled=succeeded execution=attempted "
+        f"outcome=passed evidence=executable digest={d64['3']}",
     ]
     return "\n".join(lines) + "\n"
 
@@ -1853,7 +1869,14 @@ def test_receiptcheck_bundle_perimeter() -> list[str]:
     """The verifier enforces the EXACT evidence-bundle shape (5.5E6c2): a real GNU
     bundle verifies, but a stray PDB/scratch file in executables/, an unmanifested
     top-level file, a supplemental bundle carrying run-metadata, and an external
-    artifact substituted for the bundle's own qualification.t0 are all refused."""
+    artifact substituted for the bundle's own qualification.t0 are all refused.
+
+    The tier0-spec-rlib battery (F4) also lives here, against the same produced
+    bundle and built verifier: an artifact stripped of the spec-rlib receipt is
+    refused by the typed denominator, a witness executable missing from the
+    bundle is refused at digest recompute, a spec that reaches std reddens the
+    gate through the real compiler, an abandoned #![no_std] premise is refused
+    before rustc runs, and an alloc-lawful spec edit stays green (the neuter)."""
     findings: list[str] = []
     root = HERE.parent
     rustc = shutil.which("rustc")
@@ -1944,6 +1967,81 @@ def test_receiptcheck_bundle_perimeter() -> list[str]:
             findings.append("receiptcheck_external_qualification_artifact_cannot_"
                             "substitute_for_bundle_artifact FAILED "
                             f"(got {eout.strip()[:200]!r})")
+
+        # --- the tier0-spec-rlib receipt (F4): denominator + gate battery ----
+        # (1) An artifact stripped of the spec-rlib receipt line still PARSES
+        # (the receipts block is receipt-count-agnostic), the digests of the
+        # remaining five still recompute, and the bundle shape still holds —
+        # the refusal is the typed denominator's MissingRequiredReceipt.
+        art_path = bundle / "qualification.t0"
+        original_artifact = art_path.read_bytes()
+        without_line = b"".join(
+            line + b"\n" for line in original_artifact.split(b"\n")[:-1]
+            if not line.startswith(b"receipt: tier0-spec-rlib "))
+        refuses_bundle("missing_spec_rlib_receipt_is_refused",
+                       lambda: art_path.write_bytes(without_line),
+                       lambda: art_path.write_bytes(original_artifact),
+                       "MissingRequiredReceipt")
+        # (2) The witness executable cannot leave the bundle: the receipt's
+        # digest recompute reads the bytes on disk, and an absent artifact is
+        # a refusal, not a shrug.
+        exe_suffix = ".exe" if os.name == "nt" else ""
+        rlib_exe = exe_dir / ("tier0-spec-rlib" + exe_suffix)
+        hidden = work / ("tier0-spec-rlib" + exe_suffix)
+        refuses_bundle("spec_rlib_witness_cannot_leave_the_bundle",
+                       lambda: rlib_exe.rename(hidden),
+                       lambda: hidden.rename(rlib_exe),
+                       "tier0-spec-rlib")
+        # (3) The gate itself, run standalone against sandbox trees. A spec
+        # path that reaches std is refused by the REAL compiler under the
+        # unconditional #![no_std] (the diagnostic must name `std`), an
+        # abandoned #![no_std] premise is refused before rustc runs, and an
+        # alloc-lawful spec edit is NOT refused — the neuter proving the gate
+        # reddens on the std path, not on any edit.
+        BQT = "spec/bootstrap_qualification/types.rs"
+        std_tmp = gate_sandbox([(BQT, "use alloc::string::String;",
+                                 "use std::vec::Vec;\nuse alloc::string::String;")])
+        try:
+            tail, probs = _t0_spec_rlib_gate(rustc, TOOLCHAIN_EDITION, _T0_GNU,
+                                             std_tmp, work / "sr-hostile")
+            if tail is not None or not any(
+                    "did not compile as no_std" in p for p in probs):
+                findings.append("spec_rlib_gate_refuses_std_reaching_spec FAILED "
+                                f"(tail={tail!r}, problems={probs!r})")
+            elif not any("`std`" in p for p in probs):
+                findings.append("spec_rlib_gate_refuses_std_reaching_spec FAILED "
+                                f"(refused, but the diagnostic does not name std: "
+                                f"{probs!r})")
+        finally:
+            shutil.rmtree(std_tmp, ignore_errors=True)
+        premise_tmp = gate_sandbox([])
+        try:
+            lib = premise_tmp / "spec" / "lib.rs"
+            lib.write_text(lib.read_text(encoding="utf-8")
+                           .replace("#![no_std]\n", "", 1), encoding="utf-8")
+            tail, probs = _t0_spec_rlib_gate(rustc, TOOLCHAIN_EDITION, _T0_GNU,
+                                             premise_tmp, work / "sr-premise")
+            if tail is not None or not any(
+                    "no_std compilation premise is absent" in p for p in probs):
+                findings.append("spec_rlib_gate_refuses_abandoned_no_std_premise "
+                                f"FAILED (tail={tail!r}, problems={probs!r})")
+        finally:
+            shutil.rmtree(premise_tmp, ignore_errors=True)
+        neuter_tmp = gate_sandbox([(BQT, "use alloc::string::String;",
+                                    "use alloc::string::String;\n\n"
+                                    "/// Sandbox neuter witness: alloc-lawful "
+                                    "spec growth keeps the receipt green.\n"
+                                    "pub const SPEC_RLIB_NEUTER_WITNESS: &str = "
+                                    "\"neuter\";")])
+        try:
+            tail, probs = _t0_spec_rlib_gate(rustc, TOOLCHAIN_EDITION, _T0_GNU,
+                                             neuter_tmp, work / "sr-neuter")
+            if probs or tail is None or not re.fullmatch(
+                    r"evidence=executable digest=[0-9a-f]{64}", tail):
+                findings.append("spec_rlib_gate_neuter_alloc_lawful_edit_passes "
+                                f"FAILED (tail={tail!r}, problems={probs!r})")
+        finally:
+            shutil.rmtree(neuter_tmp, ignore_errors=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return findings
@@ -1964,7 +2062,7 @@ def test_receiptcheck_bundle_perimeter() -> list[str]:
 _T0_GNU = "x86_64-pc-windows-gnu"
 _T0_MSVC = "x86_64-pc-windows-msvc"
 _T0_SLUGS = ("tier0-law-fixtures", "tier0-seedcheck", "tier0-materialize",
-             "tier0-seedcheck-tests", "tier0-spec-tests")
+             "tier0-seedcheck-tests", "tier0-spec-tests", "tier0-spec-rlib")
 _T0_WORKFLOW_PATH = ".github/workflows/msvc-qualification.yml"
 
 
@@ -2104,6 +2202,70 @@ def _t0_gate_exe(rustc, edition, target, rlib, source_root: Path, bundle: Path,
     return f"evidence=executable digest={digest}", []
 
 
+def _t0_spec_rlib_gate(rustc, edition, target, source_root: Path,
+                       bundle: Path) -> tuple[str | None, list[str]]:
+    """The tier0-spec-rlib compilation gate (F4): the no_std specification's
+    own compile is Tier 0 EVIDENCE, not an incidental build step.
+
+    The fact under proof is the fresh `--crate-type rlib` compile of
+    spec/lib.rs for the bound target. The spec declares `#![no_std]` +
+    `extern crate alloc` unconditionally, so this compile REFUSES any spec
+    path that reaches std — the compiler is the judge, not a string scan. The
+    declared posture is the receipt's premise: a spec that abandoned
+    `#![no_std]` would still compile, so its absence is refused before rustc
+    runs. The receipt is witnessed like every executable gate (5.5E6c2): a
+    minimal runner is linked against the exact rlib THIS gate compiled,
+    executed with its exit code and banner in agreement, and copied into the
+    bundle where receiptcheck recomputes its digest from the bytes on disk.
+    That digest is per-run evidence, never a cross-run source coordinate
+    (5.5E6c: compare_runs reads only the deterministic source coordinates).
+    """
+    slug = "tier0-spec-rlib"
+    work = bundle.parent / "t0-work" / slug
+    work.mkdir(parents=True, exist_ok=True)
+    (bundle / "executables").mkdir(parents=True, exist_ok=True)
+    lib_src = source_root / "spec/lib.rs"
+    if "#![no_std]" not in lib_src.read_text(encoding="utf-8"):
+        return None, [f"{slug}: spec/lib.rs does not declare #![no_std]; the "
+                      "no_std compilation premise is absent"]
+    rlib = work / "libspec.rlib"
+    proc = subprocess.run(
+        [rustc, "--edition", edition, "--target", target, "--crate-type",
+         "rlib", "--crate-name", "spec", "-o", str(rlib), str(lib_src)],
+        capture_output=True, text=True)
+    if proc.returncode != 0 or not rlib.is_file():
+        head = " / ".join(proc.stderr.splitlines()[:6])
+        return None, [f"{slug}: the spec rlib did not compile as no_std for "
+                      f"{target} ({head})"]
+    witness = work / "witness.rs"
+    witness.write_text(
+        "//! Tier-0 witness runner: links the freshly compiled no_std spec\n"
+        "//! rlib and executes a typed inventory read from it, so the bundled\n"
+        "//! artifact can only exist if THIS run's spec compiled for the\n"
+        "//! bound target.\n"
+        "fn main() {\n"
+        "    let kinds = spec::bootstrap_qualification::Tier0ReceiptKind::ALL;\n"
+        "    assert!(!kinds.is_empty(), \"the Tier 0 denominator is empty\");\n"
+        "    println!(\"spec-rlib: PASS no_std rlib linked ({} receipt kinds)\",\n"
+        "             kinds.len());\n"
+        "}\n",
+        encoding="utf-8")
+    suffix = ".exe" if os.name == "nt" else ""
+    built = work / (slug + suffix)
+    if not _t0_build(rustc, edition, target, rlib, witness, built):
+        return None, [f"{slug}: the witness runner did not build against the "
+                      "fresh rlib"]
+    proc = subprocess.run([str(built)], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    if proc.returncode != 0 or "spec-rlib: PASS" not in out:
+        head = " / ".join(out.splitlines()[:6])
+        return None, [f"{slug}: the witness runner did not pass ({head})"]
+    dest = bundle / "executables" / (slug + suffix)
+    shutil.copyfile(built, dest)
+    digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+    return f"evidence=executable digest={digest}", []
+
+
 def _t0_git(root: Path, rev: str) -> str | None:
     """A 40-hex object id from `git rev-parse`, or None."""
     p = subprocess.run(["git", "-C", str(root), "rev-parse", rev],
@@ -2214,8 +2376,14 @@ def produce_tier0_evidence(bundle: Path,
             capture_output=True, text=True).returncode != 0:
         return None, source_root, [f"the spec rlib did not build for {target}"]
 
-    # Executable gates.
+    # Executable gates. The spec-rlib compilation gate runs first: its own
+    # fresh no_std compile of the spec is the fact under receipt (F4), distinct
+    # from the shared infrastructure rlib built above.
     tails: dict[str, str] = {}
+    tail, probs = _t0_spec_rlib_gate(rustc, edition, target, source_root, bundle)
+    problems += probs
+    if tail:
+        tails["tier0-spec-rlib"] = tail
     tail, probs = _t0_gate_exe(rustc, edition, target, rlib, source_root, bundle,
                                "tier0-seedcheck", "bootstrap/seedcheck.rs",
                                "seedcheck: PASS")

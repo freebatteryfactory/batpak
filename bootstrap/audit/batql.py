@@ -654,7 +654,7 @@ def batql_operator_corpus_findings(root: Path, model: dict,
         out.append("DEC-060 is missing from the decision ledger")
     for token in ("OperatorId", "OperatorId::ALL", "OperatorWordSurface",
                   "OperatorWordSurface::ALL", "OperatorSymbolSurface",
-                  "OperatorSymbolSurface::ALL", "OperatorSyntax", "spec/operators.rs"):
+                  "OperatorSymbolSurface::ALL", "OperatorSyntax", "spec::operators"):
         if token not in fields:
             out.append(f"DEC-060 forward-policy fields do not name {token}; the basis "
                        "must name the operator surface boundary it admits")

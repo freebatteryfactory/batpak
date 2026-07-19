@@ -145,7 +145,7 @@ An embedded block inherits no authority from its containing document. A standalo
 | SyncBatCrossings | embedded-block | spec/syncbat_firewall/inventory.rs | docs/08_SYNCBAT_RUNTIME.md | SYNCBAT-CROSSINGS | bootstrap/project.py |
 | ReconciliationCoordinates | embedded-block | spec/reconciliation/inventory.rs | docs/02_SYSTEM_MODEL.md | RECONCILIATION-COORDINATES | bootstrap/project.py |
 | ReconciliationRetry | embedded-block | spec/reconciliation/types.rs | docs/02_SYSTEM_MODEL.md | RECONCILIATION-RETRY | bootstrap/project.py |
-| ReleaseSeal | embedded-block | spec/architecture/release_seal.rs | docs/36_PUBLIC_API_CI_AND_RELEASE.md | RELEASE-SEAL | bootstrap/project.py |
+| ReleaseSeal | embedded-block | spec/release/inventory.rs | docs/36_PUBLIC_API_CI_AND_RELEASE.md | RELEASE-SEAL | bootstrap/project.py |
 | ProofTerminals | embedded-block | spec/proof/types.rs | docs/12_TESTPAK.md | PROOF-TERMINALS | bootstrap/project.py |
 | StaleVocabulary | embedded-block | spec/dispositions/inventory.rs | docs/29_STATUS_AND_SUPERSESSION.md; docs/33_AGENT_FINISH_LINE_CHECKLIST.md | STALE-VOCAB | bootstrap/project.py |
 | GateInventory | embedded-block | spec/gates/inventory.rs | docs/25_IMPLEMENTATION_GATES.md | GATE-INVENTORY | bootstrap/project.py |
@@ -190,6 +190,10 @@ An embedded block inherits no authority from its containing document. A standalo
 | SproutingVocabulary | embedded-block | spec/sprouting/types.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | SPROUTING-VOCABULARY | bootstrap/project.py |
 | SpecializedPlanCandidatePolicy | embedded-block | spec/sprouting/inventory.rs | docs/07_PAKVM_ISA.md | SPECIALIZED-PLAN-CANDIDATE-POLICY | bootstrap/project.py |
 | SproutingProofRequirements | embedded-block | spec/proof/inventory.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | PROOF-REQUIREMENTS | bootstrap/project.py |
+| DynamicVerificationVocabulary | embedded-block | spec/verification/types.rs | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | DYNAMIC-VERIFICATION-VOCABULARY | bootstrap/project.py |
+| VerificationRuntimeMatrix | embedded-block | spec/verification/types.rs | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | VERIFICATION-RUNTIME-MATRIX | bootstrap/project.py |
+| SproutingPromotionMatrix | embedded-block | spec/promotion/types.rs; spec/sprouting/inventory.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | SPROUTING-PROMOTION-MATRIX | bootstrap/project.py |
+| ReleaseSealMatrix | embedded-block | spec/release/types.rs; spec/release/inventory.rs | docs/36_PUBLIC_API_CI_AND_RELEASE.md | RELEASE-SEAL-MATRIX | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views/registry.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 | SpecModuleCatalog | embedded-block | spec/lib.rs | spec/README.md | SPEC-MODULE-CATALOG | bootstrap/project.py |
 | BootstrapToolCatalog | embedded-block | spec/guarantees/types.rs | bootstrap/README.md | BOOTSTRAP-TOOL-CATALOG | bootstrap/project.py |
@@ -212,8 +216,8 @@ The repository describes its own size the same way it describes everything else:
 | legacy semantic obligations | 87 | spec/legacy_obligations/inventory.rs OBLIGATIONS |
 | legacy invariant declarations | 115 | SOURCE_INVARIANT_IDS with COVERAGE parity |
 | BatQL operators | 13 | OperatorId::ALL with OPERATORS parity |
-| registered generated views | 63 | GeneratedView::ALL |
-| static generated target instances | 64 | expansion of every Static registry target |
+| registered generated views | 67 | GeneratedView::ALL |
+| static generated target instances | 68 | expansion of every Static registry target |
 | corpus-frontmatter bindings | 46 | the eligible Markdown corpus reached by CorpusEpochMembership |
 <!-- BUNDLE-INVENTORY:END -->
 

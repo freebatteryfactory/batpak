@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-DYNAMIC-VERIFICATION-1
 authority_scope: layered dynamic verification, model/trace separation, runtime conformance, coverage strength, claim kinds, and the anti-self-grading discipline
 supersedes: verification wording previously implied only through DEC-073, DEC-075, and SEED-INDEPENDENT-ORACLE
-last_reconciled: 2026-07-18
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -65,6 +65,77 @@ SEED-AVAILABILITY-AXES). The executable shape-based guard — the audit that
 refuses any type presenting these concerns as one ordered scalar — is authored
 in F2 against the concrete verification types. This section is the law that
 guard enforces.
+
+<!-- DYNAMIC-VERIFICATION-VOCABULARY:BEGIN generated from spec/verification/types.rs by bootstrap/project.py; do not edit -->
+```text
+VerificationMethod (VERIFICATION_METHODS)
+  StructuralRule
+  CompileRefusal
+  PropertySequence
+  BoundedStateExploration
+  ScheduleExploration
+  DeterministicSimulation
+  DifferentialExecution
+  TranslationValidation
+  FaultInjection
+  CrashRecovery
+  Fuzzing
+  Mutation
+  ComplexityContract
+  BenchmarkEnvelope
+  HistoryReplay
+
+VerificationClaimKind (VERIFICATION_CLAIM_KINDS)
+  Safety
+  Liveness
+  BoundedResponse
+  Convergence
+  Stability
+  NonOscillation
+  Determinism
+  Refinement
+  Conformance
+  ResourceEnvelope
+
+VerificationCoverage (VERIFICATION_COVERAGES)
+  Sampled
+  Bounded
+  ExhaustiveWithinDeclaredModel
+  ObservedHistory
+
+VerificationEnforcementPosture (VERIFICATION_ENFORCEMENT_POSTURES)
+  Blocking
+  Quarantine
+  Advisory
+
+VerificationLane (VERIFICATION_LANES)
+  PullRequestFast
+  Merge
+  Scheduled
+  Release
+  Runtime
+
+IndependentEvidenceRouteKind (INDEPENDENT_EVIDENCE_ROUTE_KINDS)
+  DifferentialImplementation
+  HostileBoundary
+  IndependentHistoryReplay
+
+RuntimeVerificationMode (RUNTIME_VERIFICATION_MODES)
+  PreventiveGuard
+  InBandObservation
+  OfflineReplay
+
+RuntimeVerificationDisposition (RUNTIME_VERIFICATION_DISPOSITIONS)
+  GuardAdmitted
+  GuardRefused
+  NoDivergenceObserved
+  ConformantForObservedHistory
+  Divergent
+  Incomplete
+  Stale
+  Unsupported
+```
+<!-- DYNAMIC-VERIFICATION-VOCABULARY:END -->
 
 ## 2. Model/trace separation
 
@@ -178,7 +249,11 @@ there is no coverage ranking in either direction.
 F2 proves plan and observation-shape coherence. It does not prove that the
 caller honestly computed execution, freshness, artifact, or counterexample
 facts. Phase 6 TestPak receipts and independent verifiers convert concrete
-evidence into release-eligible proof. The typed admission (`admit_observation`,
+evidence into release-eligible proof. At the release boundary that
+runtime-conformance evidence binds through the release seal's
+`RuntimeConformanceDispositions` field (`spec/release/`,
+`36_PUBLIC_API_CI_AND_RELEASE.md`), which is mandatory even when empty: an
+empty set is evidence, a missing field is an incomplete envelope. The typed admission (`admit_observation`,
 `assess_plan`) refuses an incoherent SHAPE; it does not vouch for the TRUTH of
 the boolean facts a `RequirementEvidenceObservation` carries.
 
@@ -263,6 +338,19 @@ InBandObservation + ConformantForObservedHistory    refused
 PreventiveGuard   + ConformantForObservedHistory    refused
 OfflineReplay     + NoDivergenceObserved            refused
 ```
+
+<!-- VERIFICATION-RUNTIME-MATRIX:BEGIN generated from spec/verification/types.rs by bootstrap/project.py; do not edit -->
+| Disposition | PreventiveGuard | InBandObservation | OfflineReplay |
+| --- | --- | --- | --- |
+| GuardAdmitted | yes | - | - |
+| GuardRefused | yes | - | - |
+| NoDivergenceObserved | - | yes | - |
+| ConformantForObservedHistory | - | - | yes |
+| Divergent | - | yes | yes |
+| Incomplete | - | yes | yes |
+| Stale | - | yes | yes |
+| Unsupported | yes | yes | yes |
+<!-- VERIFICATION-RUNTIME-MATRIX:END -->
 
 A preventive guard needs no replay before refusing: it admits or refuses at the
 boundary, and that is its whole verdict. An in-band monitor may state "no

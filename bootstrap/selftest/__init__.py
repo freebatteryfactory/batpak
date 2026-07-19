@@ -31,7 +31,6 @@ from .catalogs import (
     test_promotion,
     test_rust_specification_compiles,
     test_seedcheck_executes_its_law,
-    test_source_grammar,
     test_toolchain,
 )
 from .core import (
@@ -60,6 +59,9 @@ from .domains import (
     test_reconciliation,
     test_syncbat_firewall,
     test_syncbat_requiredness,
+)
+from .grammar import (
+    test_source_grammar,
 )
 from .guarantees import (
     test_guarantee_authority,

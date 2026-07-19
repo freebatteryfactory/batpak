@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-CRYPTO-SECRET-1
 authority_scope: integrity roles, secret authority, key lifecycle, shred durability, and anti-rollback
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-14
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -187,7 +187,7 @@ encrypted bytes. Implementation does not get to leave them ambient.
 This document owns signing-key ownership, secret authority, and verification-key trust. It does not own whole-store authenticated history:
 
 ```text
-spec/architecture/authenticated_history.rs   the typed AuthenticatedHistoryProfile matrix and witness policy
+spec/authenticated_history/   the typed AuthenticatedHistoryProfile matrix and witness policy
 19_SECURITY_MODEL.md   the whole-store rollback threat and the permitted claims
 05_STORAGE_FBAT_AND_TILES.md  segment seals, history commitment, open/restore behavior
 ```

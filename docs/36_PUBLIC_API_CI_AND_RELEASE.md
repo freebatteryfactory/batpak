@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-PUBLIC-API-CI-RELEASE-1
 authority_scope: public API ownership, semver, MSRV, CI lane responsibilities, release seal, and refusal
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-14
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -195,16 +195,23 @@ both across every outcome at the Tier 0 gate.
 ## Release seal and refusal (DEC-058)
 
 A release receipt binds every field of the typed inventory
-(`spec/architecture/release_seal.rs`, `ReleaseSealField`) — this list is a generated
-projection of it. `KernelQualificationSet` is mandatory even when empty: an
-empty set states "no kernels admitted" (KernelImplementationId +
+(`spec/release/`, `ReleaseSealField`) — this list is a generated projection of
+it. Every field is mandatory even when its set is empty: an empty set is
+evidence, a missing field is an incomplete envelope. `KernelQualificationSet`
+empty states "no kernels admitted" (KernelImplementationId +
 KernelQualificationReceiptId per admitted kernel), it never disappears from
 the schema. An admitted row binds the `KernelContractId` it implements, the
 `QualifiedKernelId` it earned, the `KernelInterfaceHash` of the interface it
 was qualified against, and the `KernelManifestVersion` of the manifest that
-carried it.
+carried it. The same law binds the three evidence-set fields their owning
+laws added: `ModelDispositions` (model-based verification evidence) and
+`RuntimeConformanceDispositions` (runtime-conformance evidence,
+`38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md`) are distinct families, never
+merged into the test/mutation/fuzz/benchmark dispositions, and
+`CandidatePromotionSet` binds the auditable candidate-promotion receipts
+(`39_SPROUTING_NURSERY_AND_PROMOTION.md`) — each present even when empty.
 
-<!-- RELEASE-SEAL:BEGIN generated from spec/architecture/release_seal.rs by bootstrap/project.py; do not edit -->
+<!-- RELEASE-SEAL:BEGIN generated from spec/release/inventory.rs by bootstrap/project.py; do not edit -->
 ```text
 SourceTree
 Toolchain
@@ -215,9 +222,12 @@ TestDispositions
 MutationDispositions
 FuzzDispositions
 BenchmarkDispositions
+ModelDispositions
+RuntimeConformanceDispositions
 CompilerAssumptionLedger
 DependencyLedger
 KernelQualificationSet
+CandidatePromotionSet
 PackageContents
 PublicApi
 Sbom
@@ -225,6 +235,31 @@ LicenseEvidence
 ProofFreshness
 ```
 <!-- RELEASE-SEAL:END -->
+
+<!-- RELEASE-SEAL-MATRIX:BEGIN generated from spec/release/types.rs; spec/release/inventory.rs by bootstrap/project.py; do not edit -->
+| Field | Empty-set posture |
+| --- | --- |
+| SourceTree | - |
+| Toolchain | - |
+| DependencyGraph | - |
+| GeneratedFacts | - |
+| CompatibilityCorpus | - |
+| TestDispositions | - |
+| MutationDispositions | - |
+| FuzzDispositions | - |
+| BenchmarkDispositions | - |
+| ModelDispositions | mandatory even when empty |
+| RuntimeConformanceDispositions | mandatory even when empty |
+| CompilerAssumptionLedger | - |
+| DependencyLedger | - |
+| KernelQualificationSet | mandatory even when empty |
+| CandidatePromotionSet | mandatory even when empty |
+| PackageContents | - |
+| PublicApi | - |
+| Sbom | - |
+| LicenseEvidence | - |
+| ProofFreshness | - |
+<!-- RELEASE-SEAL-MATRIX:END -->
 
 A release is refused when any of these holds:
 

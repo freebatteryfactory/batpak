@@ -18,7 +18,7 @@ the real `spec` rlib.
 ## Tool census
 
 The exact tool set, generated from the typed denominator `BootstrapToolId`
-(`spec/guarantees.rs`) whose every `path()` seedcheck requires to exist.
+(`spec/guarantees/types.rs`) whose every `path()` seedcheck requires to exist.
 
 <!-- BOOTSTRAP-TOOL-CATALOG:BEGIN generated from spec/guarantees/types.rs by bootstrap/project.py; do not edit -->
 | Tool | Law path |
@@ -114,7 +114,7 @@ ASCII/LF grammar, and only then calls the sealed
 `Tier0ReceiptKind::ALL` denominator, per-kind artifact policy, single target,
 source posture, and hosted-run requirement. selftest holds no admission predicate
 of its own: a dishonest receipt is caught by the verifier, not by Python. The one
-denominator is the typed owner in `spec/bootstrap_qualification.rs`; the
+denominator is the typed owner in `spec/bootstrap_qualification/types.rs`; the
 authoritative `x86_64-pc-windows-msvc` receipt is produced by the hosted CI lane,
 and a local run produces the supplemental `x86_64-pc-windows-gnu` frozen-export
 lane.

@@ -516,7 +516,8 @@ def test_reconciliation(audit, project) -> list[str]:
     if audit.release_seal_findings(root):
         fail(f"release_seal_contract_passes (got {audit.release_seal_findings(root)!r})")
     with isolated_tree() as tmp:
-        p = tmp / "spec/architecture/release_seal.rs"
+        p = tmp / _resolve_edit_carrier(
+            root, "spec/release.rs", "    ReleaseSealField::KernelQualificationSet,\n")
         p.write_text(must_replace(
             p.read_text(encoding="utf-8"),
             "    ReleaseSealField::KernelQualificationSet,\n", "",

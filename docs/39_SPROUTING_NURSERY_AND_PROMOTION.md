@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-SPROUTING-1
 authority_scope: candidate sprouting, immutable nursery lineage, bounded search, evaluation-set roles, realization-preserving versus law-changing promotion, and generate-wide/qualify-deep frontier qualification
 supersedes: candidate and campaign wording previously implied only through DEC-048, DEC-062, DEC-073, and DEC-075
-last_reconciled: 2026-07-18
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -175,6 +175,12 @@ QualifiedHostileEvidence     qualified hostile evidence against the boundary
 AuditablePromotionReceipt    an auditable receipt of the promotion decision
 ```
 
+Those auditable receipts also reach the release envelope: the release seal's
+`CandidatePromotionSet` field (`spec/release/`, `36_PUBLIC_API_CI_AND_RELEASE.md`)
+binds the promotion receipts a release carries and is mandatory even when
+empty — an empty set states "no candidates promoted", it never disappears
+from the schema.
+
 A change class ADDS an authority path; it never REPLACES a common requirement. A
 realization-preserving candidate satisfies all four through a mechanical or
 bounded-search lane. A law-changing candidate satisfies all four AND additionally
@@ -212,6 +218,25 @@ A candidate never edits the court that judges it. ArchitectRequired has a
 terminal disposition home so it can never silently drop from the denominator: an
 escalated campaign is accounted for as escalated, not quietly absent. DEC-080
 (Enforcement, Lock) owns the promotion distinction.
+
+<!-- SPROUTING-PROMOTION-MATRIX:BEGIN generated from spec/promotion/types.rs; spec/sprouting/inventory.rs by bootstrap/project.py; do not edit -->
+| Requirement | Owner | Admission basis |
+| --- | --- | --- |
+| IndependentEvidenceRoute | BP-TESTPAK-1 | DEC-015 |
+| NamedProofTarget | BP-TESTPAK-1 | DEC-015 |
+| QualifiedHostileEvidence | BP-TESTPAK-1 | DEC-015 |
+| AuditablePromotionReceipt | BP-TESTPAK-1 | DEC-015 |
+
+```text
+policy surface                 CandidatePromotion
+policy-change basis            DEC-074
+enforcement gate               G3
+release-visibility gate        G9
+specialized-plan basis         DEC-073
+specialized-plan route         DifferentialImplementation
+specialized-plan requirements  IndependentEvidenceRoute; NamedProofTarget; QualifiedHostileEvidence; AuditablePromotionReceipt
+```
+<!-- SPROUTING-PROMOTION-MATRIX:END -->
 
 ## 6. Generate-wide, qualify-deep
 

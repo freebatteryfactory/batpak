@@ -111,6 +111,7 @@ The required Tier 0 receipt denominator is a generated projection of the harness
 | tier0-materialize | ExecutableAndOutputTree |
 | tier0-seedcheck-tests | Executable |
 | tier0-spec-tests | Executable |
+| tier0-spec-rlib | Executable |
 <!-- TIER0-RECEIPT-DENOMINATOR:END -->
 
 Every listed receipt is required. A receipt qualifies only when availability, compilation, execution, passing disposition, physical target, and required artifact/source binding all hold.

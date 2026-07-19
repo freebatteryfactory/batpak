@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-STORAGE-TILES-1
 authority_scope: durable journal, native event framing, storage authority, tiles, and recovery
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -171,7 +171,7 @@ A foreign or stale derived cache is discarded and rebuilt. A foreign or damaged 
 
 ## Authenticated history at open and restore (DEC-071)
 
-The store owns the durable material that authenticated history verifies. `spec/architecture/authenticated_history.rs` owns the typed profile matrix; `19_SECURITY_MODEL.md` owns the threat and the claims; this document owns the storage semantics:
+The store owns the durable material that authenticated history verifies. `spec/authenticated_history/` owns the typed profile matrix; `19_SECURITY_MODEL.md` owns the threat and the claims; this document owns the storage semantics:
 
 ```text
 segment seal            a per-segment authenticity commitment over accepted bytes

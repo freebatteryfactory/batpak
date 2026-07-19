@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-SECURITY-1
 authority_scope: threats, trusted computing base, guest isolation, capabilities, storage and proof honesty
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -112,7 +112,7 @@ freshness            this is the newest generation ever acknowledged
 rollback resistance  restoring an older valid generation is detectable
 ```
 
-A store's history verification claims exactly what its `AuthenticatedHistoryProfile` and verified `WitnessDisposition` support, and no more (`spec/architecture/authenticated_history.rs`):
+A store's history verification claims exactly what its `AuthenticatedHistoryProfile` and verified `WitnessDisposition` support, and no more (`spec/authenticated_history/`):
 
 ```text
 InternalConsistency           internal consistency verified

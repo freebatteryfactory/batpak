@@ -52,7 +52,10 @@ STALE_REF_RE = re.compile(r"\[STALE-REF:\s*(DEC-\d+)\]")
 STALE_VOCAB_BLOCK_RE = re.compile(r"<!-- STALE-VOCAB:BEGIN[^>]*-->(.*?)<!-- STALE-VOCAB:END -->", re.S)
 RETIRING_DISPOSITIONS = {"Kill", "Supersede", "Demote", "Lock"}
 PRODUCTION_SOURCE_DIRS = ("crates", "apps")
-EXCLUDE_DIRS = {".git", "target", "__pycache__"}
+# Lockstep with freeze.py EXCLUDE_DIRS: .ruff_cache is derived lint-tool
+# output (same class as __pycache__). Freeze excludes it, so an audit census
+# that counted it would demand a row freeze can never record.
+EXCLUDE_DIRS = {".git", "target", "__pycache__", ".ruff_cache"}
 EXCLUDE_SUFFIXES = {".zip", ".pyc"}
 
 
@@ -219,14 +222,16 @@ def declared_contract_ids(root: Path) -> set[str]:
 A_DISPOSITION_VARIANT = re.compile(r'WitnessDisposition::(\w+)')
 
 
+# Both helpers read the authenticated-history claim algebra, which graduated
+# from spec/architecture/ to its own domain in F4 (spec::authenticated_history).
 def _enum_variants(root: Path, name: str) -> set[str]:
-    src = _spec_module_source(root, "architecture")
+    src = _spec_module_source(root, "authenticated_history")
     m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
     return set(re.findall(r"^\s{4}(\w+),", m.group(1), re.M)) if m else set()
 
 
 def _const_variants(root: Path, name: str) -> list[str]:
-    src = _spec_module_source(root, "architecture")
+    src = _spec_module_source(root, "authenticated_history")
     m = re.search(r"pub const " + re.escape(name) + r":[^=]*=\s*&\[(.*?)\];", src, re.S)
     return A_DISPOSITION_VARIANT.findall(m.group(1)) if m else []
 

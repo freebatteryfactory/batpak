@@ -32,6 +32,12 @@ pub enum Tier0ReceiptKind {
     SeedcheckTests,
     /// The specification crate's own in-crate refusal-test harness.
     SpecTests,
+    /// The no_std specification rlib compile for the bound target. The spec
+    /// declares `#![no_std]` + `extern crate alloc` unconditionally, so this
+    /// compilation FAILS if any spec path reaches `std` — the compiler is the
+    /// judge. Witnessed like every executable gate: a minimal runner linked
+    /// against the freshly compiled rlib, executed and digest-bound.
+    SpecRlib,
 }
 
 impl Tier0ReceiptKind {
@@ -44,6 +50,7 @@ impl Tier0ReceiptKind {
         Tier0ReceiptKind::Materialize,
         Tier0ReceiptKind::SeedcheckTests,
         Tier0ReceiptKind::SpecTests,
+        Tier0ReceiptKind::SpecRlib,
     ];
 
     /// The stable receipt slug the harness and artifact use.
@@ -54,6 +61,7 @@ impl Tier0ReceiptKind {
             Tier0ReceiptKind::Materialize => "tier0-materialize",
             Tier0ReceiptKind::SeedcheckTests => "tier0-seedcheck-tests",
             Tier0ReceiptKind::SpecTests => "tier0-spec-tests",
+            Tier0ReceiptKind::SpecRlib => "tier0-spec-rlib",
         }
     }
 
@@ -75,6 +83,7 @@ impl Tier0ReceiptKind {
             Tier0ReceiptKind::Materialize => Tier0ArtifactPolicy::ExecutableAndOutputTree,
             Tier0ReceiptKind::SeedcheckTests => Tier0ArtifactPolicy::Executable,
             Tier0ReceiptKind::SpecTests => Tier0ArtifactPolicy::Executable,
+            Tier0ReceiptKind::SpecRlib => Tier0ArtifactPolicy::Executable,
         }
     }
 }

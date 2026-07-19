@@ -437,6 +437,18 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
         out.append(f"{A_BQ_SPEC}: reuses the product ReceiptId; Tier0ReceiptKind is the "
                    "bootstrap receipt identity")
 
+    # F4: the spec-rlib compilation receipt. The no_std specification's own
+    # compile for the bound target is Tier 0 EVIDENCE, not an incidental build
+    # step: the auditor independently pins the sixth kind and its dedicated
+    # producer, so neither can silently leave the denominator. The def-form
+    # needle means a retired gate cannot hide behind its surviving call sites.
+    if "SpecRlib" not in kinds or slugs.get("SpecRlib") != "tier0-spec-rlib":
+        out.append(f"{A_BQ_SPEC}: the Tier 0 denominator omits the tier0-spec-rlib "
+                   "spec compilation receipt")
+    if "def _t0_spec_rlib_gate" not in st:
+        out.append("bootstrap/selftest.py: no dedicated spec-rlib compilation gate "
+                   "exists; the tier0-spec-rlib receipt has no producer")
+
     # The Tier 0 denominator block equals the typed projection.
     dn = (root / "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md")
     if dn.is_file():
@@ -1090,7 +1102,10 @@ _TOPOLOGY_SIZE_CEILINGS: dict[str, int] = {
     "bootstrap/selftest/corpus.py": 1100,
     "bootstrap/selftest/inventory.py": 1600,
     "bootstrap/selftest/proof.py": 1100,
-    "bootstrap/selftest/tier0.py": 2500,
+    # 2500 -> 2700 (F4 ruling): the architect-ordered tier0-spec-rlib
+    # compilation gate and its hostile/neuter battery landed here, their
+    # ruled home beside the other Tier 0 producers and receipt hostiles.
+    "bootstrap/selftest/tier0.py": 2700,
 }
 
 
@@ -1231,9 +1246,9 @@ _TOPOLOGY_EFFECT_WHITELIST: dict[tuple[str, str], str] = {
     ("bootstrap/selftest/domains.py", "WINDOWING_OUTPUTS"):
         "0f630ede7b4c2999c1cdc6a632308032dc2c6f1963eb2115bb48a9eb40b092ef",
     # VIEW_RENDERERS = { ... the registry-driven renderer table (incl. the two
-    # F4-prelude catalog renderers) ... }
+    # F4-prelude catalog renderers and the four F4-B projection renderers) ... }
     ("bootstrap/project/__init__.py", "VIEW_RENDERERS"):
-        "562e513a54c1554184200282fe87a84f3bc23430176bdb96739cea33d0752b75",
+        "16b68d84414b7f20c2a72bf68836fd9a52cbb5199c5a6ebc80cf637f614d198d",
 }
 
 

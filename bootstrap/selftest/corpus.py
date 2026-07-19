@@ -298,7 +298,9 @@ def test_authenticated_history(audit) -> list[str]:
             fail(f"{name} (wanted {needle!r}, got {produced!r})")
 
     def probe(name, old, new, needle, validator=None):
-        tmp = gate_sandbox([("spec/architecture/authenticated_history.rs", old, new)])
+        # Door-form spelling: gate_sandbox resolves it to the unique carrier of
+        # the needle inside spec/authenticated_history/ (types.rs today).
+        tmp = gate_sandbox([("spec/authenticated_history.rs", old, new)])
         try:
             expect(name, (validator or audit.authenticated_history_findings)(tmp), needle)
         finally:

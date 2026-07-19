@@ -445,10 +445,12 @@ RELEASE_DOC = "docs/36_PUBLIC_API_CI_AND_RELEASE.md"
 
 
 def release_seal_fields(root: Path) -> list[str]:
-    src = _spec_module_source(root, "architecture")
-    start = src.index("pub const RELEASE_SEAL_FIELDS")
-    names = re.findall(r"ReleaseSealField::(\w+)",
-                       src[start: src.index("\n];", start)])
+    """The complete seal-field inventory, in RELEASE_SEAL_FIELDS declaration
+    order, from the typed owner spec/release/inventory.rs (the spec::release
+    domain — the seal moved out of spec::architecture in F4-A)."""
+    src = (root / "spec/release/inventory.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub const RELEASE_SEAL_FIELDS[^=]*= &\[(.*?)\n\];", src, re.S)
+    names = re.findall(r"ReleaseSealField::(\w+)", body.group(1)) if body else []
     if not names:
         raise Unadmitted("RELEASE_SEAL_FIELDS declares no fields")
     return names
@@ -456,6 +458,46 @@ def release_seal_fields(root: Path) -> list[str]:
 
 def render_release_seal(root: Path) -> str:
     lines = ["```text"] + release_seal_fields(root) + ["```"]
+    return "\n".join(lines)
+
+
+def release_seal_matrix_rows(root: Path) -> list[tuple[str, str]]:
+    """(field, empty-set posture) rows for every seal field: declaration order
+    and the authored "mandatory even when empty" doc posture from
+    spec/release/types.rs, refused against RELEASE_SEAL_FIELDS order from
+    spec/release/inventory.rs. A field whose doc comment does not author an
+    empty-set posture renders "-": absence is evidence, never completed here."""
+    src = (root / "spec/release/types.rs").read_text(encoding="utf-8")
+    enum_body = re.search(r"pub enum ReleaseSealField \{(.*?)\n\}", src, re.S)
+    if not enum_body:
+        raise Unadmitted("spec/release/types.rs declares no ReleaseSealField enum")
+    rows: list[tuple[str, str]] = []
+    doc: list[str] = []
+    for line in enum_body.group(1).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("///"):
+            doc.append(stripped.lstrip("/").strip())
+        elif re.fullmatch(r"\w+,", stripped):
+            posture = ("mandatory even when empty"
+                       if "mandatory even when empty" in " ".join(doc).lower()
+                       else "-")
+            rows.append((stripped[:-1], posture))
+            doc = []
+    if not rows:
+        raise Unadmitted("spec/release/types.rs: ReleaseSealField declares no variants")
+    if [field for field, _posture in rows] != release_seal_fields(root):
+        raise Unadmitted(
+            "spec/release/types.rs enum order does not equal RELEASE_SEAL_FIELDS order")
+    return rows
+
+
+def render_release_seal_matrix(root: Path) -> str:
+    """docs/36 RELEASE-SEAL-MATRIX: the complete seal-field matrix (field x
+    authored empty-set posture) with enum/inventory parity enforced across
+    both spec/release carriers."""
+    lines = ["| Field | Empty-set posture |", "| --- | --- |"]
+    for field, posture in release_seal_matrix_rows(root):
+        lines.append(f"| {field} | {posture} |")
     return "\n".join(lines)
 
 

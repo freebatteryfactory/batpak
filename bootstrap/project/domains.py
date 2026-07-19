@@ -609,6 +609,86 @@ def render_verification_plans(root: Path) -> str:
     return "\n".join(lines)
 
 
+# --- Dynamic-verification vocabulary and runtime matrix (F4-B, DEC-077/078) --
+# spec/verification/types.rs owns the layered verification axes and the
+# exhaustive runtime mode/disposition admission matrix. These projectors parse
+# the typed owner directly; no Python axis, member, or admission map exists
+# here, and neither renders plan tuples (VerificationPlans owns those).
+VERIFICATION_TYPES = "spec/verification/types.rs"
+_V_AXIS_SLICE = re.compile(
+    r"pub const ([A-Z0-9_]+): &\[(\w+)\] = &\[(.*?)\];", re.S)
+
+
+def verification_vocabulary(root: Path) -> list[tuple[str, str, list[str]]]:
+    """(slice const, axis enum, members) for every total axis slice authored
+    in spec/verification/types.rs, in declaration order. A slice naming no
+    members refuses; the axis set itself is parsed, never listed here."""
+    src = (root / VERIFICATION_TYPES).read_text(encoding="utf-8")
+    axes: list[tuple[str, str, list[str]]] = []
+    for const_name, enum_name, body in _V_AXIS_SLICE.findall(src):
+        members = re.findall(re.escape(enum_name) + r"::(\w+)", body)
+        if not members:
+            raise Unadmitted(
+                f"{VERIFICATION_TYPES}: {const_name} names no {enum_name} members")
+        axes.append((const_name, enum_name, members))
+    if not axes:
+        raise Unadmitted(f"{VERIFICATION_TYPES}: no total axis slices parse")
+    return axes
+
+
+def render_verification_vocabulary(root: Path) -> str:
+    """docs/38 DYNAMIC-VERIFICATION-VOCABULARY: every total verification axis
+    slice, each member in authored inventory order."""
+    sections = []
+    for const_name, enum_name, members in verification_vocabulary(root):
+        heading = f"{enum_name} ({const_name})"
+        sections.append(heading + "\n" + "\n".join(f"  {m}" for m in members))
+    return "```text\n" + "\n\n".join(sections) + "\n```"
+
+
+def runtime_verification_matrix(root: Path):
+    """(modes, dispositions, admits) from the exhaustive
+    RuntimeVerificationMode::admits matrix. A mode with no admits arm or an
+    arm naming a disposition outside the total slice refuses."""
+    src = (root / VERIFICATION_TYPES).read_text(encoding="utf-8")
+    slices = {c: m for c, _e, m in verification_vocabulary(root)}
+    modes = slices.get("RUNTIME_VERIFICATION_MODES", [])
+    dispositions = slices.get("RUNTIME_VERIFICATION_DISPOSITIONS", [])
+    body = re.search(
+        r"pub const fn admits\(self, disposition: RuntimeVerificationDisposition\)"
+        r" -> bool \{(.*?)\n    \}", src, re.S)
+    if not modes or not dispositions or not body:
+        raise Unadmitted(f"{VERIFICATION_TYPES}: runtime admission matrix unreadable")
+    admits: dict[str, list[str]] = {}
+    for mode, arm in re.findall(
+            r"RuntimeVerificationMode::(\w+) => matches!\(\s*disposition,\s*(.*?)\s*\),",
+            body.group(1), re.S):
+        admits[mode] = re.findall(
+            r"(?:D|RuntimeVerificationDisposition)::(\w+)", arm)
+    missing = [m for m in modes if not admits.get(m)]
+    unknown = sorted({d for ds in admits.values() for d in ds
+                      if d not in dispositions})
+    if missing or unknown:
+        raise Unadmitted(
+            f"{VERIFICATION_TYPES}: admits arms missing for {missing} or naming "
+            f"unknown dispositions {unknown}")
+    return modes, dispositions, admits
+
+
+def render_runtime_verification_matrix(root: Path) -> str:
+    """docs/38 VERIFICATION-RUNTIME-MATRIX: RUNTIME_VERIFICATION_MODES x
+    RUNTIME_VERIFICATION_DISPOSITIONS admission cells, both axes total and in
+    authored order (dispositions as rows)."""
+    modes, dispositions, admits = runtime_verification_matrix(root)
+    lines = ["| Disposition | " + " | ".join(modes) + " |",
+             "| --- |" + " --- |" * len(modes)]
+    for disposition in dispositions:
+        cells = " | ".join(
+            "yes" if disposition in admits[mode] else "-" for mode in modes)
+        lines.append(f"| {disposition} | {cells} |")
+    return "\n".join(lines)
+
+
 # --- Proof relations and the complete legacy ledger (5.5E4d) -----------------
 # spec/proof/inventory.rs owns proof-row identity, lifecycle, succession,
 # guarantee binding, and projection membership; spec/legacy_obligations/inventory.rs
@@ -824,3 +904,44 @@ def render_specialized_plan_policy(root: Path) -> str:
         f"{'promotion requirements':<22} {'; '.join(reqs)}",
     ]
     return "```text\n" + "\n".join(lines) + "\n```"
+
+
+def render_sprouting_promotion_matrix(root: Path) -> str:
+    """docs/39 SPROUTING-PROMOTION-MATRIX: the conjunctive promotion
+    denominator (requirement x owner x admission basis), the four promotion
+    policy bindings, and the DEC-073 specialized-plan policy's gate-relevant
+    bindings. Same typed owners as the docs/12 and docs/07 projections — a
+    second projection, never a second author."""
+    rows, surface, change, egate, rgate = parse_promotion(root)
+    src = (root / "spec/sprouting/inventory.rs").read_text(encoding="utf-8")
+    m = re.search(
+        r"pub const SPECIALIZED_PLAN_CANDIDATE_POLICY: SpecializedPlanCandidatePolicy =\s*"
+        r"SpecializedPlanCandidatePolicy \{(.*?)\n\s*\};", src, re.S)
+    if not m:
+        raise Unadmitted(
+            "spec/sprouting/inventory.rs: SPECIALIZED_PLAN_CANDIDATE_POLICY unreadable")
+    body = m.group(1)
+    basis = re.search(r'admission_basis: GuaranteeRef::dec\("([^"]+)"\)', body)
+    route = re.search(r"independent_route: IndependentEvidenceRouteKind::(\w+)", body)
+    reqs = re.findall(r"PromotionRequirement::(\w+)", body)
+    if not basis or not route or not reqs:
+        raise Unadmitted(
+            "spec/sprouting/inventory.rs: specialized-plan gate bindings unreadable")
+    if reqs == ["ALL"]:
+        reqs = [s for s, _o, _b in rows]
+    lines = ["| Requirement | Owner | Admission basis |", "| --- | --- | --- |"]
+    for s, o, b in rows:
+        lines.append(f"| {s} | {o} | {b} |")
+    lines += [
+        "",
+        "```text",
+        f"{'policy surface':<30} {surface}",
+        f"{'policy-change basis':<30} {change}",
+        f"{'enforcement gate':<30} {egate}",
+        f"{'release-visibility gate':<30} {rgate}",
+        f"{'specialized-plan basis':<30} {basis.group(1)}",
+        f"{'specialized-plan route':<30} {route.group(1)}",
+        f"{'specialized-plan requirements':<30} {'; '.join(reqs)}",
+        "```",
+    ]
+    return "\n".join(lines)
