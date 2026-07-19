@@ -938,7 +938,9 @@ def test_specialization(audit, project) -> list[str]:
             fail(f"synthetic specialization node introduced: {synthetic}")
     if len([n for n in nodes if n["family"] == "DEC"]) != 82:
         fail("decision_node_count_is_not_82")
-    if len(nodes) != 216 or len(edges) != 24:
+    # 25 edges since the Source Grammar Bake: SEED-CONCEPT-SPINE additionally
+    # derives from DEC-007 (the amended recursive domain-directory grammar).
+    if len(nodes) != 216 or len(edges) != 25:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     return findings
 
@@ -1036,8 +1038,8 @@ def test_probe_harness(audit) -> list[str]:
     with isolated_tree() as tmp:
         if tmp == root or str(tmp).startswith(str(root)):
             fail("canonical_workspace_is_not_a_probe_target")
-        (tmp / "spec" / "gates.rs").write_text("poisoned", encoding="utf-8")
-        if (root / "spec" / "gates.rs").read_text(encoding="utf-8") == "poisoned":
+        (tmp / "spec" / "gates" / "inventory.rs").write_text("poisoned", encoding="utf-8")
+        if (root / "spec" / "gates" / "inventory.rs").read_text(encoding="utf-8") == "poisoned":
             fail("canonical_workspace_is_not_a_probe_target")
     if canonical_drift(before):
         fail("canonical_workspace_is_not_a_probe_target")

@@ -410,7 +410,9 @@ def test_proof_policy(audit) -> list[str]:
             fail(f"synthetic mutation node introduced: {synthetic}")
     if len([n for n in nodes if n["family"] == "DEC"]) != 82:
         fail("decision_node_count_is_not_82")
-    if len(nodes) != 216 or len(edges) != 24:
+    # 25 edges since the Source Grammar Bake: SEED-CONCEPT-SPINE additionally
+    # derives from DEC-007 (the amended recursive domain-directory grammar).
+    if len(nodes) != 216 or len(edges) != 25:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     text = (root / "docs/28_SELF_EXPLAINING_REPOSITORY.md").read_text(encoding="utf-8")
     live_decisions = len(audit.G_DEC_ROW.findall(

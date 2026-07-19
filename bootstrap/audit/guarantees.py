@@ -587,12 +587,15 @@ def gate_reference_findings(root: Path) -> list[str]:
         out.extend(gate_findings(root, "LEG", lid, meta["gate_names"]))
         if not meta["gate_names"]:
             out.append(f"LEG {lid} names no gate")
-    src_inv = (root / "spec/invariants/inventory.rs").read_text(encoding="utf-8")
-    src_leg = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
+    # The retired string representation may not survive ANYWHERE in either
+    # domain (struct declaration, row, or helper), so the scan joins the whole
+    # domain directory rather than a single carrier file.
+    src_inv = _spec_module_source(root, "invariants")
+    src_leg = _spec_module_source(root, "legacy_obligations")
     if re.search(r'\bgates?:\s*"', src_inv):
-        out.append("spec/invariants/inventory.rs still carries a string gate field")
+        out.append("spec/invariants/ still carries a string gate field")
     if re.search(r'\bgates?:\s*"', src_leg):
-        out.append("spec/legacy_obligations/inventory.rs still carries a string gate field")
+        out.append("spec/legacy_obligations/ still carries a string gate field")
     return out
 
 
