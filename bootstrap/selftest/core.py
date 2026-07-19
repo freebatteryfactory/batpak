@@ -17,6 +17,22 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 
 
+def spec_module_source(root: Path, name: str) -> str:
+    """The complete source of one spec module: its concept-door file plus, when
+    a same-name directory exists, every submodule file (Wave-2 SW5). Whole-module
+    reads join through this so a concept-door decomposition keeps every item in
+    the selftest harness's view."""
+    pieces: list[str] = []
+    entry = root / "spec" / f"{name}.rs"
+    if entry.is_file():
+        pieces.append(entry.read_text(encoding="utf-8"))
+    pkg = root / "spec" / name
+    if pkg.is_dir():
+        for rel in sorted(pkg.rglob("*.rs")):
+            pieces.append(rel.read_text(encoding="utf-8"))
+    return "\n".join(pieces)
+
+
 # Qualification receipts. NOT one flat status: availability, compilation,
 # execution-attempted, and outcome are orthogonal, and flattening them is how a
 # gate that was only ever compiled came to sit beside one that actually ran and
@@ -146,6 +162,26 @@ class ProbeError(AssertionError):
     """The probe itself is broken: absent target or inert mutation."""
 
 
+def spec_carrier(root: Path, module: str, needle: str) -> str:
+    """Resolve the UNIQUE spec file (concept-door or submodule) under `module`
+    that carries `needle`, and return its relpath (Wave-2 SW5 mutation-probe
+    carrier resolution). Fails closed on 0 or 2+ carriers, mirroring
+    neutered_validator's package-agnostic search: a needle whose home is
+    ambiguous is a probe that no longer knows what it bites."""
+    files: list[Path] = []
+    door = root / "spec" / f"{module}.rs"
+    if door.is_file():
+        files.append(door)
+    pkg = root / "spec" / module
+    if pkg.is_dir():
+        files.extend(sorted(pkg.rglob("*.rs")))
+    carriers = [f for f in files if needle in f.read_text(encoding="utf-8")]
+    if len(carriers) != 1:
+        raise ProbeError(
+            f"spec_carrier({module!r}, {needle[:48]!r}) found {len(carriers)} carriers")
+    return carriers[0].relative_to(root).as_posix()
+
+
 def must_replace(text: str, old: str, new: str, what: str) -> str:
     if old not in text:
         raise ProbeError(f"probe target absent, mutation never applied: {what}")
@@ -182,10 +218,29 @@ def gate_sandbox(edits):
         if (root / rel).is_file():
             shutil.copy2(root / rel, tmp / rel)
     for rel, old, new in edits:
+        rel = _resolve_edit_carrier(root, rel, old)
         path = tmp / rel
         text = path.read_text(encoding="utf-8")
         path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
     return tmp
+
+
+def _resolve_edit_carrier(root: Path, rel: str, old: str) -> str:
+    """Concept-door decomposition (SW5): an edit aimed at a spec module's door
+    file `spec/<name>.rs` whose needle no longer lives in the door resolves to
+    the unique submodule `spec/<name>/**.rs` that carries it. Fails closed on an
+    ambiguous or absent carrier via spec_carrier. Non-spec paths, submodule
+    paths, and door-resident needles pass through unchanged."""
+    if not (rel.startswith("spec/") and rel.endswith(".rs")):
+        return rel
+    module = rel[len("spec/"):-3]
+    if "/" in module:
+        return rel  # already a submodule path
+    door = root / rel
+    pkg = root / "spec" / module
+    if door.is_file() and pkg.is_dir() and old not in door.read_text(encoding="utf-8"):
+        return spec_carrier(root, module, old)
+    return rel
 
 
 # --- Hostile-probe isolation (5.5D4a) ---------------------------------------

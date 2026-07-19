@@ -15,6 +15,7 @@ from .core import (
     isolated_tree,
     must_replace,
     receipt,
+    spec_carrier,
 )
 from .tier0 import (
     qualify_binary,
@@ -966,7 +967,7 @@ def test_compiler_assumptions(audit) -> list[str]:
             "pub enum ReconciliationRole {")],
           "spec/reconciliation.rs speaks CompilerAssumptionKind")
     probe("architecture_module_does_not_reexport_assumption_kinds",
-          [("spec/architecture.rs", "pub const REPOSITORY_NAME:",
+          [("spec/architecture/repository.rs", "pub const REPOSITORY_NAME:",
             "pub use crate::compiler_assumptions::CompilerAssumptionKind;\n"
             "pub const REPOSITORY_NAME:")],
           "spec/architecture.rs speaks CompilerAssumptionKind")
@@ -1380,7 +1381,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     # output for a compile-refused mutation, and the probe asserts the exact
     # type error rather than a runtime finding.
     probe("physical_triple_cannot_substitute_for_semantic_profile",
-          "spec/architecture.rs",
+          "spec/architecture/repository.rs",
           'environment: QualificationEnvironment::WasmHost,',
           'environment: "wasm32-unknown-unknown",',
           "expected `QualificationEnvironment`")
@@ -1449,7 +1450,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     # relocated under a forbidden write surface must redden seedcheck, not wait
     # for Phase 6 to write a candidate into tracked source.
     probe("candidate_output_root_under_a_forbidden_root_is_rejected",
-          "spec/architecture.rs",
+          "spec/architecture/policy.rs",
           'pub const CANDIDATE_OUTPUT_ROOT: &str = "target/muterprater/candidates/";',
           'pub const CANDIDATE_OUTPUT_ROOT: &str = "spec/candidates/";',
           "sits under forbidden write root")
@@ -1564,7 +1565,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         # crate's test cfg no longer reaches across the boundary, which is the
         # boundary working. Qualified with the same artifact binding.
         n_spec_tests = sum(p.read_text(encoding="utf-8").count("#[test]")
-                           for p in sorted((root / "spec").glob("*.rs")))
+                           for p in sorted((root / "spec").rglob("*.rs")))
         if n_spec_tests == 0:
             findings.append(
                 "the spec declares no #[test] refusal tests; the harness was emptied")
@@ -1841,7 +1842,7 @@ def test_toolchain(audit) -> list[str]:
             fail(f"qualifying_compiler_below_msrv_is_rejected (got {got!r})")
     # Dimension substitution, semantic side: renaming an environment spelling
     # into a triple is refused at the enum's own spelling arm.
-    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/architecture.rs",
+    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/architecture/topology.rs",
           'QualificationEnvironment::WasmHost => "wasm32 host",',
           'QualificationEnvironment::WasmHost => "wasm32-unknown-unknown",',
           "is shaped like a physical target triple")
@@ -1892,7 +1893,7 @@ def test_package_identity(audit) -> list[str]:
 
     def probe(name, old, new, needle):
         with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
-            path = tmp / "spec/architecture.rs"
+            path = tmp / spec_carrier(root, "architecture", old)
             path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
                             encoding="utf-8")
             got: list[str] = []

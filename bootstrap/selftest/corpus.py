@@ -296,7 +296,7 @@ def test_authenticated_history(audit) -> list[str]:
             fail(f"{name} (wanted {needle!r}, got {produced!r})")
 
     def probe(name, old, new, needle, validator=None):
-        tmp = gate_sandbox([("spec/architecture.rs", old, new)])
+        tmp = gate_sandbox([("spec/architecture/history.rs", old, new)])
         try:
             expect(name, (validator or audit.authenticated_history_findings)(tmp), needle)
         finally:

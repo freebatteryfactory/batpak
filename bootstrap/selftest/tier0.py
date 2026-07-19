@@ -19,6 +19,7 @@ from .core import (
     gate_sandbox,
     isolated_tree,
     receipt,
+    spec_module_source,
 )
 
 
@@ -36,7 +37,7 @@ def _tree_digest(root: Path) -> str:
     """A digest of the typed source snapshot a qualification represents."""
     h = hashlib.sha256()
     for rel in sorted(p.relative_to(root).as_posix()
-                      for p in (root / "spec").glob("*.rs")):
+                      for p in (root / "spec").rglob("*.rs")):
         h.update(rel.encode())
         h.update((root / rel).read_bytes())
     for tool in ("seedcheck", "materialize"):
@@ -300,7 +301,7 @@ def oracle_facts(root: Path) -> dict:
     """Every typed fact the oracle consumes, parsed from the owners alone."""
     bo_raw = (root / "spec/bootstrap_output.rs").read_text(encoding="utf-8")
     bo = _g0_uncomment(bo_raw)
-    arch = _g0_uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    arch = _g0_uncomment(spec_module_source(root, "architecture"))
     tc = _g0_uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
 
     facts: dict = {}

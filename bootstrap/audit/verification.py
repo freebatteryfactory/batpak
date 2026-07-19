@@ -10,7 +10,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .corpus import A_E4D_ACTIVE, _bootstrap_rust_source, _bootstrap_source, batql_extract_block
+from .corpus import (
+    A_E4D_ACTIVE,
+    _bootstrap_rust_source,
+    _bootstrap_source,
+    _spec_module_source,
+    batql_extract_block,
+)
 
 
 # 5.5F2 (DEC-077/DEC-078, docs/38): the verification plane's frozen axis
@@ -80,7 +86,7 @@ def verification_findings(root: Path) -> list[str]:
     vocabularies, the shape-based anti-ladder guard, tool-neutral methods,
     plan admissibility, and route kinds closed by adoption."""
     out: list[str] = []
-    vsrc = (root / "spec/verification.rs").read_text(encoding="utf-8")
+    vsrc = _spec_module_source(root, "verification")
     psrc = (root / "spec/proof.rs").read_text(encoding="utf-8")
     # Frozen axes: each enum exists with exactly its ruled variants. The
     # anchor accepts both payload-free variants (`Variant,`) and the payload
@@ -107,7 +113,7 @@ def verification_findings(root: Path) -> list[str]:
             out.append(f"spec/verification.rs {law}; the axes are not a ladder (DEC-077)")
     # Tool-neutral methods: a tool-name vocabulary may not exist anywhere in
     # the spec as a declaration.
-    for rel in sorted((root / "spec").glob("*.rs")):
+    for rel in sorted((root / "spec").rglob("*.rs")):
         src_i = rel.read_text(encoding="utf-8")
         for name in A_VERIFICATION_TOOL_NAMES:
             if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b", src_i, re.M):
@@ -245,7 +251,7 @@ def verification_findings(root: Path) -> list[str]:
         if not re.search(r"\bfn " + fn + r"\s*\(", vsrc):
             out.append(f"spec/verification.rs declares no {fn}; the renamed 5.5F3 "
                        "verification seam is absent")
-    for rel in sorted((root / "spec").glob("*.rs")):
+    for rel in sorted((root / "spec").rglob("*.rs")):
         src_i = rel.read_text(encoding="utf-8")
         for pattern, spelling in (
             (r"\bfn qualify\s*\(", "fn qualify"),
@@ -439,7 +445,7 @@ def sprouting_findings(root: Path) -> list[str]:
                        "conjunctive PromotionRequirement::ALL denominator")
     # No lineage/lifecycle/invalidation/manifest-version vocabulary is DECLARED
     # anywhere in the spec crate.
-    for rel in sorted((root / "spec").glob("*.rs")):
+    for rel in sorted((root / "spec").rglob("*.rs")):
         src_i = rel.read_text(encoding="utf-8")
         for name in A_SPROUTING_FORBIDDEN:
             if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b",

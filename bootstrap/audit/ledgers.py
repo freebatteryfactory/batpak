@@ -20,6 +20,7 @@ from .corpus import (
     A_GENERATED_BLOCK,
     G_DEC_ROW,
     _bootstrap_source,
+    _spec_module_source,
     _uncomment,
     batql_extract_block,
     frontmatter,
@@ -36,7 +37,7 @@ from .guarantees import G_LEG_ROW, g_package_projection
 # plus provenance, pairing, dispatcher parity, and the projector's own
 # documentary honesty. After 5.5E4a an unregistered generated block cannot
 # hide in the wallpaper.
-A_GENERATED_VIEWS_SRC = "spec/generated_views.rs"
+A_GENERATED_VIEWS_SRC = "spec/generated_views/registry.rs"
 A_VIEW_ARM = re.compile(
     r"GeneratedView::(\w+) => GeneratedViewSpec \{"
     r"(.*?)generator: BootstrapToolId::(\w+),", re.S)
@@ -377,7 +378,7 @@ def _a_gate_token_render(expr: str, root: Path) -> str:
 
 def inventory_mirror_findings(root: Path) -> list[str]:
     out: list[str] = []
-    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     # Documentary class spellings: variants == ALL, spellings unique/nonempty.
     for type_name in ("PackageClass", "EdgeClass"):
         enum_body = re.search(r"pub enum " + type_name + r" \{(.*?)\n\}", arch, re.S)
@@ -436,7 +437,7 @@ def inventory_mirror_findings(root: Path) -> list[str]:
                   for pkg, profile, env, gates, req in A_QUAL_FULL.findall(arch)]
     # Tier 0 receipt denominator, from the typed owner it now lives in (5.5E6a).
     bq_path = root / "spec/bootstrap_qualification.rs"
-    bq = bq_path.read_text(encoding="utf-8") if bq_path.is_file() else ""
+    bq = _spec_module_source(root, "bootstrap_qualification") if bq_path.is_file() else ""
     bq_order_body = re.search(
         r"pub const ALL: &'static \[Tier0ReceiptKind\] = &\[(.*?)\];", bq, re.S)
     bq_order = re.findall(r"Tier0ReceiptKind::(\w+),", bq_order_body.group(1)) \
@@ -689,7 +690,7 @@ def exact_ledger_findings(root: Path) -> list[str]:
             if re.search(r"\b" + alias + r"\b", stripped):
                 out.append(f"{rel.relative_to(root).as_posix()}: names {alias}, "
                            "an unadmitted version-identity alias")
-    for spec_rel in sorted((root / "spec").glob("*.rs")):
+    for spec_rel in sorted((root / "spec").rglob("*.rs")):
         if re.search(r"pub (?:struct|enum) Version\b",
                      _uncomment(spec_rel.read_text(encoding="utf-8"))):
             out.append(f"{spec_rel.relative_to(root).as_posix()}: declares a "

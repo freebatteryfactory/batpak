@@ -16,6 +16,7 @@ from .corpus import (
     A_GENERATED_BLOCK,
     G_DEC_ROW,
     G_LEG_ROW,
+    _spec_module_source,
     _uncomment,
     batql_extract_block,
     declared_contract_ids,
@@ -348,9 +349,11 @@ def identity_catalog_findings(root: Path) -> list[str]:
     required_owned: set[str] = set()
     for rel in ("spec/architecture.rs", "spec/proof.rs", "spec/gates.rs",
                 "spec/operators.rs"):
+        text = (_spec_module_source(root, "architecture") if rel == "spec/architecture.rs"
+                else (root / rel).read_text(encoding="utf-8"))
         required_owned.update(re.findall(
             r"pub (?:struct|enum) (\w+Id)\b",
-            _uncomment((root / rel).read_text(encoding="utf-8"))))
+            _uncomment(text)))
     for term in sorted(required_owned - existing_owned):
         out.append(f"EXISTING_TYPED_OWNER_SPELLINGS omits {term}, which the spec "
                    "declares as an existing typed owner")
@@ -584,16 +587,20 @@ def promotion_findings(root: Path) -> list[str]:
     # The raw array stays dead, and the forbidden alternate owners neither
     # declare nor re-export the type. dispositions.rs lawfully NAMES it in
     # DEC-074's amended text; naming is not ownership.
-    for rel in sorted((root / "spec").glob("*.rs")):
+    for rel in sorted((root / "spec").rglob("*.rs")):
         rsrc = _uncomment(rel.read_text(encoding="utf-8"))
-        if rel.name in ("architecture.rs", "mutation.rs", "proof.rs",
-                        "reconciliation.rs") \
+        rel_spec = rel.relative_to(root / "spec").as_posix()
+        # The owning top-level spec module: a concept-door "<name>.rs" or the
+        # same-name decomposition directory "<name>/**" both belong to <name>.
+        owner = rel_spec.split("/", 1)[0]
+        owner = owner[:-3] if owner.endswith(".rs") else owner
+        if owner in ("architecture", "mutation", "proof", "reconciliation") \
                 and re.search(r"\bPromotionRequirement\b", rsrc):
-            out.append(f"spec/{rel.name} speaks PromotionRequirement; the type has "
+            out.append(f"spec/{rel_spec} speaks PromotionRequirement; the type has "
                        "one owner module")
         if re.search(r"pub const PROMOTION_REQUIREMENTS\b", rsrc) \
-                and rel.name != "promotion.rs":
-            out.append(f"spec/{rel.name} resurrects the raw PROMOTION_REQUIREMENTS "
+                and owner != "promotion":
+            out.append(f"spec/{rel_spec} resurrects the raw PROMOTION_REQUIREMENTS "
                        "array; the napkin is retired")
     return out
 
@@ -731,15 +738,18 @@ def compiler_assumption_findings(root: Path) -> list[str]:
             out.append(f"docs/19 COMPILER-ASSUMPTION-KINDS lists {extra.split()[0]}, "
                        "which the typed catalog does not project")
     # No universal assumption identity, and no other module speaks the type.
-    for rel in sorted((root / "spec").glob("*.rs")):
+    for rel in sorted((root / "spec").rglob("*.rs")):
         rsrc = _uncomment(rel.read_text(encoding="utf-8"))
+        rel_spec = rel.relative_to(root / "spec").as_posix()
+        owner = rel_spec.split("/", 1)[0]
+        owner = owner[:-3] if owner.endswith(".rs") else owner
         if re.search(r"pub (?:struct|enum|type) (?:CompilerAssumptionId|AssumptionKind)\b",
                      rsrc):
-            out.append(f"spec/{rel.name} declares a universal assumption identity; "
+            out.append(f"spec/{rel_spec} declares a universal assumption identity; "
                        "only earned ledgerable kinds enter CompilerAssumptionKind")
-        if rel.name in ("architecture.rs", "reconciliation.rs") and re.search(
+        if owner in ("architecture", "reconciliation") and re.search(
                 r"\bCompilerAssumptionKind\b", rsrc):
-            out.append(f"spec/{rel.name} speaks CompilerAssumptionKind; the type has "
+            out.append(f"spec/{owner}.rs speaks CompilerAssumptionKind; the type has "
                        "one owner module")
     return out
 
@@ -1115,7 +1125,7 @@ def command_catalog_findings(root: Path) -> list[str]:
 
     # No universal CommandId anywhere in the public spec: command identity
     # lives in three separate namespaces or nowhere.
-    for rel in sorted((root / "spec").glob("*.rs")):
+    for rel in sorted((root / "spec").rglob("*.rs")):
         if re.search(r"pub (?:struct|enum|type) CommandId\b",
                      _uncomment(rel.read_text(encoding="utf-8"))):
             out.append(f"spec/{rel.name} declares a universal CommandId; command "

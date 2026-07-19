@@ -26,8 +26,10 @@ def test_verification_plane() -> list[str]:
         (base / "spec").mkdir()
         (base / "bootstrap").mkdir()
         (base / "docs").mkdir()
-        for rel in sorted((root / "spec").glob("*.rs")):
-            shutil.copyfile(rel, base / "spec" / rel.name)
+        for rel in sorted((root / "spec").rglob("*.rs")):
+            dst = base / "spec" / rel.relative_to(root / "spec")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(rel, dst)
         for rel in ("bootstrap/seedcheck.rs", "bootstrap/audit.py",
                     "docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md",
                     "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
@@ -43,8 +45,13 @@ def test_verification_plane() -> list[str]:
             findings.append(f"verification_plane baseline is not clean: {clean[:3]}")
 
         vpath = base / "spec" / "verification.rs"
+        # SW5 concept-door decomposition: the append-shaped probes land in the
+        # door (the audit joins door + submodules), but the probes that mutate an
+        # existing axis item target the submodule that owns it.
+        axpath = base / "spec" / "verification" / "axes.rs"
         ppath = base / "spec" / "proof.rs"
         vsrc = vpath.read_text(encoding="utf-8")
+        axsrc = axpath.read_text(encoding="utf-8")
         psrc = ppath.read_text(encoding="utf-8")
 
         def expect(name: str, needle: str) -> None:
@@ -52,6 +59,7 @@ def test_verification_plane() -> list[str]:
             if not any(needle in f for f in got):
                 findings.append(f"{name} FAILED (no finding containing {needle!r})")
             vpath.write_text(vsrc, encoding="utf-8", newline="\n")
+            axpath.write_text(axsrc, encoding="utf-8", newline="\n")
             ppath.write_text(psrc, encoding="utf-8", newline="\n")
 
         def mutate(path: Path, source: str, old: str, new: str, what: str) -> bool:
@@ -61,7 +69,7 @@ def test_verification_plane() -> list[str]:
             path.write_text(source.replace(old, new, 1), encoding="utf-8", newline="\n")
             return True
 
-        if mutate(vpath, vsrc, "#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum VerificationCoverage",
+        if mutate(axpath, axsrc, "#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum VerificationCoverage",
                   "#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]\npub enum VerificationCoverage",
                   "ordered_coverage"):
             expect("verification_axis_ordering_is_rejected", "derives an ordering")
@@ -77,11 +85,11 @@ def test_verification_plane() -> list[str]:
         vpath.write_text(vsrc + "\nuse crate::tier0_cross_run as _t0;\n",
                          encoding="utf-8", newline="\n")
         expect("tier0_import_into_verification_is_rejected", "never product verification authority")
-        if mutate(vpath, vsrc, "    ExhaustiveWithinDeclaredModel,\n    ObservedHistory,\n}",
+        if mutate(axpath, axsrc, "    ExhaustiveWithinDeclaredModel,\n    ObservedHistory,\n}",
                   "    ExhaustiveWithinDeclaredModel,\n    ObservedHistory,\n    Extra,\n}",
                   "extra_coverage_variant"):
             expect("verification_axis_variant_drift_is_rejected", "!= frozen")
-        if mutate(vpath, vsrc,
+        if mutate(axpath, axsrc,
                   "D::NoDivergenceObserved | D::Divergent | D::Incomplete | D::Stale | D::Unsupported",
                   "D::NoDivergenceObserved | D::ConformantForObservedHistory | D::Divergent | D::Incomplete | D::Stale | D::Unsupported",
                   "inband_conformant"):
@@ -142,8 +150,10 @@ def test_sprouting_plane() -> list[str]:
         (base / "spec").mkdir()
         (base / "bootstrap").mkdir()
         (base / "docs").mkdir()
-        for rel in sorted((root / "spec").glob("*.rs")):
-            shutil.copyfile(rel, base / "spec" / rel.name)
+        for rel in sorted((root / "spec").rglob("*.rs")):
+            dst = base / "spec" / rel.relative_to(root / "spec")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(rel, dst)
         for rel in ("bootstrap/seedcheck.rs", "bootstrap/audit.py",
                     "docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md",
                     "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
@@ -164,14 +174,23 @@ def test_sprouting_plane() -> list[str]:
         spath = base / "spec" / "sprouting.rs"
         vpath = base / "spec" / "verification.rs"
         ipath = base / "spec" / "identities.rs"
+        # SW5 concept-door decomposition: append-shaped probes land in the door
+        # (the audit joins door + submodules), but probes mutating an existing
+        # item target the submodule that owns it.
+        opath = base / "spec" / "verification" / "observation.rs"
+        rpath = base / "spec" / "verification" / "runtime.rs"
         ssrc = spath.read_text(encoding="utf-8")
         vsrc = vpath.read_text(encoding="utf-8")
         isrc = ipath.read_text(encoding="utf-8")
+        osrc = opath.read_text(encoding="utf-8")
+        rsrc = rpath.read_text(encoding="utf-8")
 
         def restore() -> None:
             spath.write_text(ssrc, encoding="utf-8", newline="\n")
             vpath.write_text(vsrc, encoding="utf-8", newline="\n")
             ipath.write_text(isrc, encoding="utf-8", newline="\n")
+            opath.write_text(osrc, encoding="utf-8", newline="\n")
+            rpath.write_text(rsrc, encoding="utf-8", newline="\n")
 
         def expect_s(name: str, needle: str) -> None:
             got = audit.sprouting_findings(base)
@@ -225,7 +244,7 @@ def test_sprouting_plane() -> list[str]:
             encoding="utf-8", newline="\n")
         expect_v("independent_route_field_reintroduction_is_rejected", "independent_route")
         # 8. An enforcement field added to the observation struct.
-        if mutate(vpath, vsrc, "pub counterexample_outstanding: bool,",
+        if mutate(opath, osrc, "pub counterexample_outstanding: bool,",
                   "pub counterexample_outstanding: bool,\n    pub enforcement: "
                   "VerificationEnforcementPosture,",
                   "observation_enforcement"):
@@ -242,7 +261,7 @@ def test_sprouting_plane() -> list[str]:
             "            }",
             "",
         ])
-        if mutate(vpath, vsrc, replay_guard, "", "replay_route_neutered"):
+        if mutate(rpath, rsrc, replay_guard, "", "replay_route_neutered"):
             expect_v("offline_replay_requires_replay_route", "independent history-replay")
         # 10. The retired qualify spelling reintroduced.
         vpath.write_text(vsrc + "\npub fn qualify() {}\n", encoding="utf-8", newline="\n")

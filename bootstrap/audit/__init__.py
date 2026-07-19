@@ -41,6 +41,7 @@ from .corpus import (
     STALE_REF_RE,
     STALE_VOCAB_BLOCK_RE,
     STATUSES,
+    _spec_module_source,
     batql_extract_block,
     casefold_collisions,
     check_stale_vocabulary,
@@ -753,7 +754,7 @@ def check_architecture(root: Path, findings: list[str]) -> None:
         findings.append("missing spec/architecture.rs")
         return
     findings.extend(toolchain_findings(root))
-    source = path.read_text(encoding="utf-8")
+    source = _spec_module_source(root, "architecture")
     # The variant is the identity (5.5E3b); cargo names and workspace paths
     # are projections this auditor reconstructs from the owning const fns.
     cargo = g_package_projection(root, "cargo_name")

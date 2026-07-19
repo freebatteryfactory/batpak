@@ -255,7 +255,7 @@ def test_proof_policy(audit) -> list[str]:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    ARCH = "spec/architecture.rs"
+    ARCH = "spec/architecture/policy.rs"
     DISP = "spec/dispositions.rs"
     TP = "docs/12_TESTPAK.md"
     GA = "docs/24_GAUNTLET.md"

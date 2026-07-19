@@ -15,6 +15,7 @@ from .corpus import (
     G_DEC_ROW,
     G_LEG_ROW,
     G_QUAL_ROW,
+    _spec_module_source,
     _uncomment,
     declared_contract_ids,
 )
@@ -115,7 +116,7 @@ def g_package_projection(root: Path, fn: str) -> dict[str, str]:
     """PackageId variant -> projected value, parsed from the owning const fn
     (cargo_name or workspace_path). This auditor reconstructs the projections
     independently; it carries no hand-maintained package map."""
-    src = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    src = _uncomment(_spec_module_source(root, "architecture"))
     body = re.search(
         r"pub const fn " + re.escape(fn)
         + r"\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
@@ -264,7 +265,7 @@ A_FAM_ROW = re.compile(
 
 
 def guarantee_family_policies(root: Path) -> dict[str, dict]:
-    src = _uncomment((root / "spec/guarantees.rs").read_text(encoding="utf-8"))
+    src = _uncomment(_spec_module_source(root, "guarantees"))
     out: dict[str, dict] = {}
     for m in A_FAM_ROW.finditer(src):
         fam, krule, kconst, orule, oconst, lrule, lconst, grule, gconst, wit = m.groups()
@@ -400,7 +401,7 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple], list[str]]:
         if node is not None:
             node["dclass"] = dcls
         nodes.append(node)
-    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     cargo = g_package_projection(root, "cargo_name")
     for pkg, cls, layer in G_PKG_ROW.findall(arch):
         nodes.append(_admit("ARCH", f"ARCH-{cargo.get(pkg, '')}", {}, f"Architecture(L{layer} {cls})"))
@@ -691,7 +692,7 @@ def guarantee_index(root: Path) -> dict[str, dict]:
         out[lid] = {"family": "LEG", "gates": gate_render(meta["gate_names"], root)}
     for r in decision_rows(root):
         out[r["id"]] = {"family": "DEC", "gates": gate_render(r["gate_names"], root)}
-    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     # ARCH and QUAL now carry typed gate postures (5.5D4b): ARCH from its declared
     # family policy, QUAL from its own row. Neither invents a list, and a
     # qualification target never stands in for one.

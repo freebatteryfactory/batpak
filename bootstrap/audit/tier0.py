@@ -12,7 +12,13 @@ import re
 import sys
 from pathlib import Path
 
-from .corpus import G_QUAL_ROW, _bootstrap_rust_source, _bootstrap_source, _uncomment
+from .corpus import (
+    G_QUAL_ROW,
+    _bootstrap_rust_source,
+    _bootstrap_source,
+    _spec_module_source,
+    _uncomment,
+)
 
 
 # --- 5.5E5 Gate-0 materializer output shape ----------------------------------
@@ -34,7 +40,7 @@ def bootstrap_output_findings(root: Path) -> list[str]:
         return [f"missing {A_BO_SPEC}"]
     raw = path.read_text(encoding="utf-8")
     src = _uncomment(raw)
-    arch = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    arch = _uncomment(_spec_module_source(root, "architecture"))
 
     def enum_variants(text: str, enum: str) -> list[str]:
         # Indentation-robust brace match: the five closed enums live inside a
@@ -361,7 +367,7 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
     path = root / A_BQ_SPEC
     if not path.is_file():
         return [f"missing {A_BQ_SPEC}"]
-    src = _uncomment(path.read_text(encoding="utf-8"))
+    src = _uncomment(_spec_module_source(root, "bootstrap_qualification"))
     tc = _uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
 
     def variants(text: str, enum: str) -> list[str]:
@@ -564,7 +570,7 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
     # receiptcheck.rs is the authoritative independent computer, and it is wired
     # into the required-file denominator so it can never silently vanish.
     if "bootstrap/receiptcheck.rs" not in \
-            (root / "spec/architecture.rs").read_text(encoding="utf-8"):
+            _spec_module_source(root, "architecture"):
         out.append("spec/architecture.rs: REQUIRED_DOCS omits bootstrap/receiptcheck.rs")
     return out
 
@@ -577,7 +583,7 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     path = root / A_XR_SPEC
     if not path.is_file():
         return [f"missing {A_XR_SPEC}"]
-    src = _uncomment(path.read_text(encoding="utf-8"))
+    src = _uncomment(_spec_module_source(root, "tier0_cross_run"))
 
     # Independent reconstruction (regex, no shared parse with the spec crate) of
     # the cross-run same-source comparator (5.5E6c). The verdict is EXECUTED by
@@ -691,8 +697,15 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     # canonical authoritative workflow — a promotion cannot be confirmed from a
     # branch name or a supplemental target.
     cp_head = src.find("pub fn confirm_promotion(")
-    cp_end = src.find("\n#[cfg(test)]", cp_head) if cp_head >= 0 else -1
-    cp_body = src[cp_head: cp_end if cp_end >= 0 else len(src)] if cp_head >= 0 else ""
+    # confirm_promotion is the last non-test item. The concept-door decomposition
+    # (SW5) relocated `#[cfg(test)] mod tests` to the door, so the executed-token
+    # scan bounds at the function's own column-0 closing brace instead of the
+    # (now-relocated) test-module marker — otherwise the scan would reach into the
+    # test module and a removed token could still be seen there. Works unchanged
+    # on an undecomposed tree, where the same brace precedes `#[cfg(test)]`.
+    cp_close = src.find("\n}\n", cp_head) if cp_head >= 0 else -1
+    cp_end = cp_close if cp_close >= 0 else len(src)
+    cp_body = src[cp_head: cp_end] if cp_head >= 0 else ""
     if not cp_body:
         out.append(f"{A_XR_SPEC}: declares no confirm_promotion")
     else:
@@ -710,7 +723,7 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     # The retained binding the comparator consumes is exposed by the sealed E6b
     # qualification, the canonical workflow path is owned there, and seedcheck
     # executes both the comparator and the promotion confirmation end to end.
-    bq = _uncomment((root / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8"))
+    bq = _uncomment(_spec_module_source(root, "bootstrap_qualification"))
     if "fn materializer_output_tree(&self) -> Sha256Digest" not in bq:
         out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
                    "materializer_output_tree() accessor for the cross-run comparator")
@@ -789,7 +802,7 @@ def workflow_pinning_findings(root: Path) -> list[str]:
                            "(movable tag, branch, expression, or abbreviated SHA)")
     wf = wf_dir / "msvc-qualification.yml"
     if wf.is_file():
-        bq = (root / "spec/bootstrap_qualification.rs").read_text(encoding="utf-8")
+        bq = _spec_module_source(root, "bootstrap_qualification")
         m = re.search(r"AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE:\s*PythonRelease\s*=\s*"
                       r"PythonRelease\s*\{\s*major:\s*(\d+),\s*minor:\s*(\d+),\s*patch:\s*(\d+)",
                       bq)
@@ -822,7 +835,7 @@ def python_tooling_findings(root: Path) -> list[str]:
         out.append("spec/bootstrap_qualification.rs: missing; cannot resolve the typed "
                    "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE authority")
         return out
-    bq = bq_path.read_text(encoding="utf-8")
+    bq = _spec_module_source(root, "bootstrap_qualification")
     m = re.search(r"AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE[^;]*major:\s*(\d+),"
                   r"[^;]*minor:\s*(\d+),[^;]*patch:\s*(\d+)", bq, re.S)
     if not m:
@@ -889,7 +902,7 @@ def toolchain_profile(root: Path) -> dict:
     enum_body = re.search(r"pub enum RustupComponent \{(.*?)\n\}", src, re.S)
     # The semantic environments live on the typed enum in architecture.rs;
     # the auditor reads the authored spelling arms, never a copied list.
-    arch = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    arch = _uncomment(_spec_module_source(root, "architecture"))
     spellings = re.findall(
         r'QualificationEnvironment::(\w+) => "([^"]+)",', arch)
     return {
@@ -975,7 +988,7 @@ def toolchain_findings(root: Path) -> list[str]:
             out.append(f"QualificationEnvironment::{variant} spells {spelling!r}, "
                        "which is shaped like a physical target triple; "
                        "environments answer WHAT holds, never WHERE a binary ran")
-    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     for pkg, profile, variant, _gates in G_QUAL_ROW.findall(arch):
         if t["environment_spellings"] and variant not in t["environment_spellings"]:
             out.append(f"QualificationProfile {pkg}:{profile} names environment "

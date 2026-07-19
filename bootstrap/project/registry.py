@@ -16,13 +16,29 @@ def block_pattern(name: str) -> re.Pattern[str]:
     )
 
 
+def _spec_module_source(root: Path, name: str) -> str:
+    """The complete source of one spec module: its concept-door file plus, when
+    a same-name directory exists, every submodule file (Wave-2 SW5). The
+    generator carries its OWN copy of this helper; it never imports the
+    auditor's, so generator and auditor stay independent (the topology law)."""
+    pieces: list[str] = []
+    entry = root / "spec" / f"{name}.rs"
+    if entry.is_file():
+        pieces.append(entry.read_text(encoding="utf-8"))
+    pkg = root / "spec" / name
+    if pkg.is_dir():
+        for rel in sorted(pkg.rglob("*.rs")):
+            pieces.append(rel.read_text(encoding="utf-8"))
+    return "\n".join(pieces)
+
+
 # --- The generated-view registry (5.5E4a) ------------------------------------
 # spec/generated_views.rs owns which generated views exist. This projector
 # parses the typed registry independently, dispatches through VIEW_RENDERERS,
 # and builds EVERY projection plan by iterating the registry — the scattered
 # hand-built plan denominator is dead, and a manual literal plan cannot
 # bypass the registry.
-GENERATED_VIEWS_SRC = "spec/generated_views.rs"
+GENERATED_VIEWS_SRC = "spec/generated_views/registry.rs"
 _VIEW_SPEC_ARM = re.compile(
     r"GeneratedView::(\w+) => GeneratedViewSpec \{\s*"
     r"authority_sources: &\[([^\]]*)\],\s*"

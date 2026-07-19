@@ -3,6 +3,7 @@ crossing requiredness, and DEC-075 reconciliation."""
 from __future__ import annotations
 from .core import (
     HERE,
+    _resolve_edit_carrier,
     canonical_commitments,
     canonical_drift,
     isolated_tree,
@@ -52,7 +53,10 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            # SW5: an edit aimed at a concept-door spec file resolves to the
+            # submodule that carries the needle (the ISA probes below name the
+            # pakvm_isa door; their needles live in vocab/policies/nodes).
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             text = path.read_text(encoding="utf-8")
             path.write_text(must_replace(text, old, new, name), encoding="utf-8")
             produced = (validator or pf)(tmp)
@@ -143,7 +147,7 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     # the moment someone reran the generator.
     def law_probe(name, old, new, needle):
         with isolated_tree() as tmp:
-            path = tmp / ISA
+            path = tmp / _resolve_edit_carrier(root, ISA, old)
             path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
                             encoding="utf-8")
             d07 = tmp / D07
@@ -227,10 +231,11 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     # A projector that completed a missing field would reintroduce the exact
     # defect this pass exists to remove.
     with isolated_tree() as tmp:
-        path = tmp / ISA
+        _gen_refusal_old = "        effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),"
+        path = tmp / _resolve_edit_carrier(root, ISA, _gen_refusal_old)
         path.write_text(must_replace(
             path.read_text(encoding="utf-8"),
-            "        effect: PakVmRule::AlgebraConstant(EffectPosture::ObservationalOnly),",
+            _gen_refusal_old,
             "        effect: PakVmRule::ClassDeclared,",
             "generator refusal"), encoding="utf-8")
         try:
@@ -244,7 +249,7 @@ def test_pakvm_semantic_isa(audit, project) -> list[str]:
     # neutered_validator helper: the real audit.py is never opened for writing, so
     # a probe that dies mid-mutation cannot leave a disabled rule behind.
     with isolated_tree() as tmp:
-        p2 = tmp / ISA
+        p2 = tmp / _resolve_edit_carrier(root, ISA, WINDOWING_ROWS)
         p2.write_text(must_replace(
             p2.read_text(encoding="utf-8"),
             WINDOWING_ROWS, WINDOWING_OUTPUTS,
@@ -321,7 +326,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
 
     def probe(name, rel, old, needle, new="", regen=True):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
                             encoding="utf-8")
             regenerated = regenerate(tmp) if regen else False
@@ -509,7 +514,7 @@ def test_reconciliation(audit, project) -> list[str]:
     if audit.release_seal_findings(root):
         fail(f"release_seal_contract_passes (got {audit.release_seal_findings(root)!r})")
     with isolated_tree() as tmp:
-        p = tmp / "spec/architecture.rs"
+        p = tmp / "spec/architecture/policy.rs"
         p.write_text(must_replace(
             p.read_text(encoding="utf-8"),
             "    ReleaseSealField::KernelQualificationSet,\n", "",

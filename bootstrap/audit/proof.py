@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .corpus import _spec_module_source
 from .guarantees import G_REF, decision_rows, gate_inventory, guarantee_index
 
 
@@ -146,7 +147,8 @@ D3_BANNED_RESULT_WORDS = ("pass/fail", "killed/not-killed", "success/error")
 
 
 def _arch_enum(root: Path, name: str, rel: str = "spec/architecture.rs") -> list[str]:
-    src = (root / rel).read_text(encoding="utf-8")
+    src = (_spec_module_source(root, "architecture") if rel == "spec/architecture.rs"
+           else (root / rel).read_text(encoding="utf-8"))
     m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
     return re.findall(r"^\s{4}(\w+),", m.group(1), re.M) if m else []
 
@@ -181,7 +183,7 @@ def proof_policy_findings(root: Path) -> list[str]:
             out.append(f"{rel} declares no {name}")
         elif got != want:
             out.append(f"{name} variants {got} != frozen {want}")
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     if "target/muterprater/candidates/" not in src:
         out.append("no candidate output root is declared outside tracked source")
     m = re.search(r"pub const CANDIDATE_FORBIDDEN_WRITE_ROOTS:[^=]*=\s*&\[(.*?)\];", src, re.S)

@@ -12,7 +12,7 @@ import re
 
 from .guarantees import Unadmitted, gate_tokens, guarantee_seed, _DEC_ROW, _LEG_ROW
 from .operators import parse_operators
-from .registry import parse_generated_views
+from .registry import _spec_module_source, parse_generated_views
 
 
 NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
@@ -444,7 +444,7 @@ RELEASE_DOC = "docs/36_PUBLIC_API_CI_AND_RELEASE.md"
 
 
 def release_seal_fields(root: Path) -> list[str]:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     start = src.index("pub const RELEASE_SEAL_FIELDS")
     names = re.findall(r"ReleaseSealField::(\w+)",
                        src[start: src.index("\n];", start)])
@@ -502,7 +502,7 @@ def _environment_spellings(source: str) -> dict[str, str]:
 
 
 def render_package_inventory(root: Path) -> str:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     cargo = _package_projection(src, "cargo_name")
     wpath = _package_projection(src, "workspace_path")
     classes = _class_spelling_arms(src, "PackageClass")
@@ -516,7 +516,7 @@ def render_package_inventory(root: Path) -> str:
 
 
 def render_package_edges(root: Path) -> str:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     cargo = _package_projection(src, "cargo_name")
     classes = _class_spelling_arms(src, "EdgeClass")
     lines = ["| Importer | Importee | Class | Profile |",
@@ -529,7 +529,7 @@ def render_package_edges(root: Path) -> str:
 
 
 def render_qualification_profiles(root: Path) -> str:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     cargo = _package_projection(src, "cargo_name")
     environments = _environment_spellings(src)
     lines = ["| Package | Profile | Environment | Gates | Requirement |",
@@ -555,7 +555,7 @@ def _eligible_markdown(root: Path) -> list[Path]:
 def render_bundle_inventory(root: Path) -> str:
     """Every count is DERIVED from an admitted typed denominator or the
     current tracked tree — never hardcoded, never substituted."""
-    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     numbered = len(list((root / "docs").glob("[0-9][0-9]_*.md")))
     markdown = len(_eligible_markdown(root))
     packages = len(re.findall(r"\bPackageId::\w+,", re.search(
@@ -615,7 +615,7 @@ def render_tier0_receipts(root: Path) -> str:
     src_path = root / "spec/bootstrap_qualification.rs"
     if not src_path.is_file():
         raise Unadmitted("spec/bootstrap_qualification.rs is absent; the Tier 0 denominator refuses")
-    src = src_path.read_text(encoding="utf-8")
+    src = _spec_module_source(root, "bootstrap_qualification")
     order_body = re.search(r"pub const ALL: &'static \[Tier0ReceiptKind\] = &\[(.*?)\];",
                            src, re.S)
     if not order_body:

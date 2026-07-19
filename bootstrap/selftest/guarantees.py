@@ -182,9 +182,9 @@ def test_guarantee_authority(audit, project) -> list[str]:
         if not any(needle in f for f in produced):
             fail(f"{name} (wanted {needle!r}, got {produced!r})")
 
-    GU = "spec/guarantees.rs"
+    GU = "spec/guarantees/policy.rs"
     DI = "spec/dispositions.rs"
-    AR = "spec/architecture.rs"
+    AR = "spec/architecture/repository.rs"
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:

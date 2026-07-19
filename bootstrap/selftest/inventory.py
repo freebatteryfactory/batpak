@@ -744,7 +744,7 @@ def test_generated_views(audit, project) -> list[str]:
         fail(f"generated_view_registry_passes_on_the_real_seed "
              f"({audit.generated_view_findings(root)!r})")
 
-    GV = "spec/generated_views.rs"
+    GV = "spec/generated_views/registry.rs"
     PY = "bootstrap/project.py"
     GATES_ROW = "        GeneratedView::GateInventory,\n"
 
@@ -993,6 +993,8 @@ def test_inventory_mirrors(audit, project) -> list[str]:
     def sandbox(edits):
         # gate_sandbox carries the root-level documents and bootstrap sources
         # since 5.5E4b, so the inventory projections resolve in every sandbox.
+        # It also resolves any concept-door edit (SW5) to the submodule that
+        # carries the needle, so AR edits below may name the architecture door.
         return gate_sandbox(edits)
 
     def probe(name, edits, needle, validator=None):

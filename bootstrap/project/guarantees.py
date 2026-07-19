@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+from .registry import _spec_module_source
+
 
 # --- Guarantee graph (DEC-070) -----------------------------------------------
 GUARANTEE_DOC = "docs/GUARANTEE_GRAPH.generated.md"
@@ -97,7 +99,7 @@ def _package_cargo_names(root):
     """PackageId variant -> cargo name, parsed from the projection the typed
     owner authors. The projector renders through this map and never carries a
     hand-maintained copy of the package list."""
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     body = re.search(
         r"pub const fn cargo_name\(self\) -> &'static str \{\s*match self \{(.*?)\n        \}",
         src, re.S)
@@ -154,7 +156,7 @@ _FAM_ROW = re.compile(
 
 def family_policies(root):
     """The typed family policy. Parsed, never authored here."""
-    src = _decomment((root / "spec/guarantees.rs").read_text(encoding="utf-8"))
+    src = _decomment(_spec_module_source(root, "guarantees"))
     out = {}
     for m in _FAM_ROW.finditer(src):
         fam, krule, kconst, orule, oconst, lrule, lconst, grule, gconst, wit = m.groups()
@@ -287,7 +289,7 @@ def guarantee_nodes(root):
         }, f"Decision({disp})")
         node["dclass"] = dcls
         nodes.append(node)
-    arch = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     # The rendered node id is a PROJECTION of the typed identity: the graph
     # keeps its byte-identical "ARCH-batpak" form, but the id is derived
     # through the cargo_name arms the typed owner authors.

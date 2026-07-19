@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .corpus import _const_variants, _enum_variants, _uncomment
+from .corpus import _const_variants, _enum_variants, _spec_module_source, _uncomment
 from .guarantees import gate_findings, gate_list
 
 
@@ -132,7 +132,7 @@ def release_seal_findings(root: Path) -> list[str]:
     the field list independently, checks the docs/36 projection, and refuses a
     decision row that restates the list instead of naming the owner."""
     out: list[str] = []
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     start = src.find("pub const RELEASE_SEAL_FIELDS")
     if start < 0:
         return ["spec/architecture.rs declares no RELEASE_SEAL_FIELDS"]
@@ -229,7 +229,7 @@ A_CLAIM_LADDER_NAMES = ("SecurityPosture", "VerificationLevel", "AssuranceLevel"
 def ah_fn_arms(root: Path, name: str) -> dict[str, str]:
     """AuthenticatedHistoryProfile variant -> that profile's value expression,
     parsed from the const fn that owns the fact."""
-    src = _uncomment((root / "spec/architecture.rs").read_text(encoding="utf-8"))
+    src = _uncomment(_spec_module_source(root, "architecture"))
     body = re.search(
         r"pub const fn " + re.escape(name) + r"\(self\)[^{]*\{\s*match self \{(.*?)\n    \}",
         src, re.S)
@@ -270,14 +270,14 @@ def authenticated_history_rows(root: Path) -> list[dict]:
 
 
 def claim_bundles(root: Path) -> dict[str, tuple[str, str, str, str]]:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     return {m[0]: (m[1], m[2], m[3], m[4]) for m in A_CLAIM_BUNDLE.findall(src)}
 
 
 def claim_axis_findings(root: Path) -> list[str]:
     """Four independently representable claim axes, no ladder, no flattening."""
     out: list[str] = []
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     for term in A_RETIRED_CLAIM_VOCAB:
         if term in src:
             out.append(f"spec/architecture.rs reintroduces retired claim vocabulary {term}")
@@ -387,7 +387,7 @@ def authenticated_history_findings(root: Path) -> list[str]:
             out.append(f"{r['profile']} names no implementation gate")
         if not r["release_gates"]:
             out.append(f"{r['profile']} names no release qualification gate")
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     declared = _enum_variants(root, "WitnessDisposition")
     if not declared:
         out.append("spec/architecture.rs declares no WitnessDisposition")
@@ -411,13 +411,17 @@ def authenticated_history_findings(root: Path) -> list[str]:
 def retired_claim_vocabulary_findings(root: Path) -> list[str]:
     """The flattened claim type may not return through any authoritative surface."""
     out: list[str] = []
+    _decomposed = {"spec/architecture.rs": "architecture", "spec/guarantees.rs": "guarantees"}
     for rel in ("spec/architecture.rs", "spec/dispositions.rs", "spec/guarantees.rs",
                 "docs/14_RECEIPTS_AND_EXPLANATION.md", "docs/19_SECURITY_MODEL.md",
                 "docs/05_STORAGE_FBAT_AND_TILES.md", "docs/31_FINAL_CONTRADICTION_AUDIT.md"):
-        path = root / rel
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8")
+        if rel in _decomposed:
+            text = _spec_module_source(root, _decomposed[rel])
+        else:
+            path = root / rel
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
         for line in text.splitlines():
             if "[RETIRED-CLAIM-QUOTE]" in line:
                 continue  # an explicitly marked historical quotation
@@ -776,7 +780,7 @@ def _a_isa_rule(rule: str, declared: str, node: str, field: str) -> str:
 
 def pakvm_isa_views(root: Path) -> list[dict]:
     """Independently admitted PakVM node views, or IsaAdmissionFailure."""
-    src = (root / A_ISA_SRC).read_text(encoding="utf-8")
+    src = _spec_module_source(root, "pakvm_isa")
     listing = _a_isa_block(src, "pub const PAKVM_NODES")
     order = re.findall(r"PakVmNodeId::(\w+)", listing)
     if not order:
@@ -900,7 +904,7 @@ def pakvm_isa_findings(root: Path) -> list[str]:
                     f"inventories agree")
     # The work planes partition the authored unit vocabulary. Derived from the
     # spec's own plane declarations: this states no plane membership of its own.
-    src = (A_ISA_SRC and (root / A_ISA_SRC).read_text(encoding="utf-8"))
+    src = _spec_module_source(root, "pakvm_isa")
     plane_src = src[src.find("pub const fn work_plane"): src.find("pub const fn mandatory_work_unit")]
     planes = {alg: re.findall(r"WorkUnit::(\w+)", arm) for alg, arm in
               re.findall(r"PakVmAlgebra::(\w+)\s*=>\s*&\[([^\]]*)\]", plane_src, re.S)}
@@ -1036,7 +1040,7 @@ def syncbat_firewall_views(root: Path) -> dict:
     `project.py`. It carries no plane ownership map and no crossing whitelist of
     its own, because a checker holding its own copy of the answer agrees with
     itself and calls that verification."""
-    arch = (root / A_FW_ARCH).read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     src = (root / A_FW_SRC).read_text(encoding="utf-8")
     planes = _a_fw_variants(arch, "SyncBatPlane", A_FW_ARCH)
     if not planes:

@@ -188,6 +188,22 @@ def _bootstrap_rust_source(root: Path, tool: str) -> str:
     return "\n".join(pieces)
 
 
+def _spec_module_source(root: Path, name: str) -> str:
+    """The complete source of one spec module: its concept-door file plus, when
+    a same-name directory exists, every submodule file (Wave-2 SW5). Detectors
+    grep this so a concept-door decomposition cannot silently move a guarded
+    symbol out of a detector's view."""
+    pieces: list[str] = []
+    entry = root / "spec" / f"{name}.rs"
+    if entry.is_file():
+        pieces.append(entry.read_text(encoding="utf-8"))
+    pkg = root / "spec" / name
+    if pkg.is_dir():
+        for rel in sorted(pkg.rglob("*.rs")):
+            pieces.append(rel.read_text(encoding="utf-8"))
+    return "\n".join(pieces)
+
+
 def declared_contract_ids(root: Path) -> set[str]:
     """Every contract_id declared by a document's front matter."""
     out: set[str] = set()
@@ -206,13 +222,13 @@ A_DISPOSITION_VARIANT = re.compile(r'WitnessDisposition::(\w+)')
 
 
 def _enum_variants(root: Path, name: str) -> set[str]:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
     return set(re.findall(r"^\s{4}(\w+),", m.group(1), re.M)) if m else set()
 
 
 def _const_variants(root: Path, name: str) -> list[str]:
-    src = (root / "spec/architecture.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "architecture")
     m = re.search(r"pub const " + re.escape(name) + r":[^=]*=\s*&\[(.*?)\];", src, re.S)
     return A_DISPOSITION_VARIANT.findall(m.group(1)) if m else []
 

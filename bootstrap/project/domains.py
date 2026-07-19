@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from .guarantees import Unadmitted, gate_tokens
-from .registry import parse_generated_views
+from .registry import _spec_module_source, parse_generated_views
 
 
 # --- Promotion requirements projection (5.5E3i) ------------------------------
@@ -226,7 +226,7 @@ def pakvm_specs(root: Path) -> list[dict]:
     """Admitted PakVM node specs, derived independently of spec/pakvm_isa.rs's
     own `admit`. A node that does not admit raises: a projector serializes an
     admitted spec and may never complete one."""
-    src = (root / ISA_SPEC).read_text(encoding="utf-8")
+    src = _spec_module_source(root, "pakvm_isa")
     m = P_ISA_NODES.search(src)
     nodes = P_ISA_VARIANT.findall(m.group(1)) if m else []
     algebra = _isa_arms(src, "algebra")
@@ -349,7 +349,7 @@ def syncbat_firewall_facts(root: Path) -> dict:
     raises `Unadmitted` rather than being filled in here. That restraint is the
     whole point — a generator that can supply a missing policy is a second
     authority no matter what its docstring claims."""
-    arch = (root / ARCH_SPEC).read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
     src = (root / FIREWALL_SPEC).read_text(encoding="utf-8")
     # Plane identity and the ownership sentences: spec/architecture.rs owns both.
     # The inventory is SyncBatPlane::ALL (5.5E5); the raw SYNCBAT_PLANES alias
@@ -446,7 +446,7 @@ BO_SPEC = "spec/bootstrap_output.rs"
 
 def gate0_plan_facts(root: Path) -> list[dict]:
     bo = (root / BO_SPEC).read_text(encoding="utf-8")
-    arch = (root / ARCH_SPEC).read_text(encoding="utf-8")
+    arch = _spec_module_source(root, "architecture")
 
     def enum_all(src: str, enum: str, where: str) -> list[str]:
         # A hand-written `pub const ALL` or, for the closed Gate-0 vocabularies,
