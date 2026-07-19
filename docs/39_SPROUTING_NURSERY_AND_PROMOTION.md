@@ -44,8 +44,12 @@ Candidate   qualification-eligible material under review
 A compiling `fn f() -> Result<()> { Ok(()) }` stub is a Scaffold —
 structurally present, unqualified — and counts in the UNREALIZED denominator. A
 binary realized|unrealized graph would go green over a tree of stubs; the third
-state is why it cannot. Candidate lineage reuses existing typed relation fields
-and mints NO parallel `CandidateEvidenceRelation` edge vocabulary.
+state is why it cannot. Candidate lineage is carried by required manifest and
+receipt fields — parent candidate identities, the source-frontier commitment, the
+dependency commitments, the content commitment, the generator or pilot evidence,
+the qualification receipts, the reuse key, and the promotion, refusal, and
+invalidation receipts — and relations are DERIVED from those required fields, so
+no generic `CandidateEvidenceRelation` vocabulary exists.
 
 ## 2. Immutable nursery: persistent records, disposable workspaces
 
@@ -53,19 +57,26 @@ The nursery is BOTH immutable and disposable, split by object. It is not a
 purely disposable downstream tree, and it is not a persistent nursery of
 whole-tree bytes. The ruled resolution divides by what is being stored.
 
-The nursery persists IMMUTABLE, content-addressed lineage RECORDS:
+The nursery persists IMMUTABLE, content-addressed lineage RECORDS. Lineage is
+carried by REQUIRED manifest and receipt fields, not by a free-form edge graph:
 
 ```text
-candidate lineage identity
-patch / content commitment
+candidate lineage identity                        the CandidateId object
+parent candidate identities                       explicit parent CandidateIds on the manifest
 source-frontier commitment
 dependency commitments
-lineage
+content commitment
 generator / pilot evidence
 qualification receipts
-benchmark / holdout evidence
 reuse key
+promotion, refusal, and invalidation receipts
 ```
+
+Every lineage RELATION is DERIVED from those required fields — a parent edge is
+the parent-CandidateId field, a reuse edge is the reuse key, an invalidation edge
+is the invalidation receipt. There is NO generic `CandidateEvidenceRelation` enum
+and no parallel edge vocabulary: the required fields ARE the lineage, and
+relations are read back out of them, never authored beside them.
 
 Full speculative WORKSPACES — the materialized `crates/` tree — are DISPOSABLE
 rematerializations, never persisted as authority. After a trusted-frontier
@@ -85,25 +96,26 @@ squatters' rights. Records accrue; workspaces are rebuilt.
 ## 3. The candidate lineage identity is orthogonal, never a generalization
 
 The candidate lineage identity is orthogonal. It does NOT generalize or
-replace the kernel identity quartet or the content and version identities:
+replace the kernel identity quartet or the content and version identities. The
+narrow, correct assignment against the live identity catalog is:
 
 ```text
-kernel quartet   KernelContractId, KernelImplementationId,
-                 QualifiedKernelId, KernelQualificationReceiptId
-content/version  ContentDigest, ProgramImageId, ReceiptId, git commit SHA
+candidate lineage identity   one IdentityKind object: CandidateId, owner BP-SPROUTING-1
+candidate content            bound independently via ContentDigest or another admitted BindingKind commitment
+candidate parents            explicit parent CandidateIds recorded on the candidate manifest
+kernel specialization        may additionally carry KernelContractId, KernelImplementationId,
+                             QualifiedKernelId, and KernelQualificationReceiptId per their existing meanings
+candidate manifest format    independently versioned only when the actual serialized schema lands
 ```
 
-A specialized kernel candidate may carry BOTH a candidate lineage identity (its
-lineage object) AND a `KernelImplementationId` (its implementation under the
-kernel contract). The identity system is deliberately separated into object,
-generation, binding, and version axes to prevent exactly this collapse:
-
-```text
-object axis      what a thing is (candidate lineage identity, kernel contract)
-generation axis  which produced instance (implementation identity)
-binding axis     what it was qualified against (qualified/receipt identity)
-version axis      which snapshot of bytes (ContentDigest, commit SHA)
-```
+`ContentDigest` is a `BindingKind` content commitment, not a version snapshot,
+and the candidate manifest gains a version identity only when its serialized
+schema actually lands — so candidate identity, candidate content, and candidate
+parents are three distinct facts carried by three distinct mechanisms, never one
+collapsed axis. A specialized kernel candidate may carry BOTH a candidate lineage
+identity (its `CandidateId` object) AND a `KernelImplementationId` (its
+implementation under the kernel contract); neither absorbs the other, and the
+kernel quartet keeps its existing meanings unchanged.
 
 The candidate lineage identity is authored in F3 `spec/identities.rs` alongside
 those kinds. A lineage object is never a shortcut around the identity it must
@@ -152,9 +164,31 @@ CandidateChangeClass::RealizationPreserving
 CandidateChangeClass::LawChanging
 ```
 
-A realization-preserving candidate may promote through a mechanical or bounded
-lane. A law-changing candidate routes to the architect and the DEC-074
-proof-policy process. Candidate `RepairAuthority` is:
+Both classes satisfy the SAME conjunctive promotion denominator —
+`PromotionRequirement::ALL`, all four requirements on duty at once, never a
+subset:
+
+```text
+IndependentEvidenceRoute     at least one admitted independent-evidence route
+NamedProofTarget             a named proof target the candidate must meet
+QualifiedHostileEvidence     qualified hostile evidence against the boundary
+AuditablePromotionReceipt    an auditable receipt of the promotion decision
+```
+
+A change class ADDS an authority path; it never REPLACES a common requirement. A
+realization-preserving candidate satisfies all four through a mechanical or
+bounded-search lane. A law-changing candidate satisfies all four AND additionally
+requires explicit amendment of the actual semantic owner — the owning DEC, the
+owning contract, the affected identity or version, compatibility, migration, and
+whole-corpus reconciliation as applicable — and routes to the architect; it
+enters the DEC-074 proof-policy process ONLY when proof policy or
+candidate-promotion policy itself changes or weakens, not for every law-changing
+edit.
+
+Candidate origin (HOW a candidate was produced) and authority posture (WHETHER it
+is admitted) are SEPARATE axes: a truthfully recorded origin never implies
+admission, and admission is never inferred from origin. Candidate `RepairAuthority`
+is:
 
 ```text
 Mechanical         a deterministic mechanical fix
@@ -229,6 +263,58 @@ artifact binds the exact judge digest it was produced under. DEC-082
 (Architecture, Lock) owns the whole-tree topology. The campaign closure graph
 must enter `GeneratedView::ALL` before it may land; that view is authored in F4,
 not F1.
+
+## 8. Sprouting vocabulary (generated)
+
+`spec/sprouting.rs` owns the frozen campaign vocabulary — candidate origins,
+change classes, evaluation-set roles, realization postures, and repair
+authorities. This inventory is a generated projection of those typed enums.
+
+<!-- SPROUTING-VOCABULARY:BEGIN generated from spec/sprouting.rs by bootstrap/project.py; do not edit -->
+```text
+Candidate origins
+  DeterministicGeneration
+  BoundedSearch
+  TransferReuse
+  HumanAuthored
+  MachineAssistedSynthesis
+  RepairOfCandidate
+
+Candidate change classes
+  RealizationPreserving
+  LawChanging
+
+Evaluation set roles
+  Search
+  Qualification
+  Holdout
+  Regression
+
+Realization postures
+  Missing
+  Scaffold
+  Candidate
+
+Repair authorities
+  Mechanical
+  BoundedSearch
+  ArchitectRequired
+```
+<!-- SPROUTING-VOCABULARY:END -->
+
+## 9. Required proof rows
+
+`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+| Guarantee | Required proof rows |
+| --- | --- |
+| DEC-079 | candidate_origin_confers_no_authority; scaffold_cannot_close_realization; qualified_nursery_record_is_not_promoted_source |
+| DEC-080 | law_changing_candidate_cannot_enter_realization_preserving_lane |
+| DEC-081 | search_budget_is_declared_and_receipted; search_and_holdout_sets_are_disjoint; failed_holdout_candidate_is_quarantined |
+| DEC-082 | candidate_cannot_modify_frozen_judge; later_green_cannot_bless_unresolved_dependency |
+| DEC-073 | specialized_plan_benchmark_is_advisory_only |
+<!-- PROOF-REQUIREMENTS:END -->
 
 ## Ownership
 

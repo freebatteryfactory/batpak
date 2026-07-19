@@ -31,6 +31,7 @@ pub mod promotion;
 pub mod pakvm_isa;
 pub mod proof;
 pub mod reconciliation;
+pub mod sprouting;
 pub mod syncbat_firewall;
 pub mod tier0_cross_run;
 pub mod toolchain;

@@ -71,10 +71,10 @@ guard enforces.
 Four distinct verification bases exist and never collapse:
 
 ```text
-ContractProjection   a projection generated from typed authority; drives inputs, never concludes
-IndependentReference a separately owned model, evaluator, or relation authored against the law
-DirectBoundary       a hostile probe of the real boundary under test
-RuntimeObservation   evidence recorded from an executing system
+ContractProjection                a projection generated from typed authority; drives inputs, never concludes
+IndependentReference { route }    a separately owned model, evaluator, or relation authored against the law
+DirectBoundary { route }          a hostile probe of the real boundary under test
+RuntimeObservation                evidence recorded from an executing system
 ```
 
 A generated projection can never be the SOLE independent oracle: it is derived
@@ -88,6 +88,20 @@ SEED-INDEPENDENT-ORACLE). The typed basis is a field ON the proof requirement,
 not a comment beside it: a `ContractProjection` offered on a route that demands
 independent evidence is a compile error, not a runtime warning. That basis field
 is authored in F2 `spec/verification.rs`.
+
+The independent-evidence route lives INSIDE the basis, not beside it.
+`IndependentReference { route }` carries a `DifferentialImplementation` or
+`IndependentHistoryReplay` route and never `HostileBoundary`; `DirectBoundary
+{ route }` carries `Some(HostileBoundary)` or `None`; `ContractProjection` and
+`RuntimeObservation` structurally carry no route. Admission refuses any other
+pairing, so a route can never attach to a basis that cannot host it.
+
+Enforcement posture is authored gate policy, not an observed fact. It stays on
+the requirement and is ABSENT from every observation. `Blocking` fails the row
+when its requirement fails; `Quarantine` quarantines the affected candidate or
+artifact without blocking the run; `Advisory` stays visible and never blocks and
+never confers. A caller cannot observe its way past a blocking posture, because
+the observation never carries enforcement at all.
 
 ## 3. Projection is oracle-ineligible, but its completeness still matters
 
@@ -152,13 +166,21 @@ erased by the word "exhaustive".
 This law lives inside `DEC-077`. The green-counting method is renamed
 `ProofUnitTerminal::is_positive_semantic_terminal` (`spec/proof.rs`) so a
 sampled or runtime-observed row can never launder into denominator strength: a
-positive semantic terminal is one input to requirement qualification among
-eleven — method, basis, exact coverage, lane, enforcement posture, freshness,
-actual execution, artifact bindings, counterexample posture, required
-independence, and the terminal itself — and no gate, release gate, or
-denominator calculation may use it alone. The declared requirement is satisfied
-exactly (`spec/verification.rs` `qualify`); there is no coverage ranking in
-either direction.
+positive semantic terminal is one input to observation admission among nine —
+method, basis (which now carries the independent-evidence route), exact
+coverage, lane, freshness, actual execution, artifact bindings, counterexample
+posture, and the terminal itself — and no gate, release gate, or denominator
+calculation may use it alone. Enforcement posture is authored gate policy applied
+when a plan is assessed, never a fact the observation carries. The declared
+requirement is admitted exactly (`spec/verification.rs` `admit_observation`);
+there is no coverage ranking in either direction.
+
+F2 proves plan and observation-shape coherence. It does not prove that the
+caller honestly computed execution, freshness, artifact, or counterexample
+facts. Phase 6 TestPak receipts and independent verifiers convert concrete
+evidence into release-eligible proof. The typed admission (`admit_observation`,
+`assess_plan`) refuses an incoherent SHAPE; it does not vouch for the TRUTH of
+the boolean facts a `RequirementEvidenceObservation` carries.
 
 ## 5. Claim kinds, including NonOscillation
 
@@ -256,30 +278,37 @@ for why self-corroboration is refused; it is not a type dependency.
 `spec/verification.rs` does not import or reuse the Tier 0 cross-run types as
 product-level verification authority.
 
-## 7. Independent-evidence route kind is forthcoming
+## 7. Independent-evidence route kind
 
 Independence has kinds, and the kinds are named vocabulary, not free text. F2
-mints `IndependentEvidenceRouteKind` — the single vocabulary describing WHICH
-kind of independent route supplies independence (a separately owned model, an
-independent evaluator, a hostile boundary probe, an independent replay relation,
-and the other admitted routes F2 enumerates).
+MINTS `IndependentEvidenceRouteKind` — the single vocabulary describing WHICH
+kind of independent route supplies independence: a differential implementation,
+a hostile boundary probe, an independent history replay, and the other admitted
+routes F2 enumerates. It is minted, not forthcoming: the enum exists, and its
+route/basis pairings are enforced at admission (section 2). The route lives
+INSIDE `VerificationBasis` — `IndependentReference { route }` and `DirectBoundary
+{ route }` carry it — so a requirement names its independent route as typed
+structure, never as adjacent prose.
 
-Two consumers depend on it:
+Consumers name the NEED; a concrete carrier supplies the KIND:
 
 ```text
-PromotionRequirement::IndependentEvidenceRoute   requires at least one admitted independent route exist
+PromotionRequirement::IndependentEvidenceRoute   names the need: at least one admitted independent route must exist
 the anti-self-grading SEED law                   forbids a verdict resting only on the subject's own basis
 ```
 
-Both consume `IndependentEvidenceRouteKind` in F2. Tier 0 cross-run independence
-remains a separate bootstrap concern (`BP-PUBLIC-API-CI-RELEASE-1`,
-`spec/tier0_cross_run.rs`): it proves two hosted runs describe one source
-snapshot, which is a distinct bootstrap independence from the verification-route
-independence this vocabulary names, and the two are not merged.
+F3's `CandidatePromotionPlan` (`spec/sprouting.rs`) is the FIRST concrete
+consumer of `IndependentEvidenceRouteKind`.
+`PromotionRequirement::IndependentEvidenceRoute` names the need; the promotion
+plan carries the selected `IndependentEvidenceRouteKind` for the candidate it
+admits. The vocabulary is minted once in F2 and consumed downstream, never
+redefined there.
 
-This section does not define the enum. `IndependentEvidenceRouteKind`,
-`PromotionRequirement::IndependentEvidenceRoute`, and the anti-self-grading SEED
-law are authored in F2; this section is the law they will carry.
+Tier 0 cross-run independence remains a separate bootstrap concern
+(`BP-PUBLIC-API-CI-RELEASE-1`, `spec/tier0_cross_run.rs`): it proves two hosted
+runs describe one source snapshot, a distinct bootstrap independence from the
+verification-route independence this vocabulary names, and the two are not
+merged.
 
 ## 8. Verification plans (generated)
 
@@ -289,17 +318,25 @@ through `spec/verification.rs`). This inventory is a generated projection of
 those typed facts.
 
 <!-- VERIFICATION-PLANS:BEGIN generated from spec/proof.rs; spec/verification.rs by bootstrap/project.py; do not edit -->
-| Plan | Method | Basis | Coverage | Lane | Enforcement | Independent route |
-| --- | --- | --- | --- | --- | --- | --- |
-| PLAN_HOSTILE_BOUNDARY | PropertySequence | DirectBoundary | Sampled | Merge | Blocking | HostileBoundary |
-| PLAN_FAULT_INJECTION | FaultInjection | DirectBoundary | Sampled | Merge | Blocking | HostileBoundary |
-| PLAN_CRASH_RECOVERY | CrashRecovery | DirectBoundary | Sampled | Merge | Blocking | HostileBoundary |
-| PLAN_DIFFERENTIAL | DifferentialExecution | IndependentReference | Sampled | Merge | Blocking | DifferentialImplementation |
-| PLAN_HISTORY_REPLAY | HistoryReplay | IndependentReference | Sampled | Merge | Blocking | IndependentHistoryReplay |
-| PLAN_STRUCTURAL | StructuralRule | DirectBoundary | ExhaustiveWithinDeclaredModel | PullRequestFast | Blocking | - |
-| PLAN_COMPILE_REFUSAL | CompileRefusal | DirectBoundary | Sampled | PullRequestFast | Blocking | - |
-| PLAN_PROPERTY | PropertySequence | DirectBoundary | Sampled | Merge | Blocking | - |
-| PLAN_COMPLEXITY | ComplexityContract | DirectBoundary | Sampled | Merge | Blocking | - |
+| Plan | Method | Basis | Coverage | Lane | Enforcement |
+| --- | --- | --- | --- | --- | --- |
+| PLAN_HOSTILE_BOUNDARY | PropertySequence | DirectBoundary(HostileBoundary) | Sampled | Merge | Blocking |
+| PLAN_FAULT_INJECTION | FaultInjection | DirectBoundary(HostileBoundary) | Sampled | Merge | Blocking |
+| PLAN_CRASH_RECOVERY | CrashRecovery | DirectBoundary(HostileBoundary) | Sampled | Merge | Blocking |
+| PLAN_DIFFERENTIAL | DifferentialExecution | IndependentReference(DifferentialImplementation) | Sampled | Merge | Blocking |
+| PLAN_HISTORY_REPLAY | HistoryReplay | IndependentReference(IndependentHistoryReplay) | Sampled | Merge | Blocking |
+| PLAN_STRUCTURAL | StructuralRule | DirectBoundary | ExhaustiveWithinDeclaredModel | PullRequestFast | Blocking |
+| PLAN_COMPILE_REFUSAL | CompileRefusal | DirectBoundary | Sampled | PullRequestFast | Blocking |
+| PLAN_PROPERTY | PropertySequence | DirectBoundary | Sampled | Merge | Blocking |
+| PLAN_COMPLEXITY | ComplexityContract | DirectBoundary | Sampled | Merge | Blocking |
+| PLAN_RECONCILIATION_REFINEMENT | StructuralRule | ContractProjection | ExhaustiveWithinDeclaredModel | Merge | Blocking |
+| PLAN_RECONCILIATION_REFINEMENT | DifferentialExecution | IndependentReference(DifferentialImplementation) | Bounded | Merge | Blocking |
+| PLAN_RECONCILIATION_REFINEMENT | ScheduleExploration | DirectBoundary(HostileBoundary) | Bounded | Scheduled | Blocking |
+| PLAN_LAW_CHANGE_REFUSAL | TranslationValidation | IndependentReference(DifferentialImplementation) | Bounded | Merge | Blocking |
+| PLAN_LAW_CHANGE_REFUSAL | PropertySequence | DirectBoundary(HostileBoundary) | Sampled | Merge | Blocking |
+| PLAN_FRONTIER_EXPLORATION | BoundedStateExploration | DirectBoundary(HostileBoundary) | Bounded | Scheduled | Blocking |
+| PLAN_BENCHMARK_ADVISORY | BenchmarkEnvelope | DirectBoundary | Sampled | Release | Advisory |
+| PLAN_HOLDOUT_QUARANTINE | DifferentialExecution | IndependentReference(DifferentialImplementation) | Bounded | Scheduled | Quarantine |
 
 | Active proof row | Claim | Plan |
 | --- | --- | --- |
@@ -334,7 +371,7 @@ those typed facts.
 | replay_reconstructs_same_turn_and_returns_original_receipts | Determinism | PLAN_HISTORY_REPLAY |
 | lost_acknowledgement_requires_reconciliation_before_retry | NonOscillation | PLAN_PROPERTY |
 | port_response_cannot_cross_attempts | Safety | PLAN_PROPERTY |
-| driver_await_and_cooperative_drive_produce_equivalent_logical_trace | Determinism | PLAN_DIFFERENTIAL |
+| driver_await_and_cooperative_drive_produce_equivalent_logical_trace | Refinement | PLAN_RECONCILIATION_REFINEMENT |
 | checkpoint_gap_does_not_duplicate_committed_effect | Safety | PLAN_CRASH_RECOVERY |
 | reconciliation_appends_evidence_without_rewriting_original_observation | Safety | PLAN_PROPERTY |
 | shred_ack_waits_for_backend_durability | Safety | PLAN_PROPERTY |
@@ -361,7 +398,7 @@ those typed facts.
 | no_std_batpak_has_no_std_dependency_route | Safety | PLAN_STRUCTURAL |
 | no_std_syncbat_has_no_std_dependency_route | Safety | PLAN_STRUCTURAL |
 | default_std_does_not_enable_threaded_or_browser_adapters | Safety | PLAN_STRUCTURAL |
-| browser_and_native_profiles_preserve_program_semantics | Determinism | PLAN_DIFFERENTIAL |
+| browser_and_native_profiles_preserve_program_semantics | Refinement | PLAN_DIFFERENTIAL |
 | hash_map_iteration_cannot_influence_canonical_observables | Determinism | PLAN_PROPERTY |
 | attacker_length_is_checked_before_reserve | Safety | PLAN_HOSTILE_BOUNDARY |
 | allocation_failure_returns_resource_exhausted | Safety | PLAN_FAULT_INJECTION |
@@ -399,6 +436,16 @@ those typed facts.
 | entrypoint_effect_must_be_declared_by_world_interface | Safety | PLAN_HOSTILE_BOUNDARY |
 | query_program_receipt_cannot_satisfy_entrypoint_invocation | Safety | PLAN_HOSTILE_BOUNDARY |
 | tls_does_not_upgrade_program_or_proof_authority | Safety | PLAN_PROPERTY |
+| candidate_origin_confers_no_authority | Safety | PLAN_HOSTILE_BOUNDARY |
+| scaffold_cannot_close_realization | Safety | PLAN_STRUCTURAL |
+| qualified_nursery_record_is_not_promoted_source | Safety | PLAN_HOSTILE_BOUNDARY |
+| law_changing_candidate_cannot_enter_realization_preserving_lane | Safety | PLAN_LAW_CHANGE_REFUSAL |
+| search_budget_is_declared_and_receipted | Conformance | PLAN_STRUCTURAL |
+| search_and_holdout_sets_are_disjoint | Conformance | PLAN_STRUCTURAL |
+| failed_holdout_candidate_is_quarantined | Refinement | PLAN_HOLDOUT_QUARANTINE |
+| candidate_cannot_modify_frozen_judge | Safety | PLAN_HOSTILE_BOUNDARY |
+| later_green_cannot_bless_unresolved_dependency | Safety | PLAN_FRONTIER_EXPLORATION |
+| specialized_plan_benchmark_is_advisory_only | ResourceEnvelope | PLAN_BENCHMARK_ADVISORY |
 <!-- VERIFICATION-PLANS:END -->
 
 ## 9. Ownership

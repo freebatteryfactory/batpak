@@ -1698,9 +1698,21 @@ _V_PLAN_ROW = re.compile(
     r'pub const (PLAN_[A-Z0-9_]+): &\[VerificationRequirement\] = &\[(.*?)\];', re.S)
 _V_REQ_ROW = re.compile(
     r'VerificationRequirement \{ method: VerificationMethod::(\w+), '
-    r'basis: VerificationBasis::(\w+), coverage: VerificationCoverage::(\w+), '
-    r'lane: VerificationLane::(\w+), enforcement: VerificationEnforcementPosture::(\w+), '
-    r'independent_route: (?:None|Some\(IndependentEvidenceRouteKind::(\w+)\)) \}')
+    r'basis: (VerificationBasis::\w+(?: \{ route: (?:None|Some\(IndependentEvidenceRouteKind::\w+\)|IndependentEvidenceRouteKind::\w+) \})?), '
+    r'coverage: VerificationCoverage::(\w+), lane: VerificationLane::(\w+), '
+    r'enforcement: VerificationEnforcementPosture::(\w+) \}')
+
+
+def _render_basis(basis: str) -> str:
+    """Fold the route (now carried inside VerificationBasis) into a single
+    basis cell: ContractProjection, RuntimeObservation, DirectBoundary,
+    DirectBoundary(HostileBoundary), IndependentReference(DifferentialImplementation),
+    IndependentReference(IndependentHistoryReplay)."""
+    variant = re.match(r"VerificationBasis::(\w+)", basis).group(1)
+    route = re.search(r"IndependentEvidenceRouteKind::(\w+)", basis)
+    if route:
+        return f"{variant}({route.group(1)})"
+    return variant
 _V_ACTIVE_ROW = re.compile(
     r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
     r'ProofRowState::Active \{ [^}]*claim: VerificationClaimKind::(\w+), '
@@ -1711,13 +1723,12 @@ def render_verification_plans(root: Path) -> str:
     """docs/38 VERIFICATION-PLANS: the named plans' exact axis tuples and
     every active proof row's claim + plan, parsed from spec/proof.rs."""
     src = (root / "spec/proof.rs").read_text(encoding="utf-8")
-    lines = ["| Plan | Method | Basis | Coverage | Lane | Enforcement | Independent route |",
-             "| --- | --- | --- | --- | --- | --- | --- |"]
+    lines = ["| Plan | Method | Basis | Coverage | Lane | Enforcement |",
+             "| --- | --- | --- | --- | --- | --- |"]
     for name, body in _V_PLAN_ROW.findall(src):
         for m in _V_REQ_ROW.finditer(body):
-            route = m.group(6) or "-"
-            lines.append(f"| {name} | {m.group(1)} | {m.group(2)} | {m.group(3)} | "
-                         f"{m.group(4)} | {m.group(5)} | {route} |")
+            lines.append(f"| {name} | {m.group(1)} | {_render_basis(m.group(2))} | "
+                         f"{m.group(3)} | {m.group(4)} | {m.group(5)} |")
     lines.append("")
     lines.append("| Active proof row | Claim | Plan |")
     lines.append("| --- | --- | --- |")
@@ -2138,6 +2149,76 @@ def render_generated_view_registry(root: Path) -> str:
     return "\n".join(lines)
 
 
+# --- Sprouting vocabulary and specialized-plan policy (5.5F3, BP-SPROUTING-1) -
+# spec/sprouting.rs owns the candidate-sprouting vocabulary and the DEC-073
+# specialized-plan candidate policy. These projectors parse the typed owner
+# directly; no Python origin, class, role, posture, authority, or requirement
+# spelling map exists here.
+_SPROUTING_VOCAB = (
+    ("Candidate origins", "CANDIDATE_ORIGIN_KINDS"),
+    ("Candidate change classes", "CANDIDATE_CHANGE_CLASSES"),
+    ("Evaluation set roles", "EVALUATION_SET_ROLES"),
+    ("Realization postures", "REALIZATION_POSTURES"),
+    ("Repair authorities", "REPAIR_AUTHORITIES"),
+)
+
+
+def _sprouting_const_variants(src: str, const_name: str) -> list[str]:
+    body = re.search(
+        r"pub const " + const_name + r":[^=]*= &\[(.*?)\];", src, re.S)
+    if not body:
+        raise Unadmitted(f"spec/sprouting.rs: {const_name} inventory unreadable")
+    variants = re.findall(r"\w+::(\w+)", body.group(1))
+    if not variants:
+        raise Unadmitted(f"spec/sprouting.rs: {const_name} names no variants")
+    return variants
+
+
+def render_sprouting_vocabulary(root: Path) -> str:
+    """docs/39 SPROUTING-VOCABULARY: the five frozen candidate-sprouting axes,
+    each variant in its authored inventory order, parsed from spec/sprouting.rs."""
+    src = (root / "spec/sprouting.rs").read_text(encoding="utf-8")
+    sections = []
+    for heading, const_name in _SPROUTING_VOCAB:
+        variants = _sprouting_const_variants(src, const_name)
+        sections.append(heading + "\n" + "\n".join(f"  {v}" for v in variants))
+    return "```text\n" + "\n\n".join(sections) + "\n```"
+
+
+def render_specialized_plan_policy(root: Path) -> str:
+    """docs/07 SPECIALIZED-PLAN-CANDIDATE-POLICY: the DEC-073 candidate policy
+    (owner, admission basis, change class, allowed origins, independent route,
+    conjunctive promotion requirements), parsed from spec/sprouting.rs."""
+    src = (root / "spec/sprouting.rs").read_text(encoding="utf-8")
+    m = re.search(
+        r"pub const SPECIALIZED_PLAN_CANDIDATE_POLICY: SpecializedPlanCandidatePolicy =\s*"
+        r"SpecializedPlanCandidatePolicy \{(.*?)\n\s*\};", src, re.S)
+    if not m:
+        raise Unadmitted("spec/sprouting.rs: SPECIALIZED_PLAN_CANDIDATE_POLICY unreadable")
+    body = m.group(1)
+    owner = re.search(r'semantic_owner: ContractId\("([^"]+)"\)', body)
+    basis = re.search(r'admission_basis: GuaranteeRef::dec\("([^"]+)"\)', body)
+    change = re.search(r"change_class: CandidateChangeClass::(\w+)", body)
+    route = re.search(r"independent_route: IndependentEvidenceRouteKind::(\w+)", body)
+    if not (owner and basis and change and route):
+        raise Unadmitted("spec/sprouting.rs: specialized-plan policy facts unreadable")
+    origins = re.findall(r"CandidateOriginKind::(\w+)", body)
+    if not origins:
+        origins = _sprouting_const_variants(src, "CANDIDATE_ORIGIN_KINDS")
+    reqs = re.findall(r"PromotionRequirement::(\w+)", body)
+    if not reqs or "ALL" in reqs:
+        reqs = [s for s, _o, _b in parse_promotion(root)[0]]
+    lines = [
+        f"{'semantic owner':<22} {owner.group(1)}",
+        f"{'admission basis':<22} {basis.group(1)}",
+        f"{'change class':<22} {change.group(1)}",
+        f"{'allowed origins':<22} {'; '.join(origins)}",
+        f"{'independent route':<22} {route.group(1)}",
+        f"{'promotion requirements':<22} {'; '.join(reqs)}",
+    ]
+    return "```text\n" + "\n".join(lines) + "\n```"
+
+
 VIEW_RENDERERS = {
     "OperatorsCatalog": lambda root: render_catalog(parse_operators(root)),
     "OperatorsSurfaces": lambda root: render_surfaces(parse_operators(root)),
@@ -2196,6 +2277,9 @@ VIEW_RENDERERS = {
     "SecretAuthorityProofRequirements": _proof_requirements_renderer("SecretAuthorityProofRequirements"),
     "Gate0MaterializationPlan": render_gate0_plan,
     "VerificationPlans": render_verification_plans,
+    "SproutingVocabulary": render_sprouting_vocabulary,
+    "SpecializedPlanCandidatePolicy": render_specialized_plan_policy,
+    "SproutingProofRequirements": _proof_requirements_renderer("SproutingProofRequirements"),
     "GeneratedViewRegistry": render_generated_view_registry,
 }
 

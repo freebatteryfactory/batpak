@@ -85,6 +85,12 @@ pub enum IdentityKind {
     WideExactProfile,
     QuantizationPolicy,
     RoundingMode,
+    /// The sprouted realization-candidate lineage object (5.5F3). Owned by
+    /// BP-SPROUTING-1; its content is bound independently through a
+    /// `BindingKind` commitment and its parents are explicit parent
+    /// `CandidateId`s on the manifest — this axis names the OBJECT only, not a
+    /// representation or a manifest version.
+    Candidate,
 }
 
 /// Which evolution or authority generation.
@@ -194,6 +200,7 @@ impl IdentityKind {
         IdentityKind::WideExactProfile,
         IdentityKind::QuantizationPolicy,
         IdentityKind::RoundingMode,
+        IdentityKind::Candidate,
     ];
 
     pub const fn entry(self) -> CatalogEntry {
@@ -238,6 +245,7 @@ impl IdentityKind {
             IdentityKind::WideExactProfile => entry!("WideExactProfileId", "BP-NUMERIC-1"),
             IdentityKind::QuantizationPolicy => entry!("QuantizationPolicyId", "BP-NUMERIC-1"),
             IdentityKind::RoundingMode => entry!("RoundingModeId", "BP-NUMERIC-1"),
+            IdentityKind::Candidate => entry!("CandidateId", "BP-SPROUTING-1"),
         }
     }
 }

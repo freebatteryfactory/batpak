@@ -69,6 +69,7 @@ ApproximationProfileId         BP-NUMERIC-1
 WideExactProfileId             BP-NUMERIC-1
 QuantizationPolicyId           BP-NUMERIC-1
 RoundingModeId                 BP-NUMERIC-1
+CandidateId                    BP-SPROUTING-1
 ```
 <!-- IDENTITY-CATALOG:END -->
 

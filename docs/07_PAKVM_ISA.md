@@ -436,6 +436,27 @@ FirstUseResidual
 FallbackAfterSpecializationRefusal
 ```
 
+### Specialized-plan candidate policy
+
+A specialized plan is candidate material under DEC-073: the reference interpreter
+keeps semantic authority, and a residual plan is admitted only as a
+realization-preserving candidate proved equivalent to it. The typed policy that
+admits such a candidate — its semantic owner, admission basis, change class,
+allowed origins, independent-evidence route, and the conjunctive promotion
+requirements it must satisfy — is authored in `spec/sprouting.rs` and projected
+here.
+
+<!-- SPECIALIZED-PLAN-CANDIDATE-POLICY:BEGIN generated from spec/sprouting.rs by bootstrap/project.py; do not edit -->
+```text
+semantic owner         BP-PAKVM-ISA-1
+admission basis        DEC-073
+change class           RealizationPreserving
+allowed origins        DeterministicGeneration; BoundedSearch; TransferReuse; HumanAuthored; MachineAssistedSynthesis; RepairOfCandidate
+independent route      DifferentialImplementation
+promotion requirements IndependentEvidenceRoute; NamedProofTarget; QualifiedHostileEvidence; AuditablePromotionReceipt
+```
+<!-- SPECIALIZED-PLAN-CANDIDATE-POLICY:END -->
+
 
 ## Decision-circuit lowering
 

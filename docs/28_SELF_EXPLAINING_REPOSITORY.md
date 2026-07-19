@@ -183,6 +183,9 @@ An embedded block inherits no authority from its containing document. A standalo
 | SecretAuthorityProofRequirements | embedded-block | spec/proof.rs | docs/35_CRYPTO_AND_SECRET_AUTHORITY.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | Gate0MaterializationPlan | embedded-block | spec/bootstrap_output.rs; spec/architecture.rs; spec/toolchain.rs | docs/23_BOOTSTRAP_AND_SELF_HOSTING.md | GATE0-MATERIALIZATION-PLAN | bootstrap/project.py |
 | VerificationPlans | embedded-block | spec/proof.rs; spec/verification.rs | docs/38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md | VERIFICATION-PLANS | bootstrap/project.py |
+| SproutingVocabulary | embedded-block | spec/sprouting.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | SPROUTING-VOCABULARY | bootstrap/project.py |
+| SpecializedPlanCandidatePolicy | embedded-block | spec/sprouting.rs | docs/07_PAKVM_ISA.md | SPECIALIZED-PLAN-CANDIDATE-POLICY | bootstrap/project.py |
+| SproutingProofRequirements | embedded-block | spec/proof.rs | docs/39_SPROUTING_NURSERY_AND_PROMOTION.md | PROOF-REQUIREMENTS | bootstrap/project.py |
 | GeneratedViewRegistry | embedded-block | spec/generated_views.rs | docs/28_SELF_EXPLAINING_REPOSITORY.md | GENERATED-VIEW-REGISTRY | bootstrap/project.py |
 <!-- GENERATED-VIEW-REGISTRY:END -->
 

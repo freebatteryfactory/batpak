@@ -118,6 +118,9 @@ pub enum GeneratedView {
     SecretAuthorityProofRequirements,
     Gate0MaterializationPlan,
     VerificationPlans,
+    SproutingVocabulary,
+    SpecializedPlanCandidatePolicy,
+    SproutingProofRequirements,
     GeneratedViewRegistry,
 }
 
@@ -180,6 +183,9 @@ impl GeneratedView {
         GeneratedView::SecretAuthorityProofRequirements,
         GeneratedView::Gate0MaterializationPlan,
         GeneratedView::VerificationPlans,
+        GeneratedView::SproutingVocabulary,
+        GeneratedView::SpecializedPlanCandidatePolicy,
+        GeneratedView::SproutingProofRequirements,
         GeneratedView::GeneratedViewRegistry,
     ];
 
@@ -242,6 +248,9 @@ impl GeneratedView {
             GeneratedView::SecretAuthorityProofRequirements => "SecretAuthorityProofRequirements",
             GeneratedView::Gate0MaterializationPlan => "Gate0MaterializationPlan",
             GeneratedView::VerificationPlans => "VerificationPlans",
+            GeneratedView::SproutingVocabulary => "SproutingVocabulary",
+            GeneratedView::SpecializedPlanCandidatePolicy => "SpecializedPlanCandidatePolicy",
+            GeneratedView::SproutingProofRequirements => "SproutingProofRequirements",
             GeneratedView::GeneratedViewRegistry => "GeneratedViewRegistry",
         }
     }
@@ -678,6 +687,31 @@ impl GeneratedView {
                 ]),
                 surface: GeneratedViewSurface::EmbeddedBlock,
                 marker: Some("VERIFICATION-PLANS"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SproutingVocabulary => GeneratedViewSpec {
+                authority_sources: &["spec/sprouting.rs"],
+                target: GeneratedViewTarget::Static(&[
+                    "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
+                ]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SPROUTING-VOCABULARY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SpecializedPlanCandidatePolicy => GeneratedViewSpec {
+                authority_sources: &["spec/sprouting.rs"],
+                target: GeneratedViewTarget::Static(&["docs/07_PAKVM_ISA.md"]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("SPECIALIZED-PLAN-CANDIDATE-POLICY"),
+                generator: BootstrapToolId::ProjectPy,
+            },
+            GeneratedView::SproutingProofRequirements => GeneratedViewSpec {
+                authority_sources: &["spec/proof.rs"],
+                target: GeneratedViewTarget::Static(&[
+                    "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
+                ]),
+                surface: GeneratedViewSurface::EmbeddedBlock,
+                marker: Some("PROOF-REQUIREMENTS"),
                 generator: BootstrapToolId::ProjectPy,
             },
             GeneratedView::GeneratedViewRegistry => GeneratedViewSpec {

@@ -40,6 +40,11 @@ reconciliation_epoch: cleanroom-v1
 | DEC-050 | BP-WORLD-PORTS-1 | query_program_with_effect_instruction_is_rejected; query_program_cannot_install_process; query_program_cannot_request_write_capability; query_program_over_work_bound_is_denied_before_execution; query_program_result_binds_program_and_grant_identity; entrypoint_receipt_cannot_satisfy_query_program_execution |
 | DEC-049 | BP-WORLD-PORTS-1 | entrypoint_cannot_substitute_foreign_program_image; entrypoint_effect_must_be_declared_by_world_interface; query_program_receipt_cannot_satisfy_entrypoint_invocation |
 | LEG-045 | BP-WORLD-PORTS-1 | tls_does_not_upgrade_program_or_proof_authority |
+| DEC-079 | BP-SPROUTING-1 | candidate_origin_confers_no_authority; scaffold_cannot_close_realization; qualified_nursery_record_is_not_promoted_source |
+| DEC-080 | BP-SPROUTING-1 | law_changing_candidate_cannot_enter_realization_preserving_lane |
+| DEC-081 | BP-SPROUTING-1 | search_budget_is_declared_and_receipted; search_and_holdout_sets_are_disjoint; failed_holdout_candidate_is_quarantined |
+| DEC-082 | BP-SPROUTING-1 | candidate_cannot_modify_frozen_judge; later_green_cannot_bless_unresolved_dependency |
+| DEC-073 | BP-SPROUTING-1 | specialized_plan_benchmark_is_advisory_only |
 <!-- PROOF-RELATIONS:END -->
 
 ## Purpose
@@ -156,6 +161,28 @@ handwritten specializer, cache, kernel, mechanism    Lane CompilerBacked
 ```
 
 No lane is the sole proof route. A semantic mutant that changes meaning must be observable through the reference path and the specialized path. A residual-only mutation either maps to a semantic counterpart or is classified as an implementation/mechanism mutation; it never pretends to be a semantic mutant.
+
+A specialized-plan candidate is admitted under DEC-073's realization-preserving policy; its benchmark evidence is advisory, never a gate. `docs/07_PAKVM_ISA.md` owns the specialization law; this row owns the executable meaning that a specialized plan's performance envelope can neither block promotion nor stand in for the reference interpreter's semantic verdict.
+
+
+Authoritative meanings:
+
+```text
+specialized_plan_benchmark_is_advisory_only
+    A SpecializedPlan's benchmark envelope is advisory. Deleting every
+    specialization cache changes performance and WorkObservation only, never
+    meaning, authority, proof posture, effect legality, or receipt semantics,
+    so a residual that runs slower than its declared envelope raises a
+    visible advisory and blocks nothing, and the reference interpreter — not
+    the fastest kernel — remains the semantic oracle.
+    expects: a specialized plan whose measured work exceeds its declared
+      benchmark envelope surfaces an advisory finding that gates no merge,
+      promotion, or release, while the reference interpreter and the
+      specialized residual return identical observables
+    disposition: an advisory benchmark record that stays visible and never
+      blocks; a benchmark result presented as a correctness or promotion
+      verdict fails the witness
+```
 
 ## Integrity and predecessor witnesses (LEG-023)
 
@@ -1422,6 +1449,154 @@ successors  entrypoint_receipt_cannot_satisfy_query_program_execution   (DEC-050
 aliased     0
 ```
 <!-- HISTORICAL-MIGRATION:END -->
+
+## Candidate-origin and realization-posture witnesses (DEC-079)
+
+Canonical proof-row identity and meaning for the immutable candidate nursery and its complete-lineage law. `spec/sprouting.rs` authors the candidate lifecycle vocabulary and `spec/identities.rs` authors the candidate lineage identity; `docs/39_SPROUTING_NURSERY_AND_PROMOTION.md` owns the nursery law and projects these IDs while stating no per-row executable meaning. Bootstrap proves their names, owner binding, documentary meaning, and cross-surface agreement only: it generates no candidate, qualifies none, and promotes none.
+
+
+Authoritative meanings:
+
+```text
+candidate_origin_confers_no_authority
+    A candidate's origin records how it was produced -- deterministic
+    generation, bounded search, transfer reuse, human authorship,
+    machine-assisted synthesis, or repair of a prior candidate -- and confers
+    no admission authority. Recording a synthesizer or a repair provenance is
+    a truthful lineage fact, never evidence that the candidate qualified.
+    expects: a candidate offered for admission on the strength of its recorded
+      origin alone is refused, and two candidates differing only in origin
+      receive the same admission decision from the same qualification evidence
+    disposition: a typed refusal grounding authority in qualification evidence;
+      origin is carried as lineage provenance and never enters the admission
+      decision
+
+scaffold_cannot_close_realization
+    A compiling stub that merely returns success carries the Scaffold
+    realization posture: structurally present, unqualified, and counted in the
+    unrealized denominator. A binary realized graph can never report green over
+    a tree of scaffolds, because a scaffold satisfies no obligation it stands
+    in for.
+    expects: a candidate whose realization posture is Scaffold is counted
+      unrealized, and a graph containing one scaffold does not report a closed
+      realization
+    disposition: an unrealized count naming each scaffold; a green realization
+      verdict standing over a scaffold fails the witness
+
+qualified_nursery_record_is_not_promoted_source
+    An immutable nursery record -- even one carrying qualification and holdout
+    receipts -- is speculative lineage evidence, never the promoted realization
+    source. Promotion is a separate authorized act that consumes the record and
+    never rewrites it, so a qualified record does not itself become
+    authoritative program or proof material.
+    expects: a fully qualified nursery record offered as the promoted source is
+      refused until an explicit promotion act admits it, and the promotion
+      leaves the immutable record byte-identical
+    disposition: a typed separation between qualified lineage evidence and
+      promoted authority; a nursery record treated as the realized source fails
+      the witness
+```
+
+## Realization-preserving versus law-changing promotion witness (DEC-080)
+
+Canonical proof-row identity and meaning for the promotion-class law. `docs/39_SPROUTING_NURSERY_AND_PROMOTION.md` owns the promotion law and projects this ID while stating no per-row executable meaning. The class adds an authority path and never replaces a common promotion requirement.
+
+
+Authoritative meanings:
+
+```text
+law_changing_candidate_cannot_enter_realization_preserving_lane
+    Promotion classifies a candidate change as realization-preserving or
+    law-changing. A law-changing candidate cannot promote through the mechanical
+    or bounded-search lane reserved for realization-preserving changes; it
+    routes to the architect and the DEC-074 proof-policy anti-weakening process.
+    A candidate never repairs its own courtroom.
+    expects: a candidate whose change class is LawChanging is refused entry to
+      the realization-preserving promotion lane and is routed to the
+      architect-required disposition
+    disposition: a typed lane refusal naming the law-changing class; a
+      law-changing candidate admitted through the mechanical or bounded-search
+      lane fails the witness
+```
+
+## Bounded-search and evaluation-set witnesses (DEC-081)
+
+Canonical proof-row identity and meaning for the bounded-search, evaluation-set-separation, and transfer-reuse law. `docs/39_SPROUTING_NURSERY_AND_PROMOTION.md` owns the search and evaluation law and projects these IDs while stating no per-row executable meaning.
+
+
+Authoritative meanings:
+
+```text
+search_budget_is_declared_and_receipted
+    Every candidate search declares finite candidate-count, logical-work,
+    memory, and monotonic-deadline bounds before it runs, and receipts the
+    actual work it performed against them. An unbounded search, or one whose
+    receipt omits the work it spent, is not a lawful search.
+    expects: a candidate search missing any of the four declared bounds, or
+      whose receipt does not record the actual work spent against them, is
+      refused
+    disposition: a typed declaration-or-receipt refusal naming the absent bound
+      or the missing work receipt; an unbounded search admitted as lawful fails
+      the witness
+
+search_and_holdout_sets_are_disjoint
+    Search, qualification, holdout, and regression inputs carry explicit
+    evaluation-set roles, and holdout evidence for a campaign cannot reuse that
+    campaign's search inputs. A candidate tuned against a set cannot be judged
+    final against the same set, so a search/holdout overlap voids the holdout
+    evidence.
+    expects: a holdout evaluation drawing any input that also appears in the
+      campaign's search set is refused, and the two role-tagged sets share no
+      member
+    disposition: a typed set-overlap refusal naming the shared input; holdout
+      evidence computed over a search input fails the witness
+
+failed_holdout_candidate_is_quarantined
+    A candidate that passed qualification but fails its holdout evaluation is
+    quarantined rather than promoted: the affected candidate is held out of the
+    promoted set while its lineage and failing evidence stay visible. Holdout
+    failure quarantines the candidate; it neither silently drops it from the
+    denominator nor blocks the surrounding campaign.
+    expects: a candidate failing holdout is placed in a typed quarantine
+      disposition, remains counted with its failing evidence, and does not enter
+      the promoted set
+    disposition: a quarantine record naming the failed holdout; a
+      holdout-failing candidate that promotes, or that vanishes from the
+      denominator, fails the witness
+```
+
+## Frozen-judge and dependency-frontier witnesses (DEC-082)
+
+Canonical proof-row identity and meaning for the whole-tree speculative materialization and frontier-qualification law. `docs/39_SPROUTING_NURSERY_AND_PROMOTION.md` owns the whole-tree topology and projects these IDs while stating no per-row executable meaning.
+
+
+Authoritative meanings:
+
+```text
+candidate_cannot_modify_frozen_judge
+    The judge root is a content-addressed frozen snapshot, and every evidence
+    artifact binds the exact judge digest it was produced under. A candidate
+    never modifies its frozen judge or prior evidence; digest binding detects a
+    judge mutation and invalidates the tainted evidence, so evidence produced
+    against a mutated judge cannot verify.
+    expects: evidence produced by a candidate that mutated its judge root fails
+      digest verification against the frozen judge snapshot, while the original
+      prior evidence remains byte-identical
+    disposition: a typed judge-digest invalidation; evidence that verifies
+      against a mutated judge, or a mutated prior artifact accepted as original,
+      fails the witness
+
+later_green_cannot_bless_unresolved_dependency
+    Authority in a speculative tree advances dependency-first: a later frontier
+    that qualifies green can never bless an unresolved earlier frontier it
+    depends on. A whole tree may be materialized before its gates close, but the
+    trusted frontier advances only through dependency-ordered qualification.
+    expects: a downstream candidate reporting green while an upstream dependency
+      remains unresolved advances no trusted frontier past that unresolved
+      dependency
+    disposition: a typed dependency-order refusal; a green descendant that
+      promotes over an unqualified ancestor fails the witness
+```
 
 ## Substrate proof families (5.5D1)
 
