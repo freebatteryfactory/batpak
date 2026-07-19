@@ -18,14 +18,13 @@ HERE = Path(__file__).resolve().parent.parent
 
 
 def spec_module_source(root: Path, name: str) -> str:
-    """The complete source of one spec module: its concept-door file plus, when
-    a same-name directory exists, every submodule file (Wave-2 SW5). Whole-module
-    reads join through this so a concept-door decomposition keeps every item in
-    the selftest harness's view."""
+    """The complete source of one spec module: every file of its domain
+    directory `spec/<name>/`, sorted (SGB source grammar: a sibling door file
+    `spec/<name>.rs` is an unlawful shape and is never read). Whole-module
+    reads join through this so the domain-directory grammar keeps every item
+    in the selftest harness's view; a missing directory yields the empty
+    string, exactly as a missing module did before."""
     pieces: list[str] = []
-    entry = root / "spec" / f"{name}.rs"
-    if entry.is_file():
-        pieces.append(entry.read_text(encoding="utf-8"))
     pkg = root / "spec" / name
     if pkg.is_dir():
         for rel in sorted(pkg.rglob("*.rs")):
@@ -43,7 +42,7 @@ def _toolchain_edition() -> str:
 
     A literal here would be a hidden Python owner; the audit refuses a
     hardcoded edition argument anywhere in bootstrap (5.5E3a)."""
-    src = (HERE.parent / "spec/toolchain.rs").read_text(encoding="utf-8")
+    src = (HERE.parent / "spec/toolchain/types.rs").read_text(encoding="utf-8")
     m = re.search(r"edition: RustEdition::Rust(\d+)", src)
     return m.group(1) if m else "0"
 
@@ -163,15 +162,13 @@ class ProbeError(AssertionError):
 
 
 def spec_carrier(root: Path, module: str, needle: str) -> str:
-    """Resolve the UNIQUE spec file (concept-door or submodule) under `module`
-    that carries `needle`, and return its relpath (Wave-2 SW5 mutation-probe
-    carrier resolution). Fails closed on 0 or 2+ carriers, mirroring
+    """Resolve the UNIQUE file of the domain directory `spec/<module>/` that
+    carries `needle`, and return its relpath (SGB mutation-probe carrier
+    resolution; a sibling door file is an unlawful shape and is never a
+    candidate). Fails closed on 0 or 2+ carriers, mirroring
     neutered_validator's package-agnostic search: a needle whose home is
     ambiguous is a probe that no longer knows what it bites."""
     files: list[Path] = []
-    door = root / "spec" / f"{module}.rs"
-    if door.is_file():
-        files.append(door)
     pkg = root / "spec" / module
     if pkg.is_dir():
         files.extend(sorted(pkg.rglob("*.rs")))
@@ -226,19 +223,18 @@ def gate_sandbox(edits):
 
 
 def _resolve_edit_carrier(root: Path, rel: str, old: str) -> str:
-    """Concept-door decomposition (SW5): an edit aimed at a spec module's door
-    file `spec/<name>.rs` whose needle no longer lives in the door resolves to
-    the unique submodule `spec/<name>/**.rs` that carries it. Fails closed on an
-    ambiguous or absent carrier via spec_carrier. Non-spec paths, submodule
-    paths, and door-resident needles pass through unchanged."""
+    """Door-form edit convention (SGB): an edit aimed at `spec/<name>.rs` (no
+    inner slash) is the module-level spelling — no such door file exists in the
+    domain-directory grammar, so it resolves to the unique file of the domain
+    directory `spec/<name>/**.rs` that carries the needle. Fails closed on an
+    ambiguous or absent carrier via spec_carrier. Non-spec paths and
+    submodule-form paths pass through unchanged."""
     if not (rel.startswith("spec/") and rel.endswith(".rs")):
         return rel
     module = rel[len("spec/"):-3]
     if "/" in module:
         return rel  # already a submodule path
-    door = root / rel
-    pkg = root / "spec" / module
-    if door.is_file() and pkg.is_dir() and old not in door.read_text(encoding="utf-8"):
+    if (root / "spec" / module).is_dir():
         return spec_carrier(root, module, old)
     return rel
 

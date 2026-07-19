@@ -16,7 +16,7 @@ from .guarantees import gate_findings, gate_list
 # --- DEC-075 reconciliation composition (5.5E1d) ----------------------------
 # AUDITOR half: independent parse, independent render, plus the cross-document
 # laws the generator cannot see. Shares no parsing with project.py.
-A_RECON_SRC = "spec/reconciliation.rs"
+A_RECON_SRC = "spec/reconciliation/"
 A_RECON_DOC = "docs/02_SYSTEM_MODEL.md"
 A_RECON_ROW = re.compile(
     r"ReconciliationCoordinate \{\s*role: ReconciliationRole::(\w+),\s*"
@@ -24,7 +24,7 @@ A_RECON_ROW = re.compile(
 
 
 def recon_views(root: Path) -> dict:
-    src = (root / A_RECON_SRC).read_text(encoding="utf-8")
+    src = _spec_module_source(root, "reconciliation")
     start = src.index("pub const RECONCILIATION_COORDINATES")
     coords = [
         {"role": m.group(1),
@@ -49,7 +49,7 @@ def recon_findings(root: Path) -> list[str]:
     try:
         v = recon_views(root)
     except (ValueError, KeyError) as exc:
-        return [f"spec/reconciliation.rs is unreadable: {exc}"]
+        return [f"spec/reconciliation/ is unreadable: {exc}"]
     roles = [c["role"] for c in v["coords"]]
     if sorted(set(roles)) != sorted(roles) or len(roles) != 5:
         out.append(f"reconciliation coordinates do not bind five distinct roles ({roles})")
@@ -81,7 +81,7 @@ def recon_findings(root: Path) -> list[str]:
             f"| {c['role']} | {', '.join(c['carriers'])} | {c['law']} |"
             for c in v["coords"]]
         if m.group(1) != "\n".join(want):
-            out.append("docs/02 reconciliation-coordinates block drifted from spec/reconciliation.rs")
+            out.append("docs/02 reconciliation-coordinates block drifted from spec/reconciliation/inventory.rs")
     m = re.search(r"RECONCILIATION-RETRY:BEGIN[^>]*-->\n(.*?)\n<!-- "
                   r"RECONCILIATION-RETRY:END", doc, re.S)
     if m is None:
@@ -92,7 +92,7 @@ def recon_findings(root: Path) -> list[str]:
                 + ["", "never sufficient on their own:"]
                 + [f"    {n}" for n in v["inadmissible"]] + ["```"])
         if m.group(1) != "\n".join(want):
-            out.append("docs/02 reconciliation-retry block drifted from spec/reconciliation.rs")
+            out.append("docs/02 reconciliation-retry block drifted from spec/reconciliation/types.rs")
     return out
 
 
@@ -101,10 +101,10 @@ def proof_terminal_findings(root: Path) -> list[str]:
     typed owner; docs/12 projects it. The only-Passed-counts-green fence is
     seedcheck's executed law; the auditor checks structure and parity."""
     out: list[str] = []
-    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    src = (root / "spec/proof/types.rs").read_text(encoding="utf-8")
     start = src.find("pub const PROOF_UNIT_TERMINALS")
     if start < 0:
-        return ["spec/proof.rs declares no PROOF_UNIT_TERMINALS"]
+        return ["spec/proof/types.rs declares no PROOF_UNIT_TERMINALS"]
     names = re.findall(r"ProofUnitTerminal::(\w+)", src[start: src.index("\n];", start)])
     if len(names) != len(set(names)):
         out.append("a proof terminal is listed twice")
@@ -122,7 +122,7 @@ def proof_terminal_findings(root: Path) -> list[str]:
     if m is None:
         out.append("docs/12 carries no generated proof-terminals block")
     elif m.group(1) != "\n".join(["```text"] + names + ["```"]):
-        out.append("docs/12 proof-terminals block drifted from spec/proof.rs")
+        out.append("docs/12 proof-terminals block drifted from spec/proof/types.rs")
     return out
 
 
@@ -134,7 +134,7 @@ def release_seal_findings(root: Path) -> list[str]:
     src = _spec_module_source(root, "architecture")
     start = src.find("pub const RELEASE_SEAL_FIELDS")
     if start < 0:
-        return ["spec/architecture.rs declares no RELEASE_SEAL_FIELDS"]
+        return ["spec/architecture/release_seal.rs declares no RELEASE_SEAL_FIELDS"]
     fields = re.findall(r"ReleaseSealField::(\w+)", src[start: src.index("\n];", start)])
     if len(fields) != len(set(fields)):
         out.append("a release-seal field is listed twice")
@@ -147,7 +147,7 @@ def release_seal_findings(root: Path) -> list[str]:
         out.append("docs/36 carries no generated release-seal block")
     elif m.group(1) != "\n".join(["```text"] + fields + ["```"]):
         out.append("docs/36 release-seal block drifted from the typed inventory")
-    disp = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    disp = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     row = re.search(r'DecisionSpec \{ id: "DEC-058".*?successor: "([^"]*)"', disp, re.S)
     if row is None:
         out.append("DEC-058 is missing from the decision ledger")
@@ -279,20 +279,20 @@ def claim_axis_findings(root: Path) -> list[str]:
     src = _spec_module_source(root, "architecture")
     for term in A_RETIRED_CLAIM_VOCAB:
         if term in src:
-            out.append(f"spec/architecture.rs reintroduces retired claim vocabulary {term}")
+            out.append(f"spec/architecture/ reintroduces retired claim vocabulary {term}")
     for name in A_CLAIM_LADDER_NAMES:
         # A DECLARATION, not a doc comment naming what must never be built.
         if re.search(r"^\s*pub (?:enum|struct|type|const) " + name + r"\b", src, re.M):
-            out.append(f"spec/architecture.rs introduces a generic security ladder {name}")
+            out.append(f"spec/architecture/ introduces a generic security ladder {name}")
     for axis, want in A_CLAIM_AXES.items():
         got = _enum_variants(root, axis)
         if not got:
-            out.append(f"spec/architecture.rs declares no {axis}")
+            out.append(f"spec/architecture/authenticated_history.rs declares no {axis}")
         elif got != want:
             out.append(f"{axis} variants {sorted(got)} != frozen {sorted(want)}")
     fields = re.search(r"pub struct AuthenticatedHistoryClaims \{(.*?)\n\}", src, re.S)
     if not fields:
-        out.append("spec/architecture.rs declares no AuthenticatedHistoryClaims")
+        out.append("spec/architecture/authenticated_history.rs declares no AuthenticatedHistoryClaims")
     else:
         for want in ("integrity: IntegrityClaim", "authenticity: AuthenticityClaim",
                      "freshness: FreshnessClaim", "rollback_resistance: RollbackResistanceClaim"):
@@ -313,7 +313,7 @@ def claim_axis_findings(root: Path) -> list[str]:
         if (freshness == "WitnessedGenerationVerified") != (rollback == "ScopedToVerifiedWitness"):
             out.append(f"{name} lets freshness and rollback resistance drift apart")
     if not re.search(r"^pub const REFUSAL_PARTIAL_CLAIM_LAW: &str =", src, re.M):
-        out.append("spec/architecture.rs states no refusal/partial-evidence law")
+        out.append("spec/architecture/authenticated_history.rs states no refusal/partial-evidence law")
     return out
 
 
@@ -321,7 +321,7 @@ def authenticated_history_findings(root: Path) -> list[str]:
     rows = authenticated_history_rows(root)
     out: list[str] = list(claim_axis_findings(root))
     if not rows:
-        return out + ["spec/architecture.rs derives no authenticated-history profile facts"]
+        return out + ["spec/architecture/authenticated_history.rs derives no authenticated-history profile facts"]
     names = [r["profile"] for r in rows]
     if set(names) != set(A_FROZEN_MATRIX):
         out.append(f"authenticated-history profile set {sorted(names)} != frozen {sorted(A_FROZEN_MATRIX)}")
@@ -388,7 +388,7 @@ def authenticated_history_findings(root: Path) -> list[str]:
             out.append(f"{r['profile']} names no release qualification gate")
     declared = _enum_variants(root, "WitnessDisposition")
     if not declared:
-        out.append("spec/architecture.rs declares no WitnessDisposition")
+        out.append("spec/architecture/authenticated_history.rs declares no WitnessDisposition")
     else:
         missing = A_WITNESS_DISPOSITIONS - declared
         if missing:
@@ -409,8 +409,9 @@ def authenticated_history_findings(root: Path) -> list[str]:
 def retired_claim_vocabulary_findings(root: Path) -> list[str]:
     """The flattened claim type may not return through any authoritative surface."""
     out: list[str] = []
-    _decomposed = {"spec/architecture.rs": "architecture", "spec/guarantees.rs": "guarantees"}
-    for rel in ("spec/architecture.rs", "spec/dispositions.rs", "spec/guarantees.rs",
+    _decomposed = {"spec/architecture/": "architecture", "spec/dispositions/": "dispositions",
+                   "spec/guarantees/": "guarantees"}
+    for rel in ("spec/architecture/", "spec/dispositions/", "spec/guarantees/",
                 "docs/14_RECEIPTS_AND_EXPLANATION.md", "docs/19_SECURITY_MODEL.md",
                 "docs/05_STORAGE_FBAT_AND_TILES.md", "docs/31_FINAL_CONTRADICTION_AUDIT.md"):
         if rel in _decomposed:
@@ -704,14 +705,14 @@ def check_document_law(root: Path, findings: list[str]) -> None:
 
 
 # --- PakVM semantic ISA lineage audit (D4c1) --------------------------------
-# AUDITOR half. This re-derives the admitted node specs from spec/pakvm_isa.rs
+# AUDITOR half. This re-derives the admitted node specs from spec/pakvm_isa/
 # INDEPENDENTLY of bootstrap/project.py and compares against the generated
 # docs/07 projection. It shares no parsing, admission, rendering, or comparison
 # code with the generator, and it authors no node semantics of its own: a policy
 # constant living in both scripts would be common-mode invention, and parity
 # between two copies of the same guess is not evidence.
 
-A_ISA_SRC = "spec/pakvm_isa.rs"
+A_ISA_SRC = "spec/pakvm_isa/"
 A_ISA_DOC = "docs/07_PAKVM_ISA.md"
 A_ISA_TABLE = re.compile(
     r"<!-- PAKVM-SEMANTIC-ISA:BEGIN[^>]*-->\n(.*?)\n<!-- PAKVM-SEMANTIC-ISA:END -->", re.S)
@@ -726,7 +727,7 @@ class IsaAdmissionFailure(Exception):
 def _a_isa_method(src: str, method: str) -> str:
     head = src.find("pub const fn " + method + "(")
     if head < 0:
-        raise IsaAdmissionFailure(f"spec/pakvm_isa.rs declares no {method}()")
+        raise IsaAdmissionFailure(f"spec/pakvm_isa/ declares no {method}()")
     tail = src.find("\n    pub const fn ", head + 1)
     return src[head:] if tail < 0 else src[head:tail]
 
@@ -747,7 +748,7 @@ def _a_isa_dispatch(src: str, method: str, value_re: str) -> dict[str, str]:
 def _a_isa_block(src: str, marker: str) -> str:
     start = src.find(marker)
     if start < 0:
-        raise IsaAdmissionFailure(f"spec/pakvm_isa.rs declares no {marker}")
+        raise IsaAdmissionFailure(f"spec/pakvm_isa/ declares no {marker}")
     end = src.find("\n];", start)
     return src[start:end]
 
@@ -782,7 +783,7 @@ def pakvm_isa_views(root: Path) -> list[dict]:
     listing = _a_isa_block(src, "pub const PAKVM_NODES")
     order = re.findall(r"PakVmNodeId::(\w+)", listing)
     if not order:
-        raise IsaAdmissionFailure("spec/pakvm_isa.rs lists no PakVM nodes")
+        raise IsaAdmissionFailure("spec/pakvm_isa/nodes.rs lists no PakVM nodes")
     algebras = _a_isa_dispatch(src, "algebra", r"PakVmAlgebra::\w+")
     classes = _a_isa_dispatch(src, "class", r"PakVmNodeClass::\w+")
     names = _a_isa_dispatch(src, "authored_name", r'"(?:[^"\\]|\\.)*"')
@@ -869,16 +870,16 @@ def pakvm_isa_findings(root: Path) -> list[str]:
     try:
         views = pakvm_isa_views(root)
     except IsaAdmissionFailure as exc:
-        return [f"spec/pakvm_isa.rs: PakVM node does not admit: {exc}"]
+        return [f"spec/pakvm_isa/: PakVM node does not admit: {exc}"]
     except (ValueError, KeyError, AttributeError) as exc:
-        return [f"spec/pakvm_isa.rs: PakVM semantic ISA is unreadable: {exc}"]
+        return [f"spec/pakvm_isa/: PakVM semantic ISA is unreadable: {exc}"]
     ids = [v["node"] for v in views]
     if len(set(ids)) != len(ids):
-        out.append("spec/pakvm_isa.rs: a PakVM node id is listed more than once")
+        out.append("spec/pakvm_isa/nodes.rs: a PakVM node id is listed more than once")
     seen: dict[str, str] = {}
     for v in views:
         if v["name"] in seen:
-            out.append(f"spec/pakvm_isa.rs: PakVM nodes {seen[v['name']]} and {v['node']} "
+            out.append(f"spec/pakvm_isa/nodes.rs: PakVM nodes {seen[v['name']]} and {v['node']} "
                        f"share the authored name {v['name']!r}")
         seen[v["name"]] = v["node"]
     # A node whose only lawful producer is canonical ProgramImage authoring is
@@ -897,7 +898,7 @@ def pakvm_isa_findings(root: Path) -> list[str]:
                     r"\b" + re.escape(v["name"]) + r"\b", members):
                 out.append(
                     f"docs/13 lists {v['name']!r} as a BatQL semantic-algebra member, but its "
-                    f"authoring surface is {v['surface']} (spec/pakvm_isa.rs): source-language "
+                    f"authoring surface is {v['surface']} (spec/pakvm_isa/nodes.rs): source-language "
                     f"membership enters through the language-amendment law, never to make "
                     f"inventories agree")
     # The work planes partition the authored unit vocabulary. Derived from the
@@ -920,7 +921,7 @@ def pakvm_isa_findings(root: Path) -> list[str]:
             out.append(f"authored work unit {unit} is accounted by no admitted PakVM node")
     # The effect-posture partition, verified INDEPENDENTLY of the Rust admission
     # that also enforces it. Until this rule existed the biconditional lived only
-    # in spec/pakvm_isa.rs: an algebra policy declaring an effectful query
+    # in spec/pakvm_isa/: an algebra policy declaring an effectful query
     # dataflow was caught here as projection drift, and regenerating the
     # projection made the auditor accept it outright. Drift is not a law, and a
     # finding that disappears when someone reruns the generator was never
@@ -951,12 +952,12 @@ def pakvm_isa_findings(root: Path) -> list[str]:
                    "could contain no node at all")
     # An opcode never enters the semantic layer, by any route.
     if re.search(r"#\[repr\(", src):
-        out.append("spec/pakvm_isa.rs: a #[repr] fixes a semantic node's representation")
+        out.append("spec/pakvm_isa/: a #[repr] fixes a semantic node's representation")
     body = src[src.find("pub enum PakVmNodeId"): src.find("\n}", src.find("pub enum PakVmNodeId"))]
     if re.search(r"=\s*-?\d+", body):
-        out.append("spec/pakvm_isa.rs: PakVmNodeId assigns an explicit discriminant")
+        out.append("spec/pakvm_isa/types.rs: PakVmNodeId assigns an explicit discriminant")
     if re.search(r"PakVmNodeId[^\n]*\bas\s+[iu](8|16|32|64|size)\b", src):
-        out.append("spec/pakvm_isa.rs: a PakVmNodeId is cast to an integer")
+        out.append("spec/pakvm_isa/: a PakVmNodeId is cast to an integer")
     # The generated projection carries exactly the admitted views.
     doc = (root / A_ISA_DOC).read_text(encoding="utf-8")
     table = A_ISA_TABLE.search(doc)
@@ -989,8 +990,8 @@ def pakvm_isa_findings(root: Path) -> list[str]:
     return out
 
 
-A_FW_SRC = "spec/syncbat_firewall.rs"
-A_FW_ARCH = "spec/architecture.rs"
+A_FW_SRC = "spec/syncbat_firewall/"
+A_FW_ARCH = "spec/architecture/types.rs"
 A_FW_DOC = "docs/08_SYNCBAT_RUNTIME.md"
 
 
@@ -1039,7 +1040,7 @@ def syncbat_firewall_views(root: Path) -> dict:
     its own, because a checker holding its own copy of the answer agrees with
     itself and calls that verification."""
     arch = _spec_module_source(root, "architecture")
-    src = (root / A_FW_SRC).read_text(encoding="utf-8")
+    src = _spec_module_source(root, "syncbat_firewall")
     planes = _a_fw_variants(arch, "SyncBatPlane", A_FW_ARCH)
     if not planes:
         raise FirewallAdmissionFailure(f"{A_FW_ARCH}: SyncBatPlane authors no plane")

@@ -49,12 +49,14 @@ def test_verification_plane() -> list[str]:
         if clean:
             findings.append(f"verification_plane baseline is not clean: {clean[:3]}")
 
-        vpath = base / "spec" / "verification.rs"
-        # SW5 concept-door decomposition: the append-shaped probes land in the
-        # door (the audit joins door + submodules), but the probes that mutate an
-        # existing axis item target the submodule that owns it.
-        axpath = base / "spec" / "verification" / "axes.rs"
-        ppath = base / "spec" / "proof.rs"
+        # Source-grammar bake: append-shaped probes land in the domain facade
+        # (mod.rs -- the audit joins every file under the domain directory),
+        # and probes that mutate an existing item target the carrier that owns
+        # it (types.rs for axis vocabulary, proof/inventory.rs for plan/row
+        # facts).
+        vpath = base / "spec" / "verification" / "mod.rs"
+        axpath = base / "spec" / "verification" / "types.rs"
+        ppath = base / "spec" / "proof" / "inventory.rs"
         vsrc = vpath.read_text(encoding="utf-8")
         axsrc = axpath.read_text(encoding="utf-8")
         psrc = ppath.read_text(encoding="utf-8")
@@ -176,15 +178,21 @@ def test_sprouting_plane() -> list[str]:
         if clean_v:
             findings.append(f"sprouting_plane verification baseline is not clean: {clean_v[:3]}")
 
-        spath = base / "spec" / "sprouting.rs"
-        vpath = base / "spec" / "verification.rs"
-        ipath = base / "spec" / "identities.rs"
-        # SW5 concept-door decomposition: append-shaped probes land in the door
-        # (the audit joins door + submodules), but probes mutating an existing
-        # item target the submodule that owns it.
+        # Source-grammar bake: each probe targets the carrier file that owns
+        # its needle (types.rs for frozen vocabulary and struct declarations,
+        # admission.rs for the algorithm body, inventory.rs for the authored
+        # policy instance); append-shaped probes land in a domain carrier the
+        # audit joins via its directory walk.
+        spath = base / "spec" / "sprouting" / "types.rs"
+        sadmpath = base / "spec" / "sprouting" / "admission.rs"
+        sinvpath = base / "spec" / "sprouting" / "inventory.rs"
+        vpath = base / "spec" / "verification" / "mod.rs"
+        ipath = base / "spec" / "identities" / "types.rs"
         opath = base / "spec" / "verification" / "observation.rs"
         rpath = base / "spec" / "verification" / "runtime.rs"
         ssrc = spath.read_text(encoding="utf-8")
+        sadmsrc = sadmpath.read_text(encoding="utf-8")
+        sinvsrc = sinvpath.read_text(encoding="utf-8")
         vsrc = vpath.read_text(encoding="utf-8")
         isrc = ipath.read_text(encoding="utf-8")
         osrc = opath.read_text(encoding="utf-8")
@@ -192,6 +200,8 @@ def test_sprouting_plane() -> list[str]:
 
         def restore() -> None:
             spath.write_text(ssrc, encoding="utf-8", newline="\n")
+            sadmpath.write_text(sadmsrc, encoding="utf-8", newline="\n")
+            sinvpath.write_text(sinvsrc, encoding="utf-8", newline="\n")
             vpath.write_text(vsrc, encoding="utf-8", newline="\n")
             ipath.write_text(isrc, encoding="utf-8", newline="\n")
             opath.write_text(osrc, encoding="utf-8", newline="\n")
@@ -225,12 +235,12 @@ def test_sprouting_plane() -> list[str]:
         if mutate(spath, ssrc, "max_candidates: NonZeroU64", "max_candidates: u64", "budget_u64"):
             expect_s("candidate_budget_without_nonzero_is_rejected", "NonZeroU64")
         # 3. The admit_promotion_plan LawChanging->architect coupling neutered.
-        if mutate(spath, ssrc, "PromotionPlanError::LawChangingRequiresArchitect",
+        if mutate(sadmpath, sadmsrc, "PromotionPlanError::LawChangingRequiresArchitect",
                   "PromotionPlanError::RealizationPreservingCannotRequireArchitect",
                   "lawchanging_neutered"):
             expect_s("lawchanging_requires_architect_law_is_enforced", "law-changing")
         # 4. The policy const route flipped away from the differential route.
-        if mutate(spath, ssrc,
+        if mutate(sinvpath, sinvsrc,
                   "independent_route: IndependentEvidenceRouteKind::DifferentialImplementation",
                   "independent_route: IndependentEvidenceRouteKind::HostileBoundary",
                   "policy_route_flip"):
@@ -325,11 +335,10 @@ def test_python_tooling(audit) -> list[str]:
     work = Path(tempfile.mkdtemp(prefix="batpak-pytool-"))
     try:
         (work / "spec").mkdir()
-        shutil.copyfile(root / "spec/bootstrap_qualification.rs",
-                        work / "spec/bootstrap_qualification.rs")
-        if (root / "spec/bootstrap_qualification").is_dir():
-            shutil.copytree(root / "spec/bootstrap_qualification",
-                            work / "spec/bootstrap_qualification")
+        # SGB source grammar: the domain is a directory; a missing directory is
+        # a copytree refusal, never a silently thinner fixture.
+        shutil.copytree(root / "spec/bootstrap_qualification",
+                        work / "spec/bootstrap_qualification")
         for rel in (".python-version", "pyproject.toml", "uv.lock"):
             shutil.copyfile(root / rel, work / rel)
         if audit.python_tooling_findings(work):

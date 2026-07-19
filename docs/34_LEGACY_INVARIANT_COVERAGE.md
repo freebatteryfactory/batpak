@@ -17,7 +17,7 @@ The detailed clean obligations live in [Legacy Semantic Obligations](21_LEGACY_S
 
 ## Source manifest reconciliation
 
-The denominator is the full **115-declaration** legacy invariant catalog at `LEGACY_SOURCE_COMMIT`, frozen in `spec/legacy_invariant_coverage.rs::SOURCE_INVARIANT_IDS`. The count is the number of `- id:` *declarations*, not a raw `INV-` token scan: the source view carries a generated `INV-CATALOG` block marker that resembles an invariant name but is a structural key, not a declaration, so it is excluded. The audit enforces exact set parity between `SOURCE_INVARIANT_IDS` and the coverage rows, so a declared invariant cannot silently lose coverage and a coverage row cannot cite an undeclared invariant.
+The denominator is the full **115-declaration** legacy invariant catalog at `LEGACY_SOURCE_COMMIT`, frozen in `spec/legacy_invariant_coverage/inventory.rs::SOURCE_INVARIANT_IDS`. The count is the number of `- id:` *declarations*, not a raw `INV-` token scan: the source view carries a generated `INV-CATALOG` block marker that resembles an invariant name but is a structural key, not a declaration, so it is excluded. The audit enforces exact set parity between `SOURCE_INVARIANT_IDS` and the coverage rows, so a declared invariant cannot silently lose coverage and a coverage row cannot cite an undeclared invariant.
 
 This closure raised the denominator from the earlier 107-row capability snapshot to the full 115. The eight newly reconciled invariants are:
 
@@ -36,9 +36,9 @@ The two recovered obligations had a witnessed law and no successor; the remainin
 
 ## Dispositions
 
-`spec/legacy_invariant_coverage.rs` owns the disposition vocabulary, every coverage row, and the declaration denominator. The legend, denominator, and matrix below are one generated projection of the typed owner:
+`spec/legacy_invariant_coverage/` owns the disposition vocabulary, every coverage row, and the declaration denominator. The legend, denominator, and matrix below are one generated projection of the typed owner:
 
-<!-- LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/legacy_invariant_coverage.rs by bootstrap/project.py; do not edit -->
+<!-- LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/legacy_invariant_coverage/inventory.rs by bootstrap/project.py; do not edit -->
 | Disposition | Meaning |
 | --- | --- |
 | PRESERVE | semantic law survives through named successor |
@@ -73,7 +73,7 @@ The source declaration denominator is the 115-declaration `SOURCE_INVARIANT_IDS`
 | `INV-CRYPTO-SHRED-SCOPE-DESTROYS-PLAINTEXT` | PRESERVE | `LEG-015` | Erasure destroys plaintext authority without rewriting history. |
 | `INV-DANGEROUS-TEST-HOOKS-NONDEFAULT` | PRESERVE | `LEG-065` | Dangerous levers remain absent from production profiles. |
 | `INV-DELIVERY-AT-LEAST-ONCE-WITNESS` | PRESERVE | `LEG-034` | Checkpoint-backed at-least-once evidence remains explicit. |
-| `INV-DEPENDENCY-DIRECTION` | PRESERVE | `BP-REPOSITORY-PACKAGES-1 and spec/architecture.rs` | The graph remains acyclic and direction-checked. |
+| `INV-DEPENDENCY-DIRECTION` | PRESERVE | `BP-REPOSITORY-PACKAGES-1 and spec/architecture/inventory.rs` | The graph remains acyclic and direction-checked. |
 | `INV-DOCS-CATALOG-VIEW-CURRENT` | SUPERSEDE | `BP-STATUS-1 plus typed spec facts and audit.py` | Generated views remain current, but the old catalog implementation is replaced. |
 | `INV-DST-CORPUS-CURRENCY` | SUPERSEDE | `BP-GAUNTLET-1 corpus and receipt freshness` | Corpus replay currency survives under TestPak receipts. |
 | `INV-DST-RECOVERY-LEGAL` | PRESERVE | `LEG-010` | Recovery legality remains prefix, rollback, or canonical refusal. |
@@ -164,7 +164,7 @@ The source declaration denominator is the 115-declaration `SOURCE_INVARIANT_IDS`
 | `INV-TYPESTATE-OPEN-HAS-WRITER` | PRESERVE | `LEG-052` | Open typestate cannot exist without the required writer mechanism. |
 | `INV-UNTRUSTED-MANIFEST-NO-AUTHORITY-ESCALATION` | PRESERVE | `LEG-019` | Untrusted cache/manifest rows cannot become recovery authority. |
 | `INV-WIRE-ROUNDTRIP-TOTALITY` | PRESERVE | `LEG-064` | Wire surfaces remain total on valid values and reject malformed bytes atomically. |
-| `INV-WORKSPACE-DAG-ACYCLIC` | PRESERVE | `spec/architecture.rs, seedcheck.rs, and audit.py` | The workspace graph remains independently derived and acyclic. |
+| `INV-WORKSPACE-DAG-ACYCLIC` | PRESERVE | `spec/architecture/inventory.rs, seedcheck.rs, and audit.py` | The workspace graph remains independently derived and acyclic. |
 | `INV-ZERO-WARNINGS` | SUPERSEDE | `DEC-067 and DEC-068` | The zero-warnings posture is mechanically derived from lint tables, clippy and rustdoc deny lanes, and the armed zero-allow tripwire; the legacy gate implementation does not survive. |
 <!-- LEGACY-INVARIANT-COVERAGE:END -->
 

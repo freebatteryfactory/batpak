@@ -27,7 +27,7 @@ The semantic profiles of `batpak` and `syncbat` are required to compile under `n
 
 The package inventory is a generated projection of the typed owner (`spec/architecture.rs`); membership, class, layer, path, and order live there, never in this document:
 
-<!-- PACKAGE-INVENTORY:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+<!-- PACKAGE-INVENTORY:BEGIN generated from spec/architecture/inventory.rs; spec/architecture/types.rs by bootstrap/project.py; do not edit -->
 | Package | Class | Layer | Workspace path | Role |
 | --- | --- | --- | --- | --- |
 | macbat-compiler | production | 0 | crates/macbat/compiler | pure Rust contract compiler |

@@ -11,13 +11,13 @@ reconciliation_epoch: cleanroom-v1
 
 ## Destination order
 
-`spec/gates.rs` is the typed authority for gate identity, canonical order, and
+`spec/gates/` is the typed authority for gate identity, canonical order, and
 token spelling; every gate-bearing fact family references a `GateId`, never a
 gate name in prose. The inventory below is generated from it by
 `bootstrap/project.py` and independently re-audited. The gate doctrine in the
 rest of this document is authored.
 
-<!-- GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/project.py; do not edit -->
+<!-- GATE-INVENTORY:BEGIN generated from spec/gates/inventory.rs by bootstrap/project.py; do not edit -->
 | GateId | Token | Title |
 | --- | --- | --- |
 | G0 | G0 | Constitution and skeleton |
@@ -36,7 +36,7 @@ Each gate is one review unit with savepoint commits inside it. A later gate may 
 
 ## G0: Constitution and skeleton
 
-Deliver exact workspace members/edges, status metadata, seed tools, concept-file skeleton, no forbidden paths, no legacy source, declared qualification profiles, and a passing architecture audit. G0 receives a QUALIFIED ISOLATED candidate: `bootstrap/materialize.rs` publishes the Gate-0 workspace at an explicit output root outside the signed seed, and the candidate's exact bytes enter tracked source only through the explicit reviewed integration action Phase 6 owns -- the materializer never writes the integrated repository. The Tier 0 gate qualification is recorded as concrete evidence: `bootstrap/selftest.py` writes a canonical `qualification.t0` artifact and evidence bundle, and the independent `bootstrap/receiptcheck.rs` recomputes every digest and calls the sealed `spec::bootstrap_qualification::verify` (5.5E6b) -- no Python predicate judges qualification. Two independent hosted runs are provable to describe the same committed source snapshot through the retained bindings: `spec/tier0_cross_run.rs` compares them on the deterministic source-identity coordinates (commit, tree, spec-manifest, workflow, and the independently-recomputed materializer output-tree), while executable digests -- which the current contract does not require to be byte-identical across runs -- are never a divergence, and `confirm_promotion` adds the strictly stronger candidate-to-cleanroom check (authoritative target, identical toolchain AND bootstrap Python runtime, same repository and canonical immutable-pinned workflow, and an exact admitted evidence envelope on both sides) proven end to end by the confirming run's `receiptcheck compare` (5.5E6c/E6c1/E6c2, DEC-076). Compile `batpak` and `syncbat` semantic profiles under `no_std + alloc` before G0 closes.
+Deliver exact workspace members/edges, status metadata, seed tools, concept-file skeleton, no forbidden paths, no legacy source, declared qualification profiles, and a passing architecture audit. G0 receives a QUALIFIED ISOLATED candidate: `bootstrap/materialize.rs` publishes the Gate-0 workspace at an explicit output root outside the signed seed, and the candidate's exact bytes enter tracked source only through the explicit reviewed integration action Phase 6 owns -- the materializer never writes the integrated repository. The Tier 0 gate qualification is recorded as concrete evidence: `bootstrap/selftest.py` writes a canonical `qualification.t0` artifact and evidence bundle, and the independent `bootstrap/receiptcheck.rs` recomputes every digest and calls the sealed `spec::bootstrap_qualification::verify` (5.5E6b) -- no Python predicate judges qualification. Two independent hosted runs are provable to describe the same committed source snapshot through the retained bindings: `spec/tier0_cross_run/` compares them on the deterministic source-identity coordinates (commit, tree, spec-manifest, workflow, and the independently-recomputed materializer output-tree), while executable digests -- which the current contract does not require to be byte-identical across runs -- are never a divergence, and `confirm_promotion` adds the strictly stronger candidate-to-cleanroom check (authoritative target, identical toolchain AND bootstrap Python runtime, same repository and canonical immutable-pinned workflow, and an exact admitted evidence envelope on both sides) proven end to end by the confirming run's `receiptcheck compare` (5.5E6c/E6c1/E6c2, DEC-076). Compile `batpak` and `syncbat` semantic profiles under `no_std + alloc` before G0 closes.
 
 ## G1: MacBat
 
@@ -102,7 +102,7 @@ compatibility reader with no removal/retention receipt
 
 ## Guarantee classification (DEC-070)
 
-Each guarantee's gates are owned by its native fact family (SEED in `spec/invariants.rs`, LEG, DEC, architecture, qualification). The [Guarantee Graph](GUARANTEE_GRAPH.generated.md) is a derived structural index that shows kind, lifetime, owner, gates, and relations; it is non-normative and cannot gate on its own. Lifetime (`UntilGate`, `UntilSuccessor`, `UntilCompatibilityExpiry`, `Permanent`, `HistoricalCoverageOnly`, `ClosedEvidence`) is orthogonal to active/closed status and deletion condition.
+Each guarantee's gates are owned by its native fact family (SEED in `spec/invariants/inventory.rs`, LEG, DEC, architecture, qualification). The [Guarantee Graph](GUARANTEE_GRAPH.generated.md) is a derived structural index that shows kind, lifetime, owner, gates, and relations; it is non-normative and cannot gate on its own. Lifetime (`UntilGate`, `UntilSuccessor`, `UntilCompatibilityExpiry`, `Permanent`, `HistoricalCoverageOnly`, `ClosedEvidence`) is orthogonal to active/closed status and deletion condition.
 
 ## Numeric gate ownership (DEC-069 / docs/37)
 

@@ -9,7 +9,7 @@ use super::types::*;
 /// mechanical or bounded-search repair. Panic-free: the requirement scan is
 /// index-bounded and no arm unwraps.
 ///
-/// The conjunctive denominator is CONSUMED from `spec/promotion.rs`, never
+/// The conjunctive denominator is CONSUMED from `spec/promotion/types.rs`, never
 /// restated: a change to `PromotionRequirement::ALL` changes what every plan
 /// must satisfy here, with no second list to drift.
 pub fn admit_promotion_plan(

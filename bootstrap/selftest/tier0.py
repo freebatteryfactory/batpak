@@ -25,7 +25,7 @@ from .core import (
 )
 
 # The Tier 0 receipt DENOMINATOR left Python entirely in 5.5E6b. The one
-# denominator is Tier0ReceiptKind::ALL in spec/bootstrap_qualification.rs.
+# denominator is Tier0ReceiptKind::ALL in spec/bootstrap_qualification/types.rs.
 # selftest produces concrete evidence (produce_tier0_evidence) and the
 # independent verifier bootstrap/receiptcheck.rs computes membership, ordering,
 # policy, and pass posture from the typed owner, refusing a dishonest receipt
@@ -145,8 +145,9 @@ def qualify_binary(rustc, root: Path, workdir: Path, name: str, src: str,
 # --- 5.5E5 isolated Gate-0 materializer qualification ------------------------
 # The independent output oracle and the dedicated tier0-materialize route.
 # The oracle reconstructs the complete expected candidate -- every path and
-# every byte -- from spec/bootstrap_output.rs, spec/architecture.rs, and
-# spec/toolchain.rs alone. It never imports the materializer, never invokes a
+# every byte -- from spec/bootstrap_output/types.rs, the spec/architecture
+# domain, and spec/toolchain/types.rs alone. It never imports the
+# materializer, never invokes a
 # materializer rendering function, never reads a generated candidate as its
 # expectation, and carries no package, edge, plane, feature, or target-name
 # table: every identity below is parsed from the typed owners at run time.
@@ -300,10 +301,10 @@ def _g0_all(src: str, enum: str) -> list[str]:
 
 def oracle_facts(root: Path) -> dict:
     """Every typed fact the oracle consumes, parsed from the owners alone."""
-    bo_raw = (root / "spec/bootstrap_output.rs").read_text(encoding="utf-8")
+    bo_raw = (root / "spec/bootstrap_output/types.rs").read_text(encoding="utf-8")
     bo = _g0_uncomment(bo_raw)
     arch = _g0_uncomment(spec_module_source(root, "architecture"))
-    tc = _g0_uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
+    tc = _g0_uncomment((root / "spec/toolchain/types.rs").read_text(encoding="utf-8"))
 
     facts: dict = {}
     facts["root_artifacts"] = _g0_all(bo, "Gate0RootArtifact")
@@ -404,10 +405,11 @@ _G0_LINTS = ("\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\n"
 
 
 def _oracle_toolchain_toml(root: Path) -> str:
-    """Reconstruct rust-toolchain.toml from spec/toolchain.rs alone (5.5E5a).
-    The oracle must not read the tracked file: that file is itself a generated
-    answer, and reading it would let a corrupted projection agree with itself."""
-    tc = (root / "spec/toolchain.rs").read_text(encoding="utf-8")
+    """Reconstruct rust-toolchain.toml from spec/toolchain/types.rs alone
+    (5.5E5a). The oracle must not read the tracked file: that file is itself a
+    generated answer, and reading it would let a corrupted projection agree
+    with itself."""
+    tc = (root / "spec/toolchain/types.rs").read_text(encoding="utf-8")
     rel = re.search(r"exact_rust_release: RustRelease \{ major: (\d+), minor: (\d+), "
                     r"patch: (\d+) \}", tc)
     channel = f"{rel.group(1)}.{rel.group(2)}.{rel.group(3)}"
@@ -420,12 +422,12 @@ def _oracle_toolchain_toml(root: Path) -> str:
     comp_list = ", ".join(f'"{comp_spell[c]}"' for c in comps)
     body = (f'[toolchain]\nchannel = "{channel}"\nprofile = "{prof_spell}"\n'
             f'components = [{comp_list}]\n')
-    return ("# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n"
+    return ("# generated from spec/toolchain/types.rs by bootstrap/project.py; do not edit\n"
             + body)
 
 
 def _oracle_workspace_manifest(f: dict) -> str:
-    out = ["# Generated from spec/bootstrap_output.rs, spec/architecture.rs, and spec/toolchain.rs by bootstrap/materialize.rs.\n"]
+    out = ["# Generated from spec/bootstrap_output/types.rs, spec/architecture/types.rs, and spec/toolchain/types.rs by bootstrap/materialize.rs.\n"]
     out.append(f"[workspace]\nresolver = \"{f['resolver']}\"\nmembers = [\n")
     for pid in f["package_order"]:
         out.append(f"  \"{f['package_paths'][pid]}\",\n")
@@ -547,6 +549,9 @@ def oracle_plan(root: Path) -> dict[str, bytes]:
             put(rel, _oracle_toolchain_toml(root))
         elif artifact == "Justfile":
             put(rel, _oracle_justfile(f))
+        elif artifact == "CargoConfig":
+            # Native Cargo 1.97 warnings-deny for the generated workspace only.
+            put(rel, "[build]\nwarnings = \"deny\"\n")
         else:
             raise AssertionError(f"oracle: no renderer for root artifact {artifact}")
     for pid in f["package_order"]:
@@ -556,21 +561,25 @@ def oracle_plan(root: Path) -> dict[str, bytes]:
         put(f"{base}/Cargo.toml", _oracle_package_manifest(f, pid))
         put(f"{base}/README.md",
             f"# {name}\n\nGate-0 package skeleton.\n\n**Authority:** {role}\n\n"
-            "The normative owner and dependency facts live in `spec/architecture.rs`. "
+            "The normative owner and dependency facts live in `spec/architecture/inventory.rs`. "
             "This file does not widen that role.\n")
         put(f"{base}/{f['doors'][f['kinds'][pid]]}", _oracle_source_door(f, pid))
     syncbat_base = f["package_paths"][f["plane_owner"]]
     for plane in f["planes"]:
         module = f["modules"][plane]
         ownership = f["ownership"][plane]
-        put(f"{syncbat_base}/src/{module}.rs",
-            f"//! SyncBat `{module}` plane: {ownership}.\n\n"
+        put(f"{syncbat_base}/src/{module}/mod.rs",
+            f"//! SyncBat `{module}` plane: {ownership}.\n//!\n"
+            "//! This directory is the plane's semantic ownership boundary: `mod.rs` is\n"
+            "//! the plane facade and the private `types.rs` carries the plane's canonical\n"
+            "//! nouns. Same-concept implementation files land here when the owning gate\n"
+            "//! lands.\n\nmod types;\n\n"
             "/// Gate-0 marker. Semantic types and transitions land only at their signed gate.\n"
             f"pub const PLANE_ID: &str = \"{module}\";\n")
-        put(f"{syncbat_base}/src/{module}/README.md",
-            f"# `{module}` plane\n\nOwner: {ownership}.\n\n"
-            f"The root `{module}.rs` file owns the public module and primary type spine. "
-            "This directory holds same-concept implementation files when the owning gate lands.\n")
+        put(f"{syncbat_base}/src/{module}/types.rs",
+            f"//! Canonical noun carrier for the `{module}` plane. The plane's vocabulary\n"
+            "//! arrives only at its signed gate; until then this carrier is intentionally\n"
+            "//! empty.\n")
     return plan
 
 
@@ -990,10 +999,10 @@ def test_bootstrap_output(audit, project) -> list[str]:
     plane_base = facts["package_paths"][facts["plane_owner"]]
     for plane in facts["planes"]:
         module = facts["modules"][plane]
-        if f"{plane_base}/src/{module}.rs" not in plan:
-            fail("syncbat_plane_module_missing_from_plan_is_rejected")
-        if f"{plane_base}/src/{module}/README.md" not in plan:
-            fail("syncbat_plane_readme_missing_from_plan_is_rejected")
+        if f"{plane_base}/src/{module}/mod.rs" not in plan:
+            fail("syncbat_plane_module_door_missing_from_plan_is_rejected")
+        if f"{plane_base}/src/{module}/types.rs" not in plan:
+            fail("syncbat_plane_types_carrier_missing_from_plan_is_rejected")
 
     # --- isolation laws over the harness and the corpus ----------------------
     # The forged payload is concatenated at run time so THIS source never
@@ -1053,11 +1062,11 @@ def test_bootstrap_output(audit, project) -> list[str]:
           "| justfile-drifted | Root / Justfile |")
     probe("gate0_materialization_plan_marker_drift_is_rejected",
           "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
-          "GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/bootstrap_output.rs; "
-          "spec/architecture.rs; spec/toolchain.rs",
+          "GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/bootstrap_output/types.rs; "
+          "spec/architecture/types.rs; spec/toolchain/types.rs",
           "GATE0-MATERIALIZATION-PLAN",
-          "GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/architecture.rs; "
-          "spec/bootstrap_output.rs; spec/toolchain.rs",
+          "GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/architecture/types.rs; "
+          "spec/bootstrap_output/types.rs; spec/toolchain/types.rs",
           validator=audit.generated_view_findings)
 
     # --- behavioral probes against the real binary ---------------------------
@@ -1245,8 +1254,8 @@ def test_bootstrap_output(audit, project) -> list[str]:
                     fail("seed_file_replaced_by_same_bytes_symlink_is_detected "
                          "(snapshot is not entry-type aware)")
 
-        # The toolchain oracle renders from spec/toolchain.rs: corrupting the
-        # tracked file cannot move the oracle's expected bytes.
+        # The toolchain oracle renders from spec/toolchain/types.rs: corrupting
+        # the tracked file cannot move the oracle's expected bytes.
         with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as t3:
             (t3 / "rust-toolchain.toml").write_text("# CORRUPTED\n", encoding="utf-8")
             rendered = _oracle_toolchain_toml(t3)
@@ -1589,20 +1598,20 @@ def test_bootstrap_output(audit, project) -> list[str]:
               "            | SyncBatPlane::Port\n            | SyncBatPlane::Futura => PackageId::SyncBat,"),
              (ARCH, '            SyncBatPlane::Port => "port owns explicit host requests and responses",\n        }',
               '            SyncBatPlane::Port => "port owns explicit host requests and responses",\n            SyncBatPlane::Futura => "futura owns the sandbox growth witness",\n        }')],
-            ["crates/syncbat/src/futura.rs", "crates/syncbat/src/futura/README.md"],
+            ["crates/syncbat/src/futura/mod.rs", "crates/syncbat/src/futura/types.rs"],
             2)
         # A lawful new root artifact grows the plan with NO cardinality edit:
         # the macro regenerates ALL from the variant list, so only the variant,
         # its path arm, and its render arm are touched -- not a single number.
         growth(
             "future_root_artifact_grows_without_count_edit",
-            [(BOS, "        /// The discoverability-only command file.\n        Justfile,\n    }",
-              "        /// The discoverability-only command file.\n        Justfile,\n        /// Sandbox growth witness.\n        SeedNote,\n    }"),
-             (BOS, '            Gate0RootArtifact::Justfile => "justfile",\n        }',
-              '            Gate0RootArtifact::Justfile => "justfile",\n            Gate0RootArtifact::SeedNote => "SEED-NOTE.md",\n        }'),
+            [(BOS, "        CargoConfig,\n    }",
+              "        CargoConfig,\n        /// Sandbox growth witness.\n        SeedNote,\n    }"),
+             (BOS, '            Gate0RootArtifact::CargoConfig => ".cargo/config.toml",\n        }',
+              '            Gate0RootArtifact::CargoConfig => ".cargo/config.toml",\n            Gate0RootArtifact::SeedNote => "SEED-NOTE.md",\n        }'),
              ("bootstrap/materialize/plan.rs",
-              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),",
-              "            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),\n"
+              "            bootstrap_output::Gate0RootArtifact::CargoConfig => cargo_config(),",
+              "            bootstrap_output::Gate0RootArtifact::CargoConfig => cargo_config(),\n"
               "            bootstrap_output::Gate0RootArtifact::SeedNote => \"sandbox growth witness\\n\".to_owned(),")],
             ["SEED-NOTE.md"],
             1, oracle_check=False)

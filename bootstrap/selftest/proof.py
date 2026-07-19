@@ -7,6 +7,7 @@ import shutil
 from .core import (
     HERE,
     _regen_operator_blocks,
+    _resolve_edit_carrier,
     canonical_commitments,
     canonical_drift,
     gate_sandbox,
@@ -131,7 +132,7 @@ def test_proof_relations(audit, project) -> list[str]:
          "docs/03 carries the hash-map proof row"),
         # Meaning and mirror sweep.
         ("docs24_cannot_claim_proof_identity_ownership", D24,
-         "`spec/proof.rs` owns proof-row identity, lifecycle, succession, guarantee binding, and projection membership; this document owns",
+         "`spec/proof/` owns proof-row identity, lifecycle, succession, guarantee binding, and projection membership; this document owns",
          "This document owns proof-row identity and executable meaning; it also owns",
          "may not claim proof-row identity ownership"),
         ("documentary_convergence_temporary_wording_cannot_return", D24,
@@ -143,8 +144,8 @@ def test_proof_relations(audit, project) -> list[str]:
          "Required witnesses (proof owner TestPak; gates G2), also carried by `LEG-999`:\n\n## Typed proof ownership",
          "authored required-witnesses inventory may not return"),
         ("authored_domain_proof_inventory_cannot_return", "docs/05_STORAGE_FBAT_AND_TILES.md",
-         "## Required proof rows" if False else "`spec/proof.rs` owns proof-row identity and membership.",
-         "Required proof rows, projected from docs/24 (LEG-023):\n\n```text\nmiddle_event_deletion_is_rejected\n```\n\n`spec/proof.rs` owns proof-row identity and membership.",
+         "## Required proof rows" if False else "`spec/proof/` owns proof-row identity and membership.",
+         "Required proof rows, projected from docs/24 (LEG-023):\n\n```text\nmiddle_event_deletion_is_rejected\n```\n\n`spec/proof/` owns proof-row identity and membership.",
          "authored required-proof-rows inventory may not return"),
         ("authored_legacy_obligation_row_cannot_return", D21,
          "## Closure rule",
@@ -257,7 +258,8 @@ def test_proof_policy(audit) -> list[str]:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    ARCH = "spec/architecture/policy.rs"
+    PPOL = "spec/proof/policy.rs"
+    SPRT = "spec/sprouting/inventory.rs"
     DISP = "spec/dispositions.rs"
     TP = "docs/12_TESTPAK.md"
     GA = "docs/24_GAUNTLET.md"
@@ -285,7 +287,7 @@ def test_proof_policy(audit) -> list[str]:
           "Mutation testing only inside TestPak", "no longer confines mutation testing to TestPak",
           "Mutation testing anywhere", validator=pp)
 
-    # --- lane and result vocabularies (typed owner: spec/mutation.rs) --------
+    # --- lane and result vocabularies (typed owner: spec/mutation/types.rs) --
     MUT = "spec/mutation.rs"
     probe("fourth_mutation_lane_is_rejected", MUT,
           "    CompilerBacked,\n}", "MutationLane variants", "    CompilerBacked,\n    NativeLane,\n}",
@@ -298,16 +300,16 @@ def test_proof_policy(audit) -> list[str]:
     for variant in ("NotActivated", "Refused", "TimedOut", "InfrastructureFailure", "EquivalentCandidate"):
         probe(f"mutation_result_{variant.lower()}_removed_is_rejected", MUT,
               f"    {variant},\n", "MutationResult variants", "", validator=pp)
-    probe("change_class_collapsed_is_rejected", ARCH,
+    probe("change_class_collapsed_is_rejected", PPOL,
           "    Neutral,\n", "ProofPolicyChangeClass variants", "", validator=pp)
-    probe("proof_policy_surface_removed_is_rejected", ARCH,
+    probe("proof_policy_surface_removed_is_rejected", PPOL,
           "    WaiverLogic,\n", "ProofPolicySurface variants", "", validator=pp)
 
     # --- candidate and promotion boundary -----------------------------------
     for rootdir in ("src/", "tests/", "spec/", "docs/", "companion/"):
-        probe(f"candidate_write_into_{rootdir.strip('/')}_permitted_is_rejected", ARCH,
+        probe(f"candidate_write_into_{rootdir.strip('/')}_permitted_is_rejected", SPRT,
               f'"{rootdir}"', f"not forbidden from writing {rootdir}", '"__none__"', validator=pp)
-    probe("candidate_root_moved_into_tracked_source_is_rejected", ARCH,
+    probe("candidate_root_moved_into_tracked_source_is_rejected", SPRT,
           "target/muterprater/candidates/", "no candidate output root is declared", "tests/generated/",
           validator=pp)
     # --- documentary law ----------------------------------------------------
@@ -412,7 +414,7 @@ def test_proof_policy(audit) -> list[str]:
         fail(f"graph topology moved: {len(nodes)} nodes, {len(edges)} edges")
     text = (root / "docs/28_SELF_EXPLAINING_REPOSITORY.md").read_text(encoding="utf-8")
     live_decisions = len(audit.G_DEC_ROW.findall(
-        (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+        (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")))
     if f"| decision rows | {live_decisions} |" not in text:
         fail("bundle_inventory_tracks_live_decision_count")
     return findings
@@ -439,7 +441,7 @@ def test_integrity_witnesses(audit) -> list[str]:
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             text = path.read_text(encoding="utf-8")
             path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
             expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
@@ -453,7 +455,7 @@ def test_integrity_witnesses(audit) -> list[str]:
         fail("leg023_witness_contract_passes")
 
     # Each of the seven witness identities must survive in the typed catalog
-    # (5.5E4d: spec/proof.rs owns membership; docs/24 owns meaning only).
+    # (5.5E4d: spec/proof/inventory.rs owns membership; docs/24 owns meaning only).
     for wid in audit.D4B_LEG023_WITNESSES:
         probe(f"{wid}_identity_removed_is_rejected", "spec/proof.rs",
               f'id: ProofRowId("{wid}")', f"{wid} is absent from docs/24",
@@ -524,7 +526,7 @@ def test_derived_material_witnesses(audit) -> list[str]:
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             text = path.read_text(encoding="utf-8")
             path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
             expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
@@ -616,7 +618,7 @@ def test_deferred_witnesses(audit) -> list[str]:
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             text = path.read_text(encoding="utf-8")
             path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
             expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
@@ -699,7 +701,7 @@ def test_leg081_authority(audit) -> list[str]:
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             text = path.read_text(encoding="utf-8")
             path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
             expect(name, (validator or audit.witness_reference_findings)(tmp), needle)
@@ -751,7 +753,7 @@ def test_leg081_authority(audit) -> list[str]:
           '    ProofRowRecord { id: ProofRowId("test_local_fixture_type_is_classified_correctly"), '
           'state: ProofRowState::Retired { successors: '
           '&[ProofRowId("test_local_nonsemantic_fixture_type_is_allowed")] } },\n',
-          "spec/proof.rs PROOF_ROWS never learned",
+          "PROOF_ROWS never learned",
           "", validator=rp)
     probe("registry_retirement_without_a_note_is_rejected", PR,
           'ProofRowRecord { id: ProofRowId("pre_shred_keyset_restore_is_rejected"),',
@@ -956,7 +958,7 @@ def test_proof_target_resolver(audit) -> list[str]:
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             text = path.read_text(encoding="utf-8")
             path.write_text(must_replace(text, old, new, f"{rel}: {old[:48]!r}"), encoding="utf-8")
             expect(name, (validator or audit.proof_target_findings)(tmp), needle)

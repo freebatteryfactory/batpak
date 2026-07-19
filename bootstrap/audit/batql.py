@@ -1,7 +1,7 @@
 """BatQL operator surface and numeric-semantics audit.
 
 The auditor half of the operator generator/auditor pair: it reparses
-spec/operators.rs independently, checks grammar closure, proof disposition,
+spec/operators/ independently, checks grammar closure, proof disposition,
 the numeric contract (DEC-069 / docs/37), and the phantom-sort ban. Shares no
 parsing with bootstrap/project.py.
 """
@@ -13,6 +13,7 @@ from pathlib import Path
 from .corpus import (
     A_GENERATED_BLOCK,
     G_DEC_ROW,
+    _spec_module_source,
     _uncomment,
     batql_extract_block,
     frontmatter,
@@ -79,7 +80,7 @@ def batql_parse_operator_model(root: Path) -> dict:
     """The auditor's own parse of the typed operator source: enum variants,
     ALL inventories, token/spelling arms, owner and basis arms, and raw
     OperatorSpec rows. Shares no code with the generator."""
-    src = (root / "spec/operators.rs").read_text(encoding="utf-8")
+    src = _spec_module_source(root, "operators")
     model: dict = {"src": src}
     for key, type_name, token_fn in (("id", "OperatorId", "spelling"),
                                      ("word", "OperatorWordSurface", "token"),
@@ -115,17 +116,17 @@ def batql_resolve_operator_rows(model: dict, out: list[str]) -> list[dict[str, s
         symbols = re.findall(r"OperatorSymbolSurface::(\w+)", raw["inner"])
         unknown = False
         if variant not in model["id_token"]:
-            out.append(f"spec/operators.rs: OperatorSpec row names OperatorId::{variant}, "
+            out.append(f"spec/operators/inventory.rs: OperatorSpec row names OperatorId::{variant}, "
                        "which declares no spelling arm")
             unknown = True
         for word in words:
             if word not in model["word_token"]:
-                out.append(f"spec/operators.rs: OperatorSpec row {variant} uses "
+                out.append(f"spec/operators/inventory.rs: OperatorSpec row {variant} uses "
                            f"OperatorWordSurface::{word}, which the word inventory does not declare")
                 unknown = True
         for symbol in symbols:
             if symbol not in model["symbol_token"]:
-                out.append(f"spec/operators.rs: OperatorSpec row {variant} uses "
+                out.append(f"spec/operators/inventory.rs: OperatorSpec row {variant} uses "
                            f"OperatorSymbolSurface::{symbol}, which the symbol inventory does not declare")
                 unknown = True
         if unknown:
@@ -138,11 +139,11 @@ def batql_resolve_operator_rows(model: dict, out: list[str]) -> list[dict[str, s
         elif shape == "WordWithSymbolAlias" and len(words) == 1 and len(symbols) == 1:
             canonical, alias = model["word_token"][words[0]], model["symbol_token"][symbols[0]]
         else:
-            out.append(f"spec/operators.rs: OperatorSpec row {variant} carries "
+            out.append(f"spec/operators/inventory.rs: OperatorSpec row {variant} carries "
                        f"unresolvable syntax {shape}({raw['inner']})")
             continue
         if variant in resolved:
-            out.append(f"spec/operators.rs: duplicate OperatorSpec row for OperatorId::{variant}")
+            out.append(f"spec/operators/inventory.rs: duplicate OperatorSpec row for OperatorId::{variant}")
             continue
         row = dict(raw)
         del row["inner"]
@@ -163,59 +164,59 @@ def batql_operator_model_findings(model: dict) -> list[str]:
         type_name = model[f"{key}_type"]
         variants, inventory = model[f"{key}_variants"], model[f"{key}_all"]
         if not inventory:
-            out.append(f"spec/operators.rs declares no {type_name}::ALL inventory")
+            out.append(f"spec/operators/types.rs declares no {type_name}::ALL inventory")
         for variant in variants:
             if variant not in inventory:
-                out.append(f"spec/operators.rs: {type_name}::{variant} is declared "
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} is declared "
                            f"but missing from {type_name}::ALL")
         for variant in inventory:
             if variant not in variants:
-                out.append(f"spec/operators.rs: {type_name}::ALL names {variant}, "
+                out.append(f"spec/operators/types.rs: {type_name}::ALL names {variant}, "
                            "which the enum does not declare")
         tokens = model[f"{key}_token"]
         fn_name = "spelling" if key == "id" else "token"
         for variant in inventory:
             if variant not in tokens:
-                out.append(f"spec/operators.rs: {type_name}::{variant} declares no {fn_name} arm")
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} declares no {fn_name} arm")
             if variant not in model[f"{key}_owner"]:
-                out.append(f"spec/operators.rs: {type_name}::{variant} declares no semantic_owner arm")
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} declares no semantic_owner arm")
             if variant not in model[f"{key}_basis"]:
-                out.append(f"spec/operators.rs: {type_name}::{variant} declares no admission_basis arm")
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} declares no admission_basis arm")
         seen: dict[str, str] = {}
         for variant, token in tokens.items():
             if not token:
-                out.append(f"spec/operators.rs: {type_name}::{variant} declares an empty token")
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} declares an empty token")
                 continue
             if token in seen:
-                out.append(f"spec/operators.rs: duplicate {type_name} token {token!r} "
+                out.append(f"spec/operators/types.rs: duplicate {type_name} token {token!r} "
                            f"({seen[token]} and {variant})")
             seen[token] = variant
             if key == "word" and not BATQL_WORD_GRAMMAR.match(token):
-                out.append(f"spec/operators.rs: word token {token!r} violates the "
+                out.append(f"spec/operators/types.rs: word token {token!r} violates the "
                            "canonical uppercase word grammar; punctuation can never "
                            "enter the word inventory")
             if key == "symbol" and not BATQL_SYMBOL_GRAMMAR.match(token):
-                out.append(f"spec/operators.rs: symbol token {token!r} is not nonempty "
+                out.append(f"spec/operators/types.rs: symbol token {token!r} is not nonempty "
                            "ASCII punctuation; a word can never enter the symbol inventory")
     if re.search(r"\n\s*_ =>", _uncomment(model["src"])):
-        out.append("spec/operators.rs: a wildcard match arm may not stand in for "
+        out.append("spec/operators/: a wildcard match arm may not stand in for "
                    "explicit per-variant law")
     # Row/identity parity in ALL order, and surface adoption in both directions.
     row_variants = [raw["variant"] for raw in model["rows"]]
     for variant in model["id_all"]:
         count = row_variants.count(variant)
         if count == 0:
-            out.append(f"spec/operators.rs: OperatorId::{variant} has no OperatorSpec row")
+            out.append(f"spec/operators/inventory.rs: OperatorId::{variant} has no OperatorSpec row")
         elif count > 1:
-            out.append(f"spec/operators.rs: duplicate OperatorSpec row for OperatorId::{variant}")
+            out.append(f"spec/operators/inventory.rs: duplicate OperatorSpec row for OperatorId::{variant}")
     for variant in row_variants:
         if variant not in model["id_all"]:
-            out.append(f"spec/operators.rs: OperatorSpec row {variant} is missing "
+            out.append(f"spec/operators/inventory.rs: OperatorSpec row {variant} is missing "
                        "from OperatorId::ALL")
     known_rows = [v for v in row_variants if v in model["id_all"]]
     expected = [v for v in model["id_all"] if v in row_variants]
     if known_rows != expected:
-        out.append("spec/operators.rs: OPERATORS row order does not equal OperatorId::ALL")
+        out.append("spec/operators/inventory.rs: OPERATORS row order does not equal OperatorId::ALL")
     used_words = []
     used_symbols = []
     for raw in model["rows"]:
@@ -223,19 +224,19 @@ def batql_operator_model_findings(model: dict) -> list[str]:
         used_symbols += re.findall(r"OperatorSymbolSurface::(\w+)", raw["inner"])
     for variant in model["word_all"]:
         if variant not in used_words:
-            out.append(f"spec/operators.rs: word surface {variant} is adopted by no "
+            out.append(f"spec/operators/inventory.rs: word surface {variant} is adopted by no "
                        "OperatorSpec row; a declared surface without an adopter is an orphan")
     for variant in model["symbol_all"]:
         if variant not in used_symbols:
-            out.append(f"spec/operators.rs: symbol surface {variant} is adopted by no "
+            out.append(f"spec/operators/inventory.rs: symbol surface {variant} is adopted by no "
                        "OperatorSpec row; a declared surface without an adopter is an orphan")
     for variant in set(used_words):
         if used_words.count(variant) > 1:
-            out.append(f"spec/operators.rs: word surface {variant} is adopted by more "
+            out.append(f"spec/operators/inventory.rs: word surface {variant} is adopted by more "
                        "than one OperatorSpec row")
     for variant in set(used_symbols):
         if used_symbols.count(variant) > 1:
-            out.append(f"spec/operators.rs: symbol surface {variant} is adopted by more "
+            out.append(f"spec/operators/inventory.rs: symbol surface {variant} is adopted by more "
                        "than one OperatorSpec row; an alias stays attached to one OperatorId")
     return out
 
@@ -249,16 +250,16 @@ def batql_operator_authority_findings(model: dict, contract_ids: set[str],
         type_name = model[f"{key}_type"]
         for variant, owner in sorted(model[f"{key}_owner"].items()):
             if owner not in contract_ids:
-                out.append(f"spec/operators.rs: {type_name}::{variant} names owner "
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} names owner "
                            f"{owner}, which no declared contract owns")
         for variant, basis in sorted(model[f"{key}_basis"].items()):
             if basis not in decision_ids:
-                out.append(f"spec/operators.rs: {type_name}::{variant} names admission "
+                out.append(f"spec/operators/types.rs: {type_name}::{variant} names admission "
                            f"basis {basis}, which no declared decision owns")
     return out
 
 
-# 5.5E3j1: the documentary layer of spec/operators.rs may fence OPERATOR
+# 5.5E3j1: the documentary layer of spec/operators/ may fence OPERATOR
 # ADMISSION, never deny VALUE EXISTENCE. First-class Qualified Approximation
 # is owned by DEC-069/docs/37 today; the ordinary operator parser strips
 # comments, so this law reads the RAW source before any comment removal.
@@ -285,13 +286,13 @@ def batql_operator_doc_findings(src: str) -> list[str]:
         match = pattern.search(flat)
         if match:
             out.append(
-                "spec/operators.rs: approximate values exist; no current ordinary "
+                "spec/operators/: approximate values exist; no current ordinary "
                 "operator admits raw approximate operands — the documentary layer "
                 f"may not deny value existence ({match.group(0)!r})")
     for name, fragment in BATQL_OPERATOR_DOC_DOCTRINE:
         if fragment not in flat:
             out.append(
-                f"spec/operators.rs: approximate-authority doctrine absent ({name})")
+                f"spec/operators/: approximate-authority doctrine absent ({name})")
     return out
 
 
@@ -371,7 +372,7 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
     out: list[str] = []
     ids = [o["id"] for o in ops]
     if len(ids) != len(set(ids)):
-        out.append("spec/operators.rs: duplicate OperatorId")
+        out.append("spec/operators/inventory.rs: duplicate OperatorId")
     owner: dict[tuple[str, str], str] = {}
     for op in ops:
         for surface in (op["canonical"], op.get("alias", "")):
@@ -380,7 +381,7 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
             key = (surface, op["fixity"])
             if key in owner and owner[key] != op["id"]:
                 out.append(
-                    f"spec/operators.rs: token {surface!r} with fixity {op['fixity']} claimed by {owner[key]} and {op['id']}"
+                    f"spec/operators/inventory.rs: token {surface!r} with fixity {op['fixity']} claimed by {owner[key]} and {op['id']}"
                 )
             owner[key] = op["id"]
     for op in ops:
@@ -389,35 +390,35 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
         # logical operator can never gain a symbol alias.
         required_shape = BATQL_CLASS_SHAPE.get(op.get("class", ""))
         if required_shape is None:
-            out.append(f"spec/operators.rs: operator {op.get('id', '?')} carries "
+            out.append(f"spec/operators/inventory.rs: operator {op.get('id', '?')} carries "
                        f"unknown class {op.get('class')!r}")
         elif op.get("shape") != required_shape:
             out.append(
-                f"spec/operators.rs: {op.get('class', '?').lower()} operator "
+                f"spec/operators/inventory.rs: {op.get('class', '?').lower()} operator "
                 f"{op.get('id', '?')} carries {op.get('shape')!r} source syntax; "
                 f"its class law requires {required_shape}")
         if op.get("shape") == "WordWithSymbolAlias" and not op.get("alias"):
-            out.append(f"spec/operators.rs: operator {op.get('id', '?')} claims a "
+            out.append(f"spec/operators/inventory.rs: operator {op.get('id', '?')} claims a "
                        "symbol alias shape but carries no alias token")
         if op.get("shape") in ("SymbolOnly", "WordOnly") and op.get("alias"):
-            out.append(f"spec/operators.rs: operator {op.get('id', '?')} carries an "
+            out.append(f"spec/operators/inventory.rs: operator {op.get('id', '?')} carries an "
                        "alias token outside the WordWithSymbolAlias shape")
     for op in ops:
         for field in BATQL_ROW_FIELDS:
             if not op.get(field, "").strip():
-                out.append(f"spec/operators.rs: operator {op.get('id', '?')} missing field {field}")
+                out.append(f"spec/operators/inventory.rs: operator {op.get('id', '?')} missing field {field}")
     valid_support = {"ExactSupported", "QualifiedProfileOnly", "Unsupported", "NotApplicable"}
     for op in ops:
         support = op.get("numeric_support", "")
         if support and support not in valid_support:
-            out.append(f"spec/operators.rs: operator {op['id']} has unknown numeric_support {support}")
+            out.append(f"spec/operators/inventory.rs: operator {op['id']} has unknown numeric_support {support}")
         if op.get("class") in ("Arithmetic", "Comparison") and support in ("", "NotApplicable"):
-            out.append(f"spec/operators.rs: {op.get('class')} operator {op['id']} lacks an approximate-support posture")
+            out.append(f"spec/operators/inventory.rs: {op.get('class')} operator {op['id']} lacks an approximate-support posture")
         # V1 admits no raw approximate operands: no qualified numeric profile exists,
         # so no operator may carry QualifiedProfileOnly. ExactSupported is exact-only.
         if support == "QualifiedProfileOnly":
             out.append(
-                f"spec/operators.rs: operator {op['id']} admits approximate operands (QualifiedProfileOnly) "
+                f"spec/operators/inventory.rs: operator {op['id']} admits approximate operands (QualifiedProfileOnly) "
                 f"but no qualified numeric profile exists in V1"
             )
     # The typed legality rules (5.5E1). Placement is law, not decoration: a
@@ -427,26 +428,26 @@ def batql_operator_fact_findings(ops: list[dict[str, str]]) -> list[str]:
     for op in ops:
         rules = re.findall(r"OperatorTypingRule::(\w+)", op.get("typing", ""))
         if not rules:
-            out.append(f"spec/operators.rs: operator {op['id']} declares no typing rules")
+            out.append(f"spec/operators/inventory.rs: operator {op['id']} declares no typing rules")
             continue
         sem = op.get("semantic_op", "")
         if "WallObservationDifference" in rules and sem != "subtract":
-            out.append(f"spec/operators.rs: {op['id']} claims WallObservationDifference; "
+            out.append(f"spec/operators/inventory.rs: {op['id']} claims WallObservationDifference; "
                        f"only subtraction of two observations yields TimeDelta")
         if "PercentDifference" in rules and sem != "subtract":
-            out.append(f"spec/operators.rs: {op['id']} claims PercentDifference; "
+            out.append(f"spec/operators/inventory.rs: {op['id']} claims PercentDifference; "
                        f"a rate difference is subtraction")
         if "PercentAdjustment" in rules and sem not in ("add", "subtract"):
-            out.append(f"spec/operators.rs: {op['id']} claims PercentAdjustment "
+            out.append(f"spec/operators/inventory.rs: {op['id']} claims PercentAdjustment "
                        f"outside addition and subtraction")
         if op["class"] == "Comparison" and rules != ["SameSortComparison"]:
-            out.append(f"spec/operators.rs: comparison {op['id']} must carry exactly "
+            out.append(f"spec/operators/inventory.rs: comparison {op['id']} must carry exactly "
                        f"SameSortComparison")
         if op["class"] == "Logical" and not set(rules) <= {"TruthUnary", "TruthBinary"}:
-            out.append(f"spec/operators.rs: logical {op['id']} carries a non-Truth typing rule")
+            out.append(f"spec/operators/inventory.rs: logical {op['id']} carries a non-Truth typing rule")
         if op["class"] == "Arithmetic" and set(rules) & {
                 "TruthUnary", "TruthBinary", "SameSortComparison"}:
-            out.append(f"spec/operators.rs: arithmetic {op['id']} carries a "
+            out.append(f"spec/operators/inventory.rs: arithmetic {op['id']} carries a "
                        f"comparison/truth typing rule")
     return out
 
@@ -592,7 +593,8 @@ BATQL_OPERATOR_BLOCKS = (
     ("OPERATORS-TYPING", "companion/BATQL_LANGUAGE.md"),
     ("OPERATORS-NUMERIC", "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"),
 )
-BATQL_OPERATOR_PROVENANCE = "generated from spec/operators.rs by bootstrap/project.py; do not edit"
+BATQL_OPERATOR_PROVENANCE = ("generated from spec/operators/inventory.rs; "
+                             "spec/operators/types.rs by bootstrap/project.py; do not edit")
 # The companion's authored operator-surface doctrine (5.5E3j). Each clause is
 # executable law with its own hostile, checked against the authored body with
 # every generated block removed.
@@ -612,7 +614,7 @@ def _batql_authorities(root: Path) -> tuple[set[str], set[str]]:
         cid = frontmatter(rel.read_text(encoding="utf-8")).get("contract_id")
         if cid:
             contract_ids.add(cid)
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     decision_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
     return contract_ids, decision_ids
 
@@ -628,22 +630,22 @@ def batql_operator_corpus_findings(root: Path, model: dict,
     # Retired raw surface fields and the empty-string sentinel may not return.
     for field in ("word_surface", "symbol_surface", "formatting"):
         if re.search(r"\b" + field + r"\s*:", _uncomment(src)):
-            out.append(f"spec/operators.rs: retired raw surface field {field} may not return")
+            out.append(f"spec/operators/: retired raw surface field {field} may not return")
     if re.search(r':\s*""', _uncomment(src)):
-        out.append("spec/operators.rs: an empty-string surface sentinel may not return")
+        out.append("spec/operators/: an empty-string surface sentinel may not return")
     # The residue claim rests on a real public typed owner, not a raw string field.
     if not re.search(r"pub enum OperatorId\b", src):
-        out.append("spec/operators.rs declares no public typed OperatorId owner; "
+        out.append("spec/operators/types.rs declares no public typed OperatorId owner; "
                    "the identity-residue claim may not rest on a raw string field")
-    identities_src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    identities_src = (root / "spec/identities/inventory.rs").read_text(encoding="utf-8")
     if not re.search(
             r'term: "OperatorId",\s*disposition: IdentityTermDisposition::'
             r'OwnedElsewhere\(ContractId\("BP-BATQL-LANGUAGE-1"\)\)', identities_src):
-        out.append("spec/identities.rs: the OperatorId owned-elsewhere residue row "
+        out.append("spec/identities/inventory.rs: the OperatorId owned-elsewhere residue row "
                    "(BP-BATQL-LANGUAGE-1) is missing")
     # DEC-060 is the admission basis: its forward-policy fields must name the
     # typed boundary and the exact V1 word/symbol mapping.
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     row = re.search(
         r'DecisionSpec \{ id: "DEC-060",.*?subject: "([^"]*)", successor: "([^"]*)",'
         r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
@@ -697,7 +699,8 @@ def batql_operator_corpus_findings(root: Path, model: dict,
                 r"<!-- " + re.escape(name) + r":BEGIN "
                 + re.escape(BATQL_OPERATOR_PROVENANCE) + r" -->", text):
             out.append(f"{rel}: {name} BEGIN marker does not name its "
-                       "spec/operators.rs + bootstrap/project.py provenance exactly")
+                       "spec/operators/inventory.rs; spec/operators/types.rs + "
+                       "bootstrap/project.py provenance exactly")
     # The spoken projection is narration, never source: no spoken phrase may
     # surface as grammar, and the projection table formats every operator as
     # its canonical surface.
@@ -730,7 +733,7 @@ def check_batql(root: Path, findings: list[str]) -> None:
     findings.extend(batql_operator_doc_findings(model["src"]))
     ops = batql_resolve_operator_rows(model, findings)
     if not ops:
-        findings.append("spec/operators.rs: no OperatorSpec rows parsed")
+        findings.append("spec/operators/inventory.rs: no OperatorSpec rows parsed")
     findings.extend(batql_operator_fact_findings(ops))
     contract_ids, decision_ids = _batql_authorities(root)
     findings.extend(batql_operator_authority_findings(model, contract_ids, decision_ids))
@@ -753,7 +756,7 @@ def check_batql(root: Path, findings: list[str]) -> None:
         if actual is None:
             findings.append(f"{rel}: missing generated block {name}")
         elif actual != expected:
-            findings.append(f"{rel}: generated block {name} does not match the spec/operators.rs projection")
+            findings.append(f"{rel}: generated block {name} does not match the spec/operators/ projection")
     grammar_findings, _defined, _undefined = batql_grammar_closure_findings(batql_grammar_fences(companion))
     findings.extend(grammar_findings)
     findings.extend(batql_proof_disposition_findings(batql_proof_disposition_states(companion)))

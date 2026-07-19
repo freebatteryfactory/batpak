@@ -1,7 +1,8 @@
 use crate::gates::GateId;
 
 // --- Authenticated history (DEC-071) ----------------------------------------
-// A DIFFERENT concept from the build-target `QualificationProfile` above, which
+// A DIFFERENT concept from the build-target `QualificationProfile` in
+// `spec/architecture/types.rs`, which
 // says which package compiles for which target. These facts say what a store's
 // history verification actually proves. The two families deliberately share no
 // type, field name, parser, projection, or audit rule; nothing here is named a

@@ -39,11 +39,11 @@ MacBat knows what one declaration means locally. TestPak resolves global ownersh
 
 ## Contract IR
 
-Contract kinds are closed and exhaustive. A kind enters only when one declaration becomes canonical, a real adopter exists, and every lowering/proof surface is named. `spec/contracts.rs` is the typed owner of the admitted set; each kind cites the guarantee that admits it, and the citation resolves or the kind is refused.
+Contract kinds are closed and exhaustive. A kind enters only when one declaration becomes canonical, a real adopter exists, and every lowering/proof surface is named. `spec/contracts/types.rs` is the typed owner of the admitted set; each kind cites the guarantee that admits it, and the citation resolves or the kind is refused.
 
-The admitted kinds and their admitting laws are a generated projection of the typed owner — inventory membership and canonical order live in `spec/contracts.rs`, never in this document:
+The admitted kinds and their admitting laws are a generated projection of the typed owner — inventory membership and canonical order live in `spec/contracts/types.rs`, never in this document:
 
-<!-- CONTRACT-KINDS:BEGIN generated from spec/contracts.rs by bootstrap/project.py; do not edit -->
+<!-- CONTRACT-KINDS:BEGIN generated from spec/contracts/types.rs by bootstrap/project.py; do not edit -->
 | ContractKind | Admission basis |
 | --- | --- |
 | Error | LEG-047 |

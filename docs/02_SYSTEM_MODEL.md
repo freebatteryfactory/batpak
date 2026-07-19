@@ -151,10 +151,10 @@ contracts — durable order by the journal law (docs/05, LEG-001/067),
 chronology by the time contract (docs/16, DEC-061), turns and attempts by the
 runtime and Bvisor (docs/08/09), receipts and reconciliation posture by
 docs/14 — and this section owns their composition. The typed owner of the
-closed bindings is `spec/reconciliation.rs`; the tables below are generated
+closed bindings is `spec/reconciliation/`; the tables below are generated
 from it.
 
-<!-- RECONCILIATION-COORDINATES:BEGIN generated from spec/reconciliation.rs by bootstrap/project.py; do not edit -->
+<!-- RECONCILIATION-COORDINATES:BEGIN generated from spec/reconciliation/inventory.rs by bootstrap/project.py; do not edit -->
 | Role | Carriers | Law |
 | --- | --- | --- |
 | DurableOrderWitness | GlobalSequence, CommitPoint | one writer establishes exact durable order; nothing else does |
@@ -197,7 +197,7 @@ waiter loses no semantic identity.
 Retry, resume, compensation, or terminal refusal is selected only from the
 typed signal classification:
 
-<!-- RECONCILIATION-RETRY:BEGIN generated from spec/reconciliation.rs by bootstrap/project.py; do not edit -->
+<!-- RECONCILIATION-RETRY:BEGIN generated from spec/reconciliation/types.rs by bootstrap/project.py; do not edit -->
 ```text
 admissible for retry, resume, compensation, or refusal:
     DeclaredRecoveryClass
@@ -229,9 +229,9 @@ The guest language has strong semantic and capability isolation because it canno
 
 ## Required proof rows
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-075 | paired_result_and_receipt_share_one_turn_evaluation; hlc_cannot_substitute_for_commit_sequence; receipt_binds_chronology_and_commit_without_collapsing_them; replay_reconstructs_same_turn_and_returns_original_receipts; lost_acknowledgement_requires_reconciliation_before_retry; port_response_cannot_cross_attempts; driver_await_and_cooperative_drive_produce_equivalent_logical_trace; checkpoint_gap_does_not_duplicate_committed_effect; reconciliation_appends_evidence_without_rewriting_original_observation |

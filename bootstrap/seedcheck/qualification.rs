@@ -103,8 +103,8 @@ pub(crate) fn check_bootstrap_output(findings: &mut Vec<String>) {
         }
         for &family in bo::Gate0PlaneArtifact::ALL {
             planned.push(match family {
-                bo::Gate0PlaneArtifact::Module => format!("{base}/src/{module}.rs"),
-                bo::Gate0PlaneArtifact::DirectoryReadme => format!("{base}/src/{module}/README.md"),
+                bo::Gate0PlaneArtifact::ModuleDoor => format!("{base}/src/{module}/mod.rs"),
+                bo::Gate0PlaneArtifact::TypesCarrier => format!("{base}/src/{module}/types.rs"),
             });
         }
     }

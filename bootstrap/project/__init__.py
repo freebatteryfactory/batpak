@@ -1,7 +1,7 @@
 """Deterministic projection generator for the clean-room specification.
 
 Every projection plan is built by iterating the typed generated-view registry
-(`spec/generated_views.rs` GeneratedView::ALL, 5.5E4a): embedded marker blocks
+(`spec/generated_views/registry.rs` GeneratedView::ALL, 5.5E4a): embedded marker blocks
 across the authored corpus, the standalone generated files — including the
 Guarantee Graph (docs/GUARANTEE_GRAPH.generated.md) and the tracked
 rust-toolchain.toml, both of which THIS tool generates — and the mechanical

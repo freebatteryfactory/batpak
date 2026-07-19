@@ -27,9 +27,9 @@ required witness
 gate
 ```
 
-`spec/legacy_obligations.rs` owns the complete obligation row. `spec/proof.rs` owns canonical proof-row membership. docs/24 owns proof-row meaning. This document is the generated human ledger plus authored closure doctrine:
+`spec/legacy_obligations/inventory.rs` owns the complete obligation row. `spec/proof/inventory.rs` owns canonical proof-row membership. docs/24 owns proof-row meaning. This document is the generated human ledger plus authored closure doctrine:
 
-<!-- LEGACY-OBLIGATION-LEDGER:BEGIN generated from spec/legacy_obligations.rs; spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- LEGACY-OBLIGATION-LEDGER:BEGIN generated from spec/legacy_obligations/inventory.rs; spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | ID | Retained law | Legacy evidence | Clean owner | Mechanism disposition | Required witness | Gates | Compatibility | Deletion condition | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | LEG-001 | One live writer and one physical commit order per journal | 03_INVARIANTS.md, store writer runtime | batpak::store | Reimplement cleanly | concurrency model + duplicate-writer refusal | G2 | None | OnSuccessorGateClosure | Active |

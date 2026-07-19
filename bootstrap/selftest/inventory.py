@@ -70,7 +70,7 @@ def test_stale_vocabulary(audit) -> list[str]:
 
 
 def test_stale_derivation(audit, root) -> list[str]:
-    """The matcher is derived from spec/dispositions.rs, not a hand list."""
+    """The matcher is derived from spec/dispositions/inventory.rs, not a hand list."""
     findings: list[str] = []
     problems: list[str] = []
     amap = audit.parse_stale_vocabulary(root, problems)
@@ -582,17 +582,19 @@ def test_operator_surfaces(audit, project) -> list[str]:
     # source and the generator byte-exactly.
     probe("operator_projection_source_marker_drift_is_rejected",
           [("companion/BATQL_LANGUAGE.md",
-            "OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/project.py",
-            "OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/render.py")],
+            "OPERATORS-PROJECTION:BEGIN generated from spec/operators/inventory.rs; "
+            "spec/operators/types.rs by bootstrap/project.py",
+            "OPERATORS-PROJECTION:BEGIN generated from spec/operators/inventory.rs; "
+            "spec/operators/types.rs by bootstrap/render.py")],
           batql, "OPERATORS-PROJECTION BEGIN marker does not name")
     probe("operator_typing_source_marker_drift_is_rejected",
           [("companion/BATQL_LANGUAGE.md",
-            "OPERATORS-TYPING:BEGIN generated from spec/operators.rs",
+            "OPERATORS-TYPING:BEGIN generated from spec/operators/inventory.rs",
             "OPERATORS-TYPING:BEGIN generated from spec/architecture.rs")],
           batql, "OPERATORS-TYPING BEGIN marker does not name")
     probe("operator_numeric_source_marker_drift_is_rejected",
           [("docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md",
-            "OPERATORS-NUMERIC:BEGIN generated from spec/operators.rs",
+            "OPERATORS-NUMERIC:BEGIN generated from spec/operators/inventory.rs",
             "OPERATORS-NUMERIC:BEGIN generated from spec/numeric.rs")],
           batql, "OPERATORS-NUMERIC BEGIN marker does not name")
 
@@ -619,7 +621,7 @@ def test_operator_surfaces(audit, project) -> list[str]:
     # value existence — DEC-069/docs/37 own first-class Qualified
     # Approximation TODAY. The ordinary parser strips comments, so this law
     # executes over the raw source.
-    operators_src = (root / "spec/operators.rs").read_text(encoding="utf-8")
+    operators_src = (root / "spec/operators/types.rs").read_text(encoding="utf-8")
     for stale in ("No Approximate value exists yet.",
                   "No `Approximate` value exists until a profile ships."):
         mutated = must_replace(
@@ -716,7 +718,7 @@ def test_operator_surfaces(audit, project) -> list[str]:
 
 def test_generated_views(audit, project) -> list[str]:
     """Named hostile fixtures for the generated-view registry (5.5E4a):
-    spec/generated_views.rs is the closed denominator of every repository-
+    spec/generated_views/registry.rs is the closed denominator of every repository-
     generated view, the projector dispatches only through it, and the
     universal marker census leaves no unregistered block in the wallpaper."""
     findings: list[str] = []
@@ -762,10 +764,10 @@ def test_generated_views(audit, project) -> list[str]:
           [(GV, GATES_ROW, GATES_ROW + GATES_ROW)],
           "GeneratedView::ALL repeats GateInventory")
     probe("generated_view_without_authority_source_is_rejected",
-          [(GV, 'authority_sources: &["spec/gates.rs"],', "authority_sources: &[],")],
+          [(GV, 'authority_sources: &["spec/gates/inventory.rs"],', "authority_sources: &[],")],
           "generated view GateInventory names no authority source")
     probe("generated_view_with_missing_authority_source_is_rejected",
-          [(GV, 'authority_sources: &["spec/gates.rs"],',
+          [(GV, 'authority_sources: &["spec/gates/inventory.rs"],',
             'authority_sources: &["spec/gates_missing.rs"],')],
           "names authority source spec/gates_missing.rs, which does not exist")
     probe("generated_view_with_missing_static_target_is_rejected",
@@ -802,7 +804,7 @@ def test_generated_views(audit, project) -> list[str]:
 
     # The universal marker census.
     GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
-    GATES_BEGIN = ("<!-- GATE-INVENTORY:BEGIN generated from spec/gates.rs by "
+    GATES_BEGIN = ("<!-- GATE-INVENTORY:BEGIN generated from spec/gates/inventory.rs by "
                    "bootstrap/project.py; do not edit -->")
     probe("unregistered_generated_begin_marker_is_rejected",
           [(GATES_DOC, GATES_BEGIN,
@@ -825,12 +827,14 @@ def test_generated_views(audit, project) -> list[str]:
            (GATES_DOC, "GATE-INVENTORY:END", "GATE-INVENTORYX:END")],
           "registered generated marker GATE-INVENTORY is absent from its target")
     probe("generated_marker_source_drift_is_rejected",
-          [(GATES_DOC, "GATE-INVENTORY:BEGIN generated from spec/gates.rs",
+          [(GATES_DOC, "GATE-INVENTORY:BEGIN generated from spec/gates/inventory.rs",
             "GATE-INVENTORY:BEGIN generated from spec/architecture.rs")],
           "names source spec/architecture.rs, not its registered authority source")
     probe("generated_marker_generator_drift_is_rejected",
-          [(GATES_DOC, "GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/project.py",
-            "GATE-INVENTORY:BEGIN generated from spec/gates.rs by bootstrap/render.py")],
+          [(GATES_DOC, "GATE-INVENTORY:BEGIN generated from spec/gates/inventory.rs "
+                       "by bootstrap/project.py",
+            "GATE-INVENTORY:BEGIN generated from spec/gates/inventory.rs "
+            "by bootstrap/render.py")],
           "names generator bootstrap/render.py, not bootstrap/project.py")
 
     # Dispatcher parity and the registry bypass fence. The dispatcher literal
@@ -852,7 +856,7 @@ def test_generated_views(audit, project) -> list[str]:
     # Standalone provenance.
     probe("guarantee_graph_generated_from_drift_is_rejected",
           [("docs/GUARANTEE_GRAPH.generated.md",
-            "generated_from: spec/invariants.rs;",
+            "generated_from: spec/invariants/inventory.rs;",
             "generated_from: spec/wrong.rs;")],
           "not its registry row")
     probe("guarantee_graph_generator_drift_is_rejected",
@@ -862,7 +866,7 @@ def test_generated_views(audit, project) -> list[str]:
           "not bootstrap/project.py")
     probe("rust_toolchain_provenance_comment_missing_is_rejected",
           [("rust-toolchain.toml",
-            "# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n[toolchain]",
+            "# generated from spec/toolchain/types.rs by bootstrap/project.py; do not edit\n[toolchain]",
             "[toolchain]")],
           "missing or drifted provenance comment")
 
@@ -880,9 +884,9 @@ def test_generated_views(audit, project) -> list[str]:
           "generated block GENERATED-VIEW-REGISTRY does not match")
     probe("generated_view_registry_marker_drift_is_rejected",
           [("docs/28_SELF_EXPLAINING_REPOSITORY.md",
-            "GENERATED-VIEW-REGISTRY:BEGIN generated from spec/generated_views.rs",
+            "GENERATED-VIEW-REGISTRY:BEGIN generated from spec/generated_views/registry.rs",
             "GENERATED-VIEW-REGISTRY:BEGIN generated from spec/architecture.rs")],
-          "not its registered authority source spec/generated_views.rs")
+          "not its registered authority source spec/generated_views/registry.rs")
 
     # The retired hybrid fence and the projector's documentary honesty.
     probe("contract_kind_hybrid_fence_cannot_return",
@@ -1186,8 +1190,10 @@ def test_inventory_mirrors(audit, project) -> list[str]:
         probe(name, [(rel, fragment, "RETIRED FRAGMENT")], needle)
     # Multi-source provenance: order IS provenance.
     probe("bundle_inventory_multi_source_order_drift_is_rejected",
-          [(D28, "BUNDLE-INVENTORY:BEGIN generated from spec/architecture.rs; spec/invariants.rs;",
-            "BUNDLE-INVENTORY:BEGIN generated from spec/invariants.rs; spec/architecture.rs;")],
+          [(D28, "BUNDLE-INVENTORY:BEGIN generated from spec/architecture/inventory.rs; "
+                 "spec/invariants/inventory.rs;",
+            "BUNDLE-INVENTORY:BEGIN generated from spec/invariants/inventory.rs; "
+            "spec/architecture/inventory.rs;")],
           "not its registered authority source",
           validator=audit.generated_view_findings)
 
@@ -1299,7 +1305,7 @@ def test_exact_ledgers(audit, project) -> list[str]:
          "Either substitutes for the other.",
          "version/convergence doctrine absent (layout-schema-split)"),
         ("docs24_version_witness_cannot_freeze_ten", "docs/24_GAUNTLET.md",
-         "Every member of spec/identities.rs VersionIdentityKind::ALL denotes a",
+         "Every member of spec/identities/types.rs VersionIdentityKind::ALL denotes a",
          "The ten declared version identities are distinct types; every one denotes a",
          "may not freeze a numeric count"),
         ("docs24_version_witness_must_consume_version_identity_all",
@@ -1461,12 +1467,13 @@ def test_exact_ledgers(audit, project) -> list[str]:
 
     # Marker drift flows through the universal census.
     probe("decision_ledger_marker_drift_is_rejected",
-          [(D30, "DECISION-LEDGER:BEGIN generated from spec/dispositions.rs",
+          [(D30, "DECISION-LEDGER:BEGIN generated from spec/dispositions/inventory.rs",
             "DECISION-LEDGER:BEGIN generated from spec/architecture.rs")],
           "not its registered authority source",
           validator=audit.generated_view_findings)
     probe("legacy_coverage_marker_drift_is_rejected",
-          [(D34, "LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/legacy_invariant_coverage.rs",
+          [(D34, "LEGACY-INVARIANT-COVERAGE:BEGIN generated from "
+                 "spec/legacy_invariant_coverage/inventory.rs",
             "LEGACY-INVARIANT-COVERAGE:BEGIN generated from spec/architecture.rs")],
           "not its registered authority source",
           validator=audit.generated_view_findings)

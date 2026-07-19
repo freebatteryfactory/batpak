@@ -96,7 +96,7 @@ lint suppressions (#[allow] / #[expect])
 panic / unwrap / expect / dbg in production source
 dependency-owned public types in ordinary public APIs
 drawer modules (utils, common, helpers, manager, processor, misc)
-stale architecture aliases (derived from spec/dispositions.rs)
+stale architecture aliases (derived from spec/dispositions/inventory.rs)
 canonical-order dependence on hash-map iteration
 ```
 
@@ -120,9 +120,9 @@ the danger means.
 
 This document owns the detector inventory, the required-behavior table, and the defense-in-depth posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | LEG-020 | allocation_does_not_scale_with_full_matched_set |
@@ -168,7 +168,7 @@ Muterprater may use compiler-backed mutation tooling as a backend. It never clai
 
 The executed lane facts are projected from the typed owner:
 
-<!-- MUTATION-LANES:BEGIN generated from spec/mutation.rs by bootstrap/project.py; do not edit -->
+<!-- MUTATION-LANES:BEGIN generated from spec/mutation/types.rs by bootstrap/project.py; do not edit -->
 ```text
 lane                 compile rustc   activ   slots   indep   gates
 SemanticIr           false   false   true    false   true    G3
@@ -216,7 +216,7 @@ A `Survived` verdict without activation evidence is invalid. A `Killed` verdict 
 
 The executed classification is projected from the typed owner:
 
-<!-- MUTATION-RESULTS:BEGIN generated from spec/mutation.rs by bootstrap/project.py; do not edit -->
+<!-- MUTATION-RESULTS:BEGIN generated from spec/mutation/types.rs by bootstrap/project.py; do not edit -->
 ```text
 result                 kill    surv    denominator
 Killed                 true    false   true
@@ -272,7 +272,7 @@ Muterprater may propose tests, fixtures, patches, mutation operators, and proof 
 
 ### Candidate promotion law
 
-The four typed requirements (`spec/promotion.rs`) are conjunctive: every
+The four typed requirements (`spec/promotion/types.rs`) are conjunctive: every
 member of `PromotionRequirement::ALL` is required, a missing member
 refuses promotion, and no requirement satisfies another — a killed mutant
 does not prove the evidence route was independent, a named guarantee does
@@ -305,7 +305,7 @@ arbitrary failing test, or a failure produced by the unchanged baseline.
 `AuditablePromotionReceipt`: the complete receipt below. A commit message
 is not this receipt.
 
-<!-- PROMOTION-REQUIREMENTS:BEGIN generated from spec/promotion.rs by bootstrap/project.py; do not edit -->
+<!-- PROMOTION-REQUIREMENTS:BEGIN generated from spec/promotion/types.rs by bootstrap/project.py; do not edit -->
 ```text
 requirement                owner          admission basis
 IndependentEvidenceRoute   BP-TESTPAK-1   DEC-015
@@ -381,13 +381,13 @@ It does not own Repo IR, all commands, release, benchmarks, LSP, documentation, 
 ## Audited denominator
 
 Every planned proof unit ends in one semantic terminal of the typed
-vocabulary (`spec/proof.rs`, `ProofUnitTerminal`; this list is a generated
+vocabulary (`spec/proof/types.rs`, `ProofUnitTerminal`; this list is a generated
 projection). Only `Passed` counts green. Attempt outcomes -- not executed,
 timed out, infrastructure failed -- belong to the qualification-receipt
 algebra and never collapse into these terminals: a row whose attempt died has
 no semantic terminal and stays honestly unterminated in the denominator.
 
-<!-- PROOF-TERMINALS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-TERMINALS:BEGIN generated from spec/proof/types.rs by bootstrap/project.py; do not edit -->
 ```text
 Passed
 Failed

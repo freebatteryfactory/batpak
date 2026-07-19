@@ -8,7 +8,7 @@
 //! guarantee does not prove the hostile activated, and a receipt cannot
 //! manufacture missing evidence.
 //!
-//! `spec/promotion.rs` owns which requirements exist, their canonical order
+//! `spec/promotion/` owns which requirements exist, their canonical order
 //! and spellings, and their typed owner/basis/surface/gate bindings.
 //! docs/12 owns what each requirement MEANS; docs/24 owns hostile-rule
 //! qualification and proof-row meaning; docs/31 consumes the typed law and

@@ -11,11 +11,11 @@ pub(crate) fn check_syncbat_shape(root: &Path, findings: &mut Vec<String>) {
     if !base.exists() { return; }
     for &plane in architecture::SyncBatPlane::ALL {
         let module = plane.module_name();
-        if !base.join(format!("src/{module}.rs")).exists() {
-            findings.push(format!("syncbat missing required plane src/{module}.rs"));
+        if !base.join(format!("src/{module}/mod.rs")).exists() {
+            findings.push(format!("syncbat missing required plane src/{module}/mod.rs"));
         }
-        if !base.join(format!("src/{module}")).exists() {
-            findings.push(format!("syncbat missing required plane src/{module}"));
+        if !base.join(format!("src/{module}/types.rs")).exists() {
+            findings.push(format!("syncbat missing required plane src/{module}/types.rs"));
         }
     }
 }

@@ -34,32 +34,32 @@ machine-derived and audited, never hand-counted here.
 <!-- SPEC-MODULE-CATALOG:BEGIN generated from spec/lib.rs by bootstrap/project.py; do not edit -->
 | Module | Shape |
 | --- | --- |
-| `architecture.rs` | concept door + `architecture/` (5 modules) |
-| `bootstrap_output.rs` | single module |
-| `bootstrap_qualification.rs` | concept door + `bootstrap_qualification/` (4 modules) |
-| `commands.rs` | single module |
-| `compiler_assumptions.rs` | single module |
-| `contracts.rs` | single module |
-| `corpus.rs` | single module |
-| `dispositions.rs` | single module |
-| `gates.rs` | single module |
-| `generated_views.rs` | concept door + `generated_views/` (2 modules) |
-| `guarantees.rs` | concept door + `guarantees/` (2 modules) |
-| `identities.rs` | single module |
-| `invariants.rs` | single module |
-| `legacy_invariant_coverage.rs` | single module |
-| `legacy_obligations.rs` | single module |
-| `mutation.rs` | single module |
-| `operators.rs` | single module |
-| `promotion.rs` | single module |
-| `pakvm_isa.rs` | concept door + `pakvm_isa/` (5 modules) |
-| `proof.rs` | single module |
-| `reconciliation.rs` | single module |
-| `sprouting.rs` | single module |
-| `syncbat_firewall.rs` | single module |
-| `tier0_cross_run.rs` | concept door + `tier0_cross_run/` (3 modules) |
-| `toolchain.rs` | single module |
-| `verification.rs` | concept door + `verification/` (6 modules) |
+| `architecture/` | domain directory (5 modules) |
+| `bootstrap_output/` | domain directory (2 modules) |
+| `bootstrap_qualification/` | domain directory (4 modules) |
+| `commands/` | domain directory (2 modules) |
+| `compiler_assumptions/` | domain directory (2 modules) |
+| `contracts/` | domain directory (2 modules) |
+| `corpus/` | domain directory (2 modules) |
+| `dispositions/` | domain directory (3 modules) |
+| `gates/` | domain directory (3 modules) |
+| `generated_views/` | domain directory (3 modules) |
+| `guarantees/` | domain directory (3 modules) |
+| `identities/` | domain directory (3 modules) |
+| `invariants/` | domain directory (3 modules) |
+| `legacy_invariant_coverage/` | domain directory (3 modules) |
+| `legacy_obligations/` | domain directory (3 modules) |
+| `mutation/` | domain directory (2 modules) |
+| `operators/` | domain directory (3 modules) |
+| `promotion/` | domain directory (2 modules) |
+| `pakvm_isa/` | domain directory (6 modules) |
+| `proof/` | domain directory (4 modules) |
+| `reconciliation/` | domain directory (3 modules) |
+| `sprouting/` | domain directory (5 modules) |
+| `syncbat_firewall/` | domain directory (4 modules) |
+| `tier0_cross_run/` | domain directory (5 modules) |
+| `toolchain/` | domain directory (2 modules) |
+| `verification/` | domain directory (7 modules) |
 | | 26 modules behind the one `lib.rs` boundary |
 <!-- SPEC-MODULE-CATALOG:END -->
 

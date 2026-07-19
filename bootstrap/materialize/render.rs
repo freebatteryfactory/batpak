@@ -4,7 +4,7 @@ use crate::plan::{no_std_capable, opt_in_profiles};
 
 pub(crate) fn workspace_manifest() -> String {
     let mut out = String::new();
-    out.push_str("# Generated from spec/bootstrap_output.rs, spec/architecture.rs, and spec/toolchain.rs by bootstrap/materialize.rs.\n");
+    out.push_str("# Generated from spec/bootstrap_output/types.rs, spec/architecture/types.rs, and spec/toolchain/types.rs by bootstrap/materialize.rs.\n");
     // The resolver, edition, and MSRV floor come from the typed toolchain
     // owner (5.5E3a). A literal here would be a second authority the audit
     // scans for and refuses.
@@ -170,7 +170,7 @@ pub(crate) fn package_manifest(package: &architecture::PackageSpec) -> String {
 
 pub(crate) fn package_readme(package: &architecture::PackageSpec) -> String {
     format!(
-        "# {}\n\nGate-0 package skeleton.\n\n**Authority:** {}\n\nThe normative owner and dependency facts live in `spec/architecture.rs`. This file does not widen that role.\n",
+        "# {}\n\nGate-0 package skeleton.\n\n**Authority:** {}\n\nThe normative owner and dependency facts live in `spec/architecture/inventory.rs`. This file does not widen that role.\n",
         package.id.cargo_name(), package.role
     )
 }
@@ -240,30 +240,37 @@ fn example_source(package: &architecture::PackageSpec) -> String {
     )
 }
 
-pub(crate) fn plane_module_source(plane: architecture::SyncBatPlane) -> String {
+pub(crate) fn plane_module_door(plane: architecture::SyncBatPlane) -> String {
     // The description is the plane's authored docs/08 ownership sentence: a
     // materializer must not own a second description of what a plane means.
+    // The door's docs absorb the ownership prose the retired plane README
+    // carried; no README artifact exists in the output grammar.
     let name = plane.module_name();
     let ownership = plane.authored_ownership();
     format!(
-        "//! SyncBat `{name}` plane: {ownership}.\n\n/// Gate-0 marker. Semantic types and transitions land only at their signed gate.\npub const PLANE_ID: &str = \"{name}\";\n"
+        "//! SyncBat `{name}` plane: {ownership}.\n//!\n//! This directory is the plane's semantic ownership boundary: `mod.rs` is\n//! the plane facade and the private `types.rs` carries the plane's canonical\n//! nouns. Same-concept implementation files land here when the owning gate\n//! lands.\n\nmod types;\n\n/// Gate-0 marker. Semantic types and transitions land only at their signed gate.\npub const PLANE_ID: &str = \"{name}\";\n"
     )
 }
 
-pub(crate) fn plane_directory_readme(plane: architecture::SyncBatPlane) -> String {
+pub(crate) fn plane_types_carrier(plane: architecture::SyncBatPlane) -> String {
     let name = plane.module_name();
-    let ownership = plane.authored_ownership();
     format!(
-        "# `{name}` plane\n\nOwner: {ownership}.\n\nThe root `{name}.rs` file owns the public module and primary type spine. This directory holds same-concept implementation files when the owning gate lands.\n"
+        "//! Canonical noun carrier for the `{name}` plane. The plane's vocabulary\n//! arrives only at its signed gate; until then this carrier is intentionally\n//! empty.\n"
     )
+}
+
+pub(crate) fn cargo_config() -> String {
+    // Native Cargo 1.97 warnings-deny for the GENERATED workspace only; the
+    // bootstrap tools keep #![deny(warnings)] in their own sources.
+    "[build]\nwarnings = \"deny\"\n".to_owned()
 }
 
 pub(crate) fn toolchain_manifest() -> String {
     // The workspace toolchain selection is the SAME deterministic projection
     // the tracked root file carries: one owner, two consumers. Since 5.5E4a
     // the tracked bytes open with the registered provenance line
-    // (spec/generated_views.rs RustToolchain), so both consumers project the
-    // TRACKED form.
+    // (spec/generated_views/registry.rs RustToolchain), so both consumers
+    // project the TRACKED form.
     toolchain::TOOLCHAIN.tracked_root_toolchain_toml()
 }
 

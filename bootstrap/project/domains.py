@@ -16,11 +16,11 @@ from .registry import _spec_module_source, parse_generated_views
 
 
 # --- Promotion requirements projection (5.5E3i) ------------------------------
-# spec/promotion.rs owns the conjunctive denominator; docs/12 carries the
+# spec/promotion/types.rs owns the conjunctive denominator; docs/12 carries the
 # generated table. This projector parses the typed owner — never a Python
 # list of the four requirements.
 def parse_promotion(root):
-    src = (root / "spec/promotion.rs").read_text(encoding="utf-8")
+    src = (root / "spec/promotion/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[PromotionRequirement\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"\bPromotionRequirement::(\w+)", all_body.group(1)) \
@@ -41,7 +41,7 @@ def parse_promotion(root):
                           arms["admission_basis"].get(v, ""))
         if not s or not owner or not basis:
             raise Unadmitted(
-                f"spec/promotion.rs: PromotionRequirement::{v} facts unreadable")
+                f"spec/promotion/types.rs: PromotionRequirement::{v} facts unreadable")
         rows.append((s, owner.group(1), basis.group(1)))
     surface = re.search(r"ProofPolicySurface::(\w+);", src)
     change = re.search(
@@ -49,7 +49,7 @@ def parse_promotion(root):
     egate = re.search(r"PROMOTION_ENFORCEMENT_GATE: GateId = GateId::(\w+);", src)
     rgate = re.search(r"PROMOTION_RELEASE_VISIBILITY_GATE: GateId = GateId::(\w+);", src)
     if not rows or not surface or not change or not egate or not rgate:
-        raise Unadmitted("spec/promotion.rs: family facts unreadable")
+        raise Unadmitted("spec/promotion/types.rs: family facts unreadable")
     return rows, surface.group(1), change.group(1), egate.group(1), rgate.group(1)
 
 
@@ -65,7 +65,8 @@ def render_promotion(root):
 
 
 SYSTEM_DOC = "docs/02_SYSTEM_MODEL.md"
-RECON_SPEC = "spec/reconciliation.rs"
+RECON_SPEC = "spec/reconciliation/inventory.rs"
+RECON_TYPES = "spec/reconciliation/types.rs"
 
 
 def recon_coordinates(root: Path) -> list[tuple[str, list[str], str]]:
@@ -97,7 +98,7 @@ def render_recon_coordinates(root: Path) -> str:
 
 def recon_retry(root: Path) -> tuple[list[str], list[str]]:
     """(admissible, inadmissible) retry signals from the typed classification."""
-    src = (root / RECON_SPEC).read_text(encoding="utf-8")
+    src = (root / RECON_TYPES).read_text(encoding="utf-8")
     start = src.index("pub const fn admissible")
     body = src[start: src.index("\n    }", start)]
     adm: list[str] = []
@@ -125,7 +126,7 @@ TESTPAK_DOC = "docs/12_TESTPAK.md"
 
 
 def proof_terminals(root: Path) -> list[str]:
-    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    src = (root / "spec/proof/types.rs").read_text(encoding="utf-8")
     start = src.index("pub const PROOF_UNIT_TERMINALS")
     names = re.findall(r"ProofUnitTerminal::(\w+)",
                        src[start: src.index("\n];", start)])
@@ -141,10 +142,10 @@ def render_proof_terminals(root: Path) -> str:
 # --- PakVM semantic ISA projection (D4c1) -----------------------------------
 # GENERATOR half. `bootstrap/audit.py` re-derives all of this independently and
 # compares; the two share no parsing or admission logic. Neither may author node
-# semantics: `spec/pakvm_isa.rs` owns them, this reads them, and a node whose
-# spec does not admit is not projected at all.
+# semantics: the `spec/pakvm_isa/` domain owns them, this reads them, and a node
+# whose spec does not admit is not projected at all.
 
-ISA_SPEC = "spec/pakvm_isa.rs"
+ISA_SPEC = "spec/pakvm_isa/"
 ISA_DOC = "docs/07_PAKVM_ISA.md"
 P_ISA_ARM = re.compile(
     r"((?:\|?\s*PakVmNodeId::\w+\s*)+)=>\s*\{?\s*"
@@ -224,9 +225,10 @@ def _isa_planes(src: str) -> tuple[dict[str, list[str]], dict[str, str]]:
 
 
 def pakvm_specs(root: Path) -> list[dict]:
-    """Admitted PakVM node specs, derived independently of spec/pakvm_isa.rs's
-    own `admit`. A node that does not admit raises: a projector serializes an
-    admitted spec and may never complete one."""
+    """Admitted PakVM node specs, derived independently of the pakvm_isa
+    domain's own `admit` (spec/pakvm_isa/admission.rs). A node that does not
+    admit raises: a projector serializes an admitted spec and may never
+    complete one."""
     src = _spec_module_source(root, "pakvm_isa")
     m = P_ISA_NODES.search(src)
     nodes = P_ISA_VARIANT.findall(m.group(1)) if m else []
@@ -315,8 +317,9 @@ def render_pakvm_signatures(root) -> str:
     return "\n".join(out).rstrip("\n") + "\n```"
 
 
-FIREWALL_SPEC = "spec/syncbat_firewall.rs"
-ARCH_SPEC = "spec/architecture.rs"
+FIREWALL_SPEC = "spec/syncbat_firewall/types.rs"
+FIREWALL_INVENTORY = "spec/syncbat_firewall/inventory.rs"
+ARCH_SPEC = "spec/architecture/types.rs"
 SYNCBAT_DOC = "docs/08_SYNCBAT_RUNTIME.md"
 P_COMMENT = re.compile(r"//[^\n]*")
 
@@ -350,7 +353,8 @@ def syncbat_firewall_facts(root: Path) -> dict:
     authority no matter what its docstring claims."""
     arch = _spec_module_source(root, "architecture")
     src = (root / FIREWALL_SPEC).read_text(encoding="utf-8")
-    # Plane identity and the ownership sentences: spec/architecture.rs owns both.
+    inv = (root / FIREWALL_INVENTORY).read_text(encoding="utf-8")
+    # Plane identity and the ownership sentences: spec/architecture/types.rs owns both.
     # The inventory is SyncBatPlane::ALL (5.5E5); the raw SYNCBAT_PLANES alias
     # retired with the isolated-materializer closure.
     m = re.search(r"pub const ALL: &'static \[SyncBatPlane\] = &\[(.*?)\];", arch, re.S)
@@ -363,7 +367,7 @@ def syncbat_firewall_facts(root: Path) -> dict:
     for plane in order:
         if not sentences.get(plane):
             raise Unadmitted(f"{ARCH_SPEC}: plane {plane} authors no ownership sentence")
-    # Authority ownership: spec/syncbat_firewall.rs owns it.
+    # Authority ownership: spec/syncbat_firewall/types.rs owns it.
     listed = _const_list(src, "SYNCBAT_AUTHORITIES", "SyncBatAuthority", FIREWALL_SPEC)
     if not listed:
         raise Unadmitted(f"{FIREWALL_SPEC}: SYNCBAT_AUTHORITIES lists no authority")
@@ -386,9 +390,9 @@ def syncbat_firewall_facts(root: Path) -> dict:
         if plane not in order:
             raise Unadmitted(f"{FIREWALL_SPEC}: authority {name} names {plane}, which is no plane")
         authorities.append({"authority": name, "owner": plane, "origin": name in semantic})
-    # The legal-crossing whitelist: spec/syncbat_firewall.rs owns it.
+    # The legal-crossing whitelist: spec/syncbat_firewall/inventory.rs owns it.
     crossings = []
-    for row in _struct_rows(src, "SYNCBAT_LEGAL_CROSSINGS", "SyncBatCrossing"):
+    for row in _struct_rows(inv, "SYNCBAT_LEGAL_CROSSINGS", "SyncBatCrossing"):
         frm = row.get("from", "").split("::")[-1]
         to = row.get("to", "").split("::")[-1]
         carries = row.get("carries", "").split("::")[-1]
@@ -396,20 +400,20 @@ def syncbat_firewall_facts(root: Path) -> dict:
         law = row.get("law", "").strip().strip('"')
         for plane in (frm, to):
             if plane not in order:
-                raise Unadmitted(f"{FIREWALL_SPEC}: a crossing names {plane!r}, which is no plane")
+                raise Unadmitted(f"{FIREWALL_INVENTORY}: a crossing names {plane!r}, which is no plane")
         if carries not in listed:
-            raise Unadmitted(f"{FIREWALL_SPEC}: a crossing carries {carries!r}, "
+            raise Unadmitted(f"{FIREWALL_INVENTORY}: a crossing carries {carries!r}, "
                              f"which SYNCBAT_AUTHORITIES does not author")
         # No default. An absent posture is not silently Optional; it is a refusal.
         if posture not in ("Required", "Optional"):
-            raise Unadmitted(f"{FIREWALL_SPEC}: the {frm} -> {to} crossing states no "
+            raise Unadmitted(f"{FIREWALL_INVENTORY}: the {frm} -> {to} crossing states no "
                              f"requiredness posture (got {posture!r})")
         if not law:
-            raise Unadmitted(f"{FIREWALL_SPEC}: the {frm} -> {to} crossing states no law")
+            raise Unadmitted(f"{FIREWALL_INVENTORY}: the {frm} -> {to} crossing states no law")
         crossings.append({"from": frm, "to": to, "carries": carries,
                           "posture": posture, "law": law})
     if not crossings:
-        raise Unadmitted(f"{FIREWALL_SPEC}: SYNCBAT_LEGAL_CROSSINGS lists no crossing")
+        raise Unadmitted(f"{FIREWALL_INVENTORY}: SYNCBAT_LEGAL_CROSSINGS lists no crossing")
     return {"order": order, "sentences": sentences,
             "authorities": authorities, "crossings": crossings}
 
@@ -434,13 +438,13 @@ def render_syncbat_crossings(root) -> str:
 
 
 # --- The Gate-0 materialization plan (5.5E5) ---------------------------------
-# spec/bootstrap_output.rs owns the output shape; spec/architecture.rs owns
-# package and plane membership; spec/toolchain.rs owns the toolchain file the
-# plan carries. This renderer expands the complete candidate file plan in
+# spec/bootstrap_output/types.rs owns the output shape; spec/architecture/types.rs
+# owns package and plane membership; spec/toolchain/types.rs owns the toolchain
+# file the plan carries. This renderer expands the complete candidate file plan in
 # canonical order -- roots, then packages, then SyncBat planes -- and derives
 # every path from the typed owners. It carries no file table of its own.
 
-BO_SPEC = "spec/bootstrap_output.rs"
+BO_SPEC = "spec/bootstrap_output/types.rs"
 
 
 def gate0_plan_facts(root: Path) -> list[dict]:
@@ -533,9 +537,15 @@ def gate0_plan_facts(root: Path) -> list[dict]:
         if not module or not syncbat_base:
             raise Unadmitted(f"{ARCH_SPEC}: plane {plane} projects no module name")
         for family in plane_families:
-            path = (f"{syncbat_base}/src/{module}.rs" if family == "Module"
-                    else f"{syncbat_base}/src/{module}/README.md")
-            rows.append({"path": path, "family": f"SyncBat plane / {family}",
+            # A plane is a directory under the domain-directory grammar:
+            # mod.rs is the plane facade, types.rs the private noun carrier.
+            suffix = {"ModuleDoor": f"{module}/mod.rs",
+                      "TypesCarrier": f"{module}/types.rs"}.get(family)
+            if not suffix:
+                raise Unadmitted(
+                    f"{BO_SPEC}: plane artifact family {family} projects no path")
+            rows.append({"path": f"{syncbat_base}/src/{suffix}",
+                         "family": f"SyncBat plane / {family}",
                          "derivation": f"SyncBatPlane::{plane}"})
     seen: set[str] = set()
     for row in rows:
@@ -583,8 +593,8 @@ _V_ACTIVE_ROW = re.compile(
 
 def render_verification_plans(root: Path) -> str:
     """docs/38 VERIFICATION-PLANS: the named plans' exact axis tuples and
-    every active proof row's claim + plan, parsed from spec/proof.rs."""
-    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    every active proof row's claim + plan, parsed from spec/proof/inventory.rs."""
+    src = (root / "spec/proof/inventory.rs").read_text(encoding="utf-8")
     lines = ["| Plan | Method | Basis | Coverage | Lane | Enforcement |",
              "| --- | --- | --- | --- | --- | --- |"]
     for name, body in _V_PLAN_ROW.findall(src):
@@ -600,9 +610,9 @@ def render_verification_plans(root: Path) -> str:
 
 
 # --- Proof relations and the complete legacy ledger (5.5E4d) -----------------
-# spec/proof.rs owns proof-row identity, lifecycle, succession, guarantee
-# binding, and projection membership; spec/legacy_obligations.rs owns the
-# complete obligation row. No Python relation map, no LEG witness map, no
+# spec/proof/inventory.rs owns proof-row identity, lifecycle, succession,
+# guarantee binding, and projection membership; spec/legacy_obligations/inventory.rs
+# owns the complete obligation row. No Python relation map, no LEG witness map, no
 # heading parser, no ContractId-to-path map: domain selection is SOLELY the
 # target document's authored contract_id matching an active row's
 # projection_contracts, with the target path coming from the registry.
@@ -625,7 +635,7 @@ _LEG_FULL_RE = re.compile(
 
 
 def parse_proof_relations(root: Path):
-    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    src = (root / "spec/proof/inventory.rs").read_text(encoding="utf-8")
     active = [{"id": m[0], "family": m[1], "guarantee": m[2],
                "contracts": re.findall(r'ContractId\("([^"]+)"\)', m[3])}
               for m in _PROOF_ACTIVE_RE.findall(src)]
@@ -648,7 +658,7 @@ def _doc_contract_id(root: Path, rel: str) -> str:
 
 
 def render_legacy_obligation_ledger(root: Path) -> str:
-    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    src = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     active, _retired = parse_proof_relations(root)
     by_leg: dict[str, list[str]] = {}
     for row in active:
@@ -656,7 +666,7 @@ def render_legacy_obligation_ledger(root: Path) -> str:
             by_leg.setdefault(row["guarantee"], []).append(row["id"])
     rows = _LEG_FULL_RE.findall(src)
     if not rows:
-        raise Unadmitted("spec/legacy_obligations.rs declares no complete obligation rows")
+        raise Unadmitted("spec/legacy_obligations/inventory.rs declares no complete obligation rows")
     known = {r[0] for r in rows}
     for guarantee in by_leg:
         if guarantee not in known:
@@ -744,10 +754,11 @@ def render_generated_view_registry(root: Path) -> str:
 
 
 # --- Sprouting vocabulary and specialized-plan policy (5.5F3, BP-SPROUTING-1) -
-# spec/sprouting.rs owns the candidate-sprouting vocabulary and the DEC-073
-# specialized-plan candidate policy. These projectors parse the typed owner
-# directly; no Python origin, class, role, posture, authority, or requirement
-# spelling map exists here.
+# spec/sprouting/types.rs owns the candidate-sprouting vocabulary;
+# spec/sprouting/inventory.rs owns the DEC-073 specialized-plan candidate
+# policy instance. These projectors parse the typed owners directly; no Python
+# origin, class, role, posture, authority, or requirement spelling map exists
+# here.
 _SPROUTING_VOCAB = (
     ("Candidate origins", "CANDIDATE_ORIGIN_KINDS"),
     ("Candidate change classes", "CANDIDATE_CHANGE_CLASSES"),
@@ -761,17 +772,17 @@ def _sprouting_const_variants(src: str, const_name: str) -> list[str]:
     body = re.search(
         r"pub const " + const_name + r":[^=]*= &\[(.*?)\];", src, re.S)
     if not body:
-        raise Unadmitted(f"spec/sprouting.rs: {const_name} inventory unreadable")
+        raise Unadmitted(f"spec/sprouting/types.rs: {const_name} inventory unreadable")
     variants = re.findall(r"\w+::(\w+)", body.group(1))
     if not variants:
-        raise Unadmitted(f"spec/sprouting.rs: {const_name} names no variants")
+        raise Unadmitted(f"spec/sprouting/types.rs: {const_name} names no variants")
     return variants
 
 
 def render_sprouting_vocabulary(root: Path) -> str:
     """docs/39 SPROUTING-VOCABULARY: the five frozen candidate-sprouting axes,
-    each variant in its authored inventory order, parsed from spec/sprouting.rs."""
-    src = (root / "spec/sprouting.rs").read_text(encoding="utf-8")
+    each variant in its authored inventory order, parsed from spec/sprouting/types.rs."""
+    src = (root / "spec/sprouting/types.rs").read_text(encoding="utf-8")
     sections = []
     for heading, const_name in _SPROUTING_VOCAB:
         variants = _sprouting_const_variants(src, const_name)
@@ -782,23 +793,25 @@ def render_sprouting_vocabulary(root: Path) -> str:
 def render_specialized_plan_policy(root: Path) -> str:
     """docs/07 SPECIALIZED-PLAN-CANDIDATE-POLICY: the DEC-073 candidate policy
     (owner, admission basis, change class, allowed origins, independent route,
-    conjunctive promotion requirements), parsed from spec/sprouting.rs."""
-    src = (root / "spec/sprouting.rs").read_text(encoding="utf-8")
+    conjunctive promotion requirements), parsed from spec/sprouting/inventory.rs
+    with the origin fallback resolved through spec/sprouting/types.rs."""
+    src = (root / "spec/sprouting/inventory.rs").read_text(encoding="utf-8")
     m = re.search(
         r"pub const SPECIALIZED_PLAN_CANDIDATE_POLICY: SpecializedPlanCandidatePolicy =\s*"
         r"SpecializedPlanCandidatePolicy \{(.*?)\n\s*\};", src, re.S)
     if not m:
-        raise Unadmitted("spec/sprouting.rs: SPECIALIZED_PLAN_CANDIDATE_POLICY unreadable")
+        raise Unadmitted("spec/sprouting/inventory.rs: SPECIALIZED_PLAN_CANDIDATE_POLICY unreadable")
     body = m.group(1)
     owner = re.search(r'semantic_owner: ContractId\("([^"]+)"\)', body)
     basis = re.search(r'admission_basis: GuaranteeRef::dec\("([^"]+)"\)', body)
     change = re.search(r"change_class: CandidateChangeClass::(\w+)", body)
     route = re.search(r"independent_route: IndependentEvidenceRouteKind::(\w+)", body)
     if not (owner and basis and change and route):
-        raise Unadmitted("spec/sprouting.rs: specialized-plan policy facts unreadable")
+        raise Unadmitted("spec/sprouting/inventory.rs: specialized-plan policy facts unreadable")
     origins = re.findall(r"CandidateOriginKind::(\w+)", body)
     if not origins:
-        origins = _sprouting_const_variants(src, "CANDIDATE_ORIGIN_KINDS")
+        types_src = (root / "spec/sprouting/types.rs").read_text(encoding="utf-8")
+        origins = _sprouting_const_variants(types_src, "CANDIDATE_ORIGIN_KINDS")
     reqs = re.findall(r"PromotionRequirement::(\w+)", body)
     if not reqs or "ALL" in reqs:
         reqs = [s for s, _o, _b in parse_promotion(root)[0]]

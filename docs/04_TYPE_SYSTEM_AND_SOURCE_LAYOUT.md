@@ -3,7 +3,7 @@ status: AUTHORITATIVE
 contract_id: BP-TYPE-SYSTEM-1
 authority_scope: type ownership, availability axes, typestate, and repository source grammar
 supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-13
+last_reconciled: 2026-07-19
 reconciliation_epoch: cleanroom-v1
 ---
 
@@ -13,22 +13,32 @@ reconciliation_epoch: cleanroom-v1
 
 Types make state, authority, and legal transitions visible. A developer or agent should understand a package's semantic vocabulary by opening `src/`, not by reconstructing it from helper functions and error strings.
 
-## Root concept-file spine
+## Domain-directory source grammar
 
-A primary concept owns one root file and may own a same-name directory:
+A package is a dependency, compilation, and release boundary. A directory is a semantic ownership boundary. `lib.rs` is the crate façade. Every top-level semantic domain is a directory, and its files carry named roles:
+
+- `mod.rs` — the domain façade: the `//!` charter, private `mod` declarations, and explicit re-exports. Public items pass through the domain root; no glob re-export exists.
+- `types.rs` — the domain's private canonical noun carrier. The placement test: a type belongs in `types.rs` when it defines what the domain IS, is consumed by multiple sibling files, crosses the domain boundary, or carries stable identity, authority, proof, durable, wire, or qualification meaning. Private single-algorithm state stays with its algorithm.
+- `inventory.rs` — closed authored rows: denominators and catalogs. `registry.rs` exists only for a genuine identity-to-metadata registry.
+- verb-named operation files (`encode.rs`, `admit.rs`, `verify.rs`, …) — semantic transformations and policy.
+- `ports.rs`, or a precise capability-named file — effect capability traits, never placed in `types.rs`.
+- `errors.rs` — only for a domain-wide error algebra.
+- `tests.rs` — private tests beside the seams they attack.
 
 ```text
-src/event.rs          primary event types and module declaration
+src/event/mod.rs      domain façade: charter, module declarations, explicit re-exports
+src/event/types.rs    private canonical event nouns
 src/event/encode.rs   encoding operations
 src/event/decode.rs   decoding operations
 src/event/replay.rs   replay operations
-
-src/turn.rs
-src/turn/plan.rs
-src/turn/apply.rs
+src/event/tests.rs    refusal and seam tests
 ```
 
-This replaces a universal type drawer [STALE-REF: DEC-007]. It keeps types obvious without separating them from the concept whose laws they carry.
+Subdomains recursively adopt the same grammar when they earn it: a sub-concept starts as one focused file and graduates to a directory only with independent vocabulary, multiple operations, and its own proof or effect boundary. Size alone never earns a directory. Top level is the exception: every top-level domain is a directory, universally.
+
+No global type drawer, generic helper drawer, fake microcrate, wildcard façade, or duplicate semantic owner exists. Forbidden module names without an explicit ruling: `_types`, `common`, `shared`, `helpers`, `utils`, `functions`, `logic`, `misc`. A crate-root or cross-domain type drawer, public exposure of a domain's internal types module, and domain-significant types hidden inside unrelated operation files are all forbidden.
+
+This grammar replaces a universal type drawer and the earlier root-concept-file spine [STALE-REF: DEC-007]. House-style honesty: `mod.rs` is valid Rust but not the layout the Rust Reference encourages today, which prefers a sibling `foo.rs` beside `foo/`. BatPak chooses `mod.rs` deliberately, by ruling, because the checked-in tree is itself an agent- and human-facing interface: a domain directory stays fully self-contained, at the accepted cost of worse editor-tab identity. This is BatPak house style, never a claim about the universally idiomatic modern Rust layout.
 
 ## Type placement
 
@@ -49,7 +59,7 @@ repository and proof facts
     → testpak
 ```
 
-A package may have private mechanism types, but they live under the owning concept and remain module-scoped. They appear in the navigation index; they enter the normative semantic-owner ledger only when they cross a real boundary (docs/28, 5.5E1).
+A package may have private mechanism types, but they live inside the owning domain directory and remain module-scoped. They appear in the navigation index; they enter the normative semantic-owner ledger only when they cross a real boundary (docs/28, 5.5E1).
 
 No domain-significant named type is declared inside a function.
 
@@ -212,9 +222,9 @@ Instruction kinds, lifecycle states, authority roles, delivery topologies, and t
 
 ## Required proof rows
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-065 | hash_map_iteration_cannot_influence_canonical_observables |

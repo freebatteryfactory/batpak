@@ -29,18 +29,20 @@ from .corpus import (
 # Independent gate identity reader. This deliberately does NOT share parsing,
 # ordering, or rendering with bootstrap/project.py: the auditor extracts variants
 # by pattern rather than by positional split, and builds its own canonical order
-# from spec/gates.rs. The oracle cannot manufacture the evidence it grades.
+# from spec/gates/inventory.rs. The oracle cannot manufacture the evidence it
+# grades.
 A_GATE_SPEC = re.compile(r'GateSpec \{ id: GateId::(\w+), token: "([^"]*)", title: "([^"]*)" \}')
 A_GATE_VARIANT = re.compile(r'GateId::(\w+)')
 A_GATE_ENUM = re.compile(r'pub enum GateId \{([^}]*)\}', re.S)
 
 
 def gate_inventory(root: Path) -> list[tuple[str, str, str]]:
-    return A_GATE_SPEC.findall((root / "spec" / "gates.rs").read_text(encoding="utf-8"))
+    return A_GATE_SPEC.findall(
+        (root / "spec/gates/inventory.rs").read_text(encoding="utf-8"))
 
 
 def gate_enum_variants(root: Path) -> list[str]:
-    m = A_GATE_ENUM.search((root / "spec" / "gates.rs").read_text(encoding="utf-8"))
+    m = A_GATE_ENUM.search((root / "spec/gates/types.rs").read_text(encoding="utf-8"))
     if not m:
         return []
     return [v.strip().rstrip(",") for v in m.group(1).split() if v.strip().rstrip(",")]
@@ -138,7 +140,7 @@ def _g_ids(raw: str) -> list[str]:
 
 
 def guarantee_seed_rows(root: Path) -> list[dict]:
-    src = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    src = (root / "spec/invariants/inventory.rs").read_text(encoding="utf-8")
     rows = []
     for m in G_SEED_ROW.findall(src):
         rows.append({
@@ -226,7 +228,7 @@ def guarantee_typed_witness_findings(root: Path, rows: list[dict]) -> list[str]:
 
 
 def guarantee_leg_meta(root: Path) -> dict[str, dict]:
-    leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    leg = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     out = {}
     for lid, owner, gate, compat, deletion, status in G_LEG_ROW.findall(leg):
         out[lid] = {"owner": owner, "gate_names": gate_list(gate), "compat": compat,
@@ -247,8 +249,9 @@ def _leg_lifetime(meta: dict) -> str:
 
 # --- Typed guarantee admission, independently parsed (5.5D4b) ----------------
 # This auditor no longer authors family semantics. It parses the SAME typed
-# policy the projector parses -- spec/guarantees.rs GUARANTEE_FAMILY_POLICIES and
-# the derivations owned by spec/dispositions.rs -- and verifies that every
+# policy the projector parses -- spec/guarantees/policy.rs
+# GUARANTEE_FAMILY_POLICIES and the derivations owned by
+# spec/dispositions/types.rs -- and verifies that every
 # projected field traces to it. Independent parsers are useful; duplicate policy
 # is not independence. The nine constants that used to live in both scripts are
 # gone from both.
@@ -276,7 +279,7 @@ def guarantee_family_policies(root: Path) -> dict[str, dict]:
 
 def decision_lifetime_map(root: Path) -> dict[str, str]:
     """Disposition -> GuaranteeLifetime from the typed owner's match arms."""
-    src = _uncomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    src = _uncomment((root / "spec/dispositions/types.rs").read_text(encoding="utf-8"))
     body = re.search(r"pub const fn guarantee_lifetime\(self\) -> GuaranteeLifetime \{(.*?)\n    \}",
                      src, re.S)
     out: dict[str, str] = {}
@@ -290,7 +293,7 @@ def decision_lifetime_map(root: Path) -> dict[str, str]:
 
 
 def gate_optional_decision_classes(root: Path) -> set[str]:
-    src = _uncomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    src = _uncomment((root / "spec/dispositions/types.rs").read_text(encoding="utf-8"))
     body = re.search(r"pub const fn requires_gate\(self\) -> bool \{(.*?)\n    \}", src, re.S)
     if not body:
         return set()
@@ -391,7 +394,7 @@ def guarantee_derive(root: Path) -> tuple[list[dict], list[tuple], list[str]]:
             "owner": meta["owner"], "gates": gate_render(meta["gate_names"], root),
             "derived_lifetime": _leg_lifetime(meta),
         }, "Legacy"))
-    dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dec = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     for did, dcls, dgates, disp in G_DEC_ROW.findall(dec):
         # Decision gates are node metadata; they never become graph edges.
         node = _admit("DEC", did, {
@@ -549,7 +552,7 @@ def gate_inventory_findings(root: Path) -> list[str]:
     variants = gate_enum_variants(root)
     out = []
     if not inv:
-        out.append("spec/gates.rs declares no GATES inventory")
+        out.append("spec/gates/inventory.rs declares no GATES inventory")
         return out
     ids = [g[0] for g in inv]
     tokens = [g[1] for g in inv]
@@ -584,12 +587,12 @@ def gate_reference_findings(root: Path) -> list[str]:
         out.extend(gate_findings(root, "LEG", lid, meta["gate_names"]))
         if not meta["gate_names"]:
             out.append(f"LEG {lid} names no gate")
-    src_inv = (root / "spec/invariants.rs").read_text(encoding="utf-8")
-    src_leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    src_inv = (root / "spec/invariants/inventory.rs").read_text(encoding="utf-8")
+    src_leg = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     if re.search(r'\bgates?:\s*"', src_inv):
-        out.append("spec/invariants.rs still carries a string gate field")
+        out.append("spec/invariants/inventory.rs still carries a string gate field")
     if re.search(r'\bgates?:\s*"', src_leg):
-        out.append("spec/legacy_obligations.rs still carries a string gate field")
+        out.append("spec/legacy_obligations/inventory.rs still carries a string gate field")
     return out
 
 
@@ -599,7 +602,8 @@ GATE_BLOCK_RE = re.compile(
 
 
 def gate_doc_findings(root: Path) -> list[str]:
-    """docs/25 gate inventory block equals spec/gates.rs, recomputed independently."""
+    """docs/25 gate inventory block equals spec/gates/inventory.rs, recomputed
+    independently."""
     doc = (root / "docs/25_IMPLEMENTATION_GATES.md").read_text(encoding="utf-8")
     m = GATE_BLOCK_RE.search(doc)
     if not m:
@@ -614,12 +618,12 @@ def gate_doc_findings(root: Path) -> list[str]:
             rows.append(tuple(cells))
     want = [(g[0], g[1], g[2]) for g in gate_inventory(root)]
     if rows != want:
-        return ["docs/25 GATE-INVENTORY block does not equal spec/gates.rs"]
+        return ["docs/25 GATE-INVENTORY block does not equal spec/gates/inventory.rs"]
     return []
 
 
 # --- Decision classification and gate binding (DEC-072) ---------------------
-# The AUDITOR half. Parses spec/dispositions.rs independently of
+# The AUDITOR half. Parses spec/dispositions/inventory.rs independently of
 # bootstrap/project.py and re-derives every rule from the typed row. The class,
 # never the title/ID range/document section/keyword, decides gate obligation.
 A_DEC_CLASS_ROW = re.compile(
@@ -639,7 +643,7 @@ A_DEC_GATE_OPTIONAL = {"HistoricalReceipt", "Naming"}
 
 
 def decision_rows(root: Path) -> list[dict]:
-    src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    src = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     out = []
     for did, cls, gates, disp, subject in A_DEC_CLASS_ROW.findall(src):
         out.append({"id": did, "class": cls, "gate_names": gate_list(gates),
@@ -650,7 +654,7 @@ def decision_rows(root: Path) -> list[dict]:
 def decision_class_findings(root: Path) -> list[str]:
     rows = decision_rows(root)
     out: list[str] = []
-    declared = len(re.findall(r'DecisionSpec \{ id: "DEC-', (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+    declared = len(re.findall(r'DecisionSpec \{ id: "DEC-', (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")))
     if len(rows) != declared:
         out.append(f"{declared - len(rows)} DecisionSpec row(s) carry no DecisionClass")
     for r in rows:

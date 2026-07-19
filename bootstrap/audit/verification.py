@@ -86,7 +86,7 @@ def verification_findings(root: Path) -> list[str]:
     plan admissibility, and route kinds closed by adoption."""
     out: list[str] = []
     vsrc = _spec_module_source(root, "verification")
-    psrc = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    psrc = (root / "spec/proof/inventory.rs").read_text(encoding="utf-8")
     # Frozen axes: each enum exists with exactly its ruled variants. The
     # anchor accepts both payload-free variants (`Variant,`) and the payload
     # variants VerificationBasis now carries (`Variant { route: .. },`).
@@ -94,7 +94,7 @@ def verification_findings(root: Path) -> list[str]:
         m = re.search(r"pub enum " + re.escape(axis) + r" \{(.*?)\n\}", vsrc, re.S)
         got = set(re.findall(r"^\s{4}(\w+)(?:,| \{)", m.group(1), re.M)) if m else set()
         if not got:
-            out.append(f"spec/verification.rs declares no {axis}")
+            out.append(f"spec/verification/types.rs declares no {axis}")
         elif got != want:
             out.append(f"{axis} variants {sorted(got)} != frozen {sorted(want)}")
     # Shape guard: no ordering, ranking, scoring, or numeric conversion on
@@ -109,7 +109,7 @@ def verification_findings(root: Path) -> list[str]:
          "numerically converts a verification axis"),
     ):
         if re.search(pattern, vsrc):
-            out.append(f"spec/verification.rs {law}; the axes are not a ladder (DEC-077)")
+            out.append(f"spec/verification/ {law}; the axes are not a ladder (DEC-077)")
     # Tool-neutral methods: a tool-name vocabulary may not exist anywhere in
     # the spec as a declaration.
     for rel in sorted((root / "spec").rglob("*.rs")):
@@ -122,10 +122,9 @@ def verification_findings(root: Path) -> list[str]:
     tool_sources = {
         "bootstrap/seedcheck.rs": _bootstrap_rust_source(root, "seedcheck"),
         "bootstrap/audit.py": _bootstrap_source(root, "audit"),
-        "spec/proof.rs": (root / "spec/proof.rs").read_text(encoding="utf-8")
-            if (root / "spec/proof.rs").is_file() else "",
+        "spec/proof/": _spec_module_source(root, "proof"),
     }
-    for rel in ("spec/proof.rs", "bootstrap/seedcheck.rs", "bootstrap/audit.py"):
+    for rel in ("spec/proof/", "bootstrap/seedcheck.rs", "bootstrap/audit.py"):
         if re.search(r"\bcounts_green\s*\(", tool_sources[rel]):
             out.append(f"{rel} still calls counts_green; the seam is "
                        "is_positive_semantic_terminal (5.5F2)")
@@ -207,7 +206,7 @@ def verification_findings(root: Path) -> list[str]:
     # refused pairings must not appear in the admitting arms.
     matrix = re.search(r"pub const fn admits\(.*?\n    \}", vsrc, re.S)
     if not matrix:
-        out.append("spec/verification.rs declares no admits() runtime matrix")
+        out.append("spec/verification/types.rs declares no admits() runtime matrix")
     else:
         arm = matrix.group(0)
         guard = re.search(r"PreventiveGuard => matches!\(\s*disposition,\s*([^)]*)\)", arm)
@@ -229,18 +228,18 @@ def verification_findings(root: Path) -> list[str]:
     # comparator as authority (naming it in prose as an analogy is lawful;
     # a use declaration is not).
     if re.search(r"use\s+(?:crate|spec)::tier0_cross_run", vsrc):
-        out.append("spec/verification.rs imports tier0_cross_run; the Tier 0 law is an "
+        out.append("spec/verification/ imports tier0_cross_run; the Tier 0 law is an "
                    "analogy, never product verification authority")
     # The route now lives inside the VerificationBasis payload; the retired
     # parallel `independent_route` field may not return anywhere in the plane.
     if re.search(r"\bindependent_route\b", vsrc):
-        out.append("spec/verification.rs reintroduces an independent_route field; the "
+        out.append("spec/verification/ reintroduces an independent_route field; the "
                    "route now lives inside the VerificationBasis payload (5.5F3)")
     # Enforcement is authored policy, never observed: the evidence-observation
     # struct carries no enforcement field.
     obs = re.search(r"pub struct RequirementEvidenceObservation \{(.*?)\n\}", vsrc, re.S)
     if not obs:
-        out.append("spec/verification.rs declares no RequirementEvidenceObservation")
+        out.append("spec/verification/observation.rs declares no RequirementEvidenceObservation")
     elif re.search(r"^\s{4}pub enforcement:", obs.group(1), re.M):
         out.append("RequirementEvidenceObservation carries an enforcement field; "
                    "enforcement is authored policy, never observed (5.5F3)")
@@ -248,7 +247,7 @@ def verification_findings(root: Path) -> list[str]:
     # retired spellings stay retired across the spec crate.
     for fn in ("admit_observation", "assess_plan", "admit_runtime_verification"):
         if not re.search(r"\bfn " + fn + r"\s*\(", vsrc):
-            out.append(f"spec/verification.rs declares no {fn}; the renamed 5.5F3 "
+            out.append(f"spec/verification/ declares no {fn}; the renamed 5.5F3 "
                        "verification seam is absent")
     for rel in sorted((root / "spec").rglob("*.rs")):
         src_i = rel.read_text(encoding="utf-8")
@@ -268,7 +267,7 @@ def verification_findings(root: Path) -> list[str]:
     admit_rt = re.search(
         r"pub const fn admit_runtime_verification\(.*?\n\}", vsrc, re.S)
     if not admit_rt:
-        out.append("spec/verification.rs declares no admit_runtime_verification body")
+        out.append("spec/verification/runtime.rs declares no admit_runtime_verification body")
     else:
         rt = admit_rt.group(0)
         for token, law in (
@@ -347,10 +346,9 @@ def sprouting_findings(root: Path) -> list[str]:
     policy, the Candidate identity registration, and the forbidden-vocabulary
     sweep."""
     out: list[str] = []
-    path = root / "spec/sprouting.rs"
-    if not path.is_file():
-        return ["missing spec/sprouting.rs"]
-    src = path.read_text(encoding="utf-8")
+    src = _spec_module_source(root, "sprouting")
+    if not src:
+        return ["missing spec/sprouting/"]
     # Frozen candidate vocabularies: each enum and its all-const inventory
     # carry exactly the ruled variants. The line-anchored variant scan matches
     # the verification/claim-axis reconstructions and skips per-variant doc
@@ -359,7 +357,7 @@ def sprouting_findings(root: Path) -> list[str]:
         m = re.search(r"pub enum " + kind + r" \{(.*?)\n\}", src, re.S)
         got = set(re.findall(r"^\s{4}(\w+)(?:,| \{)", m.group(1), re.M)) if m else set()
         if not got:
-            out.append(f"spec/sprouting.rs declares no {kind}")
+            out.append(f"spec/sprouting/types.rs declares no {kind}")
         elif got != want:
             out.append(f"{kind} variants {sorted(got)} != frozen {sorted(want)}")
         all_body = re.search(
@@ -367,14 +365,14 @@ def sprouting_findings(root: Path) -> list[str]:
         inv = set(re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1))) \
             if all_body else set()
         if not inv:
-            out.append(f"spec/sprouting.rs declares no {const_name} inventory")
+            out.append(f"spec/sprouting/types.rs declares no {const_name} inventory")
         elif inv != want:
             out.append(f"{const_name} inventory {sorted(inv)} != frozen {sorted(want)}")
     # The search budget carries exactly its four NonZeroU64 fields — no more,
     # no fewer, and none downgraded off NonZeroU64.
     budget = re.search(r"pub struct CandidateSearchBudget \{(.*?)\n\}", src, re.S)
     if not budget:
-        out.append("spec/sprouting.rs declares no CandidateSearchBudget")
+        out.append("spec/sprouting/types.rs declares no CandidateSearchBudget")
     else:
         nz = set(re.findall(r"pub (\w+): NonZeroU64", budget.group(1)))
         allf = set(re.findall(r"pub (\w+):", budget.group(1)))
@@ -390,7 +388,7 @@ def sprouting_findings(root: Path) -> list[str]:
     # RealizationPreserving refusing ArchitectRequired.
     admit = re.search(r"pub (?:const )?fn admit_promotion_plan\(.*?\n\}", src, re.S)
     if not admit:
-        out.append("spec/sprouting.rs declares no admit_promotion_plan body")
+        out.append("spec/sprouting/admission.rs declares no admit_promotion_plan body")
     else:
         body = admit.group(0)
         for token, law in (
@@ -414,7 +412,7 @@ def sprouting_findings(root: Path) -> list[str]:
         r"pub const SPECIALIZED_PLAN_CANDIDATE_POLICY: SpecializedPlanCandidatePolicy =\s*"
         r"SpecializedPlanCandidatePolicy \{(.*?)\n\s*\};", src, re.S)
     if not policy:
-        out.append("spec/sprouting.rs declares no SPECIALIZED_PLAN_CANDIDATE_POLICY")
+        out.append("spec/sprouting/inventory.rs declares no SPECIALIZED_PLAN_CANDIDATE_POLICY")
     else:
         pbody = policy.group(1)
         owner = re.search(r'semantic_owner: ContractId\("([^"]+)"\)', pbody)
@@ -453,19 +451,19 @@ def sprouting_findings(root: Path) -> list[str]:
                            "lifecycle are derived from required manifest and receipt "
                            "fields, never a parallel vocabulary (DEC-079/DEC-080)")
     # The Candidate lineage identity is registered with owner BP-SPROUTING-1.
-    isrc = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    isrc = (root / "spec/identities/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[IdentityKind\] = &\[(.*?)\];", isrc, re.S)
     inventory = re.findall(r"\bIdentityKind::(\w+)", all_body.group(1)) \
         if all_body else []
     if "Candidate" not in inventory:
-        out.append("spec/identities.rs omits IdentityKind::Candidate from "
+        out.append("spec/identities/types.rs omits IdentityKind::Candidate from "
                    "IdentityKind::ALL")
     arm = re.search(
         r"\bIdentityKind::Candidate => \{?\s*entry!\(\s*\"([^\"]+)\",\s*\"([^\"]+)\"\s*\)",
         isrc)
     if not arm:
-        out.append("spec/identities.rs declares no IdentityKind::Candidate catalog "
+        out.append("spec/identities/types.rs declares no IdentityKind::Candidate catalog "
                    "entry")
     else:
         if arm.group(1) != "CandidateId":

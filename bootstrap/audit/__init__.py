@@ -635,8 +635,8 @@ __all__ = [
 
 
 def check_guarantees(root: Path, findings: list[str]) -> None:
-    if not (root / "spec/guarantees.rs").is_file():
-        findings.append("missing spec/guarantees.rs")
+    if not (root / "spec/guarantees/mod.rs").is_file():
+        findings.append("missing spec/guarantees/mod.rs")
         return
     seed_rows = guarantee_seed_rows(root)
     findings.extend(guarantee_typed_relation_findings(seed_rows))
@@ -691,7 +691,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     if len(node_ids) != len(nodes):
         findings.append("duplicate guarantee id across source families")
     # duplicate-prose structural smell (SEED only; exact normalized text + owner, no relation)
-    seed_src = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    seed_src = (root / "spec/invariants/inventory.rs").read_text(encoding="utf-8")
     stmts = re.findall(r'id: "([^"]+)", statement: "((?:[^"\\]|\\.)*)"', seed_src)
     seen_text: dict[tuple[str, str], str] = {}
     rel_by_id = {r["id"]: r["rel"] for r in seed_rows}
@@ -717,7 +717,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
         derived_rows = [(r["id"], r["kind"], r["lifetime"], r["owner"],
                          gate_render(r["gate_names"], root), r["witness"]) for r in seed_rows]
         if block_rows != derived_rows:
-            findings.append("docs/23 SEED-CLASSIFICATION block does not equal spec/invariants.rs")
+            findings.append("docs/23 SEED-CLASSIFICATION block does not equal spec/invariants/inventory.rs")
     graph_path = root / "docs/GUARANTEE_GRAPH.generated.md"
     if not graph_path.is_file():
         findings.append("missing docs/GUARANTEE_GRAPH.generated.md")
@@ -749,9 +749,9 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
 
 
 def check_architecture(root: Path, findings: list[str]) -> None:
-    path = root / "spec/architecture.rs"
+    path = root / "spec/architecture/mod.rs"
     if not path.is_file():
-        findings.append("missing spec/architecture.rs")
+        findings.append("missing spec/architecture/mod.rs")
         return
     findings.extend(toolchain_findings(root))
     source = _spec_module_source(root, "architecture")
@@ -765,10 +765,10 @@ def check_architecture(root: Path, findings: list[str]) -> None:
         r"pub const ALL: &'static \[PackageId\] = &\[(.*?)\];", source, re.S)
     inventory = re.findall(r"PackageId::(\w+)", all_body.group(1)) if all_body else []
     for missing in sorted(set(variants) - set(inventory)):
-        findings.append(f"spec/architecture.rs: PackageId::{missing} is omitted "
+        findings.append(f"spec/architecture/types.rs: PackageId::{missing} is omitted "
                         "from PackageId::ALL, the one package inventory")
     for phantom in sorted(set(inventory) - set(variants)):
-        findings.append(f"spec/architecture.rs: PackageId::ALL names {phantom}, "
+        findings.append(f"spec/architecture/types.rs: PackageId::ALL names {phantom}, "
                         "which the enum does not declare")
     package_rows = re.findall(
         r"PackageSpec\s*\{\s*id:\s*PackageId::(\w+),\s*role:\s*\"([^\"]+)\",\s*class:\s*PackageClass::([A-Za-z]+),\s*layer:\s*([0-9]+),\s*\}",
@@ -776,24 +776,24 @@ def check_architecture(root: Path, findings: list[str]) -> None:
         re.S,
     )
     if not package_rows:
-        findings.append("spec/architecture.rs: no package rows parsed")
+        findings.append("spec/architecture/inventory.rs: no package rows parsed")
         return
     if [row[0] for row in package_rows] != inventory:
-        findings.append("spec/architecture.rs: PACKAGES does not declare exactly "
+        findings.append("spec/architecture/inventory.rs: PACKAGES does not declare exactly "
                         "PackageId::ALL in canonical order")
     packages = [cargo.get(row[0], "") for row in package_rows]
     paths = [wpaths.get(row[0], "") for row in package_rows]
     layers = {cargo.get(row[0], ""): int(row[3]) for row in package_rows}
     if len(packages) != len(set(packages)):
-        findings.append("spec/architecture.rs: two package identities project the same cargo name")
+        findings.append("spec/architecture/types.rs: two package identities project the same cargo name")
     if len(paths) != len(set(paths)):
-        findings.append("spec/architecture.rs: two package identities project the same workspace path")
+        findings.append("spec/architecture/types.rs: two package identities project the same workspace path")
     for variant, role, package_class, layer in package_rows:
         wp = wpaths.get(variant, "")
         if (not cargo.get(variant) or not wp or wp.startswith("/") or ".." in wp.split("/")
                 or not role or package_class not in {"Production", "BinaryAdapter", "DevOnly", "Example"}
                 or not layer.isdigit()):
-            findings.append(f"spec/architecture.rs: incomplete package {variant}")
+            findings.append(f"spec/architecture/inventory.rs: incomplete package {variant}")
 
     edge_rows = re.findall(
         r"EdgeSpec\s*\{\s*importer:\s*PackageId::(\w+),\s*importee:\s*PackageId::(\w+),\s*class:\s*EdgeClass::([A-Za-z]+),\s*profile:\s*\"([^\"]+)\"\s*\}",
@@ -805,14 +805,14 @@ def check_architecture(root: Path, findings: list[str]) -> None:
     package_set = set(packages)
     for importer, importee, edge_class, profile in edge_rows:
         if importer not in package_set or importee not in package_set:
-            findings.append(f"spec/architecture.rs: unknown package in edge {importer} -> {importee}")
+            findings.append(f"spec/architecture/inventory.rs: unknown package in edge {importer} -> {importee}")
             continue
         if importer == importee:
-            findings.append(f"spec/architecture.rs: self edge {importer}")
+            findings.append(f"spec/architecture/inventory.rs: self edge {importer}")
         if edge_class not in {"Required", "OptionalProfile", "DevOnly"} or not profile:
-            findings.append(f"spec/architecture.rs: incomplete edge {importer} -> {importee}")
+            findings.append(f"spec/architecture/inventory.rs: incomplete edge {importer} -> {importee}")
         if importer in layers and importee in layers and layers[importer] <= layers[importee]:
-            findings.append(f"spec/architecture.rs: dependency direction violation {importer}(L{layers[importer]}) -> {importee}(L{layers[importee]})")
+            findings.append(f"spec/architecture/inventory.rs: dependency direction violation {importer}(L{layers[importer]}) -> {importee}(L{layers[importee]})")
         graph[importer].append(importee)
 
     visiting: set[str] = set()
@@ -834,7 +834,7 @@ def check_architecture(root: Path, findings: list[str]) -> None:
     for package in packages:
         visiting.clear()
         if cycle(package):
-            findings.append(f"spec/architecture.rs: dependency cycle reaches {package}")
+            findings.append(f"spec/architecture/inventory.rs: dependency cycle reaches {package}")
             break
 
     profile_rows = re.findall(
@@ -849,15 +849,15 @@ def check_architecture(root: Path, findings: list[str]) -> None:
     for package, profile, environment, gates, requirement in profile_rows:
         identity = (package, profile)
         if package not in package_set or not profile or not environment or not requirement or not gates:
-            findings.append(f"spec/architecture.rs: incomplete qualification {package}:{profile}")
+            findings.append(f"spec/architecture/inventory.rs: incomplete qualification {package}:{profile}")
         if identity in identities:
-            findings.append(f"spec/architecture.rs: duplicate qualification {package}:{profile}")
+            findings.append(f"spec/architecture/inventory.rs: duplicate qualification {package}:{profile}")
         identities.add(identity)
     for package in ("batpak", "syncbat"):
         if (package, "semantic") not in identities or not any(
             row[0] == package and row[1] == "semantic" and row[2] == "NoStdAlloc" for row in profile_rows
         ):
-            findings.append(f"spec/architecture.rs: missing no_std + alloc semantic profile for {package}")
+            findings.append(f"spec/architecture/inventory.rs: missing no_std + alloc semantic profile for {package}")
 
     # The materializer selects behavior by PackageId, never by raw name: a
     # cargo-name string comparison is identity laundering (5.5E3b).
@@ -871,10 +871,10 @@ def check_architecture(root: Path, findings: list[str]) -> None:
 
     for relative in string_array(source, "REQUIRED_DOCS"):
         if not (root / relative).is_file():
-            findings.append(f"spec/architecture.rs: required file missing {relative}")
+            findings.append(f"spec/architecture/inventory.rs: required file missing {relative}")
     for relative in string_array(source, "FORBIDDEN_TARGET_PATHS"):
         if (root / relative).exists():
-            findings.append(f"spec/architecture.rs: forbidden path exists {relative}")
+            findings.append(f"spec/architecture/inventory.rs: forbidden path exists {relative}")
     syncbat_root = root / "crates/syncbat"
     if syncbat_root.exists():
         # Plane files derive from the typed inventory (5.5E5); the raw
@@ -882,17 +882,17 @@ def check_architecture(root: Path, findings: list[str]) -> None:
         arm = re.search(r"pub const fn module_name\(self\)[^{]*\{(.*?)\n    \}",
                         source, re.S)
         for module in re.findall(r'=>\s*"([^"]+)"', arm.group(1)) if arm else []:
-            for relative in (f"src/{module}.rs", f"src/{module}"):
+            for relative in (f"src/{module}/mod.rs", f"src/{module}/types.rs"):
                 if not (syncbat_root / relative).exists():
                     findings.append(f"syncbat source missing declared plane {relative}")
 
 
 def check_seed_ids(root: Path, findings: list[str]) -> None:
     sources = {
-        "invariant": (root / "spec/invariants.rs", r'id:\s*"(SEED-[A-Z0-9-]+)"'),
-        "decision": (root / "spec/dispositions.rs", r'id:\s*"(DEC-[0-9]+)"'),
-        "legacy": (root / "spec/legacy_obligations.rs", r'id:\s*"(LEG-[0-9]+)"'),
-        "legacy_coverage": (root / "spec/legacy_invariant_coverage.rs", r'legacy_id:\s*"(INV-[A-Z0-9-]+)"'),
+        "invariant": (root / "spec/invariants/inventory.rs", r'id:\s*"(SEED-[A-Z0-9-]+)"'),
+        "decision": (root / "spec/dispositions/inventory.rs", r'id:\s*"(DEC-[0-9]+)"'),
+        "legacy": (root / "spec/legacy_obligations/inventory.rs", r'id:\s*"(LEG-[0-9]+)"'),
+        "legacy_coverage": (root / "spec/legacy_invariant_coverage/inventory.rs", r'legacy_id:\s*"(INV-[A-Z0-9-]+)"'),
     }
     parsed: dict[str, list[str]] = {}
     for kind, (path, pattern) in sources.items():
@@ -927,7 +927,7 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         "OpenImplementation": "OPEN-IMPLEMENTATION",
         "RetainAsEvidence": "RETAIN-AS-EVIDENCE",
     }
-    decision_source = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    decision_source = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     decision_seed_rows = {
         ident: (disposition_tags[variant], subject, successor, dclass,
                 gate_render(gate_list(dgates), root))
@@ -957,7 +957,7 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         legacy_doc_rows[ident] = (
             clean(law), clean(owner), clean(gate), clean(compat), clean(deletion), clean(status)
         )
-    legacy_source = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    legacy_source = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     legacy_seed_rows = {
         ident: (law, owner, gate_render(gate_list(gates), root), compat, deletion, status)
         for ident, law, owner, gates, compat, deletion, status in re.findall(
@@ -998,7 +998,7 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         "Kill": "KILL",
         "Requalify": "REQUALIFY",
     }
-    coverage_source = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+    coverage_source = (root / "spec/legacy_invariant_coverage/inventory.rs").read_text(encoding="utf-8")
     coverage_seed_rows = {
         ident: (coverage_tags[variant], successor, rationale)
         for ident, variant, successor, rationale in re.findall(
@@ -1015,7 +1015,7 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
         findings.append("legacy invariant coverage source commit is missing or not a full SHA")
     manifest_ids = string_array(coverage_source, "SOURCE_INVARIANT_IDS")
     if not manifest_ids:
-        findings.append("spec/legacy_invariant_coverage.rs: missing SOURCE_INVARIANT_IDS manifest")
+        findings.append("spec/legacy_invariant_coverage/inventory.rs: missing SOURCE_INVARIANT_IDS manifest")
     else:
         findings.extend(
             legacy_manifest_findings(manifest_ids, parsed.get("legacy_coverage", []), expected_count)

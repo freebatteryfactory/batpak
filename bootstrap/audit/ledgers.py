@@ -28,7 +28,8 @@ from .corpus import (
 from .guarantees import G_LEG_ROW, g_package_projection
 
 # --- Generated-view registry (5.5E4a) ----------------------------------------
-# spec/generated_views.rs is the closed denominator of every repository-
+# spec/generated_views/registry.rs is the closed denominator of every
+# repository-
 # generated view. This auditor parses the typed registry INDEPENDENTLY of
 # bootstrap/project.py (never importing it or executing its parser), scans
 # every tracked Markdown document for generated markers, and proves true set
@@ -96,20 +97,20 @@ def generated_view_findings(root: Path) -> list[str]:
     reg = a_parse_generated_views(root)
     variants, order, views = reg["variants"], reg["order"], reg["views"]
     if not order:
-        out.append("spec/generated_views.rs declares no GeneratedView::ALL inventory")
+        out.append("spec/generated_views/registry.rs declares no GeneratedView::ALL inventory")
     for variant in variants:
         if variant not in order:
-            out.append(f"spec/generated_views.rs: GeneratedView::{variant} is declared "
+            out.append(f"spec/generated_views/registry.rs: GeneratedView::{variant} is declared "
                        "but missing from GeneratedView::ALL")
     for variant in order:
         if variant not in variants:
-            out.append(f"spec/generated_views.rs: GeneratedView::ALL names {variant}, "
+            out.append(f"spec/generated_views/registry.rs: GeneratedView::ALL names {variant}, "
                        "which the enum does not declare")
     for duplicate in sorted({v for v in order if order.count(v) > 1}):
-        out.append(f"spec/generated_views.rs: GeneratedView::ALL repeats {duplicate}")
+        out.append(f"spec/generated_views/registry.rs: GeneratedView::ALL repeats {duplicate}")
     for variant in order:
         if variant not in views:
-            out.append(f"spec/generated_views.rs: GeneratedView::{variant} has no "
+            out.append(f"spec/generated_views/registry.rs: GeneratedView::{variant} has no "
                        "parseable spec() arm")
     if "GeneratedViewRegistry" not in order:
         out.append("GeneratedView::ALL omits GeneratedViewRegistry; the registry "
@@ -267,7 +268,7 @@ def generated_view_findings(root: Path) -> list[str]:
             if body is not None and body != "\n".join(rows):
                 out.append(f"{reg_row['targets'][0]}: generated block "
                            f"{reg_row['marker']} does not match the "
-                           "spec/generated_views.rs projection")
+                           "spec/generated_views/registry.rs projection")
     # Dispatcher parity: the projector's VIEW_RENDERERS key set equals the
     # registry, and no manual literal plan bypasses it. Parsed from source —
     # the auditor never imports or executes project.py. An absent projector
@@ -366,7 +367,7 @@ A_E4B_RETIRED = (
 
 
 def _a_gate_token_render(expr: str, root: Path) -> str:
-    src = (root / "spec/gates.rs").read_text(encoding="utf-8")
+    src = (root / "spec/gates/inventory.rs").read_text(encoding="utf-8")
     rows = re.findall(r'GateSpec \{ id: GateId::(\w+), token: "([^"]*)"', src)
     order = [r[0] for r in rows]
     token_of = dict(rows)
@@ -388,10 +389,10 @@ def inventory_mirror_findings(root: Path) -> list[str]:
         inventory = re.findall(r"\b" + type_name + r"::(\w+)", all_body.group(1)) \
             if all_body else []
         for missing in [v for v in variants if v not in inventory]:
-            out.append(f"spec/architecture.rs: {type_name}::{missing} is declared "
+            out.append(f"spec/architecture/types.rs: {type_name}::{missing} is declared "
                        f"but missing from {type_name}::ALL")
         for phantom in [v for v in inventory if v not in variants]:
-            out.append(f"spec/architecture.rs: {type_name}::ALL names {phantom}, "
+            out.append(f"spec/architecture/types.rs: {type_name}::ALL names {phantom}, "
                        "which the enum does not declare")
         impl = re.search(r"impl " + type_name + r" \{(.*?)\n\}", arch, re.S)
         spellings = re.findall(r"\b" + type_name + r'::(\w+) => "([^"]*)",',
@@ -399,14 +400,14 @@ def inventory_mirror_findings(root: Path) -> list[str]:
         seen: dict[str, str] = {}
         for variant, spelling in spellings:
             if not spelling:
-                out.append(f"spec/architecture.rs: {type_name}::{variant} declares "
+                out.append(f"spec/architecture/types.rs: {type_name}::{variant} declares "
                            "an empty documentary spelling")
             elif spelling in seen:
-                out.append(f"spec/architecture.rs: duplicate {type_name} spelling "
+                out.append(f"spec/architecture/types.rs: duplicate {type_name} spelling "
                            f"{spelling!r} ({seen[spelling]} and {variant})")
             seen[spelling] = variant
         for variant in [v for v in inventory if v not in dict(spellings)]:
-            out.append(f"spec/architecture.rs: {type_name}::{variant} declares no "
+            out.append(f"spec/architecture/types.rs: {type_name}::{variant} declares no "
                        "documentary spelling arm")
     # Independent projections of the typed rows.
     pkg_all = re.findall(r"\bPackageId::(\w+),", re.search(
@@ -422,7 +423,7 @@ def inventory_mirror_findings(root: Path) -> list[str]:
     environments = dict(re.findall(r'QualificationEnvironment::(\w+) => "([^"]+)"', arch))
     pkg_rows = A_PKG_ROW_FULL.findall(arch)
     if [r[0] for r in pkg_rows] != pkg_all:
-        out.append("spec/architecture.rs: PACKAGES does not equal PackageId::ALL "
+        out.append("spec/architecture/inventory.rs: PACKAGES does not equal PackageId::ALL "
                    "exactly and in order")
     want_pkg = [f"| {cargo.get(pid, '?')} | {pkg_class.get(cls, '?')} | {layer} | "
                 f"{wpath.get(pid, '?')} | {role} |"
@@ -435,8 +436,8 @@ def inventory_mirror_findings(root: Path) -> list[str]:
                   f"{req} |"
                   for pkg, profile, env, gates, req in A_QUAL_FULL.findall(arch)]
     # Tier 0 receipt denominator, from the typed owner it now lives in (5.5E6a).
-    bq_path = root / "spec/bootstrap_qualification.rs"
-    bq = _spec_module_source(root, "bootstrap_qualification") if bq_path.is_file() else ""
+    bq_path = root / "spec/bootstrap_qualification/types.rs"
+    bq = bq_path.read_text(encoding="utf-8") if bq_path.is_file() else ""
     bq_order_body = re.search(
         r"pub const ALL: &'static \[Tier0ReceiptKind\] = &\[(.*?)\];", bq, re.S)
     bq_order = re.findall(r"Tier0ReceiptKind::(\w+),", bq_order_body.group(1)) \
@@ -447,28 +448,28 @@ def inventory_mirror_findings(root: Path) -> list[str]:
     want_tier0 = [f"| {bq_slugs[k]} | {bq_policy[k]} |" for k in bq_order
                   if k in bq_slugs and k in bq_policy]
     if bq and not want_tier0:
-        out.append("spec/bootstrap_qualification.rs declares no parseable "
+        out.append("spec/bootstrap_qualification/types.rs declares no parseable "
                    "Tier 0 receipt denominator")
     # Bundle inventory: every count independently derived.
     md_paths = _a_tracked_markdown(root)
     reg = a_parse_generated_views(root)
-    seeds = len(re.findall(r'InvariantSpec \{ id: "', (root / "spec/invariants.rs")
+    seeds = len(re.findall(r'InvariantSpec \{ id: "', (root / "spec/invariants/inventory.rs")
                            .read_text(encoding="utf-8")))
-    decisions = len(G_DEC_ROW.findall((root / "spec/dispositions.rs")
+    decisions = len(G_DEC_ROW.findall((root / "spec/dispositions/inventory.rs")
                                       .read_text(encoding="utf-8")))
-    obligations = len(G_LEG_ROW.findall((root / "spec/legacy_obligations.rs")
+    obligations = len(G_LEG_ROW.findall((root / "spec/legacy_obligations/inventory.rs")
                                         .read_text(encoding="utf-8")))
-    coverage_src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+    coverage_src = (root / "spec/legacy_invariant_coverage/inventory.rs").read_text(encoding="utf-8")
     manifest = re.findall(r'"(INV-[^"]+)"', re.search(
         r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", coverage_src,
         re.S).group(1))
     if len(re.findall(r"LegacyInvariantCoverage \{\s*legacy_id:", coverage_src)) \
             != len(manifest):
-        out.append("spec/legacy_invariant_coverage.rs: COVERAGE rows do not equal "
+        out.append("spec/legacy_invariant_coverage/inventory.rs: COVERAGE rows do not equal "
                    "SOURCE_INVARIANT_IDS")
     op_model = batql_parse_operator_model(root)
     if len(op_model["rows"]) != len(op_model["id_all"]):
-        out.append("spec/operators.rs: OPERATORS rows do not equal OperatorId::ALL")
+        out.append("spec/operators/inventory.rs: OPERATORS rows do not equal OperatorId::ALL")
     static_instances = sum(len(reg["views"][n]["targets"]) for n in reg["order"]
                            if n in reg["views"])
     bindings = sum(1 for path in md_paths
@@ -483,10 +484,10 @@ def inventory_mirror_findings(root: Path) -> list[str]:
         ("package edges", len(A_EDGE_ROW.findall(arch)), "EDGES"),
         ("qualification profiles", len(A_QUAL_FULL.findall(arch)),
          "QUALIFICATION_PROFILES"),
-        ("SEED guarantees", seeds, "spec/invariants.rs SEED inventory"),
-        ("decision rows", decisions, "spec/dispositions.rs DECISIONS"),
+        ("SEED guarantees", seeds, "spec/invariants/inventory.rs SEED inventory"),
+        ("decision rows", decisions, "spec/dispositions/inventory.rs DECISIONS"),
         ("legacy semantic obligations", obligations,
-         "spec/legacy_obligations.rs OBLIGATIONS"),
+         "spec/legacy_obligations/inventory.rs OBLIGATIONS"),
         ("legacy invariant declarations", len(manifest),
          "SOURCE_INVARIANT_IDS with COVERAGE parity"),
         ("BatQL operators", len(op_model["id_all"]),
@@ -579,7 +580,7 @@ A_VERSION_DOCTRINE = (
     ("docs/32_IMPLEMENTATION_CONSTANTS.md", "layout-constants",
      "LayoutVersion values for selected physical layouts"),
     ("docs/24_GAUNTLET.md", "version-witness-consumes-all",
-     "Every member of spec/identities.rs VersionIdentityKind::ALL denotes a "
+     "Every member of spec/identities/types.rs VersionIdentityKind::ALL denotes a "
      "distinct version type"),
     ("docs/28_SELF_EXPLAINING_REPOSITORY.md", "exact-mirror-clause",
      "An equivalence checker babysitting two editable copies is not convergence"),
@@ -645,7 +646,7 @@ def _a_spelling_laws(out, source, src_label, type_name, spelling_fn,
 def exact_ledger_findings(root: Path) -> list[str]:
     out: list[str] = []
     # Version-identity convergence.
-    ident_src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    ident_src = (root / "spec/identities/types.rs").read_text(encoding="utf-8")
     version_all = _a_all_of(ident_src, "VersionIdentityKind")
     version_pairs = re.findall(
         r'\bVersionIdentityKind::(\w+) => \{?\s*entry!\(\s*"([^"]+)",\s*"([^"]+)"\s*\)',
@@ -653,7 +654,8 @@ def exact_ledger_findings(root: Path) -> list[str]:
     version_arms = {v: s for v, s, _o in version_pairs}
     version_owner = {v: o for v, _s, o in version_pairs}
     spellings = [version_arms[v] for v in version_all if v in version_arms]
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
+    dtypes = (root / "spec/dispositions/types.rs").read_text(encoding="utf-8")
     row = re.search(
         r'DecisionSpec \{ id: "DEC-064",.*?subject: "([^"]*)", successor: "([^"]*)",'
         r'.*?replacement_contract: (?:None|Some\("([^"]*)"\))', dsrc)
@@ -708,12 +710,12 @@ def exact_ledger_findings(root: Path) -> list[str]:
             out.append(f"{rel}: may not be marked GENERATED before its missing "
                        f"fields are owned ({label})")
     # Decision-ledger and coverage reconstruction, byte-exact.
-    disp_all = _a_spelling_laws(out, dsrc, "spec/dispositions.rs", "Disposition",
+    disp_all = _a_spelling_laws(out, dtypes, "spec/dispositions/types.rs", "Disposition",
                                 "spelling", "meaning")
-    _a_spelling_laws(out, dsrc, "spec/dispositions.rs", "DecisionClass", "spelling")
-    disp_tags = _a_str_arms(dsrc, "Disposition", "spelling")
-    disp_meanings = _a_str_arms(dsrc, "Disposition", "meaning")
-    class_spellings = _a_str_arms(dsrc, "DecisionClass", "spelling")
+    _a_spelling_laws(out, dtypes, "spec/dispositions/types.rs", "DecisionClass", "spelling")
+    disp_tags = _a_str_arms(dtypes, "Disposition", "spelling")
+    disp_meanings = _a_str_arms(dtypes, "Disposition", "meaning")
+    class_spellings = _a_str_arms(dtypes, "DecisionClass", "spelling")
     ledger_lines = ["| Tag | Meaning |", "| --- | --- |"]
     ledger_lines += [f"| {disp_tags.get(v, '?')} | {disp_meanings.get(v, '?')} |"
                      for v in disp_all]
@@ -730,11 +732,12 @@ def exact_ledger_findings(root: Path) -> list[str]:
             f"| {dec_id} | {disp_tags.get(disp, '?')} | "
             f"{class_spellings.get(cls, '?')} | {_a_gate_token_render(gates, root)} | "
             f"{subject} | {successor} |")
-    cov_src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
-    cov_all = _a_spelling_laws(out, cov_src, "spec/legacy_invariant_coverage.rs",
+    cov_src = (root / "spec/legacy_invariant_coverage/inventory.rs").read_text(encoding="utf-8")
+    cov_types = (root / "spec/legacy_invariant_coverage/types.rs").read_text(encoding="utf-8")
+    cov_all = _a_spelling_laws(out, cov_types, "spec/legacy_invariant_coverage/types.rs",
                                "CoverageDisposition", "spelling", "meaning")
-    cov_tags = _a_str_arms(cov_src, "CoverageDisposition", "spelling")
-    cov_meanings = _a_str_arms(cov_src, "CoverageDisposition", "meaning")
+    cov_tags = _a_str_arms(cov_types, "CoverageDisposition", "spelling")
+    cov_meanings = _a_str_arms(cov_types, "CoverageDisposition", "meaning")
     manifest = re.findall(r'"(INV-[^"]+)"', re.search(
         r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", cov_src,
         re.S).group(1))
@@ -785,13 +788,14 @@ def exact_ledger_findings(root: Path) -> list[str]:
 
 
 # --- Proof relations and the complete legacy ledger (5.5E4d) -----------------
-# spec/proof.rs is the one membership authority; docs/24 owns meaning; the
+# spec/proof/inventory.rs is the one membership authority; docs/24 owns
+# meaning; the
 # domain documents own the pressured law; docs/21 is the generated human
 # ledger. This auditor reconstructs every projection independently, proves
 # the contract/target selection laws, and sweeps the retired mirrors.
 def proof_relation_findings(root: Path) -> list[str]:
     out: list[str] = []
-    psrc = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    psrc = _spec_module_source(root, "proof")
     active = [{"id": m[0], "family": m[1], "guarantee": m[2],
                "contracts": re.findall(r'ContractId\("([^"]+)"\)', m[3])}
               for m in A_E4D_ACTIVE.findall(psrc)]
@@ -871,7 +875,7 @@ def proof_relation_findings(root: Path) -> list[str]:
         out.append("docs/03 carries the hash-map proof row; canonical collection "
                    "order is docs/04's law")
     # docs/21 ledger parity, including the witness route cells.
-    lsrc = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    lsrc = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     by_leg: dict[str, list[str]] = {}
     for row in active:
         if row["family"] == "leg":
@@ -924,7 +928,7 @@ def proof_relation_findings(root: Path) -> list[str]:
                        "outside the generated ledger")
         if re.search(r"Required witnesses \(proof owner", stripped):
             out.append(f"{name}: an authored required-witnesses inventory may not "
-                       "return; spec/proof.rs owns membership")
+                       "return; spec/proof/inventory.rs owns membership")
         if re.search(r"Required proof rows[^\n]*:\s*\n+```text", stripped):
             out.append(f"{name}: an authored required-proof-rows inventory may not "
                        "return; the PROOF-REQUIREMENTS projection owns it")
@@ -934,18 +938,18 @@ def proof_relation_findings(root: Path) -> list[str]:
         if re.search(r"docs/24 owns proof-row identity|owns proof-row identity and "
                      r"executable meaning|canonical proof-row owner: docs/24", stripped):
             out.append(f"{name}: docs/24 may not claim proof-row identity ownership; "
-                       "spec/proof.rs owns identity, docs/24 owns meaning")
+                       "spec/proof/types.rs owns identity, docs/24 owns meaning")
     if "until the documentary convergence pass" in psrc:
-        out.append("spec/proof.rs: the temporary documentary-convergence wording "
+        out.append("spec/proof/: the temporary documentary-convergence wording "
                    "may not return")
     for field in ("expectation:", "disposition_text:", "meaning:"):
         if re.search(r"\b" + field.rstrip(":") + r":\s*&'static str", psrc):
-            out.append(f"spec/proof.rs: a {field.rstrip(':')} prose field may not "
+            out.append(f"spec/proof/: a {field.rstrip(':')} prose field may not "
                        "enter the typed catalog; docs/24 owns meaning")
     # docs/24 doctrine presence.
     d24_stripped = A_GENERATED_BLOCK.sub("", d24_text)
     for name, fragment in (
-        ("typed-ownership-split", "spec/proof.rs` owns ProofRowId identity"),
+        ("typed-ownership-split", "spec/proof/` owns ProofRowId identity"),
         ("meaning-stays", "docs/24 owns each active row's authoritative semantic summary"),
         ("relation-cannot-move-meaning", "A generated relation cannot change proof meaning"),
         ("prose-cannot-move-rows", "A prose meaning cannot silently move a proof row"),

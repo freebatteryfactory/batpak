@@ -217,7 +217,7 @@ impl ToolchainProfile {
 
     /// The TRACKED root projection (5.5E4a): the bare selection above plus
     /// the machine-readable provenance line, because the tracked file is a
-    /// registered generated view (spec/generated_views.rs RustToolchain)
+    /// registered generated view (spec/generated_views/registry.rs RustToolchain)
     /// whose generator is bootstrap/project.py. The comment is part of the
     /// exact projected bytes; the materializer consumes this SAME form so
     /// its idempotent write matches the tracked file — one typed owner, two

@@ -330,7 +330,7 @@ pub(crate) fn check_reconciliation(findings: &mut Vec<String>) {
     }
 }
 
-/// Candidate material stays disposable (spec/architecture.rs): the declared
+/// Candidate material stays disposable (spec/sprouting/inventory.rs): the declared
 /// output root must live in the untracked target/ tree and may never sit under
 /// a surface candidates are forbidden to write. The two constants state one
 /// law, and until this check existed no executing code consumed the output

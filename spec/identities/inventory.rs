@@ -82,7 +82,7 @@ pub const EXISTING_TYPED_OWNER_SPELLINGS: &[&str] = &["PackageId", "ProofRowId",
 
 /// The vocabulary this catalog must NEVER admit: time, order, topology,
 /// coordinate, cursor, and navigation terms owned by docs/16's other
-/// sections and spec/reconciliation.rs. Executed exclusion law: no catalog
+/// sections and spec/reconciliation/. Executed exclusion law: no catalog
 /// spelling may equal one of these.
 pub const EXCLUDED_CHRONOLOGY_AND_NAVIGATION: &[&str] = &[
     "ObservedWallTime",

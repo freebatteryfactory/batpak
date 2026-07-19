@@ -87,7 +87,7 @@ This is SEED-MODEL-TRACE-SEPARATION (derives from `DEC-077`, refines
 SEED-INDEPENDENT-ORACLE). The typed basis is a field ON the proof requirement,
 not a comment beside it: a `ContractProjection` offered on a route that demands
 independent evidence is a compile error, not a runtime warning. That basis field
-is authored in F2 `spec/verification.rs`.
+is authored in F2 `spec/verification/types.rs`.
 
 The independent-evidence route lives INSIDE the basis, not beside it.
 `IndependentReference { route }` carries a `DifferentialImplementation` or
@@ -164,7 +164,7 @@ model is silent about it. The model's declared scope is part of the verdict, not
 erased by the word "exhaustive".
 
 This law lives inside `DEC-077`. The green-counting method is renamed
-`ProofUnitTerminal::is_positive_semantic_terminal` (`spec/proof.rs`) so a
+`ProofUnitTerminal::is_positive_semantic_terminal` (`spec/proof/types.rs`) so a
 sampled or runtime-observed row can never launder into denominator strength: a
 positive semantic terminal is one input to observation admission among nine —
 method, basis (which now carries the independent-evidence route), exact
@@ -172,7 +172,7 @@ coverage, lane, freshness, actual execution, artifact bindings, counterexample
 posture, and the terminal itself — and no gate, release gate, or denominator
 calculation may use it alone. Enforcement posture is authored gate policy applied
 when a plan is assessed, never a fact the observation carries. The declared
-requirement is admitted exactly (`spec/verification.rs` `admit_observation`);
+requirement is admitted exactly (`spec/verification/observation.rs` `admit_observation`);
 there is no coverage ranking in either direction.
 
 F2 proves plan and observation-shape coherence. It does not prove that the
@@ -248,7 +248,7 @@ This is SEED-RUNTIME-CONFORMANCE-NO-REWRITE (derives from `DEC-078`, refines
 
 Runtime verification runs in exactly three modes, and each mode owns its lawful
 results (`RuntimeVerificationMode` / `RuntimeVerificationDisposition`, authored
-in F2 `spec/verification.rs`):
+in F2 `spec/verification/types.rs`):
 
 ```text
 PreventiveGuard      GuardAdmitted, GuardRefused, Unsupported
@@ -273,9 +273,9 @@ executions outside the observed history. A monitor generated from a
 `ContractProjection` corroborates but never alone concludes conformance — by
 section 2 it shares its basis with the authority it grades.
 
-The Tier 0 two-distinct-runs law (`spec/tier0_cross_run.rs`) is a useful ANALOGY
+The Tier 0 two-distinct-runs law (`spec/tier0_cross_run/`) is a useful ANALOGY
 for why self-corroboration is refused; it is not a type dependency.
-`spec/verification.rs` does not import or reuse the Tier 0 cross-run types as
+`spec/verification/` does not import or reuse the Tier 0 cross-run types as
 product-level verification authority.
 
 ## 7. Independent-evidence route kind
@@ -297,7 +297,7 @@ PromotionRequirement::IndependentEvidenceRoute   names the need: at least one ad
 the anti-self-grading SEED law                   forbids a verdict resting only on the subject's own basis
 ```
 
-F3's `CandidatePromotionPlan` (`spec/sprouting.rs`) is the FIRST concrete
+F3's `CandidatePromotionPlan` (`spec/sprouting/types.rs`) is the FIRST concrete
 consumer of `IndependentEvidenceRouteKind`.
 `PromotionRequirement::IndependentEvidenceRoute` names the need; the promotion
 plan carries the selected `IndependentEvidenceRouteKind` for the candidate it
@@ -305,7 +305,7 @@ admits. The vocabulary is minted once in F2 and consumed downstream, never
 redefined there.
 
 Tier 0 cross-run independence remains a separate bootstrap concern
-(`BP-PUBLIC-API-CI-RELEASE-1`, `spec/tier0_cross_run.rs`): it proves two hosted
+(`BP-PUBLIC-API-CI-RELEASE-1`, `spec/tier0_cross_run/`): it proves two hosted
 runs describe one source snapshot, a distinct bootstrap independence from the
 verification-route independence this vocabulary names, and the two are not
 merged.
@@ -313,11 +313,11 @@ merged.
 ## 8. Verification plans (generated)
 
 Every active proof row carries exactly one primary claim and a nonempty,
-duplicate-free, admissible verification plan (`spec/proof.rs`, qualified only
-through `spec/verification.rs`). This inventory is a generated projection of
+duplicate-free, admissible verification plan (`spec/proof/`, qualified only
+through `spec/verification/`). This inventory is a generated projection of
 those typed facts.
 
-<!-- VERIFICATION-PLANS:BEGIN generated from spec/proof.rs; spec/verification.rs by bootstrap/project.py; do not edit -->
+<!-- VERIFICATION-PLANS:BEGIN generated from spec/proof/inventory.rs; spec/verification/types.rs by bootstrap/project.py; do not edit -->
 | Plan | Method | Basis | Coverage | Lane | Enforcement |
 | --- | --- | --- | --- | --- | --- |
 | PLAN_HOSTILE_BOUNDARY | PropertySequence | DirectBoundary(HostileBoundary) | Sampled | Merge | Blocking |
@@ -457,9 +457,9 @@ DEC-073   verification independence wording (superseded here by explicit basis l
 DEC-075   durable-history and proof-disposition immutability (refined by section 6)
 docs/17   retry/oscillation prose, now carried by the NonOscillation claim kind
 docs/36   Tier 0 cross-run independence (bootstrap concern, analogy only here)
-spec/verification.rs   F2 home of the typed basis, layered axes, and runtime matrix
-spec/proof.rs          counts_green seam renamed in F2 for method/coverage strength
-spec/tier0_cross_run.rs   analogous self-corroboration refusal; never imported here
+spec/verification/     F2 home of the typed basis, layered axes, and runtime matrix
+spec/proof/types.rs    counts_green seam renamed in F2 for method/coverage strength
+spec/tier0_cross_run/     analogous self-corroboration refusal; never imported here
 ```
 
 This document is clean-room operating law. It authors

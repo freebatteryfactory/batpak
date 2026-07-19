@@ -435,7 +435,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
     # A projector that could supply a missing owner would be a second authority
     # wearing a serializer's name.
     with isolated_tree() as tmp:
-        path = tmp / FW
+        path = tmp / _resolve_edit_carrier(root, FW, RETRY_ARM)
         path.write_text(must_replace(path.read_text(encoding="utf-8"), RETRY_ARM,
                                      OWNERLESS_ARM, "generator refusal"), encoding="utf-8")
         try:
@@ -448,7 +448,7 @@ def test_syncbat_firewall(audit, project) -> list[str]:
     # Silencing the ownership rule must not leave a green suite. Without this the
     # probes above prove only that SOMETHING returned a string.
     with isolated_tree() as tmp:
-        p2 = tmp / FW
+        p2 = tmp / _resolve_edit_carrier(root, FW, OWNS_COMPOSITION)
         p2.write_text(must_replace(p2.read_text(encoding="utf-8"), OWNS_COMPOSITION,
                                    STEALS_COMPOSITION, "ownership mutation"), encoding="utf-8")
         if not any("which Port owns" in f for f in ff(tmp)):
@@ -481,7 +481,8 @@ def test_reconciliation(audit, project) -> list[str]:
     # A role bound twice is one name owning two authorities -- the HlcPoint
     # disease this decision exists to prevent.
     with isolated_tree() as tmp:
-        p = tmp / RS
+        p = tmp / _resolve_edit_carrier(
+            root, RS, "        role: ReconciliationRole::PhysicalIdentity,")
         p.write_text(must_replace(
             p.read_text(encoding="utf-8"),
             "        role: ReconciliationRole::PhysicalIdentity,",
@@ -503,7 +504,7 @@ def test_reconciliation(audit, project) -> list[str]:
     # A chronology carrier the time contract does not own would be a second
     # time authority minted by the composition.
     with isolated_tree() as tmp:
-        p = tmp / RS
+        p = tmp / _resolve_edit_carrier(root, RS, '"Hlc", "ObservedWallTime"')
         p.write_text(must_replace(
             p.read_text(encoding="utf-8"),
             '"Hlc", "ObservedWallTime"', '"Hlc", "WallStamp"',
@@ -515,7 +516,7 @@ def test_reconciliation(audit, project) -> list[str]:
     if audit.release_seal_findings(root):
         fail(f"release_seal_contract_passes (got {audit.release_seal_findings(root)!r})")
     with isolated_tree() as tmp:
-        p = tmp / "spec/architecture/policy.rs"
+        p = tmp / "spec/architecture/release_seal.rs"
         p.write_text(must_replace(
             p.read_text(encoding="utf-8"),
             "    ReleaseSealField::KernelQualificationSet,\n", "",
@@ -531,7 +532,9 @@ def test_reconciliation(audit, project) -> list[str]:
         if not any("drifted" in f for f in audit.release_seal_findings(tmp)):
             fail("a_trimmed_seal_projection_is_caught")
     with isolated_tree() as tmp:
-        p = tmp / "spec/dispositions.rs"
+        p = tmp / _resolve_edit_carrier(
+            root, "spec/dispositions.rs",
+            "binds every field of the typed ReleaseSealField inventory")
         p.write_text(must_replace(
             p.read_text(encoding="utf-8"),
             "binds every field of the typed ReleaseSealField inventory",
@@ -562,7 +565,7 @@ def test_syncbat_requiredness(audit, project) -> list[str]:
     def fail(name: str) -> None:
         findings.append(f"{name} FAILED")
 
-    FW = "spec/syncbat_firewall.rs"
+    FW = "spec/syncbat_firewall/inventory.rs"
     D08 = "docs/08_SYNCBAT_RUNTIME.md"
     ff = audit.syncbat_firewall_findings
 

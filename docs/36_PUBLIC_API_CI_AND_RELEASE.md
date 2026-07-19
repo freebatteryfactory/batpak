@@ -111,7 +111,7 @@ anti-vacuous, and tied to the exact changed trust boundary.
 The bootstrap gate qualification is itself evidence, not a green checkmark. A run
 produces a canonical, line-oriented `qualification.t0` artifact
 (`Tier0QualificationArtifactVersion`, `BATPAK-TIER0-QUALIFICATION/2`, owned in
-`spec/bootstrap_qualification.rs`) that binds, for one physical target: the
+`spec/bootstrap_qualification/`) that binds, for one physical target: the
 source posture (a real git checkout for the authoritative lane, or a frozen
 `git archive` export for a supplemental local lane), the exact toolchain, the
 bootstrap Python runtime, the hosted-run identity when the target is
@@ -139,7 +139,7 @@ a frozen export, is refused — a local machine produces only the supplemental
 
 The builder is bound, not assumed. rustc and cargo are pinned via
 `rust-toolchain.toml`; the bootstrap Python runtime is the typed authority
-`AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE` in `spec/bootstrap_qualification.rs`
+`AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE` in `spec/bootstrap_qualification/evidence.rs`
 (owned by `BP-PUBLIC-API-CI-RELEASE-1`), of which the workflow's `setup-python`
 version is a projection the audit refuses to let drift; an authoritative
 qualification under any other CPython release is refused, and `receiptcheck`
@@ -160,7 +160,7 @@ runtime and an exact envelope on both independently verified runs.
 
 The sealed `VerifiedTier0Qualification` retains every binding so two INDEPENDENT
 hosted runs can be proven to describe the same committed source snapshot.
-`spec/tier0_cross_run.rs` owns the comparator: `compare_runs` over two verified
+`spec/tier0_cross_run/comparison.rs` owns the comparator: `compare_runs` over two verified
 qualifications returns a sealed same-source proof, a named divergence, or a
 not-comparable verdict. Same-source rests ONLY on the deterministic,
 source-derived coordinates — source commit, source tree, spec-manifest digest,
@@ -195,7 +195,7 @@ both across every outcome at the Tier 0 gate.
 ## Release seal and refusal (DEC-058)
 
 A release receipt binds every field of the typed inventory
-(`spec/architecture.rs`, `ReleaseSealField`) — this list is a generated
+(`spec/architecture/release_seal.rs`, `ReleaseSealField`) — this list is a generated
 projection of it. `KernelQualificationSet` is mandatory even when empty: an
 empty set states "no kernels admitted" (KernelImplementationId +
 KernelQualificationReceiptId per admitted kernel), it never disappears from
@@ -204,7 +204,7 @@ the schema. An admitted row binds the `KernelContractId` it implements, the
 was qualified against, and the `KernelManifestVersion` of the manifest that
 carried it.
 
-<!-- RELEASE-SEAL:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+<!-- RELEASE-SEAL:BEGIN generated from spec/architecture/release_seal.rs by bootstrap/project.py; do not edit -->
 ```text
 SourceTree
 Toolchain

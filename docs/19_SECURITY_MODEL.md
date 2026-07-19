@@ -57,7 +57,7 @@ release-visible proof surface. When real ledger rows land, each row will
 additionally bind its kind, an exact source anchor, its target/profile,
 and an explicit assumption statement as required non-optional fields.
 
-<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from spec/compiler_assumptions.rs by bootstrap/project.py; do not edit -->
+<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from spec/compiler_assumptions/types.rs by bootstrap/project.py; do not edit -->
 ```text
 kind                   basis     marker  classify  release
 UnsafeMemoryContract   DEC-068   true    G3        G9
@@ -112,7 +112,7 @@ freshness            this is the newest generation ever acknowledged
 rollback resistance  restoring an older valid generation is detectable
 ```
 
-A store's history verification claims exactly what its `AuthenticatedHistoryProfile` and verified `WitnessDisposition` support, and no more (`spec/architecture.rs`):
+A store's history verification claims exactly what its `AuthenticatedHistoryProfile` and verified `WitnessDisposition` support, and no more (`spec/architecture/authenticated_history.rs`):
 
 ```text
 InternalConsistency           internal consistency verified

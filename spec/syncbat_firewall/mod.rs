@@ -11,7 +11,7 @@
 //! ```
 //!
 //! This file RATIFIES that law into typed authority. It is not a second model and
-//! not a second topology: `spec/architecture.rs` owns the plane identities and
+//! not a second topology: `spec/architecture/types.rs` owns the plane identities and
 //! their package membership, and this file owns exactly one thing — which plane
 //! owns which authority, and which authorities may lawfully cross which boundary.
 //! docs/08's firewall section becomes a projection of this file.

@@ -64,13 +64,13 @@ Live capability slots are opaque, instance-scoped, generation-scoped, and non-se
 
 ## Three instruction algebras
 
-`spec/pakvm_isa.rs` is the typed authority for what a PakVM semantic node MEANS: its algebra, class, effect posture, operand and result sorts, boundedness, capability requirement, work-formula family, and independent evidence class. This document does not author those facts and states no per-node meaning of its own; the inventory below is generated from ADMITTED node specs and changes there or nowhere.
+`spec/pakvm_isa/nodes.rs` is the typed authority for what a PakVM semantic node MEANS: its algebra, class, effect posture, operand and result sorts, boundedness, capability requirement, work-formula family, and independent evidence class. This document does not author those facts and states no per-node meaning of its own; the inventory below is generated from ADMITTED node specs and changes there or nowhere.
 
 A node that does not admit is not in the semantic ISA and does not appear here. Exact opcode numbers and the ISA version value remain G5 implementation constants: no numeric opcode is assigned by the typed authority, and the order below is reading order, not encoding.
 
 A pure query image cannot contain Effect instructions. The validator rejects the image before execution.
 
-<!-- PAKVM-SEMANTIC-ISA:BEGIN generated from spec/pakvm_isa.rs by bootstrap/project.py; do not edit -->
+<!-- PAKVM-SEMANTIC-ISA:BEGIN generated from spec/pakvm_isa/nodes.rs; spec/pakvm_isa/policies.rs; spec/pakvm_isa/types.rs by bootstrap/project.py; do not edit -->
 | Node | Algebra | Class | Effect | Capability | Boundedness | WorkFormula | WorkUnits | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | literal | FormulaDecision | ScalarComputation | Pure | None | ConstantWork | ConstantInstruction | Instructions | ReferenceInterpreterModel |
@@ -116,7 +116,7 @@ Each algebra accounts its work on its own plane, and the three planes partition 
 ## Node authoring surfaces (5.5E1)
 
 Every admitted node names the surface that may lawfully produce it
-(`spec/pakvm_isa.rs::authoring_surface`, total by construction). All V1 nodes
+(`spec/pakvm_isa/nodes.rs::authoring_surface`, total by construction). All V1 nodes
 are `BatQlLowered` except `join`, which is `CanonicalProgramImageOnly`: the
 frozen BatQL grammar permits one primary source per query and carries no JOIN
 syntax, so `join`'s only lawful production path is canonical ProgramImage
@@ -128,7 +128,7 @@ membership changes travel through the language-amendment law only.
 
 Node signatures, in the closed value algebra. No generic host object or `Any` value crosses the boundary:
 
-<!-- PAKVM-SIGNATURES:BEGIN generated from spec/pakvm_isa.rs by bootstrap/project.py; do not edit -->
+<!-- PAKVM-SIGNATURES:BEGIN generated from spec/pakvm_isa/nodes.rs by bootstrap/project.py; do not edit -->
 ```text
 literal
     operands  none; a constant-pool reference
@@ -443,10 +443,10 @@ keeps semantic authority, and a residual plan is admitted only as a
 realization-preserving candidate proved equivalent to it. The typed policy that
 admits such a candidate — its semantic owner, admission basis, change class,
 allowed origins, independent-evidence route, and the conjunctive promotion
-requirements it must satisfy — is authored in `spec/sprouting.rs` and projected
+requirements it must satisfy — is authored in `spec/sprouting/inventory.rs` and projected
 here.
 
-<!-- SPECIALIZED-PLAN-CANDIDATE-POLICY:BEGIN generated from spec/sprouting.rs by bootstrap/project.py; do not edit -->
+<!-- SPECIALIZED-PLAN-CANDIDATE-POLICY:BEGIN generated from spec/sprouting/inventory.rs by bootstrap/project.py; do not edit -->
 ```text
 semantic owner         BP-PAKVM-ISA-1
 admission basis        DEC-073

@@ -31,7 +31,7 @@ never lies about provenance. Recording a synthesizer confers no authority; that
 is exactly what makes the trust sentence structurally true. A truthful synthesis
 record and a zero-authority candidate are the same fact stated once.
 
-The typed candidate lifecycle is authored in F3 `spec/sprouting.rs`. A
+The typed candidate lifecycle is authored in F3 `spec/sprouting/types.rs`. A
 `RealizationPosture` with THREE states exists so a stub cannot pass for a
 realization:
 
@@ -117,7 +117,7 @@ identity (its `CandidateId` object) AND a `KernelImplementationId` (its
 implementation under the kernel contract); neither absorbs the other, and the
 kernel quartet keeps its existing meanings unchanged.
 
-The candidate lineage identity is authored in F3 `spec/identities.rs` alongside
+The candidate lineage identity is authored in F3 `spec/identities/types.rs` alongside
 those kinds. A lineage object is never a shortcut around the identity it must
 still earn.
 
@@ -233,7 +233,7 @@ reached it.
 ## 7. Campaign-root topology and judge integrity
 
 The speculative `crates/` tree cannot live in the tracked checkout.
-`FORBIDDEN_TARGET_PATHS` (`spec/architecture.rs`) refuses `crates/`, `corpus`,
+`FORBIDDEN_TARGET_PATHS` (`spec/architecture/inventory.rs`) refuses `crates/`, `corpus`,
 and `fixtures` from ever existing in the tracked tree. The campaign lives in an
 EXTERNAL campaign root with physically disjoint roots:
 
@@ -266,11 +266,11 @@ not F1.
 
 ## 8. Sprouting vocabulary (generated)
 
-`spec/sprouting.rs` owns the frozen campaign vocabulary — candidate origins,
+`spec/sprouting/types.rs` owns the frozen campaign vocabulary — candidate origins,
 change classes, evaluation-set roles, realization postures, and repair
 authorities. This inventory is a generated projection of those typed enums.
 
-<!-- SPROUTING-VOCABULARY:BEGIN generated from spec/sprouting.rs by bootstrap/project.py; do not edit -->
+<!-- SPROUTING-VOCABULARY:BEGIN generated from spec/sprouting/types.rs by bootstrap/project.py; do not edit -->
 ```text
 Candidate origins
   DeterministicGeneration
@@ -304,9 +304,9 @@ Repair authorities
 
 ## 9. Required proof rows
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-079 | candidate_origin_confers_no_authority; scaffold_cannot_close_realization; qualified_nursery_record_is_not_promoted_source |
@@ -330,8 +330,8 @@ DEC-081           bounded search and holdout independence
 DEC-082           generate-wide/qualify-deep whole-tree topology (Architecture, Lock)
 DEC-074           proof-policy amendment process for a wrong judge
 DEC-048 / DEC-075 dependency-ordered advancement refined here
-spec/sprouting.rs   F3 candidate lifecycle and RealizationPosture
-spec/identities.rs  F3 candidate lineage identity alongside kernel and content
-spec/architecture.rs FORBIDDEN_TARGET_PATHS and campaign-root topology
+spec/sprouting/     F3 candidate lifecycle and RealizationPosture
+spec/identities/    F3 candidate lineage identity alongside kernel and content
+spec/architecture/   FORBIDDEN_TARGET_PATHS and campaign-root topology
 GeneratedView::ALL  F4 closure view a campaign must enter before landing
 ```

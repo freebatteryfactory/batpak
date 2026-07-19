@@ -18,7 +18,7 @@ kernels; those are later gates.
 
 Numeric authority (`DEC-069`) locks the exact-versus-approximate boundary.
 Concrete typed arithmetic, units, ratios, rounding, and the operator facts
-remain owned by `DEC-060` and `spec/operators.rs` (OperatorSpec). The shared
+remain owned by `DEC-060` and `spec/operators/` (OperatorSpec). The shared
 semantic sorts are frozen in `04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md`.
 
 ## 1. Exact Authority
@@ -504,7 +504,7 @@ a bounds/resource receipt.
 ## 12. OperatorSpec numeric support
 
 Each arithmetic operator declares one numeric support posture in
-`spec/operators.rs`: `ExactSupported`, `QualifiedProfileOnly`, or `Unsupported`.
+`spec/operators/inventory.rs`: `ExactSupported`, `QualifiedProfileOnly`, or `Unsupported`.
 General approximate arithmetic through `+ - * /` is not automatically admitted;
 approximate arithmetic is admitted only when a qualified profile defines sound
 error or interval propagation. A typed value wrapper does not make ordinary
@@ -525,7 +525,7 @@ second type system.
 The operator numeric support matrix is generated from OperatorSpec and
 independently re-audited:
 
-<!-- OPERATORS-NUMERIC:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+<!-- OPERATORS-NUMERIC:BEGIN generated from spec/operators/inventory.rs; spec/operators/types.rs by bootstrap/project.py; do not edit -->
 | OperatorId | Class | Numeric support |
 | --- | --- | --- |
 | OP-MUL | Arithmetic | ExactSupported |

@@ -68,9 +68,9 @@ mirrors.
 
 ## Package roles
 
-The package inventory — membership, class, layer, path, and canonical order — is a generated projection of `spec/architecture.rs`. The authored sections below explain meaning; they own none of those facts:
+The package inventory — membership, class, layer, path, and canonical order — is a generated projection of `spec/architecture/inventory.rs`. The authored sections below explain meaning; they own none of those facts:
 
-<!-- PACKAGE-INVENTORY:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+<!-- PACKAGE-INVENTORY:BEGIN generated from spec/architecture/inventory.rs; spec/architecture/types.rs by bootstrap/project.py; do not edit -->
 | Package | Class | Layer | Workspace path | Role |
 | --- | --- | --- | --- | --- |
 | macbat-compiler | production | 0 | crates/macbat/compiler | pure Rust contract compiler |
@@ -130,9 +130,9 @@ Non-publishable public-surface witness at `examples/` (`src/bin/`). It depends o
 
 ## Dependency graph
 
-The edge inventory is a generated projection of `spec/architecture.rs` `EDGES`; layer numbers live in the generated package inventory above:
+The edge inventory is a generated projection of `spec/architecture/inventory.rs` `EDGES`; layer numbers live in the generated package inventory above:
 
-<!-- PACKAGE-EDGES:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+<!-- PACKAGE-EDGES:BEGIN generated from spec/architecture/inventory.rs; spec/architecture/types.rs by bootstrap/project.py; do not edit -->
 | Importer | Importee | Class | Profile |
 | --- | --- | --- | --- |
 | macbat | macbat-compiler | required | compile |
@@ -172,9 +172,9 @@ A format name, noun, or purity preference does not earn a Cargo package.
 
 ## Qualification profiles
 
-Package ownership and build qualification are separate questions. The profile inventory is a generated projection of `spec/architecture.rs` `QUALIFICATION_PROFILES`:
+Package ownership and build qualification are separate questions. The profile inventory is a generated projection of `spec/architecture/inventory.rs` `QUALIFICATION_PROFILES`:
 
-<!-- QUALIFICATION-PROFILES:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+<!-- QUALIFICATION-PROFILES:BEGIN generated from spec/architecture/inventory.rs; spec/architecture/types.rs by bootstrap/project.py; do not edit -->
 | Package | Profile | Environment | Gates | Requirement |
 | --- | --- | --- | --- | --- |
 | batpak | semantic | no_std + alloc | G0/G5 | contracts, schemas, codecs, image values, deterministic parsing, and storage-port law compile without std |
@@ -185,13 +185,13 @@ Package ownership and build qualification are separate questions. The profile in
 | batpak | browser-storage | wasm32 host | G2/G5/G7 | the browser persistence adapter proves its own atomicity, ordering, durability, quota, crash/reload, authority-generation, and bounded-size behavior without borrowing native filesystem claims |
 <!-- QUALIFICATION-PROFILES:END -->
 
-The generated QualificationProfile table is the current typed profile inventory. The later threaded, encryption, interop, and similar entries are implementation and CI coverage families under DEC-065. They are not additional QualificationProfile identities unless they enter `spec/architecture.rs`.
+The generated QualificationProfile table is the current typed profile inventory. The later threaded, encryption, interop, and similar entries are implementation and CI coverage families under DEC-065. They are not additional QualificationProfile identities unless they enter `spec/architecture/inventory.rs`.
 
 The semantic profiles include contracts, typed values, canonical parsing/encoding over caller-provided buffers, image validation, PakVM reference interpretation, logical runtime transitions, Bvisor admission state, and port request/response protocols. They exclude native filesystem handles, threads, sockets, ambient clocks, entropy providers, and browser APIs.
 
 Semantic qualification is distinct from Cargo feature defaults. Per DEC-047, the `batpak` and `syncbat` default profiles are usable native `std` (a real `cargo add batpak` works); a consumer reaches the `no_std + alloc` semantic profile with `default-features = false`. Enabling `std` by default grants ordinary native usability only — it must never pull in the threaded, browser, encryption, mapping, or interop adapters, which stay behind their own explicit opt-in profiles added at their owning gate.
 
-The native and browser profiles may supply mechanisms but may not change semantic result, error, receipt, replay, or authority contracts. Exact profile facts live in `spec/architecture.rs`.
+The native and browser profiles may supply mechanisms but may not change semantic result, error, receipt, replay, or authority contracts. Exact profile facts live in `spec/architecture/inventory.rs`.
 
 ## no_std realization (DEC-065)
 
@@ -248,9 +248,9 @@ Every profile in the matrix preserves program semantics (DEC-065). The same prog
 
 This document owns the package inventory, the feature posture, and the qualification matrix. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-065 | no_std_batpak_has_no_std_dependency_route; no_std_syncbat_has_no_std_dependency_route; default_std_does_not_enable_threaded_or_browser_adapters; browser_and_native_profiles_preserve_program_semantics |
@@ -275,4 +275,4 @@ Tables, systems, ports, and kernels live under the concept they serve. Generated
 
 The clean target contains no standalone runtime-machine, Bvisor, PakVM, Host composition, storage-format, legacy testkit, xtask, or integrity package. Their useful meanings have explicit successors in the current graph.
 
-It also contains no root `corpus/` or `fixtures/` directory: those assets live only under `crates/testpak/`. `spec/architecture.rs` lists both as forbidden target paths.
+It also contains no root `corpus/` or `fixtures/` directory: those assets live only under `crates/testpak/`. `spec/architecture/inventory.rs` lists both as forbidden target paths.

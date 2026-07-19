@@ -11,7 +11,7 @@ reconciliation_epoch: cleanroom-v1
 
 ## Result
 
-The final v1 architecture has one owner and one dependency direction for every package-scale concept. No known contradiction remains between narrative documents and `spec/architecture.rs`.
+The final v1 architecture has one owner and one dependency direction for every package-scale concept. No known contradiction remains between narrative documents and `spec/architecture/`.
 
 ## Pass 2 defects removed
 
@@ -76,7 +76,7 @@ no generic timestamp/cursor
 no cross-attempt result attachment
 no outcome-unknown laundering
 no unresolved architecture marker in authoritative docs
-no operator relationship defined in two places (spec/operators.rs is the one operator authority; grammar/precedence/formatting/spoken tables are generated and independently re-audited)
+no operator relationship defined in two places (spec/operators/ is the one operator authority; grammar/precedence/formatting/spoken tables are generated and independently re-audited)
 no undefined grammar nonterminal referenced by a normative fence (grammar 15/15.2/15.3 is closed)
 no proof disposition collapsed on projection (the five states VERIFIED, LEGACY_WEAK, UNVERIFIED, PROOF_UNAVAILABLE, PROOF_INVALID pass through unchanged)
 no approximate value granted silent numeric authority (crossings require a receipted Quantize or IntervalDecision; DEC-069, docs/37)
@@ -87,9 +87,9 @@ no guarantee lifetime conflated with deletion condition or active/closed status 
 no guarantee relation inferred from prose similarity, shared owner, or document section
 no clean_owner text or gate name treated as a successor guarantee edge (UntilSuccessor requires a resolvable typed successor; a gate-closed active obligation is UntilGate)
 no bare SEED, DEC, or architecture law Discharges or Closes an active obligation before its qualifying evidence or closure receipt exists at Gate 0
-no second gate identity type (spec/gates.rs owns GateId, GateSpec, and the gate inventory; every gate-bearing fact family references &[GateId], never a gate name in prose or a string)
+no second gate identity type (spec/gates/ owns GateId, GateSpec, and the gate inventory; every gate-bearing fact family references &[GateId], never a gate name in prose or a string)
 no gate reference unresolvable against the inventory, duplicated within one fact, or out of canonical order
-no gate identity authored twice (the docs/25 gate inventory is a generated projection of spec/gates.rs and is independently re-audited; the surrounding gate doctrine stays authored)
+no gate identity authored twice (the docs/25 gate inventory is a generated projection of spec/gates/inventory.rs and is independently re-audited; the surrounding gate doctrine stays authored)
 no decision without a typed DecisionClass, and no implementation-bearing decision without a typed GateId (Naming and HistoricalReceipt may be ungated; the class decides, never the title or ID range; DEC-072)
 no integrity/authenticity/freshness/rollback-resistance collapsed into one verified boolean or one mutually exclusive posture value (they are four independently representable typed claims: IntegrityClaim, AuthenticityClaim, FreshnessClaim, RollbackResistanceClaim; DEC-071, docs/19)
 no claim axis inferred from profile identity, witness policy, witness disposition, or another axis (profile identity does not substitute for an explicit claim bundle, and neither does witness disposition)
@@ -100,7 +100,7 @@ no authenticated-history claim exceeding the selected profile and verified witne
 no invalid profile/witness-policy pair normalized into a neighbouring profile (SignedHistory + Required is refused, never upgraded to ExternallyAnchoredHistory)
 no supplied invalid optional witness rendered as an absent one, and no absent optional witness claiming rollback resistance
 no authenticated-history profile, witness, claim-posture, or gate node in the Guarantee Graph (decision class and gates are node metadata, never synthetic nodes or edges)
-no second witness authority (spec/proof.rs owns proof-row identity and membership, docs/24 owns proof-row meaning; the docs/21 Required witness column projects the typed relations and is audited, never authoritative; LEG-023)
+no second witness authority (spec/proof/ owns proof-row identity and membership, docs/24 owns proof-row meaning; the docs/21 Required witness column projects the typed relations and is audited, never authoritative; LEG-023)
 no ContentDigest equality accepted as EventCommitment equality, and no verified-set membership accepted as immediate-predecessor proof (LEG-023, DEC-052)
 no genesis marker resetting an already-started stream, and no derived index selecting the expected authority bytes and then authenticating its own selection
 no LEG-023 absorption of the lane-isolation law owned by LEG-050 or the visible-linearization law owned by LEG-067 (it cites them)
@@ -111,7 +111,7 @@ no planned mutation leaving the denominator silently, and no mutation score publ
 no Survived without activation evidence, no Killed without a qualified baseline, and no EquivalentCandidate excluded without an independent equivalence witness
 no Muterprater as a standalone product, second semantic authority, replacement compiler, or replacement test runner; nextest executes and never owns semantic authority, and compiler-backed tooling is not retired without a qualification receipt
 no candidate written directly into src/, tests/, spec/, docs/, or companion/, and no generated candidate grading the evidence that judges it; generation and promotion stay separate admitted actions with separate receipts
-no candidate promotes while any member of `spec/promotion.rs` `PromotionRequirement::ALL` is unsatisfied; no production implementation serving as its own sole oracle, and no second full PakVM required to supply independence
+no candidate promotes while any member of `spec/promotion/types.rs` `PromotionRequirement::ALL` is unsatisfied; no production implementation serving as its own sole oracle, and no second full PakVM required to supply independence
 no residual SpecializedPlan treated as program authority, canonical source, a ProgramImage, a replacement ISA, a second VM, or the sole oracle (the reference interpreter is the executable semantic authority; DEC-073, docs/07)
 no specialization cache whose deletion changes value, availability, truth, decision, completeness, ProofDisposition, effects, effect ordering, authority meaning, or required receipts (it may change performance and WorkObservation only)
 no residual reused under a different specialization key, and no key silently omitting a component that can influence the plan or binding a dynamic fact as static

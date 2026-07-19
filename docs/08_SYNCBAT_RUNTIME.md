@@ -81,9 +81,9 @@ The `std` profile adds native threaded drivers and host adapters. The browser pr
 
 All five planes live in one crate, so no module boundary separates them. Sharing a crate does not permit one plane to perform another's transition. Nothing structural stops the runtime from reaching a socket; only the law below does, and it is typed so that it refuses rather than reminds.
 
-`spec/architecture.rs` owns the plane identities and the ownership sentences. `spec/syncbat_firewall.rs` owns which plane holds which authority and which authorities may lawfully cross which boundary. Every inventory in this section is projected from those two files.
+`spec/architecture/types.rs` owns the plane identities and the ownership sentences. `spec/syncbat_firewall/` owns which plane holds which authority and which authorities may lawfully cross which boundary. Every inventory in this section is projected from those typed owners.
 
-<!-- SYNCBAT-PLANE-OWNERSHIP:BEGIN generated from spec/architecture.rs by bootstrap/project.py; do not edit -->
+<!-- SYNCBAT-PLANE-OWNERSHIP:BEGIN generated from spec/architecture/types.rs by bootstrap/project.py; do not edit -->
 ```text
 runtime owns logical legality
 pakvm owns program semantics
@@ -99,7 +99,7 @@ Each authority has exactly one owning plane, so "who decides this" never has two
 
 A semantic authority must name the admitted PakVM node it came from. That is what makes "the ISA is the only execution route" a condition on a value rather than a sentence in this document.
 
-<!-- SYNCBAT-AUTHORITIES:BEGIN generated from spec/syncbat_firewall.rs by bootstrap/project.py; do not edit -->
+<!-- SYNCBAT-AUTHORITIES:BEGIN generated from spec/syncbat_firewall/types.rs by bootstrap/project.py; do not edit -->
 | Authority | Owning plane | Names a PakVM origin |
 | --- | --- | --- |
 | LogicalLegality | Runtime | no |
@@ -124,7 +124,7 @@ A crossing transports an already-owned value; it never transfers ownership. Afte
 
 This table is a whitelist. Any crossing absent from it is forbidden, because a blacklist of bad crossings is a list someone has to keep imagining new entries for.
 
-<!-- SYNCBAT-CROSSINGS:BEGIN generated from spec/syncbat_firewall.rs by bootstrap/project.py; do not edit -->
+<!-- SYNCBAT-CROSSINGS:BEGIN generated from spec/syncbat_firewall/inventory.rs by bootstrap/project.py; do not edit -->
 | From | To | Carries | Posture | Law |
 | --- | --- | --- | --- | --- |
 | World | Runtime | CompositionAndInstanceIdentity | Required | world supplies admitted composition and instance identity to the turn |
@@ -146,7 +146,7 @@ PakVM calling filesystem/network/clock directly
 world redefining BatPak-owned IDs or schema law
 ```
 
-These are illustrations, not a sixth inventory, and they are deliberately not projected. The first four each reduce to one plane exercising an authority another plane owns, which `admit_crossing` refuses by the ownership rule above; they are the same defect wearing four coats. The fifth is not a plane crossing at all — it is package topology, owned by `spec/architecture.rs`, because BatPak owns `.fbat` identity and schema law no matter which SyncBat plane reaches for it. Deriving these five sentences from the typed tables would mean authoring an example-to-authority mapping inside the generator, which is the invention the firewall exists to prevent.
+These are illustrations, not a sixth inventory, and they are deliberately not projected. The first four each reduce to one plane exercising an authority another plane owns, which `admit_crossing` refuses by the ownership rule above; they are the same defect wearing four coats. The fifth is not a plane crossing at all — it is package topology, owned by `spec/architecture/`, because BatPak owns `.fbat` identity and schema law no matter which SyncBat plane reaches for it. Deriving these five sentences from the typed tables would mean authoring an example-to-authority mapping inside the generator, which is the invention the firewall exists to prevent.
 
 ## Logical process
 
@@ -280,9 +280,9 @@ Failure must never produce a panic, an abort presented as ordinary refusal, an i
 
 This document owns the allocation discipline, the two canonical failure classes, and the plane coverage list. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-066 | attacker_length_is_checked_before_reserve; allocation_failure_returns_resource_exhausted; declared_work_overrun_returns_budget_exceeded; resource_exhaustion_never_publishes_partial_event; resource_exhaustion_never_advances_checkpoint; artifact_staging_failure_publishes_no_artifact_ref; pakvm_arena_exhaustion_returns_typed_terminal_disposition |

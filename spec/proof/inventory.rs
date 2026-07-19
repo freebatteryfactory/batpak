@@ -9,7 +9,7 @@ use super::types::*;
 
 /// The COMPLETE proof-identity catalog (5.5E2j): every canonical active
 /// proof-row identity docs/24 declares, in document order, followed by every
-/// identity that ever stopped being authoritative. spec/proof.rs owns
+/// identity that ever stopped being authoritative. spec/proof/ owns
 /// identity, lifecycle, succession, guarantee binding, projection membership,
 /// claim, and verification-plan membership; docs/24 permanently owns semantic
 /// summary, expected observation, and terminal disposition. Execution receipts
@@ -26,7 +26,7 @@ use super::types::*;
 /// Named verification plans (5.5F2). Each is the exact axis tuple a family
 /// of rows demands; rows reference plans by name so the catalog stays
 /// readable and the audit can independently parse both. A plan is authored
-/// posture — admission and qualification stay sealed in spec/verification.rs.
+/// posture — admission and qualification stay sealed in spec/verification/.
 pub const PLAN_HOSTILE_BOUNDARY: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::PropertySequence, basis: VerificationBasis::DirectBoundary { route: Some(IndependentEvidenceRouteKind::HostileBoundary) }, coverage: VerificationCoverage::Sampled, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking }];
 pub const PLAN_FAULT_INJECTION: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::FaultInjection, basis: VerificationBasis::DirectBoundary { route: Some(IndependentEvidenceRouteKind::HostileBoundary) }, coverage: VerificationCoverage::Sampled, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking }];
 pub const PLAN_CRASH_RECOVERY: &[VerificationRequirement] = &[VerificationRequirement { method: VerificationMethod::CrashRecovery, basis: VerificationBasis::DirectBoundary { route: Some(IndependentEvidenceRouteKind::HostileBoundary) }, coverage: VerificationCoverage::Sampled, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking }];
@@ -39,7 +39,7 @@ pub const PLAN_COMPLEXITY: &[VerificationRequirement] = &[VerificationRequiremen
 
 /// Composite plans (5.5F3). A row demanding more than one axis tuple lists
 /// each requirement literal on its own line; admission and jury still run in
-/// spec/verification.rs, and enforcement posture per requirement is authored
+/// spec/verification/, and enforcement posture per requirement is authored
 /// here, never observed.
 pub const PLAN_RECONCILIATION_REFINEMENT: &[VerificationRequirement] = &[
     VerificationRequirement { method: VerificationMethod::StructuralRule, basis: VerificationBasis::ContractProjection, coverage: VerificationCoverage::ExhaustiveWithinDeclaredModel, lane: VerificationLane::Merge, enforcement: VerificationEnforcementPosture::Blocking },

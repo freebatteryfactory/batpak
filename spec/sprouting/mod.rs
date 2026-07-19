@@ -4,8 +4,8 @@
 //! This file owns the CLOSED axes a sprouted candidate is described on and the
 //! typed law that admits a candidate-promotion plan. It owns no candidate
 //! records, no manifest schema, no serialized representation, and no version
-//! type: `spec/promotion.rs` owns the conjunctive promotion denominator
-//! (consumed here, never restated); `spec/verification.rs` owns the
+//! type: `spec/promotion/` owns the conjunctive promotion denominator
+//! (consumed here, never restated); `spec/verification/` owns the
 //! independent-evidence route vocabulary; docs/39 owns the sprouting doctrine
 //! in prose; docs/07 owns the DEC-073 specialization surface.
 //!

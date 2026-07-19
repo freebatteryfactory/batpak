@@ -13,7 +13,7 @@ reconciliation_epoch: cleanroom-v1
 
 - [ ] Read Constitution, Status, Decision Ledger, and the active gate.
 - [ ] Run `bootstrap/audit.py`.
-- [ ] Confirm package/edge facts in `spec/architecture.rs`.
+- [ ] Confirm package/edge facts in `spec/architecture/inventory.rs`.
 - [ ] Locate every affected `LEG-*` obligation and legacy `INV-*` coverage row.
 - [ ] Confirm no stale or rejected path is being recreated.
 - [ ] Confirm the affected semantic profile still compiles under `no_std + alloc`, or that the file is an explicitly admitted host adapter.
@@ -54,9 +54,9 @@ one generic cursor/timestamp/position
 
 ## Derived stale vocabulary (machine-checked)
 
-The complete stale-alias set is DERIVED from `spec/dispositions.rs`; `audit.py` proves this projection matches it exactly. Do not edit by hand — change the owning decision's `stale_aliases` instead.
+The complete stale-alias set is DERIVED from `spec/dispositions/inventory.rs`; `audit.py` proves this projection matches it exactly. Do not edit by hand — change the owning decision's `stale_aliases` instead.
 
-<!-- STALE-VOCAB:BEGIN generated from spec/dispositions.rs by bootstrap/project.py; do not edit -->
+<!-- STALE-VOCAB:BEGIN generated from spec/dispositions/inventory.rs by bootstrap/project.py; do not edit -->
 ```text
 FileBat
 filebat package
@@ -70,6 +70,7 @@ VPak as the machine name
 universal type drawer
 src/_types
 _types drawer
+root concept file
 universal layer-folder tree
 HostBat
 HostBat shell
@@ -89,7 +90,7 @@ meaning-free umbrella
 
 ## Per-file checks
 
-- [ ] Primary semantic types are in root concept files.
+- [ ] Primary semantic types are in their domain's private `types.rs`, re-exported through the domain `mod.rs`.
 - [ ] No named domain type is declared inside a function.
 - [ ] Implementation file states owner/read/write/bounds/proof where critical.
 - [ ] No drawer filename.

@@ -32,6 +32,10 @@ gate0_closed_enum! {
         RustToolchain,
         /// The discoverability-only command file.
         Justfile,
+        /// The workspace Cargo configuration carrying the native
+        /// `build.warnings = "deny"` posture (Cargo 1.97). Generated
+        /// workspace only: the bootstrap tools keep `#![deny(warnings)]`.
+        CargoConfig,
     }
 }
 
@@ -42,6 +46,7 @@ impl Gate0RootArtifact {
             Gate0RootArtifact::WorkspaceManifest => "Cargo.toml",
             Gate0RootArtifact::RustToolchain => "rust-toolchain.toml",
             Gate0RootArtifact::Justfile => "justfile",
+            Gate0RootArtifact::CargoConfig => ".cargo/config.toml",
         }
     }
 }
@@ -77,13 +82,20 @@ gate0_closed_enum! {
 }
 
 gate0_closed_enum! {
-    /// A file family every SyncBat plane expands to exactly once.
+    /// A file family every SyncBat plane expands to exactly once. A plane is a
+    /// directory under the recursive domain-directory source grammar: its
+    /// `mod.rs` is the plane facade and its private `types.rs` carries the
+    /// plane's canonical nouns. No README artifact exists in the output
+    /// grammar: the ownership prose lives in the module door's `//!` docs.
     pub enum Gate0PlaneArtifact {
-        /// `crates/syncbat/src/<module>.rs` — the plane's public module file.
-        Module,
-        /// `crates/syncbat/src/<module>/README.md` — the plane directory's
-        /// ownership note.
-        DirectoryReadme,
+        /// `crates/syncbat/src/<module>/mod.rs` — the plane's module door:
+        /// facade docs (absorbing the plane's authored ownership), the
+        /// `mod types;` declaration, and the Gate-0 plane marker.
+        ModuleDoor,
+        /// `crates/syncbat/src/<module>/types.rs` — the plane's private
+        /// canonical-noun carrier; its vocabulary arrives only at the
+        /// plane's signed gate, so Gate-0 publishes it intentionally empty.
+        TypesCarrier,
     }
 }
 

@@ -23,7 +23,7 @@ CONTRACT_DOC = "docs/06_MACBAT.md"
 def parse_contract_kinds(root):
     """Ordered (spelling, admission-basis id) pairs, in ContractKind::ALL
     order, from the typed owner."""
-    src = (root / "spec/contracts.rs").read_text(encoding="utf-8")
+    src = (root / "spec/contracts/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[ContractKind\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"ContractKind::(\w+)", all_body.group(1)) if all_body else []
@@ -45,14 +45,14 @@ def render_contract_kinds(root):
 
 
 # --- Toolchain projection (5.5E3a) -------------------------------------------
-# spec/toolchain.rs owns the values; this projector serializes the tracked
+# spec/toolchain/types.rs owns the values; this projector serializes the tracked
 # root rust-toolchain.toml and never completes a missing field.
 _TOOLCHAIN_PROFILE_SPELLING = {"Minimal": "minimal"}
 _TOOLCHAIN_COMPONENT_SPELLING = {"Clippy": "clippy", "Rustfmt": "rustfmt"}
 
 
 def parse_toolchain(root):
-    src = (root / "spec/toolchain.rs").read_text(encoding="utf-8")
+    src = (root / "spec/toolchain/types.rs").read_text(encoding="utf-8")
     release = re.search(
         r"exact_rust_release: RustRelease \{ major: (\d+), minor: (\d+), patch: (\d+) \}", src)
     floor = re.search(
@@ -81,7 +81,8 @@ def render_root_toolchain(tc):
 
 
 # --- Identity catalog projection (5.5E3d) ------------------------------------
-# spec/identities.rs owns four separate catalog axes plus the non-cataloged
+# spec/identities/types.rs owns four separate catalog axes;
+# spec/identities/inventory.rs owns the non-cataloged
 # residue table; docs/16 carries five generated blocks projecting ordered
 # entries AND owners. This projector renders; audit.py independently
 # reconstructs; they share no classification map.
@@ -102,7 +103,7 @@ def parse_identity_catalog(root, kind):
     """Ordered (spelling, owner) entries in Kind::ALL order from the typed
     owner. An ALL variant with no entry() arm refuses rather than rendering
     a hole."""
-    src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    src = (root / "spec/identities/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[" + kind + r"\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) if all_body else []
@@ -114,7 +115,7 @@ def parse_identity_catalog(root, kind):
     missing = [v for v in inventory if v not in arms]
     if not inventory or missing:
         raise Unadmitted(
-            f"spec/identities.rs: {kind} inventory unreadable or entries missing "
+            f"spec/identities/types.rs: {kind} inventory unreadable or entries missing "
             f"for {missing}")
     return [arms[v] for v in inventory]
 
@@ -122,19 +123,19 @@ def parse_identity_catalog(root, kind):
 def parse_identity_residue(root):
     """Ordered (term, disposition variant, reference) rows from
     NON_CATALOGED_IDENTITY_TERMS."""
-    src = (root / "spec/identities.rs").read_text(encoding="utf-8")
+    src = (root / "spec/identities/inventory.rs").read_text(encoding="utf-8")
     body = re.search(
         r"pub const NON_CATALOGED_IDENTITY_TERMS: &\[NonCatalogedIdentityTerm\] = &\[(.*?)\n\];",
         src, re.S)
     if not body:
-        raise Unadmitted("spec/identities.rs: NON_CATALOGED_IDENTITY_TERMS unreadable")
+        raise Unadmitted("spec/identities/inventory.rs: NON_CATALOGED_IDENTITY_TERMS unreadable")
     rows = re.findall(
         r'term: "(\w+)",\s*disposition: IdentityTermDisposition::(\w+)\('
         r'(?:ContractId|DecisionId)\("([^"]+)"\)\)', body.group(1))
     bad = [v for _, v, _ in rows if v not in _DISPOSITION_SPELLING]
     if not rows or bad:
         raise Unadmitted(
-            f"spec/identities.rs: residue rows unreadable or dispositions unknown: {bad}")
+            f"spec/identities/inventory.rs: residue rows unreadable or dispositions unknown: {bad}")
     return rows
 
 
@@ -152,13 +153,13 @@ def render_identity_residue(root):
 
 
 # --- Compiler-assumption kinds projection (5.5E3h) ---------------------------
-# spec/compiler_assumptions.rs owns the admitted ledgerable kinds; docs/19,
+# spec/compiler_assumptions/types.rs owns the admitted ledgerable kinds; docs/19,
 # the semantic owner, carries the generated fact row per kind.
 SECURITY_DOC = "docs/19_SECURITY_MODEL.md"
 
 
 def parse_compiler_assumptions(root):
-    src = (root / "spec/compiler_assumptions.rs").read_text(encoding="utf-8")
+    src = (root / "spec/compiler_assumptions/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[CompilerAssumptionKind\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"\bCompilerAssumptionKind::(\w+)", all_body.group(1)) \
@@ -189,7 +190,7 @@ def parse_compiler_assumptions(root):
     for v in inventory:
         if any(v not in fields[k] for k in fields):
             raise Unadmitted(
-                f"spec/compiler_assumptions.rs: CompilerAssumptionKind::{v} facts unreadable")
+                f"spec/compiler_assumptions/types.rs: CompilerAssumptionKind::{v} facts unreadable")
         rows.append((
             fields["spelling"][v].strip('"'),
             re.search(r'"([^"]+)"', fields["basis"][v]).group(1),
@@ -198,7 +199,7 @@ def parse_compiler_assumptions(root):
             re.search(r"GateId::(\w+)", fields["rgate"][v]).group(1),
         ))
     if not rows:
-        raise Unadmitted("spec/compiler_assumptions.rs: inventory unreadable")
+        raise Unadmitted("spec/compiler_assumptions/types.rs: inventory unreadable")
     return rows
 
 
@@ -212,13 +213,13 @@ def render_compiler_assumptions(root):
 
 
 # --- Corpus epoch projection (5.5E3g) ----------------------------------------
-# spec/corpus.rs owns which corpus epochs exist and which one is CURRENT;
+# spec/corpus/types.rs owns which corpus epochs exist and which one is CURRENT;
 # this projector mechanically converges every eligible document's epoch
 # frontmatter and renders the docs/00 fact block. It touches ONLY the epoch
 # field — authored status, contract id, scope, supersession, and the
 # last_reconciled date stay authored.
 def parse_corpus_epoch(root):
-    src = (root / "spec/corpus.rs").read_text(encoding="utf-8")
+    src = (root / "spec/corpus/types.rs").read_text(encoding="utf-8")
     cur = re.search(
         r"pub const CURRENT_RECONCILIATION_EPOCH:\s*ReconciliationEpoch = "
         r"ReconciliationEpoch::(\w+);", src)
@@ -228,7 +229,7 @@ def parse_corpus_epoch(root):
     bases = dict(re.findall(
         r'ReconciliationEpoch::(\w+) => \{?\s*GuaranteeRef::Seed\(SeedId\("([^"]+)"\)\)', src))
     if not cur or cur.group(1) not in spellings:
-        raise Unadmitted("spec/corpus.rs: CURRENT_RECONCILIATION_EPOCH unreadable")
+        raise Unadmitted("spec/corpus/types.rs: CURRENT_RECONCILIATION_EPOCH unreadable")
     v = cur.group(1)
     return {"variant": v, "spelling": spellings[v],
             "owner": owners.get(v, ""), "basis": bases.get(v, "")}
@@ -265,7 +266,7 @@ def converge_epoch_frontmatter(text, spelling):
 
 
 # --- Mutation vocabulary projection (5.5E3f) ---------------------------------
-# spec/mutation.rs owns the lanes and result classifications as TOTAL const
+# spec/mutation/types.rs owns the lanes and result classifications as TOTAL const
 # functions; docs/12 carries two generated fact tables.
 MUTATION_DOC = "docs/12_TESTPAK.md"
 
@@ -290,7 +291,7 @@ def _mutation_fn_arms(src, enum, name):
 
 
 def parse_mutation_lanes(root):
-    src = (root / "spec/mutation.rs").read_text(encoding="utf-8")
+    src = (root / "spec/mutation/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[MutationLane\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"\bMutationLane::(\w+)", all_body.group(1)) if all_body else []
@@ -302,7 +303,7 @@ def parse_mutation_lanes(root):
     rows = []
     for v in inventory:
         if any(v not in fields[f] for f in fields):
-            raise Unadmitted(f"spec/mutation.rs: MutationLane::{v} facts unreadable")
+            raise Unadmitted(f"spec/mutation/types.rs: MutationLane::{v} facts unreadable")
         rows.append((
             fields["spelling"][v].strip('"'),
             fields["requires_per_candidate_rust_compile"][v],
@@ -313,12 +314,12 @@ def parse_mutation_lanes(root):
             " ".join(re.findall(r"GateId::(\w+)", fields["gates"][v])),
         ))
     if not rows:
-        raise Unadmitted("spec/mutation.rs: MutationLane inventory unreadable")
+        raise Unadmitted("spec/mutation/types.rs: MutationLane inventory unreadable")
     return rows
 
 
 def parse_mutation_results(root):
-    src = (root / "spec/mutation.rs").read_text(encoding="utf-8")
+    src = (root / "spec/mutation/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[MutationResult\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"\bMutationResult::(\w+)", all_body.group(1)) if all_body else []
@@ -327,11 +328,11 @@ def parse_mutation_results(root):
     rows = []
     for v in inventory:
         if any(v not in fields[f] for f in fields):
-            raise Unadmitted(f"spec/mutation.rs: MutationResult::{v} facts unreadable")
+            raise Unadmitted(f"spec/mutation/types.rs: MutationResult::{v} facts unreadable")
         rows.append((fields["spelling"][v].strip('"'), fields["counts_as_kill"][v],
                      fields["counts_as_survival"][v], fields["appears_in_denominator"][v]))
     if not rows:
-        raise Unadmitted("spec/mutation.rs: MutationResult inventory unreadable")
+        raise Unadmitted("spec/mutation/types.rs: MutationResult inventory unreadable")
     return rows
 
 
@@ -353,7 +354,7 @@ def render_mutation_results(root):
 
 
 # --- Command namespace projection (5.5E3e) -----------------------------------
-# spec/commands.rs owns three separate closed namespaces and each entry's
+# spec/commands/types.rs owns three separate closed namespaces and each entry's
 # typed authority relation. docs/26 projects the two CLI inventories; the
 # BatQL companion projects the source modes.
 COMMANDS_DOC = "docs/26_COMMAND_PLANE.md"
@@ -368,7 +369,7 @@ COMMAND_NAMESPACES = (
 def parse_command_namespace(root, kind):
     """Ordered (token, shape, owner, delegates) rows in Kind::ALL order from
     the typed owner."""
-    src = (root / "spec/commands.rs").read_text(encoding="utf-8")
+    src = (root / "spec/commands/types.rs").read_text(encoding="utf-8")
     all_body = re.search(
         r"pub const ALL: &'static \[" + kind + r"\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) if all_body else []
@@ -396,7 +397,7 @@ def parse_command_namespace(root, kind):
     missing = [v for v in inventory if v not in tokens or v not in authority]
     if not inventory or missing:
         raise Unadmitted(
-            f"spec/commands.rs: {kind} inventory unreadable or arms missing for {missing}")
+            f"spec/commands/types.rs: {kind} inventory unreadable or arms missing for {missing}")
     return [(tokens[v], *authority[v]) for v in inventory]
 
 
@@ -424,7 +425,7 @@ def stale_aliases(root: Path) -> list[str]:
     """Every retired alias, in DEC declaration order. Declaration order IS
     canonical, so the projection stays grouped under the decision that retired
     each term rather than scattering them alphabetically."""
-    src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    src = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     out: list[str] = []
     for raw in _STALE_ROW.findall(src):
         for alias in re.findall(r'"([^"]+)"', raw):
@@ -463,8 +464,8 @@ def render_tracked_toolchain(root: Path) -> str:
     selection; byte-equal to ToolchainProfile::tracked_root_toolchain_toml."""
     tc = parse_toolchain(root)
     if not all(tc.values()):
-        raise Unadmitted("spec/toolchain.rs: incomplete ToolchainProfile; the projection refuses")
-    return ("# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n"
+        raise Unadmitted("spec/toolchain/types.rs: incomplete ToolchainProfile; the projection refuses")
+    return ("# generated from spec/toolchain/types.rs by bootstrap/project.py; do not edit\n"
             + render_root_toolchain(tc))
 
 
@@ -565,10 +566,11 @@ def render_bundle_inventory(root: Path) -> str:
     edges = len(_EDGE_ROW.findall(arch))
     profiles = len(_QUAL_PROFILE_ROW.findall(arch))
     seeds = len(guarantee_seed(root))
-    decisions = len(_DEC_ROW.findall((root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+    decisions = len(_DEC_ROW.findall(
+        (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")))
     obligations = len(_LEG_ROW.findall(
-        (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")))
-    coverage_src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
+        (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")))
+    coverage_src = (root / "spec/legacy_invariant_coverage/inventory.rs").read_text(encoding="utf-8")
     manifest = re.findall(r'"(INV-[^"]+)"', re.search(
         r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", coverage_src,
         re.S).group(1))
@@ -588,10 +590,10 @@ def render_bundle_inventory(root: Path) -> str:
         ("Cargo packages", packages, "PackageId::ALL with PACKAGES parity"),
         ("package edges", edges, "EDGES"),
         ("qualification profiles", profiles, "QUALIFICATION_PROFILES"),
-        ("SEED guarantees", seeds, "spec/invariants.rs SEED inventory"),
-        ("decision rows", decisions, "spec/dispositions.rs DECISIONS"),
+        ("SEED guarantees", seeds, "spec/invariants/inventory.rs SEED inventory"),
+        ("decision rows", decisions, "spec/dispositions/inventory.rs DECISIONS"),
         ("legacy semantic obligations", obligations,
-         "spec/legacy_obligations.rs OBLIGATIONS"),
+         "spec/legacy_obligations/inventory.rs OBLIGATIONS"),
         ("legacy invariant declarations", len(manifest),
          "SOURCE_INVARIANT_IDS with COVERAGE parity"),
         ("BatQL operators", operators, "OperatorId::ALL with OPERATORS parity"),
@@ -609,22 +611,21 @@ def render_bundle_inventory(root: Path) -> str:
 
 def render_tier0_receipts(root: Path) -> str:
     """The required Tier 0 receipt denominator, parsed from the typed owner
-    spec/bootstrap_qualification.rs (5.5E6a). This block declares WHAT is
+    spec/bootstrap_qualification/types.rs (5.5E6a). This block declares WHAT is
     required and each receipt's artifact policy; run receipts carry whether a
     particular run passed. The denominator is no longer a Python authority."""
-    src_path = root / "spec/bootstrap_qualification.rs"
-    if not src_path.is_file():
-        raise Unadmitted("spec/bootstrap_qualification.rs is absent; the Tier 0 denominator refuses")
+    if not (root / "spec/bootstrap_qualification").is_dir():
+        raise Unadmitted("spec/bootstrap_qualification/ is absent; the Tier 0 denominator refuses")
     src = _spec_module_source(root, "bootstrap_qualification")
     order_body = re.search(r"pub const ALL: &'static \[Tier0ReceiptKind\] = &\[(.*?)\];",
                            src, re.S)
     if not order_body:
-        raise Unadmitted("spec/bootstrap_qualification.rs declares no Tier0ReceiptKind::ALL")
+        raise Unadmitted("spec/bootstrap_qualification/types.rs declares no Tier0ReceiptKind::ALL")
     order = re.findall(r"Tier0ReceiptKind::(\w+),", order_body.group(1))
     slugs = dict(re.findall(r'Tier0ReceiptKind::(\w+) => "([^"]+)"', src))
     policy = dict(re.findall(r"Tier0ReceiptKind::(\w+) => Tier0ArtifactPolicy::(\w+)", src))
     if not order or not slugs or not policy:
-        raise Unadmitted("spec/bootstrap_qualification.rs Tier 0 policy parses to nothing")
+        raise Unadmitted("spec/bootstrap_qualification/types.rs Tier 0 policy parses to nothing")
     lines = ["| Receipt | Artifact policy |", "| --- | --- |"]
     for kind in order:
         lines.append(f"| {slugs[kind]} | {policy[kind]} |")
@@ -633,10 +634,12 @@ def render_tier0_receipts(root: Path) -> str:
 
 def render_spec_module_catalog(root: Path) -> str:
     """The exact spec module census, serialized from spec/lib.rs (the declared
-    module set the rlib boundary makes real). Each row states the module and
-    its physical shape; a same-name directory is the concept-door module tree
-    the Wave-2 bake introduced. Descriptions stay authored prose: this block
-    owns the census, never the meaning."""
+    module set the rlib boundary makes real). Under the recursive
+    domain-directory source grammar every declared module is a domain
+    directory whose mod.rs is the facade; each row counts every Rust module
+    file in the domain tree, mod.rs included. A declared module with no
+    domain directory is unlawful shape and refuses. Descriptions stay
+    authored prose: this block owns the census, never the meaning."""
     lib = root / "spec/lib.rs"
     if not lib.is_file():
         raise Unadmitted("spec/lib.rs is absent; the module catalog refuses")
@@ -646,31 +649,31 @@ def render_spec_module_catalog(root: Path) -> str:
     lines = ["| Module | Shape |", "| --- | --- |"]
     for m in mods:
         tree = root / "spec" / m
-        if tree.is_dir():
-            n = len(sorted(tree.glob("*.rs")))
-            lines.append(f"| `{m}.rs` | concept door + `{m}/` ({n} modules) |")
-        else:
-            lines.append(f"| `{m}.rs` | single module |")
+        if not tree.is_dir():
+            raise Unadmitted(
+                f"spec/{m}/ is absent; the declared module has no domain directory")
+        n = len(sorted(tree.rglob("*.rs")))
+        lines.append(f"| `{m}/` | domain directory ({n} modules) |")
     lines.append(f"| | {len(mods)} modules behind the one `lib.rs` boundary |")
     return "\n".join(lines)
 
 
 def render_bootstrap_tool_catalog(root: Path) -> str:
     """The exact bootstrap tool census, serialized from the typed denominator
-    BootstrapToolId (spec/guarantees.rs): ALL order, display spelling, and the
+    BootstrapToolId (spec/guarantees/types.rs): ALL order, display spelling, and the
     law path whose existence seedcheck enforces. Role descriptions stay
     authored prose."""
     src = _spec_module_source(root, "guarantees")
     order_body = re.search(
         r"pub const ALL: &'static \[BootstrapToolId\] = &\[(.*?)\];", src, re.S)
     if not order_body:
-        raise Unadmitted("spec/guarantees.rs declares no BootstrapToolId::ALL")
+        raise Unadmitted("spec/guarantees/types.rs declares no BootstrapToolId::ALL")
     order = re.findall(r"BootstrapToolId::(\w+),", order_body.group(1))
 
     def arms(fn_name: str) -> dict[str, str]:
         start = src.find(f"pub const fn {fn_name}(")
         if start < 0:
-            raise Unadmitted(f"spec/guarantees.rs: BootstrapToolId::{fn_name} absent")
+            raise Unadmitted(f"spec/guarantees/types.rs: BootstrapToolId::{fn_name} absent")
         rest = src[start:]
         nxt = rest.find("\n    pub const fn ", 1)
         body = rest if nxt < 0 else rest[:nxt]
@@ -678,7 +681,7 @@ def render_bootstrap_tool_catalog(root: Path) -> str:
 
     paths, displays = arms("path"), arms("display")
     if not order or set(order) != set(paths) or set(order) != set(displays):
-        raise Unadmitted("spec/guarantees.rs BootstrapToolId census is incomplete")
+        raise Unadmitted("spec/guarantees/types.rs BootstrapToolId census is incomplete")
     lines = ["| Tool | Law path |", "| --- | --- |"]
     for v in order:
         lines.append(f"| `{displays[v]}` | `{paths[v]}` |")

@@ -116,7 +116,7 @@ def test_gates(audit, project) -> list[str]:
     probe("docs25_gate_inventory_drift_is_rejected",
           [("docs/25_IMPLEMENTATION_GATES.md",
             "| G4 | G4 | BatQL compiler |", "| G4 | G4 | BatQL compilerr |")],
-          audit.gate_doc_findings, "does not equal spec/gates.rs")
+          audit.gate_doc_findings, "does not equal spec/gates/inventory.rs")
     probe("docs23_rendered_seed_gate_drift_is_rejected",
           [("docs/23_BOOTSTRAP_AND_SELF_HOSTING.md",
             "| SEED-PAKVM-NAME | SemanticLaw | Permanent | docs/07_PAKVM_ISA.md | G0/G5 |",
@@ -298,7 +298,7 @@ def test_authenticated_history(audit) -> list[str]:
             fail(f"{name} (wanted {needle!r}, got {produced!r})")
 
     def probe(name, old, new, needle, validator=None):
-        tmp = gate_sandbox([("spec/architecture/history.rs", old, new)])
+        tmp = gate_sandbox([("spec/architecture/authenticated_history.rs", old, new)])
         try:
             expect(name, (validator or audit.authenticated_history_findings)(tmp), needle)
         finally:
@@ -951,7 +951,7 @@ def test_bundle_inventory_decision_count(audit) -> list[str]:
     root = HERE.parent
     text = (root / "docs/28_SELF_EXPLAINING_REPOSITORY.md").read_text(encoding="utf-8")
     live = len(audit.G_DEC_ROW.findall(
-        (root / "spec/dispositions.rs").read_text(encoding="utf-8")))
+        (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")))
     if f"| decision rows | {live} |" not in text:
         findings.append("bundle_inventory_tracks_live_decision_count FAILED")
     return findings

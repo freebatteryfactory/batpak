@@ -78,9 +78,9 @@ Agents do not “support both just in case.” They apply the decision ledger.
 
 ## Derived stale vocabulary (machine-checked)
 
-The complete stale-alias set is DERIVED from `spec/dispositions.rs`; `audit.py` proves this projection matches it exactly. Do not edit by hand — change the owning decision's `stale_aliases` instead.
+The complete stale-alias set is DERIVED from `spec/dispositions/inventory.rs`; `audit.py` proves this projection matches it exactly. Do not edit by hand — change the owning decision's `stale_aliases` instead.
 
-<!-- STALE-VOCAB:BEGIN generated from spec/dispositions.rs by bootstrap/project.py; do not edit -->
+<!-- STALE-VOCAB:BEGIN generated from spec/dispositions/inventory.rs by bootstrap/project.py; do not edit -->
 ```text
 FileBat
 filebat package
@@ -94,6 +94,7 @@ VPak as the machine name
 universal type drawer
 src/_types
 _types drawer
+root concept file
 universal layer-folder tree
 HostBat
 HostBat shell

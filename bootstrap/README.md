@@ -20,7 +20,7 @@ the real `spec` rlib.
 The exact tool set, generated from the typed denominator `BootstrapToolId`
 (`spec/guarantees.rs`) whose every `path()` seedcheck requires to exist.
 
-<!-- BOOTSTRAP-TOOL-CATALOG:BEGIN generated from spec/guarantees.rs by bootstrap/project.py; do not edit -->
+<!-- BOOTSTRAP-TOOL-CATALOG:BEGIN generated from spec/guarantees/types.rs by bootstrap/project.py; do not edit -->
 | Tool | Law path |
 | --- | --- |
 | `project.py` | `bootstrap/project.py` |

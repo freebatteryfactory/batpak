@@ -187,7 +187,7 @@ encrypted bytes. Implementation does not get to leave them ambient.
 This document owns signing-key ownership, secret authority, and verification-key trust. It does not own whole-store authenticated history:
 
 ```text
-spec/architecture.rs   the typed AuthenticatedHistoryProfile matrix and witness policy
+spec/architecture/authenticated_history.rs   the typed AuthenticatedHistoryProfile matrix and witness policy
 19_SECURITY_MODEL.md   the whole-store rollback threat and the permitted claims
 05_STORAGE_FBAT_AND_TILES.md  segment seals, history commitment, open/restore behavior
 ```
@@ -206,9 +206,9 @@ TestPak               independent crash, rollback, and transplant witnesses
 
 This document owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | LEG-081 | shred_ack_waits_for_backend_durability; crash_before_durable_key_delete_does_not_report_shred_success; reopen_after_ack_cannot_recover_shredded_plaintext; shred_transition_binding_mismatch_is_rejected; stale_or_pre_shred_keyset_restore_is_rejected; foreign_keyset_generation_is_rejected; shredded_unavailable_and_keyset_missing_remain_distinct; snapshot_fork_worldimage_artifact_and_receipt_exports_exclude_raw_keys; external_key_backend_preserves_shred_semantics |

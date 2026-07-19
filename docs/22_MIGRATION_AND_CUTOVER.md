@@ -75,7 +75,7 @@ The orphan branch becomes default after:
 ```text
 this specification is signed
 seedcheck and audit pass under pinned tools
-Gate 0 skeleton matches spec/architecture.rs
+Gate 0 skeleton matches spec/architecture/inventory.rs
 legacy branch/tag are protected
 issue mapping and agent context point to clean authority
 ```
@@ -88,9 +88,9 @@ Every imported reader, vector, fixture, kernel, and retired legacy path receives
 
 ## Required proof rows
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | LEG-074 | close_reopen_reimport_returns_zero_new_events |

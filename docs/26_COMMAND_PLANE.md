@@ -28,7 +28,7 @@ Each entry carries its typed authority relation: `direct` cites the contract
 owning the command-level operation; `composite` cites the orchestration
 owner and the delegates whose semantic law it routes to.
 
-<!-- PRODUCT-COMMANDS:BEGIN generated from spec/commands.rs by bootstrap/project.py; do not edit -->
+<!-- PRODUCT-COMMANDS:BEGIN generated from spec/commands/types.rs by bootstrap/project.py; do not edit -->
 ```text
 compile    composite  BP-COMMAND-PLANE-1           BP-MACBAT-1 BP-BATQL-ARCH-1 BP-WORLD-PORTS-1
 run        direct     BP-WORLD-PORTS-1
@@ -48,7 +48,7 @@ invokes a declared WorldImage entrypoint whose program may be ASK or DO;
 
 ## TestPak commands
 
-<!-- TESTPAK-COMMANDS:BEGIN generated from spec/commands.rs by bootstrap/project.py; do not edit -->
+<!-- TESTPAK-COMMANDS:BEGIN generated from spec/commands/types.rs by bootstrap/project.py; do not edit -->
 ```text
 inspect    direct     BP-SELF-EXPLAINING-1
 forge      direct     BP-TESTPAK-1

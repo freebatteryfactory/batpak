@@ -109,9 +109,9 @@ A future compressed profile requires a `CompressionId`, canonical parameters, bo
 
 This document owns the compression posture and the future-profile admission requirements. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere. The two obligations below qualify at their own typed gates; sharing this paragraph does not merge their gate schedules.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | LEG-023 | middle_event_deletion_is_rejected; event_reorder_is_rejected; duplicate_payload_splice_is_rejected; cross_lane_predecessor_is_rejected; cross_entity_predecessor_is_rejected; midstream_genesis_is_rejected; forged_index_row_cannot_choose_and_authenticate_bytes |
@@ -171,7 +171,7 @@ A foreign or stale derived cache is discarded and rebuilt. A foreign or damaged 
 
 ## Authenticated history at open and restore (DEC-071)
 
-The store owns the durable material that authenticated history verifies. `spec/architecture.rs` owns the typed profile matrix; `19_SECURITY_MODEL.md` owns the threat and the claims; this document owns the storage semantics:
+The store owns the durable material that authenticated history verifies. `spec/architecture/authenticated_history.rs` owns the typed profile matrix; `19_SECURITY_MODEL.md` owns the threat and the claims; this document owns the storage semantics:
 
 ```text
 segment seal            a per-segment authenticity commitment over accepted bytes

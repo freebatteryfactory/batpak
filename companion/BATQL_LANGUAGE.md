@@ -9,7 +9,7 @@ reconciliation_epoch: cleanroom-v1
 
 # BatQL Frontend Language Packet
 
-> **Freeze:** BatQL 1.0 is normative, identified by its `BatQlLanguageVersion`. Only defects proven by parser, type, compatibility, or conformance work may amend it through the signed language-change law. Each admitted operator carries a stable `OperatorId` in the typed operator authority (`spec/operators.rs`).
+> **Freeze:** BatQL 1.0 is normative, identified by its `BatQlLanguageVersion`. Only defects proven by parser, type, compatibility, or conformance work may amend it through the signed language-change law. Each admitted operator carries a stable `OperatorId` in the typed operator authority (`spec/operators/types.rs`).
 
 
 ## Definition
@@ -71,7 +71,7 @@ DO     Admitted transaction. May perform declared effects and always returns a r
 That boundary is structural. The typed source-mode inventory is projected
 from the command namespaces:
 
-<!-- BATQL-SOURCE-MODES:BEGIN generated from spec/commands.rs by bootstrap/project.py; do not edit -->
+<!-- BATQL-SOURCE-MODES:BEGIN generated from spec/commands/types.rs by bootstrap/project.py; do not edit -->
 ```text
 ASK        direct     BP-BATQL-LANGUAGE-1
 DO         direct     BP-BATQL-LANGUAGE-1
@@ -128,9 +128,9 @@ Logical operators remain canonical words in every source density: `NOT`, `AND`, 
 
 Spoken narration is not parser syntax: the spoken projection narrates the typed tree and is never accepted source.
 
-The exact surface mapping is a generated projection of the typed source (`OperatorSyntax` in `spec/operators.rs`), not a hand-maintained table:
+The exact surface mapping is a generated projection of the typed source (`OperatorSyntax` in `spec/operators/types.rs`), not a hand-maintained table:
 
-<!-- OPERATORS-SURFACES:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+<!-- OPERATORS-SURFACES:BEGIN generated from spec/operators/inventory.rs; spec/operators/types.rs by bootstrap/project.py; do not edit -->
 | OperatorId | Shape | Canonical | Accepted alias |
 | --- | --- | --- | --- |
 | OP-MUL | symbol-only | `*` | - |
@@ -1409,9 +1409,9 @@ No unqualified `FLOAT`, `F32`, `F64`, `NaN`, or `Infinity` literal forms exist. 
 
 ## 5.2a Typed arithmetic legality (DEC-060)
 
-BatQL cannot claim strict typing while leaving operator meaning underdetermined. The legal operator matrix below is a generated projection of each operator's typed legality rules (`spec/operators.rs`, `OperatorTypingRule`); anything not derivable from those rules is a compile-time type error. Rules match in declaration order, so `Percent - Percent` is a `PercentagePoints` difference, never a bare same-unit result. `ObservedWallTime - ObservedWallTime` yields `TimeDelta`, a signed diagnostic observation difference that is never `Duration` or any ordering, budget, or deadline authority (docs/16). `Money * Percent` stays `Money` — exact by scale increase, with scale reduction through an explicit named rounding mode; a percentage of money is money, not a new one-off sort.
+BatQL cannot claim strict typing while leaving operator meaning underdetermined. The legal operator matrix below is a generated projection of each operator's typed legality rules (`spec/operators/inventory.rs`, `OperatorTypingRule`); anything not derivable from those rules is a compile-time type error. Rules match in declaration order, so `Percent - Percent` is a `PercentagePoints` difference, never a bare same-unit result. `ObservedWallTime - ObservedWallTime` yields `TimeDelta`, a signed diagnostic observation difference that is never `Duration` or any ordering, budget, or deadline authority (docs/16). `Money * Percent` stays `Money` — exact by scale increase, with scale reduction through an explicit named rounding mode; a percentage of money is money, not a new one-off sort.
 
-<!-- OPERATORS-TYPING:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+<!-- OPERATORS-TYPING:BEGIN generated from spec/operators/inventory.rs; spec/operators/types.rs by bootstrap/project.py; do not edit -->
 ### Multiplication (`*`)
 
 ```text
@@ -1492,7 +1492,7 @@ value   HalfEven   HALF_UP/HalfAwayFromZero   DOWN/TowardZero   UP/AwayFromZero 
 -0.5       0                 -1                       0                -1           -1        0
 ```
 
-`Floor` rounds toward negative infinity; `Ceiling` rounds toward positive infinity. The concrete operator and rounding facts are owned by `spec/operators.rs` (OperatorSpec); DEC-060 is the authored decision that points to it.
+`Floor` rounds toward negative infinity; `Ceiling` rounds toward positive infinity. The concrete operator and rounding facts are owned by `spec/operators/inventory.rs` (OperatorSpec); DEC-060 is the authored decision that points to it.
 
 ```batql
 ROUND(value, target_scale, HALF_EVEN)
@@ -3348,7 +3348,7 @@ rounding_mode
   := HALF_EVEN | HALF_UP | DOWN | UP | FLOOR | CEILING
 ```
 
-The four function/declaration/MATCH structural forms and every lexical and metavariable leaf are defined below in 15.2. The operator productions (`comparison_operator`, `arithmetic_operator`, `logical_operator`) are generated from `spec/operators.rs` in 15.3; they are the one operator authority. `rounding_mode` lists the surface spellings that lower to the six canonical rounding modes frozen by DEC-060.
+The four function/declaration/MATCH structural forms and every lexical and metavariable leaf are defined below in 15.2. The operator productions (`comparison_operator`, `arithmetic_operator`, `logical_operator`) are generated from `spec/operators/` in 15.3; they are the one operator authority. `rounding_mode` lists the surface spellings that lower to the six canonical rounding modes frozen by DEC-060.
 
 The complete grammar must remain parseable without semantic backtracking.
 
@@ -3511,9 +3511,9 @@ cost_clause
 
 ## 15.3 Generated operator projections
 
-These blocks are generated from `spec/operators.rs` by `bootstrap/project.py` and independently re-checked by `bootstrap/audit.py`. OperatorSpec is the one operator authority; it owns operator relationships and these projected tables and fragments only, never the function, MATCH, declaration, or general lexical grammar. Do not hand-edit the generated content.
+These blocks are generated from `spec/operators/` by `bootstrap/project.py` and independently re-checked by `bootstrap/audit.py`. OperatorSpec is the one operator authority; it owns operator relationships and these projected tables and fragments only, never the function, MATCH, declaration, or general lexical grammar. Do not hand-edit the generated content.
 
-<!-- OPERATORS-CATALOG:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+<!-- OPERATORS-CATALOG:BEGIN generated from spec/operators/inventory.rs; spec/operators/types.rs by bootstrap/project.py; do not edit -->
 | OperatorId | Class | Arity | Fixity | Precedence | Associativity | Result sort | Exactness |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | OP-MUL | Arithmetic | Binary | Infix | 70 | Left | exact dimensional | Exact |
@@ -3533,7 +3533,7 @@ These blocks are generated from `spec/operators.rs` by `bootstrap/project.py` an
 
 The operator grammar fragment defines the operator productions referenced by `comparison`, `arithmetic_expression`, and `logical_expression`:
 
-<!-- OPERATORS-GRAMMAR:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+<!-- OPERATORS-GRAMMAR:BEGIN generated from spec/operators/inventory.rs; spec/operators/types.rs by bootstrap/project.py; do not edit -->
 ```text
 comparison_operator
   := IS | IS NOT | IS LESS THAN | IS AT MOST | IS MORE THAN | IS AT LEAST | "=" | "!=" | "<" | "<=" | ">" | ">="
@@ -3548,7 +3548,7 @@ logical_operator
 
 Formatting and spoken projections and legal mutation classes:
 
-<!-- OPERATORS-PROJECTION:BEGIN generated from spec/operators.rs by bootstrap/project.py; do not edit -->
+<!-- OPERATORS-PROJECTION:BEGIN generated from spec/operators/inventory.rs; spec/operators/types.rs by bootstrap/project.py; do not edit -->
 | OperatorId | Canonical formatting | Spoken | Legal mutation classes |
 | --- | --- | --- | --- |
 | OP-MUL | `*` | times | precedence, associativity, constant-folding, parenthesis, scale-adjustment |

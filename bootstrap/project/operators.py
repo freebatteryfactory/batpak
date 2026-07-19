@@ -1,8 +1,10 @@
 """BatQL operator projections (5.5E3j) and the typing legality matrix (5.5E1).
 
-Parses spec/operators.rs through the typed inventories and serializes the six
-operator views plus the typed legality matrix. Standard library only; shares
-no parsing with bootstrap/audit.py.
+Parses the operators domain through the typed inventories — the vocabulary and
+token arms from spec/operators/types.rs, the OPERATORS rows from
+spec/operators/inventory.rs — and serializes the six operator views plus the
+typed legality matrix. Standard library only; shares no parsing with
+bootstrap/audit.py.
 """
 from __future__ import annotations
 
@@ -41,7 +43,7 @@ def _operator_all(source: str, type_name: str) -> list[str]:
     body = re.search(
         r"pub const ALL: &'static \[" + type_name + r"\] = &\[(.*?)\];", source, re.S)
     if not body:
-        raise SystemExit(f"project: spec/operators.rs declares no {type_name}::ALL inventory")
+        raise SystemExit(f"project: spec/operators/types.rs declares no {type_name}::ALL inventory")
     # \b keeps e.g. OperatorSymbolSurface::X from satisfying OperatorId::X-style
     # prefixes of longer type names.
     return re.findall(r"\b" + type_name + r"::(\w+)", body.group(1))
@@ -58,20 +60,21 @@ def _operator_token_arms(source: str, type_name: str, fn_name: str) -> dict[str,
         body, re.S)
     if not fn:
         raise SystemExit(
-            f"project: spec/operators.rs declares no {type_name}::{fn_name} arms")
+            f"project: spec/operators/types.rs declares no {type_name}::{fn_name} arms")
     return dict(re.findall(r"\b" + type_name + r'::(\w+) => "([^"]*)",', fn.group(1)))
 
 
 def parse_operators(root: Path) -> list[dict[str, str]]:
     """OperatorSpec rows resolved through the typed inventories, returned in
     OperatorId::ALL order."""
-    source = (root / "spec/operators.rs").read_text(encoding="utf-8")
-    id_all = _operator_all(source, "OperatorId")
-    id_spelling = _operator_token_arms(source, "OperatorId", "spelling")
-    word_token = _operator_token_arms(source, "OperatorWordSurface", "token")
-    symbol_token = _operator_token_arms(source, "OperatorSymbolSurface", "token")
+    types_src = (root / "spec/operators/types.rs").read_text(encoding="utf-8")
+    rows_src = (root / "spec/operators/inventory.rs").read_text(encoding="utf-8")
+    id_all = _operator_all(types_src, "OperatorId")
+    id_spelling = _operator_token_arms(types_src, "OperatorId", "spelling")
+    word_token = _operator_token_arms(types_src, "OperatorWordSurface", "token")
+    symbol_token = _operator_token_arms(types_src, "OperatorSymbolSurface", "token")
     rows: dict[str, dict[str, str]] = {}
-    for match in OPERATOR_ROW.findall(source):
+    for match in OPERATOR_ROW.findall(rows_src):
         (variant, cls, shape, inner, semantic_op, arity, fixity, precedence,
          associativity, typing, input_sorts, result_sort, exactness, overflow,
          exception, spoken, mutation_classes, numeric_support) = match

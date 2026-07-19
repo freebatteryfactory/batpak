@@ -29,11 +29,11 @@ signed documents and typed seed facts
 
 ## Stage 0: signed seed
 
-The current bundle, `spec/lib.rs` with the concept-door module trees under `spec/`, `audit.py`, `freeze.py`, `seedcheck.rs`, and `materialize.rs` are the starting authority. Seedcheck validates shape and stale architecture before production code exists. Materialize consumes the same package facts to publish an isolated Gate-0 workspace candidate outside the signed seed tree.
+The current bundle, `spec/lib.rs` with the domain-directory module trees under `spec/`, `audit.py`, `freeze.py`, `seedcheck.rs`, and `materialize.rs` are the starting authority. Seedcheck validates shape and stale architecture before production code exists. Materialize consumes the same package facts to publish an isolated Gate-0 workspace candidate outside the signed seed tree.
 
 ## Materialization law
 
-`bootstrap/materialize.rs` is a one-time factory with two explicit roots: `materialize --seed <signed-seed-root> --output <candidate-output-root>`. The signed seed and the generated output are separate roots. The materializer reads and validates the seed; it writes only the output; the seed is never modified. It may publish only the exact workspace, package manifests, source doors, and SyncBat plane skeleton the typed owners declare, and the complete plan -- every path and every byte -- is constructed from `spec/bootstrap_output.rs`, `spec/architecture.rs`, and `spec/toolchain.rs` before any filesystem write. It never imports legacy source, invents a package, or writes semantic implementation.
+`bootstrap/materialize.rs` is a one-time factory with two explicit roots: `materialize --seed <signed-seed-root> --output <candidate-output-root>`. The signed seed and the generated output are separate roots. The materializer reads and validates the seed; it writes only the output; the seed is never modified. It may publish only the exact workspace, package manifests, source doors, and SyncBat plane skeleton the typed owners declare, and the complete plan -- every path and every byte -- is constructed from `spec/bootstrap_output/`, `spec/architecture/`, and `spec/toolchain/` before any filesystem write. It never imports legacy source, invents a package, or writes semantic implementation.
 
 Publication has exactly two successful dispositions: `Created` (the output was absent and a complete staged tree was renamed into place) and `Unchanged` (the output already carried exactly the planned tree and nothing was written). A divergent existing output is refused, never repaired in place. Qualification compares the published candidate against an independent output oracle that reconstructs the expected bytes from the same typed owners, and it proves the seed tree unchanged across the run.
 
@@ -41,12 +41,13 @@ The output is a CANDIDATE tree. Promotion of its exact bytes into tracked source
 
 The complete expanded plan:
 
-<!-- GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/bootstrap_output.rs; spec/architecture.rs; spec/toolchain.rs by bootstrap/project.py; do not edit -->
+<!-- GATE0-MATERIALIZATION-PLAN:BEGIN generated from spec/bootstrap_output/types.rs; spec/architecture/types.rs; spec/toolchain/types.rs by bootstrap/project.py; do not edit -->
 | Path | Artifact family | Derivation |
 | --- | --- | --- |
 | Cargo.toml | Root / WorkspaceManifest | Gate0RootArtifact::WorkspaceManifest |
 | rust-toolchain.toml | Root / RustToolchain | Gate0RootArtifact::RustToolchain |
 | justfile | Root / Justfile | Gate0RootArtifact::Justfile |
+| .cargo/config.toml | Root / CargoConfig | Gate0RootArtifact::CargoConfig |
 | crates/macbat/compiler/Cargo.toml | Package / Manifest | PackageId::MacBatCompiler (Library) |
 | crates/macbat/compiler/README.md | Package / Readme | PackageId::MacBatCompiler (Library) |
 | crates/macbat/compiler/src/lib.rs | Package / SourceDoor | PackageId::MacBatCompiler (Library) |
@@ -74,16 +75,16 @@ The complete expanded plan:
 | examples/Cargo.toml | Package / Manifest | PackageId::BatPakExamples (ExampleBinary) |
 | examples/README.md | Package / Readme | PackageId::BatPakExamples (ExampleBinary) |
 | examples/src/bin/family_smoke.rs | Package / SourceDoor | PackageId::BatPakExamples (ExampleBinary) |
-| crates/syncbat/src/runtime.rs | SyncBat plane / Module | SyncBatPlane::Runtime |
-| crates/syncbat/src/runtime/README.md | SyncBat plane / DirectoryReadme | SyncBatPlane::Runtime |
-| crates/syncbat/src/pakvm.rs | SyncBat plane / Module | SyncBatPlane::PakVm |
-| crates/syncbat/src/pakvm/README.md | SyncBat plane / DirectoryReadme | SyncBatPlane::PakVm |
-| crates/syncbat/src/bvisor.rs | SyncBat plane / Module | SyncBatPlane::Bvisor |
-| crates/syncbat/src/bvisor/README.md | SyncBat plane / DirectoryReadme | SyncBatPlane::Bvisor |
-| crates/syncbat/src/world.rs | SyncBat plane / Module | SyncBatPlane::World |
-| crates/syncbat/src/world/README.md | SyncBat plane / DirectoryReadme | SyncBatPlane::World |
-| crates/syncbat/src/port.rs | SyncBat plane / Module | SyncBatPlane::Port |
-| crates/syncbat/src/port/README.md | SyncBat plane / DirectoryReadme | SyncBatPlane::Port |
+| crates/syncbat/src/runtime/mod.rs | SyncBat plane / ModuleDoor | SyncBatPlane::Runtime |
+| crates/syncbat/src/runtime/types.rs | SyncBat plane / TypesCarrier | SyncBatPlane::Runtime |
+| crates/syncbat/src/pakvm/mod.rs | SyncBat plane / ModuleDoor | SyncBatPlane::PakVm |
+| crates/syncbat/src/pakvm/types.rs | SyncBat plane / TypesCarrier | SyncBatPlane::PakVm |
+| crates/syncbat/src/bvisor/mod.rs | SyncBat plane / ModuleDoor | SyncBatPlane::Bvisor |
+| crates/syncbat/src/bvisor/types.rs | SyncBat plane / TypesCarrier | SyncBatPlane::Bvisor |
+| crates/syncbat/src/world/mod.rs | SyncBat plane / ModuleDoor | SyncBatPlane::World |
+| crates/syncbat/src/world/types.rs | SyncBat plane / TypesCarrier | SyncBatPlane::World |
+| crates/syncbat/src/port/mod.rs | SyncBat plane / ModuleDoor | SyncBatPlane::Port |
+| crates/syncbat/src/port/types.rs | SyncBat plane / TypesCarrier | SyncBatPlane::Port |
 <!-- GATE0-MATERIALIZATION-PLAN:END -->
 
 ## First implementation action
@@ -102,7 +103,7 @@ The first Gate-0 actions execute this plan in order:
 
 The required Tier 0 receipt denominator is a generated projection of the harness that enforces it:
 
-<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN generated from spec/bootstrap_qualification.rs by bootstrap/project.py; do not edit -->
+<!-- TIER0-RECEIPT-DENOMINATOR:BEGIN generated from spec/bootstrap_qualification/types.rs by bootstrap/project.py; do not edit -->
 | Receipt | Artifact policy |
 | --- | --- |
 | tier0-law-fixtures | FixtureSet |
@@ -166,9 +167,9 @@ No component may generate both the claim and its sole expected result. Every boo
 
 ## Guarantee classification (generated)
 
-Each SEED fact carries its own guarantee classification (DEC-070); `spec/invariants.rs` is authoritative. The block below is generated from it by `bootstrap/project.py` and independently re-audited; the full derived index across all fact families is the non-normative [Guarantee Graph](GUARANTEE_GRAPH.generated.md).
+Each SEED fact carries its own guarantee classification (DEC-070); `spec/invariants/inventory.rs` is authoritative. The block below is generated from it by `bootstrap/project.py` and independently re-audited; the full derived index across all fact families is the non-normative [Guarantee Graph](GUARANTEE_GRAPH.generated.md).
 
-<!-- SEED-CLASSIFICATION:BEGIN generated from spec/invariants.rs by bootstrap/project.py; do not edit -->
+<!-- SEED-CLASSIFICATION:BEGIN generated from spec/invariants/inventory.rs by bootstrap/project.py; do not edit -->
 | GuaranteeId | Kind | Lifetime | Owner | Gates | Witness | Relations |
 | --- | --- | --- | --- | --- | --- | --- |
 | SEED-ONE-OWNER | SemanticLaw | Permanent | docs/00_CONSTITUTION.md | G0 | audit.py; BP-SELF-EXPLAINING-1 -- contract-id uniqueness scan; the self-explaining-repository law | - |
@@ -181,7 +182,7 @@ Each SEED fact carries its own guarantee classification (DEC-070); `spec/invaria
 | SEED-SEMANTIC-ZERO-LEAKAGE | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0 | seedcheck; DEC-068 -- production-token scan; the AST gate | DerivesFrom DEC-068 |
 | SEED-SYNC-FIRST | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | LEG-080; seedcheck -- no-tokio scan | Refines LEG-080 |
 | SEED-NO-STD-SEMANTIC-PROFILES | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0/G5 | DEC-065 -- qualification matrix | DerivesFrom DEC-065 |
-| SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068; seedcheck -- the AST gate | DerivesFrom DEC-068 |
+| SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068; seedcheck -- the AST gate | DerivesFrom DEC-068; DerivesFrom DEC-007 |
 | SEED-NO-INLINE-DOMAIN-TYPES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G1/G3 | DEC-068 -- the AST gate | DerivesFrom DEC-068 |
 | SEED-EXPLICIT-EFFECTS | SemanticLaw | Permanent | docs/08_SYNCBAT_RUNTIME.md | G6 | LEG-036; LEG-061; BP-GAUNTLET-1 | - |
 | SEED-INDEPENDENT-ORACLE | SemanticLaw | Permanent | docs/24_GAUNTLET.md | G3/G8 | LEG-079; LEG-049 | - |

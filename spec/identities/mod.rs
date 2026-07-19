@@ -18,7 +18,7 @@
 //! TimeDelta, MonotonicDeadline, Hlc, GlobalSequence, CommitPoint,
 //! StreamPosition, DagPosition, Coordinate, PageCursor, WorldPath, and
 //! ProjectionPath stay owned by docs/16's time/order/navigation sections and
-//! `spec/reconciliation.rs`. An identity may bind or reference a CommitPoint;
+//! `spec/reconciliation/`. An identity may bind or reference a CommitPoint;
 //! this catalog defines no CommitPoint comparison, no HLC ordering or
 //! tie-breaking, no frontier progress, and no part of the DEC-075
 //! dual-coordinate theorem.

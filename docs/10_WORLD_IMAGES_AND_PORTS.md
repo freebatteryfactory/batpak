@@ -64,9 +64,9 @@ PakVM never resolves a kernel by display name. The `AttemptReceipt` records the 
 
 This document owns the kernel vocabulary, the two binding modes, and the receipt rule. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-062 | kernel_cannot_resolve_by_display_name; kernel_contract_and_implementation_ids_are_not_interchangeable; qualified_interface_requires_matching_qualification_receipt; exact_kernel_binding_rejects_another_implementation; attempt_receipt_records_exact_kernel_implementation |
@@ -144,7 +144,7 @@ The compiled image still passes ordinary validation and admission. Source identi
 This document owns the boundary law, the invocation classes, the capability envelopes, and the transport posture. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere. The rows below span four obligations, each qualifying at its own typed gates.
 
 
-An effect instruction is not a name on a list. It is any node `spec/pakvm_isa.rs` admits with the `Effectful` effect posture, which admission binds to the Effect algebra in both directions. `query_program_with_effect_instruction_is_rejected` therefore covers a node from the day it is admitted; there is no enumeration here to fall out of date, and none anywhere else.
+An effect instruction is not a name on a list. It is any node `spec/pakvm_isa/nodes.rs` admits with the `Effectful` effect posture, which admission binds to the Effect algebra in both directions. `query_program_with_effect_instruction_is_rejected` therefore covers a node from the day it is admitted; there is no enumeration here to fall out of date, and none anywhere else.
 
 Equivalence oracle: the same query compiled into the same canonical ProgramImage must produce equivalent PakVM semantics whether invoked as a pure declared entrypoint or an ephemeral `ExecuteQueryProgram`, given the same source cut, parameters, selectors, bounds, and proof posture. The receipts differ (authority and invocation identities differ); the query value and structured derivation do not.
 

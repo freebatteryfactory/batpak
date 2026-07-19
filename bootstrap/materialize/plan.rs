@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
-use crate::render::{justfile, package_manifest, package_readme, plane_directory_readme, plane_module_source, source_door, toolchain_manifest, workspace_manifest};
+use crate::render::{cargo_config, justfile, package_manifest, package_readme, plane_module_door, plane_types_carrier, source_door, toolchain_manifest, workspace_manifest};
 use crate::publish::publish;
 use crate::{invalid, COMPILED_SEED_MANIFEST};
 
@@ -127,6 +127,7 @@ fn build_plan() -> io::Result<BTreeMap<String, Vec<u8>>> {
             bootstrap_output::Gate0RootArtifact::WorkspaceManifest => workspace_manifest(),
             bootstrap_output::Gate0RootArtifact::RustToolchain => toolchain_manifest(),
             bootstrap_output::Gate0RootArtifact::Justfile => justfile(),
+            bootstrap_output::Gate0RootArtifact::CargoConfig => cargo_config(),
         };
         admit(artifact.relative_path().to_owned(), bytes)?;
     }
@@ -155,13 +156,13 @@ fn build_plan() -> io::Result<BTreeMap<String, Vec<u8>>> {
         let module = plane.module_name();
         for &family in bootstrap_output::Gate0PlaneArtifact::ALL {
             let (path, bytes) = match family {
-                bootstrap_output::Gate0PlaneArtifact::Module => (
-                    format!("{syncbat_base}/src/{module}.rs"),
-                    plane_module_source(plane),
+                bootstrap_output::Gate0PlaneArtifact::ModuleDoor => (
+                    format!("{syncbat_base}/src/{module}/mod.rs"),
+                    plane_module_door(plane),
                 ),
-                bootstrap_output::Gate0PlaneArtifact::DirectoryReadme => (
-                    format!("{syncbat_base}/src/{module}/README.md"),
-                    plane_directory_readme(plane),
+                bootstrap_output::Gate0PlaneArtifact::TypesCarrier => (
+                    format!("{syncbat_base}/src/{module}/types.rs"),
+                    plane_types_carrier(plane),
                 ),
             };
             admit(path, bytes)?;

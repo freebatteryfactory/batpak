@@ -1,6 +1,6 @@
 //! The canonical mutation vocabulary (5.5E3f).
 //!
-//! Two closed types, moved out of `spec/architecture.rs` and stripped of
+//! Two closed types, moved out of the architecture domain and stripped of
 //! their shadow tables: the lane facts and result classifications are TOTAL
 //! const functions on the enums, so there is no parallel row catalog whose
 //! only job is to keep agreeing with the variants. The lettered nicknames

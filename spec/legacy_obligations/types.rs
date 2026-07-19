@@ -35,7 +35,7 @@ pub enum DeletionCondition {
 
 /// The witness ROUTE for one obligation (5.5E4d): a posture, not proof
 /// evidence. `CanonicalProofRows` means the required witness identities are
-/// obtained from active `spec/proof.rs` rows whose guarantee is this exact
+/// obtained from active `spec/proof/inventory.rs` rows whose guarantee is this exact
 /// LEG identity - no free-text plan substitutes for those rows. `Planned`
 /// means no canonical active proof row has yet been admitted, and the
 /// nonempty text states the required future evidence route; it is never

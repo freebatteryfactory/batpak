@@ -22,8 +22,9 @@ GUARANTEE_FRONT = (
     "status: GENERATED\n"
     "authority_scope: derived structural index only\n"
     "generated_by: bootstrap/project.py\n"
-    "generated_from: spec/invariants.rs; spec/legacy_obligations.rs; "
-    "spec/dispositions.rs; spec/architecture.rs; spec/guarantees.rs; spec/gates.rs\n"
+    "generated_from: spec/invariants/inventory.rs; spec/legacy_obligations/inventory.rs; "
+    "spec/dispositions/inventory.rs; spec/architecture/inventory.rs; "
+    "spec/architecture/types.rs; spec/guarantees/policy.rs; spec/gates/inventory.rs\n"
     "do_not_edit: true\n"
     "---\n"
 )
@@ -34,7 +35,7 @@ _GATE_SPEC_ROW = re.compile(
 
 def gate_inventory(root: Path) -> list[tuple[str, str, str]]:
     """The gate inventory in declaration order. Declaration order IS canonical."""
-    src = (root / "spec" / "gates.rs").read_text(encoding="utf-8")
+    src = (root / "spec/gates/inventory.rs").read_text(encoding="utf-8")
     return _GATE_SPEC_ROW.findall(src)
 
 
@@ -119,7 +120,7 @@ def _ids(raw):
 
 
 def guarantee_seed(root):
-    src = (root / "spec/invariants.rs").read_text(encoding="utf-8")
+    src = (root / "spec/invariants/inventory.rs").read_text(encoding="utf-8")
     out = []
     for m in _SEED_ROW.findall(src):
         out.append({
@@ -134,7 +135,7 @@ def guarantee_seed(root):
 
 # --- Typed guarantee admission (5.5D4b authority closure) --------------------
 # Every GuaranteeView field comes from a direct authored value, a declared family
-# policy in spec/guarantees.rs, or one named lawful derivation. This projector
+# policy in spec/guarantees/policy.rs, or one named lawful derivation. This projector
 # serializes admitted views. It does not complete them: the nine semantic
 # constants that used to live here (Permanent, the docs/30 owner string, the
 # family kinds, the empty gate/witness strings, and `gates: target`) are gone,
@@ -170,7 +171,7 @@ def family_policies(root):
 
 def disposition_lifetimes(root):
     """Disposition -> GuaranteeLifetime, read from the typed owner's match arms."""
-    src = _decomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    src = _decomment((root / "spec/dispositions/types.rs").read_text(encoding="utf-8"))
     body = re.search(r"pub const fn guarantee_lifetime\(self\) -> GuaranteeLifetime \{(.*?)\n    \}",
                      src, re.S)
     out = {}
@@ -185,7 +186,7 @@ def disposition_lifetimes(root):
 
 def gate_optional_classes(root):
     """Classes whose typed `requires_gate()` is false. Read from the owner."""
-    src = _decomment((root / "spec/dispositions.rs").read_text(encoding="utf-8"))
+    src = _decomment((root / "spec/dispositions/types.rs").read_text(encoding="utf-8"))
     body = re.search(r"pub const fn requires_gate\(self\) -> bool \{(.*?)\n    \}", src, re.S)
     if not body:
         return set()
@@ -265,7 +266,7 @@ def guarantee_nodes(root):
             "kind": s["kind"], "owner": s["owner"], "lifetime": s["lifetime"],
             "gates": s["gates"], "witness": s["witness"],
         }, f"Seed({s['failure']})"))
-    leg = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    leg = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     for lid, owner, gate_expr, deletion, status in _LEG_ROW.findall(leg):
         gate = gate_tokens(gate_expr, root)
         # A LEG row names a clean owner and gates but no typed successor
@@ -280,7 +281,7 @@ def guarantee_nodes(root):
         nodes.append(admit(root, "LEG", lid, {
             "owner": owner, "gates": gate, "derived_lifetime": life,
         }, f"Legacy({gate})"))
-    dec = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dec = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     for did, dcls, dgates, disp in _DEC_ROW.findall(dec):
         # Decision gates are node METADATA. They never become graph edges, and no
         # gate or profile node is synthesized to hold them.
@@ -397,7 +398,7 @@ def render_guarantee_graph(root):
 
 
 def render_gate_inventory(root: Path) -> str:
-    """The docs/25 gate inventory, projected from spec/gates.rs."""
+    """The docs/25 gate inventory, projected from spec/gates/inventory.rs."""
     rows = ["| GateId | Token | Title |", "| --- | --- | --- |"]
     for gid, token, title in gate_inventory(root):
         rows.append(f"| {gid} | {token} | {title} |")
@@ -436,13 +437,14 @@ def _all_variants(source: str, type_name: str) -> list[str]:
 
 
 def render_decision_ledger(root: Path) -> str:
-    src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
-    tags = _fn_str_arms(src, "Disposition", "spelling")
-    meanings = _fn_str_arms(src, "Disposition", "meaning")
-    classes = _fn_str_arms(src, "DecisionClass", "spelling")
-    order = _all_variants(src, "Disposition")
+    types_src = (root / "spec/dispositions/types.rs").read_text(encoding="utf-8")
+    rows_src = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
+    tags = _fn_str_arms(types_src, "Disposition", "spelling")
+    meanings = _fn_str_arms(types_src, "Disposition", "meaning")
+    classes = _fn_str_arms(types_src, "DecisionClass", "spelling")
+    order = _all_variants(types_src, "Disposition")
     if not order:
-        raise Unadmitted("spec/dispositions.rs declares no Disposition::ALL")
+        raise Unadmitted("spec/dispositions/types.rs declares no Disposition::ALL")
     lines = ["| Tag | Meaning |", "| --- | --- |"]
     for variant in order:
         if variant not in tags or variant not in meanings:
@@ -450,9 +452,9 @@ def render_decision_ledger(root: Path) -> str:
         lines.append(f"| {tags[variant]} | {meanings[variant]} |")
     lines += ["", "| ID | Tag | Class | Gates | Subject | Final ruling |",
               "| --- | --- | --- | --- | --- | --- |"]
-    rows = _FULL_DEC_ROW.findall(src)
+    rows = _FULL_DEC_ROW.findall(rows_src)
     if not rows:
-        raise Unadmitted("spec/dispositions.rs declares no DecisionSpec rows")
+        raise Unadmitted("spec/dispositions/inventory.rs declares no DecisionSpec rows")
     for dec_id, cls, gates, disp, subject, successor in rows:
         if disp not in tags or cls not in classes:
             raise Unadmitted(f"{dec_id} carries an unadmitted class or disposition")
@@ -462,15 +464,16 @@ def render_decision_ledger(root: Path) -> str:
 
 
 def render_legacy_coverage(root: Path) -> str:
-    src = (root / "spec/legacy_invariant_coverage.rs").read_text(encoding="utf-8")
-    tags = _fn_str_arms(src, "CoverageDisposition", "spelling")
-    meanings = _fn_str_arms(src, "CoverageDisposition", "meaning")
-    order = _all_variants(src, "CoverageDisposition")
+    types_src = (root / "spec/legacy_invariant_coverage/types.rs").read_text(encoding="utf-8")
+    rows_src = (root / "spec/legacy_invariant_coverage/inventory.rs").read_text(encoding="utf-8")
+    tags = _fn_str_arms(types_src, "CoverageDisposition", "spelling")
+    meanings = _fn_str_arms(types_src, "CoverageDisposition", "meaning")
+    order = _all_variants(types_src, "CoverageDisposition")
     if not order:
-        raise Unadmitted("spec/legacy_invariant_coverage.rs declares no CoverageDisposition::ALL")
+        raise Unadmitted("spec/legacy_invariant_coverage/types.rs declares no CoverageDisposition::ALL")
     manifest = re.findall(r'"(INV-[^"]+)"', re.search(
-        r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", src, re.S).group(1))
-    rows = _COVERAGE_FULL_ROW.findall(src)
+        r"pub const SOURCE_INVARIANT_IDS: &\[&str\] = &\[(.*?)\];", rows_src, re.S).group(1))
+    rows = _COVERAGE_FULL_ROW.findall(rows_src)
     if {r[0] for r in rows} != set(manifest) or len(rows) != len(manifest):
         raise Unadmitted("COVERAGE does not equal SOURCE_INVARIANT_IDS set parity")
     lines = ["| Disposition | Meaning |", "| --- | --- |"]

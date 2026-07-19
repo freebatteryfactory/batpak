@@ -251,7 +251,7 @@ pub(crate) fn check_witness_citations(root: &Path, findings: &mut Vec<String>) {
 /// through the real is_positive_semantic_terminal() (renamed from
 /// counts_green in 5.5F2), so reclassifying a terminal reddens the running
 /// binary. The positive terminal is one qualification input, never the
-/// verdict: requirement qualification is spec/verification.rs law.
+/// verdict: requirement qualification is spec/verification/ law.
 pub(crate) fn check_proof_terminals(findings: &mut Vec<String>) {
     use proof::ProofUnitTerminal as T;
     let mut seen = BTreeSet::new();

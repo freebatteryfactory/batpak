@@ -3,14 +3,14 @@
 Owns the substrate/specialization/proof-policy laws (5.5D1-D3), witness
 reference resolution, the LEG-023/019/043/081 obligation proofs, the typed
 proof-identity catalog and its retirement lineage, and the generic
-proof-target resolution. docs/24 owns meaning; spec/proof.rs owns membership.
+proof-target resolution. docs/24 owns meaning; spec/proof/inventory.rs owns
+membership.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-from .corpus import _spec_module_source
 from .guarantees import G_REF, decision_rows, gate_inventory, guarantee_index
 
 # --- 5.5D1 substrate law: sharpened LEG statements may not be weakened -------
@@ -55,13 +55,13 @@ D1_LEG_CLAUSES = {
 
 def d1_substrate_findings(root: Path) -> list[str]:
     """The sharpened substrate clauses survive in their owning LEG rows."""
-    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    src = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     laws = dict(re.findall(r'LegacyObligation \{ id: "(LEG-\d+)", law: "([^"]+)"', src))
     out = []
     for lid, clauses in D1_LEG_CLAUSES.items():
         law = laws.get(lid)
         if law is None:
-            out.append(f"{lid} is absent from spec/legacy_obligations.rs")
+            out.append(f"{lid} is absent from spec/legacy_obligations/inventory.rs")
             continue
         for clause in clauses:
             if clause not in law:
@@ -108,7 +108,7 @@ def specialization_findings(root: Path) -> list[str]:
     rows = {r["id"]: r for r in decision_rows(root)}
     dec = rows.get("DEC-073")
     if dec is None:
-        out.append("DEC-073 is absent from spec/dispositions.rs")
+        out.append("DEC-073 is absent from spec/dispositions/inventory.rs")
         return out
     if dec["class"] != "Capability":
         out.append(f"DEC-073 class {dec['class']} is not Capability")
@@ -145,9 +145,8 @@ D3_FORBIDDEN_CANDIDATE_ROOTS = ["src/", "tests/", "spec/", "docs/", "companion/"
 D3_BANNED_RESULT_WORDS = ("pass/fail", "killed/not-killed", "success/error")
 
 
-def _arch_enum(root: Path, name: str, rel: str = "spec/architecture.rs") -> list[str]:
-    src = (_spec_module_source(root, "architecture") if rel == "spec/architecture.rs"
-           else (root / rel).read_text(encoding="utf-8"))
+def _arch_enum(root: Path, name: str, rel: str) -> list[str]:
+    src = (root / rel).read_text(encoding="utf-8")
     m = re.search(r"pub enum " + re.escape(name) + r" \{(.*?)\n\}", src, re.S)
     return re.findall(r"^\s{4}(\w+),", m.group(1), re.M) if m else []
 
@@ -158,7 +157,7 @@ def proof_policy_findings(root: Path) -> list[str]:
     rows = {r["id"]: r for r in decision_rows(root)}
     dec = rows.get("DEC-074")
     if dec is None:
-        out.append("DEC-074 is absent from spec/dispositions.rs")
+        out.append("DEC-074 is absent from spec/dispositions/inventory.rs")
     else:
         if dec["class"] != "Enforcement":
             out.append(f"DEC-074 class {dec['class']} is not Enforcement")
@@ -167,22 +166,22 @@ def proof_policy_findings(root: Path) -> list[str]:
                 out.append(f"DEC-074 does not name gate {gate}")
     d15 = rows.get("DEC-015")
     if d15 is None or "Mutation testing only inside TestPak" not in d15["subject"] + str(d15):
-        src = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+        src = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
         if "Mutation testing only inside TestPak" not in src:
             out.append("DEC-015 no longer confines mutation testing to TestPak")
     # The lane and result vocabularies moved to their typed owner (5.5E3f);
     # their facts and classifications are reconstructed by mutation_findings.
     for name, want, rel in (
-            ("MutationLane", D3_LANES, "spec/mutation.rs"),
-            ("MutationResult", D3_RESULTS, "spec/mutation.rs"),
-            ("ProofPolicyChangeClass", D3_CHANGE_CLASSES, "spec/architecture.rs"),
-            ("ProofPolicySurface", D3_POLICY_SURFACES, "spec/architecture.rs")):
+            ("MutationLane", D3_LANES, "spec/mutation/types.rs"),
+            ("MutationResult", D3_RESULTS, "spec/mutation/types.rs"),
+            ("ProofPolicyChangeClass", D3_CHANGE_CLASSES, "spec/proof/policy.rs"),
+            ("ProofPolicySurface", D3_POLICY_SURFACES, "spec/proof/policy.rs")):
         got = _arch_enum(root, name, rel)
         if not got:
             out.append(f"{rel} declares no {name}")
         elif got != want:
             out.append(f"{name} variants {got} != frozen {want}")
-    src = _spec_module_source(root, "architecture")
+    src = (root / "spec/sprouting/inventory.rs").read_text(encoding="utf-8")
     if "target/muterprater/candidates/" not in src:
         out.append("no candidate output root is declared outside tracked source")
     m = re.search(r"pub const CANDIDATE_FORBIDDEN_WRITE_ROOTS:[^=]*=\s*&\[(.*?)\];", src, re.S)
@@ -219,9 +218,10 @@ W_ID = re.compile(r"^[a-z0-9_]+$")
 
 def witness_rows(root: Path) -> dict[str, dict]:
     """proof-row id -> {owner guarantee}. Since 5.5E4d the TYPED catalog in
-    spec/proof.rs is the one membership authority; docs/24 owns meaning only,
-    and the retired fence headers are no longer parsed for anything."""
-    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    spec/proof/inventory.rs is the one membership authority; docs/24 owns
+    meaning only, and the retired fence headers are no longer parsed for
+    anything."""
+    src = (root / "spec/proof/inventory.rs").read_text(encoding="utf-8")
     out: dict[str, dict] = {}
     for wid, family, guarantee, _contracts, _claim, _plan in re.findall(
             r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
@@ -340,11 +340,11 @@ D4B_LEG023_WITNESSES = [
 
 
 def integrity_witness_findings(root: Path) -> list[str]:
-    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    src = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     m = re.search(r'id: "LEG-023", law: "([^"]+)"', src)
     out: list[str] = []
     if not m:
-        return ["LEG-023 is absent from spec/legacy_obligations.rs"]
+        return ["LEG-023 is absent from spec/legacy_obligations/inventory.rs"]
     law = m.group(1)
     for clause in D4B_LEG023_CLAUSES:
         if clause not in law:
@@ -385,11 +385,11 @@ D4B2A_ROWS = {
 
 
 def derived_material_findings(root: Path) -> list[str]:
-    src = (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8")
+    src = (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8")
     m = re.search(r'id: "LEG-019", law: "([^"]+)"', src)
     out: list[str] = []
     if not m:
-        return ["LEG-019 is absent from spec/legacy_obligations.rs"]
+        return ["LEG-019 is absent from spec/legacy_obligations/inventory.rs"]
     law = m.group(1)
     for clause in D4B2A_LEG019_CLAUSES:
         if clause not in law:
@@ -522,8 +522,9 @@ D4B2C_ROWS = [
 # Note that `pre_shred_keyset_restore_is_rejected` is a proper substring of its
 # own successor, so reintroduction is matched on identifier boundaries, never
 # by `in`.
-# The retired proof-row registry moved to its typed owner in 5.5E2:
-# spec/proof.rs PROOF_ROW_MIGRATIONS. The dict that stood here was already
+# The retired proof-row registry moved to its typed owner in 5.5E2 (today
+# spec/proof/inventory.rs PROOF_ROWS, which absorbed the old
+# PROOF_ROW_MIGRATIONS). The dict that stood here was already
 # missing an entry (test_local_fixture_type_is_classified_correctly, retired
 # by a docs/24 migration note the dict never learned) — a registry the
 # auditor owns is a registry the auditor cannot be caught neglecting. This
@@ -539,7 +540,7 @@ def proof_row_catalog(root: Path) -> list[tuple[str, str, tuple[str, ...]]]:
     """(id, state, successors) in declaration order, from the typed catalog.
     Active rows carry guarantee and projection contracts since 5.5E4d; this
     lifecycle view records the state name and any successors."""
-    src = (root / "spec/proof.rs").read_text(encoding="utf-8")
+    src = (root / "spec/proof/inventory.rs").read_text(encoding="utf-8")
     out: list[tuple[str, str, tuple[str, ...]]] = []
     for m in re.finditer(
             r'ProofRowRecord \{ id: ProofRowId\("([a-z0-9_]+)"\), state: '
@@ -564,7 +565,7 @@ def proof_row_catalog_findings(root: Path) -> list[str]:
     out: list[str] = []
     catalog = proof_row_catalog(root)
     if not catalog:
-        return ["spec/proof.rs declares no proof-identity catalog"]
+        return ["spec/proof/inventory.rs declares no proof-identity catalog"]
     ids = [rid for rid, _, _ in catalog]
     for dup in sorted({i for i in ids if ids.count(i) > 1}):
         out.append(f"{dup} is declared twice in the proof-identity catalog; "
@@ -700,7 +701,8 @@ def retired_proof_row_findings(root: Path) -> list[str]:
     Every document, not a per-phase list of the ones a rename happened to touch:
     a retired id leaking into docs/09 is the same defect as one leaking into
     docs/35, and only one of those was ever checked. The registry itself is the
-    typed spec/proof.rs owner, and it must agree with the migration notes in
+    typed spec/proof/inventory.rs owner, and it must agree with the migration
+    notes in
     BOTH directions — a note that retires an id the registry never learned is
     exactly the defect the Python dict era shipped.
     """
@@ -710,11 +712,11 @@ def retired_proof_row_findings(root: Path) -> list[str]:
     for missing in sorted(noted - set(registry)):
         out.append(
             f"docs/24 retires proof-row id {missing} in a migration note that "
-            "spec/proof.rs PROOF_ROWS never learned"
+            "spec/proof/inventory.rs PROOF_ROWS never learned"
         )
     for phantom in sorted(set(registry) - noted):
         out.append(
-            f"spec/proof.rs retires proof-row id {phantom} with no docs/24 "
+            f"spec/proof/inventory.rs retires proof-row id {phantom} with no docs/24 "
             "migration note recording the retirement"
         )
     for old, successors in registry.items():

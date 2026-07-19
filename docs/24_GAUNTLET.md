@@ -11,9 +11,9 @@ reconciliation_epoch: cleanroom-v1
 
 ## Typed proof ownership
 
-`spec/proof.rs` owns ProofRowId identity, active or retired lifecycle, succession, guarantee binding, and projection membership. docs/24 owns each active row's authoritative semantic summary, expected observation, and terminal disposition. A generated relation cannot change proof meaning. A prose meaning cannot silently move a proof row to another guarantee.
+`spec/proof/` owns ProofRowId identity, active or retired lifecycle, succession, guarantee binding, and projection membership. docs/24 owns each active row's authoritative semantic summary, expected observation, and terminal disposition. A generated relation cannot change proof meaning. A prose meaning cannot silently move a proof row to another guarantee.
 
-<!-- PROOF-RELATIONS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-RELATIONS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Projection contract(s) | Active proof rows |
 | --- | --- | --- |
 | LEG-023 | BP-STORAGE-TILES-1 | middle_event_deletion_is_rejected; event_reorder_is_rejected; duplicate_payload_splice_is_rejected; cross_lane_predecessor_is_rejected; cross_entity_predecessor_is_rejected; midstream_genesis_is_rejected; forged_index_row_cannot_choose_and_authenticate_bytes |
@@ -88,7 +88,7 @@ A structural rule is accepted only after a conforming fixture passes, a violatin
 
 ## Mutation lanes
 
-Exactly three, frozen (DEC-015). The typed names are `MutationLane` in `spec/mutation.rs`; the contract, result algebra, activation evidence, and promotion law live in `12_TESTPAK.md`. The promotion denominator's `QualifiedHostileEvidence` requirement consumes this document's Rule qualification law; the requirement inventory itself is owned by `spec/promotion.rs` and is not restated here.
+Exactly three, frozen (DEC-015). The typed names are `MutationLane` in `spec/mutation/types.rs`; the contract, result algebra, activation evidence, and promotion law live in `12_TESTPAK.md`. The promotion denominator's `QualifiedHostileEvidence` requirement consumes this document's Rule qualification law; the requirement inventory itself is owned by `spec/promotion/types.rs` and is not restated here.
 
 ### Semantic IR (`MutationLane::SemanticIr`)
 
@@ -121,7 +121,7 @@ Native, browser, embedded, and in-memory adapters qualify only the guarantees th
 ## Release seal
 
 The release seal binds the typed `ReleaseSealField` inventory
-(`spec/architecture.rs`; full projection in `36_PUBLIC_API_CI_AND_RELEASE.md`,
+(`spec/architecture/release_seal.rs`; full projection in `36_PUBLIC_API_CI_AND_RELEASE.md`,
 DEC-058). The gauntlet supplies its `TestDispositions`, `MutationDispositions`,
 `FuzzDispositions`, `BenchmarkDispositions`, and `ProofFreshness` inputs; this
 document restates no second copy of the list.
@@ -186,7 +186,7 @@ specialized_plan_benchmark_is_advisory_only
 
 ## Integrity and predecessor witnesses (LEG-023)
 
-`spec/proof.rs` owns proof-row identity, lifecycle, succession, guarantee binding, and projection membership; this document owns each active row's semantic summary, expected observation, and terminal disposition. `21_LEGACY_SEMANTIC_OBLIGATIONS.md` projects the required witness IDs for each legacy obligation from the typed relations; that projection is audited but is not a second authority. A witness meaning is changed here, never there.
+`spec/proof/` owns proof-row identity, lifecycle, succession, guarantee binding, and projection membership; this document owns each active row's semantic summary, expected observation, and terminal disposition. `21_LEGACY_SEMANTIC_OBLIGATIONS.md` projects the required witness IDs for each legacy obligation from the typed relations; that projection is audited but is not a second authority. A witness meaning is changed here, never there.
 
 
 Authoritative meanings:
@@ -497,7 +497,7 @@ trapping_host_filesystem_remains_unreached_under_injected_storage
 ## Single-writer dual-axis reconciliation witnesses (DEC-075)
 
 The composition law's executable denominator. `docs/02_SYSTEM_MODEL.md` owns
-the end-to-end law and `spec/reconciliation.rs` owns the closed bindings;
+the end-to-end law and `spec/reconciliation/` owns the closed bindings;
 these rows own the executable meanings. Bootstrap proves their names, owner
 binding, documentary meaning, and cross-surface agreement only: it executes
 no turn, commits no effect, and drives no port.
@@ -597,7 +597,7 @@ reconciliation_appends_evidence_without_rewriting_original_observation
 
 ## Secret-authority shred witnesses (LEG-081)
 
-Canonical proof-row identity and meaning for `LEG-081`. `docs/35_CRYPTO_AND_SECRET_AUTHORITY.md` owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions; it projects these IDs and states no per-row executable meaning. The typed law in `spec/legacy_obligations.rs` is unchanged by this pass: its owner, gates, status, compatibility disposition, deletion condition, and lifetime all stand.
+Canonical proof-row identity and meaning for `LEG-081`. `docs/35_CRYPTO_AND_SECRET_AUTHORITY.md` owns the secret-authority law, shred semantics, the cryptographic-erasure threat model, and key-authority transitions; it projects these IDs and states no per-row executable meaning. The typed law in `spec/legacy_obligations/inventory.rs` is unchanged by this pass: its owner, gates, status, compatibility disposition, deletion condition, and lifetime all stand.
 
 
 Authoritative meanings:
@@ -835,7 +835,7 @@ program_image_id_is_independent_of_compiler_provenance
       carried as receipt evidence and never enters the id computation
 
 distinct_version_types_do_not_typecheck_when_substituted
-    Every member of spec/identities.rs VersionIdentityKind::ALL denotes a
+    Every member of spec/identities/types.rs VersionIdentityKind::ALL denotes a
     distinct version type. No generic Version crosses a subsystem boundary, and
     substituting one identity where another is required is rejected by the type
     system rather than by a runtime range check. The boundary includes the
@@ -1315,7 +1315,7 @@ query_program_with_effect_instruction_is_rejected
     The validator rejects the image before execution."
 
     The effect instructions are not enumerated here, or anywhere in prose. They
-    are exactly the nodes `spec/pakvm_isa.rs` admits with `EffectPosture::Effectful`,
+    are exactly the nodes `spec/pakvm_isa/nodes.rs` admits with `EffectPosture::Effectful`,
     which admission binds to the Effect algebra in both directions: an Effect-algebra
     node cannot claim purity, and a node outside it cannot claim effectfulness. A
     node admitted into that algebra is therefore covered on the day it is admitted,
@@ -1452,7 +1452,7 @@ aliased     0
 
 ## Candidate-origin and realization-posture witnesses (DEC-079)
 
-Canonical proof-row identity and meaning for the immutable candidate nursery and its complete-lineage law. `spec/sprouting.rs` authors the candidate lifecycle vocabulary and `spec/identities.rs` authors the candidate lineage identity; `docs/39_SPROUTING_NURSERY_AND_PROMOTION.md` owns the nursery law and projects these IDs while stating no per-row executable meaning. Bootstrap proves their names, owner binding, documentary meaning, and cross-surface agreement only: it generates no candidate, qualifies none, and promotes none.
+Canonical proof-row identity and meaning for the immutable candidate nursery and its complete-lineage law. `spec/sprouting/types.rs` authors the candidate lifecycle vocabulary and `spec/identities/types.rs` authors the candidate lineage identity; `docs/39_SPROUTING_NURSERY_AND_PROMOTION.md` owns the nursery law and projects these IDs while stating no per-row executable meaning. Bootstrap proves their names, owner binding, documentary meaning, and cross-surface agreement only: it generates no candidate, qualifies none, and promotes none.
 
 
 Authoritative meanings:

@@ -30,9 +30,9 @@ impl PackageClass {
 
 /// The five SyncBat planes (docs/08 ownership firewall).
 ///
-/// `spec/architecture.rs` owns package topology, so it owns the plane IDENTITIES
+/// `spec/architecture/types.rs` owns package topology, so it owns the plane IDENTITIES
 /// and their package membership. It does NOT own what each plane may do: the
-/// legal-crossing and forbidden-transfer law lives in `spec/syncbat_firewall.rs`,
+/// legal-crossing and forbidden-transfer law lives in `spec/syncbat_firewall/`,
 /// which is the one authority for it. Splitting them this way keeps the plane
 /// inventory in one place while leaving the firewall a narrow, single-purpose
 /// authority rather than another topology.

@@ -167,7 +167,7 @@ pub const GUARANTEE_FAMILY_POLICIES: &[GuaranteeFamilyPolicy] = &[
     GuaranteeFamilyPolicy {
         family: "ARCH",
         kind: KindRule::FamilyConstant(GuaranteeKind::ArchitectureConstraint),
-        owner: OwnerRule::FamilyConstant("spec/architecture.rs"),
+        owner: OwnerRule::FamilyConstant("spec/architecture/inventory.rs"),
         lifetime: LifetimeRule::FamilyConstant(GuaranteeLifetime::Permanent),
         gate_posture: GatePostureRule::FamilyConstant(GatePosture::Scheduled(&[GateId::G0])),
         witness: WitnessPosture::StructuralArchitecture,
@@ -175,7 +175,7 @@ pub const GUARANTEE_FAMILY_POLICIES: &[GuaranteeFamilyPolicy] = &[
     GuaranteeFamilyPolicy {
         family: "QUAL",
         kind: KindRule::FamilyConstant(GuaranteeKind::QualificationRequirement),
-        owner: OwnerRule::FamilyConstant("spec/architecture.rs"),
+        owner: OwnerRule::FamilyConstant("spec/architecture/inventory.rs"),
         lifetime: LifetimeRule::FamilyConstant(GuaranteeLifetime::Permanent),
         // Scheduling is row-specific: it cannot be derived from a compilation
         // target or from neighbouring SEED vocabulary.
@@ -285,12 +285,12 @@ impl GuaranteeAdmissionRule {
     pub const fn owner(self) -> &'static str {
         match self {
             Self::DeclaredFamilyPolicy | Self::PolicyMatchesNativeRowShape => {
-                "spec/guarantees.rs GUARANTEE_FAMILY_POLICIES"
+                "spec/guarantees/policy.rs GUARANTEE_FAMILY_POLICIES"
             }
-            Self::NonEmptyOwner => "spec/guarantees.rs GuaranteeView::owner",
-            Self::RowNamesScheduledGates => "spec/guarantees.rs GatePostureRule::RowDeclared",
+            Self::NonEmptyOwner => "spec/guarantees/policy.rs GuaranteeView::owner",
+            Self::RowNamesScheduledGates => "spec/guarantees/policy.rs GatePostureRule::RowDeclared",
             Self::ImplementationBearingDecisionNamesGate => {
-                "spec/dispositions.rs DecisionClass::requires_gate"
+                "spec/dispositions/types.rs DecisionClass::requires_gate"
             }
         }
     }

@@ -2,7 +2,7 @@
 //!
 //! This file owns the SHARED semantic types for the guarantee system. It does
 //! NOT own the individual guarantees: SEED facts are classified in
-//! `spec/invariants.rs`; LEG, DEC, architecture, and qualification facts keep
+//! `spec/invariants/inventory.rs`; LEG, DEC, architecture, and qualification facts keep
 //! their native authority and schemas in their own files. This file is not a
 //! second SEED table and is not a graph generator — the derived Guarantee Graph
 //! is produced by `bootstrap/project.py` from ADMITTED views and independently

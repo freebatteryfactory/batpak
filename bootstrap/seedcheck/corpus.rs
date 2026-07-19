@@ -369,7 +369,7 @@ pub(crate) fn check_toolchain(root: &Path, findings: &mut Vec<String>) {
     let refuse = |findings: &mut Vec<String>, field: &str, observed: &str, required: &str,
                   repair: &str| {
         findings.push(format!(
-            "toolchain {field} violated (owner: spec/toolchain.rs ToolchainProfile;              observed: {observed}; required: {required}; repair: {repair})"
+            "toolchain {field} violated (owner: spec/toolchain/types.rs ToolchainProfile;              observed: {observed}; required: {required}; repair: {repair})"
         ));
     };
     // The exact qualifying release and the MSRV floor answer DIFFERENT

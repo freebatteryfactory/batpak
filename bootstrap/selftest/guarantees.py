@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .core import (
     HERE,
+    _resolve_edit_carrier,
     canonical_commitments,
     canonical_drift,
     isolated_tree,
@@ -185,11 +186,11 @@ def test_guarantee_authority(audit, project) -> list[str]:
 
     GU = "spec/guarantees/policy.rs"
     DI = "spec/dispositions.rs"
-    AR = "spec/architecture/repository.rs"
+    AR = "spec/architecture/inventory.rs"
 
     def probe(name, rel, old, needle, new="", validator=None):
         with isolated_tree() as tmp:
-            path = tmp / rel
+            path = tmp / _resolve_edit_carrier(root, rel, old)
             path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new,
                                          f"{rel}: {old[:44]!r}"), encoding="utf-8")
             expect(name, (validator or audit.guarantee_admission_findings)(tmp), needle)

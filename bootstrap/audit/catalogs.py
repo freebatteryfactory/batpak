@@ -24,7 +24,7 @@ from .corpus import (
 )
 
 # --- Admitted contract kinds (5.5E3c, block form 5.5E4a) ---------------------
-# spec/contracts.rs owns the admitted set; docs/06 projects it through the
+# spec/contracts/types.rs owns the admitted set; docs/06 projects it through the
 # ordinary CONTRACT-KINDS generated block. A kind whose admitting citation
 # dangles, and a block that admits more or fewer kinds than the enum, are both
 # refused — and the retired HYBRID fence (a generator editing selected columns
@@ -35,16 +35,16 @@ A_CONTRACT_KIND_HYBRID_FENCE = re.compile(
 
 def contract_kind_findings(root: Path) -> list[str]:
     out: list[str] = []
-    src_path = root / "spec/contracts.rs"
+    src_path = root / "spec/contracts/types.rs"
     if not src_path.is_file():
-        return ["missing spec/contracts.rs"]
+        return ["missing spec/contracts/types.rs"]
     src = _uncomment(src_path.read_text(encoding="utf-8"))
     enum_body = re.search(r"pub enum ContractKind \{(.*?)\n\}", src, re.S)
     variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
     all_body = re.search(r"pub const ALL: &'static \[ContractKind\] = &\[(.*?)\];", src, re.S)
     inventory = re.findall(r"ContractKind::(\w+)", all_body.group(1)) if all_body else []
     if not variants:
-        out.append("spec/contracts.rs declares no ContractKind variants")
+        out.append("spec/contracts/types.rs declares no ContractKind variants")
     for missing in sorted(set(variants) - set(inventory)):
         out.append(f"ContractKind::{missing} is omitted from ContractKind::ALL")
     for phantom in sorted(set(inventory) - set(variants)):
@@ -52,9 +52,9 @@ def contract_kind_findings(root: Path) -> list[str]:
     # tag/prefix agreement and resolution against the declared tables
     tagged = re.findall(r'ContractKind::(\w+) => GuaranteeRef::(leg|dec)\("([^"]+)"\)', src)
     leg_ids = {m[0] for m in G_LEG_ROW.findall(
-        (root / "spec/legacy_obligations.rs").read_text(encoding="utf-8"))}
+        (root / "spec/legacy_obligations/inventory.rs").read_text(encoding="utf-8"))}
     dec_ids = {m[0] for m in G_DEC_ROW.findall(
-        (root / "spec/dispositions.rs").read_text(encoding="utf-8"))}
+        (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8"))}
     for kind, tag, ident in tagged:
         if tag == "leg" and not ident.startswith("LEG-"):
             out.append(f"ContractKind::{kind} tags {ident!r} as leg, whose family "
@@ -98,12 +98,12 @@ def contract_kind_findings(root: Path) -> list[str]:
 
 
 # --- Identity catalogs (5.5E3d) ----------------------------------------------
-# spec/identities.rs owns four catalog axes plus the non-cataloged residue.
+# spec/identities/ owns four catalog axes plus the non-cataloged residue.
 # This auditor independently parses the typed owner, reconstructs the five
 # generated docs/16 blocks (ordered entries AND owners), and runs the standing
 # corpus-sweep law: every identity-shaped term discovered in the AUTHORED
 # corpus resolves through exactly one of five classification paths. Discovery
-# deliberately excludes generated projection blocks and spec/identities.rs
+# deliberately excludes generated projection blocks and spec/identities/
 # itself — the denominator must never prove itself by rereading its own
 # answer sheet.
 A_IDENTITY_AXES = (
@@ -123,13 +123,14 @@ A_IDENT_TERM = re.compile(
     r"\b[A-Z][A-Za-z0-9]*(?:Id|Hash|Digest|Commitment|Generation|Version)\b")
 
 
-def _identity_block_body(name: str, doc: str):
+def _identity_block_body(name: str, source: str, doc: str):
     # The BEGIN marker is provenance, verified independently of the renderer
-    # (5.5E3d1): it must name spec/identities.rs as the source authority
+    # (5.5E3d1): it must name the registry's authority source for the block
     # exactly, or the block is not a generated identity block at all.
     m = re.search(
         r"<!-- " + re.escape(name)
-        + r":BEGIN generated from spec/identities\.rs by bootstrap/project\.py; "
+        + r":BEGIN generated from " + re.escape(source)
+        + r" by bootstrap/project\.py; "
         + r"do not edit -->\n```text\n(.*?)\n```\n<!-- "
         + re.escape(name) + r":END -->", doc, re.S)
     return m.group(1) if m else None
@@ -137,10 +138,10 @@ def _identity_block_body(name: str, doc: str):
 
 def identity_catalog_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / "spec/identities.rs"
-    if not path.is_file():
-        return ["missing spec/identities.rs"]
-    src = _uncomment(path.read_text(encoding="utf-8"))
+    src = _spec_module_source(root, "identities")
+    if not src:
+        return ["missing spec/identities/"]
+    src = _uncomment(src)
     contract_ids = declared_contract_ids(root)
     # Owner coherence (5.5E3d2): the owner must AUTHOR the term. Map each
     # declared contract to its authoritative document's authored text —
@@ -161,7 +162,7 @@ def identity_catalog_findings(root: Path) -> list[str]:
     def owner_authors(cid: str, term: str) -> bool:
         return bool(re.search(r"\b" + re.escape(term) + r"\b", owner_text.get(cid, "")))
 
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     dec_disposition = {m[0]: m[3] for m in G_DEC_ROW.findall(dsrc)}
     # Spellings with existing typed spec owners are referenced, never
     # re-admitted: a duplicate variant is a wrapper passport.
@@ -169,7 +170,7 @@ def identity_catalog_findings(root: Path) -> list[str]:
         r"pub const EXISTING_TYPED_OWNER_SPELLINGS: &\[&str\] = &\[(.*?)\];", src, re.S)
     existing_owned = set(re.findall(r'"(\w+)"', owned_body.group(1))) if owned_body else set()
     if not existing_owned:
-        out.append("spec/identities.rs declares no EXISTING_TYPED_OWNER_SPELLINGS list")
+        out.append("spec/identities/inventory.rs declares no EXISTING_TYPED_OWNER_SPELLINGS list")
     # Independent parse of the four axes, in Kind::ALL order. The \b anchor
     # keeps "VersionIdentityKind::..." from satisfying "IdentityKind::...".
     catalogs: dict[str, list[tuple[str, str]]] = {}
@@ -183,7 +184,7 @@ def identity_catalog_findings(root: Path) -> list[str]:
             r"\b" + kind + r"::(\w+) => \{?\s*entry!\(\s*\"([^\"]+)\",\s*\"([^\"]+)\"\s*\)",
             src)}
         if not inventory:
-            out.append(f"spec/identities.rs declares no {kind} inventory")
+            out.append(f"spec/identities/types.rs declares no {kind} inventory")
             continue
         entries: list[tuple[str, str]] = []
         for v in inventory:
@@ -218,7 +219,7 @@ def identity_catalog_findings(root: Path) -> list[str]:
         src, re.S)
     excluded = set(re.findall(r'"(\w+)"', excluded_body.group(1))) if excluded_body else set()
     if not excluded:
-        out.append("spec/identities.rs declares no EXCLUDED_CHRONOLOGY_AND_NAVIGATION list")
+        out.append("spec/identities/inventory.rs declares no EXCLUDED_CHRONOLOGY_AND_NAVIGATION list")
     for term in sorted(excluded & set(axis_of)):
         out.append(f"{term} is chronology/navigation vocabulary and may not enter "
                    f"the {axis_of[term]} catalog")
@@ -231,7 +232,7 @@ def identity_catalog_findings(root: Path) -> list[str]:
         r'(?:ContractId|DecisionId)\("([^"]+)"\)\)',
         residue_body.group(1)) if residue_body else []
     if not residue:
-        out.append("spec/identities.rs declares no NON_CATALOGED_IDENTITY_TERMS rows")
+        out.append("spec/identities/inventory.rs declares no NON_CATALOGED_IDENTITY_TERMS rows")
     residue_seen: set[str] = set()
     for term, variant, ref in residue:
         if term in residue_seen:
@@ -291,10 +292,11 @@ def identity_catalog_findings(root: Path) -> list[str]:
     doc = (root / "docs/16_IDENTITY_TIME_AND_NAVIGATION.md").read_text(encoding="utf-8")
     for marker, _kind in A_IDENTITY_AXES:
         want = [f"{s:<30} {o}" for s, o in catalogs.get(marker, [])]
-        _identity_block_parity(marker, want, doc, out)
+        _identity_block_parity(marker, "spec/identities/types.rs", want, doc, out)
     residue_want = [f"{t:<30} {A_IDENT_DISPOSITION.get(v, '?'):<22} {r}"
                     for t, v, r in residue]
-    _identity_block_parity("IDENTITY-RESIDUE", residue_want, doc, out)
+    _identity_block_parity("IDENTITY-RESIDUE", "spec/identities/inventory.rs",
+                           residue_want, doc, out)
     # The standing corpus-sweep law, TRUE set equality (5.5E3d1). Authored
     # corpus: the authoritative docs and companion, minus every generated
     # projection block. Three refusal shapes: discovered but unclassified;
@@ -346,13 +348,10 @@ def identity_catalog_findings(root: Path) -> list[str]:
         out.append(f"EXCLUDED_CHRONOLOGY_AND_NAVIGATION lists {term}, which docs/16's "
                    "navigation and time-and-order fences do not declare")
     required_owned: set[str] = set()
-    for rel in ("spec/architecture.rs", "spec/proof.rs", "spec/gates.rs",
-                "spec/operators.rs"):
-        text = (_spec_module_source(root, "architecture") if rel == "spec/architecture.rs"
-                else (root / rel).read_text(encoding="utf-8"))
+    for name in ("architecture", "proof", "gates", "operators"):
         required_owned.update(re.findall(
             r"pub (?:struct|enum) (\w+Id)\b",
-            _uncomment(text)))
+            _uncomment(_spec_module_source(root, name))))
     for term in sorted(required_owned - existing_owned):
         out.append(f"EXISTING_TYPED_OWNER_SPELLINGS omits {term}, which the spec "
                    "declares as an existing typed owner")
@@ -362,12 +361,12 @@ def identity_catalog_findings(root: Path) -> list[str]:
     return out
 
 
-def _identity_block_parity(marker: str, want: list[str], doc: str,
+def _identity_block_parity(marker: str, source: str, want: list[str], doc: str,
                            out: list[str]) -> None:
-    body = _identity_block_body(marker, doc)
+    body = _identity_block_body(marker, source, doc)
     if body is None:
         out.append(f"docs/16 carries no generated {marker} block naming "
-                   "spec/identities.rs as source")
+                   f"{source} as source")
         return
     listed = [line.rstrip() for line in body.splitlines() if line.strip()]
     want = [line.rstrip() for line in want]
@@ -383,7 +382,7 @@ def _identity_block_parity(marker: str, want: list[str], doc: str,
 
 
 # --- Promotion requirements (5.5E3i) -----------------------------------------
-# spec/promotion.rs owns the conjunctive denominator: four required members,
+# spec/promotion/types.rs owns the conjunctive denominator: four required members,
 # no optional flag, no waiver variant, no second list anywhere. docs/12 owns
 # what each requirement means; docs/24 consumes Rule qualification; docs/31
 # consumes the typed law. The authored doctrine clauses are themselves law:
@@ -418,12 +417,12 @@ A_PROMOTION_DISQUALIFIED = (
 
 def promotion_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / "spec/promotion.rs"
-    if not path.is_file():
-        return ["missing spec/promotion.rs"]
-    src = _uncomment(path.read_text(encoding="utf-8"))
+    src = _spec_module_source(root, "promotion")
+    if not src:
+        return ["missing spec/promotion/"]
+    src = _uncomment(src)
     contract_ids = declared_contract_ids(root)
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     dec_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
     enum_body = re.search(r"pub enum PromotionRequirement \{(.*?)\n\}", src, re.S)
     variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
@@ -439,7 +438,7 @@ def promotion_findings(root: Path) -> list[str]:
         out.append(f"PromotionRequirement::ALL names {phantom}, which the enum "
                    "does not declare")
     if re.search(r"\boptional\b|\bwaiver\b", src, re.I):
-        out.append("spec/promotion.rs speaks of optional or waiver; the "
+        out.append("spec/promotion/ speaks of optional or waiver; the "
                    "denominator is conjunctive with no escape hatch")
 
     def fn_arms(name):
@@ -516,7 +515,7 @@ def promotion_findings(root: Path) -> list[str]:
         r'DecisionSpec \{ id: "DEC-074",.*?successor: "([^"]*)"', dsrc)
     f74 = row74.group(1) if row74 else ""
     for token in ("PromotionRequirement", "ProofPolicySurface::CandidatePromotion",
-                  "spec/promotion.rs"):
+                  "spec/promotion/types.rs"):
         if token not in f74:
             out.append(f"DEC-074 does not name {token}; the change law must bind "
                        "the typed boundary")
@@ -534,12 +533,12 @@ def promotion_findings(root: Path) -> list[str]:
             out.append(f"docs/12 no longer states that {token} cannot satisfy "
                        "QualifiedHostileEvidence")
     m = re.search(
-        r"<!-- PROMOTION-REQUIREMENTS:BEGIN generated from spec/promotion\.rs by "
+        r"<!-- PROMOTION-REQUIREMENTS:BEGIN generated from spec/promotion/types\.rs by "
         r"bootstrap/project\.py; do not edit -->\n```text\n(.*?)\n```\n<!-- "
         r"PROMOTION-REQUIREMENTS:END -->", doc12, re.S)
     if not m:
         out.append("docs/12 carries no generated PROMOTION-REQUIREMENTS block "
-                   "naming spec/promotion.rs as source")
+                   "naming spec/promotion/types.rs as source")
     else:
         header = f"{'requirement':<26} {'owner':<14} admission basis"
         family = [f"{'policy surface':<26} {surface.group(1) if surface else '?'}",
@@ -563,9 +562,9 @@ def promotion_findings(root: Path) -> list[str]:
     # cannot return.
     doc24 = A_GENERATED_BLOCK.sub(
         "", (root / "docs/24_GAUNTLET.md").read_text(encoding="utf-8"))
-    if re.search(r"MutationLane`? in `?spec/architecture\.rs", doc24):
-        out.append("docs/24 points MutationLane at spec/architecture.rs; the "
-                   "typed owner moved to spec/mutation.rs and left no re-export")
+    if re.search(r"MutationLane`? in `?spec/architecture", doc24):
+        out.append("docs/24 points MutationLane at spec/architecture; the "
+                   "typed owner moved to spec/mutation/types.rs and left no re-export")
     if "QualifiedHostileEvidence" not in doc24 or "Rule qualification" not in doc24:
         out.append("docs/24 no longer states that QualifiedHostileEvidence "
                    "consumes its Rule qualification law")
@@ -576,7 +575,7 @@ def promotion_findings(root: Path) -> list[str]:
     doc31 = A_GENERATED_BLOCK.sub(
         "", (root / "docs/31_FINAL_CONTRADICTION_AUDIT.md").read_text(encoding="utf-8"))
     if "PromotionRequirement::ALL" not in doc31:
-        out.append("docs/31 no longer consumes spec/promotion.rs "
+        out.append("docs/31 no longer consumes spec/promotion/types.rs "
                    "PromotionRequirement::ALL as the promotion condition")
     for s in ("IndependentEvidenceRoute", "NamedProofTarget",
               "QualifiedHostileEvidence", "AuditablePromotionReceipt"):
@@ -589,8 +588,9 @@ def promotion_findings(root: Path) -> list[str]:
     for rel in sorted((root / "spec").rglob("*.rs")):
         rsrc = _uncomment(rel.read_text(encoding="utf-8"))
         rel_spec = rel.relative_to(root / "spec").as_posix()
-        # The owning top-level spec module: a concept-door "<name>.rs" or the
-        # same-name decomposition directory "<name>/**" both belong to <name>.
+        # The owning top-level spec module: every domain is a directory, so
+        # the owner is the first path segment (lib.rs maps to the crate facade
+        # and owns no domain).
         owner = rel_spec.split("/", 1)[0]
         owner = owner[:-3] if owner.endswith(".rs") else owner
         if owner in ("architecture", "mutation", "proof", "reconciliation") \
@@ -605,18 +605,18 @@ def promotion_findings(root: Path) -> list[str]:
 
 
 # --- Compiler-assumption kinds (5.5E3h) --------------------------------------
-# spec/compiler_assumptions.rs owns the admitted ledgerable kinds — two
+# spec/compiler_assumptions/types.rs owns the admitted ledgerable kinds — two
 # sharp instruments, never a junk drawer. Hard violations, test allowances,
 # dependency mechanisms, and not-yet-earned ideas keep their existing
 # owners; the borders are proven by hostiles, not by a second census table.
 def compiler_assumption_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / "spec/compiler_assumptions.rs"
+    path = root / "spec/compiler_assumptions/types.rs"
     if not path.is_file():
-        return ["missing spec/compiler_assumptions.rs"]
+        return ["missing spec/compiler_assumptions/types.rs"]
     src = _uncomment(path.read_text(encoding="utf-8"))
     contract_ids = declared_contract_ids(root)
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     dec_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
     enum_body = re.search(r"pub enum CompilerAssumptionKind \{(.*?)\n\}", src, re.S)
     variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
@@ -716,11 +716,11 @@ def compiler_assumption_findings(root: Path) -> list[str]:
     doc19 = (root / "docs/19_SECURITY_MODEL.md").read_text(encoding="utf-8")
     m = re.search(
         r"<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from "
-        r"spec/compiler_assumptions\.rs by bootstrap/project\.py; do not edit -->"
+        r"spec/compiler_assumptions/types\.rs by bootstrap/project\.py; do not edit -->"
         r"\n```text\n(.*?)\n```\n<!-- COMPILER-ASSUMPTION-KINDS:END -->", doc19, re.S)
     if not m:
         out.append("docs/19 carries no generated COMPILER-ASSUMPTION-KINDS block "
-                   "naming spec/compiler_assumptions.rs as source")
+                   "naming spec/compiler_assumptions/types.rs as source")
     else:
         header = f"{'kind':<22} {'basis':<9} {'marker':<7} {'classify':<9} release"
         expected = [header] + rows
@@ -748,21 +748,21 @@ def compiler_assumption_findings(root: Path) -> list[str]:
                        "only earned ledgerable kinds enter CompilerAssumptionKind")
         if owner in ("architecture", "reconciliation") and re.search(
                 r"\bCompilerAssumptionKind\b", rsrc):
-            out.append(f"spec/{owner}.rs speaks CompilerAssumptionKind; the type has "
+            out.append(f"spec/{owner}/ speaks CompilerAssumptionKind; the type has "
                        "one owner module")
     return out
 
 
 # --- Corpus reconciliation epoch (5.5E3g) ------------------------------------
-# spec/corpus.rs owns which corpus epochs exist and which is CURRENT. The
+# spec/corpus/types.rs owns which corpus epochs exist and which is CURRENT. The
 # epoch answers "which coherent semantic corpus does this document belong
 # to" — never a date, release, digest, proof freshness, or the runtime
-# reconciliation posture that spec/reconciliation.rs owns under DEC-075.
+# reconciliation posture that spec/reconciliation/ owns under DEC-075.
 def corpus_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / "spec/corpus.rs"
+    path = root / "spec/corpus/types.rs"
     if not path.is_file():
-        return ["missing spec/corpus.rs"]
+        return ["missing spec/corpus/types.rs"]
     src = _uncomment(path.read_text(encoding="utf-8"))
     contract_ids = declared_contract_ids(root)
     enum_body = re.search(r"pub enum ReconciliationEpoch \{(.*?)\n\}", src, re.S)
@@ -781,7 +781,7 @@ def corpus_findings(root: Path) -> list[str]:
         r"pub const CURRENT_RECONCILIATION_EPOCH:\s*ReconciliationEpoch = "
         r"ReconciliationEpoch::(\w+);", src)
     if not cur:
-        out.append("spec/corpus.rs declares no CURRENT_RECONCILIATION_EPOCH")
+        out.append("spec/corpus/types.rs declares no CURRENT_RECONCILIATION_EPOCH")
         return out
     current = cur.group(1)
     if current not in inventory:
@@ -793,7 +793,7 @@ def corpus_findings(root: Path) -> list[str]:
     bases = dict(re.findall(
         r'ReconciliationEpoch::(\w+) => \{?\s*GuaranteeRef::Seed\(SeedId\("([^"]+)"\)\)',
         src))
-    inv_src = _uncomment((root / "spec/invariants.rs").read_text(encoding="utf-8"))
+    inv_src = _uncomment((root / "spec/invariants/inventory.rs").read_text(encoding="utf-8"))
     seen: set[str] = set()
     for v in inventory:
         s = spellings.get(v, "")
@@ -859,21 +859,21 @@ def corpus_findings(root: Path) -> list[str]:
         elif got != current_spelling:
             out.append(f"{rel.as_posix()}: claims corpus epoch {got}; the current "
                        f"corpus epoch is {current_spelling}")
-    # spec/reconciliation.rs owns runtime execution reconciliation, never the
+    # spec/reconciliation/ owns runtime execution reconciliation, never the
     # corpus epoch.
-    recon = _uncomment((root / "spec/reconciliation.rs").read_text(encoding="utf-8"))
+    recon = _uncomment(_spec_module_source(root, "reconciliation"))
     if re.search(r"\bReconciliationEpoch\b", recon):
-        out.append("spec/reconciliation.rs speaks ReconciliationEpoch; the runtime "
+        out.append("spec/reconciliation/ speaks ReconciliationEpoch; the runtime "
                    "reconciliation module does not own the corpus epoch")
     # The docs/00 fact block: exact provenance and ordered content.
     doc00 = (root / "docs/00_CONSTITUTION.md").read_text(encoding="utf-8")
     m = re.search(
-        r"<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from spec/corpus\.rs by "
+        r"<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from spec/corpus/types\.rs by "
         r"bootstrap/project\.py; do not edit -->\n```text\n(.*?)\n```\n<!-- "
         r"CORPUS-RECONCILIATION-EPOCH:END -->", doc00, re.S)
     if not m:
         out.append("docs/00 carries no generated CORPUS-RECONCILIATION-EPOCH block "
-                   "naming spec/corpus.rs as source")
+                   "naming spec/corpus/types.rs as source")
     else:
         want = [f"{'current epoch':<18} {current_spelling}",
                 f"{'semantic owner':<18} {owners.get(current, '')}",
@@ -886,7 +886,7 @@ def corpus_findings(root: Path) -> list[str]:
 
 
 # --- Mutation vocabulary (5.5E3f) --------------------------------------------
-# spec/mutation.rs owns the lanes and result classifications as total const
+# spec/mutation/types.rs owns the lanes and result classifications as total const
 # functions. This auditor independently parses the fn arms, executes the
 # semantic fences, reconstructs the two docs/12 fact tables, and refuses the
 # lettered lane nicknames anywhere in authoritative prose.
@@ -911,9 +911,9 @@ def _mutation_arms(src: str, enum: str, name: str) -> dict[str, str]:
 
 def mutation_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / "spec/mutation.rs"
+    path = root / "spec/mutation/types.rs"
     if not path.is_file():
-        return ["missing spec/mutation.rs"]
+        return ["missing spec/mutation/types.rs"]
     src = _uncomment(path.read_text(encoding="utf-8"))
     contract_ids = declared_contract_ids(root)
     owner_text: dict[str, str] = {}
@@ -925,7 +925,7 @@ def mutation_findings(root: Path) -> list[str]:
         cid = frontmatter(text).get("contract_id")
         if cid:
             owner_text[cid] = A_GENERATED_BLOCK.sub("", text)
-    dsrc = (root / "spec/dispositions.rs").read_text(encoding="utf-8")
+    dsrc = (root / "spec/dispositions/inventory.rs").read_text(encoding="utf-8")
     dec_ids = {m[0] for m in G_DEC_ROW.findall(dsrc)}
     inventories: dict[str, list[str]] = {}
     for enum in ("MutationLane", "MutationResult"):
@@ -1049,12 +1049,12 @@ def mutation_findings(root: Path) -> list[str]:
     for marker, expected in (("MUTATION-LANES", [lane_header] + lane_rows),
                              ("MUTATION-RESULTS", [result_header] + result_rows)):
         m = re.search(
-            r"<!-- " + marker + r":BEGIN generated from spec/mutation\.rs by "
+            r"<!-- " + marker + r":BEGIN generated from spec/mutation/types\.rs by "
             r"bootstrap/project\.py; do not edit -->\n```text\n(.*?)\n```\n<!-- "
             + marker + r":END -->", doc12, re.S)
         if not m:
             out.append(f"docs/12 carries no generated {marker} block naming "
-                       "spec/mutation.rs as source")
+                       "spec/mutation/types.rs as source")
             continue
         listed = [line.rstrip() for line in m.group(1).splitlines() if line.strip()]
         expected = [line.rstrip() for line in expected]
@@ -1081,7 +1081,7 @@ def mutation_findings(root: Path) -> list[str]:
 
 
 # --- Command namespaces (5.5E3e) ---------------------------------------------
-# spec/commands.rs owns three separate closed namespaces and each entry's
+# spec/commands/types.rs owns three separate closed namespaces and each entry's
 # typed authority relation. A command's namespace identity and its invoked
 # semantic authority are separate axes: Direct owners own the command-level
 # operation; a Composite's composition owner owns ONLY orchestration and
@@ -1096,7 +1096,7 @@ A_COMMAND_NAMESPACES = (
 def _command_block_body(name: str, doc: str):
     m = re.search(
         r"<!-- " + re.escape(name)
-        + r":BEGIN generated from spec/commands\.rs by bootstrap/project\.py; "
+        + r":BEGIN generated from spec/commands/types\.rs by bootstrap/project\.py; "
         + r"do not edit -->\n```text\n(.*?)\n```\n<!-- "
         + re.escape(name) + r":END -->", doc, re.S)
     return m.group(1) if m else None
@@ -1104,9 +1104,9 @@ def _command_block_body(name: str, doc: str):
 
 def command_catalog_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / "spec/commands.rs"
+    path = root / "spec/commands/types.rs"
     if not path.is_file():
-        return ["missing spec/commands.rs"]
+        return ["missing spec/commands/types.rs"]
     src = _uncomment(path.read_text(encoding="utf-8"))
     contract_ids = declared_contract_ids(root)
     owner_text: dict[str, str] = {}
@@ -1127,7 +1127,8 @@ def command_catalog_findings(root: Path) -> list[str]:
     for rel in sorted((root / "spec").rglob("*.rs")):
         if re.search(r"pub (?:struct|enum|type) CommandId\b",
                      _uncomment(rel.read_text(encoding="utf-8"))):
-            out.append(f"spec/{rel.name} declares a universal CommandId; command "
+            out.append(f"spec/{rel.relative_to(root / 'spec').as_posix()} "
+                       "declares a universal CommandId; command "
                        "identity lives in three separate namespaces or nowhere")
     # The composition boundary is DECLARED in authored docs/26 prose, and the
     # typed authority must agree in both directions — a command cannot
@@ -1150,7 +1151,7 @@ def command_catalog_findings(root: Path) -> list[str]:
         inventory = re.findall(r"\b" + kind + r"::(\w+)", all_body.group(1)) \
             if all_body else []
         if not inventory:
-            out.append(f"spec/commands.rs declares no {kind} inventory")
+            out.append(f"spec/commands/types.rs declares no {kind} inventory")
             continue
         enum_body = re.search(r"pub enum " + kind + r" \{(.*?)\n\}", src, re.S)
         variants = re.findall(r"^\s{4}(\w+),", enum_body.group(1), re.M) if enum_body else []
@@ -1241,7 +1242,7 @@ def command_catalog_findings(root: Path) -> list[str]:
         body = _command_block_body(marker, docs_of[docrel])
         if body is None:
             out.append(f"{docrel} carries no generated {marker} block naming "
-                       "spec/commands.rs as source")
+                       "spec/commands/types.rs as source")
             continue
         listed = [line.rstrip() for line in body.splitlines() if line.strip()]
         for i, expect in enumerate(rows):

@@ -1,9 +1,10 @@
 """Gate-0 output shape, Tier-0 qualification, and toolchain authority.
 
-Reparses spec/bootstrap_output.rs, spec/bootstrap_qualification.rs,
-spec/tier0_cross_run.rs, the workflow-pinning and python-tooling planes, and
-spec/toolchain.rs, holding the static posture laws while the dynamic isolated
-qualification lives in selftest. Shares no parser with bootstrap/project.py.
+Reparses spec/bootstrap_output/types.rs, the spec/bootstrap_qualification and
+spec/tier0_cross_run domains, the workflow-pinning and python-tooling planes,
+and spec/toolchain/types.rs, holding the static posture laws while the dynamic
+isolated qualification lives in selftest. Shares no parser with
+bootstrap/project.py.
 """
 from __future__ import annotations
 
@@ -22,13 +23,13 @@ from .corpus import (
 )
 
 # --- 5.5E5 Gate-0 materializer output shape ----------------------------------
-# spec/bootstrap_output.rs owns the candidate's file shape; the materializer
-# and the selftest oracle both expand it. This auditor re-parses the typed
-# owner independently and holds the STATIC posture laws: the dynamic isolated
-# qualification (two output roots, seed snapshot, byte oracle, Cargo) lives in
-# selftest, and audit never executes Cargo or materializes a tree.
+# spec/bootstrap_output/types.rs owns the candidate's file shape; the
+# materializer and the selftest oracle both expand it. This auditor re-parses
+# the typed owner independently and holds the STATIC posture laws: the dynamic
+# isolated qualification (two output roots, seed snapshot, byte oracle, Cargo)
+# lives in selftest, and audit never executes Cargo or materializes a tree.
 
-A_BO_SPEC = "spec/bootstrap_output.rs"
+A_BO_SPEC = "spec/bootstrap_output/types.rs"
 A_BO_ENUMS = ("Gate0RootArtifact", "Gate0PackageArtifact", "Gate0PackageTargetKind",
               "Gate0PlaneArtifact", "Gate0OutputDisposition")
 
@@ -203,8 +204,8 @@ def bootstrap_output_findings(root: Path) -> list[str]:
     syncbat_base = package_paths.get("SyncBat", "")
     for plane in plane_order:
         module = modules.get(plane, "")
-        expected_paths.append(f"{syncbat_base}/src/{module}.rs")
-        expected_paths.append(f"{syncbat_base}/src/{module}/README.md")
+        expected_paths.append(f"{syncbat_base}/src/{module}/mod.rs")
+        expected_paths.append(f"{syncbat_base}/src/{module}/types.rs")
     doc23 = root / "docs/23_BOOTSTRAP_AND_SELF_HOSTING.md"
     if doc23.is_file():
         text = doc23.read_text(encoding="utf-8")
@@ -281,7 +282,7 @@ def bootstrap_output_findings(root: Path) -> list[str]:
     # The parallel plane inventories cannot return.
     for token in ("SYNCBAT_REQUIRED_PLANES", "pub const SYNCBAT_PLANES"):
         if token in arch:
-            out.append(f"spec/architecture.rs: the raw plane inventory {token.split()[-1]} "
+            out.append(f"spec/architecture/types.rs: the raw plane inventory {token.split()[-1]} "
                        "returned; SyncBatPlane::ALL is the one inventory")
 
     # Static materializer posture laws.
@@ -341,7 +342,7 @@ def bootstrap_output_findings(root: Path) -> list[str]:
             for name in cargo_names:
                 if f'"{name}"' in block:
                     out.append(f"bootstrap/selftest.py: the output oracle carries the "
-                               f"package name {name!r}; names derive from spec/architecture.rs")
+                               f"package name {name!r}; names derive from spec/architecture/types.rs")
             for module in modules.values():
                 if f'"{module}"' in block:
                     out.append(f"bootstrap/selftest.py: the output oracle carries the "
@@ -357,16 +358,16 @@ def bootstrap_output_findings(root: Path) -> list[str]:
 
 
 # --- 5.5E6a typed Tier 0 receipt policy -------------------------------------
-A_BQ_SPEC = "spec/bootstrap_qualification.rs"
+A_BQ_SPEC = "spec/bootstrap_qualification"
 
 
 def bootstrap_qualification_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / A_BQ_SPEC
+    path = root / A_BQ_SPEC / "mod.rs"
     if not path.is_file():
-        return [f"missing {A_BQ_SPEC}"]
+        return [f"missing {A_BQ_SPEC}/mod.rs"]
     src = _uncomment(_spec_module_source(root, "bootstrap_qualification"))
-    tc = _uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
+    tc = _uncomment((root / "spec/toolchain/types.rs").read_text(encoding="utf-8"))
 
     def variants(text: str, enum: str) -> list[str]:
         head = text.find(f"pub enum {enum} {{")
@@ -413,7 +414,7 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
     auth = re.search(r"pub const AUTHORITATIVE_TARGET: RustTargetTriple = "
                      r"RustTargetTriple::(\w+);", tc)
     if not auth or auth.group(1) != "X86_64PcWindowsMsvc":
-        out.append("spec/toolchain.rs: AUTHORITATIVE_TARGET is not the MSVC triple")
+        out.append("spec/toolchain/types.rs: AUTHORITATIVE_TARGET is not the MSVC triple")
     if "QualificationEnvironment" in src:
         out.append(f"{A_BQ_SPEC}: speaks QualificationEnvironment; a semantic environment "
                    "is not a physical target")
@@ -569,18 +570,18 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
     # into the required-file denominator so it can never silently vanish.
     if "bootstrap/receiptcheck.rs" not in \
             _spec_module_source(root, "architecture"):
-        out.append("spec/architecture.rs: REQUIRED_DOCS omits bootstrap/receiptcheck.rs")
+        out.append("spec/architecture/inventory.rs: REQUIRED_DOCS omits bootstrap/receiptcheck.rs")
     return out
 
 
-A_XR_SPEC = "spec/tier0_cross_run.rs"
+A_XR_SPEC = "spec/tier0_cross_run"
 
 
 def tier0_cross_run_findings(root: Path) -> list[str]:
     out: list[str] = []
-    path = root / A_XR_SPEC
+    path = root / A_XR_SPEC / "mod.rs"
     if not path.is_file():
-        return [f"missing {A_XR_SPEC}"]
+        return [f"missing {A_XR_SPEC}/mod.rs"]
     src = _uncomment(_spec_module_source(root, "tier0_cross_run"))
 
     # Independent reconstruction (regex, no shared parse with the spec crate) of
@@ -723,10 +724,10 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     # executes both the comparator and the promotion confirmation end to end.
     bq = _uncomment(_spec_module_source(root, "bootstrap_qualification"))
     if "fn materializer_output_tree(&self) -> Sha256Digest" not in bq:
-        out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
+        out.append("spec/bootstrap_qualification/verify.rs: VerifiedTier0Qualification exposes no "
                    "materializer_output_tree() accessor for the cross-run comparator")
     if "AUTHORITATIVE_WORKFLOW_PATH" not in bq:
-        out.append("spec/bootstrap_qualification.rs: declares no AUTHORITATIVE_WORKFLOW_PATH "
+        out.append("spec/bootstrap_qualification/evidence.rs: declares no AUTHORITATIVE_WORKFLOW_PATH "
                    "constant for promotion confirmation")
 
     # Builder-identity perimeter (5.5E6c2): typed Python authority, the runtime
@@ -734,9 +735,9 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     for needed in ("AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE", "struct PythonRelease",
                    "struct BootstrapRuntimeBinding", "AuthoritativeBootstrapRuntimeMismatch"):
         if needed not in bq:
-            out.append(f"spec/bootstrap_qualification.rs: missing builder-identity item {needed!r}")
+            out.append(f"spec/bootstrap_qualification: missing builder-identity item {needed!r}")
     if "fn bootstrap_runtime(&self) -> &BootstrapRuntimeBinding" not in bq:
-        out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
+        out.append("spec/bootstrap_qualification/verify.rs: VerifiedTier0Qualification exposes no "
                    "bootstrap_runtime() accessor")
     rc_raw = _bootstrap_rust_source(root, "receiptcheck")
     if 'expect_exact("BATPAK-TIER0-QUALIFICATION/2")' not in rc_raw:
@@ -805,7 +806,7 @@ def workflow_pinning_findings(root: Path) -> list[str]:
                       r"PythonRelease\s*\{\s*major:\s*(\d+),\s*minor:\s*(\d+),\s*patch:\s*(\d+)",
                       bq)
         if not m:
-            out.append("spec/bootstrap_qualification.rs: cannot read "
+            out.append("spec/bootstrap_qualification/evidence.rs: cannot read "
                        "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE for the workflow projection check")
         else:
             want = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
@@ -852,23 +853,23 @@ def workflow_pinning_findings(root: Path) -> list[str]:
 def python_tooling_findings(root: Path) -> list[str]:
     """The Python tooling plane must stay honest about the bootstrap runtime.
     `.python-version` PROJECTS the typed authority
-    AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE (spec/bootstrap_qualification.rs) —
+    AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE (spec/bootstrap_qualification/evidence.rs) —
     it is never a second authority, so its MAJOR.MINOR.PATCH is parsed FROM the
     constant, never hardcoded. `pyproject.toml` owns only the development tooling
     plane: its `requires-python` must agree with that major.minor, and it must
     NOT declare a populated `[project].dependencies` list — the bootstrap runtime
     stays standard-library-only (a lawful dev dependency group is fine)."""
     out: list[str] = []
-    bq_path = root / "spec/bootstrap_qualification.rs"
+    bq_path = root / "spec/bootstrap_qualification/evidence.rs"
     if not bq_path.is_file():
-        out.append("spec/bootstrap_qualification.rs: missing; cannot resolve the typed "
+        out.append("spec/bootstrap_qualification/evidence.rs: missing; cannot resolve the typed "
                    "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE authority")
         return out
     bq = _spec_module_source(root, "bootstrap_qualification")
     m = re.search(r"AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE[^;]*major:\s*(\d+),"
                   r"[^;]*minor:\s*(\d+),[^;]*patch:\s*(\d+)", bq, re.S)
     if not m:
-        out.append("spec/bootstrap_qualification.rs: cannot read "
+        out.append("spec/bootstrap_qualification/evidence.rs: cannot read "
                    "AUTHORITATIVE_BOOTSTRAP_PYTHON_RELEASE for the python-tooling projection check")
         return out
     want_full = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
@@ -940,7 +941,7 @@ def python_tooling_findings(root: Path) -> list[str]:
 
 
 # --- Toolchain authority (5.5E3a) --------------------------------------------
-# spec/toolchain.rs owns every toolchain value. This auditor independently
+# spec/toolchain/types.rs owns every toolchain value. This auditor independently
 # reconstructs the tracked projection's bytes and refuses any hidden owner: a
 # hardcoded resolver/edition/MSRV/channel literal in the materializer or a
 # hardcoded rustc edition in the harness is a second authority.
@@ -952,7 +953,7 @@ A_TC_COMPONENT_SPELLING = {"Clippy": "clippy", "Rustfmt": "rustfmt"}
 
 
 def toolchain_profile(root: Path) -> dict:
-    src = _uncomment((root / "spec/toolchain.rs").read_text(encoding="utf-8"))
+    src = _uncomment((root / "spec/toolchain/types.rs").read_text(encoding="utf-8"))
     release = re.search(
         r"exact_rust_release: RustRelease \{ major: (\d+), minor: (\d+), patch: (\d+) \}", src)
     floor = re.search(
@@ -992,9 +993,9 @@ def toolchain_findings(root: Path) -> list[str]:
     out: list[str] = []
     for key in ("exact", "floor", "edition", "resolver", "profile"):
         if not t[key]:
-            out.append(f"spec/toolchain.rs authors no toolchain {key}")
+            out.append(f"spec/toolchain/types.rs authors no toolchain {key}")
     if not t["components"]:
-        out.append("spec/toolchain.rs authors no required components")
+        out.append("spec/toolchain/types.rs authors no required components")
     # RustupComponent::ALL is the ONE component denominator: every declared
     # variant appears in it exactly once. Dropping a component from ALL while
     # the projection moves in lockstep would leave a declared-but-unconsumed
@@ -1008,7 +1009,7 @@ def toolchain_findings(root: Path) -> list[str]:
     if len(t["component_all"]) != len(set(t["component_all"])):
         out.append("RustupComponent::ALL repeats a component")
     if not t["environment_spellings"]:
-        out.append("spec/architecture.rs declares no qualification environments")
+        out.append("spec/architecture/types.rs declares no qualification environments")
     # exact >= floor, never "same minor": a newer qualifying compiler that
     # preserves the MSRV floor is ordinary; one below the floor would qualify
     # a foundation its own consumers may lawfully refuse.
@@ -1019,7 +1020,7 @@ def toolchain_findings(root: Path) -> list[str]:
             "floor the generated workspace claims")
     # The tracked root projection opens with its machine-readable provenance
     # line (5.5E4a): the comment is part of the exact projected bytes.
-    want = ('# generated from spec/toolchain.rs by bootstrap/project.py; do not edit\n'
+    want = ('# generated from spec/toolchain/types.rs by bootstrap/project.py; do not edit\n'
             '[toolchain]\nchannel = "{}"\nprofile = "{}"\ncomponents = [{}]\n'
             .format(t["exact"], t["profile"],
                     ", ".join(f'"{c}"' for c in t["components"])))
@@ -1030,7 +1031,7 @@ def toolchain_findings(root: Path) -> list[str]:
     elif tracked.read_text(encoding="utf-8") != want:
         out.append("tracked rust-toolchain.toml does not equal the "
                    "deterministic projection of ToolchainProfile "
-                   "(owner: spec/toolchain.rs; repair: regenerate, never hand-edit)")
+                   "(owner: spec/toolchain/types.rs; repair: regenerate, never hand-edit)")
     mat = _bootstrap_rust_source(root, "materialize")
     for pattern, what in ((r'resolver = \\"[0-9]', "resolver"),
                           (r'edition = \\"[0-9]', "edition"),
@@ -1038,11 +1039,11 @@ def toolchain_findings(root: Path) -> list[str]:
                           (r'channel = \\"[0-9]', "channel")):
         if re.search(pattern, mat):
             out.append(f"bootstrap/materialize.rs hardcodes a {what} literal; "
-                       "spec/toolchain.rs ToolchainProfile is the owner")
+                       "spec/toolchain/types.rs ToolchainProfile is the owner")
     harness = _bootstrap_source(root, "selftest")
     if re.search(r'"--edition", "[0-9]', harness):
         out.append("bootstrap/selftest.py hardcodes a rustc edition; "
-                   "spec/toolchain.rs ToolchainProfile is the owner")
+                   "spec/toolchain/types.rs ToolchainProfile is the owner")
     # Environment membership dissolved into construction (5.5E3a1): a QUAL
     # row carries a closed QualificationEnvironment variant, so the auditor
     # checks the authored SPELLINGS and that rows name declared variants.

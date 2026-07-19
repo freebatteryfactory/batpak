@@ -91,7 +91,7 @@ Damage to authority is never treated as absence.
 
 ## 6. Types are the state
 
-Primary semantic types live in discoverable root concept files. Operations live in same-name module directories. Domain-significant types do not hide inside functions or unrelated algorithm files.
+Every top-level semantic domain is a directory: its private `types.rs` carries the canonical boundary nouns, its `mod.rs` façade explicitly re-exports the public items, and verb-named files own the operations. Domain-significant types do not hide inside functions or unrelated algorithm files.
 
 Core owns cross-package public, durable, wire-visible, proof-bearing types. Outer packages do not mint local passports for the same concept.
 
@@ -154,7 +154,7 @@ evidence; its historical design does not thereby become current
 authority. A new epoch is admitted only by a deliberate whole-corpus
 reconciliation that moves the current selection.
 
-<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from spec/corpus.rs by bootstrap/project.py; do not edit -->
+<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from spec/corpus/types.rs by bootstrap/project.py; do not edit -->
 ```text
 current epoch      cleanroom-v1
 semantic owner     BP-CONSTITUTION-1

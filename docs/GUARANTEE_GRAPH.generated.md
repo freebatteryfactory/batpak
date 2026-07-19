@@ -2,7 +2,7 @@
 status: GENERATED
 authority_scope: derived structural index only
 generated_by: bootstrap/project.py
-generated_from: spec/invariants.rs; spec/legacy_obligations.rs; spec/dispositions.rs; spec/architecture.rs; spec/guarantees.rs; spec/gates.rs
+generated_from: spec/invariants/inventory.rs; spec/legacy_obligations/inventory.rs; spec/dispositions/inventory.rs; spec/architecture/inventory.rs; spec/architecture/types.rs; spec/guarantees/policy.rs; spec/gates/inventory.rs
 do_not_edit: true
 source_reconciliation_epoch: cleanroom-v1
 ---
@@ -27,7 +27,7 @@ navigation only; the owning fact is authoritative. Do not edit.
 
 ```text
 nodes: 216
-edges: 24
+edges: 25
 unresolved references: 0
 ```
 
@@ -73,7 +73,7 @@ historical coverage only: 4
 | SEED-SEMANTIC-ZERO-LEAKAGE | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0 | seedcheck; DEC-068 -- production-token scan; the AST gate | DerivesFrom DEC-068 |
 | SEED-SYNC-FIRST | ArchitectureConstraint | Permanent | docs/08_SYNCBAT_RUNTIME.md | G0/G5 | LEG-080; seedcheck -- no-tokio scan | Refines LEG-080 |
 | SEED-NO-STD-SEMANTIC-PROFILES | ArchitectureConstraint | Permanent | docs/20_DEPENDENCY_SOVEREIGNTY.md | G0/G5 | DEC-065 -- qualification matrix | DerivesFrom DEC-065 |
-| SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068; seedcheck -- the AST gate | DerivesFrom DEC-068 |
+| SEED-CONCEPT-SPINE | ArchitectureConstraint | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G0 | DEC-068; seedcheck -- the AST gate | DerivesFrom DEC-068; DerivesFrom DEC-007 |
 | SEED-NO-INLINE-DOMAIN-TYPES | SemanticLaw | Permanent | docs/04_TYPE_SYSTEM_AND_SOURCE_LAYOUT.md | G1/G3 | DEC-068 -- the AST gate | DerivesFrom DEC-068 |
 | SEED-EXPLICIT-EFFECTS | SemanticLaw | Permanent | docs/08_SYNCBAT_RUNTIME.md | G6 | LEG-036; LEG-061; BP-GAUNTLET-1 | - |
 | SEED-INDEPENDENT-ORACLE | SemanticLaw | Permanent | docs/24_GAUNTLET.md | G3/G8 | LEG-079; LEG-049 | - |
@@ -307,21 +307,21 @@ admission and never reaches this table.
 | DEC-080 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G8/G9 | - | NoFamilyWitness |
 | DEC-081 | DEC | Decision | Permanent | Enforcement | docs/30_DECISION_AND_REJECTION_LEDGER.md | G3/G8/G9 | - | NoFamilyWitness |
 | DEC-082 | DEC | Decision | Permanent | Architecture | docs/30_DECISION_AND_REJECTION_LEDGER.md | G0/G3/G9 | - | NoFamilyWitness |
-| ARCH-batpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-batpak-cli | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-batpak-examples | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-batql | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-macbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-macbat-compiler | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-netbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-syncbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| ARCH-testpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture.rs | G0 | - | StructuralArchitecture |
-| QUAL-batpak-browser-storage | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G2/G5/G7 | wasm32 host | QualificationReceipt |
-| QUAL-batpak-native | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | std | QualificationReceipt |
-| QUAL-batpak-semantic | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | no_std + alloc | QualificationReceipt |
-| QUAL-syncbat-browser | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | wasm32 host | QualificationReceipt |
-| QUAL-syncbat-native | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | std | QualificationReceipt |
-| QUAL-syncbat-semantic | QUAL | QualificationRequirement | Permanent | - | spec/architecture.rs | G0/G5 | no_std + alloc | QualificationReceipt |
+| ARCH-batpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-batpak-cli | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-batpak-examples | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-batql | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-macbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-macbat-compiler | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-netbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-syncbat | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| ARCH-testpak | ARCH | ArchitectureConstraint | Permanent | - | spec/architecture/inventory.rs | G0 | - | StructuralArchitecture |
+| QUAL-batpak-browser-storage | QUAL | QualificationRequirement | Permanent | - | spec/architecture/inventory.rs | G2/G5/G7 | wasm32 host | QualificationReceipt |
+| QUAL-batpak-native | QUAL | QualificationRequirement | Permanent | - | spec/architecture/inventory.rs | G0/G5 | std | QualificationReceipt |
+| QUAL-batpak-semantic | QUAL | QualificationRequirement | Permanent | - | spec/architecture/inventory.rs | G0/G5 | no_std + alloc | QualificationReceipt |
+| QUAL-syncbat-browser | QUAL | QualificationRequirement | Permanent | - | spec/architecture/inventory.rs | G0/G5 | wasm32 host | QualificationReceipt |
+| QUAL-syncbat-native | QUAL | QualificationRequirement | Permanent | - | spec/architecture/inventory.rs | G0/G5 | std | QualificationReceipt |
+| QUAL-syncbat-semantic | QUAL | QualificationRequirement | Permanent | - | spec/architecture/inventory.rs | G0/G5 | no_std + alloc | QualificationReceipt |
 
 ## Edges
 
@@ -333,6 +333,7 @@ admission and never reaches this table.
 | SEED-CANDIDATE-NOT-AUTHORITY | DerivesFrom | DEC-079 |
 | SEED-CANDIDATE-NOT-AUTHORITY | DerivesFrom | DEC-080 |
 | SEED-CANDIDATE-NOT-AUTHORITY | Refines | SEED-ONE-OWNER |
+| SEED-CONCEPT-SPINE | DerivesFrom | DEC-007 |
 | SEED-CONCEPT-SPINE | DerivesFrom | DEC-068 |
 | SEED-GENERATE-WIDE-QUALIFY-DEEP | DerivesFrom | DEC-082 |
 | SEED-GENERATE-WIDE-QUALIFY-DEEP | Refines | DEC-048 |

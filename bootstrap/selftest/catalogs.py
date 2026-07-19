@@ -13,6 +13,7 @@ from pathlib import Path
 from .core import (
     HERE,
     TOOLCHAIN_EDITION,
+    _resolve_edit_carrier,
     gate_sandbox,
     isolated_tree,
     must_replace,
@@ -214,12 +215,12 @@ def test_identity_catalogs(audit) -> list[str]:
     # naming any other source is not a generated identity block at all.
     probe("identity_projection_source_marker_drift_is_rejected",
           [(DOC16,
-            "<!-- IDENTITY-CATALOG:BEGIN generated from spec/identities.rs "
+            "<!-- IDENTITY-CATALOG:BEGIN generated from spec/identities/types.rs "
             "by bootstrap/project.py; do not edit -->",
             "<!-- IDENTITY-CATALOG:BEGIN generated from spec/identity_soup.rs "
             "by bootstrap/project.py; do not edit -->")],
           "docs/16 carries no generated IDENTITY-CATALOG block naming "
-          "spec/identities.rs as source")
+          "spec/identities/types.rs as source")
     # Owner coherence (5.5E3d2): the owner must AUTHOR the term. Each owner
     # mutation moves the generated docs/16 row in lockstep, so the hostile
     # fails for owner incoherence, never for a stale projection.
@@ -490,12 +491,12 @@ def test_commands(audit) -> list[str]:
           "direct BP-BATQL-ARCH-1; the typed catalog states ASK direct "
           "BP-BATQL-LANGUAGE-1 at that position")
     probe("command_projection_source_marker_drift_is_rejected",
-          [(D26, "<!-- PRODUCT-COMMANDS:BEGIN generated from spec/commands.rs "
+          [(D26, "<!-- PRODUCT-COMMANDS:BEGIN generated from spec/commands/types.rs "
                  "by bootstrap/project.py; do not edit -->",
             "<!-- PRODUCT-COMMANDS:BEGIN generated from spec/command_soup.rs "
                  "by bootstrap/project.py; do not edit -->")],
           "docs/26_COMMAND_PLANE.md carries no generated PRODUCT-COMMANDS "
-          "block naming spec/commands.rs as source")
+          "block naming spec/commands/types.rs as source")
     probe("universal_command_id_is_absent_from_the_public_spec",
           [(CM, "use crate::guarantees::ContractId;",
             "use crate::guarantees::ContractId;\npub struct CommandId;")],
@@ -649,12 +650,12 @@ def test_mutation(audit) -> list[str]:
           "docs/12 MUTATION-RESULTS row 2 states Killed true true true; the "
           "typed catalog states Killed true false true at that position")
     probe("mutation_projection_source_marker_drift_is_rejected",
-          [(D12, "<!-- MUTATION-LANES:BEGIN generated from spec/mutation.rs "
+          [(D12, "<!-- MUTATION-LANES:BEGIN generated from spec/mutation/types.rs "
                  "by bootstrap/project.py; do not edit -->",
             "<!-- MUTATION-LANES:BEGIN generated from spec/mutation_soup.rs "
                  "by bootstrap/project.py; do not edit -->")],
           "docs/12 carries no generated MUTATION-LANES block naming "
-          "spec/mutation.rs as source")
+          "spec/mutation/types.rs as source")
     return findings
 
 
@@ -786,11 +787,11 @@ def test_corpus_epoch(audit) -> list[str]:
     probe("corpus_epoch_projection_source_marker_drift_is_rejected",
           [("docs/00_CONSTITUTION.md",
             "<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from "
-            "spec/corpus.rs by bootstrap/project.py; do not edit -->",
+            "spec/corpus/types.rs by bootstrap/project.py; do not edit -->",
             "<!-- CORPUS-RECONCILIATION-EPOCH:BEGIN generated from "
             "spec/corpse.rs by bootstrap/project.py; do not edit -->")],
           "docs/00 carries no generated CORPUS-RECONCILIATION-EPOCH block "
-          "naming spec/corpus.rs as source")
+          "naming spec/corpus/types.rs as source")
     # Moving CURRENT without re-projecting the corpus strands every document
     # on the old epoch — the whole corpus reds, not just the constant.
     probe("changing_current_epoch_requires_whole_corpus_projection",
@@ -802,7 +803,7 @@ def test_corpus_epoch(audit) -> list[str]:
     probe("runtime_reconciliation_module_does_not_own_corpus_epoch",
           [("spec/reconciliation.rs", "pub enum ReconciliationRole {",
             "pub struct ReconciliationEpoch;\npub enum ReconciliationRole {")],
-          "spec/reconciliation.rs speaks ReconciliationEpoch; the runtime "
+          "spec/reconciliation/ speaks ReconciliationEpoch; the runtime "
           "reconciliation module does not own the corpus epoch")
     # GREEN growth: a declared future epoch with a unique spelling, the same
     # live constitutional owner, an authored constitutional description, and
@@ -954,11 +955,11 @@ def test_compiler_assumptions(audit) -> list[str]:
           "DEC-068 true G3 G9 at that position")
     probe("compiler_assumption_projection_source_marker_drift_is_rejected",
           [(D19, "<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from "
-                 "spec/compiler_assumptions.rs by bootstrap/project.py; do not edit -->",
+                 "spec/compiler_assumptions/types.rs by bootstrap/project.py; do not edit -->",
             "<!-- COMPILER-ASSUMPTION-KINDS:BEGIN generated from "
                  "spec/compiler_presumptions.rs by bootstrap/project.py; do not edit -->")],
           "docs/19 carries no generated COMPILER-ASSUMPTION-KINDS block naming "
-          "spec/compiler_assumptions.rs as source")
+          "spec/compiler_assumptions/types.rs as source")
     probe("universal_assumption_identity_is_absent_from_the_public_spec",
           [(CA, "use crate::gates::GateId;",
             "use crate::gates::GateId;\npub struct CompilerAssumptionId;")],
@@ -967,12 +968,12 @@ def test_compiler_assumptions(audit) -> list[str]:
           [("spec/reconciliation.rs", "pub enum ReconciliationRole {",
             "pub struct CompilerAssumptionKindMirror(pub CompilerAssumptionKind);\n"
             "pub enum ReconciliationRole {")],
-          "spec/reconciliation.rs speaks CompilerAssumptionKind")
+          "spec/reconciliation/ speaks CompilerAssumptionKind")
     probe("architecture_module_does_not_reexport_assumption_kinds",
-          [("spec/architecture/repository.rs", "pub const REPOSITORY_NAME:",
+          [("spec/architecture/inventory.rs", "pub const REPOSITORY_NAME:",
             "pub use crate::compiler_assumptions::CompilerAssumptionKind;\n"
             "pub const REPOSITORY_NAME:")],
-          "spec/architecture.rs speaks CompilerAssumptionKind")
+          "spec/architecture/ speaks CompilerAssumptionKind")
     # GREEN structural growth — evidence that the parser and projection are
     # count-free ONLY: every structural surface present (variant, ALL, unique
     # spelling, live authoring owner, live decision naming it, full arms,
@@ -1138,11 +1139,11 @@ def test_promotion(audit) -> list[str]:
           "BP-TESTPAK-1 DEC-015 at that position")
     probe("promotion_projection_source_marker_drift_is_rejected",
           [(D12, "<!-- PROMOTION-REQUIREMENTS:BEGIN generated from "
-                 "spec/promotion.rs by bootstrap/project.py; do not edit -->",
+                 "spec/promotion/types.rs by bootstrap/project.py; do not edit -->",
             "<!-- PROMOTION-REQUIREMENTS:BEGIN generated from "
                  "spec/demotion.rs by bootstrap/project.py; do not edit -->")],
           "docs/12 carries no generated PROMOTION-REQUIREMENTS block naming "
-          "spec/promotion.rs as source")
+          "spec/promotion/types.rs as source")
     probe("docs24_must_consume_rule_qualification_without_reowning_requirements",
           [("docs/24_GAUNTLET.md",
             "is not restated here.",
@@ -1150,10 +1151,10 @@ def test_promotion(audit) -> list[str]:
           "docs/24 restates the promotion-requirement inventory")
     probe("mutation_lane_consumer_cannot_point_to_architecture_module",
           [("docs/24_GAUNTLET.md",
-            "The typed names are `MutationLane` in `spec/mutation.rs`",
+            "The typed names are `MutationLane` in `spec/mutation/types.rs`",
             "The typed names are `MutationLane` in `spec/architecture.rs`")],
-          "docs/24 points MutationLane at spec/architecture.rs; the typed owner "
-          "moved to spec/mutation.rs")
+          "docs/24 points MutationLane at spec/architecture; the typed owner "
+          "moved to spec/mutation/types.rs")
     probe("docs31_cannot_restate_a_second_promotion_inventory",
           [("docs/31_FINAL_CONTRADICTION_AUDIT.md",
             "`PromotionRequirement::ALL` is unsatisfied",
@@ -1279,6 +1280,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
             shutil.rmtree(tmp, ignore_errors=True)
 
     def probe(name: str, rel: str, old: str, new: str, needle: str) -> None:
+        rel = _resolve_edit_carrier(root, rel, old)
         with isolated_tree() as tmp:
             path = tmp / rel
             path.write_text(must_replace(path.read_text(encoding="utf-8"), old, new, name),
@@ -1383,7 +1385,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     # output for a compile-refused mutation, and the probe asserts the exact
     # type error rather than a runtime finding.
     probe("physical_triple_cannot_substitute_for_semantic_profile",
-          "spec/architecture/repository.rs",
+          "spec/architecture/inventory.rs",
           'environment: QualificationEnvironment::WasmHost,',
           'environment: "wasm32-unknown-unknown",',
           "expected `QualificationEnvironment`")
@@ -1452,7 +1454,7 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
     # relocated under a forbidden write surface must redden seedcheck, not wait
     # for Phase 6 to write a candidate into tracked source.
     probe("candidate_output_root_under_a_forbidden_root_is_rejected",
-          "spec/architecture/policy.rs",
+          "spec/sprouting/inventory.rs",
           'pub const CANDIDATE_OUTPUT_ROOT: &str = "target/muterprater/candidates/";',
           'pub const CANDIDATE_OUTPUT_ROOT: &str = "spec/candidates/";',
           "sits under forbidden write root")
@@ -1563,7 +1565,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
             rustc, root, tmp, "tier0-seedcheck-tests", "bootstrap/seedcheck.rs",
             f"test result: ok. {n_tests} passed", extra=("--test",), run_args=()))
         # The spec's OWN tests (5.5E2): the ISA admission refusals moved into
-        # spec/pakvm_isa.rs where the seam they exercise lives — a downstream
+        # spec/pakvm_isa/ where the seam they exercise lives — a downstream
         # crate's test cfg no longer reaches across the boundary, which is the
         # boundary working. Qualified with the same artifact binding.
         n_spec_tests = sum(p.read_text(encoding="utf-8").count("#[test]")
@@ -1699,7 +1701,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
              "let _ = ();",
              "no `PromotionRequirement` in `mutation`"),
             ("proof_policy_surface_cannot_substitute_for_promotion_requirement",
-             "use spec::architecture::ProofPolicySurface;\n"
+             "use spec::proof::ProofPolicySurface;\n"
              "use spec::promotion::PromotionRequirement;",
              "let _: PromotionRequirement = ProofPolicySurface::CandidatePromotion;",
              "expected `PromotionRequirement`, found `ProofPolicySurface`"),
@@ -1771,7 +1773,7 @@ def test_rust_specification_compiles(_audit) -> list[str]:
 def test_toolchain(audit) -> list[str]:
     """Named hostile fixtures for the typed toolchain owner (5.5E3a).
 
-    spec/toolchain.rs owns every value; the tracked root projection, the
+    spec/toolchain/types.rs owns every value; the tracked root projection, the
     materializer, and the harness derive. Each fixture plants a hidden owner
     or a substituted dimension and must be refused for ITS law."""
     findings: list[str] = []
@@ -1815,7 +1817,7 @@ def test_toolchain(audit) -> list[str]:
     # the contradiction. The tracked file is mutated in lockstep so only the
     # law under test can fire.
     with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
-        tc = tmp / "spec/toolchain.rs"
+        tc = tmp / "spec/toolchain/types.rs"
         tc.write_text(must_replace(
             tc.read_text(encoding="utf-8"),
             "RustRelease { major: 1, minor: 97, patch: 0 }",
@@ -1829,7 +1831,7 @@ def test_toolchain(audit) -> list[str]:
         if got:
             fail(f"newer_qualifying_compiler_may_preserve_msrv (got {got!r})")
     with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
-        tc = tmp / "spec/toolchain.rs"
+        tc = tmp / "spec/toolchain/types.rs"
         tc.write_text(must_replace(
             tc.read_text(encoding="utf-8"),
             "RustRelease { major: 1, minor: 97, patch: 0 }",
@@ -1844,7 +1846,7 @@ def test_toolchain(audit) -> list[str]:
             fail(f"qualifying_compiler_below_msrv_is_rejected (got {got!r})")
     # Dimension substitution, semantic side: renaming an environment spelling
     # into a triple is refused at the enum's own spelling arm.
-    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/architecture/topology.rs",
+    probe("semantic_target_shaped_like_a_triple_is_rejected", "spec/architecture/types.rs",
           'QualificationEnvironment::WasmHost => "wasm32 host",',
           'QualificationEnvironment::WasmHost => "wasm32-unknown-unknown",',
           "is shaped like a physical target triple")
@@ -1852,7 +1854,7 @@ def test_toolchain(audit) -> list[str]:
     # declared component from it (with the projection moving in lockstep)
     # must be refused, or Rustfmt becomes a declared-but-unconsumed variant.
     with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
-        tc = tmp / "spec/toolchain.rs"
+        tc = tmp / "spec/toolchain/types.rs"
         tc.write_text(must_replace(
             tc.read_text(encoding="utf-8"),
             "&[RustupComponent::Clippy, RustupComponent::Rustfmt]",

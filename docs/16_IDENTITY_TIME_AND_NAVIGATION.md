@@ -31,7 +31,7 @@ The identity catalog answers exactly one question: which semantic, instance,
 event, operation, or evidence object. Each entry names its canonical semantic
 owner. Spellings, order, and owners are projected from the typed catalogs.
 
-<!-- IDENTITY-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+<!-- IDENTITY-CATALOG:BEGIN generated from spec/identities/types.rs by bootstrap/project.py; do not edit -->
 ```text
 ContractId                     BP-IDENTITY-TIME-NAV-1
 SchemaId                       BP-SCHEMA-CODEC-1
@@ -81,7 +81,7 @@ A generation answers "which evolution or authority generation", never which
 object. `AuthorityGeneration` lives here, not in the identity stack: a
 generation of authority is not an object passport.
 
-<!-- GENERATION-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+<!-- GENERATION-CATALOG:BEGIN generated from spec/identities/types.rs by bootstrap/project.py; do not edit -->
 ```text
 AuthorityGeneration            BP-STORAGE-TILES-1
 KeyGeneration                  BP-CRYPTO-SECRET-1
@@ -98,7 +98,7 @@ never the object's identity. `ContentDigest` and `Commitment` live here, not
 in the identity stack. A binding may reference a `CommitPoint`; it defines no
 CommitPoint comparison, chronology, or frontier law.
 
-<!-- BINDING-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+<!-- BINDING-CATALOG:BEGIN generated from spec/identities/types.rs by bootstrap/project.py; do not edit -->
 ```text
 ContentDigest                  BP-STORAGE-TILES-1
 Commitment                     BP-IDENTITY-TIME-NAV-1
@@ -117,7 +117,7 @@ EffectBatchDigest              BP-SYNCBAT-1
 
 Version is not one generic type crossing subsystem boundaries. Each format and protocol carries its own distinct version identity, with its canonical semantic owner:
 
-<!-- VERSION-CATALOG:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+<!-- VERSION-CATALOG:BEGIN generated from spec/identities/types.rs by bootstrap/project.py; do not edit -->
 ```text
 BatQlLanguageVersion           BP-BATQL-LANGUAGE-1
 ProgramImageVersion            BP-IDENTITY-TIME-NAV-1
@@ -141,11 +141,11 @@ Distinct version types do not typecheck when substituted for one another. Canoni
 
 `ProgramImageId` commits to the canonical ProgramImage bytes, including its `ProgramImageVersion`. Compiler implementation/version is provenance, not identity: two qualified compilers emitting identical canonical bytes produce the same `ProgramImageId`. `WorldImageId` commits to its linked ProgramImages, contracts, interfaces, and WorldImage version. NetBat protocol negotiation is independent of `PakVmIsaVersion` and `WorldImageVersion` — a transport version never upgrades the ISA or the image.
 
-`spec/identities.rs` owns WHICH version identities exist and their owner mapping; this document owns their semantic distinctions and the identity commitment laws above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
+`spec/identities/types.rs` owns WHICH version identities exist and their owner mapping; this document owns their semantic distinctions and the identity commitment laws above. It does not own executable proof-row identity or per-row meaning: those live in `docs/24_GAUNTLET.md`, and a meaning changes there or nowhere.
 
-`spec/proof.rs` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
+`spec/proof/` owns proof-row identity and membership. docs/24 owns proof-row meaning. This document owns the domain law being pressured:
 
-<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof.rs by bootstrap/project.py; do not edit -->
+<!-- PROOF-REQUIREMENTS:BEGIN generated from spec/proof/inventory.rs by bootstrap/project.py; do not edit -->
 | Guarantee | Required proof rows |
 | --- | --- |
 | DEC-064 | program_image_id_is_independent_of_compiler_provenance; distinct_version_types_do_not_typecheck_when_substituted; netbat_version_does_not_upgrade_pakvm_isa |
@@ -162,7 +162,7 @@ cites the standing decision naming the prerequisites — entry happens only by
 amending that decision AND joining exactly one catalog, never by the amendment
 alone.
 
-<!-- IDENTITY-RESIDUE:BEGIN generated from spec/identities.rs by bootstrap/project.py; do not edit -->
+<!-- IDENTITY-RESIDUE:BEGIN generated from spec/identities/inventory.rs by bootstrap/project.py; do not edit -->
 ```text
 GateId                         owned elsewhere        BP-GATES-1
 OperatorId                     owned elsewhere        BP-BATQL-LANGUAGE-1
@@ -258,7 +258,7 @@ HLC enables temporal range pruning, approximate chronology, lag observation, and
 `ObservedWallTime - ObservedWallTime` yields `TimeDelta`: a signed diagnostic
 difference between two physical observations. A negative value is lawful
 evidence of wall-clock regression or differing observers, never an error to
-normalize away. The typed operator rule is owned by `spec/operators.rs`
+normalize away. The typed operator rule is owned by `spec/operators/types.rs`
 (`OperatorTypingRule::WallObservationDifference`).
 
 `TimeDelta` is observation evidence, not authority. It is never `Duration`,

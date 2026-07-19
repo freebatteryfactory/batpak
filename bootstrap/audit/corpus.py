@@ -18,7 +18,8 @@ REQUIRED_FRONT = {"status", "contract_id", "authority_scope", "supersedes", "las
 GENERATED_FRONT = {"status", "authority_scope", "generated_by", "generated_from", "do_not_edit",
                    "source_reconciliation_epoch"}
 PLACEHOLDERS = ("TBD", "TO BE DECIDED", "IMPLEMENTATION DECIDES", "FIXME")
-# Stale vocabulary is DERIVED from spec/dispositions.rs (never a hand-kept list).
+# Stale vocabulary is DERIVED from spec/dispositions/inventory.rs (never a
+# hand-kept list).
 # Each retiring decision names its stale aliases and the contexts in which they
 # may still appear. Ordinary authoritative material and production/config source
 # are not permissive contexts: they must carry an inline [STALE-REF: DEC-...].
@@ -32,20 +33,21 @@ STALE_CONTEXT_BY_PATH = {
     "docs/22_MIGRATION_AND_CUTOVER.md": "MigrationCompatibility",
     "docs/15_SCHEMA_CODEC_AND_MIGRATION.md": "MigrationCompatibility",
     "docs/20_DEPENDENCY_SOVEREIGNTY.md": "MigrationCompatibility",
-    "spec/dispositions.rs": "DecisionLedger",
+    "spec/dispositions/inventory.rs": "DecisionLedger",
 }
 STALE_PROJECTION_DOCS = ("docs/29_STATUS_AND_SUPERSESSION.md", "docs/33_AGENT_FINISH_LINE_CHECKLIST.md")
 # The closed stale-context vocabulary (5.5E2): five permissive contexts a
 # retiring decision may allow-list, plus the two DEFAULT contexts the scanner
 # assigns to everything else. The defaults are never permissive. The typed
-# enum in spec/dispositions.rs must declare exactly this set — before the
+# enum in spec/dispositions/types.rs must declare exactly this set — before the
 # completion the scanner spoke two context names the typed owner could not.
 STALE_PERMISSIVE_CONTEXTS = frozenset({
     "DecisionLedger", "RejectionRecord", "SupersessionGuide",
     "LegacyEvidence", "MigrationCompatibility"})
 STALE_DEFAULT_CONTEXTS = frozenset({"ProductionSource", "OrdinaryAuthoritative"})
 STALE_REF_RE = re.compile(r"\[STALE-REF:\s*(DEC-\d+)\]")
-# The block is generated from spec/dispositions.rs (5.5D4b). The marker carries
+# The block is generated from spec/dispositions/inventory.rs (5.5D4b). The
+# marker carries
 # its provenance, so the pattern must not pin the bare form.
 STALE_VOCAB_BLOCK_RE = re.compile(r"<!-- STALE-VOCAB:BEGIN[^>]*-->(.*?)<!-- STALE-VOCAB:END -->", re.S)
 RETIRING_DISPOSITIONS = {"Kill", "Supersede", "Demote", "Lock"}
@@ -188,19 +190,16 @@ def _bootstrap_rust_source(root: Path, tool: str) -> str:
 
 
 def _spec_module_source(root: Path, name: str) -> str:
-    """The complete source of one spec module: its concept-door file plus, when
-    a same-name directory exists, every submodule file (Wave-2 SW5). Detectors
-    grep this so a concept-door decomposition cannot silently move a guarded
-    symbol out of a detector's view."""
-    pieces: list[str] = []
-    entry = root / "spec" / f"{name}.rs"
-    if entry.is_file():
-        pieces.append(entry.read_text(encoding="utf-8"))
+    """The complete source of one spec domain: every module file under the
+    domain directory spec/<name>/ in sorted order (SGB source grammar). A
+    sibling concept-door file spec/<name>.rs is an unlawful shape and is
+    never consulted. Detectors grep this so an intra-domain decomposition
+    cannot silently move a guarded symbol out of a detector's view."""
     pkg = root / "spec" / name
-    if pkg.is_dir():
-        for rel in sorted(pkg.rglob("*.rs")):
-            pieces.append(rel.read_text(encoding="utf-8"))
-    return "\n".join(pieces)
+    if not pkg.is_dir():
+        return ""
+    return "\n".join(
+        rel.read_text(encoding="utf-8") for rel in sorted(pkg.rglob("*.rs")))
 
 
 def declared_contract_ids(root: Path) -> set[str]:
@@ -298,17 +297,17 @@ def control_character_findings(root: Path) -> list[str]:
 
 
 def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[str, frozenset[str], str]]:
-    """Derive the stale-alias matcher from spec/dispositions.rs.
+    """Derive the stale-alias matcher from the spec/dispositions domain
+    (StaleContext vocabulary in types.rs, DECISIONS rows in inventory.rs).
 
     Returns alias_lower -> (owning decision id, allowed contexts, canonical alias).
     The matcher is a consequence of the decisions that retired vocabulary; there
     is no separately authored stale-term list.
     """
-    path = root / "spec/dispositions.rs"
-    if not path.is_file():
-        findings.append("missing spec/dispositions.rs for stale-vocabulary derivation")
+    source = _spec_module_source(root, "dispositions")
+    if not source:
+        findings.append("missing spec/dispositions/ for stale-vocabulary derivation")
         return {}
-    source = path.read_text(encoding="utf-8")
     # The typed enum declares EXACTLY the vocabulary this scanner speaks:
     # the five permissive contexts plus the two never-permissive defaults.
     enum_body = re.search(r"pub enum StaleContext \{(.*?)\n\}", _uncomment(source), re.S)
@@ -316,7 +315,7 @@ def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[s
     want = STALE_PERMISSIVE_CONTEXTS | STALE_DEFAULT_CONTEXTS
     if declared != want:
         findings.append(
-            f"spec/dispositions.rs StaleContext variants {sorted(declared)} != "
+            f"spec/dispositions/types.rs StaleContext variants {sorted(declared)} != "
             f"the scanner's closed vocabulary {sorted(want)}")
     if not (set(STALE_CONTEXT_BY_PATH.values()) <= STALE_PERMISSIVE_CONTEXTS):
         findings.append("audit's stale-context path map names an undeclared or non-permissive context")
@@ -330,18 +329,18 @@ def parse_stale_vocabulary(root: Path, findings: list[str]) -> dict[str, tuple[s
         aliases = re.findall(r'"([^"]+)"', aliases_raw)
         contexts = frozenset(re.findall(r"StaleContext::(\w+)", contexts_raw))
         if aliases and disposition not in RETIRING_DISPOSITIONS:
-            findings.append(f"spec/dispositions.rs: {ident} carries stale aliases but disposition {disposition} does not retire vocabulary")
+            findings.append(f"spec/dispositions/inventory.rs: {ident} carries stale aliases but disposition {disposition} does not retire vocabulary")
         if aliases and not contexts:
-            findings.append(f"spec/dispositions.rs: {ident} has stale aliases but no allowed contexts")
+            findings.append(f"spec/dispositions/inventory.rs: {ident} has stale aliases but no allowed contexts")
         for ctx in sorted(contexts & STALE_DEFAULT_CONTEXTS):
             findings.append(
-                f"spec/dispositions.rs: {ident} allow-lists the default context {ctx}; "
+                f"spec/dispositions/inventory.rs: {ident} allow-lists the default context {ctx}; "
                 "production source and ordinary authoritative material always require "
                 "an inline STALE-REF")
         for alias in aliases:
             key = alias.lower()
             if key in alias_map:
-                findings.append(f"spec/dispositions.rs: stale alias {alias!r} claimed by {alias_map[key][0]} and {ident}")
+                findings.append(f"spec/dispositions/inventory.rs: stale alias {alias!r} claimed by {alias_map[key][0]} and {ident}")
             alias_map[key] = (ident, contexts, alias)
     return alias_map
 

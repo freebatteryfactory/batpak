@@ -4,7 +4,7 @@
 //! document claim membership in? It is NOT wall time, document modification
 //! time, Git commit identity, a source-tree digest, a product/spec/release
 //! version, proof freshness, runtime reconciliation posture, or a
-//! `ReconciliationRole` — `spec/reconciliation.rs` owns logical/physical
+//! `ReconciliationRole` — `spec/reconciliation/` owns logical/physical
 //! execution reconciliation under DEC-075, and corpus reconciliation is
 //! documentary authority, never runtime execution state.
 //!
