@@ -1294,6 +1294,22 @@ def guarantee_typed_relation_findings(rows: list[dict]) -> list[str]:
     return out
 
 
+def _bootstrap_source(root: Path, tool: str) -> str:
+    """The complete source of one bootstrap tool: its entry file plus, when a
+    package directory exists, every package file (Wave-2 SW3a). Detectors grep
+    this so a decomposition cannot silently move a guarded symbol out of a
+    detector's view."""
+    pieces: list[str] = []
+    entry = root / "bootstrap" / f"{tool}.py"
+    if entry.is_file():
+        pieces.append(entry.read_text(encoding="utf-8"))
+    pkg = root / "bootstrap" / tool
+    if pkg.is_dir():
+        for rel in sorted(pkg.rglob("*.py")):
+            pieces.append(rel.read_text(encoding="utf-8"))
+    return "\n".join(pieces)
+
+
 def declared_contract_ids(root: Path) -> set[str]:
     """Every contract_id declared by a document's front matter."""
     out: set[str] = set()
@@ -4390,7 +4406,7 @@ def bootstrap_qualification_findings(root: Path) -> list[str]:
 
     # The denominator moved out of Python: selftest DERIVES it, never authors a
     # literal slug tuple, and the product ReceiptId cannot substitute.
-    st = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
+    st = _bootstrap_source(root, "selftest")
     # 5.5E6b: the Tier 0 admission authority left Python. selftest holds no
     # hand-authored denominator and no Python pass-predicate; it produces
     # concrete evidence and delegates the verdict to the independent verifier
@@ -4710,7 +4726,7 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
                    "--python-executable"):
         if needed not in rc_raw:
             out.append(f"bootstrap/receiptcheck.rs: missing E6c2 perimeter piece {needed!r}")
-    st_raw = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
+    st_raw = _bootstrap_source(root, "selftest")
     if '"BATPAK-TIER0-QUALIFICATION/2"' not in st_raw:
         out.append("bootstrap/selftest.py: producer does not emit the v2 qualification magic")
 
@@ -5050,7 +5066,7 @@ def toolchain_findings(root: Path) -> list[str]:
         if re.search(pattern, mat):
             out.append(f"bootstrap/materialize.rs hardcodes a {what} literal; "
                        "spec/toolchain.rs ToolchainProfile is the owner")
-    harness = (root / "bootstrap/selftest.py").read_text(encoding="utf-8")
+    harness = _bootstrap_source(root, "selftest")
     if re.search(r'"--edition", "[0-9]', harness):
         out.append("bootstrap/selftest.py hardcodes a rustc edition; "
                    "spec/toolchain.rs ToolchainProfile is the owner")
@@ -5316,12 +5332,11 @@ def generated_view_findings(root: Path) -> list[str]:
     # registry, and no manual literal plan bypasses it. Parsed from source —
     # the auditor never imports or executes project.py. An absent projector
     # is a refusal, never a crash.
-    proj_path = root / "bootstrap/project.py"
-    if not proj_path.is_file():
+    proj_src = _bootstrap_source(root, "project")
+    if not proj_src:
         out.append("bootstrap/project.py is absent; the registered generated "
                    "views have no projector")
         return out
-    proj_src = proj_path.read_text(encoding="utf-8")
     dispatch_body = re.search(r"\nVIEW_RENDERERS = \{(.*?)\n\}", proj_src, re.S)
     dispatch_keys = re.findall(r'\n    "(\w+)":', dispatch_body.group(1)) \
         if dispatch_body else []
@@ -5954,8 +5969,16 @@ def verification_findings(root: Path) -> list[str]:
                 out.append(f"{rel.name} declares tool vocabulary {name}; methods stay "
                            "tool-neutral and tools are receipts")
     # The retired spelling stays retired.
+    tool_sources = {
+        "bootstrap/seedcheck.rs":
+            (root / "bootstrap/seedcheck.rs").read_text(encoding="utf-8")
+            if (root / "bootstrap/seedcheck.rs").is_file() else "",
+        "bootstrap/audit.py": _bootstrap_source(root, "audit"),
+        "spec/proof.rs": (root / "spec/proof.rs").read_text(encoding="utf-8")
+            if (root / "spec/proof.rs").is_file() else "",
+    }
     for rel in ("spec/proof.rs", "bootstrap/seedcheck.rs", "bootstrap/audit.py"):
-        if re.search(r"\bcounts_green\s*\(", (root / rel).read_text(encoding="utf-8")):
+        if re.search(r"\bcounts_green\s*\(", tool_sources[rel]):
             out.append(f"{rel} still calls counts_green; the seam is "
                        "is_positive_semantic_terminal (5.5F2)")
     # Named plans: parse, admit, and require nonempty duplicate-free tuples.

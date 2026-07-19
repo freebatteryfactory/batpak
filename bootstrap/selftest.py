@@ -919,8 +919,35 @@ def qualify_materializer(rustc, root: Path, workdir: Path) -> list[str]:
     return findings
 
 
-def load(name: str):
-    spec = importlib.util.spec_from_file_location(name, HERE / f"{name}.py")
+def load(name: str, base: Path | None = None):
+    """Load a bootstrap tool by name, package-agnostic (Wave-2 SW3a).
+
+    A tool is either a single file `<base>/<name>.py` or a package directory
+    `<base>/<name>/` whose `__init__.py` re-exports the full public surface;
+    the package form is loaded with its own submodule search location so its
+    relative imports resolve — no sys.path mutation either way.
+    """
+    root = base if base is not None else HERE
+    package = root / name / "__init__.py"
+    if package.is_file():
+        spec = importlib.util.spec_from_file_location(
+            name, package, submodule_search_locations=[str(root / name)])
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        # A package's relative imports resolve through sys.modules; register
+        # for the duration of exec, then release the name so two loads (e.g.
+        # canonical and a neutered copy) never alias each other.
+        previous = sys.modules.get(name)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+        return module
+    spec = importlib.util.spec_from_file_location(name, root / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -1866,8 +1893,14 @@ def test_generated_views(audit, project) -> list[str]:
             b"<!-- FUTURE-LEDGER:BEGIN generated from spec/future_ledger.rs by "
             b"bootstrap/project.py; do not edit -->\n(pending)\n"
             b"<!-- FUTURE-LEDGER:END -->\n")
-        spec_mod = importlib.util.spec_from_file_location(
-            "project_growth_tmp", tmp / "bootstrap/project.py")
+        _growth_pkg = tmp / "bootstrap/project/__init__.py"
+        if _growth_pkg.is_file():
+            spec_mod = importlib.util.spec_from_file_location(
+                "project_growth_tmp", _growth_pkg,
+                submodule_search_locations=[str(tmp / "bootstrap/project")])
+        else:
+            spec_mod = importlib.util.spec_from_file_location(
+                "project_growth_tmp", tmp / "bootstrap/project.py")
         proj_tmp = importlib.util.module_from_spec(spec_mod)
         spec_mod.loader.exec_module(proj_tmp)
         regen_findings: list[str] = []
@@ -4870,27 +4903,42 @@ def neutered_validator(name: str, target: str, replacement: str = "if False:"):
     restoring afterwards. The canonical file is never opened for writing, so a
     timeout mid-probe cannot leave a disabled rule behind.
     """
-    canonical = HERE / f"{name}.py"
-    before = _commit(canonical)
-    source = canonical.read_text(encoding="utf-8")
-    if target not in source:
+    # Package-agnostic (Wave-2 SW3a): the mutated literal may live in the
+    # single-file tool or in any file of its package directory. The whole tool
+    # (shim + package, when one exists) is copied and the one file carrying
+    # the target is mutated in the copy; the canonical tree is never written.
+    candidates = [HERE / f"{name}.py"]
+    if (HERE / name).is_dir():
+        candidates.extend(sorted((HERE / name).rglob("*.py")))
+    carrier = None
+    for candidate in candidates:
+        if candidate.is_file() and target in candidate.read_text(encoding="utf-8"):
+            carrier = candidate
+            break
+    if carrier is None:
         raise ProbeError(f"probe target absent in {name}.py: {target!r}")
+    before = {c: _commit(c) for c in candidates if c.is_file()}
+    source = carrier.read_text(encoding="utf-8")
     mutated = source.replace(target, replacement, 1)
     if mutated == source:
         raise ProbeError(f"probe mutation changed no bytes in {name}.py: {target!r}")
     tmp = Path(tempfile.mkdtemp(prefix="batpak-neuter-"))
     try:
-        path = tmp / f"{name}.py"
-        path.write_text(mutated, encoding="utf-8")
-        spec = importlib.util.spec_from_file_location(f"{name}_neutered", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
+        for candidate in candidates:
+            if not candidate.is_file():
+                continue
+            rel = candidate.relative_to(HERE)
+            dest = tmp / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(candidate, dest)
+        (tmp / carrier.relative_to(HERE)).write_text(mutated, encoding="utf-8")
+        module = load(name, base=tmp)
         yield module
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-        if _commit(canonical) != before:
-            raise ProbeError(f"canonical {name}.py was modified during a probe")
+        for candidate, digest in before.items():
+            if _commit(candidate) != digest:
+                raise ProbeError(f"canonical {name}.py was modified during a probe")
 
 
 def test_probe_harness(audit) -> list[str]:
@@ -8838,6 +8886,8 @@ def test_verification_plane() -> list[str]:
                     "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
                     "docs/07_PAKVM_ISA.md"):
             shutil.copyfile(root / rel, base / rel)
+        if (root / "bootstrap/audit").is_dir():
+            shutil.copytree(root / "bootstrap/audit", base / "bootstrap/audit")
         clean = audit.verification_findings(base)
         if clean:
             findings.append(f"verification_plane baseline is not clean: {clean[:3]}")
@@ -8949,6 +8999,8 @@ def test_sprouting_plane() -> list[str]:
                     "docs/39_SPROUTING_NURSERY_AND_PROMOTION.md",
                     "docs/07_PAKVM_ISA.md"):
             shutil.copyfile(root / rel, base / rel)
+        if (root / "bootstrap/audit").is_dir():
+            shutil.copytree(root / "bootstrap/audit", base / "bootstrap/audit")
         clean_s = audit.sprouting_findings(base)
         if clean_s:
             findings.append(f"sprouting_plane sprouting baseline is not clean: {clean_s[:3]}")
