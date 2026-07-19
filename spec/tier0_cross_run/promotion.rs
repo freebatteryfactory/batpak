@@ -1,5 +1,5 @@
 use crate::bootstrap_qualification::{
-    AUTHORITATIVE_WORKFLOW_PATH, BootstrapRuntimeBinding, GitHubActionsRunBinding, ToolchainBinding,
+    AUTHORITATIVE_WORKFLOW_PATH, BootstrapRuntimeBinding, ToolchainBinding,
     VerifiedTier0Qualification,
 };
 use crate::toolchain::RustTargetTriple;
@@ -8,57 +8,6 @@ use super::*;
 // ===========================================================================
 // Promotion confirmation (5.5E6c1): strictly stronger than same-source
 // ===========================================================================
-
-/// A sealed proof that a candidate qualification run and a cleanroom
-/// qualification run CONFIRM the promotion of one committed source snapshot to
-/// the authoritative target. Obtainable ONLY through `confirm_promotion`.
-///
-/// This is strictly stronger than `SameSourceProof`. Same-source asks "do these
-/// two runs describe one committed source snapshot?" and tolerates a cross-target
-/// or cross-toolchain pair as orthogonal corroboration. Promotion confirmation
-/// additionally requires that BOTH runs qualified the AUTHORITATIVE target under
-/// the IDENTICAL pinned toolchain, in the SAME repository and canonical workflow —
-/// the exact posture the candidate-exact-SHA and cleanroom-exact-SHA runs share
-/// across a lawful fast-forward. It retains the same-source proof, the confirmed
-/// authoritative target and toolchain, and the two DISTINCT run identities.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PromotionConfirmationProof {
-    same_source: SameSourceProof,
-    target: RustTargetTriple,
-    toolchain: ToolchainBinding,
-    bootstrap_runtime: BootstrapRuntimeBinding,
-    candidate_run: GitHubActionsRunBinding,
-    cleanroom_run: GitHubActionsRunBinding,
-    _seal: (),
-}
-
-impl PromotionConfirmationProof {
-    /// The same-source proof this confirmation is built on. Promotion
-    /// confirmation inherits every same-source coordinate and adds authority.
-    pub const fn same_source(&self) -> &SameSourceProof {
-        &self.same_source
-    }
-    /// The authoritative target both runs qualified.
-    pub const fn target(&self) -> RustTargetTriple {
-        self.target
-    }
-    /// The identical pinned toolchain both runs ran on.
-    pub const fn toolchain(&self) -> &ToolchainBinding {
-        &self.toolchain
-    }
-    /// The identical pinned bootstrap runtime (CPython release) both runs ran on.
-    pub const fn bootstrap_runtime(&self) -> &BootstrapRuntimeBinding {
-        &self.bootstrap_runtime
-    }
-    /// The candidate-branch hosted run.
-    pub const fn candidate_run(&self) -> &GitHubActionsRunBinding {
-        &self.candidate_run
-    }
-    /// The cleanroom hosted run.
-    pub const fn cleanroom_run(&self) -> &GitHubActionsRunBinding {
-        &self.cleanroom_run
-    }
-}
 
 /// Why two verified qualifications do NOT confirm a promotion — even when they
 /// may still corroborate the same committed source snapshot. Each arm names the

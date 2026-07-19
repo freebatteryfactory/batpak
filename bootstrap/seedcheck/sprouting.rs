@@ -336,11 +336,11 @@ pub(crate) fn check_reconciliation(findings: &mut Vec<String>) {
 /// law, and until this check existed no executing code consumed the output
 /// root at all — the containment relation between them was never enforced.
 pub(crate) fn check_candidate_containment(findings: &mut Vec<String>) {
-    let out = architecture::CANDIDATE_OUTPUT_ROOT;
+    let out = sprouting::CANDIDATE_OUTPUT_ROOT;
     if !out.starts_with("target/") {
         findings.push(format!("candidate output root {out} escapes the untracked target/ tree"));
     }
-    for forbidden in architecture::CANDIDATE_FORBIDDEN_WRITE_ROOTS {
+    for forbidden in sprouting::CANDIDATE_FORBIDDEN_WRITE_ROOTS {
         if out.starts_with(forbidden) {
             findings.push(format!("candidate output root {out} sits under forbidden write root {forbidden}"));
         }

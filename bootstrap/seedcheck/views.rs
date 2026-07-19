@@ -1,4 +1,4 @@
-use spec::{architecture, commands, dispositions, generated_views, gates, guarantees};
+use spec::{commands, dispositions, generated_views, gates, guarantees, proof};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use crate::proof::{authors_token, contract_authored_texts, declared_contract_ids};
@@ -301,7 +301,7 @@ pub(crate) fn check_promotion(root: &Path, findings: &mut Vec<String>) {
     }
     if !matches!(
         PROMOTION_POLICY_SURFACE,
-        architecture::ProofPolicySurface::CandidatePromotion
+        proof::ProofPolicySurface::CandidatePromotion
     ) {
         findings.push(
             "the promotion policy surface is not ProofPolicySurface::CandidatePromotion"
