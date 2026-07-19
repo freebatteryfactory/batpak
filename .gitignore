@@ -7,3 +7,8 @@
 # material in the cleanroom must be VISIBLE contamination — an ignore entry
 # that hides a parallel organism is worse than the organism.
 /target/
+# Python bytecode is derived build output (the interpreter's /target/): the
+# Wave-2 package decomposition made the bootstrap plane importable, so the
+# interpreter now materializes __pycache__ beside the packages it loads.
+__pycache__/
+*.pyc
