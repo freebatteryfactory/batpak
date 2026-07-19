@@ -490,7 +490,7 @@ jobs:
         with:
           toolchain: 1.97.0
           components: clippy,rustfmt
-      - uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
+      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
           tool: cargo-nextest@0.9.132
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -1032,7 +1032,7 @@ jobs:
           # against it ("sanitizer is incompatible with statically linked
           # libc"). Pin gnu explicitly so the target std is present.
           targets: x86_64-unknown-linux-gnu
-      - uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
+      - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2
         with:
           tool: cargo-fuzz@0.13.2
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
