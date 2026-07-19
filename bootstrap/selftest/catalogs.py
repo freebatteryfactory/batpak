@@ -1224,6 +1224,11 @@ def test_seedcheck_executes_its_law(_audit) -> list[str]:
         (tree / "bootstrap").mkdir(exist_ok=True)
         if not (tree / "bootstrap/seedcheck.rs").is_file():
             shutil.copy2(root / "bootstrap/seedcheck.rs", tree / "bootstrap/seedcheck.rs")
+        # seedcheck is a module tree now (Wave-2 SW4): the root shim mounts
+        # bootstrap/seedcheck/*.rs via #[path], so the package must ride along or
+        # the build cannot resolve the mounted modules.
+        if (root / "bootstrap/seedcheck").is_dir() and not (tree / "bootstrap/seedcheck").is_dir():
+            shutil.copytree(root / "bootstrap/seedcheck", tree / "bootstrap/seedcheck")
         tmp = Path(tempfile.mkdtemp(prefix="batpak-tier0-"))
         try:
             exe = tmp / ("sc" + (".exe" if os.name == "nt" else ""))
@@ -1544,6 +1549,10 @@ def test_rust_specification_compiles(_audit) -> list[str]:
         # finding, never a quiet "ok. 0 passed".
         n_tests = (root / "bootstrap/seedcheck.rs").read_text(
             encoding="utf-8").count("#[test]")
+        pkg_sc = root / "bootstrap" / "seedcheck"
+        if pkg_sc.is_dir():
+            n_tests += sum(p.read_text(encoding="utf-8").count("#[test]")
+                           for p in sorted(pkg_sc.glob("*.rs")))
         if n_tests == 0:
             findings.append(
                 "seedcheck declares no #[test] refusal tests; the harness was emptied")
@@ -1782,11 +1791,11 @@ def test_toolchain(audit) -> list[str]:
 
     # Hidden owners: a literal in the materializer or the harness is a second
     # authority the moment it exists.
-    probe("materialized_resolver_mismatch_is_rejected", "bootstrap/materialize.rs",
+    probe("materialized_resolver_mismatch_is_rejected", "bootstrap/materialize/render.rs",
           'resolver = \\"{}\\"',
           'resolver = \\"2\\"',
           "hardcodes a resolver literal")
-    probe("workspace_msrv_mismatch_is_rejected", "bootstrap/materialize.rs",
+    probe("workspace_msrv_mismatch_is_rejected", "bootstrap/materialize/render.rs",
           'rust-version = \\"{}\\"',
           'rust-version = \\"1.96\\"',
           "hardcodes a rust-version literal")
@@ -1919,7 +1928,7 @@ def test_package_identity(audit) -> list[str]:
 
     # The materializer may not select behavior by raw package name.
     with isolated_tree(subdirs=("spec", "docs", "companion", "bootstrap")) as tmp:
-        path = tmp / "bootstrap/materialize.rs"
+        path = tmp / "bootstrap/materialize/render.rs"
         path.write_text(must_replace(
             path.read_text(encoding="utf-8"),
             "package.id == architecture::PackageId::BatPak",

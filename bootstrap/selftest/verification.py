@@ -35,6 +35,9 @@ def test_verification_plane() -> list[str]:
             shutil.copyfile(root / rel, base / rel)
         if (root / "bootstrap/audit").is_dir():
             shutil.copytree(root / "bootstrap/audit", base / "bootstrap/audit")
+        for tool in ("seedcheck", "materialize", "receiptcheck"):
+            if (root / "bootstrap" / tool).is_dir():
+                shutil.copytree(root / "bootstrap" / tool, base / "bootstrap" / tool)
         clean = audit.verification_findings(base)
         if clean:
             findings.append(f"verification_plane baseline is not clean: {clean[:3]}")
@@ -148,6 +151,9 @@ def test_sprouting_plane() -> list[str]:
             shutil.copyfile(root / rel, base / rel)
         if (root / "bootstrap/audit").is_dir():
             shutil.copytree(root / "bootstrap/audit", base / "bootstrap/audit")
+        for tool in ("seedcheck", "materialize", "receiptcheck"):
+            if (root / "bootstrap" / tool).is_dir():
+                shutil.copytree(root / "bootstrap" / tool, base / "bootstrap" / tool)
         clean_s = audit.sprouting_findings(base)
         if clean_s:
             findings.append(f"sprouting_plane sprouting baseline is not clean: {clean_s[:3]}")

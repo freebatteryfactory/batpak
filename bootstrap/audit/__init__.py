@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from .corpus import (
+    _bootstrap_rust_source,
     A_DISPOSITION_VARIANT,
     A_E4D_ACTIVE,
     A_E4D_AUTOMATIC,
@@ -859,9 +860,8 @@ def check_architecture(root: Path, findings: list[str]) -> None:
 
     # The materializer selects behavior by PackageId, never by raw name: a
     # cargo-name string comparison is identity laundering (5.5E3b).
-    mat_path = root / "bootstrap/materialize.rs"
-    if mat_path.is_file():
-        mat = mat_path.read_text(encoding="utf-8")
+    mat = _bootstrap_rust_source(root, "materialize")
+    if mat:
         for name in sorted(set(cargo.values())):
             if re.search(r'== "' + re.escape(name) + '"', mat):
                 findings.append(

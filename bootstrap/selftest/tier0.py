@@ -39,10 +39,17 @@ def _tree_digest(root: Path) -> str:
                       for p in (root / "spec").glob("*.rs")):
         h.update(rel.encode())
         h.update((root / rel).read_bytes())
-    for rel in ("bootstrap/seedcheck.rs", "bootstrap/materialize.rs"):
+    for tool in ("seedcheck", "materialize"):
+        rel = f"bootstrap/{tool}.rs"
         if (root / rel).is_file():
             h.update(rel.encode())
             h.update((root / rel).read_bytes())
+        pkg = root / "bootstrap" / tool
+        if pkg.is_dir():
+            for p in sorted(pkg.glob("*.rs")):
+                r = p.relative_to(root).as_posix()
+                h.update(r.encode())
+                h.update(p.read_bytes())
     return h.hexdigest()
 
 
@@ -1157,7 +1164,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
             # Symlink creation needs privilege this environment lacks; the
             # refusal still has to EXIST in the publication path, and the
             # hosted lane exercises it behaviorally.
-            if "is_symlink" not in (root / "bootstrap/materialize.rs").read_text(encoding="utf-8"):
+            if "is_symlink" not in (root / "bootstrap/materialize/publish.rs").read_text(encoding="utf-8"):
                 fail("materializer_symlink_is_rejected (no symlink refusal in the "
                      "publication path)")
         o = scratch("p-collision")
@@ -1591,7 +1598,7 @@ def test_bootstrap_output(audit, project) -> list[str]:
               "        /// The discoverability-only command file.\n        Justfile,\n        /// Sandbox growth witness.\n        SeedNote,\n    }"),
              (BOS, '            Gate0RootArtifact::Justfile => "justfile",\n        }',
               '            Gate0RootArtifact::Justfile => "justfile",\n            Gate0RootArtifact::SeedNote => "SEED-NOTE.md",\n        }'),
-             ("bootstrap/materialize.rs",
+             ("bootstrap/materialize/plan.rs",
               "            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),",
               "            bootstrap_output::Gate0RootArtifact::Justfile => justfile(),\n"
               "            bootstrap_output::Gate0RootArtifact::SeedNote => \"sandbox growth witness\\n\".to_owned(),")],
@@ -1720,6 +1727,10 @@ def test_receiptcheck_refuses_dishonest_artifacts() -> list[str]:
     # shells out to no python — its lone "selftest.py" mention is a comment
     # asserting exactly this, not a call.
     rc_src = (root / "bootstrap/receiptcheck.rs").read_text(encoding="utf-8")
+    pkg_rc = root / "bootstrap" / "receiptcheck"
+    if pkg_rc.is_dir():
+        rc_src += "\n" + "\n".join(p.read_text(encoding="utf-8")
+                                   for p in sorted(pkg_rc.glob("*.rs")))
     if "fn sha256(" not in rc_src or "self_check_sha256" not in rc_src:
         findings.append("receiptcheck_computes_its_own_sha256 FAILED "
                         "(no self-checked internal hasher)")
@@ -2201,6 +2212,10 @@ def produce_tier0_evidence(bundle: Path,
         tails["tier0-seedcheck"] = tail
     n_sc = (source_root / "bootstrap/seedcheck.rs").read_text(
         encoding="utf-8").count("#[test]")
+    pkg_sc = source_root / "bootstrap" / "seedcheck"
+    if pkg_sc.is_dir():
+        n_sc += sum(p.read_text(encoding="utf-8").count("#[test]")
+                    for p in sorted(pkg_sc.glob("*.rs")))
     tail, probs = _t0_gate_exe(rustc, edition, target, rlib, source_root, bundle,
                                "tier0-seedcheck-tests", "bootstrap/seedcheck.rs",
                                f"test result: ok. {n_sc} passed",

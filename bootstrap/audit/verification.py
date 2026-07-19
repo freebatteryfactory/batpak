@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .corpus import A_E4D_ACTIVE, _bootstrap_source, batql_extract_block
+from .corpus import A_E4D_ACTIVE, _bootstrap_rust_source, _bootstrap_source, batql_extract_block
 
 
 # 5.5F2 (DEC-077/DEC-078, docs/38): the verification plane's frozen axis
@@ -115,9 +115,7 @@ def verification_findings(root: Path) -> list[str]:
                            "tool-neutral and tools are receipts")
     # The retired spelling stays retired.
     tool_sources = {
-        "bootstrap/seedcheck.rs":
-            (root / "bootstrap/seedcheck.rs").read_text(encoding="utf-8")
-            if (root / "bootstrap/seedcheck.rs").is_file() else "",
+        "bootstrap/seedcheck.rs": _bootstrap_rust_source(root, "seedcheck"),
         "bootstrap/audit.py": _bootstrap_source(root, "audit"),
         "spec/proof.rs": (root / "spec/proof.rs").read_text(encoding="utf-8")
             if (root / "spec/proof.rs").is_file() else "",

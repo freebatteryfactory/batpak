@@ -172,6 +172,22 @@ def _bootstrap_source(root: Path, tool: str) -> str:
     return "\n".join(pieces)
 
 
+def _bootstrap_rust_source(root: Path, tool: str) -> str:
+    """The complete source of one bootstrap Rust tool: its root file plus, when a
+    module directory exists, every module file (Wave-2 SW4). Detectors grep this
+    so a decomposition cannot silently move a guarded symbol out of a detector's
+    view."""
+    pieces: list[str] = []
+    entry = root / "bootstrap" / f"{tool}.rs"
+    if entry.is_file():
+        pieces.append(entry.read_text(encoding="utf-8"))
+    pkg = root / "bootstrap" / tool
+    if pkg.is_dir():
+        for rel in sorted(pkg.rglob("*.rs")):
+            pieces.append(rel.read_text(encoding="utf-8"))
+    return "\n".join(pieces)
+
+
 def declared_contract_ids(root: Path) -> set[str]:
     """Every contract_id declared by a document's front matter."""
     out: set[str] = set()

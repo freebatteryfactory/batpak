@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from .corpus import G_QUAL_ROW, _bootstrap_source, _uncomment
+from .corpus import G_QUAL_ROW, _bootstrap_rust_source, _bootstrap_source, _uncomment
 
 
 # --- 5.5E5 Gate-0 materializer output shape ----------------------------------
@@ -266,9 +266,8 @@ def bootstrap_output_findings(root: Path) -> list[str]:
     # cardinality assertion may return in seedcheck.
     if "pub fn is_portable_gate0_relative_path" not in raw:
         out.append(f"{A_BO_SPEC}: the portable-path law is missing")
-    sc_path = root / "bootstrap/seedcheck.rs"
-    if sc_path.is_file():
-        sc = sc_path.read_text(encoding="utf-8")
+    sc = _bootstrap_rust_source(root, "seedcheck")
+    if sc:
         if "is_portable_gate0_relative_path" not in sc:
             out.append("bootstrap/seedcheck.rs: does not use the typed portable-path law")
         if re.search(r"Gate0\w+::ALL\.len\(\)\s*!=\s*\d", sc):
@@ -282,11 +281,10 @@ def bootstrap_output_findings(root: Path) -> list[str]:
                        "returned; SyncBatPlane::ALL is the one inventory")
 
     # Static materializer posture laws.
-    mat_path = root / "bootstrap/materialize.rs"
-    if not mat_path.is_file():
+    mat = _bootstrap_rust_source(root, "materialize")
+    if not mat:
         out.append("missing bootstrap/materialize.rs")
     else:
-        mat = mat_path.read_text(encoding="utf-8")
         if 'PathBuf::from(".")' in mat or "args().nth(1)" in mat:
             out.append("bootstrap/materialize.rs: an implicit current-directory or "
                        "one-root invocation route exists; both roots must be explicit")
@@ -729,7 +727,7 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     if "fn bootstrap_runtime(&self) -> &BootstrapRuntimeBinding" not in bq:
         out.append("spec/bootstrap_qualification.rs: VerifiedTier0Qualification exposes no "
                    "bootstrap_runtime() accessor")
-    rc_raw = (root / "bootstrap/receiptcheck.rs").read_text(encoding="utf-8")
+    rc_raw = _bootstrap_rust_source(root, "receiptcheck")
     if 'expect_exact("BATPAK-TIER0-QUALIFICATION/2")' not in rc_raw:
         out.append("bootstrap/receiptcheck.rs: does not parse the v2 qualification magic")
     if 'expect_exact("BATPAK-TIER0-QUALIFICATION/1")' in rc_raw:
@@ -742,7 +740,7 @@ def tier0_cross_run_findings(root: Path) -> list[str]:
     if '"BATPAK-TIER0-QUALIFICATION/2"' not in st_raw:
         out.append("bootstrap/selftest.py: producer does not emit the v2 qualification magic")
 
-    sc = (root / "bootstrap/seedcheck.rs").read_text(encoding="utf-8")
+    sc = _bootstrap_rust_source(root, "seedcheck")
     if "check_tier0_cross_run" not in sc or "compare_runs(" not in sc:
         out.append("bootstrap/seedcheck.rs: does not execute the cross-run comparator")
     if "confirm_promotion(" not in sc:
@@ -957,7 +955,7 @@ def toolchain_findings(root: Path) -> list[str]:
         out.append("tracked rust-toolchain.toml does not equal the "
                    "deterministic projection of ToolchainProfile "
                    "(owner: spec/toolchain.rs; repair: regenerate, never hand-edit)")
-    mat = (root / "bootstrap/materialize.rs").read_text(encoding="utf-8")
+    mat = _bootstrap_rust_source(root, "materialize")
     for pattern, what in ((r'resolver = \\"[0-9]', "resolver"),
                           (r'edition = \\"[0-9]', "edition"),
                           (r'rust-version = \\"[0-9]', "rust-version"),
