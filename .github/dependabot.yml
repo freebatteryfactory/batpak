@@ -1,12 +1,20 @@
+# PAUSED by architect ruling (2026-07-19, F4 closure): this configuration targets
+# the legacy main source cut (/bpk-lib + legacy workflow actions), not the
+# cleanroom architecture. The legacy lineage is preserved as-is; version updates
+# re-enter deliberately when the Phase 6 workspace and its dependency graph are
+# authoritative, and then only as a candidate generator feeding the qualification
+# law (never auto-merge; Action updates end as exact 40-hex commit pins passing
+# the workflow-pinning audit). open-pull-requests-limit: 0 is Dependabot's
+# documented pause mechanism: security advisories remain visible, no version PRs.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /bpk-lib
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
