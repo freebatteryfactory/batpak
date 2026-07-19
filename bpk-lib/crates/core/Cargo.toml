@@ -112,7 +112,7 @@ ctor = { version = "0.2", optional = true }
 # the Vec-returning `Aead::{encrypt,decrypt}` surface. MIT OR Apache-2.0. Its
 # `subtle` transitive dep is already present in the workspace graph, so this adds
 # no new license family.
-chacha20poly1305 = { version = "0.10", optional = true, default-features = false, features = [
+chacha20poly1305 = { version = "0.11", optional = true, default-features = false, features = [
     "alloc",
 ] }
 # Optional: only pulled in by `payload-encryption`. OS CSPRNG for symmetric key
