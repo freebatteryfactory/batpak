@@ -1,4 +1,7 @@
-use spec::{authenticated_history, guarantees, reconciliation, release, sprouting, verification};
+use spec::{
+    authenticated_history, campaign, guarantees, proof, reconciliation, release, sprouting,
+    verification,
+};
 use std::collections::BTreeSet;
 
 /// 5.5F3 (DEC-079..082/DEC-073, docs/39): the typed sprouting plane is
@@ -80,15 +83,64 @@ pub(crate) fn check_sprouting(findings: &mut Vec<String>) {
             "REPAIR_AUTHORITIES carries {} entries, expected 3", REPAIR_AUTHORITIES.len()));
     }
     // The promotion-plan admitter: a complete realization-preserving plan
-    // admits; every refusal arm fires for its own law.
+    // admits; every refusal arm fires for its own law. The plan's proof
+    // targets are the campaign evidence profile rows the mini-supernova
+    // rehearsal realizes literally (E7, TL-10) — honest names, not
+    // decoration.
     let green_plan = CandidatePromotionPlan {
         change_class: CandidateChangeClass::RealizationPreserving,
         repair_authority: RepairAuthority::Mechanical,
         independent_route: IndependentEvidenceRouteKind::DifferentialImplementation,
+        proof_targets: campaign::MINI_SUPERNOVA_PROFILE.realized_rows,
         requirements: PromotionRequirement::ALL,
     };
-    if admit_promotion_plan(green_plan).is_err() {
-        findings.push("a complete realization-preserving promotion plan failed admission".into());
+    match admit_promotion_plan(green_plan) {
+        Err(_) => findings
+            .push("a complete realization-preserving promotion plan failed admission".into()),
+        Ok(admitted) => {
+            // E7: an admitted plan NAMES its proof targets — nonempty,
+            // duplicate-free, and each resolving to an ACTIVE spec::proof row.
+            let targets = admitted.plan().proof_targets;
+            if targets.is_empty() {
+                findings.push("an admitted promotion plan names no proof target".into());
+            }
+            for (index, target) in targets.iter().enumerate() {
+                if targets[..index].contains(target) {
+                    findings.push(format!(
+                        "admitted promotion-plan proof target {} is repeated", target.raw()));
+                }
+                let active = proof::PROOF_ROWS.iter().any(|record| {
+                    record.id.raw() == target.raw()
+                        && matches!(record.state, proof::ProofRowState::Active { .. })
+                });
+                if !active {
+                    findings.push(format!(
+                        "promotion-plan proof target {} resolves to no Active proof row",
+                        target.raw()));
+                }
+            }
+        }
+    }
+    // Two-sided: a plan naming NO proof target is refused (E7 —
+    // NamedProofTarget must actually name targets).
+    if !matches!(
+        admit_promotion_plan(CandidatePromotionPlan {
+            proof_targets: &[], ..green_plan }),
+        Err(PromotionPlanError::EmptyProofTargets)
+    ) {
+        findings.push("a promotion plan naming no proof target was admitted".into());
+    }
+    // A repeated proof target is refused by the index of its first repeat.
+    static DUPLICATE_PROOF_TARGETS: [proof::ProofRowId; 2] = [
+        campaign::MINI_SUPERNOVA_PROFILE.realized_rows[0],
+        campaign::MINI_SUPERNOVA_PROFILE.realized_rows[0],
+    ];
+    if !matches!(
+        admit_promotion_plan(CandidatePromotionPlan {
+            proof_targets: &DUPLICATE_PROOF_TARGETS, ..green_plan }),
+        Err(PromotionPlanError::DuplicateProofTarget { index: 1 })
+    ) {
+        findings.push("a promotion plan repeating a proof target was admitted".into());
     }
     // A law-changing candidate with architect authority also admits.
     if admit_promotion_plan(CandidatePromotionPlan {

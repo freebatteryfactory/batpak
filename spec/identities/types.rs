@@ -99,16 +99,19 @@ pub enum VersionIdentityKind {
     /// Sweep-discovered beside LayoutId in docs/02; the old docs/16 version
     /// fence omitted it.
     Layout,
-    /// The candidate lineage MANIFEST format (F5): the persisted,
-    /// line-oriented serialization of a `spec/campaign/` `CandidateRecord`,
-    /// whose first line names its own version
-    /// (`BATPAK-CANDIDATE-MANIFEST/1`). Distinct from `IdentityKind::Candidate`
-    /// (the lineage OBJECT this format serializes), from `ContentDigest` (the
-    /// content commitment a manifest carries), and from
-    /// `Tier0QualificationArtifact` (the Tier 0 evidence format). Minted now
-    /// because the serialized schema lands with the F5 campaign: docs/39 §3's
-    /// "independently versioned only when the actual serialized schema lands"
-    /// condition is met, and no unversioned "temporary" format ever exists.
+    /// The candidate lineage MANIFEST format: the persisted, line-oriented
+    /// serialization of a `spec/campaign/` `CandidateRecord`, whose first
+    /// line names its own version. The family is versioned:
+    /// `BATPAK-CANDIDATE-MANIFEST/1` (F5) remains parseable historical
+    /// evidence and cannot open Phase 6; `BATPAK-CANDIDATE-MANIFEST/2` (E7,
+    /// DEC-064) is the current grammar the live renderer emits. Distinct from
+    /// `IdentityKind::Candidate` (the lineage OBJECT this format serializes),
+    /// from `ContentDigest` (the content commitment a manifest carries), and
+    /// from `Tier0QualificationArtifact` (the Tier 0 evidence format). Minted
+    /// with the F5 campaign because the serialized schema landed then:
+    /// docs/39 §3's "independently versioned only when the actual serialized
+    /// schema lands" condition was met, and no unversioned "temporary" format
+    /// ever exists.
     CandidateManifest,
     /// The Tier 0 qualification evidence artifact format (5.5E6b). An
     /// independently versioned, line-oriented bootstrap format — distinct from

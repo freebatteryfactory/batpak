@@ -1,7 +1,9 @@
 use core::num::NonZeroU64;
 
+use crate::campaign::MINI_SUPERNOVA_PROFILE;
 use crate::guarantees::{ContractId, GuaranteeRef};
 use crate::promotion::PromotionRequirement;
+use crate::proof::ProofRowId;
 use crate::verification::IndependentEvidenceRouteKind;
 
 use super::*;
@@ -14,11 +16,16 @@ const FULL_REQUIREMENTS: &[PromotionRequirement] = &[
     PromotionRequirement::AuditablePromotionReceipt,
 ];
 
+/// The rehearsal-shaped fixture plan (R5: templates are frozen test-owned
+/// rehearsal fixtures). Its proof targets are the campaign evidence profile
+/// rows the mini-supernova rehearsal realizes literally — honest names, not
+/// decoration.
 fn preserving_plan() -> CandidatePromotionPlan {
     CandidatePromotionPlan {
         change_class: CandidateChangeClass::RealizationPreserving,
         repair_authority: RepairAuthority::Mechanical,
         independent_route: IndependentEvidenceRouteKind::DifferentialImplementation,
+        proof_targets: MINI_SUPERNOVA_PROFILE.realized_rows,
         requirements: FULL_REQUIREMENTS,
     }
 }
@@ -83,6 +90,32 @@ fn duplicate_requirement_is_refused() {
 }
 
 #[test]
+fn empty_proof_targets_are_refused() {
+    // E7: NamedProofTarget must actually name targets — a plan naming none
+    // binds no semantic purpose and is refused before any other law runs.
+    let mut plan = preserving_plan();
+    plan.proof_targets = &[];
+    assert_eq!(
+        admit_promotion_plan(plan),
+        Err(PromotionPlanError::EmptyProofTargets)
+    );
+}
+
+#[test]
+fn duplicate_proof_target_is_refused() {
+    const DUP_TARGETS: &[ProofRowId] = &[
+        ProofRowId("planted_semantic_mutant_is_activated_and_killed"),
+        ProofRowId("planted_semantic_mutant_is_activated_and_killed"),
+    ];
+    let mut plan = preserving_plan();
+    plan.proof_targets = DUP_TARGETS;
+    assert_eq!(
+        admit_promotion_plan(plan),
+        Err(PromotionPlanError::DuplicateProofTarget { index: 1 })
+    );
+}
+
+#[test]
 fn law_changing_without_architect_is_refused() {
     let mut plan = preserving_plan();
     plan.change_class = CandidateChangeClass::LawChanging;
@@ -130,11 +163,14 @@ fn specialized_plan_policy_invariants() {
     );
     assert_eq!(policy.requirements, PromotionRequirement::ALL);
     // The policy's own plan admits: origin confers no authority, so the
-    // policy posture is lawful independent of any producing origin.
+    // policy posture is lawful independent of any producing origin. Its
+    // proof target is the one Active DEC-073 row binding the specialized-plan
+    // lane — the plan's admission basis IS that row's guarantee.
     let plan = CandidatePromotionPlan {
         change_class: policy.change_class,
         repair_authority: RepairAuthority::Mechanical,
         independent_route: policy.independent_route,
+        proof_targets: &[ProofRowId("specialized_plan_benchmark_is_advisory_only")],
         requirements: policy.requirements,
     };
     assert!(admit_promotion_plan(plan).is_ok());

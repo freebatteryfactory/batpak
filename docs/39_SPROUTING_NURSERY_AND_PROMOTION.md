@@ -313,6 +313,7 @@ Campaign terminals (denominator home)
 Frontier states
   Qualified
   BlockedByDependency
+  Unqualified
   Invalidated
 
 Evidence freshness

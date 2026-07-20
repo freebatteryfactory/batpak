@@ -42,7 +42,7 @@ machine-derived and audited, never hand-counted here.
 | `authenticated_history/` | domain directory (2 modules) |
 | `bootstrap_output/` | domain directory (2 modules) |
 | `bootstrap_qualification/` | domain directory (4 modules) |
-| `campaign/` | domain directory (3 modules) |
+| `campaign/` | domain directory (4 modules) |
 | `commands/` | domain directory (2 modules) |
 | `compiler_assumptions/` | domain directory (2 modules) |
 | `contracts/` | domain directory (2 modules) |

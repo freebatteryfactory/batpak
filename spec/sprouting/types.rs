@@ -2,6 +2,7 @@ use core::num::NonZeroU64;
 
 use crate::guarantees::{ContractId, GuaranteeRef};
 use crate::promotion::PromotionRequirement;
+use crate::proof::ProofRowId;
 use crate::verification::IndependentEvidenceRouteKind;
 
 /// HOW a candidate was produced. This axis records provenance only; it confers
@@ -147,6 +148,14 @@ pub struct CandidatePromotionPlan {
     /// The selected independent-evidence route (the concrete kind naming the
     /// `PromotionRequirement::IndependentEvidenceRoute` need).
     pub independent_route: IndependentEvidenceRouteKind,
+    /// The named proof targets that bind the candidate's semantic purpose
+    /// (E7, TL-1): the exact `spec::proof` rows promotion under this plan
+    /// claims to realize — `PromotionRequirement::NamedProofTarget` must
+    /// actually NAME targets, and a diagnostic `unit=` label never
+    /// substitutes. Admission refuses an empty or duplicated set; outside
+    /// this crate a `ProofRowId` is only obtainable from the `spec/proof/`
+    /// catalog, and Active-row resolution is seedcheck/receiptcheck law.
+    pub proof_targets: &'static [ProofRowId],
     /// The promotion requirements the plan claims to satisfy. Admission checks
     /// these are set-equal to `PromotionRequirement::ALL` with no duplicate.
     pub requirements: &'static [PromotionRequirement],
@@ -161,6 +170,12 @@ pub enum PromotionPlanError {
     MissingRequirement { requirement: PromotionRequirement },
     /// A requirement appears more than once; the index is the first repeat.
     DuplicateRequirement { index: usize },
+    /// The plan names no proof target (E7): `NamedProofTarget` must actually
+    /// name targets — an empty set binds no semantic purpose and admits
+    /// nothing.
+    EmptyProofTargets,
+    /// A proof target appears more than once; the index is the first repeat.
+    DuplicateProofTarget { index: usize },
     /// A law-changing candidate did not require an architect. A law change
     /// cannot ride a mechanical or bounded-search repair authority.
     LawChangingRequiresArchitect,

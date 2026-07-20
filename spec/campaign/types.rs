@@ -3,6 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::bootstrap_qualification::{HexParseError, Sha256Digest};
+use crate::proof::ProofRowId;
 use crate::sprouting::{CandidateChangeClass, CandidateOriginKind, RealizationPosture};
 
 // ===========================================================================
@@ -170,6 +171,11 @@ impl CampaignTerminal {
 
 /// A receipted terminal: WHICH terminal disposition, bound to the receipt that
 /// proves it. A terminal without its receipt is an assertion, not a fact.
+///
+/// E7 (DEC-064 V2 mint): terminals are carried by APPEND-ONLY campaign
+/// receipts beside the immutable candidate manifest, never by a manifest
+/// field — the V2 manifest owns only mint-time facts, and this pairing is the
+/// shape a verifier reconstructs from the receipt store, not a record field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CampaignTerminalReceipt {
     /// The terminal disposition the receipt records.
@@ -179,19 +185,92 @@ pub struct CampaignTerminalReceipt {
     pub receipt: ReceiptRef,
 }
 
+/// The closed vocabulary of campaign receipt kinds: EXACTLY the kinds the
+/// `BATPAK-CAMPAIGN-RECEIPT/2` wire grammar serializes on its `kind` line
+/// (TL-3) — the nine kinds the V1 wire already carried, retyped without
+/// reclassification churn. R2 itself calls fuzz output a receipt, so `Fuzz`
+/// is a receipt kind, not a side channel. No generic candidate-relation
+/// cosmology exists beside this vocabulary: a receipt kind is typed here
+/// because the wire serializes it, and for no other reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CampaignReceiptKind {
+    /// Qualification evidence earned on the qualification set.
+    Qualification,
+    /// Holdout evidence earned on the search-disjoint holdout set (DEC-081).
+    Holdout,
+    /// The promotion decision against the conjunctive denominator.
+    Promotion,
+    /// A refusal naming the failed requirement (own-content judgment).
+    Refusal,
+    /// An invalidation recording why standing evidence no longer binds.
+    Invalidation,
+    /// An escalation stopping the campaign as `ArchitectRequired`.
+    Escalation,
+    /// A reuse authorization binding the reuse key plus fresh
+    /// requalification evidence (a key alone never licenses reuse).
+    Reuse,
+    /// A fuzz run binding seed, trace count, operation bound, and value
+    /// bound (R2).
+    Fuzz,
+    /// The bounded repair loop's convergence to a stable qualified frontier.
+    Convergence,
+}
+
+impl CampaignReceiptKind {
+    /// The frozen inventory of campaign receipt kinds, in canonical order.
+    pub const ALL: &'static [CampaignReceiptKind] = &[
+        CampaignReceiptKind::Qualification,
+        CampaignReceiptKind::Holdout,
+        CampaignReceiptKind::Promotion,
+        CampaignReceiptKind::Refusal,
+        CampaignReceiptKind::Invalidation,
+        CampaignReceiptKind::Escalation,
+        CampaignReceiptKind::Reuse,
+        CampaignReceiptKind::Fuzz,
+        CampaignReceiptKind::Convergence,
+    ];
+
+    /// The lowercase WIRE token the `BATPAK-CAMPAIGN-RECEIPT/2` `kind` line
+    /// carries — unlike the sibling documentary spellings, this one is a
+    /// serialization fact, and the match is exhaustive so a new kind must
+    /// decide its wire token before it can exist.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            CampaignReceiptKind::Qualification => "qualification",
+            CampaignReceiptKind::Holdout => "holdout",
+            CampaignReceiptKind::Promotion => "promotion",
+            CampaignReceiptKind::Refusal => "refusal",
+            CampaignReceiptKind::Invalidation => "invalidation",
+            CampaignReceiptKind::Escalation => "escalation",
+            CampaignReceiptKind::Reuse => "reuse",
+            CampaignReceiptKind::Fuzz => "fuzz",
+            CampaignReceiptKind::Convergence => "convergence",
+        }
+    }
+}
+
 // ===========================================================================
 // The immutable lineage record (DEC-079)
 // ===========================================================================
 
-/// One immutable, content-addressed nursery lineage record (DEC-079). The
-/// nursery persists RECORDS; full speculative workspaces are disposable
-/// rematerializations, never persisted as authority.
+/// One immutable, content-addressed nursery lineage record (DEC-079; V2 mint
+/// under DEC-064). The nursery persists RECORDS; full speculative workspaces
+/// are disposable rematerializations, never persisted as authority.
+///
+/// V2 splits identity from evidence (the architect's E7 ruling): this record
+/// — and the manifest that serializes it — owns ONLY mint-time facts.
+/// Qualification, holdout, promotion, refusal, invalidation, and escalation
+/// are APPEND-ONLY campaign receipts stored BESIDE the record and referencing
+/// it by candidate id; no mutating receipt vector and no terminal state lives
+/// inside the immutable content-addressed candidate definition. The V1
+/// record's evidence, receipt, and terminal fields did exactly that and are
+/// removed, not renamed.
 ///
 /// Lineage is carried by these REQUIRED fields and every lineage RELATION is
 /// DERIVED from them — a parent edge is the parent-`CandidateId` field, a
 /// dependency edge is a dependency commitment, a reuse edge is the reuse key,
-/// an invalidation edge is the invalidation receipt. No generic
-/// candidate-evidence-relation vocabulary exists beside them.
+/// an invalidation edge is the invalidation receipt beside the record. No
+/// generic candidate-evidence-relation vocabulary exists beside them.
 ///
 /// Immutability is a NURSERY STORAGE law, not a Rust mutability property: a
 /// persisted record is never rewritten, and a repair is a NEW record whose
@@ -204,6 +283,12 @@ pub struct CampaignTerminalReceipt {
 pub struct CandidateRecord {
     /// The candidate lineage identity.
     pub id: CandidateId,
+    /// The named proof targets that bind the candidate's semantic purpose
+    /// (E7, TL-1): the exact `spec::proof` rows this candidate exists to
+    /// realize. Nonempty; canonical lexicographic order; part of the identity
+    /// preimage — a diagnostic `unit=` label is NOT authority and never
+    /// substitutes for these names.
+    pub proof_targets: Vec<ProofRowId>,
     /// Explicit parent candidate identities. Empty for a first-generation
     /// candidate; a repair names its failed parent here.
     pub parents: Vec<CandidateId>,
@@ -225,19 +310,8 @@ pub struct CandidateRecord {
     /// counted in the UNREALIZED denominator, and a realized graph can never
     /// go green over a tree of stubs (DEC-079).
     pub realization_posture: RealizationPosture,
-    /// The generator or pilot evidence produced when the candidate was minted.
-    pub generator_or_pilot_evidence: Vec<EvidenceRef>,
-    /// The qualification receipts the candidate has earned.
-    pub qualification_receipts: Vec<ReceiptRef>,
-    /// The holdout receipts: holdout evidence for a campaign cannot reuse its
-    /// search inputs (DEC-081), so these are earned on the disjoint set.
-    pub holdout_receipts: Vec<ReceiptRef>,
     /// The transfer-reuse key this unit may later be reused under.
     pub reuse_key: ReuseKey,
-    /// The receipted terminal, once one exists. `None` means the candidate is
-    /// still in flight — NOT that it left the denominator; every terminal
-    /// that ever arrives remains in the denominator.
-    pub terminal: Option<CampaignTerminalReceipt>,
 }
 
 // ===========================================================================
@@ -249,34 +323,61 @@ pub struct CandidateRecord {
 /// canonical grammar FROM DAY ONE — no unversioned "temporary" format ever
 /// exists. The version identity is `VersionIdentityKind::CandidateManifest`
 /// (`CandidateManifestVersion`, `spec/identities/`), and the first line of
-/// every manifest names its own version.
+/// every manifest names its own version: `/2` is the current grammar minted
+/// by E7 under DEC-064; `/1` remains parseable F5 historical evidence and
+/// cannot open Phase 6.
 ///
-/// The canonical grammar is `key value` lines in EXACTLY this order, with an
-/// explicit count line before every repeated section and an explicit
-/// `terminal none` when no terminal exists — an empty set is stated, never
-/// omitted:
+/// The V2 manifest owns ONLY mint-time facts. It carries NO evidence,
+/// receipt, or terminal line: those are append-only campaign receipts beside
+/// the record, never fields of the immutable definition. The canonical
+/// grammar is `key value` lines in EXACTLY this order, with an explicit count
+/// line before every repeated section (an empty set is stated by its `0`
+/// count, never omitted) and every repeated section in canonical
+/// lexicographic order:
 ///
 /// ```text
-/// BATPAK-CANDIDATE-MANIFEST/1
+/// BATPAK-CANDIDATE-MANIFEST/2
 /// candidate-id <64 lowercase hex>
+/// proof-target-count <n>                            (n >= 1)
+/// proof-target <proof row name>                     (n lines, lexicographic)
 /// parent-count <n>
-/// parent <64 hex>                                   (n lines)
+/// parent <64 hex>                                   (n lines, lexicographic)
 /// source-frontier-commitment <64 hex>
 /// dependency-count <n>
-/// dependency <candidate 64 hex> <commitment 64 hex> (n lines)
+/// dependency <candidate 64 hex> <commitment 64 hex> (n lines, lex by candidate)
 /// content-commitment <64 hex>
 /// origin <CandidateOriginKind variant name>
 /// change-class <CandidateChangeClass variant name>
 /// realization-posture <RealizationPosture variant name>
-/// evidence-count <n>
-/// evidence <64 hex>                                 (n lines)
-/// qualification-receipt-count <n>
-/// qualification-receipt <64 hex>                    (n lines)
-/// holdout-receipt-count <n>
-/// holdout-receipt <64 hex>                          (n lines)
 /// reuse-key <64 hex>
-/// terminal none | terminal <CampaignTerminal spelling> <receipt 64 hex>
 /// ```
+///
+/// # NORMATIVE: `candidate-id-preimage/2`
+///
+/// The candidate id is recomputable from the parsed manifest alone. The
+/// preimage is the domain line `candidate-id-preimage/2\n` followed by every
+/// manifest line AFTER the `candidate-id` line, in manifest order, each
+/// LF-terminated; `CandidateId` is the SHA-256 of those exact UTF-8 bytes.
+/// Manifest order IS the canonical order — the domain line binds the grammar
+/// version, and every identity-bearing field (proof targets, parents, source
+/// frontier, dependency ids+commitments, content commitment, origin, change
+/// class, realization posture, reuse key) sits inside the preimage. The
+/// Python producer and the Rust verifier implement this INDEPENDENTLY from
+/// this one documented grammar; they share no parser and no helper, and this
+/// crate (no_std vocabulary, no hasher) implements neither side.
+///
+/// # NORMATIVE: `reuse-key-preimage/2`
+///
+/// The reuse key binds proof targets, content commitment, dependency
+/// commitments, and the candidate-relevant profile inputs. Its preimage is
+/// the domain line `reuse-key-preimage/2\n` followed by the manifest's
+/// `proof-target` lines (lexicographic), the `content-commitment` line, the
+/// `dependency` lines (lexicographic), and one `profile <id> <64hex>\n` line
+/// where `<64hex>` is the SHA-256 of the profile's realized row names
+/// LF-joined with a trailing LF; `ReuseKey` is the SHA-256 of those exact
+/// UTF-8 bytes. The key alone NEVER licenses reuse: a reuse receipt
+/// additionally binds the current judge digest, current source frontier,
+/// current dependency commitments, and fresh requalification evidence.
 ///
 /// The axis values render the `spec/sprouting/` variant names verbatim:
 /// sprouting owns the axes, this grammar owns only their serialization, and
@@ -290,19 +391,30 @@ pub struct CandidateManifest {
 
 impl CandidateManifest {
     /// The versioned first line. A manifest whose first line is not exactly
-    /// this string is not a version-1 candidate manifest.
-    pub const MAGIC: &'static str = "BATPAK-CANDIDATE-MANIFEST/1";
+    /// this string is not a version-2 candidate manifest.
+    pub const MAGIC: &'static str = "BATPAK-CANDIDATE-MANIFEST/2";
 
     /// Render the canonical line-oriented form, in the documented field
-    /// order, terminated by a trailing newline on every line.
+    /// order, terminated by a trailing newline on every line. Every repeated
+    /// section is emitted in canonical lexicographic order regardless of the
+    /// record's field order: the renderer canonicalizes, so two records
+    /// differing only in set order serialize to identical bytes.
     pub fn render(&self) -> String {
         let r = &self.record;
         let mut out = String::new();
         push_line(&mut out, Self::MAGIC);
         push_kv(&mut out, "candidate-id", &r.id.render());
+        push_count(&mut out, "proof-target-count", r.proof_targets.len());
+        let mut targets: Vec<&str> = r.proof_targets.iter().map(|t| t.raw()).collect();
+        targets.sort_unstable();
+        for target in targets {
+            push_kv(&mut out, "proof-target", target);
+        }
         push_count(&mut out, "parent-count", r.parents.len());
-        for parent in &r.parents {
-            push_kv(&mut out, "parent", &parent.render());
+        let mut parents: Vec<String> = r.parents.iter().map(|p| p.render()).collect();
+        parents.sort_unstable();
+        for parent in &parents {
+            push_kv(&mut out, "parent", parent);
         }
         push_kv(
             &mut out,
@@ -310,11 +422,19 @@ impl CandidateManifest {
             &r.source_frontier_commitment.render(),
         );
         push_count(&mut out, "dependency-count", r.dependency_commitments.len());
-        for dep in &r.dependency_commitments {
-            let mut value = dep.dependency.render();
-            value.push(' ');
-            value.push_str(&dep.commitment.render());
-            push_kv(&mut out, "dependency", &value);
+        let mut deps: Vec<String> = r
+            .dependency_commitments
+            .iter()
+            .map(|dep| {
+                let mut value = dep.dependency.render();
+                value.push(' ');
+                value.push_str(&dep.commitment.render());
+                value
+            })
+            .collect();
+        deps.sort_unstable();
+        for dep in &deps {
+            push_kv(&mut out, "dependency", dep);
         }
         push_kv(&mut out, "content-commitment", &r.content_commitment.render());
         push_kv(&mut out, "origin", origin_token(r.origin));
@@ -324,32 +444,7 @@ impl CandidateManifest {
             "realization-posture",
             posture_token(r.realization_posture),
         );
-        push_count(&mut out, "evidence-count", r.generator_or_pilot_evidence.len());
-        for evidence in &r.generator_or_pilot_evidence {
-            push_kv(&mut out, "evidence", &evidence.render());
-        }
-        push_count(
-            &mut out,
-            "qualification-receipt-count",
-            r.qualification_receipts.len(),
-        );
-        for receipt in &r.qualification_receipts {
-            push_kv(&mut out, "qualification-receipt", &receipt.render());
-        }
-        push_count(&mut out, "holdout-receipt-count", r.holdout_receipts.len());
-        for receipt in &r.holdout_receipts {
-            push_kv(&mut out, "holdout-receipt", &receipt.render());
-        }
         push_kv(&mut out, "reuse-key", &r.reuse_key.render());
-        match &r.terminal {
-            None => push_line(&mut out, "terminal none"),
-            Some(t) => {
-                let mut value = String::from(t.terminal.spelling());
-                value.push(' ');
-                value.push_str(&t.receipt.render());
-                push_kv(&mut out, "terminal", &value);
-            }
-        }
         out
     }
 }
@@ -428,23 +523,38 @@ pub struct FrozenJudgeSnapshot {
 // ===========================================================================
 
 /// The dependency-first frontier status of ONE candidate (DEC-082, docs/39
-/// §6). Authority advances only through dependency-ordered qualification: a
-/// candidate is frontier-qualified only when every dependency is qualified,
-/// and LATER GREEN CANNOT BLESS EARLIER RED — a locally green candidate above
-/// an unresolved dependency is `BlockedByDependency`, not qualified; the
-/// frontier has not reached it.
+/// §6; four-state law ruled in E7). The frontier answers ONE narrow question
+/// — admission into the current trusted frontier — and every candidate holds
+/// exactly one of four answers. Authority advances only through
+/// dependency-ordered qualification: a candidate is frontier-qualified only
+/// when every dependency is qualified, and LATER GREEN CANNOT BLESS EARLIER
+/// RED — a locally green candidate above an unresolved dependency is
+/// `BlockedByDependency`, not qualified; the frontier has not reached it.
+///
+/// Refusal, scaffolding, and architect escalation are NOT frontier variants:
+/// those meanings are owned by `CampaignTerminal` and `RealizationPosture`,
+/// and the frontier only records that such a candidate is `Unqualified`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrontierState {
-    /// Every dependency is qualified and this candidate's own qualification
-    /// receipts stand; the trusted frontier has reached and admitted it.
+    /// Admitted into the current trusted frontier: every dependency is
+    /// qualified and this candidate's own qualification receipts stand.
     Qualified,
-    /// The candidate may be locally green, but at least one dependency is not
-    /// qualified; no amount of downstream green changes this.
+    /// The candidate's own qualification is otherwise promotable, but at
+    /// least one dependency is not qualified; no amount of downstream green
+    /// changes this.
     BlockedByDependency,
-    /// The candidate's standing was invalidated — its evidence is bound to a
-    /// mutated judge or a superseded dependency commitment. This is the
-    /// current frontier STATUS; the receipted `CampaignTerminal::Invalidated`
-    /// event is the separate fact that put it here.
+    /// The candidate's own posture, evidence, semantic result, or authority
+    /// path does not admit it: still in flight, refused on its own content,
+    /// a `Scaffold` or `Missing` realization posture, or stopped as
+    /// `ArchitectRequired` — all land here. Distinct from
+    /// `BlockedByDependency` (whose fault lies upstream) and from
+    /// `Invalidated` (which once WAS admissible).
+    Unqualified,
+    /// The candidate's standing was invalidated — evidence or standing that
+    /// once applied no longer binds the current judge or frontier
+    /// commitments. This is the current frontier STATUS; the receipted
+    /// `CampaignTerminal::Invalidated` event is the separate fact that put
+    /// it here.
     Invalidated,
 }
 
@@ -453,6 +563,7 @@ impl FrontierState {
     pub const ALL: &'static [FrontierState] = &[
         FrontierState::Qualified,
         FrontierState::BlockedByDependency,
+        FrontierState::Unqualified,
         FrontierState::Invalidated,
     ];
 
@@ -461,6 +572,7 @@ impl FrontierState {
         match self {
             FrontierState::Qualified => "Qualified",
             FrontierState::BlockedByDependency => "BlockedByDependency",
+            FrontierState::Unqualified => "Unqualified",
             FrontierState::Invalidated => "Invalidated",
         }
     }

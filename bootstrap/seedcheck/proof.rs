@@ -1,4 +1,4 @@
-use spec::{architecture, guarantees, invariants, proof};
+use spec::{architecture, campaign, guarantees, invariants, proof};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -40,6 +40,24 @@ pub(crate) fn check_proof_rows(_root: &Path, findings: &mut Vec<String>) {
     }
     if retired.is_empty() {
         findings.push("the proof-identity catalog constructs no Retired row; the retirement ledger was deleted".into());
+    }
+    // E7 (TL-10): the campaign evidence profile names ACTIVE rows only, each
+    // exactly once — the mini-supernova rehearsal cannot claim to realize a
+    // row this catalog does not carry alive.
+    let mut profile_rows: BTreeSet<&str> = BTreeSet::new();
+    for row in campaign::MINI_SUPERNOVA_PROFILE.realized_rows {
+        if !profile_rows.insert(row.raw()) {
+            findings.push(format!(
+                "the campaign evidence profile names {} twice", row.raw()));
+        }
+        if !active.contains(row.raw()) {
+            findings.push(format!(
+                "campaign evidence profile row {} is not an Active proof identity",
+                row.raw()));
+        }
+    }
+    if profile_rows.is_empty() {
+        findings.push("the campaign evidence profile names no realized row".into());
     }
     for record in PROOF_ROWS {
         if let ProofRowState::Retired { successors } = record.state {
