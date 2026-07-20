@@ -162,10 +162,14 @@ pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
     // R13: no non-test spec source relinks std. `#![no_std]` on the facade
     // does not prevent a deliberate `extern crate std` inside a carrier, so
     // the refusal is SOURCE law scanned here, never compile luck. `extern
-    // crate alloc` stays lawful, and tests.rs carriers compile under the
-    // host test harness and are exempt per the existing test exclusion.
+    // crate alloc` stays lawful. The test exemption is ANCESTRY, never a
+    // filename: only a carrier whose mount chain from the crate facade
+    // passes through an exact `#[cfg(test)]` mod gate compiles exclusively
+    // under the host test harness; a tests.rs mounted by a plain
+    // `mod tests;` is production source and its stem earns nothing.
+    let test_reachable = cfg_test_reachable(&spec);
     for path in &sources {
-        if path.file_stem().and_then(|stem| stem.to_str()) == Some("tests") {
+        if test_reachable.contains(path) {
             continue;
         }
         let rel = posix(path.strip_prefix(root).unwrap_or(path));
@@ -173,10 +177,16 @@ pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
             Ok(text) => {
                 let relink = extern_std_line(&sanitize_rust(&text));
                 if relink.is_some() {
-                    findings.push(format!(
+                    let mut finding = format!(
                         "spec source {rel} declares extern crate std (line {}); the spec is #![no_std] source law and a deliberate std relink is refused (extern crate alloc stays lawful)",
                         relink.unwrap_or(0)
-                    ));
+                    );
+                    if path.file_stem().and_then(|stem| stem.to_str()) == Some("tests") {
+                        finding.push_str(
+                            "; a tests.rs mounted outside an exact #[cfg(test)] mod gate is production source and its stem earns no exemption",
+                        );
+                    }
+                    findings.push(finding);
                 }
             }
             Err(_) => findings.push(format!("cannot read {rel}")),
@@ -216,20 +226,46 @@ pub(crate) fn check_source_grammar(root: &Path, findings: &mut Vec<String>) {
 }
 
 /// The `mod` declarations of a facade file as (name, declared_public), parsed
-/// line-by-line from comment/string-blind text. Same-line attributes
+/// line-by-line from comment/string-blind text. Attribute prefixes
 /// (`#[cfg(test)] mod tests;`) are stripped; any `pub` spelling (bare or
 /// restricted) counts as public. Inline module bodies do not occur in facade
 /// files and fail the trailing-`;` requirement.
 pub(crate) fn module_declarations(sanitized: &str) -> Vec<(String, bool)> {
+    gated_module_declarations(sanitized)
+        .into_iter()
+        .map(|(name, public, _)| (name, public))
+        .collect()
+}
+
+/// module_declarations with the stripped attribute prefix RECORDED instead of
+/// discarded: each declaration is (name, declared_public, cfg_test_gated),
+/// and the gate is true only for the exact `#[cfg(test)]` attribute — on the
+/// declaration line itself or on its own attribute line(s) directly above it,
+/// the way the real facades spell the mount. `#[cfg(not(test))]` and every
+/// other attribute form are decoration, never the test gate.
+pub(crate) fn gated_module_declarations(sanitized: &str) -> Vec<(String, bool, bool)> {
     let mut out = Vec::new();
+    let mut pending_cfg_test = false;
     for line in sanitized.lines() {
         let mut rest = line.trim();
+        if rest.is_empty() {
+            continue; // blank and comment-blanked lines never detach an attribute
+        }
+        let mut cfg_test = pending_cfg_test;
         while rest.starts_with("#[") {
             match rest.find(']') {
-                Some(end) => rest = rest[end + 1..].trim_start(),
+                Some(end) => {
+                    cfg_test = cfg_test || &rest[..end + 1] == "#[cfg(test)]";
+                    rest = rest[end + 1..].trim_start();
+                }
                 None => break,
             }
         }
+        if rest.is_empty() {
+            pending_cfg_test = cfg_test; // an attribute-only line gates the next item
+            continue;
+        }
+        pending_cfg_test = false;
         let (public, rest) = if let Some(after) = rest.strip_prefix("pub ") {
             (true, after.trim_start())
         } else if let Some(after) = rest.strip_prefix("pub(") {
@@ -244,10 +280,56 @@ pub(crate) fn module_declarations(sanitized: &str) -> Vec<(String, bool)> {
         let Some(name) = decl.strip_suffix(';') else { continue };
         let name = name.trim();
         if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            out.push((name.to_string(), public));
+            out.push((name.to_string(), public, cfg_test));
         }
     }
     out
+}
+
+/// The spec sources whose mount chain from the crate facade passes through an
+/// exact `#[cfg(test)]` mod gate — the ONLY carriers R13 exempts (E7-E
+/// ruling). Reachability follows the declared module tree the way rustc
+/// mounts it: a `mod x;` in a carrier resolves to a sibling x.rs or x/mod.rs,
+/// and once one hop is test-gated the whole declared subtree below it is test
+/// code. A dangling declaration is R6's finding, not this walk's; a file no
+/// declaration reaches is R12's orphan and stays scanned.
+fn cfg_test_reachable(spec: &Path) -> BTreeSet<PathBuf> {
+    let mut exempt = BTreeSet::new();
+    if let Ok(text) = fs::read_to_string(spec.join("lib.rs")) {
+        mark_cfg_test_reachable(&sanitize_rust(&text), spec, false, &mut exempt);
+    }
+    exempt
+}
+
+fn mark_cfg_test_reachable(
+    sanitized: &str,
+    child_dir: &Path,
+    gated: bool,
+    exempt: &mut BTreeSet<PathBuf>,
+) {
+    for (name, _public, decl_gated) in gated_module_declarations(sanitized) {
+        let child_gated = gated || decl_gated;
+        let leaf = child_dir.join(format!("{name}.rs"));
+        let facade = child_dir.join(&name).join("mod.rs");
+        let file = if leaf.is_file() {
+            leaf
+        } else if facade.is_file() {
+            facade
+        } else {
+            continue;
+        };
+        if child_gated {
+            exempt.insert(file.clone());
+        }
+        if let Ok(text) = fs::read_to_string(&file) {
+            mark_cfg_test_reachable(
+                &sanitize_rust(&text),
+                &child_dir.join(&name),
+                child_gated,
+                exempt,
+            );
+        }
+    }
 }
 
 /// The 1-based line of the first `extern crate std` declaration (bare,

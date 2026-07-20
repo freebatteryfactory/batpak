@@ -60,6 +60,12 @@ from .domains import (
     test_syncbat_firewall,
     test_syncbat_requiredness,
 )
+from .e7 import (
+    compare_cli as e7_compare_cli,
+)
+from .e7 import (
+    underwrite_cli as e7_underwrite_cli,
+)
 from .grammar import (
     test_source_grammar,
 )
@@ -138,6 +144,17 @@ def main() -> int:
     # the confirming rehearsal's authoritative results must be identical.
     if argv0[:1] == ["--supernova-compare"] and len(argv0) == 3:
         return compare_supernova_cli(argv0[1], argv0[2])
+    # --e7-underwrite <out> --campaign-root <dir> --tier0-bundle <dir>: the
+    # E7-F opening-matrix producer -- compute every binding and all twenty
+    # zero rows from named bases, then block on receiptcheck e7-verify.
+    if argv0[:1] == ["--e7-underwrite"] and len(argv0) == 6 \
+            and argv0[2] == "--campaign-root" and argv0[4] == "--tier0-bundle":
+        return e7_underwrite_cli(argv0[1], argv0[3], argv0[5])
+    # --e7-compare <own-artifact> <candidate-artifact>: the E7 stability law
+    # (TL-12) -- authoritative-result equality, then the mechanical-only
+    # Phase 6 opening-eligibility banner.
+    if argv0[:1] == ["--e7-compare"] and len(argv0) == 3:
+        return e7_compare_cli(argv0[1], argv0[2])
     if len(argv0) == 2 and argv0[0] == "--emit-evidence":
         bundle = Path(argv0[1]).resolve() / "tier0-evidence"
         artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)

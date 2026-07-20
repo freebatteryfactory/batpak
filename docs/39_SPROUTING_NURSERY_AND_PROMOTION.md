@@ -105,17 +105,48 @@ candidate content            bound independently via ContentDigest or another ad
 candidate parents            explicit parent CandidateIds recorded on the candidate manifest
 kernel specialization        may additionally carry KernelContractId, KernelImplementationId,
                              QualifiedKernelId, and KernelQualificationReceiptId per their existing meanings
-candidate manifest format    independently versioned as CandidateManifestVersion, minted with the serialized schema (BATPAK-CANDIDATE-MANIFEST/1) in spec/campaign/
+candidate manifest format    independently versioned as CandidateManifestVersion; current schema BATPAK-CANDIDATE-MANIFEST/2 in spec/campaign/
 ```
 
 `ContentDigest` is a `BindingKind` content commitment, not a version snapshot,
-and the candidate manifest's serialized schema landed with the F5 campaign
-records, so its version identity `CandidateManifestVersion` is minted — candidate identity, candidate content, and candidate
+and the candidate manifest's serialized schema is versioned from day one, so its
+version identity `CandidateManifestVersion` is minted for the whole versioned
+manifest family — candidate identity, candidate content, and candidate
 parents are three distinct facts carried by three distinct mechanisms, never one
 collapsed axis. A specialized kernel candidate may carry BOTH a candidate lineage
 identity (its `CandidateId` object) AND a `KernelImplementationId` (its
 implementation under the kernel contract); neither absorbs the other, and the
 kernel quartet keeps its existing meanings unchanged.
+
+The current manifest grammar is `BATPAK-CANDIDATE-MANIFEST/2` (E7, DEC-064),
+and it splits identity from evidence: the manifest owns ONLY mint-time
+identity facts —
+
+```text
+candidate id · named proof targets · parent candidate ids · source-frontier
+commitment · dependency commitments · content commitment · origin · change
+class · realization posture · reuse key
+```
+
+Qualification, holdout, promotion, refusal, invalidation, and escalation are
+never manifest fields. They are APPEND-ONLY campaign receipts
+(`BATPAK-CAMPAIGN-RECEIPT/2`, exactly the nine typed kinds the wire grammar
+serializes — qualification, holdout, promotion, refusal, invalidation,
+escalation, reuse, fuzz, convergence) stored beside the record at
+`nursery/<candidate>/receipts/` and referencing the immutable manifest by
+candidate id; no mutating receipt vector and no terminal state lives inside
+the immutable content-addressed candidate definition.
+
+`CandidateId` is recomputable from the parsed manifest alone: it is the
+SHA-256 of the domain-separated `candidate-id-preimage/2` — the domain line
+followed by every manifest line after the `candidate-id` line, in manifest
+order, each LF-terminated — so every identity-bearing field sits inside the
+preimage. `spec/campaign/types.rs` is the normative owner of the manifest
+grammar and both preimage laws; this document does not duplicate them.
+
+`BATPAK-CANDIDATE-MANIFEST/1` and `BATPAK-CAMPAIGN-EVIDENCE/1` are explicitly
+historical F5 evidence: they remain parseable through the historical verifier
+arm, and they are NOT admissible for Phase-6 opening.
 
 The candidate lineage identity is authored in F3 `spec/identities/types.rs` alongside
 those kinds. A lineage object is never a shortcut around the identity it must
@@ -151,8 +182,12 @@ Holdout evidence for a campaign cannot reuse its search inputs —
 SEED-HOLDOUT-INDEPENDENCE (derives from DEC-081, refines
 SEED-INDEPENDENT-ORACLE). A holdout that overlaps the search set proves nothing
 it was tuned against and is refused. Transfer reuse is keyed and requalified
-against upstream churn: a reuse key that no longer matches the current upstream
-frontier does not license reuse.
+against upstream churn. The reuse key binds the candidate's named proof
+targets, its content commitment, its dependency commitments, and the campaign
+evidence profile; the key alone NEVER licenses reuse — a reuse receipt
+additionally binds the current judge digest, the current source frontier, the
+current dependency commitments, and fresh requalification evidence. A reuse
+key that no longer matches the current upstream frontier licenses nothing.
 
 ## 5. Realization-preserving versus law-changing promotion; repair authority
 
@@ -254,6 +289,24 @@ candidate work cannot modify its frozen judge or prior evidence
 Generation is wide and speculative; qualification is deep and ordered. A green
 leaf above an unresolved dependency is not authority — the frontier has not
 reached it.
+
+The frontier answers ONE narrow question — admission into the current trusted
+frontier — and every candidate holds exactly one of the four `FrontierState`
+answers (four-state law ruled in E7):
+
+```text
+Qualified            admitted into the current trusted frontier
+BlockedByDependency  own qualification otherwise promotable; at least one dependency not qualified
+Unqualified          own posture, evidence, semantic result, or authority path does not admit it
+Invalidated          evidence or standing that once applied no longer binds current judge or frontier commitments
+```
+
+A candidate still in flight, refused on its own content, sitting at a
+`Scaffold` or `Missing` realization posture, or stopped as `ArchitectRequired`
+classifies as `Unqualified`. Refused, Scaffold, and ArchitectRequired are NOT
+frontier variants: those meanings are owned by `CampaignTerminal` and
+`RealizationPosture`, and the frontier only records that such a candidate is
+`Unqualified`.
 
 ## 7. Campaign-root topology and judge integrity
 
@@ -394,5 +447,6 @@ DEC-048 / DEC-075 dependency-ordered advancement refined here
 spec/sprouting/     F3 candidate lifecycle and RealizationPosture
 spec/identities/    F3 candidate lineage identity alongside kernel and content
 spec/architecture/   FORBIDDEN_TARGET_PATHS and campaign-root topology
+spec/campaign/inventory.rs  E7 campaign evidence profile naming the proof rows a rehearsal must realize
 GeneratedView::ALL  F5 CampaignClosureGraph view; typed owner spec/campaign/
 ```

@@ -958,3 +958,41 @@ def proof_relation_findings(root: Path) -> list[str]:
             out.append(f"docs/24: typed proof-ownership doctrine absent ({name})")
     return out
 
+
+# --- Authored domain-catalog membership parity (E7-E, TL-11) -----------------
+# spec/lib.rs is the membership authority; the spec/README.md authored Domain
+# catalog carries each domain's meaning. Descriptions remain authored —
+# membership does not: every declared domain carries exactly one authored row
+# and no authored row admits a domain the crate facade never declares. Judged
+# with generated blocks stripped, so the generated module census can never
+# stand in for the authored table.
+A_DOMAIN_ROW = re.compile(r"^\| `(\w+)/` \|", re.M)
+
+
+def domain_catalog_findings(root: Path) -> list[str]:
+    out: list[str] = []
+    lib = root / "spec/lib.rs"
+    readme = root / "spec/README.md"
+    if not lib.is_file() or not readme.is_file():
+        return ["spec/lib.rs or spec/README.md is absent; the domain-catalog "
+                "parity law has no denominator"]
+    declared: list[str] = []
+    for line in _uncomment(lib.read_text(encoding="utf-8")).splitlines():
+        m = re.match(r"\s*(#\[cfg\(test\)\]\s*)?pub mod (\w+);", line)
+        if m and not m.group(1):
+            declared.append(m.group(2))
+    rows = A_DOMAIN_ROW.findall(A_GENERATED_BLOCK.sub(
+        "", readme.read_text(encoding="utf-8")))
+    for dup in sorted({r for r in rows if rows.count(r) > 1}):
+        out.append(f"spec/README.md authored domain catalog carries {dup}/ "
+                   "twice; one domain, one row")
+    for name in [d for d in declared if d not in rows]:
+        out.append(f"spec/lib.rs declares pub mod {name}; but the spec/README.md "
+                   "authored domain catalog carries no row for it; membership "
+                   "derives from the crate facade, only the description is authored")
+    for name in [r for r in rows if r not in declared]:
+        out.append(f"spec/README.md authored domain catalog carries a row for "
+                   f"{name}/, which spec/lib.rs never declares; an authored row "
+                   "cannot admit a domain")
+    return out
+

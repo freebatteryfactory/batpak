@@ -215,6 +215,7 @@ from .ledgers import (
     A_AUTHORED_FENCES,
     A_COV_FULL_ROW,
     A_DEC_FULL_ROW,
+    A_DOMAIN_ROW,
     A_E4B_DOCTRINE,
     A_E4B_RETIRED,
     A_EDGE_ROW,
@@ -230,6 +231,7 @@ from .ledgers import (
     A_VIEW_ARM,
     A_VIEW_SURFACES,
     a_parse_generated_views,
+    domain_catalog_findings,
     exact_ledger_findings,
     generated_view_findings,
     inventory_mirror_findings,
@@ -349,6 +351,7 @@ __all__ = [
     "A_DEC_GATE_OPTIONAL",
     "A_DEC_GATE_REQUIRED",
     "A_DISPOSITION_VARIANT",
+    "A_DOMAIN_ROW",
     "A_E4B_DOCTRINE",
     "A_E4B_RETIRED",
     "A_E4D_ACTIVE",
@@ -556,6 +559,7 @@ __all__ = [
     "deferred_posture_findings",
     "derived_material_findings",
     "docs21_witness_refs",
+    "domain_catalog_findings",
     "exact_ledger_findings",
     "frontmatter",
     "frozen_files",
@@ -664,6 +668,7 @@ def check_guarantees(root: Path, findings: list[str]) -> None:
     findings.extend(contract_kind_findings(root))
     findings.extend(generated_view_findings(root))
     findings.extend(inventory_mirror_findings(root))
+    findings.extend(domain_catalog_findings(root))
     findings.extend(exact_ledger_findings(root))
     findings.extend(proof_relation_findings(root))
     findings.extend(verification_findings(root))

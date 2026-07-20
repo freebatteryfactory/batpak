@@ -14,6 +14,8 @@ public surface, preserving the CLI argv contract exactly:
     selftest.py --confirm-promotion <6 args>
     selftest.py --supernova <campaign-root>
     selftest.py --supernova-compare <own-bundle> <candidate-bundle>
+    selftest.py --e7-underwrite <out-dir> --campaign-root <dir> --tier0-bundle <dir>
+    selftest.py --e7-compare <own-artifact> <candidate-artifact>
 """
 from __future__ import annotations
 

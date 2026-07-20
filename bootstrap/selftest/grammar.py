@@ -106,6 +106,34 @@ def test_source_grammar(_audit) -> list[str]:
         path = tree / "spec/corpus/types.rs"
         path.write_bytes(b"extern crate std;\nuse std::vec::Vec;\n" + path.read_bytes())
 
+    def relink_tests(tree: Path, rel: str) -> None:
+        path = tree / rel
+        path.write_bytes(b"extern crate std;\n" + path.read_bytes())
+
+    def mutate_plain_mounted_tests(tree: Path) -> None:
+        # The mount loses its #[cfg(test)] gate: the same tests.rs bytes are
+        # now production source, and the stem earns no exemption (E7-E).
+        edit(tree, "spec/campaign/mod.rs", "#[cfg(test)]\nmod tests;", "mod tests;",
+             "plain_mounted_tests")
+        relink_tests(tree, "spec/campaign/tests.rs")
+
+    def mutate_cfg_not_test_decoy(tree: Path) -> None:
+        # A decoy gate: #[cfg(not(test))] is an attribute, not the test gate.
+        edit(tree, "spec/campaign/mod.rs", "#[cfg(test)]\nmod tests;",
+             "#[cfg(not(test))]\nmod tests;", "cfg_not_test_decoy")
+        relink_tests(tree, "spec/campaign/tests.rs")
+
+    def mutate_renamed_production_carrier(tree: Path) -> None:
+        # A production carrier with a planted std relink takes the tests.rs
+        # name and a plain `mod tests;` mount; the novelty badge earns
+        # nothing. planted() manifests the new path so exactly R13 fires.
+        inventory = tree / "spec/gates/inventory.rs"
+        data = b"extern crate std;\n" + inventory.read_bytes()
+        inventory.unlink()
+        planted(tree, "spec/gates/tests.rs", data)
+        edit(tree, "spec/gates/mod.rs", "mod inventory;", "mod tests;",
+             "renamed_production_carrier")
+
     exe_root = Path(tempfile.mkdtemp(prefix="batpak-grammar-exe-"))
     try:
         build_dir = exe_root / "canonical"
@@ -208,8 +236,37 @@ def test_source_grammar(_audit) -> list[str]:
                 "spec source spec/corpus/types.rs declares extern crate std (line 1); "
                 "the spec is #![no_std] source law and a deliberate std relink "
                 "is refused (extern crate alloc stays lawful)")
+        # R13 ancestry (E7-E): the exemption is the exact #[cfg(test)] mount
+        # chain, never the tests.rs stem. A plain `mod tests;` mount is
+        # production source and the full extended finding names the case.
+        hostile("plain_mounted_tests_with_std_relink_is_rejected",
+                mutate_plain_mounted_tests,
+                "spec source spec/campaign/tests.rs declares extern crate std (line 1); "
+                "the spec is #![no_std] source law and a deliberate std relink "
+                "is refused (extern crate alloc stays lawful); a tests.rs mounted "
+                "outside an exact #[cfg(test)] mod gate is production source and "
+                "its stem earns no exemption")
+        # The decoy gate: #[cfg(not(test))] must earn nothing either.
+        hostile("cfg_not_test_decoy_mount_is_rejected", mutate_cfg_not_test_decoy,
+                "spec source spec/campaign/tests.rs declares extern crate std (line 1)")
+        # A production carrier renamed tests.rs under a plain mount: still red.
+        hostile("production_carrier_renamed_tests_is_rejected",
+                mutate_renamed_production_carrier,
+                "spec source spec/gates/tests.rs declares extern crate std (line 1)")
+        # The lawful side stays lawful: std inside an exactly-#[cfg(test)]-
+        # gated tests.rs is host-harness test code and the gate stays green.
+        lawful = grammar_tree()
+        try:
+            relink_tests(lawful, "spec/campaign/tests.rs")
+            code, out = scan(exe, lawful)
+            if code != 0:
+                findings.append("cfg_test_gated_tests_std_stays_lawful FAILED "
+                                f"({out.strip()[:300]!r})")
+        finally:
+            shutil.rmtree(lawful, ignore_errors=True)
 
-        def neuter(name: str, blind: str, mutate) -> None:
+        def neuter(name: str, blind: str, mutate,
+                   replacement: str = "if false {") -> None:
             # Blind ONE rule in a copied grammar.rs, rebuild, rerun the same
             # hostile mutation: the run must now PASS end to end.
             build_tree = grammar_tree()
@@ -219,7 +276,7 @@ def test_source_grammar(_audit) -> list[str]:
             try:
                 gpath = build_tree / "bootstrap/seedcheck/grammar.rs"
                 gpath.write_text(
-                    must_replace(gpath.read_text(encoding="utf-8"), blind, "if false {", name),
+                    must_replace(gpath.read_text(encoding="utf-8"), blind, replacement, name),
                     encoding="utf-8")
                 blinded, nerr = _seedcheck_exe(build_tree, used_triples, ndir)
                 if blinded is None:
@@ -250,6 +307,15 @@ def test_source_grammar(_audit) -> list[str]:
                "if !declared.iter().any(|(child, _)| child == stem) {", mutate_orphan_carrier)
         neuter("neutered_extern_std_rule_goes_silent",
                "if relink.is_some() {", mutate_extern_std)
+        # Blind the cfg(test)-ancestry predicate by resurrecting the retired
+        # stem exemption: the planted plain-mount violation must go silent,
+        # proving the ancestry walk — not the stem — is the thing detecting.
+        neuter("neutered_cfg_test_ancestry_resurrects_the_stem_exemption",
+               "if test_reachable.contains(path) {",
+               mutate_plain_mounted_tests,
+               replacement='if test_reachable.contains(path) '
+                           '|| path.file_stem().and_then(|stem| stem.to_str()) '
+                           '== Some("tests") {')
 
         receipt("source-grammar-fixtures", available=True, compiled=True, executed=True,
                 passed=not findings,

@@ -33,8 +33,10 @@
 //! generic `CandidateEvidenceRelation` enum: a candidate's relations are
 //! DERIVED from required manifest and receipt fields (parent candidate
 //! identities, the source-frontier commitment, dependency commitments, the
-//! content commitment, generator or pilot evidence, qualification receipts, the
-//! reuse key, and the promotion, refusal, and invalidation receipts), never
+//! content commitment, named proof targets, and the reuse key on the immutable
+//! V2 manifest; evidence references and the qualification, holdout, promotion,
+//! refusal, invalidation, and escalation events ride append-only campaign
+//! receipts in the nursery receipt store, never manifest fields), never
 //! from a parallel edge vocabulary. This file mints no such vocabulary.
 //!
 //! Every axis is a closed enum with a frozen `ALL`-style inventory and derives

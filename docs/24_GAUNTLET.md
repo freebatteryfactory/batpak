@@ -1622,10 +1622,12 @@ planted_semantic_mutant_is_activated_and_killed
 
 bounded_generated_trace_attack_holds_boundary
     A seeded deterministic generator attacks the real boundary with a
-    bounded trace set; the receipt binds the exact seed and bounds so the
-    candidate and confirming runs reproduce the identical attack.
+    bounded trace set; the receipt always binds the exact seed, trace
+    count, operation bound, and value bound so the candidate and
+    confirming runs reproduce the identical attack.
     expects: every generated illegal trace terminates in a typed refusal at
-      the boundary; the receipt records seed, bounds, and traces executed
+      the boundary; the receipt records seed, trace count, operation
+      bound, value bound, and traces executed
     disposition: the boundary holds with typed refusals; an unrefused
       illegal trace or an unreceipted attack fails the witness
 
@@ -1680,8 +1682,9 @@ bounded_repair_loop_reaches_stable_qualified_frontier
       repair sequence fails the witness
 
 confirming_rerun_changes_no_authoritative_result
-    The confirming run re-executes the rehearsal and every authoritative
-    result is identical to the candidate run's.
+    The confirming run re-executes the rehearsal and the campaign
+    authoritative results are identical across runs: the confirming rerun
+    changes no authoritative result.
     expects: terminals, frontier state, and dispositions from the confirming
       rehearsal equal the candidate rehearsal's bound results
     disposition: identical authority across the two runs; any drift refuses

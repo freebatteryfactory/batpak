@@ -43,6 +43,18 @@
 //!     --judge-root <dir> --envelope <file> --source-commit <40-hex>
 //!     --nursery-root <dir> --evidence-root <dir>
 //! ```
+//!
+//! `e7-verify` (E7-F) independently verifies the BATPAK-E7-UNDERWRITING/1
+//! opening-matrix artifact: it recomputes every binding digest from the bytes
+//! on disk, refuses any nonzero opening-matrix row by name, re-executes the
+//! campaign verification core in-process over the six bound campaign inputs,
+//! and recomputes the unresolved-architect-required-findings row from the
+//! nursery receipts (TL-6):
+//! ```text
+//! receiptcheck e7-verify <artifact> --root <repo> --tier0-bundle <dir>
+//!     --campaign-bundle <file> --judge-root <dir> --envelope <file>
+//!     --source-commit <40-hex> --nursery-root <dir> --evidence-root <dir>
+//! ```
 
 use std::env;
 
@@ -53,8 +65,10 @@ use std::env;
 #[path = "receiptcheck/hashing.rs"] mod hashing;
 #[path = "receiptcheck/campaign.rs"] mod campaign;
 #[path = "receiptcheck/campaign_v1.rs"] mod campaign_v1;
+#[path = "receiptcheck/e7.rs"] mod e7;
 
 use crate::campaign::mode_campaign_verify;
+use crate::e7::mode_e7_verify;
 use crate::modes::{mode_compare, mode_policy, mode_verify};
 
 fn main() {
@@ -65,6 +79,7 @@ fn main() {
         Some("verify") => mode_verify(&args[2..]),
         Some("compare") => mode_compare(&args[2..]),
         Some("campaign-verify") => mode_campaign_verify(&args[2..]),
+        Some("e7-verify") => mode_e7_verify(&args[2..]),
         _ => Err(
             "usage: receiptcheck policy | receiptcheck verify <artifact> \
              --root <root> --evidence <bundle> --python-executable <py> [--upload-ready] \
@@ -74,7 +89,10 @@ fn main() {
              --root <root> --python-executable <py> [--require-promotion-confirmation] \
              | receiptcheck campaign-verify <bundle> --judge-root <dir> \
              --envelope <file> --source-commit <sha> --nursery-root <dir> \
-             --evidence-root <dir> (V1 bundles: the first three flags only)"
+             --evidence-root <dir> (V1 bundles: the first three flags only) \
+             | receiptcheck e7-verify <artifact> --root <repo> --tier0-bundle <dir> \
+             --campaign-bundle <file> --judge-root <dir> --envelope <file> \
+             --source-commit <sha> --nursery-root <dir> --evidence-root <dir>"
                 .to_owned(),
         ),
     };

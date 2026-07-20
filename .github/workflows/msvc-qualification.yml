@@ -158,6 +158,29 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
 
+      # E7 underwriting (E7-F): produce the BATPAK-E7-UNDERWRITING/1
+      # opening-matrix artifact from THIS run's fresh evidence (the Tier 0
+      # bundle and the campaign roots produced above) and block on the
+      # independent `receiptcheck e7-verify` recompute of every binding and
+      # every zero row. BOTH postures run this step: the candidate run
+      # produces and verifies its own artifact, and the confirming run
+      # produces ITS OWN before comparing authoritative results below.
+      - name: e7 underwriting (produce + independently verify)
+        run: >
+          python -I bootstrap/selftest.py --e7-underwrite "${{ runner.temp }}/e7"
+          --campaign-root "${{ runner.temp }}/supernova"
+          --tier0-bundle "${{ runner.temp }}/evidence/tier0-evidence"
+
+      # Publish the verified E7 artifact, named to bind the exact source,
+      # run id, and attempt (the campaign artifact's naming idiom).
+      - name: upload e7 underwriting artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: batpak-e7-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/e7
+          if-no-files-found: error
+          include-hidden-files: true
+
       # ---- promotion-confirmation posture (candidate_run_id supplied) ----
 
       - name: download candidate evidence
@@ -221,3 +244,27 @@ jobs:
           python -I bootstrap/selftest.py --supernova-compare
           "${{ runner.temp }}/supernova/evidence/campaign-evidence.bundle"
           candidate-campaign/campaign-evidence.bundle
+
+      # The candidate run's E7 artifact, for the E7 stability law: every
+      # AUTHORITATIVE line of the two independently produced artifacts must
+      # be identical (tier0-bundle and campaign-bundle are per-run bindings,
+      # each verified within its own run), and the Phase 6 opening
+      # eligibility banner speaks only when every mechanical zero row is
+      # zero in BOTH artifacts (TL-12; the semantic row stays the
+      # architect's).
+      - name: download candidate e7 artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: batpak-e7-${{ github.sha }}-${{ inputs.candidate_run_id }}-*
+          path: candidate-e7
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          merge-multiple: true
+
+      - name: confirm E7 stability (authoritative-result equality + Phase 6 opening eligibility)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        run: >
+          python -I bootstrap/selftest.py --e7-compare
+          "${{ runner.temp }}/e7/e7-underwriting.t0"
+          candidate-e7/e7-underwriting.t0

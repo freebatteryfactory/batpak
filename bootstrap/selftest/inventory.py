@@ -1231,6 +1231,25 @@ def test_inventory_mirrors(audit, project) -> list[str]:
     if readme_body is None or readme_body != docs3_body:
         fail("package_inventory_multi_target_bytes_are_identical")
 
+    # Authored domain-catalog membership parity (E7-E, TL-11): descriptions
+    # remain authored, membership does not — two-sided.
+    if audit.domain_catalog_findings(root):
+        fail(f"domain_catalog_parity_passes_on_the_real_seed "
+             f"({audit.domain_catalog_findings(root)!r})")
+    probe("declared_domain_without_authored_row_is_rejected",
+          [("spec/README.md", "| `campaign/` | The typed campaign record",
+            "| campaign (row withheld) | The typed campaign record")],
+          "spec/lib.rs declares pub mod campaign; but the spec/README.md "
+          "authored domain catalog carries no row for it",
+          validator=audit.domain_catalog_findings)
+    probe("authored_row_without_declared_domain_is_rejected",
+          [("spec/README.md", "\n| `commands/` | The three closed",
+            "\n| `phantom/` | A row no facade declares. |\n"
+            "| `commands/` | The three closed")],
+          "authored domain catalog carries a row for phantom/, which "
+          "spec/lib.rs never declares",
+          validator=audit.domain_catalog_findings)
+
     return findings
 
 

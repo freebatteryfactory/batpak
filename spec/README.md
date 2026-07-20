@@ -84,6 +84,7 @@ exact module tree, so no filename ledger is hand-maintained here.
 | `authenticated_history/` | The authenticated-history claim contract (DEC-071): profiles, witness policy and dispositions, and the four independent claim axes — a contract, not an implementation. |
 | `bootstrap_output/` | The SHAPE of the isolated Gate-0 workspace candidate the materializer publishes; derived from the closed inventories, never a hardcoded file table. |
 | `bootstrap_qualification/` | The typed Tier 0 qualification receipt algebra: what a qualification receipt means and its required `ALL` denominator. |
+| `campaign/` | The typed campaign record vocabulary: candidate identity and the `BATPAK-CANDIDATE-MANIFEST/2` grammar, receipt kinds, the four-state frontier, closure-projection nouns, and the campaign evidence profile. |
 | `commands/` | The three closed command namespaces: `ProductCommand`, `BatQlSourceMode`, `TestPakCommand`. |
 | `compiler_assumptions/` | The admitted compiler-assumption kinds: dangerous mechanisms that have earned a ledger row, detector, and hostile witness. |
 | `contracts/` | The admitted MacBat contract kinds at Gate 1 — the border crossing, not a brochure of families that might someday exist. |
