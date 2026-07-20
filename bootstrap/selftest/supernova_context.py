@@ -89,8 +89,17 @@ def build_context(*, judge: Path, judge_digest: str, judge_after: str,
             "RuntimeConformanceDispositions": [
                 runtime_dispositions[0].removeprefix(
                     "runtime-conformance-disposition ")],
+            # The release seal commits to the stable release fact -- WHICH
+            # candidates were promoted (id + unit) -- never the per-run
+            # promotion-receipt address. Under RECEIPT/3 a promotion receipt
+            # references the qualification/search receipts, which chain to the
+            # bounded search's measured monotonic ticks; binding that address
+            # here would make the release envelope per-run. The receipt
+            # provenance stays fully verified by the campaign verifier and
+            # lives in the (per-run) campaign bundle, not in the reproducible
+            # release identity.
             "CandidatePromotionSet": [
-                f"{r['id']} {r['unit']} {terminals[r['id']][1]}"
+                f"{r['id']} {r['unit']}"
                 for r in records
                 if terminals.get(r["id"], ("",))[0] == "Promoted"],
         },
