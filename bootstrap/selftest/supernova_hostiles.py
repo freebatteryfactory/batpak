@@ -76,7 +76,8 @@ def hostiles(paths: dict, work: Path, *, admit_failure_evidence,
     victim.write_text(victim.read_text(encoding="utf-8") + "# tampered\n",
                       encoding="utf-8", newline="\n")
     ok, out = sb.campaign_verify(rc, paths["bundle"], tampered, paths["envelope"],
-                                 paths["source_commit"])
+                                 paths["source_commit"], paths["nursery"],
+                                 paths["evidence_root"])
     if ok:
         findings.append("receiptcheck ADMITTED a bundle over a tampered judge root")
     elif "judge-root digest" not in out:
@@ -90,8 +91,95 @@ def hostiles(paths: dict, work: Path, *, admit_failure_evidence,
         findings.append(f"verifier neuter did not build: {err}")
     else:
         ok, _out = sb.campaign_verify(neutered, paths["bundle"], tampered,
-                                      paths["envelope"], paths["source_commit"])
+                                      paths["envelope"], paths["source_commit"],
+                                      paths["nursery"], paths["evidence_root"])
         if not ok:
             findings.append("the blinded verifier still refused; the neuter "
                             "proves nothing about the judge-digest guard")
+
+    # E7 perimeter probes, each on COPIES of the real nursery/evidence so the
+    # rehearsal's own artifacts stay untouched.
+    def verify_with(nursery, bundle=None):
+        return sb.campaign_verify(rc, bundle or paths["bundle"], paths["judge"],
+                                  paths["envelope"], paths["source_commit"],
+                                  nursery, paths["evidence_root"])
+
+    # (a) One tampered nursery-manifest byte is refused (byte identity with
+    # the bundle-embedded manifest), and a verifier whose identity guard is
+    # blinded admits the identical tamper -- the second new neuter.
+    n_tampered = work / "nursery-tampered"
+    shutil.copytree(paths["nursery"], n_tampered)
+    victim = sorted(n_tampered.glob("*/manifest"))[0]
+    text = victim.read_text(encoding="utf-8")
+    flipped = text[:-2] + ("0" if text[-2] != "0" else "1") + "\n"
+    victim.write_text(flipped, encoding="utf-8", newline="\n")
+    _ok, out = verify_with(n_tampered)
+    expect_refusal("nursery_manifest_tamper_is_refused", out,
+                   "does not match its bundle-embedded manifest")
+    blinded, err = sb.neutered_receiptcheck(
+        paths["rustc"], paths["target_triple"], work,
+        "if nursery_text != embedded_text {",
+        "if nursery_text != embedded_text && false {")
+    if blinded is None:
+        findings.append(f"manifest-identity neuter did not build: {err}")
+    else:
+        ok, _out = sb.campaign_verify(blinded, paths["bundle"], paths["judge"],
+                                      paths["envelope"], paths["source_commit"],
+                                      n_tampered, paths["evidence_root"])
+        if not ok:
+            findings.append("the blinded verifier still refused the manifest "
+                            "tamper; the neuter proves nothing about the "
+                            "byte-identity guard")
+
+    # (b) An unreferenced authority-looking file in the nursery is refused.
+    n_rogue = work / "nursery-rogue"
+    shutil.copytree(paths["nursery"], n_rogue)
+    (n_rogue / "rogue.manifest").write_text("BATPAK-CANDIDATE-MANIFEST/2\n",
+                                            encoding="utf-8", newline="\n")
+    _ok, out = verify_with(n_rogue)
+    expect_refusal("unreferenced_authority_file_is_refused", out,
+                   "authority-looking")
+
+    # (c) Deleting one referenced receipt (a promotion) leaves its terminal
+    # claim unresolved and is refused.
+    n_gone = work / "nursery-receipt-gone"
+    shutil.copytree(paths["nursery"], n_gone)
+    victim = next((p for p in sorted(n_gone.glob("*/receipts/*.receipt"))
+                   if "\nkind promotion\n" in p.read_text(encoding="utf-8")),
+                  None)
+    if victim is None:
+        findings.append("no promotion receipt exists to delete; the perimeter "
+                        "probe cannot run")
+    else:
+        victim.unlink()
+        _ok, out = verify_with(n_gone)
+        expect_refusal("deleted_promotion_receipt_is_refused", out,
+                       "not represented by a promotion receipt")
+
+    # (d) Rewriting the frontier section to claim Qualified for the scaffold
+    # candidate is refused by the Scaffold+Qualified coherence law.
+    bundle_text = Path(paths["bundle"]).read_text(encoding="utf-8")
+    scaffold_id = None
+    current = None
+    for line in bundle_text.splitlines():
+        if line.startswith("candidate-id "):
+            current = line.split(" ")[1]
+        if line == "realization-posture Scaffold":
+            scaffold_id = current
+    if scaffold_id is None:
+        findings.append("no scaffold candidate exists in the bundle; the "
+                        "coherence probe cannot run")
+    else:
+        forged = work / "bundle-scaffold-qualified"
+        old = f"frontier {scaffold_id} state=Unqualified"
+        if old not in bundle_text:
+            findings.append("the scaffold candidate's frontier line is not "
+                            "Unqualified; the coherence probe cannot run")
+        else:
+            forged.write_text(
+                bundle_text.replace(old, f"frontier {scaffold_id} state=Qualified"),
+                encoding="utf-8", newline="\n")
+            _ok, out = verify_with(paths["nursery"], bundle=forged)
+            expect_refusal("scaffold_qualified_frontier_is_refused", out,
+                           "Scaffold candidate")
     return findings

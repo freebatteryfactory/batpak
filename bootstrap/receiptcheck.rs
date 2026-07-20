@@ -34,11 +34,14 @@
 //! sealed `compare_runs` and `confirm_promotion`. It computes the comparison —
 //! Python never parses or duplicates the comparator law.
 //!
-//! `campaign-verify` (F5, R4) independently recomputes and validates the
-//! mini-supernova campaign-evidence bundle:
+//! `campaign-verify` (F5 R4; E7 R4 hardening) independently recomputes and
+//! validates the campaign-evidence bundle, dispatching on the bundle's own
+//! version line — a `/2` bundle requires the full six-flag perimeter, a `/1`
+//! bundle routes to the historical arm under the original four flags:
 //! ```text
 //! receiptcheck campaign-verify <bundle>
 //!     --judge-root <dir> --envelope <file> --source-commit <40-hex>
+//!     --nursery-root <dir> --evidence-root <dir>
 //! ```
 
 use std::env;
@@ -49,6 +52,7 @@ use std::env;
 #[path = "receiptcheck/bundle.rs"] mod bundle;
 #[path = "receiptcheck/hashing.rs"] mod hashing;
 #[path = "receiptcheck/campaign.rs"] mod campaign;
+#[path = "receiptcheck/campaign_v1.rs"] mod campaign_v1;
 
 use crate::campaign::mode_campaign_verify;
 use crate::modes::{mode_compare, mode_policy, mode_verify};
@@ -69,7 +73,8 @@ fn main() {
              --cleanroom-evidence <bundle> --cleanroom-run-metadata <meta> \
              --root <root> --python-executable <py> [--require-promotion-confirmation] \
              | receiptcheck campaign-verify <bundle> --judge-root <dir> \
-             --envelope <file> --source-commit <sha>"
+             --envelope <file> --source-commit <sha> --nursery-root <dir> \
+             --evidence-root <dir> (V1 bundles: the first three flags only)"
                 .to_owned(),
         ),
     };
