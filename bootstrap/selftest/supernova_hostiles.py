@@ -278,4 +278,103 @@ def hostiles(paths: dict, work: Path, *, admit_failure_evidence,
         _ok, out = verify_with(paths["nursery"], bundle=forged)
         expect_refusal("omitted_closure_edge_is_refused", out,
                        "closure omits the Dependency edge")
+
+    # E7-closeout release-seal (CL-10) probes: the CandidatePromotionSet seal
+    # binds the canonical, sorted set of promoted CandidateId VALUES, and the
+    # verifier RE-DERIVES that set from the effective, un-superseded promotion
+    # receipts and requires exact set + canonical-order equality. The envelope
+    # lives inside the evidence root (exempt only via --envelope), so each
+    # tamper runs on a COPY of the evidence root with the forged envelope
+    # written in place; the nursery stays the real one.
+    ev_seal = work / "evidence-seal"
+    shutil.copytree(paths["evidence_root"], ev_seal)
+    seal_bundle = ev_seal / Path(paths["bundle"]).name
+    seal_env = ev_seal / Path(paths["envelope"]).name
+    env_text = Path(paths["envelope"]).read_text(encoding="utf-8")
+    promo_rows = sorted(ln.split(" ", 2)[2] for ln in env_text.splitlines()
+                        if ln.startswith("row CandidatePromotionSet "))
+
+    def reseal(new_rows: list[str]) -> str:
+        """Replace the CandidatePromotionSet count + rows, every other envelope
+        byte preserved."""
+        out_lines: list[str] = []
+        skipping = False
+        for ln in env_text.splitlines():
+            if ln.startswith("seal CandidatePromotionSet rows "):
+                out_lines.append(f"seal CandidatePromotionSet rows {len(new_rows)}")
+                out_lines.extend(f"row CandidatePromotionSet {r}" for r in new_rows)
+                skipping = True
+                continue
+            if skipping and ln.startswith("row CandidatePromotionSet "):
+                continue
+            skipping = False
+            out_lines.append(ln)
+        return "".join(line + "\n" for line in out_lines)
+
+    def verify_seal(text: str):
+        seal_env.write_text(text, encoding="utf-8", newline="\n")
+        return sb.campaign_verify(rc, seal_bundle, paths["judge"], seal_env,
+                                  paths["source_commit"], paths["nursery"], ev_seal)
+
+    if len(promo_rows) < 2:
+        findings.append("the release seal names fewer than two promoted "
+                        "candidates; the CandidatePromotionSet probes cannot run")
+    else:
+        # (a) OMISSION: drop one promoted id -> the missing-promoted finding,
+        # and a verifier whose set-equality guard is blinded ADMITS the tamper.
+        omitted = promo_rows[1:]
+        _ok, out = verify_seal(reseal(omitted))
+        expect_refusal("seal_omits_promoted_candidate_is_refused", out,
+                       "omits promoted candidate")
+        seal_env.write_text(reseal(omitted), encoding="utf-8", newline="\n")
+        blinded, err = sb.neutered_receiptcheck(
+            paths["rustc"], paths["target_triple"], work,
+            "if !rows_set.contains(id) {",
+            "if !rows_set.contains(id) && false {")
+        if blinded is None:
+            findings.append(f"promotion-set neuter did not build: {err}")
+        else:
+            ok, _out = sb.campaign_verify(blinded, seal_bundle, paths["judge"],
+                                          seal_env, paths["source_commit"],
+                                          paths["nursery"], ev_seal)
+            if not ok:
+                findings.append("the blinded verifier still refused the omitted "
+                                "promotion set; the neuter proves nothing about "
+                                "the set-equality guard")
+
+        # (b) INJECTION: add a token that is no bundle candidate (a stray
+        # receipt-address-shaped id) -> the no-bundle-candidate finding. `f`*64
+        # sorts after every real id, so the canonical order stays intact and
+        # the set-membership guard is what bites.
+        stray = "f" * 64
+        _ok, out = verify_seal(reseal(promo_rows + [stray]))
+        expect_refusal("seal_injects_noncandidate_is_refused", out,
+                       "is no bundle candidate")
+
+        # (c) SUBSTITUTION: swap a promoted id for a different (unpromoted)
+        # candidate id -> the unpromoted-candidate finding.
+        cand_ids = [ln.split(" ")[1] for ln in bundle_text.splitlines()
+                    if ln.startswith("candidate-begin ")]
+        unpromoted = sorted(set(cand_ids) - set(promo_rows))
+        if not unpromoted:
+            findings.append("every candidate is promoted; the substitution "
+                            "probe cannot run")
+        else:
+            substituted = sorted(set(promo_rows[1:]) | {unpromoted[0]})
+            _ok, out = verify_seal(reseal(substituted))
+            expect_refusal("seal_substitutes_unpromoted_is_refused", out,
+                           "names unpromoted candidate")
+
+        # (d) DUPLICATE: repeat a promoted id -> the duplicate finding (the
+        # duplicate guard bites before the ordering guard).
+        _ok, out = verify_seal(reseal(promo_rows + [promo_rows[0]]))
+        expect_refusal("seal_duplicate_id_is_refused", out,
+                       "duplicates candidate")
+
+        # (e) NONCANONICAL: the correct set in the wrong order -> the
+        # canonical-order finding.
+        unsorted = [promo_rows[1], promo_rows[0], *promo_rows[2:]]
+        _ok, out = verify_seal(reseal(unsorted))
+        expect_refusal("seal_noncanonical_order_is_refused", out,
+                       "not in canonical")
     return findings

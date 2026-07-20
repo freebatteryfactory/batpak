@@ -227,11 +227,21 @@ QualifiedHostileEvidence     qualified hostile evidence against the boundary
 AuditablePromotionReceipt    an auditable receipt of the promotion decision
 ```
 
-Those auditable receipts also reach the release envelope: the release seal's
+Those auditable receipts also govern the release envelope, but the release
+seal is a REPRODUCIBLE source identity, so it binds the stable FACT the
+receipts prove, not their per-run provenance. The release seal's
 `CandidatePromotionSet` field (`spec/release/`, `36_PUBLIC_API_CI_AND_RELEASE.md`)
-binds the promotion receipts a release carries and is mandatory even when
-empty — an empty set states "no candidates promoted", it never disappears
-from the schema.
+binds the canonical, lexicographically sorted set of promoted `CandidateId`
+values — the stable promoted set, values only. The per-run promotion-receipt
+addresses stay in the campaign nursery and evidence perimeter (the per-run
+campaign bundle the campaign verifier proves): they are REQUIRED to derive
+membership — the verifier re-derives the promoted set from the effective,
+un-superseded promotion receipts and requires exact set and canonical-order
+equality — but they are NOT bytes in the reproducible release identity (a
+promotion receipt references qualification/search receipts that chain to the
+bounded search's measured monotonic ticks, so its address is per-run). The
+field is mandatory even when empty — an empty set states "no candidates
+promoted", it never disappears from the schema.
 
 A change class ADDS an authority path; it never REPLACES a common requirement. A
 realization-preserving candidate satisfies all four through a mechanical or

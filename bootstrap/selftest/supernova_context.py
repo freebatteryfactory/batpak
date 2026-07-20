@@ -89,18 +89,23 @@ def build_context(*, judge: Path, judge_digest: str, judge_after: str,
             "RuntimeConformanceDispositions": [
                 runtime_dispositions[0].removeprefix(
                     "runtime-conformance-disposition ")],
-            # The release seal commits to the stable release fact -- WHICH
-            # candidates were promoted (id + unit) -- never the per-run
-            # promotion-receipt address. Under RECEIPT/3 a promotion receipt
-            # references the qualification/search receipts, which chain to the
-            # bounded search's measured monotonic ticks; binding that address
-            # here would make the release envelope per-run. The receipt
-            # provenance stays fully verified by the campaign verifier and
-            # lives in the (per-run) campaign bundle, not in the reproducible
-            # release identity.
-            "CandidatePromotionSet": [
-                f"{r['id']} {r['unit']}"
-                for r in records
-                if terminals.get(r["id"], ("",))[0] == "Promoted"],
+            # The release seal is a REPRODUCIBLE source identity, so
+            # CandidatePromotionSet is the canonical, lexicographically SORTED,
+            # duplicate-free set of promoted CandidateId VALUES ONLY (CL-10).
+            # The diagnostic `unit` label is authority-free (proof targets are
+            # authority) and is NOT a byte in the release identity; the per-run
+            # promotion-receipt address is excluded too, because under
+            # RECEIPT/3 a promotion receipt references the qualification/search
+            # receipts, which chain to the bounded search's measured monotonic
+            # ticks -- binding that address here would make the release
+            # envelope per-run. The receipt provenance stays fully verified by
+            # the campaign verifier and lives in the (per-run) campaign bundle,
+            # not in the reproducible release identity; the verifier
+            # independently RE-DERIVES this promoted-id set from the effective,
+            # un-superseded promotion receipts and requires exact set and
+            # canonical-order equality against these rows.
+            "CandidatePromotionSet": sorted(
+                {r["id"] for r in records
+                 if terminals.get(r["id"], ("",))[0] == "Promoted"}),
         },
     }

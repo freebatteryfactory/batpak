@@ -826,6 +826,10 @@ def underwrite(out_dir: str | Path, campaign_root: str | Path,
     # is the built receiptcheck exe (per-run bytes; the verifier re-runs the
     # campaign core rather than recomputing this digest); `output` is the
     # normalized captured stdout. tier0/audit/project receipts follow below.
+    # CL-11: this exe hash MAY stay per-run -- cross-run equality is over the
+    # verified authoritative RESULT + source/toolchain coordinates, never the
+    # native exe bytes; e7_crossrun.py and receiptcheck e7-open both compare
+    # each zero row's (token, count) RESULT only (owner+receipt are ignored).
     receipts_dir = out / "receipts"
     owner_receipts: dict[str, str] = {}
     owner_receipts["campaign-verify"] = _write_owner_receipt(

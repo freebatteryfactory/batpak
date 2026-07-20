@@ -23,7 +23,11 @@ EXCLUDE = {"SPEC.sha256"}
 # a local `ruff check` run from the checkout dropped its cache into the tree
 # and the freeze swept it (F4 prelude, SGB battery); the exclusion belongs in
 # the enumerator itself, not in operator discipline.
-EXCLUDE_DIRS = {".git", "target", "__pycache__", ".ruff_cache"}
+# .venv: a uv-created virtualenv is the same class -- gitignored, derived
+# tooling output. A local `uv sync` for the locked Ruff lane dropped one into
+# the checkout and the freeze swept 16 of its files into SPEC.sha256, which the
+# isolated gate then refused as rows with no frozen file (E7 closeout F).
+EXCLUDE_DIRS = {".git", "target", "__pycache__", ".ruff_cache", ".venv"}
 EXCLUDE_SUFFIXES = {".zip", ".pyc"}
 
 

@@ -8,7 +8,7 @@ artifacts, per-candidate BATPAK-CAMPAIGN-RECEIPT/3 receipts beside the
 immutable records (the strict ten-kind grammar: counted lex-ordered
 sections, typed causes, explicit supersession, no free-form trailing line),
 trusted frontier roots (CL-1: a root IS its content commitment), the
-BATPAK-CAMPAIGN-EVIDENCE/3 bundle, the BATPAK-CAMPAIGN-ENVELOPE/1 rehearsal
+BATPAK-CAMPAIGN-EVIDENCE/3 bundle, the BATPAK-CAMPAIGN-ENVELOPE/2 rehearsal
 release envelope (all 20 seal fields; explicit empty is stated, never
 omitted), the authoritative-result comparison the Stability row demands, and
 the delegation to the independent receiptcheck campaign verifier.
@@ -31,7 +31,7 @@ from pathlib import Path
 from .core import HERE, TOOLCHAIN_EDITION, ProbeError
 
 BUNDLE_MAGIC = "BATPAK-CAMPAIGN-EVIDENCE/3"
-ENVELOPE_MAGIC = "BATPAK-CAMPAIGN-ENVELOPE/1"
+ENVELOPE_MAGIC = "BATPAK-CAMPAIGN-ENVELOPE/2"
 MANIFEST_MAGIC = "BATPAK-CANDIDATE-MANIFEST/2"
 RECEIPT_MAGIC = "BATPAK-CAMPAIGN-RECEIPT/3"
 
@@ -656,7 +656,8 @@ def render_envelope(c: dict) -> str:
     row count even when zero -- explicit emptiness, never omission. The three
     new fields carry the model dispositions (witness verdicts), the
     runtime-conformance dispositions (capture + offline replay), and the
-    candidate promotion receipts."""
+    canonical, lexicographically sorted set of promoted CandidateId values
+    (CL-10: values only -- no unit label, no per-run receipt address)."""
     rows: dict[str, list[str]] = c["seal_rows"]
     commitments: dict[str, str] = c["seal_commitments"]
     lines = [ENVELOPE_MAGIC]

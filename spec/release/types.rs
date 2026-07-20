@@ -30,8 +30,11 @@ pub enum ReleaseSealField {
     /// Mandatory even when empty: an empty set states "no kernels admitted",
     /// it never disappears from the schema.
     KernelQualificationSet,
-    /// The candidate promotion set (DEC-080, docs/39): every promoted
-    /// candidate this release binds. Mandatory even when empty: an empty set
+    /// The candidate promotion set (DEC-080, docs/39): the canonical,
+    /// lexicographically sorted, duplicate-free set of promoted `CandidateId`
+    /// VALUES this release binds -- the stable promoted fact, not the per-run
+    /// promotion-receipt addresses (those stay in the campaign evidence
+    /// perimeter that derives the set). Mandatory even when empty: an empty set
     /// states "no candidates promoted"; a missing field is an incomplete
     /// envelope, so the field never disappears from the schema.
     CandidatePromotionSet,

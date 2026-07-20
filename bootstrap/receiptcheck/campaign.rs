@@ -35,6 +35,11 @@
 //!   per-target evidence, independent route, hostile evidence, and
 //!   dependency snapshot are independently recomputed against
 //!   `spec::promotion::PromotionRequirement::ALL`;
+//! - the release-seal `CandidatePromotionSet` law (CL-10): the envelope's
+//!   `BATPAK-CAMPAIGN-ENVELOPE/2` rows are the canonical, lexicographically
+//!   sorted, duplicate-free set of promoted CandidateId VALUES ONLY, and the
+//!   verifier RE-DERIVES the promoted set from the effective, un-superseded
+//!   promotion receipts and requires EXACT set and canonical-order equality;
 //! - both-direction perimeter equality: manifests<->bundle, evidence
 //!   references<->artifacts, AND the fact->edge completeness sweep
 //!   (relations and closure edges are SET-EQUAL);
@@ -68,7 +73,7 @@ use std::path::{Path, PathBuf};
 const BUNDLE_MAGIC: &str = "BATPAK-CAMPAIGN-EVIDENCE/3";
 const BUNDLE_MAGIC_V2: &str = "BATPAK-CAMPAIGN-EVIDENCE/2";
 const BUNDLE_MAGIC_V1: &str = "BATPAK-CAMPAIGN-EVIDENCE/1";
-const ENVELOPE_MAGIC: &str = "BATPAK-CAMPAIGN-ENVELOPE/1";
+const ENVELOPE_MAGIC: &str = "BATPAK-CAMPAIGN-ENVELOPE/2";
 const MANIFEST_MAGIC: &str = "BATPAK-CANDIDATE-MANIFEST/2";
 const RECEIPT_MAGIC: &str = "BATPAK-CAMPAIGN-RECEIPT/3";
 const ID_PREIMAGE_DOMAIN: &str = "candidate-id-preimage/2";
@@ -815,7 +820,13 @@ fn check_dispositions(section: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn check_envelope(path: &Path) -> Result<(), String> {
+/// Walk the `BATPAK-CAMPAIGN-ENVELOPE/2` release envelope: the 20 seal fields
+/// in canonical order, every NotSetValued field one commitment, every
+/// set-valued field its explicit row count. Returns the parsed
+/// `CandidatePromotionSet` row VALUES (the token after `row
+/// CandidatePromotionSet `) so `check_promotion_set` can require exact set +
+/// canonical-order equality against the receipt-derived promoted set (CL-10).
+fn check_envelope(path: &Path) -> Result<Vec<String>, String> {
     let raw = fs::read(path)
         .map_err(|e| format!("campaign: cannot read envelope {}: {e}", path.display()))?;
     let lines = strict_lines(&raw)?;
@@ -826,6 +837,7 @@ fn check_envelope(path: &Path) -> Result<(), String> {
         ));
     }
     let mut pos = 1;
+    let mut promotion_set: Vec<String> = Vec::new();
     for &field in RELEASE_SEAL_FIELDS {
         let name = format!("{field:?}");
         let line = lines
@@ -855,10 +867,13 @@ fn check_envelope(path: &Path) -> Result<(), String> {
                     let row = lines
                         .get(pos)
                         .ok_or_else(|| format!("campaign: envelope ended inside {name} rows"))?;
-                    if !row.starts_with(&format!("row {name} ")) {
-                        return Err(format!(
+                    let value = row
+                        .strip_prefix(&format!("row {name} "))
+                        .ok_or_else(|| format!(
                             "campaign: expected `row {name} ...`, found {row:?}"
-                        ));
+                        ))?;
+                    if name == "CandidatePromotionSet" {
+                        promotion_set.push(value.to_owned());
                     }
                     pos += 1;
                 }
@@ -881,6 +896,105 @@ fn check_envelope(path: &Path) -> Result<(), String> {
     }
     if pos != lines.len() {
         return Err("campaign: envelope carries trailing lines".to_owned());
+    }
+    Ok(promotion_set)
+}
+
+/// The release-seal `CandidatePromotionSet` law (CL-10): the envelope rows must
+/// be the canonical, lexicographically sorted, duplicate-free set of promoted
+/// `CandidateId` VALUES ONLY, exactly equal to the set the verifier re-derives
+/// from the effective, un-superseded promotion receipts. Seven distinct named
+/// findings refuse (in house voice), so a divergence names its exact shape:
+///
+/// - a bare row carrying a diagnostic unit token (a value that is not one id);
+/// - a malformed id (not 64-hex lowercase);
+/// - a duplicate id in the rows;
+/// - noncanonical (unsorted) ordering;
+/// - a token that is no bundle candidate (covers a stray receipt address);
+/// - an unpromoted candidate present in the rows;
+/// - a promoted candidate missing from the rows.
+fn check_promotion_set(
+    rows: &[String],
+    candidates: &[ParsedCandidate],
+    stores: &BTreeMap<String, ReceiptStore>,
+) -> Result<(), String> {
+    // Per-row shape: id-only means no embedded space (a unit label is a
+    // second token) and a 64-hex lowercase address.
+    for row in rows {
+        if row.contains(' ') {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet row {row:?} carries a \
+                 diagnostic unit token; the seal binds bare promoted CandidateId \
+                 values only, never a unit label (the unit is diagnostic, not authority)"
+            ));
+        }
+        if !is_hex64(row) {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet row {row:?} is not a \
+                 64-hex lowercase candidate id; the seal binds CandidateId values only"
+            ));
+        }
+    }
+    // Duplicate-free.
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for row in rows {
+        if !seen.insert(row.as_str()) {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet duplicates candidate {row}; \
+                 the promoted set is duplicate-free"
+            ));
+        }
+    }
+    // Canonical (strictly ascending) order.
+    for pair in rows.windows(2) {
+        if pair[1] < pair[0] {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet is not in canonical \
+                 lexicographic order ({:?} follows {:?})",
+                pair[1], pair[0]
+            ));
+        }
+    }
+    // The set the verifier independently re-derives from the effective,
+    // un-superseded promotion receipts (the resolved terminal is `Promoted`).
+    let candidate_ids: BTreeSet<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
+    let derived: BTreeSet<&str> = candidates
+        .iter()
+        .filter(|c| stores[c.id.as_str()].terminal == Some("Promoted"))
+        .map(|c| c.id.as_str())
+        .collect();
+    let rows_set: BTreeSet<&str> = rows.iter().map(String::as_str).collect();
+    // A token that is no bundle candidate at all -- a stray receipt address or
+    // foreign id -- is refused before the promoted/unpromoted split.
+    for row in rows {
+        if !candidate_ids.contains(row.as_str()) {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet names {row}, which is no \
+                 bundle candidate; the seal binds promoted CandidateId values, never a \
+                 receipt address or foreign id"
+            ));
+        }
+    }
+    // An extra/unpromoted candidate: a real candidate whose effective terminal
+    // is not a promotion.
+    for row in rows {
+        if !derived.contains(row.as_str()) {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet names unpromoted candidate \
+                 {row}; only candidates whose effective un-superseded terminal is a \
+                 promotion belong in the set"
+            ));
+        }
+    }
+    // A missing promoted candidate: derived but absent from the rows.
+    for id in &derived {
+        if !rows_set.contains(id) {
+            return Err(format!(
+                "campaign: release seal CandidatePromotionSet omits promoted candidate \
+                 {id}; every candidate with an effective promotion receipt binds into the \
+                 reproducible release identity"
+            ));
+        }
     }
     Ok(())
 }
@@ -2626,7 +2740,10 @@ fn verify_v3(
     check_policy(&doc.sections["policy"])?;
     check_manifest_section(&doc.sections["manifests"], judge_root)?;
     check_dispositions(&doc.sections["dispositions"])?;
-    check_envelope(envelope)?;
+    // The envelope walk proves the seal's shape now; the CandidatePromotionSet
+    // rows it returns are compared for exact set + canonical-order equality
+    // against the receipt-derived promoted set once the terminals resolve.
+    let promotion_set_rows = check_envelope(envelope)?;
 
     // The declared trusted roots (CL-1), then the V3 candidates: strict
     // manifests, active proof targets, and the exact identity recompute.
@@ -2832,6 +2949,9 @@ fn verify_v3(
     check_closure_edges(&candidates, &stores, &closure, &roots)?;
     let states = recompute_frontier(&candidates, &stores, &frontier, &roots)?;
     check_promotions(&candidates, &stores, &states, &roots)?;
+    // CL-10: the release seal binds the stable promoted-CandidateId set, so the
+    // envelope rows must set- and order-equal the receipt-derived promoted set.
+    check_promotion_set(&promotion_set_rows, &candidates, &stores)?;
 
     // Row 13's orphan half: the evidence root carries referenced artifacts
     // and the bundle, nothing else. Append-only ACROSS the run is the

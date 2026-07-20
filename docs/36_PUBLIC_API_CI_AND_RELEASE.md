@@ -210,8 +210,11 @@ laws added: `ModelDispositions` (model-based verification evidence) and
 `RuntimeConformanceDispositions` (runtime-conformance evidence,
 `38_DYNAMIC_VERIFICATION_AND_CONFORMANCE.md`) are distinct families, never
 merged into the test/mutation/fuzz/benchmark dispositions, and
-`CandidatePromotionSet` binds the auditable candidate-promotion receipts
-(`39_SPROUTING_NURSERY_AND_PROMOTION.md`) — each present even when empty.
+`CandidatePromotionSet` binds the canonical, sorted set of promoted
+`CandidateId` values — the stable promoted fact, not the per-run
+promotion-receipt addresses, which stay in the campaign evidence perimeter
+that derives the set (`39_SPROUTING_NURSERY_AND_PROMOTION.md`) — each present
+even when empty.
 
 <!-- RELEASE-SEAL:BEGIN generated from spec/release/inventory.rs by bootstrap/project.py; do not edit -->
 ```text
