@@ -61,10 +61,13 @@ from .domains import (
     test_syncbat_requiredness,
 )
 from .e7 import (
-    compare_cli as e7_compare_cli,
-)
-from .e7 import (
     underwrite_cli as e7_underwrite_cli,
+)
+from .e7_crossrun import (
+    crossrun_cli as e7_crossrun_cli,
+)
+from .e7_crossrun import (
+    open_cli as e7_open_cli,
 )
 from .grammar import (
     test_source_grammar,
@@ -99,7 +102,6 @@ from .supernova import (
     test_supernova,
 )
 from .supernova_cli import (
-    compare_supernova_cli,
     run_supernova_cli,
 )
 from .tier0 import (
@@ -142,21 +144,25 @@ def main() -> int:
     # independent receiptcheck campaign-verify. Both hosted postures run it.
     if argv0[:1] == ["--supernova"] and len(argv0) == 2:
         return run_supernova_cli(argv0[1])
-    # --supernova-compare <own-bundle> <candidate-bundle>: the Stability law --
-    # the confirming rehearsal's authoritative results must be identical.
-    if argv0[:1] == ["--supernova-compare"] and len(argv0) == 3:
-        return compare_supernova_cli(argv0[1], argv0[2])
     # --e7-underwrite <out> --campaign-root <dir> --tier0-bundle <dir>: the
-    # E7-F opening-matrix producer -- compute every binding and all twenty
-    # zero rows from named bases, then block on receiptcheck e7-verify.
+    # E7 opening-matrix producer -- compute every binding and all twenty
+    # zero rows from named bases, wrap the fresh audit/project/campaign-verify
+    # gates into owner receipts, then block on receiptcheck e7-verify.
     if argv0[:1] == ["--e7-underwrite"] and len(argv0) == 6 \
             and argv0[2] == "--campaign-root" and argv0[4] == "--tier0-bundle":
         return e7_underwrite_cli(argv0[1], argv0[3], argv0[5])
-    # --e7-compare <own-artifact> <candidate-artifact>: the E7 stability law
-    # (TL-12) -- authoritative-result equality, then the mechanical-only
-    # Phase 6 opening-eligibility banner.
-    if argv0[:1] == ["--e7-compare"] and len(argv0) == 3:
-        return e7_compare_cli(argv0[1], argv0[2])
+    # --e7-crossrun <own-e7-dir> <candidate-e7-dir> <own-bundle>
+    # <candidate-bundle>: the single cross-run comparison authority (CL-3;
+    # absorbs the retired --supernova-compare). Compares BOTH campaign and E7
+    # authoritative results, prints both ruled literals, and writes the
+    # cross-run stability receipt. Never prints the eligibility banner.
+    if argv0[:1] == ["--e7-crossrun"] and len(argv0) == 5:
+        return e7_crossrun_cli(argv0[1], argv0[2], argv0[3], argv0[4])
+    # --e7-open <stability-receipt> <own-artifact> <candidate-artifact>
+    # <source-commit>: the thin shim to receiptcheck e7-open, the sole printer
+    # of phase6-opening-eligible (workflow keeps one entrypoint).
+    if argv0[:1] == ["--e7-open"] and len(argv0) == 5:
+        return e7_open_cli(argv0[1], argv0[2], argv0[3], argv0[4])
     if len(argv0) == 2 and argv0[0] == "--emit-evidence":
         bundle = Path(argv0[1]).resolve() / "tier0-evidence"
         artifact, source_root, problems = produce_tier0_evidence(bundle, _T0_GNU)

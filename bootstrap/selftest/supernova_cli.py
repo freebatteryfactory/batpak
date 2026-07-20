@@ -2,11 +2,11 @@
 
 `selftest.py --supernova <dir>` executes the complete rehearsal with
 persistent roots under <dir> (OUTSIDE the checkout) and blocks on the
-independent receiptcheck campaign-verify verdict; `--supernova-compare
-<own-bundle> <candidate-bundle>` compares two bundles' authoritative results
-(the Stability row's cross-run law; the --e7-crossrun comparison authority
-absorbs this step in the confirming workflow). Wiring only: the rehearsal
-lives in supernova.py, the grammars and the verifier delegation in
+independent receiptcheck campaign-verify verdict. The cross-run authoritative
+comparison (the Stability row's law) is no longer a separate entry here: the
+single --e7-crossrun comparison authority (selftest/e7.py) absorbed it (CL-3),
+calling supernova_bundle.compare_authoritative directly. Wiring only: the
+rehearsal lives in supernova.py, the grammars and the verifier delegation in
 supernova_bundle.py, and the module graph stays a DAG (this module imports
 the harness, never the reverse).
 """
@@ -16,11 +16,10 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import supernova_bundle as sb
 from .supernova import run_rehearsal
 from .supernova_bundle import verify_bundle
 
-__all__ = ["compare_supernova_cli", "run_supernova_cli", "verify_bundle"]
+__all__ = ["run_supernova_cli", "verify_bundle"]
 
 
 def run_supernova_cli(directory: str) -> int:
@@ -50,21 +49,4 @@ def run_supernova_cli(directory: str) -> int:
             print(f"- {finding}", file=sys.stderr)
         return 1
     print(f"selftest: supernova campaign rehearsal PASS (bundle {paths['bundle']})")
-    return 0
-
-
-def compare_supernova_cli(mine: str, theirs: str) -> int:
-    """`selftest.py --supernova-compare <own-bundle> <candidate-bundle>`: the
-    Stability row's cross-run law -- the confirming rehearsal's authoritative
-    results (terminals, frontier, dispositions) must equal the candidate's."""
-    mine_text = Path(mine).read_text(encoding="utf-8")
-    theirs_text = Path(theirs).read_text(encoding="utf-8")
-    findings = sb.compare_authoritative(mine_text, theirs_text)
-    if findings:
-        print("selftest: SUPERNOVA STABILITY FAIL:", file=sys.stderr)
-        for finding in findings:
-            print(f"- {finding}", file=sys.stderr)
-        return 1
-    print("selftest: campaign authoritative results identical across runs "
-          "(confirming rerun changed no authoritative result)")
     return 0

@@ -36,24 +36,35 @@
 //!
 //! `campaign-verify` (F5 R4; E7 R4 hardening) independently recomputes and
 //! validates the campaign-evidence bundle, dispatching on the bundle's own
-//! version line — a `/2` bundle requires the full six-flag perimeter, a `/1`
-//! bundle routes to the historical arm under the original four flags:
+//! version line — a `/3` bundle is verified live and requires the full
+//! six-flag perimeter, a `/2` bundle is REFUSED as E7-mechanical historical
+//! evidence (its full verifier is retired), and a `/1` bundle routes to the
+//! retained historical arm under the original four flags:
 //! ```text
 //! receiptcheck campaign-verify <bundle>
 //!     --judge-root <dir> --envelope <file> --source-commit <40-hex>
 //!     --nursery-root <dir> --evidence-root <dir>
 //! ```
 //!
-//! `e7-verify` (E7-F) independently verifies the BATPAK-E7-UNDERWRITING/1
-//! opening-matrix artifact: it recomputes every binding digest from the bytes
-//! on disk, refuses any nonzero opening-matrix row by name, re-executes the
+//! `e7-verify` (E7 closeout, CL-8) independently verifies the
+//! BATPAK-E7-UNDERWRITING/2 opening-matrix artifact: it recomputes every
+//! binding digest from the bytes on disk, refuses any nonzero opening-matrix
+//! row by name, VERIFIES each row's independently produced owner receipt (no
+//! literal zero is accepted without a receipt-backed owner), re-executes the
 //! campaign verification core in-process over the six bound campaign inputs,
 //! and recomputes the unresolved-architect-required-findings row from the
-//! nursery receipts (TL-6):
+//! nursery receipts (TL-6). `e7-open` is the SOLE printer of
+//! `phase6-opening-eligible`: given the cross-run stability receipt and the
+//! two runs' artifacts, it recomputes the receipt's digests, independently
+//! re-runs the authoritative comparison, requires every zero row 0 with
+//! owner+receipt and `cross-run-stability pending` in BOTH, and only then
+//! speaks the mechanical-rows opening banner:
 //! ```text
 //! receiptcheck e7-verify <artifact> --root <repo> --tier0-bundle <dir>
 //!     --campaign-bundle <file> --judge-root <dir> --envelope <file>
 //!     --source-commit <40-hex> --nursery-root <dir> --evidence-root <dir>
+//! receiptcheck e7-open <stability-receipt> --own-artifact <t0>
+//!     --candidate-artifact <t0> --source-commit <40-hex>
 //! ```
 
 use std::env;
@@ -68,7 +79,7 @@ use std::env;
 #[path = "receiptcheck/e7.rs"] mod e7;
 
 use crate::campaign::mode_campaign_verify;
-use crate::e7::mode_e7_verify;
+use crate::e7::{mode_e7_open, mode_e7_verify};
 use crate::modes::{mode_compare, mode_policy, mode_verify};
 
 fn main() {
@@ -80,6 +91,7 @@ fn main() {
         Some("compare") => mode_compare(&args[2..]),
         Some("campaign-verify") => mode_campaign_verify(&args[2..]),
         Some("e7-verify") => mode_e7_verify(&args[2..]),
+        Some("e7-open") => mode_e7_open(&args[2..]),
         _ => Err(
             "usage: receiptcheck policy | receiptcheck verify <artifact> \
              --root <root> --evidence <bundle> --python-executable <py> [--upload-ready] \
@@ -92,7 +104,9 @@ fn main() {
              --evidence-root <dir> (V1 bundles: the first three flags only) \
              | receiptcheck e7-verify <artifact> --root <repo> --tier0-bundle <dir> \
              --campaign-bundle <file> --judge-root <dir> --envelope <file> \
-             --source-commit <sha> --nursery-root <dir> --evidence-root <dir>"
+             --source-commit <sha> --nursery-root <dir> --evidence-root <dir> \
+             | receiptcheck e7-open <stability-receipt> --own-artifact <t0> \
+             --candidate-artifact <t0> --source-commit <sha>"
                 .to_owned(),
         ),
     };

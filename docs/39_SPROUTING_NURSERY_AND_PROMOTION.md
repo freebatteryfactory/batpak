@@ -128,14 +128,18 @@ commitment · dependency commitments · content commitment · origin · change
 class · realization posture · reuse key
 ```
 
-Qualification, holdout, promotion, refusal, invalidation, and escalation are
-never manifest fields. They are APPEND-ONLY campaign receipts
-(`BATPAK-CAMPAIGN-RECEIPT/2`, exactly the nine typed kinds the wire grammar
-serializes — qualification, holdout, promotion, refusal, invalidation,
-escalation, reuse, fuzz, convergence) stored beside the record at
-`nursery/<candidate>/receipts/` and referencing the immutable manifest by
+Generation, qualification, holdout, promotion, refusal, invalidation, and
+escalation are never manifest fields. They are APPEND-ONLY campaign receipts
+(`BATPAK-CAMPAIGN-RECEIPT/3`, exactly the ten typed kinds the wire grammar
+serializes — generation, qualification, holdout, promotion, refusal,
+invalidation, escalation, reuse, fuzz, convergence) stored beside the record
+at `nursery/<candidate>/receipts/` and referencing the immutable manifest by
 candidate id; no mutating receipt vector and no terminal state lives inside
-the immutable content-addressed candidate definition.
+the immutable content-addressed candidate definition. The causally-first
+`generation` receipt (DEC-079) records complete creation provenance at the
+mint site, and every promotion receipt is the CONSEQUENCE of completed proof —
+assembled from the store only after each named proof target already carries a
+naming receipt, never an optimistic bookmark.
 
 `CandidateId` is recomputable from the parsed manifest alone: it is the
 SHA-256 of the domain-separated `candidate-id-preimage/2` — the domain line
@@ -144,9 +148,22 @@ order, each LF-terminated — so every identity-bearing field sits inside the
 preimage. `spec/campaign/types.rs` is the normative owner of the manifest
 grammar and both preimage laws; this document does not duplicate them.
 
+A campaign evidence bundle additionally DECLARES its trusted frontier roots
+(CL-1). An already-trusted input — for the rehearsal, the unchanged
+mini-ledger — is modeled as a ROOT, not a newly promoted candidate: a root IS
+its content commitment (its id is that digest), so it carries no nursery
+record, no generation or promotion receipt, and no decorative proof rows, and
+its fresh standing is earned through the reuse receipt's requalification
+evidence. The closure resolves candidate dependencies and reuse edges against
+candidates UNION roots, and a root's dependencies are Qualified by definition.
+
 `BATPAK-CANDIDATE-MANIFEST/1` and `BATPAK-CAMPAIGN-EVIDENCE/1` are explicitly
 historical F5 evidence: they remain parseable through the historical verifier
-arm, and they are NOT admissible for Phase-6 opening.
+arm, and they are NOT admissible for Phase-6 opening. The E7-mechanical
+`BATPAK-CAMPAIGN-RECEIPT/2` and `BATPAK-CAMPAIGN-EVIDENCE/2` records are
+likewise reclassified historical: their full verifier is retired, a `/2`
+bundle is refused, and only the `/1` arm is retained — the live campaign
+grammar is `/3`.
 
 The candidate lineage identity is authored in F3 `spec/identities/types.rs` alongside
 those kinds. A lineage object is never a shortcut around the identity it must

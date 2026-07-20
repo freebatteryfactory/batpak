@@ -1,43 +1,65 @@
-//! `receiptcheck e7-verify` — the independent verifier of the
-//! BATPAK-E7-UNDERWRITING/1 opening-matrix artifact (E7-F).
+//! `receiptcheck e7-verify` / `receiptcheck e7-open` — the independent
+//! verifier and opening-eligibility printer for the
+//! BATPAK-E7-UNDERWRITING/2 opening-matrix artifact (E7 closeout, CL-8).
 //!
 //! The artifact is a strict line-oriented document (the `qualification.t0`
-//! idiom): magic, twelve binding lines, exactly twenty `zero <token> <n>`
-//! rows in the frozen TL-5 order, the `architect-semantic-row
-//! reserved-to-architect` line, and `end`. This mode recomputes every
-//! binding from the bytes on disk, refuses any nonzero row by name,
-//! RE-EXECUTES the campaign verification core in-process (the same
-//! `campaign-verify` law, so the campaign-derived rows are re-proven, never
-//! trusted — its PASS banner prints before this mode's own), and recomputes
-//! row 20 from the nursery receipts (TL-6: escalation receipts counted
-//! against the single expected rehearsal-fixture escalation, identified by
-//! the one LawChanging candidate manifest).
+//! idiom): magic, twelve binding lines, exactly twenty
+//! `zero <token> <n> owner <owner> receipt <64hex>` rows in the frozen TL-5
+//! order, the `cross-run-stability pending` line, the `architect-semantic-row
+//! reserved-to-architect` line, and `end`. `e7-verify` recomputes every
+//! binding from the bytes on disk, refuses any nonzero row by name, VERIFIES
+//! each row's INDEPENDENTLY PRODUCED owner receipt (no longer accepting a
+//! literal zero without a receipt-backed owner), RE-EXECUTES the campaign
+//! verification core in-process (the same `campaign-verify` law — its PASS
+//! banner prints before this mode's own), and recomputes row 20 from the
+//! nursery receipts (TL-6).
 //!
-//! Documented digest bases, byte-identical with the Python producer:
-//! * `source-tree`: for each SPEC.sha256 row the file's content hash is
-//!   recomputed from disk and rendered back as `<sha256>  <relpath>` in
-//!   manifest order; the digest is the SHA-256 of that text.
-//! * `package-graph`: SHA-256 over `<relpath>\t<sha256>` rows (sorted by
-//!   relpath, LF-terminated) of every non-root Cargo.toml inside the bound
-//!   Tier 0 bundle's `gate0-candidate` tree; the set must equal the
-//!   compiled `spec::architecture::PACKAGES` workspace paths exactly.
-//! * `toolchain` / `python` are cross-checked against the bound campaign
-//!   bundle's toolchain section and the bound Tier 0 artifact's
-//!   `python-release` line — the carrier idioms already in evidence.
+//! Owner receipts (CL-8): each row names its enforcing owner. A `tier0` row
+//! is proved by the bound Tier 0 bundle — its receipt is the sha256 of that
+//! bundle's `qualification.t0`, recomputed here. An `audit` / `project-check`
+//! row is proved by a BATPAK-OWNER-RECEIPT/1 in the artifact's `receipts`
+//! dir (derived as `<artifact-dir>/receipts`); the receipt is content-
+//! addressed (its filename is the sha256 of its bytes), binds this checkout's
+//! source-commit, states `outcome pass`, and its `tool` digest is RECOMPUTED
+//! from the owner package bytes under `--root`. A `campaign-verify` row's
+//! receipt binds the built receiptcheck exe (a per-run digest this verifier
+//! does NOT recompute); its assurance is the in-process campaign re-run.
 //!
-//! The final semantic row is the ARCHITECT's: this verifier proves the
-//! mechanical rows only and never announces semantic completeness.
+//! `e7-open` is the SOLE printer of `phase6-opening-eligible: yes`. Given the
+//! cross-run stability receipt and the two runs' artifacts, it recomputes the
+//! receipt's four digests against the actual files, independently re-runs the
+//! authoritative comparison (bindings minus the two per-run keys + every zero
+//! row's (token,count) RESULT + `cross-run-stability pending` in BOTH),
+//! requires every zero row 0 with owner+receipt present in both, and only
+//! then prints the banner. Any failure is a named finding with no banner.
+//!
+//! The final semantic row is the ARCHITECT's: these modes prove the
+//! mechanical rows only and never announce semantic completeness.
 
 use crate::artifact::{parse_release, strict_lines};
 use crate::hashing::{sha256, tree_digest};
 use spec::architecture::PACKAGES;
 use spec::bootstrap_qualification::Sha256Digest;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const E7_MAGIC: &str = "BATPAK-E7-UNDERWRITING/1";
+const E7_MAGIC: &str = "BATPAK-E7-UNDERWRITING/2";
 const ARCHITECT_LINE: &str = "architect-semantic-row reserved-to-architect";
+const CROSSRUN_PENDING: &str = "cross-run-stability pending";
+const OWNER_RECEIPT_MAGIC: &str = "BATPAK-OWNER-RECEIPT/1";
+const STABILITY_MAGIC: &str = "BATPAK-CROSSRUN-STABILITY-RECEIPT/1";
+
+/// The twelve binding keys, in wire order.
+const BIND_KEYS: [&str; 12] = [
+    "source-commit", "source-tree", "spec-manifest", "workflow-digest",
+    "toolchain", "python", "tier0-bundle", "campaign-bundle",
+    "materializer-output-tree", "package-graph", "generated-view-registry",
+    "release-envelope",
+];
+
+/// The two PER-RUN binding keys excluded from cross-run authoritative equality.
+const PER_RUN_KEYS: [&str; 2] = ["tier0-bundle", "campaign-bundle"];
 
 /// TL-5: the architect's twenty matrix rows, kebab-cased, frozen order.
 const ZERO_TOKENS: [&str; 20] = [
@@ -61,6 +83,15 @@ const ZERO_TOKENS: [&str; 20] = [
     "scaffolds-counted-realized",
     "later-green-above-unresolved-red",
     "unresolved-architect-required-findings",
+];
+
+/// CL-8: the enforcing owner backing each row's zero, in frozen TL-5 order.
+const ROW_OWNERS: [&str; 20] = [
+    "tier0", "tier0", "campaign-verify", "audit", "campaign-verify",
+    "campaign-verify", "campaign-verify", "campaign-verify", "tier0",
+    "campaign-verify", "campaign-verify", "audit", "tier0", "project-check",
+    "campaign-verify", "audit", "audit", "campaign-verify", "campaign-verify",
+    "campaign-verify",
 ];
 
 struct E7Args {
@@ -135,7 +166,12 @@ fn read_text(path: &Path) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| format!("e7: {} is not UTF-8", path.display()))
 }
 
-fn compare_binding(claimed: &str, actual: &str, what: &str) -> Result<(), String> {
+fn compare_binding(
+    claimed: impl AsRef<str>,
+    actual: impl AsRef<str>,
+    what: &str,
+) -> Result<(), String> {
+    let (claimed, actual) = (claimed.as_ref(), actual.as_ref());
     if claimed != actual {
         return Err(format!(
             "e7: {what} mismatch: artifact claims {claimed}, recomputed {actual}"
@@ -273,6 +309,172 @@ fn recompute_architect_row(nursery_root: &Path) -> Result<u64, String> {
     Ok(violations)
 }
 
+/// The parsed /2 artifact: the twelve bindings by key and the twenty rows.
+struct ParsedE7 {
+    bindings: BTreeMap<String, String>,
+    rows: Vec<(String, u64, String, String)>,
+}
+
+/// Strict, order-sensitive parse of the frozen BATPAK-E7-UNDERWRITING/2
+/// grammar, shared by `e7-verify` and `e7-open`. Enforces the twelve binding
+/// keys in order, the twenty `zero <token> <n> owner <owner> receipt <64hex>`
+/// rows (owner MUST equal the census map for that row), the
+/// `cross-run-stability pending` line (a non-`pending` line is a time-travel
+/// refusal), then the architect line and `end`.
+fn parse_e7_artifact(lines: &[String]) -> Result<ParsedE7, String> {
+    let mut c = E7Cursor { lines, pos: 0 };
+    c.expect_exact(E7_MAGIC)?;
+    let mut bindings: BTreeMap<String, String> = BTreeMap::new();
+    for key in BIND_KEYS {
+        let value = c.take(key)?;
+        bindings.insert(key.to_owned(), value);
+    }
+    let mut rows: Vec<(String, u64, String, String)> = Vec::new();
+    for (token, expected_owner) in ZERO_TOKENS.iter().zip(ROW_OWNERS.iter()) {
+        let value = c.take("zero")?;
+        let parts: Vec<&str> = value.split(' ').collect();
+        if parts.len() != 6
+            || parts[0] != *token
+            || parts[2] != "owner"
+            || parts[3] != *expected_owner
+            || parts[4] != "receipt"
+        {
+            return Err(format!(
+                "e7: zero row {value:?} breaks the frozen `zero {token} <n> \
+                 owner {expected_owner} receipt <64hex>` grammar"
+            ));
+        }
+        let count: u64 = parts[1]
+            .parse()
+            .map_err(|_| format!("e7: zero row {token} count {:?} is not a u64", parts[1]))?;
+        require_hex64(parts[5], "zero row receipt")?;
+        rows.push((token.to_string(), count, parts[3].to_owned(), parts[5].to_owned()));
+    }
+    c.expect_exact(CROSSRUN_PENDING).map_err(|_| {
+        format!("e7: the cross-run-stability line is not {CROSSRUN_PENDING:?}; a \
+                 single run never claims cross-run stability (no time travel)")
+    })?;
+    c.expect_exact(ARCHITECT_LINE)?;
+    c.expect_exact("end")?;
+    if !c.at_end() {
+        return Err("e7: trailing content after end".to_owned());
+    }
+    Ok(ParsedE7 { bindings, rows })
+}
+
+/// The owner package file set whose bytes define an audit / project owner
+/// tool digest: the shim plus every non-`__pycache__` file under its package.
+fn collect_owner_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("e7: cannot read dir {}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("e7: dir entry error: {e}"))?;
+        let path = entry.path();
+        let ft = entry
+            .file_type()
+            .map_err(|e| format!("e7: cannot stat {}: {e}", path.display()))?;
+        if ft.is_dir() {
+            if entry.file_name() == "__pycache__" {
+                continue;
+            }
+            collect_owner_files(&path, out)?;
+        } else if ft.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Recompute the `tool` digest an audit / project owner receipt must bind:
+/// sha256 over the sorted `<rel>\t<sha256>` rows of the owner package bytes.
+fn owner_tool_digest(root: &Path, owner: &str) -> Result<String, String> {
+    let (shim, pkg) = match owner {
+        "audit" => ("bootstrap/audit.py", "bootstrap/audit"),
+        "project-check" => ("bootstrap/project.py", "bootstrap/project"),
+        _ => return Err(format!("e7: owner {owner:?} has no recomputable tool digest")),
+    };
+    let mut files = vec![root.join(shim)];
+    collect_owner_files(&root.join(pkg), &mut files)?;
+    let mut rows: Vec<String> = Vec::new();
+    for f in &files {
+        let rel = f
+            .strip_prefix(root)
+            .map_err(|_| "e7: owner package file escaped the root".to_owned())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        rows.push(format!("{rel}\t{}", sha_hex(&read_bytes(f)?)));
+    }
+    rows.sort();
+    let mut text = String::new();
+    for r in &rows {
+        text.push_str(r);
+        text.push('\n');
+    }
+    Ok(sha_hex(text.as_bytes()))
+}
+
+/// Verify one INDEPENDENTLY PRODUCED BATPAK-OWNER-RECEIPT/1 backing an
+/// audit / project / campaign-verify row: it resolves by digest in the
+/// artifact's receipts dir, is content-addressed (its filename equals the
+/// sha256 of its bytes), declares the row's owner, binds this checkout's
+/// source-commit, states `outcome pass`, and — for audit/project — its `tool`
+/// recomputes from the owner package bytes under `--root`. A campaign-verify
+/// receipt's `tool` is the per-run receiptcheck exe, NOT recomputed here; its
+/// assurance is the in-process campaign re-run below.
+fn verify_owner_receipt(
+    receipts_dir: &Path,
+    owner: &str,
+    receipt: &str,
+    root: &Path,
+    source_commit: &str,
+) -> Result<(), String> {
+    let path = receipts_dir.join(format!("{receipt}.receipt"));
+    let raw = fs::read(&path).map_err(|e| {
+        format!("e7: {owner} owner receipt {receipt} is unresolvable at {}: {e}", path.display())
+    })?;
+    if sha_hex(&raw) != receipt {
+        return Err(format!(
+            "e7: owner receipt at {receipt}.receipt is not content-addressed; its \
+             bytes hash to {}",
+            sha_hex(&raw)
+        ));
+    }
+    let lines = strict_lines(&raw)?;
+    let mut c = E7Cursor { lines: &lines, pos: 0 };
+    c.expect_exact(OWNER_RECEIPT_MAGIC)?;
+    let got_owner = c.take("owner")?;
+    if got_owner != owner {
+        return Err(format!(
+            "e7: owner receipt {receipt} declares owner {got_owner:?}, the row claims {owner:?}"
+        ));
+    }
+    let sc = c.take("source-commit")?;
+    if sc != source_commit {
+        return Err(format!(
+            "e7: owner receipt {receipt} binds source-commit {sc}, not this checkout's {source_commit}"
+        ));
+    }
+    let tool = c.take("tool")?;
+    require_hex64(&tool, "owner receipt tool")?;
+    c.expect_exact("outcome pass")?;
+    let output = c.take("output")?;
+    require_hex64(&output, "owner receipt output")?;
+    c.expect_exact("end")?;
+    if !c.at_end() {
+        return Err(format!("e7: owner receipt {receipt} has trailing content after end"));
+    }
+    if owner == "audit" || owner == "project-check" {
+        let recomputed = owner_tool_digest(root, owner)?;
+        if recomputed != tool {
+            return Err(format!(
+                "e7: owner receipt {receipt} tool digest {tool} does not match the \
+                 {owner} package bytes under --root (recomputed {recomputed})"
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn mode_e7_verify(args: &[String]) -> Result<(), String> {
     let a = parse_args(args)?;
     let raw = read_bytes(&a.artifact)?;
@@ -280,9 +482,8 @@ pub(crate) fn mode_e7_verify(args: &[String]) -> Result<(), String> {
     let lines = strict_lines(&raw)?;
 
     // Strict, order-sensitive parse of the frozen grammar.
-    let mut c = E7Cursor { lines: &lines, pos: 0 };
-    c.expect_exact(E7_MAGIC)?;
-    let source_commit = c.take("source-commit")?;
+    let parsed = parse_e7_artifact(&lines)?;
+    let source_commit = parsed.bindings["source-commit"].clone();
     if source_commit.len() != 40
         || !source_commit
             .bytes()
@@ -299,55 +500,33 @@ pub(crate) fn mode_e7_verify(args: &[String]) -> Result<(), String> {
             a.source_commit
         ));
     }
-    let source_tree = c.take("source-tree")?;
-    require_hex64(&source_tree, "source-tree")?;
-    let spec_manifest = c.take("spec-manifest")?;
-    require_hex64(&spec_manifest, "spec-manifest")?;
-    let workflow_digest = c.take("workflow-digest")?;
-    require_hex64(&workflow_digest, "workflow-digest")?;
-    let toolchain = c.take("toolchain")?;
+    let source_tree = &parsed.bindings["source-tree"];
+    require_hex64(source_tree, "source-tree")?;
+    let spec_manifest = &parsed.bindings["spec-manifest"];
+    require_hex64(spec_manifest, "spec-manifest")?;
+    let workflow_digest = &parsed.bindings["workflow-digest"];
+    require_hex64(workflow_digest, "workflow-digest")?;
+    let toolchain = &parsed.bindings["toolchain"];
     let mut toolchain_tokens = toolchain.split(' ');
     parse_release(toolchain_tokens.next().unwrap_or(""))
         .map_err(|e| format!("e7: toolchain line carries no rustc release: {e}"))?;
     if toolchain_tokens.next().is_none() {
         return Err("e7: toolchain line carries no host triple".to_owned());
     }
-    let python = c.take("python")?;
-    parse_release(&python).map_err(|e| format!("e7: bad python release: {e}"))?;
-    let tier0_bundle = c.take("tier0-bundle")?;
-    require_hex64(&tier0_bundle, "tier0-bundle")?;
-    let campaign_bundle = c.take("campaign-bundle")?;
-    require_hex64(&campaign_bundle, "campaign-bundle")?;
-    let materializer = c.take("materializer-output-tree")?;
-    require_hex64(&materializer, "materializer-output-tree")?;
-    let package_graph = c.take("package-graph")?;
-    require_hex64(&package_graph, "package-graph")?;
-    let registry = c.take("generated-view-registry")?;
-    require_hex64(&registry, "generated-view-registry")?;
-    let release_envelope = c.take("release-envelope")?;
-    require_hex64(&release_envelope, "release-envelope")?;
-    let mut zeros: Vec<(String, u64)> = Vec::new();
-    for expected in ZERO_TOKENS {
-        let value = c.take("zero")?;
-        let (token, count) = value
-            .split_once(' ')
-            .ok_or_else(|| format!("e7: zero row {value:?} is not `<token> <n>`"))?;
-        if token != expected {
-            return Err(format!(
-                "e7: zero row {token:?} out of order; the frozen TL-5 order \
-                 expects {expected:?}"
-            ));
-        }
-        let count: u64 = count
-            .parse()
-            .map_err(|_| format!("e7: zero row {token} count {count:?} is not a u64"))?;
-        zeros.push((token.to_owned(), count));
-    }
-    c.expect_exact(ARCHITECT_LINE)?;
-    c.expect_exact("end")?;
-    if !c.at_end() {
-        return Err("e7: trailing content after end".to_owned());
-    }
+    let python = &parsed.bindings["python"];
+    parse_release(python).map_err(|e| format!("e7: bad python release: {e}"))?;
+    let tier0_bundle = &parsed.bindings["tier0-bundle"];
+    require_hex64(tier0_bundle, "tier0-bundle")?;
+    let campaign_bundle = &parsed.bindings["campaign-bundle"];
+    require_hex64(campaign_bundle, "campaign-bundle")?;
+    let materializer = &parsed.bindings["materializer-output-tree"];
+    require_hex64(materializer, "materializer-output-tree")?;
+    let package_graph = &parsed.bindings["package-graph"];
+    require_hex64(package_graph, "package-graph")?;
+    let registry = &parsed.bindings["generated-view-registry"];
+    require_hex64(registry, "generated-view-registry")?;
+    let release_envelope = &parsed.bindings["release-envelope"];
+    require_hex64(release_envelope, "release-envelope")?;
 
     // Bindings, each recomputed from the bytes on disk.
     let spec_manifest_bytes = read_bytes(&a.root.join("SPEC.sha256"))?;
@@ -439,13 +618,43 @@ pub(crate) fn mode_e7_verify(args: &[String]) -> Result<(), String> {
         "release-envelope",
     )?;
 
-    // The opening matrix: every row must be zero, refused by name.
-    for (token, count) in &zeros {
+    // The opening matrix: every row must be zero AND backed by its
+    // independently produced owner receipt -- a literal zero without a
+    // receipt-backed owner is no longer accepted (CL-8). The receipts dir is
+    // derived as `<artifact-dir>/receipts`.
+    let receipts_dir = a
+        .artifact
+        .parent()
+        .ok_or("e7: the artifact path has no parent dir for its receipts")?
+        .join("receipts");
+    let tier0_qual_digest = sha_hex(&read_bytes(&a.tier0.join("qualification.t0"))?);
+    for (i, (token, count, owner, receipt)) in parsed.rows.iter().enumerate() {
         if *count != 0 {
             return Err(format!(
                 "e7: zero row {token} is {count}, not zero -- the opening matrix \
                  is not zero"
             ));
+        }
+        if owner != ROW_OWNERS[i] {
+            return Err(format!(
+                "e7: zero row {token} names owner {owner}, the census fixes {}",
+                ROW_OWNERS[i]
+            ));
+        }
+        match owner.as_str() {
+            "tier0" => {
+                if *receipt != tier0_qual_digest {
+                    return Err(format!(
+                        "e7: row {token} tier0 receipt {receipt} does not equal the \
+                         sha256 of the bound Tier 0 bundle's qualification.t0 \
+                         ({tier0_qual_digest})"
+                    ));
+                }
+            }
+            "audit" | "project-check" | "campaign-verify" => {
+                verify_owner_receipt(&receipts_dir, owner, receipt, &a.root, &a.source_commit)?;
+            }
+            other => return Err(format!("e7: row {token} names unknown owner {other:?}")),
         }
     }
 
@@ -470,7 +679,7 @@ pub(crate) fn mode_e7_verify(args: &[String]) -> Result<(), String> {
 
     // Row 20 (TL-6), recomputed from the nursery receipts alone.
     let recomputed = recompute_architect_row(&a.nursery_root)?;
-    let claimed = zeros[19].1;
+    let claimed = parsed.rows[19].1;
     if recomputed != claimed {
         return Err(format!(
             "e7: zero row {} recomputes {recomputed} from the nursery receipts, \
@@ -484,5 +693,188 @@ pub(crate) fn mode_e7_verify(args: &[String]) -> Result<(), String> {
     println!("grammar: {E7_MAGIC}");
     println!("artifact: {artifact_digest}");
     println!("e7: PASS");
+    Ok(())
+}
+
+struct E7OpenArgs {
+    stability: PathBuf,
+    own: PathBuf,
+    candidate: PathBuf,
+    source_commit: String,
+}
+
+fn parse_open_args(args: &[String]) -> Result<E7OpenArgs, String> {
+    let stability = args
+        .first()
+        .ok_or("e7-open requires a stability-receipt path")?
+        .clone();
+    let mut m: BTreeMap<&str, String> = BTreeMap::new();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            flag @ ("--own-artifact" | "--candidate-artifact" | "--source-commit") => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| format!("{flag} requires a value"))?
+                    .clone();
+                if m.insert(flag, value).is_some() {
+                    return Err(format!("duplicate e7-open flag {flag}"));
+                }
+                i += 2;
+            }
+            other => return Err(format!("unknown e7-open flag {other}")),
+        }
+    }
+    let get = |key: &str| -> Result<String, String> {
+        m.get(key).cloned().ok_or_else(|| format!("e7-open requires {key}"))
+    };
+    Ok(E7OpenArgs {
+        stability: PathBuf::from(stability),
+        own: PathBuf::from(get("--own-artifact")?),
+        candidate: PathBuf::from(get("--candidate-artifact")?),
+        source_commit: get("--source-commit")?,
+    })
+}
+
+/// A parsed BATPAK-CROSSRUN-STABILITY-RECEIPT/1.
+struct StabilityReceipt {
+    source_commit: String,
+    own_e7_artifact: String,
+    candidate_e7_artifact: String,
+    own_campaign_bundle: String,
+    candidate_campaign_bundle: String,
+}
+
+fn parse_stability_receipt(lines: &[String]) -> Result<StabilityReceipt, String> {
+    let mut c = E7Cursor { lines, pos: 0 };
+    c.expect_exact(STABILITY_MAGIC)?;
+    let source_commit = c.take("source-commit")?;
+    let own_e7_artifact = c.take("own-e7-artifact")?;
+    let candidate_e7_artifact = c.take("candidate-e7-artifact")?;
+    let own_campaign_bundle = c.take("own-campaign-bundle")?;
+    let candidate_campaign_bundle = c.take("candidate-campaign-bundle")?;
+    for hex in [
+        &own_e7_artifact,
+        &candidate_e7_artifact,
+        &own_campaign_bundle,
+        &candidate_campaign_bundle,
+    ] {
+        require_hex64(hex, "stability receipt digest")?;
+    }
+    c.expect_exact("campaign-authoritative identical")?;
+    c.expect_exact("e7-authoritative identical")?;
+    c.expect_exact("end")?;
+    if !c.at_end() {
+        return Err("e7: stability receipt has trailing content after end".to_owned());
+    }
+    Ok(StabilityReceipt {
+        source_commit,
+        own_e7_artifact,
+        candidate_e7_artifact,
+        own_campaign_bundle,
+        candidate_campaign_bundle,
+    })
+}
+
+/// The SOLE printer of `phase6-opening-eligible: yes`. Given the cross-run
+/// stability receipt and the two runs' /2 artifacts, recompute the receipt's
+/// four digests against the actual files, independently re-run the
+/// authoritative comparison in Rust (bindings minus the per-run keys + every
+/// zero row's (token,count) RESULT + `cross-run-stability pending` in BOTH),
+/// require every zero row 0 with owner+receipt present in both, and only then
+/// print the banner. Any failure is a named finding with no banner.
+pub(crate) fn mode_e7_open(args: &[String]) -> Result<(), String> {
+    let a = parse_open_args(args)?;
+
+    let receipt_raw = read_bytes(&a.stability)?;
+    let receipt_lines = strict_lines(&receipt_raw)?;
+    let receipt = parse_stability_receipt(&receipt_lines)?;
+    if receipt.source_commit != a.source_commit {
+        return Err(format!(
+            "e7-open: stability receipt binds source-commit {}, not the passed {}",
+            receipt.source_commit, a.source_commit
+        ));
+    }
+
+    let own_raw = read_bytes(&a.own)?;
+    let candidate_raw = read_bytes(&a.candidate)?;
+    let own = parse_e7_artifact(&strict_lines(&own_raw)?)?;
+    let candidate = parse_e7_artifact(&strict_lines(&candidate_raw)?)?;
+
+    // Both artifacts bind the passed source-commit.
+    for (parsed, label) in [(&own, "own"), (&candidate, "candidate")] {
+        if parsed.bindings["source-commit"] != a.source_commit {
+            return Err(format!(
+                "e7-open: the {label} artifact binds source-commit {}, not the passed {}",
+                parsed.bindings["source-commit"], a.source_commit
+            ));
+        }
+    }
+
+    // The receipt's four digests, recomputed against the actual files: the two
+    // e7-artifact digests directly, the two campaign-bundle digests from each
+    // artifact's own (already receiptcheck-verified) `campaign-bundle` binding.
+    compare_binding(&receipt.own_e7_artifact, sha_hex(&own_raw), "stability own-e7-artifact")?;
+    compare_binding(
+        &receipt.candidate_e7_artifact,
+        sha_hex(&candidate_raw),
+        "stability candidate-e7-artifact",
+    )?;
+    compare_binding(
+        &receipt.own_campaign_bundle,
+        &own.bindings["campaign-bundle"],
+        "stability own-campaign-bundle vs own artifact binding",
+    )?;
+    compare_binding(
+        &receipt.candidate_campaign_bundle,
+        &candidate.bindings["campaign-bundle"],
+        "stability candidate-campaign-bundle vs candidate artifact binding",
+    )?;
+
+    // Independently re-run the authoritative comparison: the bindings minus the
+    // two per-run keys, and every zero row's (token, count) RESULT. Owner and
+    // receipt are per-run provenance (the campaign-verify receipt binds the
+    // per-run receiptcheck exe), verified WITHIN each run by e7-verify.
+    for key in BIND_KEYS {
+        if PER_RUN_KEYS.contains(&key) {
+            continue;
+        }
+        if own.bindings[key] != candidate.bindings[key] {
+            return Err(format!(
+                "e7-open: authoritative binding {key} diverges across runs: {} vs {}",
+                own.bindings[key], candidate.bindings[key]
+            ));
+        }
+    }
+    for ((token, count_a, _oa, _ra), (_t, count_b, _ob, _rb)) in
+        own.rows.iter().zip(candidate.rows.iter())
+    {
+        if count_a != count_b {
+            return Err(format!(
+                "e7-open: authoritative zero row {token} diverges across runs: {count_a} vs {count_b}"
+            ));
+        }
+    }
+
+    // Every zero row 0 with owner+receipt present (well-formed by parse) in
+    // BOTH artifacts; the `cross-run-stability pending` line is asserted by the
+    // parse of each (no time travel).
+    for parsed in [&own, &candidate] {
+        for (token, count, _owner, _receipt) in &parsed.rows {
+            if *count != 0 {
+                return Err(format!(
+                    "e7-open: zero row {token} is {count}, not zero -- the opening \
+                     matrix is not zero"
+                ));
+            }
+        }
+    }
+
+    println!("receiptcheck: PASS");
+    println!("mode: e7-open");
+    println!("grammar: {STABILITY_MAGIC}");
+    println!("own-artifact: {}", sha_hex(&own_raw));
+    println!("candidate-artifact: {}", sha_hex(&candidate_raw));
+    println!("phase6-opening-eligible: yes");
     Ok(())
 }

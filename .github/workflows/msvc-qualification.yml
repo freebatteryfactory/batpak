@@ -238,20 +238,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           merge-multiple: true
 
-      - name: confirm campaign stability (authoritative-result equality)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
-        run: >
-          python -I bootstrap/selftest.py --supernova-compare
-          "${{ runner.temp }}/supernova/evidence/campaign-evidence.bundle"
-          candidate-campaign/campaign-evidence.bundle
-
-      # The candidate run's E7 artifact, for the E7 stability law: every
-      # AUTHORITATIVE line of the two independently produced artifacts must
-      # be identical (tier0-bundle and campaign-bundle are per-run bindings,
-      # each verified within its own run), and the Phase 6 opening
-      # eligibility banner speaks only when every mechanical zero row is
-      # zero in BOTH artifacts (TL-12; the semantic row stays the
-      # architect's).
+      # The candidate run's E7 artifact, for the cross-run stability law. The
+      # single --e7-crossrun authority (CL-3) compares BOTH the campaign
+      # bundles' and the two e7 artifacts' authoritative results (tier0-bundle
+      # and campaign-bundle are per-run bindings, each verified within its own
+      # run; the zero rows are compared by RESULT, their owner receipts being
+      # per-run provenance) and writes the cross-run stability receipt. The
+      # candidate campaign bundle downloaded above feeds the same step.
       - name: download candidate e7 artifact
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
@@ -262,9 +255,47 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           merge-multiple: true
 
-      - name: confirm E7 stability (authoritative-result equality + Phase 6 opening eligibility)
+      # The single cross-run comparison authority (CL-3): compare BOTH the
+      # campaign bundles' and the two e7 artifacts' authoritative results,
+      # print both ruled literals, and write the cross-run stability receipt
+      # into this run's e7 receipts dir. Never prints the eligibility banner.
+      - name: cross-run stability (campaign + E7 authoritative equality + stability receipt)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        shell: pwsh
+        run: |
+          python -I bootstrap/selftest.py --e7-crossrun `
+            "${{ runner.temp }}/e7" candidate-e7 `
+            "${{ runner.temp }}/supernova/evidence/campaign-evidence.bundle" `
+            candidate-campaign/campaign-evidence.bundle
+          $stage = "${{ runner.temp }}/e7-crossrun"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          $sr = Get-ChildItem "${{ runner.temp }}/e7/receipts/*.receipt" |
+            Where-Object { (Get-Content $_ -TotalCount 1) -eq "BATPAK-CROSSRUN-STABILITY-RECEIPT/1" } |
+            Select-Object -First 1
+          if (-not $sr) { Write-Error "no cross-run stability receipt was produced"; exit 1 }
+          Copy-Item $sr.FullName "$stage/stability.receipt"
+
+      # The SOLE printer of phase6-opening-eligible: receiptcheck e7-open (via
+      # the --e7-open shim), gated on the stability receipt, both artifacts'
+      # authoritative equality, every zero row 0 with owner+receipt, and
+      # `cross-run-stability pending` in BOTH runs. The semantic row stays the
+      # architect's; this banner speaks only for the twenty mechanical rows.
+      - name: final opening receipt (phase6-opening-eligible)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
         run: >
-          python -I bootstrap/selftest.py --e7-compare
+          python -I bootstrap/selftest.py --e7-open
+          "${{ runner.temp }}/e7-crossrun/stability.receipt"
           "${{ runner.temp }}/e7/e7-underwriting.t0"
           candidate-e7/e7-underwriting.t0
+          ${{ github.sha }}
+
+      # Publish the cross-run stability receipt, named to bind the exact
+      # source, run id, and attempt (the campaign artifact's naming idiom).
+      - name: upload cross-run stability receipt
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_run_id != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: batpak-e7-crossrun-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/e7-crossrun/stability.receipt
+          if-no-files-found: error
+          include-hidden-files: true
