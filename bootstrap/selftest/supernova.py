@@ -4,19 +4,25 @@ One complete candidate-authority cycle in miniature, executed against the
 tracked subject templates (supernova_subject) in an EXTERNAL campaign root
 with physically disjoint judge / candidate / evidence / nursery roots:
 
-freeze judge -> generate candidates -> fail for a REAL reason (a genuine
+freeze judge -> generate candidates (each admitted by a causally-first
+generation receipt at its mint site) -> fail for a REAL reason (a genuine
 compiler refusal, never `status = red`) -> compress causal diagnostics ->
 repair as a child candidate under a receipted bounded search -> independently
-qualify (the separately implemented Rust witness judges; this producer never
-votes on semantics) -> exercise the disjoint holdout -> activate and kill the
-planted semantic mutant -> advance the trusted frontier dependency-first ->
-invalidate descendants -> rematerialize -> reach every terminal (Promoted /
-Refused / Invalidated / ArchitectRequired, all visible in the denominator) ->
-emit the BATPAK-CAMPAIGN-EVIDENCE/2 bundle and the rehearsal release envelope
--> block on bootstrap/receiptcheck.rs `campaign-verify` (V2: bundle + judge +
-envelope + source commit + the exact nursery and evidence perimeter).
+qualify per proof target (the separately implemented Rust witness judges;
+this producer never votes on semantics) -> exercise the disjoint holdout ->
+persist every adopter verdict (simulation, fuzz, capture, offline replay) as
+evidence with per-row qualification receipts -> activate and kill the planted
+semantic mutant -> advance the trusted frontier dependency-first ->
+invalidate descendants with typed causes -> rematerialize -> reach every
+terminal (Promoted / Refused / Invalidated / ArchitectRequired, all in the
+denominator), where PROMOTION IS THE LAST RECEIPT, assembled from the actual
+receipt store only after every named proof target carries a naming receipt
+(refused otherwise) -> emit the BATPAK-CAMPAIGN-EVIDENCE/3 bundle (trusted
+roots beside the nine candidate manifests, CL-1) and the release envelope ->
+block on receiptcheck `campaign-verify`.
 
-Every candidate persists an immutable V2 manifest at nursery/<id>/manifest,
+Every candidate persists an immutable V2 manifest at nursery/<id>/manifest
+(write-once: absent -> create, identical -> unchanged, different -> refuse),
 receipts append-only beside it; terminals are receipt-backed facts, never
 record fields; the frontier speaks the four-state law. The nine spec-owned
 profile rows are realized literally, each asserted against executed evidence.
@@ -27,7 +33,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -35,6 +40,7 @@ from pathlib import Path
 from . import supernova_bundle as sb
 from . import supernova_subject as subj
 from .core import HERE, TOOLCHAIN_EDITION, ProbeError, receipt
+from .supernova_context import build_context
 
 _EXE = ".exe" if os.name == "nt" else ""
 _WITNESS_FIXTURE = HERE / "selftest" / "supernova_witness.rs"
@@ -188,8 +194,8 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     evidence = base / "evidence"
     nursery = base / "nursery"
     scratch = base / "scratch"
-    for root in (judge, candidates, evidence, nursery, scratch):
-        root.mkdir(parents=True, exist_ok=True)
+    for root_dir in (judge, candidates, evidence, nursery, scratch):
+        root_dir.mkdir(parents=True, exist_ok=True)
     paths.update(judge=judge, evidence=evidence, base=base,
                  nursery=nursery, evidence_root=evidence)
 
@@ -222,18 +228,41 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     witness = _bind(witness_exe)
 
     # -- lineage generation (whole-tree speculative materialization) --------
-    # Proof targets bind each candidate's semantic purpose (TL-1), honestly
-    # per role; a diagnostic unit label is never authority. Terminals are
-    # receipt-backed facts kept BESIDE the immutable records, never fields.
+    # Proof targets bind semantic purpose (TL-1); a diagnostic unit label is
+    # never authority; terminals are receipt-backed facts BESIDE the records.
     source_frontier = sb.sha_hex("genesis\n" + judge_digest)
     terminals: dict[str, tuple[str, str]] = {}
+    # CL-2: every generation receipt's generator configuration commitment is
+    # the frozen subject template module (templates + budgets + vectors).
+    generator_commitment = sb.sha_hex(
+        (HERE / "selftest" / "supernova_subject.py").read_bytes())
 
     def persist_manifest(record: dict) -> Path:
+        """WRITE-ONCE (perimeter-equality law): absent -> create, identical
+        bytes -> unchanged, different bytes -> refuse -- a content-addressed
+        record is never unconditionally rewritten."""
         d = nursery / record["id"]
         d.mkdir(parents=True, exist_ok=True)
         path = d / "manifest"
-        path.write_text(sb.render_manifest(record), encoding="utf-8", newline="\n")
+        data = sb.render_manifest(record).encode("utf-8")
+        if path.exists():
+            if path.read_bytes() != data:
+                raise ProbeError(f"nursery manifest {record['id'][:12]} collision: "
+                                 "write-once violated")
+            return path
+        path.write_bytes(data)
         return path
+
+    def admit(record: dict, gen_evidence: tuple[str, ...] = ()) -> None:
+        """Persist the immutable manifest, then the causally-first generation
+        receipt at the mint site (CL-7): complete creation provenance."""
+        manifest_path = persist_manifest(record)
+        sb.put_receipt(nursery, judge_digest, source_frontier, "generation",
+                       record["id"],
+                       sb.receipt_generation(record, manifest_path.read_bytes(),
+                                             "supernova-rehearsal-harness",
+                                             generator_commitment,
+                                             list(gen_evidence)))
 
     ledger_src = subj.MINI_LEDGER_RS
     broken_src = subj.MINI_RECONCILE_RS.replace("__APPEND_ARG__", subj.BROKEN_APPEND_ARG)
@@ -246,14 +275,21 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     # The invalidated echo/never-attempted descendants realize the Invalidated
     # arm of the liveness claim (every obligation reaches a visible terminal).
     row_terminal = "every_admitted_campaign_obligation_reaches_a_terminal"
-    ledger1 = sb.mint_record("mini-ledger", proof_targets=[row_repair_loop],
-                             parents=[], source_frontier=source_frontier,
-                             dependencies=[], content=ledger_src,
-                             origin="DeterministicGeneration",
-                             change_class="RealizationPreserving", posture="Candidate")
+    row_search = "candidate_search_terminates_within_declared_budget"
+    row_blocked = "later_green_cannot_bless_unresolved_dependency"
+    row_fuzz = "bounded_generated_trace_attack_holds_boundary"
+    row_sim = "deterministic_replay_equality_of_simulated_trace"
+    row_capture = "runtime_capture_appends_observed_history_without_rewrite"
+    row_replay = "offline_replay_concludes_conformance_for_captured_history"
+    # CL-1: mini-ledger is an already-TRUSTED ROOT, not a candidate: no
+    # nursery record, no generation/promotion/qualification receipt; it is
+    # declared in the bundle's roots section, requalified freshly through
+    # the reuse receipt below, and seeds the qualified frontier because it
+    # IS the trusted frontier input.
+    root = sb.mint_root("mini-ledger", ledger_src)
     reconcile1 = sb.mint_record("mini-reconcile", proof_targets=[row_repair_loop],
                                 parents=[], source_frontier=source_frontier,
-                                dependencies=[(ledger1["id"], ledger1["content_commitment"])],
+                                dependencies=[(root["id"], root["content_commitment"])],
                                 content=broken_src, origin="DeterministicGeneration",
                                 change_class="RealizationPreserving", posture="Candidate")
     frontier1 = sb.mint_record("mini-frontier", proof_targets=[row_terminal],
@@ -266,8 +302,8 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
                              dependencies=[(frontier1["id"], frontier1["content_commitment"])],
                              content=target_src, origin="DeterministicGeneration",
                              change_class="RealizationPreserving", posture="Candidate")
-    for record in (ledger1, reconcile1, frontier1, target1):
-        persist_manifest(record)
+    for record in (reconcile1, frontier1, target1):
+        admit(record)
     parent_bytes = (nursery / reconcile1["id"] / "manifest").read_bytes()
 
     def norm(text: str) -> str:
@@ -292,8 +328,8 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
         ok = code == 0 and "test result: ok. 1 passed" in out
     if not ok:
         findings.append("gen1 mini-ledger unit test did not pass")
-    sb.put_receipt(nursery, judge_digest, source_frontier, "qualification",
-                   ledger1["id"], ["unit-tests 1 passed", f"target {target_triple}"])
+    # The root's fresh unit-test run feeds the reuse requalification (CL-1).
+    root_unit_line = "unit-tests 1 passed" if ok else "unit-tests FAILED"
 
     reconcile_rlib = gen1 / "libmini_reconcile.rlib"
     ok, diag = _build(rustc, target_triple, reconcile_rlib, "mini_reconcile",
@@ -395,81 +431,81 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     repaired_src = subj.MINI_RECONCILE_RS.replace("__APPEND_ARG__", chosen or "*event")
     reconcile2 = sb.mint_record(
         "mini-reconcile",
-        proof_targets=[row_repair_loop,
-                       "candidate_search_terminates_within_declared_budget"],
+        proof_targets=[row_repair_loop, row_search],
         parents=[reconcile1["id"]], source_frontier=source_frontier,
-        dependencies=[(ledger1["id"], ledger1["content_commitment"])],
+        dependencies=[(root["id"], root["content_commitment"])],
         content=repaired_src, origin="RepairOfCandidate",
         change_class="RealizationPreserving", posture="Candidate")
     # Binds the MEASURED resource actuals (monotonic ticks: per-run evidence
-    # by construction); the bundle's policy section carries the declared/
-    # actual budget claim the comparator treats as non-authoritative.
+    # by construction); the bundle's policy section carries the budget claim
+    # the comparator treats as non-authoritative.
     search_ref = sb.put_evidence(
         evidence, judge_digest, "search-receipt",
         "".join(f"{axis} declared={budget[axis]} actual={actual[axis]}\n"
                 for axis in budget) + "within-budget yes\n")
-
-    # Descendants bound to the OLD dependency commitment are invalidated and
-    # the whole workspace is rematerialized -- no stale bytes survive. This
-    # IS the Invalidated law: previously-applicable standing lost because a
-    # bound coordinate changed, receipted exactly.
-    for record in (frontier1, target1):
-        inv = sb.put_receipt(nursery, judge_digest, source_frontier,
-                             "invalidation", record["id"],
-                             [f"stale-coordinate dependency-commitment "
-                              f"old={reconcile1['id']} new={reconcile2['id']}",
-                              f"evidence {echo_ref}"])
-        terminals[record["id"]] = ("Invalidated", inv)
-        record["frontier"] = "Invalidated"
-        record["freshness"] = "StaleByDependencyChange"
-        record["frontier_reason"] = "superseded-dependency-commitment"
+    # The repair child's generation receipt binds the bounded-search receipt
+    # as its DEC-079 synthesis evidence.
+    admit(reconcile2, gen_evidence=(search_ref,))
     # The rematerialized descendant exists to demonstrate that its local
     # green cannot bless the still-unqualified repair beneath it.
     frontier2 = sb.mint_record(
         "mini-frontier",
-        proof_targets=["later_green_cannot_bless_unresolved_dependency"],
+        proof_targets=[row_blocked],
         parents=[frontier1["id"]], source_frontier=source_frontier,
         dependencies=[(reconcile2["id"], reconcile2["content_commitment"])],
         content=frontier_src, origin="DeterministicGeneration",
         change_class="RealizationPreserving", posture="Candidate")
+    admit(frontier2)
+    # Descendants bound to the OLD dependency commitment are invalidated --
+    # typed cause (CL-4/CL-6): the candidate-id old/new axis reconciles
+    # against the manifests (the invalidated manifest carries dependency id
+    # == `old`; `new`'s parent set contains `old`) and the coordinate line
+    # carries the exact stale bound commitment.
+    invalidation_edges: list[tuple[str, str, str]] = []
+    for record, old, new in ((frontier1, reconcile1, reconcile2),
+                             (target1, frontier1, frontier2)):
+        coordinate = dict(record["dependencies"])[old["id"]]
+        inv = sb.put_receipt(nursery, judge_digest, source_frontier,
+                             "invalidation", record["id"],
+                             sb.receipt_invalidation(
+                                 "dependency-commitment-changed", coordinate,
+                                 old["id"], new["id"], [echo_ref]))
+        terminals[record["id"]] = ("Invalidated", inv)
+        record["frontier"] = "Invalidated"
+        record["freshness"] = "StaleByDependencyChange"
+        record["frontier_reason"] = "superseded-dependency-commitment"
+        invalidation_edges.append((record["id"], new["id"], "Invalidation"))
     target2 = sb.mint_record(
         "mini-witness-target",
-        proof_targets=["bounded_generated_trace_attack_holds_boundary",
-                       "deterministic_replay_equality_of_simulated_trace",
-                       "runtime_capture_appends_observed_history_without_rewrite",
-                       "offline_replay_concludes_conformance_for_captured_history"],
+        proof_targets=[row_fuzz, row_sim, row_capture, row_replay],
         parents=[target1["id"]], source_frontier=source_frontier,
         dependencies=[(frontier2["id"], frontier2["content_commitment"])],
         content=target_src, origin="DeterministicGeneration",
         change_class="RealizationPreserving", posture="Candidate")
-    for record in (reconcile2, frontier2, target2):
-        persist_manifest(record)
+    admit(target2)
     # Parent record immutability: the failed parent's persisted nursery
     # record is byte-identical after the repair child was minted beside it.
     if (nursery / reconcile1["id"] / "manifest").read_bytes() != parent_bytes:
         findings.append("the failed parent's nursery record was rewritten by "
                         "the repair (records are immutable)")
-    # Lawful transfer reuse: mini-ledger's reuse key still matches the current
-    # upstream frontier, so its evidence is reused, receipted, not re-run.
-    # The reuse receipt binds key + current dependency commitments + fresh
-    # requalification evidence -- the key alone licenses nothing.
-    reuse_check = sb.mint_record(
-        "mini-ledger", proof_targets=list(ledger1["proof_targets"]),
-        parents=[], source_frontier=source_frontier, dependencies=[],
-        content=ledger_src, origin="DeterministicGeneration",
-        change_class="RealizationPreserving", posture="Candidate")
-    if reuse_check["reuse_key"] != ledger1["reuse_key"]:
-        findings.append("mini-ledger reuse key failed requalification against "
-                        "unchanged commitments")
-    requal_ref = sb.put_evidence(
-        evidence, judge_digest, "reuse-requalification",
-        f"reused {ledger1['id']}\nrecomputed-key {reuse_check['reuse_key']}\n"
-        f"matches-original yes\n")
+    # Lawful transfer reuse (CL-1): the root key is recomputed from unchanged
+    # content; the receipt binds key + SET-EQUAL current dependency set +
+    # reused target + fresh requalification -- the key alone licenses nothing.
+    reuse_check = sb.mint_root("mini-ledger", ledger_src)
+    if reuse_check["reuse_key"] != root["reuse_key"]:
+        findings.append("mini-ledger root reuse key failed requalification "
+                        "against unchanged content")
+    root_requal_ref = sb.put_evidence(
+        evidence, judge_digest, "root-requalification",
+        f"root {root['id']}\nrecomputed-key {reuse_check['reuse_key']}\n"
+        f"matches-original yes\n{root_unit_line}\ntarget {target_triple}\n")
     sb.put_receipt(nursery, judge_digest, source_frontier, "reuse",
                    reconcile2["id"],
-                   [f"reused {ledger1['id']}", f"reuse-key {ledger1['reuse_key']}",
-                    *[f"dependency {d} {c}" for d, c in reconcile2["dependencies"]],
-                    f"requalified-evidence {requal_ref}"])
+                   sb.receipt_reuse(root["id"], root["reuse_key"],
+                                    reconcile2["dependencies"],
+                                    [row_repair_loop],
+                                    {row_repair_loop: root_requal_ref}))
+    reuse_edges = [(reconcile2["id"], root["id"], "Reuse")]
 
     gen2 = candidates / "gen2"
     gen2.mkdir()
@@ -506,7 +542,7 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     target = _bind(target_exe)
 
     # -- dependency-first frontier: later green cannot bless earlier red ----
-    qualified: set[str] = {ledger1["id"]}
+    qualified: set[str] = {root["id"]}  # the trusted frontier input (CL-1)
     blocked = promote_guard(frontier2, qualified)
     blocked_ref = None
     if not blocked or "BlockedByDependency" not in blocked:
@@ -518,9 +554,13 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
         summary.append("dependency-first demonstrated: mini-frontier promotion "
                        "refused while mini-reconcile was unqualified")
 
-    def qualify(record: dict, lines: list[str]) -> None:
+    def qualify(record: dict, targets: list[str], plan: dict[str, str],
+                evidence_refs: list[str]) -> None:
+        """One V3 qualification receipt: named targets, spec-owned plan
+        tokens, executed disposition, persisted evidence refs."""
         sb.put_receipt(nursery, judge_digest, source_frontier, "qualification",
-                       record["id"], lines)
+                       record["id"],
+                       sb.receipt_qualification(targets, plan, evidence_refs))
         qualified.add(record["id"])
 
     qual_transcript, terrs = _target_transcript(target, subj.QUALIFICATION_VECTORS,
@@ -531,25 +571,30 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     _witness(witness, ["judge", str(judge / "qualification.vectors"), str(qt),
                        str(subj.FRONTIER_MAX_BATCHES)],
              "witness: AGREE", findings, "qualification differential")
-    qualify(reconcile2, ["unit-tests 2 passed",
-                         "witness-differential search+qualification agree",
-                         f"evidence {search_ref}"])
-    qualify(frontier2, ["unit-tests 1 passed"]
-            + ([f"evidence {blocked_ref}"] if blocked_ref else []))
-    qualify(target2, ["witness-differential qualification agree"])
+    # The witness differential accepted the winning search candidate, so the
+    # differential implementation is the route that supplied independence.
+    qualify(reconcile2, [row_search],
+            sb.proof_plan(row_search, route="DifferentialImplementation"),
+            [search_ref])
+    if blocked_ref:
+        qualify(frontier2, [row_blocked], sb.proof_plan(row_blocked), [blocked_ref])
 
     hold_transcript, terrs = _target_transcript(target, subj.HOLDOUT_VECTORS,
                                                 scratch, "holdout")
     findings += terrs
     ht = scratch / "holdout.transcript"
     ht.write_text(hold_transcript, encoding="utf-8", newline="\n")
-    _witness(witness, ["judge", str(judge / "holdout.vectors"), str(ht),
-                       str(subj.FRONTIER_MAX_BATCHES)],
-             "witness: AGREE", findings, "holdout differential")
+    hold_verdict = _witness(witness, ["judge", str(judge / "holdout.vectors"),
+                                      str(ht), str(subj.FRONTIER_MAX_BATCHES)],
+                            "witness: AGREE", findings, "holdout differential")
+    hold_ref = sb.put_evidence(evidence, judge_digest, "holdout-verdict",
+                               norm(hold_verdict))
     sb.put_receipt(nursery, judge_digest, source_frontier, "holdout",
                    target2["id"],
-                   ["witness-differential holdout agree",
-                    "holdout-disjoint-from-search yes"])
+                   sb.receipt_holdout(
+                       [row_fuzz],
+                       sb.sha_hex((judge / "holdout.vectors").read_bytes()),
+                       [hold_ref]))
     reg_transcript, terrs = _target_transcript(target, subj.REGRESSION_VECTORS,
                                                scratch, "regression")
     findings += terrs
@@ -559,23 +604,20 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
                        str(subj.FRONTIER_MAX_BATCHES)],
              "witness: AGREE", findings, "regression differential")
 
-    for record in (ledger1, reconcile2, frontier2, target2):
-        refusal = promote_guard(record, qualified)
-        if refusal:
-            findings.append(f"promotion of {record['unit']} refused: {refusal}")
-            continue
-        promo = sb.put_receipt(nursery, judge_digest, source_frontier,
-                               "promotion", record["id"],
-                               ["denominator satisfied", "dependencies-qualified yes"])
-        terminals[record["id"]] = ("Promoted", promo)
-        record["frontier"] = "Qualified"
-        record["freshness"] = "Fresh"
-        record["frontier_reason"] = "promoted"
-
     # -- verification adopters: simulation, fuzz, capture, offline replay ---
-    _witness(witness, ["simulate", str(judge / "qualification.vectors"),
-                       str(subj.FRONTIER_MAX_BATCHES)],
-             "witness: REPLAY-EQUAL", findings, "deterministic simulation")
+    # Each verdict PERSISTS as evidence and earns a per-row V3 receipt on the
+    # boundary candidate BEFORE any promotion is assembled (CL-7).
+    sim_out = _witness(witness, ["simulate", str(judge / "qualification.vectors"),
+                                 str(subj.FRONTIER_MAX_BATCHES)],
+                       "witness: REPLAY-EQUAL", findings, "deterministic simulation")
+    sim_ref = sb.put_evidence(evidence, judge_digest, "simulation-verdict",
+                              norm(sim_out))
+    if "witness: REPLAY-EQUAL" in sim_out:
+        # The separately owned witness performed the simulation: the
+        # differential implementation supplied the independence.
+        qualify(target2, [row_sim],
+                sb.proof_plan(row_sim, route="DifferentialImplementation"),
+                [sim_ref])
     fuzz_dir = scratch / "fuzz"
     fuzz_dir.mkdir()
     fuzz_out = _witness(
@@ -585,32 +627,64 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
         "witness: FUZZ-HELD", findings, "bounded generated-trace attack")
     fuzz_line = (f"fuzz seed={subj.FUZZ_SEED} traces={subj.FUZZ_TRACES} "
                  f"max-ops={subj.FUZZ_MAX_OPS} max-amount={subj.FUZZ_MAX_AMOUNT}")
-    sb.put_receipt(nursery, judge_digest, source_frontier, "fuzz", target2["id"],
-                   [fuzz_line, fuzz_out.strip().splitlines()[-1]
-                    if fuzz_out.strip() else "no verdict"])
+    fuzz_ref = sb.put_evidence(evidence, judge_digest, "fuzz-verdict",
+                               norm(fuzz_out))
+    traces_executed = len(list(fuzz_dir.glob("fuzz-*.trace")))
+    if "witness: FUZZ-HELD" in fuzz_out:
+        sb.put_receipt(nursery, judge_digest, source_frontier, "fuzz",
+                       target2["id"],
+                       sb.receipt_fuzz([row_fuzz], subj.FUZZ_SEED,
+                                       subj.FUZZ_TRACES, subj.FUZZ_MAX_OPS,
+                                       subj.FUZZ_MAX_AMOUNT, traces_executed,
+                                       [fuzz_ref]))
 
     history = scratch / "observed.history"
+    capture_ok = True
+    observations: list[str] = []
     for i, trace_text in enumerate((subj.CAPTURE_TRACE_1, subj.CAPTURE_TRACE_2)):
         trace_path = scratch / f"capture-{i}.trace"
         trace_path.write_text(trace_text, encoding="utf-8", newline="\n")
         before = history.read_bytes() if history.exists() else b""
         code, out = _run_bound(target, ["capture", str(trace_path), str(history)])
+        session_ok = True
         if code != 0:
             findings.append(f"capture session {i} failed: {out.strip()[:120]}")
+            session_ok = False
         if "no-divergence-observed" not in out:
             findings.append(f"capture session {i} did not state its in-band "
                             "no-divergence observation")
+            session_ok = False
         if "CONFORMANT" in out.upper():
             findings.append("the in-band side claimed conformance; only offline "
                             "replay may conclude")
+            session_ok = False
         after = history.read_bytes()
         if not after.startswith(before) or len(after) <= len(before):
             findings.append(f"capture session {i} rewrote observed history "
                             "instead of appending")
+            session_ok = False
+        observations.append(f"session-{i} no-divergence-observed append-only "
+                            + ("yes" if session_ok else "VIOLATED"))
+        capture_ok = capture_ok and session_ok
+    history_digest = sb.sha_hex(history.read_bytes())
+    capture_ref = sb.put_evidence(
+        evidence, judge_digest, "runtime-capture-observation",
+        "".join(line + "\n" for line in observations)
+        + f"history {history_digest}\n")
+    if capture_ok:
+        # The captured history's independence arrives via the independent
+        # offline replay of exactly these recorded bytes.
+        qualify(target2, [row_capture],
+                sb.proof_plan(row_capture, "PropertySequence",
+                              route="IndependentHistoryReplay"), [capture_ref])
     replay_out = _witness(witness, ["replay", str(history)],
                           "witness: CONFORMANT-FOR-OBSERVED-HISTORY", findings,
                           "offline history replay")
-    history_digest = sb.sha_hex(history.read_bytes())
+    replay_ref = sb.put_evidence(evidence, judge_digest, "offline-replay-verdict",
+                                 norm(replay_out))
+    if "witness: CONFORMANT-FOR-OBSERVED-HISTORY" in replay_out:
+        qualify(target2, [row_replay],
+                sb.proof_plan(row_replay, "HistoryReplay"), [replay_ref])
     events_m = re.search(r"events=(\d+)", replay_out)
     events_n = events_m.group(1) if events_m else "0"
 
@@ -620,11 +694,11 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
         return ["the mutant patch target is absent; no mutant was planted"], summary, paths
     mutant = sb.mint_record("mini-ledger",
                             proof_targets=["planted_semantic_mutant_is_activated_and_killed"],
-                            parents=[ledger1["id"]],
+                            parents=[root["id"]],
                             source_frontier=source_frontier, dependencies=[],
                             content=mutant_src, origin="DeterministicGeneration",
                             change_class="RealizationPreserving", posture="Candidate")
-    persist_manifest(mutant)
+    admit(mutant)
     mdir = candidates / "mutant"
     mdir.mkdir()
     msources = dict(sources, mini_ledger=mutant_src)
@@ -681,8 +755,8 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     # existed (Invalidated = standing lost to a changed bound coordinate).
     mutant_refusal = sb.put_receipt(
         nursery, judge_digest, source_frontier, "refusal", mutant["id"],
-        ["killed-by witness-differential", f"evidence {activation_ref}"]
-        + ([f"evidence {kill_ref}"] if kill_ref else ["kill-evidence missing"]))
+        sb.receipt_refusal("witness-differential-kill",
+                           [activation_ref] + ([kill_ref] if kill_ref else [])))
     terminals[mutant["id"]] = ("Refused", mutant_refusal)
     mutant["frontier"] = "Unqualified"
     mutant["frontier_reason"] = "own-content-refusal"
@@ -690,9 +764,8 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     # -- the failed parent's terminal: refused on its own content -----------
     r1_refusal = sb.put_receipt(nursery, judge_digest, source_frontier,
                                 "refusal", reconcile1["id"],
-                                ["failed compile-refusal error[E0308]",
-                                 f"evidence {root_diag_ref}",
-                                 f"evidence {summary_ref}"])
+                                sb.receipt_refusal("compile-refusal",
+                                                   [root_diag_ref, summary_ref]))
     terminals[reconcile1["id"]] = ("Refused", r1_refusal)
     reconcile1["frontier"] = "Unqualified"
     reconcile1["frontier_reason"] = "own-content-refusal"
@@ -711,13 +784,17 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
         dependencies=[(frontier2["id"], frontier2["content_commitment"])],
         content=subj.SCAFFOLD_CONTENT, origin="HumanAuthored",
         change_class="RealizationPreserving", posture="Scaffold")
-    persist_manifest(scaffold)
+    admit(scaffold)
     scaffold_refusal_text = promote_guard(scaffold, qualified)
     if not scaffold_refusal_text or "scaffold" not in scaffold_refusal_text:
         findings.append("the scaffold was not refused promotion")
+    scaffold_ref = sb.put_evidence(
+        evidence, judge_digest, "promotion-refusal",
+        f"{scaffold['id']}\n{scaffold_refusal_text or 'missing refusal'}\n")
     sref = sb.put_receipt(nursery, judge_digest, source_frontier, "refusal",
                           scaffold["id"],
-                          [scaffold_refusal_text or "missing refusal"])
+                          sb.receipt_refusal("unrealized-obligation-open",
+                                             [scaffold_ref]))
     terminals[scaffold["id"]] = ("Refused", sref)
     scaffold["frontier"] = "Unqualified"
     scaffold["frontier_reason"] = "unrealized-obligation-open"
@@ -726,27 +803,30 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     lawchange = sb.mint_record(
         "mini-ledger/law-change",
         proof_targets=["law_changing_candidate_cannot_enter_realization_preserving_lane"],
-        parents=[ledger1["id"]],
+        parents=[root["id"]],
         source_frontier=source_frontier,
-        dependencies=[(ledger1["id"], ledger1["content_commitment"])],
+        dependencies=[(root["id"], root["content_commitment"])],
         content=subj.LAW_CHANGE_PATCH, origin="HumanAuthored",
         change_class="LawChanging", posture="Candidate")
-    persist_manifest(lawchange)
+    admit(lawchange)
     lc_refusal = promote_guard(lawchange, qualified)
     if not lc_refusal or "architect" not in lc_refusal:
         findings.append("the law-changing candidate was not routed to the architect")
+    lc_ref = sb.put_evidence(
+        evidence, judge_digest, "escalation-cause",
+        f"{lawchange['id']}\n{lc_refusal or 'missing refusal'}\n"
+        "campaign STOPPED; amendment proceeds separately (DEC-074)\n")
     esc = sb.put_receipt(nursery, judge_digest, source_frontier, "escalation",
                          lawchange["id"],
-                         ["reason law-changing-candidate",
-                          "disposition ArchitectRequired",
-                          "campaign STOPPED; amendment proceeds separately (DEC-074)"])
+                         sb.receipt_escalation("law-changing-candidate",
+                                               [lc_ref]))
     terminals[lawchange["id"]] = ("ArchitectRequired", esc)
     lawchange["frontier"] = "Unqualified"
     lawchange["frontier_reason"] = "architect-amendment-outstanding"
     summary.append(f"ArchitectRequired terminal visible: {lawchange['id'][:12]} "
                    "(campaign stopped; no ordinary repair lane)")
 
-    records = [ledger1, reconcile1, frontier1, target1, reconcile2, frontier2,
+    records = [reconcile1, frontier1, target1, reconcile2, frontier2,
                target2, mutant, scaffold, lawchange]
 
     # -- convergence: the bounded repair loop reaches a stable frontier -----
@@ -754,11 +834,13 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
         return [(r["id"], r["frontier"]) for r in records]
 
     stable = None
+    iterations = 0
     view = frontier_view()
-    for _iteration in range(subj.REPAIR_MAX_LOOP):
+    for iteration in range(subj.REPAIR_MAX_LOOP):
         again = frontier_view()
         if again == view:
             stable = again
+            iterations = iteration + 1
             break
         view = again
     if stable is None:
@@ -766,7 +848,32 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
                         "within its bound")
     sb.put_receipt(nursery, judge_digest, source_frontier, "convergence",
                    reconcile2["id"],
-                   [f"stable-after-iterations 1 bound {subj.REPAIR_MAX_LOOP}"])
+                   sb.receipt_convergence([row_repair_loop], iterations,
+                                          subj.REPAIR_MAX_LOOP))
+
+    # -- promotion: the CONSEQUENCE of completed proof (CL-7) ---------------
+    # Promotions are the LAST receipts written, ASSEMBLED from the actual
+    # receipt store: every manifest proof target must be NAMED by an
+    # un-superseded qualification/holdout/fuzz/convergence receipt already
+    # persisted beside the record; a target without a naming receipt REFUSES
+    # the promotion (the honest stop), never an optimistic bookmark.
+    hostile_refs = [activation_ref] + ([kill_ref] if kill_ref else [])
+    for record in (reconcile2, frontier2, target2):
+        refusal = promote_guard(record, qualified)
+        if refusal:
+            findings.append(f"promotion of {record['unit']} refused: {refusal}")
+            continue
+        try:
+            promo_lines = sb.assemble_promotion(nursery, record, hostile_refs)
+        except ProbeError as stop:
+            findings.append(str(stop))
+            continue
+        promo = sb.put_receipt(nursery, judge_digest, source_frontier,
+                               "promotion", record["id"], promo_lines)
+        terminals[record["id"]] = ("Promoted", promo)
+        record["frontier"] = "Qualified"
+        record["freshness"] = "Fresh"
+        record["frontier_reason"] = "promoted"
 
     # -- stability: re-evaluating the qualified frontier changes nothing ----
     re_transcript, _terrs = _target_transcript(target, subj.QUALIFICATION_VECTORS,
@@ -810,70 +917,14 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     source_commit = sb.source_commit_of(HERE.parent)
     if source_commit is None:
         return ["no git HEAD commit; the bundle cannot bind its source"], summary, paths
-    m = re.search(r"release: (\S+)", subprocess.run(
-        [rustc, "-vV"], capture_output=True, text=True).stdout)
-    rustc_release = m.group(1) if m else "0.0.0"
-    edges: list[tuple[str, str, str]] = []
-    for record in records:
-        for parent in record["parents"]:
-            edges.append((record["id"], parent, "Parent"))
-        for dep_id, _c in record["dependencies"]:
-            edges.append((record["id"], dep_id, "Dependency"))
-    edges.append((reconcile2["id"], ledger1["id"], "Reuse"))
-    edges.append((frontier1["id"], reconcile2["id"], "Invalidation"))
-    edges.append((target1["id"], reconcile2["id"], "Invalidation"))
-    vector_sets = {role: (len(_split_traces(text)),
-                          sb.sha_hex((judge / f"{role}.vectors").read_bytes()))
-                   for role, text in subj.VECTOR_SETS.items()}
-    model_dispositions = [
-        f"model-disposition mini-witness-target {role} agree "
-        f"witness-source={witness_src_digest}"
-        for role in ("qualification", "holdout", "regression")]
-    runtime_dispositions = [
-        f"runtime-conformance-disposition mini-witness-target "
-        f"conformant-for-observed-history events={events_n} history={history_digest}"]
-    closure_preview = "".join(f"node {r['id']}\n" for r in records)
-    _profile_id, profile_rows = sb.mini_supernova_profile()
-    context = {
-        "judge_digest": judge_digest, "judge_digest_after": judge_after,
-        "source_commit": source_commit, "rustc_release": rustc_release,
-        "target": target_triple, "budget_declared": budget, "budget_actual": actual,
-        "fuzz_line": fuzz_line, "vector_sets": vector_sets, "records": records,
-        "terminals": terminals,
-        "model_dispositions": model_dispositions,
-        "runtime_dispositions": runtime_dispositions,
-        "mutant_line": f"mutant {mutant['id']} activated=yes killed=yes "
-                       "killer=witness-differential",
-        "edges": edges,
-        "seal_commitments": {
-            "SourceTree": sb.sha_hex(source_commit),
-            "Toolchain": sb.sha_hex(f"{rustc_release} {target_triple}"),
-            "DependencyGraph": sb.sha_hex(
-                "\n".join(f"{a} {b}" for a, b in subj.DEPENDENCY_EDGES)),
-            "GeneratedFacts": sb.sha_hex(closure_preview),
-            # The freshness commitment binds the spec-owned profile rows
-            # (parsed, never hand-authored here).
-            "ProofFreshness": sb.sha_hex("\n".join(profile_rows)),
-        },
-        "seal_rows": {
-            "TestDispositions": [
-                "mini-ledger unit-tests passed",
-                "mini-reconcile unit-tests passed",
-                "mini-frontier unit-tests passed"],
-            "MutationDispositions": [f"{mutant['id']} activated killed "
-                                     "witness-differential"],
-            "FuzzDispositions": [fuzz_line + " held"],
-            "ModelDispositions": [line.removeprefix("model-disposition ")
-                                  for line in model_dispositions],
-            "RuntimeConformanceDispositions": [
-                runtime_dispositions[0].removeprefix(
-                    "runtime-conformance-disposition ")],
-            "CandidatePromotionSet": [
-                f"{r['id']} {r['unit']} {terminals[r['id']][1]}"
-                for r in records
-                if terminals.get(r["id"], ("",))[0] == "Promoted"],
-        },
-    }
+    context = build_context(
+        judge=judge, judge_digest=judge_digest, judge_after=judge_after,
+        source_commit=source_commit, rustc=rustc, target_triple=target_triple,
+        budget=budget, actual=actual, fuzz_line=fuzz_line,
+        records=records, roots=[root], terminals=terminals,
+        extra_edges=reuse_edges + invalidation_edges,
+        witness_src_digest=witness_src_digest, events_n=events_n,
+        history_digest=history_digest, mutant=mutant)
     bundle_text = sb.render_bundle(context)
     envelope_text = sb.render_envelope(context)
     bundle_path = evidence / "campaign-evidence.bundle"
@@ -883,26 +934,14 @@ def run_rehearsal(base: Path) -> tuple[list[str], list[str], dict]:
     paths.update(bundle=bundle_path, envelope=envelope_path,
                  source_commit=source_commit, target_triple=target_triple,
                  rustc=rustc)
+    _profile_id, profile_rows = sb.mini_supernova_profile()
     for row in profile_rows:
         summary.append(f"proof-row realized: {row}")
     return findings, summary, paths
 
 
-def verify_bundle(paths: dict, work: Path) -> tuple[list[str], str]:
-    """Build the REAL receiptcheck and block on its campaign-verify verdict."""
-    rc, err = sb.build_receiptcheck(paths["rustc"], paths["target_triple"], work)
-    if rc is None:
-        return [f"receiptcheck unavailable for campaign-verify: {err}"], ""
-    ok, out = sb.campaign_verify(rc, paths["bundle"], paths["judge"],
-                                 paths["envelope"], paths["source_commit"],
-                                 paths["nursery"], paths["evidence_root"])
-    if not ok:
-        return ["receiptcheck REFUSED the campaign bundle:\n" + out], out
-    return [], out
-
-
 # ---------------------------------------------------------------------------
-# Battery and CLI wiring
+# The battery (CLI wiring lives in supernova_cli; the module graph is a DAG)
 # ---------------------------------------------------------------------------
 
 def test_supernova() -> list[str]:
@@ -921,7 +960,7 @@ def test_supernova() -> list[str]:
         if not findings and paths.get("bundle"):
             work = base / "verify-work"
             work.mkdir()
-            verify_findings, out = verify_bundle(paths, work)
+            verify_findings, out = sb.verify_bundle(paths, work)
             findings += verify_findings
             if out and not verify_findings:
                 print(f"supernova: {out.splitlines()[0]} (campaign bundle "
@@ -945,50 +984,3 @@ def test_supernova() -> list[str]:
     finally:
         shutil.rmtree(base, ignore_errors=True)
     return findings
-
-
-def run_supernova_cli(directory: str) -> int:
-    """`selftest.py --supernova <dir>`: execute the rehearsal with persistent
-    roots under <dir> and block on the independent bundle verification. The
-    workflow's candidate AND confirming postures both run this."""
-    if not shutil.which("rustc"):
-        print("selftest: --supernova requires rustc", file=sys.stderr)
-        return 1
-    base = Path(directory).resolve()
-    if base.exists() and any(base.iterdir()):
-        shutil.rmtree(base, ignore_errors=True)
-    base.mkdir(parents=True, exist_ok=True)
-    findings, summary, paths = run_rehearsal(base)
-    for line in summary:
-        print(f"supernova: {line}")
-    if not findings and paths.get("bundle"):
-        work = base / "verify-work"
-        work.mkdir(exist_ok=True)
-        verify_findings, out = verify_bundle(paths, work)
-        findings += verify_findings
-        if out:
-            print(out)
-    if findings:
-        print(f"selftest: SUPERNOVA FAIL ({len(findings)} finding(s))", file=sys.stderr)
-        for finding in findings:
-            print(f"- {finding}", file=sys.stderr)
-        return 1
-    print(f"selftest: supernova campaign rehearsal PASS (bundle {paths['bundle']})")
-    return 0
-
-
-def compare_supernova_cli(mine: str, theirs: str) -> int:
-    """`selftest.py --supernova-compare <own-bundle> <candidate-bundle>`: the
-    Stability row's cross-run law -- the confirming rehearsal's authoritative
-    results (terminals, frontier, dispositions) must equal the candidate's."""
-    mine_text = Path(mine).read_text(encoding="utf-8")
-    theirs_text = Path(theirs).read_text(encoding="utf-8")
-    findings = sb.compare_authoritative(mine_text, theirs_text)
-    if findings:
-        print("selftest: SUPERNOVA STABILITY FAIL:", file=sys.stderr)
-        for finding in findings:
-            print(f"- {finding}", file=sys.stderr)
-        return 1
-    print("selftest: campaign authoritative results identical across runs "
-          "(confirming rerun changed no authoritative result)")
-    return 0

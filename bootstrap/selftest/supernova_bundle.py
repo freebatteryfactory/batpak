@@ -4,12 +4,14 @@ The RECORD side of the mini-supernova rehearsal: content-addressed candidate
 records rendered as BATPAK-CANDIDATE-MANIFEST/2 (the spec/campaign/ grammar,
 re-implemented here as the PRODUCER; bootstrap/receiptcheck.rs re-parses it
 independently and no parser is shared), append-only judge-bound evidence
-artifacts, per-candidate BATPAK-CAMPAIGN-RECEIPT/2 receipts beside the
-immutable records, the BATPAK-CAMPAIGN-EVIDENCE/2 bundle, the BATPAK-
-CAMPAIGN-ENVELOPE/1 rehearsal release envelope (all 20 seal fields; explicit
-empty is stated, never omitted), the authoritative-result comparison the
-Stability row demands, and the delegation to the independent receiptcheck
-campaign verifier.
+artifacts, per-candidate BATPAK-CAMPAIGN-RECEIPT/3 receipts beside the
+immutable records (the strict ten-kind grammar: counted lex-ordered
+sections, typed causes, explicit supersession, no free-form trailing line),
+trusted frontier roots (CL-1: a root IS its content commitment), the
+BATPAK-CAMPAIGN-EVIDENCE/3 bundle, the BATPAK-CAMPAIGN-ENVELOPE/1 rehearsal
+release envelope (all 20 seal fields; explicit empty is stated, never
+omitted), the authoritative-result comparison the Stability row demands, and
+the delegation to the independent receiptcheck campaign verifier.
 
 E7 removed the Python dynamic-semantics maps: the seal-field order/posture
 and the realized proof-row profile are PARSED from their spec owners at run
@@ -28,13 +30,15 @@ from pathlib import Path
 
 from .core import HERE, TOOLCHAIN_EDITION, ProbeError
 
-BUNDLE_MAGIC = "BATPAK-CAMPAIGN-EVIDENCE/2"
+BUNDLE_MAGIC = "BATPAK-CAMPAIGN-EVIDENCE/3"
 ENVELOPE_MAGIC = "BATPAK-CAMPAIGN-ENVELOPE/1"
 MANIFEST_MAGIC = "BATPAK-CANDIDATE-MANIFEST/2"
-RECEIPT_MAGIC = "BATPAK-CAMPAIGN-RECEIPT/2"
+RECEIPT_MAGIC = "BATPAK-CAMPAIGN-RECEIPT/3"
 
 _SEAL_FIELDS_CACHE: tuple[tuple[str, str], ...] | None = None
 _PROFILE_CACHE: tuple[str, tuple[str, ...]] | None = None
+_PROMOTION_REQ_CACHE: tuple[str, ...] | None = None
+_PROOF_PLAN_CACHE: dict[str, list[dict[str, str]]] | None = None
 
 
 def seal_fields() -> tuple[tuple[str, str], ...]:
@@ -97,6 +101,93 @@ def mini_supernova_profile() -> tuple[str, tuple[str, ...]]:
         raise ProbeError("MINI_SUPERNOVA_PROFILE names a realized row twice")
     _PROFILE_CACHE = (profile_id.group(1), tuple(rows))
     return _PROFILE_CACHE
+
+
+def promotion_requirements() -> tuple[str, ...]:
+    """The PromotionRequirement spellings in inventory (ALL) order, parsed
+    from spec/promotion/types.rs source text (the E7 idiom: Rust owns the
+    vocabulary, this producer parses the const, receiptcheck consumes the
+    compiled const -- no shared parser, no hand-authored Python mirror). The
+    promotion receipt's denominator line states every member =satisfied and
+    the verifier RECOMPUTES all four, never trusts them as asserted."""
+    global _PROMOTION_REQ_CACHE
+    if _PROMOTION_REQ_CACHE is not None:
+        return _PROMOTION_REQ_CACHE
+    src = (HERE.parent / "spec/promotion/types.rs").read_text(encoding="utf-8")
+    body = re.search(
+        r"pub const ALL: &'static \[PromotionRequirement\] = &\[(.*?)\];", src, re.S)
+    if not body:
+        raise ProbeError("spec/promotion/types.rs: PromotionRequirement::ALL unreadable")
+    order = re.findall(r"PromotionRequirement::(\w+),", body.group(1))
+    spellings = dict(re.findall(r'PromotionRequirement::(\w+) => "(\w+)"', src))
+    if not order or len(order) != len(set(order)) or set(order) - set(spellings):
+        raise ProbeError("spec/promotion/types.rs: ALL order vs spelling arms disagree")
+    _PROMOTION_REQ_CACHE = tuple(spellings[variant] for variant in order)
+    return _PROMOTION_REQ_CACHE
+
+
+def proof_plan(row: str, method: str | None = None,
+               route: str | None = None) -> dict[str, str]:
+    """The verification-plan tokens a V3 qualification receipt binds for one
+    Active proof row: plan name, method, independent route, coverage, and
+    lane -- parsed from spec/proof/inventory.rs (PROOF_ROWS plus the named
+    PLAN_* consts), never hand-authored here; receiptcheck cross-checks the
+    same tokens against the compiled consts. A composite plan (several
+    requirements) is selected by `method`. When the requirement's basis
+    names an independent route the receipt binds exactly that one (a
+    contradicting `route` refuses); when it names none, the caller MUST name
+    the admitted route that genuinely supplied independence."""
+    global _PROOF_PLAN_CACHE
+    if _PROOF_PLAN_CACHE is None:
+        src = (HERE.parent / "spec/proof/inventory.rs").read_text(encoding="utf-8")
+        plans: dict[str, list[dict[str, str]]] = {}
+        for m in re.finditer(
+                r"pub const (PLAN_\w+): &\[VerificationRequirement\] = &\[(.*?)\];",
+                src, re.S):
+            requirements: list[dict[str, str]] = []
+            for chunk in m.group(2).split("VerificationRequirement {")[1:]:
+                axes = {axis: re.search(rf"{axis}: Verification{owner}::(\w+)", chunk)
+                        for axis, owner in (("method", "Method"),
+                                            ("coverage", "Coverage"),
+                                            ("lane", "Lane"))}
+                if not all(axes.values()):
+                    raise ProbeError(
+                        f"spec/proof/inventory.rs: {m.group(1)} requirement unreadable")
+                basis_route = re.search(r"IndependentEvidenceRouteKind::(\w+)",
+                                        chunk.split(", coverage:")[0])
+                requirements.append({
+                    "plan": m.group(1),
+                    "method": axes["method"].group(1),
+                    "route": basis_route.group(1) if basis_route else "none",
+                    "coverage": axes["coverage"].group(1),
+                    "lane": axes["lane"].group(1)})
+            plans[m.group(1)] = requirements
+        rows = re.findall(
+            r'ProofRowRecord \{ id: ProofRowId\("(\w+)"\), '
+            r"state: ProofRowState::Active \{[^}]*verification: (\w+) \}", src)
+        cache = {name: plans[plan] for name, plan in rows if plan in plans}
+        if not cache:
+            raise ProbeError("spec/proof/inventory.rs: no Active row/plan pair parsed")
+        _PROOF_PLAN_CACHE = cache
+    requirements = _PROOF_PLAN_CACHE.get(row)
+    if not requirements:
+        raise ProbeError(f"proof row {row} names no parsed verification plan")
+    if method is None and len(requirements) != 1:
+        raise ProbeError(f"proof row {row} carries a composite plan; name the method")
+    chosen = next((r for r in requirements
+                   if method is None or r["method"] == method), None)
+    if chosen is None:
+        raise ProbeError(f"proof row {row} plan carries no {method} requirement")
+    if chosen["route"] == "none":
+        if route is None:
+            raise ProbeError(
+                f"proof row {row} plan names no route; the receipt must name the "
+                "admitted route that supplied independence")
+        return dict(chosen, route=route)
+    if route is not None and route != chosen["route"]:
+        raise ProbeError(
+            f"proof row {row} plan requires route {chosen['route']}, not {route}")
+    return chosen
 
 
 def sha_hex(data: bytes | str) -> str:
@@ -203,6 +294,28 @@ def mint_record(unit: str, *, proof_targets: list[str], parents: list[str],
     return record
 
 
+def mint_root(unit: str, content: str) -> dict:
+    """One already-trusted frontier root (CL-1): a trusted root IS its
+    content, so the root id is the content commitment -- no new preimage
+    machinery. Roots are DECLARED in the bundle's roots section and are
+    never candidates: no nursery record, no manifest, no generation or
+    promotion receipt, no proof-target rows (the architect vetoed decorative
+    proof rows); fresh root standing is earned through the reuse receipt's
+    requalification evidence. The reuse key binds reuse-key-preimage/2 with
+    ZERO proof-target lines, the content commitment, ZERO dependency lines,
+    and the profile line."""
+    content_commitment = sha_hex(content)
+    profile_id, profile_rows = mini_supernova_profile()
+    profile_hex = sha_hex("".join(row + "\n" for row in profile_rows))
+    reuse_preimage = (
+        "reuse-key-preimage/2\n"
+        + f"content-commitment {content_commitment}\n"
+        + f"profile {profile_id} {profile_hex}\n")
+    return {"unit": unit, "id": content_commitment,
+            "content_commitment": content_commitment,
+            "reuse_key": sha_hex(reuse_preimage)}
+
+
 def render_manifest(record: dict) -> str:
     """The canonical BATPAK-CANDIDATE-MANIFEST/2 line grammar: the magic, the
     candidate-id line, then exactly the id-preimage body -- no evidence,
@@ -237,19 +350,30 @@ def put_evidence(evidence_dir: Path, judge_digest: str, kind: str, payload: str)
     return put_artifact(evidence_dir, "evidence", text)
 
 
+_TERMINAL_RECEIPT_KINDS = frozenset({"promotion", "refusal", "invalidation",
+                                     "escalation"})
+
+
 def put_receipt(nursery: Path, judge_digest: str, source_frontier: str,
-                kind: str, candidate_id: str, lines: list[str]) -> str:
-    """One BATPAK-CAMPAIGN-RECEIPT/2 persisted BESIDE the candidate's
+                kind: str, candidate_id: str, lines: list[str],
+                supersedes: str | None = None) -> str:
+    """One BATPAK-CAMPAIGN-RECEIPT/3 persisted BESIDE the candidate's
     immutable record at nursery/<candidate>/receipts/<sha256-of-bytes>.receipt
     (TL-9), append-only: an existing identical file is lawful, differing
-    content at the same address is refused. Every receipt binds the frozen
-    judge digest and the current source frontier before its kind-specific and
-    free evidence lines."""
-    text = "".join(
-        line + "\n"
-        for line in [RECEIPT_MAGIC, f"kind {kind}", f"candidate {candidate_id}",
-                     f"judge {judge_digest}", f"source-frontier {source_frontier}",
-                     *lines])
+    content at the same address is refused. The strict common header --
+    magic, kind, candidate, judge, source-frontier (a CHECKED binding the
+    verifier compares against the manifest's source-frontier commitment) --
+    then the OPTIONAL supersedes-receipt line (terminal kinds only: explicit
+    supersession, never implicit precedence), then EXACTLY the kind-specific
+    line set. No free evidence line exists in the /3 grammar."""
+    if supersedes is not None and kind not in _TERMINAL_RECEIPT_KINDS:
+        raise ProbeError(
+            f"supersedes-receipt is lawful only on terminal kinds, not {kind}")
+    header = [RECEIPT_MAGIC, f"kind {kind}", f"candidate {candidate_id}",
+              f"judge {judge_digest}", f"source-frontier {source_frontier}"]
+    if supersedes is not None:
+        header.append(f"supersedes-receipt {supersedes}")
+    text = "".join(line + "\n" for line in [*header, *lines])
     data = text.encode("utf-8")
     digest = sha_hex(data)
     receipts = nursery / candidate_id / "receipts"
@@ -261,6 +385,197 @@ def put_receipt(nursery: Path, judge_digest: str, source_frontier: str,
         return digest
     path.write_bytes(data)
     return digest
+
+
+# ---------------------------------------------------------------------------
+# BATPAK-CAMPAIGN-RECEIPT/3 kind-specific line sets (CL-6): counted sections
+# with entries in canonical lexicographic order, explicit empty (`0` count),
+# typed causes/reasons, and NOTHING ELSE -- the verifier refuses any unknown
+# trailing line, so a /3 receipt is never "a receipt plus notes".
+# ---------------------------------------------------------------------------
+
+def _counted(key: str, values: list[str]) -> list[str]:
+    return [f"{key}-count {len(values)}"] + [f"{key} {v}" for v in sorted(values)]
+
+
+def receipt_generation(record: dict, manifest_bytes: bytes, generator: str,
+                       generator_commitment: str, evidence: list[str]) -> list[str]:
+    """Creation provenance (DEC-079): the causally-first mint receipt,
+    exactly one per candidate, never superseded. Binds the digest of the
+    exact persisted nursery manifest bytes, the manifest-equal origin /
+    content commitment / parent set, the generator identity, and the CL-2
+    generator configuration commitment."""
+    if record["origin"] == "RepairOfCandidate" and not record["parents"]:
+        raise ProbeError("a RepairOfCandidate generation receipt names no parent")
+    return ([f"manifest-digest {sha_hex(manifest_bytes)}",
+             f"origin {record['origin']}",
+             f"generator {generator}",
+             f"generator-commitment {generator_commitment}",
+             f"content-commitment {record['content_commitment']}"]
+            + _counted("parent", record["parents"])
+            + _counted("evidence", evidence))
+
+
+def receipt_qualification(targets: list[str], plan: dict[str, str],
+                          evidence: list[str]) -> list[str]:
+    """Per-target qualifying evidence: the named proof rows, the spec-owned
+    plan tokens (proof_plan -- never hand-authored), the executed
+    disposition, freshness, and the persisted evidence artifacts."""
+    if not targets or not evidence:
+        raise ProbeError("a qualification receipt names >=1 target and >=1 evidence ref")
+    return (_counted("proof-target", targets)
+            + [f"plan {plan['plan']}", f"method {plan['method']}",
+               f"route {plan['route']}", f"coverage {plan['coverage']}",
+               f"lane {plan['lane']}",
+               "execution compiled=succeeded execution=attempted outcome=passed",
+               "freshness Fresh"]
+            + _counted("evidence", evidence))
+
+
+def receipt_holdout(targets: list[str], holdout_set: str,
+                    evidence: list[str]) -> list[str]:
+    """Holdout evidence on the search-disjoint set (DEC-081), binding the
+    exact holdout-set digest and the witness verdict."""
+    return (_counted("proof-target", targets)
+            + [f"holdout-set {holdout_set}",
+               "holdout-disjoint-from-search yes",
+               "verdict witness-differential-agree"]
+            + _counted("evidence", evidence))
+
+
+def receipt_fuzz(targets: list[str], seed: int, traces: int, max_ops: int,
+                 max_amount: int, traces_executed: int,
+                 evidence: list[str]) -> list[str]:
+    """The seeded bounded generated-trace attack (R2): exact seed and bounds
+    so the confirming run reproduces the identical attack, plus the MEASURED
+    executed-trace count."""
+    return (_counted("proof-target", targets)
+            + [f"seed {seed}", f"traces {traces}", f"max-ops {max_ops}",
+               f"max-amount {max_amount}", "held yes",
+               f"traces-executed {traces_executed}"]
+            + _counted("evidence", evidence))
+
+
+def receipt_convergence(targets: list[str], iterations: int, bound: int) -> list[str]:
+    """The bounded repair loop's convergence to a stable qualified frontier."""
+    return (_counted("proof-target", targets)
+            + [f"stable-after-iterations {iterations}", f"bound {bound}"])
+
+
+def receipt_refusal(cause: str, evidence: list[str]) -> list[str]:
+    """An own-content refusal with its typed CampaignRefusalCause token."""
+    if cause not in ("compile-refusal", "witness-differential-kill",
+                     "unrealized-obligation-open"):
+        raise ProbeError(f"unknown refusal cause {cause!r}")
+    return [f"cause {cause}"] + _counted("evidence", evidence)
+
+
+def receipt_invalidation(cause: str, coordinate: str, old: str, new: str,
+                         evidence: list[str]) -> list[str]:
+    """Typed invalidation (CL-4/CL-6): the changed-coordinate cause, the
+    exact stale bound coordinate (the dependency commitment the invalidated
+    manifest carried), and the candidate-id old/new axis the verifier
+    reconciles against the manifests and current frontier."""
+    if cause not in ("dependency-commitment-changed", "judge-changed"):
+        raise ProbeError(f"unknown invalidation cause {cause!r}")
+    return ([f"cause {cause}", f"coordinate {coordinate}",
+             f"old {old}", f"new {new}"]
+            + _counted("evidence", evidence))
+
+
+def receipt_escalation(reason: str, evidence: list[str]) -> list[str]:
+    """An escalation stopping the campaign; the disposition is ALWAYS
+    ArchitectRequired and the reason token is typed (CL-6)."""
+    if reason not in ("law-changing-candidate", "judge-defect",
+                      "proof-policy-conflict"):
+        raise ProbeError(f"unknown escalation reason {reason!r}")
+    return ([f"reason {reason}", "disposition ArchitectRequired"]
+            + _counted("evidence", evidence))
+
+
+def receipt_reuse(reused: str, reuse_key: str,
+                  dependencies: list[tuple[str, str]], targets: list[str],
+                  requalified: dict[str, str]) -> list[str]:
+    """A reuse authorization (architect strengthening): binds the reused
+    root, its key, the SET-EQUAL current dependency set of the reusing
+    manifest, the reused targets, and fresh TARGET-SPECIFIC requalification
+    evidence -- the key alone licenses nothing."""
+    if not targets or set(requalified) != set(targets):
+        raise ProbeError("a reuse receipt requalifies exactly its reused targets")
+    return ([f"reused {reused}", f"reuse-key {reuse_key}",
+             f"dependency-count {len(dependencies)}"]
+            + [f"dependency {d} {c}" for d, c in sorted(dependencies)]
+            + _counted("proof-target", targets)
+            + [f"requalified-evidence {name} {requalified[name]}"
+               for name in sorted(requalified)])
+
+
+def receipt_promotion(record: dict, target_evidence: dict[str, list[str]],
+                      route: str, hostile_evidence: list[str]) -> list[str]:
+    """The promotion receipt is the CONSEQUENCE of completed proof, never an
+    optimistic bookmark: the SET-EQUAL manifest proof-target set, one
+    target-evidence line per target listing every in-store receipt that
+    NAMES it, the independent evidence route, the qualified hostile evidence,
+    the SET-EQUAL dependency snapshot, and the denominator stated over every
+    PromotionRequirement in inventory order. HONEST STOP: a target without a
+    naming receipt REFUSES the promotion -- nothing here fabricates."""
+    targets = record["proof_targets"]
+    missing = sorted(t for t in targets if not target_evidence.get(t))
+    foreign = sorted(set(target_evidence) - set(targets))
+    if missing or foreign:
+        raise ProbeError(
+            f"promotion of {record['unit']} refused: proof target(s) without a "
+            f"naming receipt {missing}; foreign target-evidence {foreign}")
+    if not hostile_evidence:
+        raise ProbeError(
+            f"promotion of {record['unit']} refused: no qualified hostile evidence")
+    lines = _counted("proof-target", targets)
+    lines += [f"target-evidence {t} " + " ".join(sorted(target_evidence[t]))
+              for t in sorted(targets)]
+    lines.append(f"route {route}")
+    lines += _counted("hostile-evidence", hostile_evidence)
+    lines.append(f"dependency-count {len(record['dependencies'])}")
+    lines += [f"dependency {d} {c}" for d, c in sorted(record["dependencies"])]
+    lines.append("denominator " + " ".join(
+        f"{req}=satisfied" for req in promotion_requirements()))
+    return lines
+
+
+def assemble_promotion(nursery: Path, record: dict,
+                       hostile_evidence: list[str]) -> list[str]:
+    """Assemble one promotion receipt FROM THE CANDIDATE'S ACTUAL STORE
+    (CL-7): collect the un-superseded qualification/holdout/fuzz/convergence
+    receipts persisted beside the record, map each manifest proof target to
+    the receipt addresses NAMING it, and read the independent route back
+    from the referenced receipts -- never asserted freely. A target without
+    a naming receipt, or a store whose referenced receipts name no
+    independent route, REFUSES (the honest stop)."""
+    superseded: set[str] = set()
+    parsed: list[tuple[str, dict[str, list[str]]]] = []
+    for path in sorted((nursery / record["id"] / "receipts").glob("*.receipt")):
+        fields: dict[str, list[str]] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, _sep, value = line.partition(" ")
+            fields.setdefault(key, []).append(value)
+        superseded.update(fields.get("supersedes-receipt", []))
+        parsed.append((path.stem, fields))
+    naming: dict[str, list[str]] = {}
+    routes: dict[str, str] = {}
+    for digest, fields in parsed:
+        if digest in superseded or fields.get("kind", [""])[0] not in (
+                "qualification", "holdout", "fuzz", "convergence"):
+            continue
+        if fields.get("route"):
+            routes[digest] = fields["route"][0]
+        for name in fields.get("proof-target", []):
+            naming.setdefault(name, []).append(digest)
+    per_target = {t: naming.get(t, []) for t in record["proof_targets"]}
+    named_routes = sorted({routes[d] for refs in per_target.values()
+                           for d in refs if d in routes})
+    if not named_routes:
+        raise ProbeError(f"promotion of {record['unit']} refused: no referenced "
+                         "receipt names an independent route")
+    return receipt_promotion(record, per_target, named_routes[0], hostile_evidence)
 
 
 def evidence_snapshot(evidence_dir: Path) -> dict[str, str]:
@@ -282,11 +597,13 @@ def evidence_append_only(before: dict[str, str], after: dict[str, str]) -> list[
 # ---------------------------------------------------------------------------
 
 def render_bundle(c: dict) -> str:
-    """BATPAK-CAMPAIGN-EVIDENCE/2: sections judge/source/toolchain/policy/
-    manifests/candidates/dispositions/frontier/closure, LF-only ASCII. The
-    candidates section carries V2 manifests (mint-time facts only); terminals
-    appear in the closure section from the receipt-backed terminal map; the
-    frontier section speaks the four-state law."""
+    """BATPAK-CAMPAIGN-EVIDENCE/3: sections judge/source/toolchain/policy/
+    manifests/roots/candidates/dispositions/frontier/closure (ten), LF-only
+    ASCII. The roots section DECLARES the trusted frontier inputs (CL-1:
+    root id = content commitment; the reuse receipt carries the proof); the
+    candidates section carries V2 manifests (mint-time facts only);
+    terminals appear in the closure section from the receipt-backed terminal
+    map; the frontier section speaks the four-state law."""
     lines: list[str] = [BUNDLE_MAGIC, "section: judge",
                         f"judge-root-digest {c['judge_digest']}",
                         f"judge-root-digest-after {c['judge_digest_after']}",
@@ -302,6 +619,11 @@ def render_bundle(c: dict) -> str:
         count, digest = c["vector_sets"][role]
         lines.append(f"evaluation-set {role} count={count} digest={digest}")
     lines.append("search-holdout-disjoint yes")
+    lines.append("section: roots")
+    lines.append(f"root-count {len(c['roots'])}")
+    for root in c["roots"]:
+        lines.append(f"root {root['id']} content-commitment "
+                     f"{root['content_commitment']} reuse-key {root['reuse_key']}")
     lines.append("section: candidates")
     lines.append(f"candidate-count {len(c['records'])}")
     for record in c["records"]:
@@ -366,7 +688,7 @@ def render_envelope(c: dict) -> str:
 def _sections(text: str) -> dict[str, list[str]]:
     lines = text.splitlines()
     if not lines or lines[0] != BUNDLE_MAGIC:
-        raise ProbeError("not a BATPAK-CAMPAIGN-EVIDENCE/2 bundle")
+        raise ProbeError("not a BATPAK-CAMPAIGN-EVIDENCE/3 bundle")
     out: dict[str, list[str]] = {}
     current: str | None = None
     for line in lines[1:]:
@@ -384,8 +706,8 @@ def compare_authoritative(mine: str, theirs: str) -> list[str]:
     """Every authoritative divergence between two campaign bundles."""
     a, b = _sections(mine), _sections(theirs)
     findings: list[str] = []
-    for name in ("judge", "source", "manifests", "candidates", "dispositions",
-                 "frontier", "closure"):
+    for name in ("judge", "source", "manifests", "roots", "candidates",
+                 "dispositions", "frontier", "closure"):
         if a.get(name) != b.get(name):
             sa, sb = a.get(name, []), b.get(name, [])
             diff = [f"-{x}" for x in sa if x not in sb] + [f"+{x}" for x in sb if x not in sa]
@@ -456,6 +778,20 @@ def campaign_verify(rc_exe: Path, bundle: Path, judge_root: Path,
          "--evidence-root", str(evidence_root)],
         capture_output=True, text=True)
     return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
+
+
+def verify_bundle(paths: dict, work: Path) -> tuple[list[str], str]:
+    """Build the REAL receiptcheck and block on its campaign-verify verdict
+    (shared by the battery and the CLI; the module graph stays a DAG)."""
+    rc, err = build_receiptcheck(paths["rustc"], paths["target_triple"], work)
+    if rc is None:
+        return [f"receiptcheck unavailable for campaign-verify: {err}"], ""
+    ok, out = campaign_verify(rc, paths["bundle"], paths["judge"],
+                              paths["envelope"], paths["source_commit"],
+                              paths["nursery"], paths["evidence_root"])
+    if not ok:
+        return ["receiptcheck REFUSED the campaign bundle:\n" + out], out
+    return [], out
 
 
 def source_commit_of(root: Path) -> str | None:

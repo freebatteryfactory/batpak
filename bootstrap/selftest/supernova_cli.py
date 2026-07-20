@@ -1,0 +1,70 @@
+"""CLI wiring for the mini-supernova campaign rehearsal (E7-closeout split).
+
+`selftest.py --supernova <dir>` executes the complete rehearsal with
+persistent roots under <dir> (OUTSIDE the checkout) and blocks on the
+independent receiptcheck campaign-verify verdict; `--supernova-compare
+<own-bundle> <candidate-bundle>` compares two bundles' authoritative results
+(the Stability row's cross-run law; the --e7-crossrun comparison authority
+absorbs this step in the confirming workflow). Wiring only: the rehearsal
+lives in supernova.py, the grammars and the verifier delegation in
+supernova_bundle.py, and the module graph stays a DAG (this module imports
+the harness, never the reverse).
+"""
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+from . import supernova_bundle as sb
+from .supernova import run_rehearsal
+from .supernova_bundle import verify_bundle
+
+__all__ = ["compare_supernova_cli", "run_supernova_cli", "verify_bundle"]
+
+
+def run_supernova_cli(directory: str) -> int:
+    """`selftest.py --supernova <dir>`: execute the rehearsal with persistent
+    roots under <dir> and block on the independent bundle verification. The
+    workflow's candidate AND confirming postures both run this."""
+    if not shutil.which("rustc"):
+        print("selftest: --supernova requires rustc", file=sys.stderr)
+        return 1
+    base = Path(directory).resolve()
+    if base.exists() and any(base.iterdir()):
+        shutil.rmtree(base, ignore_errors=True)
+    base.mkdir(parents=True, exist_ok=True)
+    findings, summary, paths = run_rehearsal(base)
+    for line in summary:
+        print(f"supernova: {line}")
+    if not findings and paths.get("bundle"):
+        work = base / "verify-work"
+        work.mkdir(exist_ok=True)
+        verify_findings, out = verify_bundle(paths, work)
+        findings += verify_findings
+        if out:
+            print(out)
+    if findings:
+        print(f"selftest: SUPERNOVA FAIL ({len(findings)} finding(s))", file=sys.stderr)
+        for finding in findings:
+            print(f"- {finding}", file=sys.stderr)
+        return 1
+    print(f"selftest: supernova campaign rehearsal PASS (bundle {paths['bundle']})")
+    return 0
+
+
+def compare_supernova_cli(mine: str, theirs: str) -> int:
+    """`selftest.py --supernova-compare <own-bundle> <candidate-bundle>`: the
+    Stability row's cross-run law -- the confirming rehearsal's authoritative
+    results (terminals, frontier, dispositions) must equal the candidate's."""
+    mine_text = Path(mine).read_text(encoding="utf-8")
+    theirs_text = Path(theirs).read_text(encoding="utf-8")
+    findings = sb.compare_authoritative(mine_text, theirs_text)
+    if findings:
+        print("selftest: SUPERNOVA STABILITY FAIL:", file=sys.stderr)
+        for finding in findings:
+            print(f"- {finding}", file=sys.stderr)
+        return 1
+    print("selftest: campaign authoritative results identical across runs "
+          "(confirming rerun changed no authoritative result)")
+    return 0

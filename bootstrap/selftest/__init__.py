@@ -96,9 +96,11 @@ from .proof import (
     test_proof_target_resolver,
 )
 from .supernova import (
+    test_supernova,
+)
+from .supernova_cli import (
     compare_supernova_cli,
     run_supernova_cli,
-    test_supernova,
 )
 from .tier0 import (
     _T0_GNU,
