@@ -67,8 +67,9 @@ content_addressed! {
 }
 
 content_addressed! {
-    /// The content address of ONE campaign receipt — a qualification, holdout,
-    /// promotion, refusal, or invalidation receipt in the evidence root. A
+    /// The content address of ONE campaign receipt in the evidence root — any
+    /// of the ten kinds the `CampaignReceiptKind` inventory freezes, from the
+    /// causally-first generation receipt through the terminal dispositions. A
     /// receipt is evidence of a decision already taken; referencing one
     /// confers nothing the receipt itself does not prove.
     ReceiptRef
@@ -185,15 +186,87 @@ pub struct CampaignTerminalReceipt {
     pub receipt: ReceiptRef,
 }
 
-/// The closed vocabulary of campaign receipt kinds: EXACTLY the kinds the
-/// `BATPAK-CAMPAIGN-RECEIPT/2` wire grammar serializes on its `kind` line
-/// (TL-3) — the nine kinds the V1 wire already carried, retyped without
-/// reclassification churn. R2 itself calls fuzz output a receipt, so `Fuzz`
-/// is a receipt kind, not a side channel. No generic candidate-relation
-/// cosmology exists beside this vocabulary: a receipt kind is typed here
-/// because the wire serializes it, and for no other reason.
+/// The closed vocabulary of campaign receipt kinds: EXACTLY the TEN kinds the
+/// `BATPAK-CAMPAIGN-RECEIPT/3` wire grammar serializes on its `kind` line —
+/// the nine kinds the `/2` wire carried plus `Generation`, declared FIRST
+/// because it is causally first: the mint receipt every other receipt's
+/// candidate reference presupposes. The `/2` receipt grammar remains
+/// parseable E7-mechanical historical evidence and cannot open Phase 6. R2
+/// itself calls fuzz output a receipt, so `Fuzz` is a receipt kind, not a
+/// side channel. No generic candidate-relation cosmology exists beside this
+/// vocabulary: a receipt kind is typed here because the wire serializes it,
+/// and for no other reason.
+///
+/// # NORMATIVE: the `BATPAK-CAMPAIGN-RECEIPT/3` common header
+///
+/// Every `/3` receipt opens with the same header lines, in exactly this
+/// order:
+///
+/// ```text
+/// BATPAK-CAMPAIGN-RECEIPT/3
+/// kind <lowercase kind token>
+/// candidate <64 lowercase hex>
+/// judge <64 lowercase hex>
+/// source-frontier <64 lowercase hex>
+/// supersedes-receipt <64 lowercase hex>    (OPTIONAL; terminal kinds only)
+/// ```
+///
+/// followed by the kind-specific line set and NOTHING ELSE. The grammar is
+/// STRICT: each kind admits exactly its own line set, every repeated section
+/// carries an explicit count line (an empty set is stated by its `0` count,
+/// never omitted) with its entries in canonical lexicographic order, and any
+/// unknown trailing line REFUSES the receipt — a `/3` receipt is never "a
+/// receipt plus notes".
+///
+/// The `source-frontier` line is a CHECKED binding, not decoration: the
+/// verifier retains the parsed value and compares it for EQUALITY against
+/// the candidate manifest's `source-frontier-commitment`, failing closed on
+/// contradiction — the receipt and the manifest must name THE SAME
+/// commitment, not merely both be hexadecimal.
+///
+/// # Supersession is explicit, never implicit
+///
+/// `supersedes-receipt` is lawful ONLY on the terminal kinds — `Promotion`,
+/// `Refusal`, `Invalidation`, `Escalation` — and the reference must resolve
+/// IN THE SAME RECEIPT STORE to the earlier terminal receipt it supersedes.
+/// At most ONE un-superseded terminal receipt stands per candidate. Implicit
+/// terminal precedence is REJECTED: two contradictory terminal receipts
+/// without an explicit supersession link REFUSE verification — a later
+/// terminal never quietly outranks an earlier one.
+///
+/// # The `Generation` receipt (DEC-079 creation provenance)
+///
+/// Exactly one generation receipt exists per candidate and it is never
+/// superseded. It carries the complete creation provenance the DEC-079
+/// evidence category requires: `manifest-digest` (the digest of the exact
+/// persisted nursery manifest bytes), `origin` (equal to the manifest's
+/// origin token), `generator` (the generator or pilot identity),
+/// `generator-commitment` (the generator version/configuration commitment),
+/// `content-commitment` (equal to the manifest's), the counted `parent`
+/// section (equal to the manifest's parents; a `RepairOfCandidate` origin
+/// requires at least one), and the counted `evidence` section referencing
+/// the generation or synthesis evidence artifacts.
+///
+/// # The `Promotion` receipt (the consequence of completed proof)
+///
+/// A promotion receipt is the CONSEQUENCE of completed per-target proof,
+/// never an optimistic bookmark. It binds: the candidate's proof-target set
+/// (SET-EQUAL to the manifest's, both directions), one qualifying evidence
+/// receipt set PER TARGET (every reference resolving in this candidate's
+/// store to an un-superseded receipt NAMING that target), the independent
+/// evidence route, at least one qualified hostile evidence reference, the
+/// dependency frontier snapshot (SET-EQUAL to the manifest's dependency
+/// commitments), and the promotion-denominator result stated over every
+/// member of `PromotionRequirement::ALL` (`spec::promotion`) in inventory
+/// order — a result the verifier RECOMPUTES from the referenced evidence,
+/// never trusts as asserted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CampaignReceiptKind {
+    /// The mint receipt: complete creation provenance for one candidate
+    /// (DEC-079), exactly one per candidate, never superseded. Causally
+    /// first — no other receipt can reference a candidate this receipt has
+    /// not minted.
+    Generation,
     /// Qualification evidence earned on the qualification set.
     Qualification,
     /// Holdout evidence earned on the search-disjoint holdout set (DEC-081).
@@ -217,8 +290,10 @@ pub enum CampaignReceiptKind {
 }
 
 impl CampaignReceiptKind {
-    /// The frozen inventory of campaign receipt kinds, in canonical order.
+    /// The frozen inventory of campaign receipt kinds, in canonical order —
+    /// `Generation` first because the mint receipt is causally first.
     pub const ALL: &'static [CampaignReceiptKind] = &[
+        CampaignReceiptKind::Generation,
         CampaignReceiptKind::Qualification,
         CampaignReceiptKind::Holdout,
         CampaignReceiptKind::Promotion,
@@ -230,12 +305,13 @@ impl CampaignReceiptKind {
         CampaignReceiptKind::Convergence,
     ];
 
-    /// The lowercase WIRE token the `BATPAK-CAMPAIGN-RECEIPT/2` `kind` line
+    /// The lowercase WIRE token the `BATPAK-CAMPAIGN-RECEIPT/3` `kind` line
     /// carries — unlike the sibling documentary spellings, this one is a
     /// serialization fact, and the match is exhaustive so a new kind must
     /// decide its wire token before it can exist.
     pub const fn spelling(self) -> &'static str {
         match self {
+            CampaignReceiptKind::Generation => "generation",
             CampaignReceiptKind::Qualification => "qualification",
             CampaignReceiptKind::Holdout => "holdout",
             CampaignReceiptKind::Promotion => "promotion",
@@ -245,6 +321,85 @@ impl CampaignReceiptKind {
             CampaignReceiptKind::Reuse => "reuse",
             CampaignReceiptKind::Fuzz => "fuzz",
             CampaignReceiptKind::Convergence => "convergence",
+        }
+    }
+}
+
+/// WHY a refusal receipt refused the candidate on its own content: the typed
+/// vocabulary of the `BATPAK-CAMPAIGN-RECEIPT/3` refusal `cause` line. A
+/// refusal is an own-content judgment (`CampaignTerminal::Refused`), so every
+/// cause here names a defect of the candidate itself — never upstream churn,
+/// which is `CampaignInvalidationCause` territory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CampaignRefusalCause {
+    /// The candidate's content did not compile; nothing downstream of the
+    /// compiler ever judged it.
+    CompileRefusal,
+    /// The independent witness differential disagreed with the candidate's
+    /// claimed behavior and killed it.
+    WitnessDifferentialKill,
+    /// A named obligation the candidate was required to realize remains
+    /// open and unreceipted; an unrealized obligation refuses, it never
+    /// quietly waives.
+    UnrealizedObligationOpen,
+}
+
+impl CampaignRefusalCause {
+    /// The frozen inventory of refusal causes, in canonical order.
+    pub const ALL: &'static [CampaignRefusalCause] = &[
+        CampaignRefusalCause::CompileRefusal,
+        CampaignRefusalCause::WitnessDifferentialKill,
+        CampaignRefusalCause::UnrealizedObligationOpen,
+    ];
+
+    /// The lowercase WIRE token the `BATPAK-CAMPAIGN-RECEIPT/3` refusal
+    /// `cause` line carries; the match is exhaustive so a new cause must
+    /// decide its wire token before it can exist.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            CampaignRefusalCause::CompileRefusal => "compile-refusal",
+            CampaignRefusalCause::WitnessDifferentialKill => "witness-differential-kill",
+            CampaignRefusalCause::UnrealizedObligationOpen => "unrealized-obligation-open",
+        }
+    }
+}
+
+/// WHY an escalation receipt stopped the campaign: the typed vocabulary of
+/// the `BATPAK-CAMPAIGN-RECEIPT/3` escalation `reason` line. The escalation
+/// disposition is ALWAYS `CampaignTerminal::ArchitectRequired` — the receipt
+/// states it explicitly on its `disposition` line, and no escalation reason
+/// routes anywhere but the architect (DEC-080: there is no ordinary repair
+/// lane by which a candidate modifies its own courtroom).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CampaignEscalationReason {
+    /// The candidate changes realized law (`CandidateChangeClass::
+    /// LawChanging`); only the architect admits a law change.
+    LawChangingCandidate,
+    /// The judge itself is wrong — a drifted independent model, a
+    /// mis-specified fixture, a stale judge-root view; the DEC-074 amendment
+    /// lane runs separately.
+    JudgeDefect,
+    /// The proof policy and the candidate's obligations contradict each
+    /// other; the campaign cannot resolve its own governing policy.
+    ProofPolicyConflict,
+}
+
+impl CampaignEscalationReason {
+    /// The frozen inventory of escalation reasons, in canonical order.
+    pub const ALL: &'static [CampaignEscalationReason] = &[
+        CampaignEscalationReason::LawChangingCandidate,
+        CampaignEscalationReason::JudgeDefect,
+        CampaignEscalationReason::ProofPolicyConflict,
+    ];
+
+    /// The lowercase WIRE token the `BATPAK-CAMPAIGN-RECEIPT/3` escalation
+    /// `reason` line carries; the match is exhaustive so a new reason must
+    /// decide its wire token before it can exist.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            CampaignEscalationReason::LawChangingCandidate => "law-changing-candidate",
+            CampaignEscalationReason::JudgeDefect => "judge-defect",
+            CampaignEscalationReason::ProofPolicyConflict => "proof-policy-conflict",
         }
     }
 }
@@ -610,6 +765,55 @@ impl EvidenceFreshness {
             EvidenceFreshness::Fresh => "Fresh",
             EvidenceFreshness::StaleByJudgeChange => "StaleByJudgeChange",
             EvidenceFreshness::StaleByDependencyChange => "StaleByDependencyChange",
+        }
+    }
+}
+
+/// WHICH bound coordinate changed out from under standing evidence: the
+/// typed vocabulary of the `BATPAK-CAMPAIGN-RECEIPT/3` invalidation `cause`
+/// line. This enum names the CHANGED COORDINATE; the sibling
+/// `EvidenceFreshness` names the RESULTING evidence state —
+/// `DependencyCommitmentChanged` is what puts evidence into
+/// `StaleByDependencyChange`, and `JudgeChanged` into `StaleByJudgeChange`.
+/// The two enums answer different questions and neither substitutes for the
+/// other.
+///
+/// A free-form stale-coordinate line is REJECTED: the invalidation receipt
+/// carries this typed cause plus exact `coordinate`, `old`, and `new` lines,
+/// with the old/new axis being the candidate id (CL-4 — matching the
+/// manifest's `dependency` id lines). The verifier RECONCILES the claim
+/// against the manifests and the current frontier rather than trusting it:
+/// a dependency-commitment change requires the invalidated candidate's
+/// manifest to carry a dependency whose id equals `old` while `new` is a
+/// bundle candidate whose parent set contains `old`; a judge change
+/// requires `old` to differ from the recomputed judge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CampaignInvalidationCause {
+    /// An upstream dependency commitment the candidate was built against
+    /// changed; the descendant's standing evidence no longer binds the
+    /// current frontier.
+    DependencyCommitmentChanged,
+    /// The frozen judge changed; evidence bound to the old judge digest
+    /// cannot verify against the new snapshot.
+    JudgeChanged,
+}
+
+impl CampaignInvalidationCause {
+    /// The frozen inventory of invalidation causes, in canonical order.
+    pub const ALL: &'static [CampaignInvalidationCause] = &[
+        CampaignInvalidationCause::DependencyCommitmentChanged,
+        CampaignInvalidationCause::JudgeChanged,
+    ];
+
+    /// The lowercase WIRE token the `BATPAK-CAMPAIGN-RECEIPT/3` invalidation
+    /// `cause` line carries; the match is exhaustive so a new cause must
+    /// decide its wire token before it can exist.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            CampaignInvalidationCause::DependencyCommitmentChanged => {
+                "dependency-commitment-changed"
+            }
+            CampaignInvalidationCause::JudgeChanged => "judge-changed",
         }
     }
 }

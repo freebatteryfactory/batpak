@@ -218,13 +218,15 @@ fn campaign_terminal_inventory_is_frozen() {
 
 #[test]
 fn campaign_receipt_kind_inventory_is_frozen() {
-    // TL-3: exactly the NINE kinds the BATPAK-CAMPAIGN-RECEIPT/2 wire
-    // serializes, spelled as their lowercase wire tokens.
-    assert_eq!(CampaignReceiptKind::ALL.len(), 9);
+    // Exactly the TEN kinds the BATPAK-CAMPAIGN-RECEIPT/3 wire serializes,
+    // spelled as their lowercase wire tokens — generation FIRST because the
+    // mint receipt is causally first.
+    assert_eq!(CampaignReceiptKind::ALL.len(), 10);
     let spellings: Vec<&str> = CampaignReceiptKind::ALL.iter().map(|k| k.spelling()).collect();
     assert_eq!(
         spellings,
         [
+            "generation",
             "qualification",
             "holdout",
             "promotion",
@@ -236,6 +238,57 @@ fn campaign_receipt_kind_inventory_is_frozen() {
             "convergence",
         ]
     );
+}
+
+#[test]
+fn campaign_invalidation_cause_inventory_is_frozen() {
+    // The typed RECEIPT/3 invalidation cause names WHICH bound coordinate
+    // changed; EvidenceFreshness names the RESULTING evidence state.
+    assert_eq!(CampaignInvalidationCause::ALL.len(), 2);
+    let spellings: Vec<&str> = CampaignInvalidationCause::ALL
+        .iter()
+        .map(|c| c.spelling())
+        .collect();
+    assert_eq!(spellings, ["dependency-commitment-changed", "judge-changed"]);
+}
+
+#[test]
+fn campaign_refusal_cause_inventory_is_frozen() {
+    // The typed RECEIPT/3 refusal cause: every cause is an own-content
+    // judgment, never upstream churn.
+    assert_eq!(CampaignRefusalCause::ALL.len(), 3);
+    let spellings: Vec<&str> = CampaignRefusalCause::ALL
+        .iter()
+        .map(|c| c.spelling())
+        .collect();
+    assert_eq!(
+        spellings,
+        [
+            "compile-refusal",
+            "witness-differential-kill",
+            "unrealized-obligation-open",
+        ]
+    );
+}
+
+#[test]
+fn campaign_escalation_reason_inventory_is_frozen() {
+    // The typed RECEIPT/3 escalation reason; the escalation disposition is
+    // always ArchitectRequired.
+    assert_eq!(CampaignEscalationReason::ALL.len(), 3);
+    let spellings: Vec<&str> = CampaignEscalationReason::ALL
+        .iter()
+        .map(|r| r.spelling())
+        .collect();
+    assert_eq!(
+        spellings,
+        [
+            "law-changing-candidate",
+            "judge-defect",
+            "proof-policy-conflict",
+        ]
+    );
+    assert!(CampaignTerminal::ArchitectRequired.remains_in_denominator());
 }
 
 #[test]

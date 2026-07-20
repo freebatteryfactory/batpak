@@ -12,7 +12,7 @@
 //! content-addressed nursery lineage record carries, how its versioned
 //! manifest serializes (`BATPAK-CANDIDATE-MANIFEST/2` current, `/1` retained
 //! as F5 historical evidence — no unversioned "temporary" format ever
-//! exists), which receipt kinds the `BATPAK-CAMPAIGN-RECEIPT/2` wire
+//! exists), which receipt kinds the `BATPAK-CAMPAIGN-RECEIPT/3` wire
 //! serializes, which terminal dispositions a campaign can reach, how the
 //! four-state dependency-first frontier and evidence freshness are spoken
 //! about, what a frozen judge snapshot binds, and the node/edge nouns the
@@ -53,8 +53,9 @@ mod types;
 mod inventory;
 
 pub use types::{
-    CampaignClosureEdge, CampaignClosureEdgeKind, CampaignClosureNode, CampaignReceiptKind,
-    CampaignTerminal, CampaignTerminalReceipt, CandidateId, CandidateManifest, CandidateRecord,
+    CampaignClosureEdge, CampaignClosureEdgeKind, CampaignClosureNode, CampaignEscalationReason,
+    CampaignInvalidationCause, CampaignReceiptKind, CampaignRefusalCause, CampaignTerminal,
+    CampaignTerminalReceipt, CandidateId, CandidateManifest, CandidateRecord,
     DependencyCommitment, EvidenceFreshness, EvidenceRef, FrontierState, FrozenJudgeSnapshot,
     ReceiptRef, ReuseKey,
 };
