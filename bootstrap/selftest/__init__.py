@@ -119,6 +119,7 @@ from .tier0 import (
 )
 from .verification import (
     test_bootstrap_topology,
+    test_derived_output_exclusion_parity,
     test_isolated_execution,
     test_python_tooling,
     test_sprouting_plane,
@@ -257,6 +258,7 @@ def main() -> int:
     findings += test_receiptcheck_bundle_perimeter()
     findings += test_workflow_pinning()
     findings += test_verification_plane()
+    findings += test_derived_output_exclusion_parity()
     findings += test_sprouting_plane()
     findings += test_seedcheck_executes_its_law(audit)
     findings += test_source_grammar(audit)

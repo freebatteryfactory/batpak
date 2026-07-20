@@ -19,6 +19,17 @@ NUMERIC_DOC = "docs/37_NUMERIC_SEMANTICS_AND_AUTHORITY.md"
 GATES_DOC = "docs/25_IMPLEMENTATION_GATES.md"
 CONTRACT_DOC = "docs/06_MACBAT.md"
 
+# The generator's OWN corpus-exclusion set: derived-output directories that a
+# corpus scan must never traverse. .ruff_cache and .venv join .git/target/
+# __pycache__ so that derived Markdown dropped by a local `ruff`/`uv` run cannot
+# perturb the eligible-Markdown census or the corpus-frontmatter binding count.
+# This is a GENERATOR-LOCAL constant: it is deliberately NOT shared with
+# freeze.py or audit's EXCLUDE_DIRS -- the three enumeration planes stay
+# independent, and their parity is proven by the selftest, not by a shared
+# value. Both generator corpus scans (this module's _eligible_markdown and the
+# corpus-frontmatter traversal in project/__init__.py) read exactly this set.
+CORPUS_EXCLUDE_DIRS = (".git", "target", "__pycache__", ".ruff_cache", ".venv")
+
 
 def parse_contract_kinds(root):
     """Ordered (spelling, admission-basis id) pairs, in ContractKind::ALL
@@ -599,7 +610,7 @@ def _eligible_markdown(root: Path) -> list[Path]:
     out = []
     for path in sorted(root.rglob("*.md")):
         parts = path.relative_to(root).parts
-        if any(part in (".git", "target", "__pycache__") for part in parts):
+        if any(part in CORPUS_EXCLUDE_DIRS for part in parts):
             continue
         out.append(path)
     return out

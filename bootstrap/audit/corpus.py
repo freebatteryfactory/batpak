@@ -52,10 +52,14 @@ STALE_REF_RE = re.compile(r"\[STALE-REF:\s*(DEC-\d+)\]")
 STALE_VOCAB_BLOCK_RE = re.compile(r"<!-- STALE-VOCAB:BEGIN[^>]*-->(.*?)<!-- STALE-VOCAB:END -->", re.S)
 RETIRING_DISPOSITIONS = {"Kill", "Supersede", "Demote", "Lock"}
 PRODUCTION_SOURCE_DIRS = ("crates", "apps")
-# Lockstep with freeze.py EXCLUDE_DIRS: .ruff_cache is derived lint-tool
-# output (same class as __pycache__). Freeze excludes it, so an audit census
-# that counted it would demand a row freeze can never record.
-EXCLUDE_DIRS = {".git", "target", "__pycache__", ".ruff_cache"}
+# Lockstep with freeze.py EXCLUDE_DIRS: .ruff_cache (derived lint-tool output)
+# and .venv (a uv-created virtualenv, gitignored derived tooling output) are the
+# same class as __pycache__. Freeze excludes both, so an audit census that
+# counted either would demand a manifest row freeze can never record -- exactly
+# the failure an in-tree `uv sync` produced when the auditor lagged the freezer
+# (E7 closeout G). This is the auditor's OWN independent constant: parity with
+# freeze.py is proven by the selftest, never by importing a shared value.
+EXCLUDE_DIRS = {".git", "target", "__pycache__", ".ruff_cache", ".venv"}
 EXCLUDE_SUFFIXES = {".zip", ".pyc"}
 
 

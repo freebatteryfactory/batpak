@@ -16,6 +16,123 @@ from .core import (
 )
 
 
+def test_derived_output_exclusion_parity() -> list[str]:
+    """Three INDEPENDENT derived-output enumeration planes stay in lockstep
+    (E7 closeout G / CL-12).
+
+    The freezer (freeze.files), the auditor (audit.frozen_files), and the
+    generator corpus scans each own a SEPARATE exclusion constant. A derived
+    directory dropped into the checkout by a local `uv sync` (.venv) or a local
+    `ruff` run (.ruff_cache) -- alongside target/ and __pycache__/ -- must be
+    invisible to every judged census, or an in-tree uv env demands manifest rows
+    freeze refuses (audit FAIL) and derived Markdown pollutes the generator's
+    corpus count. Parity is proven here by exercising each plane's REAL function
+    against its OWN constant, never by importing one shared value: removing
+    ".venv" from any single plane's constant fails only that plane's assertion.
+
+    The derived README.md fixtures carry reconciliation_epoch frontmatter so a
+    leak would move the generator's Markdown count AND its corpus-frontmatter
+    binding count, not merely the raw file census.
+    """
+    findings: list[str] = []
+    freeze = load("freeze")
+    audit = load("audit")
+    project = load("project")
+
+    def fail(name: str) -> None:
+        findings.append(f"{name} FAILED")
+
+    DERIVED_PLAIN = (".venv/pyvenv.cfg", "target/README.md", "__pycache__/README.md")
+    DERIVED_MARKDOWN = (".venv/README.md", ".ruff_cache/README.md")
+    DERIVED = DERIVED_PLAIN + DERIVED_MARKDOWN
+    ORDINARY = "docs/ordinary_g_parity.md"
+    EPOCH_MD = "---\nreconciliation_epoch: 0\n---\n# derived output, not corpus\n"
+
+    def plant(root: Path) -> None:
+        for rel in DERIVED_PLAIN:
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("derived output\n", encoding="utf-8")
+        for rel in DERIVED_MARKDOWN:
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(EPOCH_MD, encoding="utf-8")
+
+    # --- planes 1 & 2: freeze.files and audit.frozen_files over a minimal,
+    # repository-shaped tree. A minimal tree isolates the enumeration law: the
+    # ONLY reason a derived path could survive is that plane's own constant.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        plant(root)
+        (root / ORDINARY).parent.mkdir(parents=True, exist_ok=True)
+        (root / ORDINARY).write_text("# ordinary tracked doc\n", encoding="utf-8")
+
+        frozen = {rel for rel, _path in freeze.files(root)}
+        for rel in DERIVED:
+            if rel in frozen:
+                fail(f"freeze_files_excludes_{rel.split('/', 1)[0]}")
+        if ORDINARY not in frozen:
+            fail("freeze_files_retains_the_ordinary_file")
+
+        audited = set(audit.frozen_files(root))
+        for rel in DERIVED:
+            if rel in audited:
+                fail(f"audit_frozen_files_excludes_{rel.split('/', 1)[0]}")
+        if ORDINARY not in audited:
+            fail("audit_frozen_files_retains_the_ordinary_file")
+
+    # --- plane 3 (generator) and the auditor's corpus census. Both require a
+    # full repository-shaped tree (the sandbox copy). The generator's build_plans
+    # (corpus-frontmatter traversal in project/__init__.py) and render_bundle_
+    # inventory / _eligible_markdown (project/repository.py) must move NO census
+    # under derived Markdown: plan-target set, eligible-Markdown count, corpus-
+    # frontmatter binding count, or BundleInventory Markdown count. The AUDITOR
+    # recomputes the same BundleInventory independently (exact_ledger_findings ->
+    # _a_tracked_markdown); that census must stay invariant too -- it is exactly
+    # the path the real `audit` gate fails when the auditor's Markdown
+    # enumeration lags .venv/.ruff_cache. Both use their OWN plane's constant.
+    base = gate_sandbox([])
+    try:
+        def census(r: Path):
+            local: list[str] = []
+            _views, plans, corpus_bindings = project.build_plans(r, local)
+            plan_targets = tuple(sorted(
+                p[0].relative_to(r).as_posix() for p in plans))
+            eligible = len(project.repository._eligible_markdown(r))
+            inventory = project.render_bundle_inventory(r)
+            return local, plan_targets, corpus_bindings, eligible, inventory
+
+        base_local, targets_before, bindings_before, elig_before, inv_before = census(base)
+        if base_local:
+            fail(f"generator_census_baseline_is_clean ({base_local[:3]!r})")
+        auditor_before = [f for f in audit.inventory_mirror_findings(base)
+                          if "BUNDLE-INVENTORY" in f]
+        if auditor_before:
+            fail(f"auditor_bundle_inventory_baseline_is_clean ({auditor_before[:3]!r})")
+
+        plant(base)
+
+        after_local, targets_after, bindings_after, elig_after, inv_after = census(base)
+        if after_local:
+            fail(f"generator_census_stays_clean_with_derived_output ({after_local[:3]!r})")
+        if targets_after != targets_before:
+            fail("generator_plan_target_set_is_invariant_under_derived_markdown")
+        if bindings_after != bindings_before:
+            fail("generator_corpus_frontmatter_binding_count_is_invariant_under_derived_markdown")
+        if elig_after != elig_before:
+            fail("generator_eligible_markdown_count_is_invariant_under_derived_markdown")
+        if inv_after != inv_before:
+            fail("generator_bundle_inventory_markdown_count_is_invariant_under_derived_markdown")
+        auditor_after = [f for f in audit.inventory_mirror_findings(base)
+                         if "BUNDLE-INVENTORY" in f]
+        if auditor_after:
+            fail("auditor_bundle_inventory_markdown_census_is_invariant_under_derived_markdown")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+    return findings
+
+
 def test_verification_plane() -> list[str]:
     """audit.verification_findings: the frozen axes, the shape-based
     anti-ladder guard, tool-neutral methods, plan admissibility, route kinds

@@ -18,6 +18,7 @@ from .corpus import (
     A_E4D_LEG_FULL,
     A_E4D_PLANNED_TEXT,
     A_GENERATED_BLOCK,
+    EXCLUDE_DIRS,
     G_DEC_ROW,
     _bootstrap_source,
     _spec_module_source,
@@ -83,10 +84,11 @@ def a_parse_generated_views(root: Path) -> dict:
 
 
 def _a_tracked_markdown(root: Path) -> list[Path]:
+    # EXCLUDE_DIRS governs this census too (E7 closeout G; formerly an inline copy).
     out = []
     for path in sorted(root.rglob("*.md")):
         parts = path.relative_to(root).parts
-        if any(part in (".git", "target", "__pycache__") for part in parts):
+        if any(part in EXCLUDE_DIRS for part in parts):
             continue
         out.append(path)
     return out

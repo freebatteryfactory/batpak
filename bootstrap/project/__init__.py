@@ -129,6 +129,7 @@ from .repository import (
     COMMANDS_DOC,
     COMPANION_DOC,
     CONTRACT_DOC,
+    CORPUS_EXCLUDE_DIRS,
     GATES_DOC,
     IDENTITY_AXES,
     IDENTITY_DOC,
@@ -445,7 +446,7 @@ def build_plans(root: Path, findings: list[str]):
     if epoch_spelling is not None:
         for path in sorted(root.rglob("*.md")):
             rel_parts = path.relative_to(root).parts
-            if any(part in (".git", "target", "__pycache__") for part in rel_parts):
+            if any(part in CORPUS_EXCLUDE_DIRS for part in rel_parts):
                 continue
             entry = load(path.relative_to(root).as_posix())
             entry[2] = converge_epoch_frontmatter(entry[2], epoch_spelling)

@@ -1035,12 +1035,14 @@ def check_seed_ids(root: Path, findings: list[str]) -> None:
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     findings: list[str] = []
-    markdown = sorted(root.rglob("*.md"))
+    # EXCLUDE_DIRS filters the census up front so a derived in-tree directory
+    # (.venv, .ruff_cache) can never inflate the reported Markdown count either
+    # (E7 closeout G); the per-document checks below then see only tracked docs.
+    markdown = [path for path in sorted(root.rglob("*.md"))
+                if not any(part in EXCLUDE_DIRS for part in path.relative_to(root).parts)]
     contract_ids: dict[str, Path] = {}
     for path in markdown:
         relative_path = path.relative_to(root)
-        if any(part in EXCLUDE_DIRS for part in relative_path.parts):
-            continue
         rel = relative_path.as_posix()
         text = path.read_text(encoding="utf-8")
         meta = frontmatter(text)
