@@ -8,6 +8,7 @@ themselves stay owned by supernova.py -- this module only exercises them.
 """
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -182,4 +183,99 @@ def hostiles(paths: dict, work: Path, *, admit_failure_evidence,
             _ok, out = verify_with(paths["nursery"], bundle=forged)
             expect_refusal("scaffold_qualified_frontier_is_refused", out,
                            "Scaffold candidate")
+
+    # E7-closeout RECEIPT/3 probes: the strict verifier is proven two-sided
+    # on the new laws, on COPIES of the real nursery/bundle.
+    def receipt_with(nursery: Path, needle: str) -> Path | None:
+        return next((p for p in sorted(nursery.glob("*/receipts/*.receipt"))
+                     if needle in p.read_text(encoding="utf-8")), None)
+
+    def readdress(victim: Path, text: str) -> None:
+        victim.unlink()
+        (victim.parent / (sb.sha_hex(text) + ".receipt")).write_text(
+            text, encoding="utf-8", newline="\n")
+
+    # (e) A forged receipt source-frontier is refused (the receipt and the
+    # manifest must name the SAME commitment), and a verifier whose equality
+    # guard is blinded admits the identical forgery -- the closeout neuter.
+    n_forged = work / "nursery-frontier-forged"
+    shutil.copytree(paths["nursery"], n_forged)
+    victim = receipt_with(n_forged, "\nkind escalation\n")
+    if victim is None:
+        findings.append("no escalation receipt exists to forge; the "
+                        "source-frontier probe cannot run")
+    else:
+        text = victim.read_text(encoding="utf-8")
+        value = re.search(r"^source-frontier ([0-9a-f]{64})$", text, re.M).group(1)
+        flipped = value[:-1] + ("0" if value[-1] != "0" else "1")
+        readdress(victim, text.replace(f"source-frontier {value}",
+                                       f"source-frontier {flipped}"))
+        _ok, out = verify_with(n_forged)
+        expect_refusal("forged_source_frontier_is_refused", out,
+                       "must name the same commitment")
+        blinded, err = sb.neutered_receiptcheck(
+            paths["rustc"], paths["target_triple"], work,
+            "if receipt_frontier != candidate.source_frontier {",
+            "if false {")
+        if blinded is None:
+            findings.append(f"source-frontier neuter did not build: {err}")
+        else:
+            ok, _out = sb.campaign_verify(blinded, paths["bundle"], paths["judge"],
+                                          paths["envelope"], paths["source_commit"],
+                                          n_forged, paths["evidence_root"])
+            if not ok:
+                findings.append("the blinded verifier still refused the forged "
+                                "source-frontier; the neuter proves nothing "
+                                "about the equality guard")
+
+    # (f) A contradictory second terminal receipt WITHOUT supersedes-receipt
+    # is refused (implicit terminal precedence is rejected).
+    n_second = work / "nursery-second-terminal"
+    shutil.copytree(paths["nursery"], n_second)
+    victim = receipt_with(n_second, "\nkind refusal\n")
+    if victim is None:
+        findings.append("no refusal receipt exists; the second-terminal probe "
+                        "cannot run")
+    else:
+        text = victim.read_text(encoding="utf-8")
+        cause = re.search(r"^cause (\S+)$", text, re.M).group(1)
+        other = next(c for c in ("compile-refusal", "unrealized-obligation-open")
+                     if c != cause)
+        second = text.replace(f"cause {cause}", f"cause {other}", 1)
+        (victim.parent / (sb.sha_hex(second) + ".receipt")).write_text(
+            second, encoding="utf-8", newline="\n")
+        _ok, out = verify_with(n_second)
+        expect_refusal("second_terminal_without_supersedes_is_refused", out,
+                       "un-superseded terminal receipts")
+
+    # (g) Deleting a receipt a promotion's target-evidence references leaves
+    # the promotion denominator unrecomputable and is refused.
+    n_ref = work / "nursery-target-evidence-gone"
+    shutil.copytree(paths["nursery"], n_ref)
+    victim = receipt_with(n_ref, "\nkind promotion\n")
+    ref = victim and re.search(r"^target-evidence \S+ ([0-9a-f]{64})",
+                               victim.read_text(encoding="utf-8"), re.M)
+    if not ref:
+        findings.append("no promotion target-evidence reference exists; the "
+                        "denominator probe cannot run")
+    else:
+        (victim.parent / (ref.group(1) + ".receipt")).unlink()
+        _ok, out = verify_with(n_ref)
+        expect_refusal("deleted_target_evidence_ref_is_refused", out,
+                       "resolves to no receipt in")
+
+    # (h) Omitting one Dependency closure edge whose manifest fact stands is
+    # refused by the NEW fact->edge completeness sweep.
+    edge = re.search(r"^edge [0-9a-f]{64} [0-9a-f]{64} Dependency$",
+                     bundle_text, re.M)
+    if edge is None:
+        findings.append("no Dependency closure edge exists; the fact->edge "
+                        "probe cannot run")
+    else:
+        forged = work / "bundle-edge-omitted"
+        forged.write_text(bundle_text.replace(edge.group(0) + "\n", "", 1),
+                          encoding="utf-8", newline="\n")
+        _ok, out = verify_with(paths["nursery"], bundle=forged)
+        expect_refusal("omitted_closure_edge_is_refused", out,
+                       "closure omits the Dependency edge")
     return findings
