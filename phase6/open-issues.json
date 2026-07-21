@@ -1,0 +1,416 @@
+{
+  "snapshot_kind": "PHASE6-FOUNDING-INTAKE-ISSUE-SNAPSHOT/1",
+  "repository": "freebatteryfactory/batpak",
+  "foundation_ref": "8a92dcacafd6b1013c8131a7fe62c899d2b180e4",
+  "query_time_utc": "2026-07-21T14:39:48+00:00",
+  "state_filter": "open",
+  "count": 45,
+  "note": "Navigation snapshot only; not authoritative. Body digests bind exact text at query time.",
+  "issues": [
+    {
+      "number": 175,
+      "title": "GAUNT-COMPILER-ASSUMPTION-LEDGER: receipt unsafe/cast/layout hazards beyond the bvisor basement",
+      "state": "OPEN",
+      "updatedAt": "2026-07-13T13:49:12Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/175",
+      "body_sha256": "dcc7471e842101cfca0a79cfddac89b930447ee28a5f26e84598ef25c60ef2ee",
+      "body_len": 4848
+    },
+    {
+      "number": 176,
+      "title": "perf: investigate v0.10.0 coordination/projection cliffs from cloud baseline",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:50:38Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/176",
+      "body_sha256": "5acbd18d66110b2b793f799c240d0500b7b5f4d7d1b3d8acca12754792995a81",
+      "body_len": 6554
+    },
+    {
+      "number": 177,
+      "title": "GAUNT-NAMESPACE-DURABILITY-SHADOW-FS: prove directory-entry crash semantics, not just durable byte prefixes",
+      "state": "OPEN",
+      "updatedAt": "2026-07-14T13:29:02Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/177",
+      "body_sha256": "827192c83c45fdc1605c55d314349d485657d1089de564c24994974ac0334135",
+      "body_len": 12680
+    },
+    {
+      "number": 179,
+      "title": "External StoreFs backends: publish the conformance corpus + expose SimFs as a public fault layer",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:07:46Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/179",
+      "body_sha256": "1169456f19ee277d2e2bb11ec50def71f6ec199234cf31381605f943026475b0",
+      "body_len": 3656
+    },
+    {
+      "number": 180,
+      "title": "Publish the StoreError handling-class contract (currently locked inside batpak-testkit, publish=false)",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:07:57Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/180",
+      "body_sha256": "17f8632853eab6f598fcac859ea2fcb9bba2df292a10997c5b266fe9beadabbd",
+      "body_len": 1975
+    },
+    {
+      "number": 181,
+      "title": "Promote open_cooperative to a supported public single-threaded execution mode",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:08:10Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/181",
+      "body_sha256": "1098747ba34f753eac080a7241d49d622e66cba2c39b9c181fba13a5e2fc4a7f",
+      "body_len": 4225
+    },
+    {
+      "number": 184,
+      "title": "projection: add an additive fallible replay surface for typed decode and apply failures",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:38:58Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/184",
+      "body_sha256": "b54ed0e8ea16a6ec18205ee1e83484682f065da8252661f7d202c1ebbcb82fb1",
+      "body_len": 4704
+    },
+    {
+      "number": 185,
+      "title": "GAUNT-WORKLOAD-ENVELOPE: prove sustained load, maintenance interference, backpressure, and recovery tails",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:52:14Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/185",
+      "body_sha256": "6b72277376f13499d9525831198a41fbb479f8578ada1ec1793032e95d42b7f7",
+      "body_len": 8572
+    },
+    {
+      "number": 186,
+      "title": "GAUNT-INVOCATION-CAPSULE: bind host composition and operation identity into every runtime receipt",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:49:44Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/186",
+      "body_sha256": "796b07b2a07f27d88721827f478e68bdecfbbc12f5d8a81222a0e6ddb629e5e1",
+      "body_len": 10747
+    },
+    {
+      "number": 187,
+      "title": "bvisor: bind AttemptId into start/report evidence and drive the host path through lifecycle typestate",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:09:21Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/187",
+      "body_sha256": "d49a17233f7dc95b412282fc7ad3b1af6781f87ba435e8fee5e6d05bb35e9e6a",
+      "body_len": 8495
+    },
+    {
+      "number": 188,
+      "title": "Expose durable idempotency-store checkpoint/restore as a public seam (embedder out-of-band persistence)",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:09:32Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/188",
+      "body_sha256": "6c5424784918033e4b54c87a9ae4a3346dff62f992b9c7bccfbdf41dc61afcf2",
+      "body_len": 1848
+    },
+    {
+      "number": 190,
+      "title": "GAUNT-PRIMITIVE-TAXONOMY: one typed integrity plane for checksum, digest, MAC, signature, and witness",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:09:53Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/190",
+      "body_sha256": "7d52992ba36a669b6f931d1b347c8d246adb01dea4252e541a4cfbc74f22b413",
+      "body_len": 11900
+    },
+    {
+      "number": 191,
+      "title": "GAUNT-EVENT-COMMITMENT-V2: separate payload identity from event identity and prove exact chain topology",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:10:04Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/191",
+      "body_sha256": "aa19f48c1e4a639a7354d9eff32c92a9a7aec895597734231a0b65346e1db183",
+      "body_len": 15944
+    },
+    {
+      "number": 193,
+      "title": "GAUNT-SEGMENT-SEALS: signed segment roots, global append accumulator, and proof-carrying compaction",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:38:57Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/193",
+      "body_sha256": "849c0f1e28a51e3f9e1fbd2b97945cdd2555ba62a922750a0310f5546decb2a1",
+      "body_len": 14616
+    },
+    {
+      "number": 194,
+      "title": "GAUNT-ANTI-ROLLBACK-ANCHORS: external witnesses, monotonic store roots, and restore refusal",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:10:35Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/194",
+      "body_sha256": "d34f5086c7d1f96e44d9082be7fd169303ea70e28e08024bbc089b708458fba4",
+      "body_len": 13691
+    },
+    {
+      "number": 195,
+      "title": "GAUNT-AUTHORITY-MANIFEST: bind mutable authorities and derived caches to one store generation",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T11:24:51Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/195",
+      "body_sha256": "7d0d7804fa602e1271b1bbe26b93b9ce37dc5f8e1a842192ab79d0f8a63e54b0",
+      "body_len": 15158
+    },
+    {
+      "number": 196,
+      "title": "GAUNT-EVIDENCE-END-TO-END: carry verifiable commitments and receipts across syncbat, hostbat, netbat, and bvisor",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:10:58Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/196",
+      "body_sha256": "bfdf912b8bd28450457b8469dfddcd9967998b7cde0c7667646947fea0f329bb",
+      "body_len": 14755
+    },
+    {
+      "number": 197,
+      "title": "GAUNT-PROOF-OF-PROOF: make the assurance machine semantic, adversarial, anti-vacuous, and freshness-bound",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T14:49:53Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/197",
+      "body_sha256": "29962d249c32412706a45304e137f24b6f385845bc9dadcebd4f31eed3a34475",
+      "body_len": 19429
+    },
+    {
+      "number": 198,
+      "title": "GAUNT-AUTHENTICATED-STORE: cryptographic accountability from event bytes to external witness",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:28:35Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/198",
+      "body_sha256": "a2d590f86b5dccd7669e488dafb96f1b035ccfe49a2b16dab7c21c4ed40d072f",
+      "body_len": 14889
+    },
+    {
+      "number": 199,
+      "title": "MODEL-MATERIALIZED-PROJECTION-V1: selector-backed, coordinate-bearing replay beyond one entity",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T11:24:49Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/199",
+      "body_sha256": "96607c3c72077f04465925bd7106ecd38e1afb71d7cb1366408d44e3be7c9f18",
+      "body_len": 10132
+    },
+    {
+      "number": 200,
+      "title": "MODEL-PATH-COLLATION-V1: typed hierarchical keys with frozen total order and canonical encoding",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:11:47Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/200",
+      "body_sha256": "8b0adaafeab2b1d3bf157607c0836fb637d4516fcb04656f0d541803a18a6590",
+      "body_len": 10193
+    },
+    {
+      "number": 201,
+      "title": "MODEL-SPARSE-PROJECTION-TREE-V1: bounded ordered materialized state over immutable events",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:11:58Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/201",
+      "body_sha256": "6db2fb117779a4395c2e34cd19da4b0b58a43bc3eb07f03065e94428c415efe2",
+      "body_len": 11758
+    },
+    {
+      "number": 202,
+      "title": "FAMILY-PROJECTION-QUERY-V1: manifest-declared typed projection reads across syncbat, hostbat, and netbat",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:14:49Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/202",
+      "body_sha256": "c72e1c1f3a2cf0e4db97033f2904af92e036696430cd9a7d1f07ea89e003d1b5",
+      "body_len": 13568
+    },
+    {
+      "number": 203,
+      "title": "Per-entity Store::project pays O(scope) per call; incremental flag does not remove the scan",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T11:24:48Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/203",
+      "body_sha256": "c6c27729aa0fec514a5a11b6a9dfe0e5761ce5a826d7f3ff95465917c1560dca",
+      "body_len": 1572
+    },
+    {
+      "number": 206,
+      "title": "Region/scope-scoped frontier accessor",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:39:29Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/206",
+      "body_sha256": "d39404a830e9cc6bee52e2d74dd08abddc5bb914b5f79fa8c06883ea79f3e341",
+      "body_len": 352
+    },
+    {
+      "number": 207,
+      "title": "GAUNT-ARCH-CONSTITUTION: one semantic owner ledger for every public concept and lowering",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:40:23Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/207",
+      "body_sha256": "4e148f20a99f885b45df40491e449fc53af16bd7cb3bbed289dcbc521ad7c016",
+      "body_len": 6898
+    },
+    {
+      "number": 208,
+      "title": "GAUNT-CLOCK-ORDER-TAXONOMY: separate time source, journal commit point, stream position, and causal time",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:13:23Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/208",
+      "body_sha256": "cced7568615ae516dca981c6a822e42a42b855a2e22d6fa1a7571b28569fa66d",
+      "body_len": 9694
+    },
+    {
+      "number": 209,
+      "title": "F8-ASYNC-SUCCESSION: BatPak-owned async adapters, cooperative driver capability, and parity laws",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:33:19Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/209",
+      "body_sha256": "e863ada568c13d86d6ea588765a7b9afc9850e59280a5412e588b8f469c38192",
+      "body_len": 9826
+    },
+    {
+      "number": 210,
+      "title": "PUBLIC-OUTCOME-SUCCESSION: audit the saga algebra, introduce a narrow submission disposition, and deprecate without erasure",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:13:37Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/210",
+      "body_sha256": "dff8559b1ac13db70cd7a9facc43cc7a5c72c7b59e5452219bb0dd177bd7c67c",
+      "body_len": 7075
+    },
+    {
+      "number": 211,
+      "title": "GAUNT-REPO-IR-CONVERGENCE: one repository fact plane for architecture, assurance, and Muterprater",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T19:17:38Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/211",
+      "body_sha256": "f68ff9e65af7b6e5460040cec90d3e69db3c7680df8f1b7c9843ef6d1067d2ba",
+      "body_len": 8196
+    },
+    {
+      "number": 212,
+      "title": "FAMILY-SUBSCRIPTION-CONTRACT-V1: one declaration and generated lowering across hostbat, syncbat, and netbat",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:14:41Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/212",
+      "body_sha256": "1d1c95cde25968af1ad1d16c3ee73f2da7736c8ece99811ac43e5789dc5cecc9",
+      "body_len": 8983
+    },
+    {
+      "number": 213,
+      "title": "GAUNT-DEPENDENCY-SOVEREIGNTY: composition-honest profiles, private facades, and evidence-gated native replacements",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:28:48Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/213",
+      "body_sha256": "bbc3f33261ea4a35c39cdedd80c42dcac7b72aec05592088e9593607e476de17",
+      "body_len": 11822
+    },
+    {
+      "number": 214,
+      "title": "MACRO-CONTRACT-IR: one semantic compiler skeleton for incremental derives, composition, and generated facades",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:27:32Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/214",
+      "body_sha256": "18320e654dab2c305ce34222b3741bab7d9606032da2f5070b432fac6d7766b1",
+      "body_len": 11954
+    },
+    {
+      "number": 215,
+      "title": "PERF-NETBAT-BUFFERED-FRAMING: eliminate byte-at-a-time transport reads and benchmark the real TCP path",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T05:45:51Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/215",
+      "body_sha256": "c290c5d18388b0884c2fd9df2c1cba05043d6897febb852572595eae980a08bd",
+      "body_len": 6811
+    },
+    {
+      "number": 217,
+      "title": "Active-segment point reads serialize on one Mutex<FdCache>",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:39:28Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/217",
+      "body_sha256": "74b117f057d2ca98286e3d5954f8a42d1e8f2453219687507a87ad7646357090",
+      "body_len": 1147
+    },
+    {
+      "number": 218,
+      "title": "GAUNT-FD-POSTCONDITION: prove the exec-time descriptor set and fail closed on CLOEXEC/close faults",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:39:25Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/218",
+      "body_sha256": "c97902c30cd281aa58aa6b4dbf6aa486ecb94ab16cd460d78493af5f457abb9f",
+      "body_len": 13586
+    },
+    {
+      "number": 224,
+      "title": "hygiene: Windows CI lane runs zero family-crate tests (default-members nextest blind spot)",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T19:19:18Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/224",
+      "body_sha256": "eeb6fbc220806da7ec23a207cad48da27f168d5f332e3ae6e052886a9d25811c",
+      "body_len": 2588
+    },
+    {
+      "number": 225,
+      "title": "hygiene: name zero-warnings as a discoverable gate (#178 seam 4, deferred from #221)",
+      "state": "OPEN",
+      "updatedAt": "2026-07-12T19:19:31Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/225",
+      "body_sha256": "0b09df437c6bc15129879209e6acae09e08ce6c7ed7f3c8c4c5bd429b8bf9252",
+      "body_len": 1892
+    },
+    {
+      "number": 227,
+      "title": "Store::import_events loses retry deduplication after destination reopen",
+      "state": "OPEN",
+      "updatedAt": "2026-07-13T06:23:36Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/227",
+      "body_sha256": "d2b93d760a1f3eb613e70c1838a79f9873ee0bb5d7e0b319c6374add566ceb72",
+      "body_len": 3573
+    },
+    {
+      "number": 228,
+      "title": "netbat: add bounded response decoding and blocking client call",
+      "state": "OPEN",
+      "updatedAt": "2026-07-13T06:40:39Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/228",
+      "body_sha256": "7c7f20152383dcc83748579d4734be7aaa19792948b1ccee73dd977ea8cc108c",
+      "body_len": 3157
+    },
+    {
+      "number": 229,
+      "title": "syncbat: add atomic typed batch append effect capability",
+      "state": "OPEN",
+      "updatedAt": "2026-07-13T07:14:02Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/229",
+      "body_sha256": "8965dd4ede39b3dd259c48e546ead594b469a1a3de3d4c89471a8dd5fcae61c0",
+      "body_len": 2142
+    },
+    {
+      "number": 230,
+      "title": "core: add paged read-walk evidence without full matched-set materialization",
+      "state": "OPEN",
+      "updatedAt": "2026-07-13T07:14:18Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/230",
+      "body_sha256": "15bfcdfea9a8d0aa3406aef0e0f6ddfc33babf6fa18b763ec60e4f0f466575d3",
+      "body_len": 1950
+    },
+    {
+      "number": 231,
+      "title": "bvisor: expose content-addressed captured streams to host consumers",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:39:26Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/231",
+      "body_sha256": "08a4f8ee90f15248a22bea73fc93585e18a26ed00a86076775bf0045ddb202de",
+      "body_len": 2024
+    },
+    {
+      "number": 232,
+      "title": "bvisor: support self-hosted launcher dispatch for single-binary applications",
+      "state": "OPEN",
+      "updatedAt": "2026-07-16T15:39:27Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/232",
+      "body_sha256": "767b17daa0d71d2e3741bc52ecbd4537408bddef733223d349bc6bee6088fbca",
+      "body_len": 2294
+    },
+    {
+      "number": 233,
+      "title": "bvisor: reserve collision-free event kinds for downstream composition",
+      "state": "OPEN",
+      "updatedAt": "2026-07-13T07:26:48Z",
+      "url": "https://github.com/freebatteryfactory/batpak/issues/233",
+      "body_sha256": "e0327419f02bd0566afcc1f3952f03cb91e85800be44879effc971408912009f",
+      "body_len": 2077
+    }
+  ]
+}
