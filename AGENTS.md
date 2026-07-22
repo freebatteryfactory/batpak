@@ -1,55 +1,58 @@
 ---
 status: AUTHORITATIVE
-contract_id: BP-AGENT-GUIDE
-authority_scope: agent discovery adapter — mission, authority order, first steps, and stop conditions
-supersedes: BatPak clean-room Pass 1 and selectively retained Pass 2 rulings
-last_reconciled: 2026-07-19
-reconciliation_epoch: cleanroom-v1
+contract_id: TP-AGENT-GUIDE-1
+authority_scope: agent discovery, authority routing, and stop conditions
+last_reconciled: 2026-07-22
 ---
 
-# Agent Guide
+# ThreadPak Agent Guide
 
-This file is a thin discovery adapter. It points at the authorities; it does not
-restate them. Source layout, code doctrine, the review packet, and the legacy
-rule live in their numbered owners (`docs/04`, `docs/12`, `docs/25`, `docs/27`,
-`docs/33`), not here.
+This file is a thin discovery adapter. It contains no independent product law.
 
-## Mission
+## First steps
 
-Implement this specification once, in dependency order, without reviving a
-rejected architecture as a convenience layer. The specification is the current
-architecture, not a bag of suggestions: a code agent may refine exact signatures
-and byte constants only inside a named implementation gate, and only while
-preserving the owner, direction, lifecycle, and proof obligations already frozen.
+1. Read [Product and Behavior](docs/PRODUCT_AND_BEHAVIOR.md).
+2. Read [Implementation Plan](docs/IMPLEMENTATION_PLAN.md).
+3. Confirm the current branch, commit, worktree status, authorized packet, and
+   exact path boundary before editing.
+4. Run only the validation commands available at that packet boundary.
 
 ## Authority order
 
 ```text
-typed spec facts in spec/   >   numbered domain docs   >   generated projections
+docs/PRODUCT_AND_BEHAVIOR.md
+    > docs/IMPLEMENTATION_PLAN.md
+    > packet-owned implementation and independent evidence
+    > generated projections
+    > extraction sources
 ```
 
-A stale document is evidence of past intent, never current law. When two
-authorities disagree, do not average them: apply
-`docs/29_STATUS_AND_SUPERSESSION.md`, and report the contradiction if it survives.
+Do not average contradictory statements. Stop and report the exact conflict if
+it changes semantic ownership, durable bytes, authority, lifecycle, dependency
+direction, proof meaning, or the current packet boundary.
 
-## First five minutes
+## Working law
 
-1. Read `docs/00_CONSTITUTION.md`.
-2. Read `docs/27_WORKFLOW.md`.
-3. Read `docs/33_AGENT_FINISH_LINE_CHECKLIST.md`.
-4. Run the bootstrap battery (`audit.py`, `selftest.py`, and the
-   `seedcheck`/`receiptcheck` oracles; see `bootstrap/README.md`).
+- Implement only explicitly authorized packets and exact paths.
+- Write tests and an appropriately independent oracle before or with behavior.
+- Do not invent an open name, format, type shape, profile, package, dependency,
+  support claim, or mechanism to make compilation proceed.
+- Do not edit extraction sources unless the active packet names the path as a
+  transition or target file.
+- Do not delete or archive migration evidence before P11.
+- Generated or optimized output cannot be its own only judge.
+- A compiler error does not authorize moving ownership or adding an adapter.
 
-## Hard stop conditions
+## Hard stops
 
-Stop and report a structured finding — do not local-patch, do not file a
-"follow-up" — when any of these hold:
+Stop rather than patch around:
 
 ```text
-two current authorities contradict each other
-an enforced gate is red
-a proof-policy change is unclassified
+branch or starting commit mismatch
+two current authorities contradict
+an unavailable decision or bakeoff is required
+a symbolic package root would need a temporary spelling
+a new dependency or reverse edge is required
+an extraction source would need modification
+deletion or archival would occur outside P11
 ```
-
-The workflow lives in `docs/27_WORKFLOW.md`; the finish-line checklist lives in
-`docs/33_AGENT_FINISH_LINE_CHECKLIST.md`.
