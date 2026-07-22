@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/macros",
+    "crates/testpak",
+    "crates/threadpak",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+publish = false
+# Private scaffold identity only; this is not a release-version declaration.
+version = "0.0.0"

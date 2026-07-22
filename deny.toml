@@ -1,0 +1,3 @@
+# P01A establishes this file as the dependency-policy owner without freezing
+# license, advisory, source, or duplicate-version policy. Those public and
+# release-facing decisions belong to their later authorized packet.
